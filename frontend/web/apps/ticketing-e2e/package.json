@@ -1,0 +1,10 @@
+{
+  "name": "@pml.tickets/ticketing-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "implicitDependencies": [
+      "@pml.tickets/ticketing"
+    ]
+  }
+}

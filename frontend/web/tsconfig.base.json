@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "importHelpers": true,
+    "isolatedModules": true,
+    "lib": [
+      "es2022"
+    ],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2022",
+    "customConditions": [
+      "@pml.tickets/source"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@pml.tickets/shared": [
+        "libs/shared/src/index.ts"
+      ],
+      "@pml.tickets/shared/*": [
+        "libs/shared/src/*"
+      ],
+      "@pml.tickets/shared/testing/*": [
+        "libs/shared/testing/*"
+      ],
+      "@shared": [
+        "libs/shared/src/index.ts"
+      ],
+      "@shared/*": [
+        "libs/shared/src/*"
+      ]
+    }
+  }
+}

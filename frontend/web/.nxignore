@@ -1,0 +1,6 @@
+# Ignore Next.js build outputs
+**/.next
+**/node_modules
+**/.turbo
+**/dist
+**/.cache

@@ -1,0 +1,4093 @@
+schema {
+  query: Query
+  mutation: Mutation
+}
+scalar BigDecimal
+scalar DateTime
+scalar JSON
+scalar Long
+type AccountBalance {
+  accountCode: String!
+  accountName: String!
+  accountType: String!
+  debitBalance: BigDecimal!
+  creditBalance: BigDecimal!
+  netBalance: BigDecimal!
+}
+type AccountSummary {
+  accountId: ID!
+  accountNumber: String!
+  eventId: String!
+  eventTitle: String!
+  organizerId: String!
+  organizerName: String!
+  currentBalance: BigDecimal!
+  totalDeposits: BigDecimal!
+  totalWithdrawals: BigDecimal!
+  totalRefunds: BigDecimal!
+  totalCommissions: BigDecimal!
+  availableForPayout: BigDecimal!
+  status: EscrowAccountStatus!
+  currency: String!
+  transactionCount: Int!
+}
+type ApprovalEscalation {
+  id: ID!
+  eventId: String!
+  eventTitle: String!
+  status: EscalationStatus!
+  reason: String!
+  triggeredAt: DateTime!
+  acknowledgedAt: DateTime
+  resolvedAt: DateTime
+  escalatedTo: String!
+  escalatedToName: String!
+  acknowledgedBy: String
+  acknowledgedByName: String
+  resolvedBy: String
+  resolvedByName: String
+  resolutionNotes: String
+  originalReviewerId: String
+  originalReviewerName: String
+  remindersSent: Int!
+  lastReminderAt: DateTime
+  nextReminderAt: DateTime
+  hoursOverdue: Int!
+  slaDeadline: DateTime!
+}
+type ApprovalEscalationConnection {
+  edges: [ApprovalEscalationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+type ApprovalEscalationEdge {
+  node: ApprovalEscalation!
+  cursor: String!
+}
+type ApprovalEscalationMutationResponse {
+  success: Boolean!
+  message: String
+  data: ApprovalEscalation
+  errors: [String!]!
+}
+type ApprovalEscalationOffsetPage {
+  content: [ApprovalEscalation!]!
+  pageNumber: Int!
+  pageSize: Int!
+  totalElements: Int!
+  totalPages: Int!
+  hasNext: Boolean!
+  hasPrevious: Boolean!
+}
+type ApprovalNotification {
+  id: ID!
+  eventId: String!
+  eventTitle: String!
+  type: ApprovalNotificationType!
+  channel: ApprovalNotificationChannel!
+  recipientId: String!
+  recipientEmail: String
+  recipientName: String!
+  subject: String!
+  message: String!
+  actionUrl: String
+  sentAt: DateTime
+  deliveredAt: DateTime
+  readAt: DateTime
+  failedAt: DateTime
+  failureReason: String
+  retryCount: Int!
+  nextRetryAt: DateTime
+}
+type ApprovalStats {
+  totalPendingReviews: Int!
+  totalOverdue: Int!
+  totalEscalated: Int!
+  submittedToday: Int!
+  approvedToday: Int!
+  rejectedToday: Int!
+  changesRequestedToday: Int!
+  averageProcessingTimeHours: Float!
+  slaComplianceRate: Float!
+  pendingByDaysWaiting: [DaysWaitingBreakdown!]!
+  activeEscalations: Int!
+  escalationsThisWeek: Int!
+  averageEscalationResolutionHours: Float
+}
+type ApprovalTimeline {
+  eventId: String!
+  eventTitle: String!
+  organizerId: String!
+  organizerName: String!
+  currentStatus: EventStatus!
+  assignedReviewerId: String
+  assignedReviewerName: String
+  timelineEvents: [TimelineEvent!]!
+  submittedAt: DateTime
+  slaDeadline: DateTime
+  expectedApprovalAt: DateTime
+  actualApprovalAt: DateTime
+  totalProcessingTimeHours: Int
+  isOverdue: Boolean!
+  hoursUntilDeadline: Int
+  slaCompliancePercentage: Float
+  escalation: ApprovalEscalation
+  hasActiveEscalation: Boolean!
+  submissionCount: Int!
+  currentIteration: Int!
+  totalComments: Int!
+  lastActivityAt: DateTime
+}
+type ApprovalTimelineConnection {
+  edges: [ApprovalTimelineEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+type ApprovalTimelineEdge {
+  node: ApprovalTimeline!
+  cursor: String!
+}
+type ApprovalTimelineMutationResponse {
+  success: Boolean!
+  message: String
+  data: ApprovalTimeline
+  errors: [String!]!
+}
+type ApprovalTimelineOffsetPage {
+  content: [ApprovalTimeline!]!
+  pageNumber: Int!
+  pageSize: Int!
+  totalElements: Int!
+  totalPages: Int!
+  hasNext: Boolean!
+  hasPrevious: Boolean!
+}
+type ApprovePayoutRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: PayoutRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type ApproveRefundRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: RefundRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type AuthPayload {
+  success: Boolean!
+  message: String
+  user: User
+  accessToken: String
+  refreshToken: String
+  expiresIn: Int
+  tokenType: String
+}
+type BankAccount {
+  id: ID!
+  organizerId: String!
+  organizationId: String
+  accountHolderName: String!
+  bankName: String!
+  bankCode: String
+  branchName: String
+  branchCode: String
+  accountNumber: String!
+  accountType: String
+  currency: String!
+  swiftCode: String
+  isDefault: Boolean!
+  isVerified: Boolean!
+  verifiedAt: DateTime
+  verifiedBy: String
+  status: String!
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+type BankAccountMutationResponse {
+  success: Boolean!
+  message: String
+  data: BankAccount
+  errors: [String!]!
+  metadata: JSON
+}
+type BulkAccessGrantResponse {
+  success: Boolean!
+  message: String
+  grantedCount: Int!
+  failedCount: Int!
+  grants: [EventAccessGrant!]
+  errors: [BulkOperationError!]
+}
+type BulkApprovalResponse {
+  success: Boolean!
+  message: String
+  processedCount: Int!
+  failedCount: Int!
+  results: [EventApprovalResult!]!
+  errors: [String!]!
+}
+type BulkInvitationResponse {
+  success: Boolean!
+  message: String
+  sentCount: Int!
+  failedCount: Int!
+  invitations: [TeamInvitation!]
+  errors: [BulkOperationError!]
+}
+type BulkOperationError {
+  index: Int!
+  identifier: String
+  message: String!
+  code: String
+}
+type BulkOperationResponse {
+  success: Boolean!
+  message: String
+  processedCount: Int!
+  failedCount: Int!
+  errors: [String!]!
+}
+type BulkPayoutOperationResponse {
+  success: Boolean!
+  message: String
+  processedCount: Int!
+  failedCount: Int!
+  processedPayouts: [PayoutRequest!]!
+  failedPayoutIds: [String!]!
+  errors: [String!]!
+}
+type BulkReminderResponse {
+  success: Boolean!
+  message: String
+  sentCount: Int!
+  failedCount: Int!
+  errors: [String!]!
+}
+type CancelTicketMutationResponse {
+  success: Boolean!
+  message: String
+  data: Ticket
+  errors: [String!]!
+  metadata: JSON
+}
+type CategoryMutationResponse {
+  success: Boolean!
+  message: String
+  data: EventCategory
+  errors: [String!]!
+  metadata: JSON
+}
+type ChannelStatus {
+  channel: NotificationChannel!
+  status: NotificationStatus!
+  sentAt: DateTime
+  deliveredAt: DateTime
+  errorMessage: String
+}
+type ChargebackMutationResponse {
+  success: Boolean!
+  message: String
+  data: ChargebackRecord
+  errors: [String!]!
+  metadata: JSON
+}
+type ChargebackOffsetPage {
+  data: [ChargebackRecord!]!
+  pagination: PaginationInfo!
+}
+type ChargebackRecord {
+  id: ID!
+  chargebackId: String!
+  originalTransactionId: String!
+  ticketId: String!
+  eventId: String!
+  organizerId: String!
+  organizationId: String
+  customerId: String!
+  originalAmount: BigDecimal!
+  chargebackAmount: BigDecimal!
+  chargebackFee: BigDecimal!
+  currency: String!
+  reason: ChargebackReason!
+  status: ChargebackStatus!
+  receivedAt: DateTime!
+  responseDeadline: DateTime!
+  evidenceSubmitted: String
+  resolvedAt: DateTime
+  recoveryStatus: RecoveryStatus!
+  recoveredAmount: BigDecimal
+  commissionClawbackId: String
+  fundSource: ChargebackFundSource
+  journalEntryId: String
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type ChargebackStats {
+  totalCount: Int!
+  pendingCount: Int!
+  disputedCount: Int!
+  wonCount: Int!
+  lostCount: Int!
+  totalAmount: BigDecimal!
+  recoveredAmount: BigDecimal!
+  writtenOffAmount: BigDecimal!
+  chargebackRate: Float!
+  winRate: Float!
+}
+type ChartOfAccountsEntry {
+  id: ID!
+  accountCode: String!
+  accountName: String!
+  accountType: AccountType!
+  subType: AccountSubType
+  parentAccountCode: String
+  currency: String!
+  isActive: Boolean!
+  description: String
+  normalBalance: BalanceDirection!
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type ChartOfAccountsMutationResponse {
+  success: Boolean!
+  message: String
+  data: ChartOfAccountsEntry
+  errors: [String!]!
+  metadata: JSON
+}
+type ChartOfAccountsOffsetPage {
+  data: [ChartOfAccountsEntry!]!
+  pagination: PaginationInfo!
+}
+type CheckInEvent {
+  ticketId: ID!
+  ticketNumber: String!
+  tierName: String!
+  buyerName: String
+  checkedInAt: DateTime!
+  scannerId: String
+  scannerName: String
+  totalCheckedIn: Int!
+}
+type City {
+  id: ID!
+  name: String!
+  code: String
+  provinceId: String
+  province: String
+  country: String
+  eventCount: Int
+  createdAt: DateTime
+  updatedAt: DateTime
+  createdBy: String
+  updatedBy: String
+  isActive: Boolean!
+}
+type CityConnection {
+  edges: [CityEdge!]!
+  pageInfo: PageInfo!
+}
+type CityEdge {
+  node: City!
+  cursor: String!
+}
+type CityMutationResponse {
+  success: Boolean!
+  message: String
+  data: City
+  errors: [String!]!
+  metadata: JSON
+}
+type CityOffsetPage {
+  content: [City!]!
+  pageNumber: Int!
+  pageSize: Int!
+  totalElements: Int!
+  totalPages: Int!
+  hasNext: Boolean!
+  hasPrevious: Boolean!
+}
+type CityStats {
+  cityId: String
+  cityName: String!
+  country: String!
+  eventCount: Int!
+}
+type Coordinates {
+  latitude: Float
+  longitude: Float
+}
+type CreateBankAccountMutationResponse {
+  success: Boolean!
+  message: String
+  data: BankAccount
+  errors: [String!]!
+  metadata: JSON
+}
+type CreatePayoutRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: PayoutRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type CreateRefundRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: RefundRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type DaysWaitingBreakdown {
+  daysWaiting: Int!
+  count: Int!
+  percentage: Float!
+}
+type DeleteBankAccountMutationResponse {
+  success: Boolean!
+  message: String
+  errors: [String!]!
+  metadata: JSON
+}
+type DeleteMutationResponse {
+  success: Boolean!
+  message: String
+  errors: [String!]!
+  metadata: JSON
+}
+type DeviceMutationResponse {
+  success: Boolean!
+  message: String
+  device: UserDevice
+}
+type DocumentMutationResponse {
+  success: Boolean!
+  message: String
+  document: VerificationDocument
+}
+type EffectivePermissions {
+  userId: ID!
+  organizationId: ID
+  eventId: ID
+  permissions: [String!]!
+  role: String
+  source: String
+}
+type EscrowAccountConnection {
+  edges: [EscrowAccountEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type EscrowAccountEdge {
+  cursor: String!
+  node: EventEscrowAccount!
+}
+type EscrowAccountMutationResponse {
+  success: Boolean!
+  message: String
+  data: EventEscrowAccount
+  errors: [String!]!
+  metadata: JSON
+}
+type EscrowAccountOffsetPage {
+  data: [EventEscrowAccount!]!
+  pagination: PaginationInfo!
+}
+type EscrowJournalVerificationResponse {
+  success: Boolean!
+  message: String
+  eventId: String!
+  escrowAccountId: String
+  journalAccountCode: String
+  escrowBalance: BigDecimal
+  journalBalance: BigDecimal
+  variance: BigDecimal
+  isConsistent: Boolean!
+  status: EscrowJournalVerificationStatus
+  details: [String!]!
+  errors: [String!]!
+}
+type EscrowTransactionMutationResponse {
+  success: Boolean!
+  message: String
+  data: StandaloneEscrowTransaction
+  errors: [String!]!
+  metadata: JSON
+}
+type EscrowTransactionOffsetPage {
+  data: [StandaloneEscrowTransaction!]!
+  pagination: PaginationInfo!
+}
+type Event {
+  id: ID!
+  totalCapacity: Int!
+  title: String!
+  eventDateTime: DateTime!
+  organizerId: String!
+  tickets: [Ticket!]!
+  ticketsSold: Int!
+  revenue: BigDecimal!
+  ticketsAvailable: Int!
+  soldOut: Boolean!
+  salesPercentage: Float!
+  description: String!
+  category: EventCategory
+  categoryId: String
+  endDateTime: DateTime!
+  location: Location
+  locationId: String
+  locationName: String
+  locationAddress: String
+  cityName: String
+  organizer: User
+  organization: Organization
+  organizationId: String
+  organizerName: String!
+  organizerEmail: String
+  organizerPhone: String
+  organizerBusinessEmail: String
+  organizerBusinessPhone: String
+  organizerCompanyName: String
+  organizerFirstName: String
+  organizerLastName: String
+  status: EventStatus!
+  published: Boolean!
+  publishedAt: DateTime
+  submittedForApprovalAt: DateTime
+  approvalDeadline: DateTime
+  approvedAt: DateTime
+  approvedBy: String
+  rejectedAt: DateTime
+  rejectedBy: String
+  rejectionReason: String
+  isOverdue: Boolean
+  availableTickets: Int!
+  soldTickets: Int!
+  ticketTiers: [TicketTier!]
+  minTicketPrice: BigDecimal
+  maxTicketPrice: BigDecimal
+  currency: String
+  accessibility: EventAccessibility
+  bannerImageUrl: String
+  thumbnailImageUrl: String
+  galleryImages: [String!]
+  tags: [String!]
+  additionalInfo: JSON
+  featured: Boolean!
+  isFreeEvent: Boolean!
+  hasWaitlist: Boolean!
+  waitlistEnabled: Boolean!
+  waitlistCapacity: Int
+  isVirtual: Boolean!
+  virtualEventUrl: String
+  virtualEventPlatform: String
+  isRecurring: Boolean!
+  recurrencePattern: String
+  parentEventId: String
+  refundPolicy: String
+  cancellationPolicy: String
+  termsAndConditions: String
+  createdAt: DateTime
+  updatedAt: DateTime
+  createdBy: String
+  updatedBy: String
+  isActive: Boolean!
+  version: Int
+}
+type EventAccessGrant {
+  id: ID!
+  userId: ID!
+  user: User
+  eventId: ID!
+  organizationId: ID!
+  organization: Organization
+  eventRole: EventRole!
+  customPermissions: [String!]
+  grantedById: ID!
+  grantedBy: User
+  reason: String
+  status: AccessGrantStatus!
+  expiresAt: DateTime
+  revokedById: ID
+  revokedBy: User
+  revokedAt: DateTime
+  revocationReason: String
+  grantedAt: DateTime!
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type EventAccessGrantConnection {
+  edges: [EventAccessGrantEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type EventAccessGrantEdge {
+  cursor: String!
+  node: EventAccessGrant!
+}
+type EventAccessGrantOffsetPage {
+  content: [EventAccessGrant!]!
+  pageInfo: PageInfo!
+}
+type EventAccessibility {
+  wheelchairAccessible: Boolean!
+  wheelchairSeatsAvailable: Int
+  signLanguageInterpreter: Boolean!
+  hearingLoopAvailable: Boolean!
+  accessibleParking: Boolean!
+  accessibleRestrooms: Boolean!
+  assistanceDogsAllowed: Boolean!
+  additionalNotes: String
+}
+type EventAccessMutationResponse {
+  success: Boolean!
+  message: String
+  accessGrant: EventAccessGrant
+}
+type EventAccessProposal {
+  eventId: ID!
+  role: EventRole!
+  expiresAt: DateTime
+}
+type EventApprovalResult {
+  eventId: ID!
+  eventTitle: String
+  success: Boolean!
+  message: String
+  newStatus: EventStatus
+}
+type EventCancellationResponse {
+  success: Boolean!
+  message: String
+  event: Event
+  ticketsAffected: Int!
+  refundSagaInitiated: Boolean!
+  sagaId: ID
+  errors: [String!]!
+}
+type EventCategory {
+  id: ID!
+  name: String!
+  code: String!
+  description: String
+  iconUrl: String
+  color: String
+  sortOrder: Int
+  eventCount: Int
+  isActive: Boolean!
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+type EventCategoryConnection {
+  edges: [EventCategoryEdge!]!
+  pageInfo: PageInfo!
+}
+type EventCategoryEdge {
+  node: EventCategory!
+  cursor: String!
+}
+type EventCategoryOffsetPage {
+  content: [EventCategory!]!
+  pageNumber: Int!
+  pageSize: Int!
+  totalElements: Int!
+  totalPages: Int!
+  hasNext: Boolean!
+  hasPrevious: Boolean!
+}
+type EventCategoryStats {
+  categoryId: String!
+  category: String!
+  count: Int!
+  percentage: Float!
+  totalCapacity: Int!
+  totalSoldTickets: Int!
+  totalRevenue: BigDecimal
+}
+type EventConnection {
+  edges: [EventEdge!]!
+  pageInfo: PageInfo!
+}
+type EventEdge {
+  node: Event!
+  cursor: String!
+}
+type EventEscrowAccount {
+  id: ID!
+  accountNumber: String!
+  eventId: String!
+  eventTitle: String
+  organizerId: String!
+  organizerName: String
+  currentBalance: BigDecimal!
+  totalDeposits: BigDecimal!
+  totalWithdrawals: BigDecimal!
+  totalRefunds: BigDecimal!
+  totalCommissions: BigDecimal!
+  pendingWithdrawals: BigDecimal
+  currency: String!
+  status: EscrowAccountStatus!
+  lockUntil: DateTime
+  lockReason: String
+  payoutEligibleAt: DateTime
+  closedAt: DateTime
+  closedReason: String
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+type EventFinancialSummary {
+  eventId: ID!
+  eventTitle: String!
+  totalRevenue: BigDecimal!
+  totalCommissions: BigDecimal!
+  totalRefunds: BigDecimal!
+  escrowBalance: BigDecimal!
+  payoutStatus: String!
+}
+type EventLifecycle {
+  eventId: String!
+  currentStatus: EventStatus!
+  createdAt: DateTime
+  lastStatusChange: DateTime
+  createdBy: String
+  statusTransitions: [StatusTransition!]
+  allowedTransitions: [EventStatus!]
+}
+type EventMutationResponse {
+  success: Boolean!
+  message: String
+  data: Event
+  errors: [String!]!
+  metadata: JSON
+}
+type EventOffsetPage {
+  content: [Event!]!
+  pageNumber: Int!
+  pageSize: Int!
+  totalElements: Int!
+  totalPages: Int!
+  hasNext: Boolean!
+  hasPrevious: Boolean!
+}
+type EventOrganizerStats {
+  organizerId: String!
+  organizerName: String!
+  eventCount: Int!
+  totalCapacity: Int!
+  totalSoldTickets: Int!
+  totalRevenue: BigDecimal
+}
+type EventReminder {
+  id: ID!
+  userId: ID!
+  eventId: ID!
+  ticketId: ID!
+  eventTitle: String
+  eventDateTime: DateTime
+  reminderAt: DateTime!
+  minutesBefore: Int!
+  channels: [NotificationChannel!]
+  status: ReminderStatus!
+  sentAt: DateTime
+  errorMessage: String
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type EventStats {
+  totalEvents: Int!
+  publishedEvents: Int!
+  approvedNotPublishedEvents: Int!
+  draftEvents: Int!
+  pendingApprovalEvents: Int!
+  cancelledEvents: Int!
+  completedEvents: Int!
+  rejectedEvents: Int!
+  totalCapacity: Int!
+  totalSoldTickets: Int!
+  totalRevenue: BigDecimal
+  eventsByCategory: [EventCategoryStats!]
+  eventsByStatus: [EventStatusStats!]
+  eventsByOrganizer: [EventOrganizerStats!]
+  recentEvents: [Event!]
+}
+type EventStatusStats {
+  status: EventStatus!
+  count: Int!
+  percentage: Float!
+}
+type EventTicketStatistics {
+  eventId: ID!
+  eventTitle: String!
+  eventDate: DateTime!
+  totalTicketsAvailable: Int!
+  totalTicketsSold: Int!
+  totalTicketsRefunded: Int!
+  totalCommissionEarned: BigDecimal
+  totalGrossRevenue: BigDecimal
+  tierStatistics: [TicketTierStats!]
+  overallSalesPercentage: Float!
+  bestSellingTier: String
+}
+type FinancialDataPoint {
+  period: String!
+  revenue: BigDecimal!
+  commissions: BigDecimal!
+  refunds: BigDecimal!
+  payouts: BigDecimal!
+  ticketsSold: Int!
+}
+type FinancialReport {
+  startDate: DateTime!
+  endDate: DateTime!
+  totalRevenue: BigDecimal!
+  totalCommissions: BigDecimal!
+  totalRefunds: BigDecimal!
+  totalPayouts: BigDecimal!
+  pendingPayouts: BigDecimal!
+  escrowBalance: BigDecimal!
+  netPlatformRevenue: BigDecimal!
+  dataPoints: [FinancialDataPoint!]!
+  eventBreakdown: [EventFinancialSummary!]
+}
+type InvitationMutationResponse {
+  success: Boolean!
+  message: String
+  invitation: TeamInvitation
+}
+type JournalEntry {
+  id: ID!
+  entryNumber: String!
+  correlationId: String
+  entryDate: DateTime!
+  effectiveDate: DateTime
+  description: String!
+  type: JournalEntryType!
+  status: JournalEntryStatus!
+  lines: [JournalLine!]!
+  createdBy: String
+  postedBy: String
+  postedAt: DateTime
+  reversedBy: String
+  reversedAt: DateTime
+  reversalEntryId: String
+  reversedByEntryId: String
+  totalDebits: BigDecimal!
+  totalCredits: BigDecimal!
+  isBalanced: Boolean!
+  metadata: JSON
+  createdAt: DateTime!
+}
+type JournalEntryMutationResponse {
+  success: Boolean!
+  message: String
+  data: JournalEntry
+  errors: [String!]!
+  metadata: JSON
+}
+type JournalEntryOffsetPage {
+  data: [JournalEntry!]!
+  pagination: PaginationInfo!
+}
+type JournalLine {
+  accountCode: String!
+  accountName: String!
+  debit: BigDecimal
+  credit: BigDecimal
+  description: String
+  referenceType: String
+  referenceId: String
+}
+type LiveDashboard {
+  eventId: ID!
+  eventTitle: String!
+  totalSold: Int!
+  totalCapacity: Int!
+  checkedIn: Int!
+  checkInRate: Float!
+  checkInsLastHour: Int!
+  peakCheckInTime: DateTime
+  currentCheckInRate: Float
+  checkInsByTier: [TierCheckInStats!]!
+  recentCheckIns: [CheckInEvent!]
+}
+type Location {
+  id: ID!
+  name: String!
+  address: String!
+  city: String!
+  province: String
+  country: String!
+  postalCode: String
+  coordinates: Coordinates
+  description: String
+}
+type LocationConnection {
+  edges: [LocationEdge!]!
+  pageInfo: PageInfo!
+}
+type LocationEdge {
+  node: Location!
+  cursor: String!
+}
+type MemberMutationResponse {
+  success: Boolean!
+  message: String
+  member: OrganizationMember
+}
+type Mutation {
+  purchaseTicket(input: TicketPurchaseInput!): PurchaseTicketMutationResponse!
+  validateTicket(ticketNumber: String!): ValidateTicketMutationResponse!
+  useTicket(ticketNumber: String!): UseTicketMutationResponse!
+  cancelTicket(ticketNumber: String!, reason: String!): CancelTicketMutationResponse!
+  refundTicket(ticketNumber: String!, reason: String!): RefundTicketMutationResponse!
+  adminUpdateTicket(ticketId: ID!, input: AdminTicketUpdateInput!): TicketMutationResponse!
+  regenerateTicketQrCode(ticketId: ID!): TicketMutationResponse!
+  bulkCancelTickets(ticketIds: [ID!]!, reason: String!): BulkOperationResponse!
+  createUserRefundRequest(input: CreateRefundRequestInput!): CreateRefundRequestMutationResponse!
+  createAdminRefundRequest(ticketId: ID!, reason: String!, bypassApproval: Boolean): RefundRequestMutationResponse!
+  approveRefundRequest(refundRequestId: ID!, reviewComments: String): ApproveRefundRequestMutationResponse!
+  rejectRefundRequest(refundRequestId: ID!, rejectionReason: String!): RejectRefundRequestMutationResponse!
+  processRefundRequest(refundRequestId: ID!): ProcessRefundRequestMutationResponse!
+  cancelRefundRequest(refundRequestId: ID!, reason: String!): RefundRequestMutationResponse!
+  bulkApproveRefunds(refundRequestIds: [ID!]!): BulkOperationResponse!
+  initiatePaymentAttempt(input: InitiatePaymentAttemptInput!): PaymentAttemptMutationResponse!
+  retryPaymentAttempt(depositId: String!): PaymentAttemptMutationResponse!
+  processPaymentWebhook(input: ProcessPaymentWebhookInput!): PaymentAttemptMutationResponse!
+  verifyPaymentWithGateway(depositId: String!): PaymentAttemptMutationResponse!
+  markPaymentFulfilled(input: MarkPaymentFulfilledInput!): PaymentAttemptMutationResponse!
+  cancelPaymentAttempt(depositId: String!, reason: String!): PaymentAttemptMutationResponse!
+  addPaymentAttemptNote(depositId: String!, note: String!): PaymentAttemptMutationResponse!
+  setPaymentAttemptReviewStatus(depositId: String!, reviewStatus: String!, notes: String): PaymentAttemptMutationResponse!
+  pollPendingPayments: Int!
+  expireTimedOutPayments: Int!
+  createEscrowAccount(input: CreateEscrowAccountInput!): EscrowAccountMutationResponse!
+  updateEscrowAccountStatus(accountId: ID!, status: EscrowAccountStatus!, reason: String): EscrowAccountMutationResponse!
+  lockEscrowAccount(accountId: ID!, lockUntil: DateTime!, reason: String!): EscrowAccountMutationResponse!
+  unlockEscrowAccount(accountId: ID!, reason: String!): EscrowAccountMutationResponse!
+  markPayoutEligible(accountId: ID!): EscrowAccountMutationResponse!
+  closeEscrowAccount(accountId: ID!, reason: String!): EscrowAccountMutationResponse!
+  createPayoutRequest(input: CreatePayoutRequestInput!): CreatePayoutRequestMutationResponse!
+  approvePayoutRequest(payoutRequestId: ID!, notes: String): ApprovePayoutRequestMutationResponse!
+  rejectPayoutRequest(payoutRequestId: ID!, rejectionReason: String!): RejectPayoutRequestMutationResponse!
+  processPayoutRequest(payoutRequestId: ID!): ProcessPayoutRequestMutationResponse!
+  completePayoutRequest(payoutRequestId: ID!, bankReference: String!): PayoutRequestMutationResponse!
+  cancelPayoutRequest(payoutRequestId: ID!, reason: String!): RejectPayoutRequestMutationResponse!
+  retryPayoutRequest(payoutRequestId: ID!): PayoutRequestMutationResponse!
+  resumePayoutRequest(payoutRequestId: ID!): PayoutRequestMutationResponse!
+  markPayoutForReview(payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String): PayoutRequestMutationResponse!
+  resolvePayoutIssue(payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!, newBankAccountId: ID): PayoutRequestMutationResponse!
+  bulkRetryFailedPayouts(payoutRequestIds: [ID!]!): BulkPayoutOperationResponse!
+  bulkMarkPayoutsForReview(payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String): BulkPayoutOperationResponse!
+  escalatePayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequestMutationResponse!
+  createBankAccount(input: CreateBankAccountInput!): CreateBankAccountMutationResponse!
+  updateBankAccount(id: ID!, input: UpdateBankAccountInput!): UpdateBankAccountMutationResponse!
+  deleteBankAccount(id: ID!): DeleteBankAccountMutationResponse!
+  setDefaultBankAccount(id: ID!): UpdateBankAccountMutationResponse!
+  verifyBankAccount(id: ID!): VerifyBankAccountMutationResponse!
+  reserveTickets(input: ReserveTicketsInput!): TicketReservation!
+  completeReservation(input: CompleteReservationInput!): [Ticket!]!
+  cancelReservation(reservationId: ID!): Boolean!
+  extendReservation(reservationId: ID!, minutes: Int!): TicketReservation!
+  forceExpireReservation(reservationId: ID!): Boolean!
+  createPromoCode(input: CreatePromoCodeInput!): PromoCode!
+  updatePromoCode(id: ID!, input: UpdatePromoCodeInput!): PromoCode!
+  activatePromoCode(id: ID!): PromoCode!
+  deactivatePromoCode(id: ID!): PromoCode!
+  deletePromoCode(id: ID!): DeleteMutationResponse!
+  createChartOfAccountsEntry(input: CreateChartOfAccountsInput!): ChartOfAccountsMutationResponse!
+  updateChartOfAccountsEntry(id: ID!, input: CreateChartOfAccountsInput!): ChartOfAccountsMutationResponse!
+  deactivateChartOfAccountsEntry(id: ID!): ChartOfAccountsMutationResponse!
+  seedChartOfAccounts: Boolean!
+  createJournalEntry(input: CreateJournalEntryInput!): JournalEntryMutationResponse!
+  postJournalEntry(id: ID!): JournalEntryMutationResponse!
+  reverseJournalEntry(id: ID!, reason: String!): JournalEntryMutationResponse!
+  createPlatformAccount(accountType: PlatformAccountType!, name: String!, currency: String!): PlatformAccountMutationResponse!
+  creditPlatformAccount(id: ID!, amount: BigDecimal!, description: String!): PlatformAccountMutationResponse!
+  debitPlatformAccount(id: ID!, amount: BigDecimal!, description: String!): PlatformAccountMutationResponse!
+  receiveChargeback(input: ReceiveChargebackInput!): ChargebackMutationResponse!
+  startChargebackReview(id: ID!): ChargebackMutationResponse!
+  acceptChargeback(id: ID!): ChargebackMutationResponse!
+  disputeChargeback(id: ID!, input: DisputeChargebackInput!): ChargebackMutationResponse!
+  recordChargebackOutcome(id: ID!, won: Boolean!): ChargebackMutationResponse!
+  recoverChargebackFunds(id: ID!, input: RecoverChargebackInput!): ChargebackMutationResponse!
+  startReconciliation(input: StartReconciliationInput!): ReconciliationMutationResponse!
+  resolveReconciliationItem(runId: ID!, input: ResolveReconciliationItemInput!): ReconciliationMutationResponse!
+  completeReconciliation(runId: ID!): ReconciliationMutationResponse!
+  failReconciliation(runId: ID!, reason: String!): ReconciliationMutationResponse!
+  verifyEscrowJournalConsistency(eventId: ID!): EscrowJournalVerificationResponse!
+  """
+  Records a gateway settlement in the accounting system.
+  
+  Called when:
+  1. Gateway webhook confirms settlement completed
+  2. Admin manually records a settlement from bank statement
+  3. Reconciliation process confirms matched transactions
+  
+  Accounting Entry (IN/OUT):
+  - DR Bank Account (1011)        - IN: Money received in bank
+  - DR Gateway Fees Expense (5010) - IN: Fee cost to platform
+  - CR Gateway Receivable (1021)  - OUT: Receivable cleared
+  """
+  recordGatewaySettlement(input: RecordGatewaySettlementInput!): JournalEntryMutationResponse!
+  createEvent(input: CreateEventInput!): EventMutationResponse!
+  updateEvent(id: ID!, input: UpdateEventInput!): EventMutationResponse!
+  deleteEvent(id: ID!): DeleteMutationResponse!
+  publishEvent(id: ID!): EventMutationResponse!
+  unpublishEvent(id: ID!): EventMutationResponse!
+  cancelEvent(id: ID!, input: EventCancellationInput!): EventCancellationResponse!
+  completeEvent(id: ID!): EventMutationResponse!
+  duplicateEvent(eventId: ID!, newTitle: String!): EventMutationResponse!
+  updateEventCapacity(eventId: ID!, newCapacity: Int!): EventMutationResponse!
+  updateEventAccessibility(eventId: ID!, input: EventAccessibilityInput!): EventMutationResponse!
+  featureEvent(eventId: ID!, featured: Boolean!): EventMutationResponse!
+  updatePlatformConfiguration(input: UpdatePlatformConfigurationInput!): PlatformConfigurationMutationResponse!
+  submitEventForApproval(eventId: ID!): EventMutationResponse!
+  approveEvent(eventId: ID!, comments: String): EventMutationResponse!
+  rejectEvent(eventId: ID!, comments: String!): EventMutationResponse!
+  requestEventChanges(eventId: ID!, comments: String!): EventMutationResponse!
+  assignEventReviewer(input: AssignReviewerInput!): ApprovalTimelineMutationResponse!
+  unassignEventReviewer(eventId: ID!, reason: String): ApprovalTimelineMutationResponse!
+  addApprovalComment(eventId: ID!, comment: String!, isInternal: Boolean = true): ApprovalTimelineMutationResponse!
+  acknowledgeEscalation(escalationId: ID!, notes: String): ApprovalEscalationMutationResponse!
+  resolveEscalation(input: ResolveEscalationInput!): ApprovalEscalationMutationResponse!
+  triggerManualEscalation(eventId: ID!, reason: String!, escalateTo: String!): ApprovalEscalationMutationResponse!
+  sendEventPublishReminder(eventId: ID!, triggeredBy: String!): EventMutationResponse!
+  sendBulkEventPublishReminders(eventIds: [ID!]!, triggeredBy: String!): BulkReminderResponse!
+  createTicketTier(eventId: ID!, input: CreateTicketTierInput!): TierMutationResponse!
+  updateTicketTier(tierId: ID!, input: UpdateTicketTierInput!): TierMutationResponse!
+  deleteTicketTier(tierId: ID!): DeleteMutationResponse!
+  reorderTicketTiers(eventId: ID!, tierIds: [ID!]!): [TicketTier!]!
+  activateTicketTier(tierId: ID!): TierMutationResponse!
+  deactivateTicketTier(tierId: ID!): TierMutationResponse!
+  createEventCategory(input: CreateEventCategoryInput!): CategoryMutationResponse!
+  updateEventCategory(id: ID!, input: UpdateEventCategoryInput!): CategoryMutationResponse!
+  deleteEventCategory(id: ID!): DeleteMutationResponse!
+  activateEventCategory(id: ID!): CategoryMutationResponse!
+  deactivateEventCategory(id: ID!): CategoryMutationResponse!
+  createProvince(input: CreateProvinceInput!): ProvinceMutationResponse!
+  updateProvince(id: ID!, input: UpdateProvinceInput!): ProvinceMutationResponse!
+  deleteProvince(id: ID!): DeleteMutationResponse!
+  createCity(input: CreateCityInput!): CityMutationResponse!
+  updateCity(id: ID!, input: UpdateCityInput!): CityMutationResponse!
+  deleteCity(id: ID!): DeleteMutationResponse!
+  login(email: String!, password: String!): AuthPayload!
+  register(input: RegisterInput!): User!
+  refreshToken(refreshToken: String!): AuthPayload!
+  logout: Boolean!
+  validateToken(token: String!): TokenValidation!
+  updateMyProfile(input: UpdateUserInput!): UserMutationResponse!
+  setupTwoFactor(input: SetupTwoFactorInput!): TwoFactorSetupResponse!
+  verifyTwoFactor(input: VerifyTwoFactorInput!): MutationResponse!
+  disableTwoFactor(confirmationCode: String!): MutationResponse!
+  socialAuth(input: SocialAuthInput!): AuthPayload!
+  linkSocialAccount(input: SocialAuthInput!): MutationResponse!
+  unlinkSocialAccount(provider: SocialProvider!): MutationResponse!
+  requestAccountDeletion(input: RequestAccountDeletionInput!): MutationResponse!
+  cancelAccountDeletion: MutationResponse!
+  createUser(input: CreateUserInput!): UserMutationResponse!
+  updateUser(id: ID!, input: UpdateUserInput!): UserMutationResponse!
+  suspendUser(id: ID!, reason: String!): MutationResponse!
+  unsuspendUser(id: ID!): MutationResponse!
+  lockUser(id: ID!, reason: String!): MutationResponse!
+  unlockUser(id: ID!): MutationResponse!
+  applyToBeOrganizer(input: ApplyToBeOrganizerInput!): OrganizerMutationResponse!
+  updateOrganizerProfile(input: UpdateOrganizerProfileInput!): OrganizerMutationResponse!
+  uploadVerificationDocument(documentType: String!, documentUrl: String!, fileName: String, fileSize: Int, mimeType: String): VerificationDocument
+  deleteVerificationDocument(documentId: ID!): Boolean!
+  submitOrganizerApplication(input: SubmitOrganizerApplicationInput!): OrganizerMutationResponse!
+  approveOrganizer(profileId: ID!): OrganizerProfile
+  rejectOrganizer(profileId: ID!, reason: String!): OrganizerProfile
+  requestOrganizerChanges(profileId: ID!, reason: String!): OrganizerProfile
+  suspendOrganizer(profileId: ID!, reason: String!): OrganizerProfile
+  unsuspendOrganizer(profileId: ID!): OrganizerProfile
+  updateOrganization(id: ID!, input: UpdateOrganizationInput!): Organization
+  updateOrganizationSettings(id: ID!, input: UpdateOrganizationSettingsInput!): Organization
+  suspendOrganization(id: ID!, reason: String!): Organization
+  unsuspendOrganization(id: ID!): Organization
+  inviteTeamMember(organizationId: ID!, input: InviteMemberInput!): TeamInvitation
+  bulkInviteTeamMembers(organizationId: ID!, invitations: [InviteMemberInput!]!): [TeamInvitation!]
+  resendInvitation(invitationId: ID!): TeamInvitation
+  revokeInvitation(invitationId: ID!): TeamInvitation
+  acceptInvitation(token: String!): OrganizationMember
+  declineInvitation(token: String!): TeamInvitation
+  updateMemberRole(memberId: ID!, input: UpdateMemberRoleInput!): OrganizationMember
+  removeMember(memberId: ID!, reason: String): Boolean!
+  suspendMember(memberId: ID!, reason: String): OrganizationMember
+  reactivateMember(memberId: ID!): OrganizationMember
+  leaveOrganization(organizationId: ID!): Boolean!
+  initiateOwnershipTransfer(organizationId: ID!, newOwnerId: ID!, reason: String): OwnershipTransferRequest
+  cancelOwnershipTransfer(organizationId: ID!): OwnershipTransferRequest
+  acceptOwnershipTransfer(token: String!, confirmationCode: String!): OwnershipTransferRequest
+  declineOwnershipTransfer(token: String!): OwnershipTransferRequest
+  createEventOwner(eventId: ID!, organizationId: ID!): EventAccessGrant
+  grantEventAccess(eventId: ID!, organizationId: ID!, userId: ID!, role: EventRole!, customPermissions: [String!], reason: String, expiresAt: DateTime): EventAccessGrant
+  bulkGrantEventAccess(eventId: ID!, organizationId: ID!, grants: [EventAccessGrantInput!]!): [EventAccessGrant!]
+  updateEventAccess(accessId: ID!, newRole: EventRole, customPermissions: [String!], expiresAt: DateTime): EventAccessGrant
+  revokeEventAccess(accessId: ID!, reason: String): EventAccessGrant
+  markNotificationRead(notificationId: ID!): Notification
+  markAllNotificationsRead: Int!
+  deleteNotification(notificationId: ID!): Boolean!
+  updateNotificationPreferences(input: UpdateNotificationPreferencesInput!): NotificationPreferences
+  sendNotification(input: SendNotificationInput!): Notification
+  sendBulkNotification(userIds: [ID!]!, input: SendNotificationInput!): Int!
+  registerDevice(input: RegisterDeviceInput!): UserDevice
+  unregisterDevice(deviceId: ID!): Boolean!
+  setEventReminder(input: SetEventReminderInput!): EventReminder
+  cancelEventReminder(reminderId: ID!): Boolean!
+  updateOrganizationStatus(id: ID!, status: OrganizationStatus!): Organization
+  transferOrganizationOwnership(organizationId: ID!, newOwnerId: ID!): OrganizationMember
+  createOrganizerProfile(input: CreateOrganizerProfileInput!): OrganizerProfile
+  submitOrganizerProfileForReview: OrganizerProfile
+  deleteOrganizerProfile: Boolean!
+  approveOrganizerByUserId(userId: ID!): OrganizerProfile
+  rejectOrganizerByUserId(userId: ID!, reason: String!): OrganizerProfile
+  suspendOrganizerByUserId(userId: ID!, reason: String!): OrganizerProfile
+  reactivateOrganizer(profileId: ID!): OrganizerProfile
+  reactivateOrganizerByUserId(userId: ID!): OrganizerProfile
+  verifyOrganizerBusiness(profileId: ID!): OrganizerProfile
+  verifyOrganizerDocuments(profileId: ID!): OrganizerProfile
+  verifyOrganizerBankAccount(profileId: ID!): OrganizerProfile
+  createPermission(name: String!, description: String, category: String): Permission
+  updatePermission(id: ID!, name: String, description: String, category: String): Permission
+  deletePermission(id: ID!): Boolean!
+  assignPermissionToRole(roleId: ID!, permissionId: ID!): Boolean!
+  removePermissionFromRole(roleId: ID!, permissionId: ID!): Boolean!
+  requestPhoneOtp(phoneNumber: String!, channel: String): OtpRequestResponse!
+  verifyPhoneOtp(phoneNumber: String!, otp: String!): PhoneAuthPayload!
+  sendEmailVerification: Boolean!
+  verifyEmail(token: String!): User
+  syncEmailVerificationStatus: User
+  updateProfile(input: JSON!): User
+  changePassword(oldPassword: String!, newPassword: String!): Boolean!
+  resetPassword(email: String!): Boolean!
+  sendPhoneVerification: Boolean!
+  verifyPhone(code: String!): User
+  deactivateUser(id: ID!): Boolean!
+  activateUser(id: ID!): Boolean!
+  updateUserRoles(userId: ID!, roles: [String!]!): Boolean!
+  approveVerificationDocument(documentId: ID!): VerificationDocument
+  rejectVerificationDocument(documentId: ID!, reason: String!): VerificationDocument
+  syncUserFromKeycloak(userId: ID!): User
+  syncAllUsersFromKeycloak: Boolean!
+}
+type MutationResponse {
+  success: Boolean!
+  message: String
+  code: String
+}
+type Notification {
+  id: ID!
+  userId: ID!
+  type: NotificationType!
+  title: String!
+  body: String!
+  imageUrl: String
+  actionUrl: String
+  data: JSON
+  channels: [NotificationChannel!]!
+  priority: String
+  channelStatuses: [ChannelStatus!]
+  status: NotificationStatus!
+  scheduledAt: DateTime
+  sentAt: DateTime
+  deliveredAt: DateTime
+  readAt: DateTime
+  expiresAt: DateTime
+  createdAt: DateTime!
+}
+type NotificationConnection {
+  edges: [NotificationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type NotificationEdge {
+  cursor: String!
+  node: Notification!
+}
+type NotificationMutationResponse {
+  success: Boolean!
+  message: String
+  notification: Notification
+}
+type NotificationOffsetPage {
+  content: [Notification!]!
+  pageInfo: PageInfo!
+}
+type NotificationPreferences {
+  id: ID!
+  userId: ID!
+  emailEnabled: Boolean!
+  smsEnabled: Boolean!
+  whatsappEnabled: Boolean!
+  pushEnabled: Boolean!
+  inAppEnabled: Boolean!
+  ticketNotifications: Boolean!
+  eventReminders: Boolean!
+  eventUpdates: Boolean!
+  paymentNotifications: Boolean!
+  teamNotifications: Boolean!
+  marketingEmails: Boolean!
+  systemAnnouncements: Boolean!
+  reminderHoursBefore: Int!
+  quietHoursStart: String
+  quietHoursEnd: String
+  timezone: String
+  updatedAt: DateTime
+}
+type Organization {
+  id: ID!
+  name: String!
+  slug: String!
+  description: String
+  logoUrl: String
+  bannerUrl: String
+  organizerProfileId: ID!
+  organizerProfile: OrganizerProfile
+  keycloakGroupId: String
+  ownerId: ID!
+  owner: User
+  members: [OrganizationMember!]
+  memberCount: Int!
+  activeMembers: [OrganizationMember!]
+  pendingInvitations: [TeamInvitation!]
+  pendingInvitationCount: Int!
+  settings: OrganizationSettings
+  status: OrganizationStatus!
+  verified: Boolean!
+  totalEvents: Int
+  totalTicketsSold: Int
+  totalRevenue: BigDecimal
+  averageRating: Float
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type OrganizationConnection {
+  edges: [OrganizationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type OrganizationEdge {
+  cursor: String!
+  node: Organization!
+}
+type OrganizationMember {
+  id: ID!
+  userId: ID!
+  user: User
+  organizationId: ID!
+  organization: Organization
+  role: OrganizationRole!
+  customPermissions: [String!]
+  deniedPermissions: [String!]
+  status: MemberStatus!
+  invitedById: ID
+  invitedBy: User
+  joinedAt: DateTime!
+  lastActiveAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type OrganizationMemberConnection {
+  edges: [OrganizationMemberEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type OrganizationMemberEdge {
+  cursor: String!
+  node: OrganizationMember!
+}
+type OrganizationMemberOffsetPage {
+  content: [OrganizationMember!]!
+  pageInfo: PageInfo!
+}
+type OrganizationMutationResponse {
+  success: Boolean!
+  message: String
+  organization: Organization
+}
+type OrganizationOffsetPage {
+  content: [Organization!]!
+  pageInfo: PageInfo!
+}
+type OrganizationSettings {
+  id: ID!
+  organizationId: ID!
+  defaultEventVisibility: String
+  requireEventApproval: Boolean!
+  allowMembersToInvite: Boolean!
+  inviteRequiresApproval: Boolean!
+  maxTeamMembers: Int
+  managersCanRequestPayouts: Boolean!
+  marketersCanViewFinancials: Boolean!
+  notifyOwnerOnMemberJoin: Boolean!
+  notifyOwnerOnEventCreated: Boolean!
+  notifyOwnerOnPayoutRequest: Boolean!
+  updatedAt: DateTime
+  updatedById: ID
+}
+type OrganizerApplicationConnection {
+  edges: [OrganizerApplicationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type OrganizerApplicationEdge {
+  cursor: String!
+  node: OrganizerProfile!
+}
+type OrganizerApplicationOffsetPage {
+  content: [OrganizerProfile!]!
+  pageInfo: PageInfo!
+}
+type OrganizerMutationResponse {
+  success: Boolean!
+  message: String
+  organizerProfile: OrganizerProfile
+  organization: Organization
+}
+type OrganizerProfile {
+  id: ID!
+  userId: String!
+  user: User
+  companyName: String
+  companyDescription: String
+  tagline: String
+  website: String
+  socialLinks: SocialLinks
+  taxId: String
+  businessRegistrationNumber: String
+  businessType: String
+  yearEstablished: Int
+  businessPhone: String
+  businessEmail: String
+  businessAddress: String
+  city: String
+  province: String
+  country: String
+  postalCode: String
+  verificationDocuments: [VerificationDocument!]
+  commissionRate: Float
+  payoutSchedule: String
+  status: OrganizerStatus!
+  statusReason: String
+  verified: Boolean!
+  documentsVerified: Boolean!
+  bankVerified: Boolean!
+  reviewedById: String
+  reviewedBy: User
+  reviewedAt: DateTime
+  reviewNotes: String
+  totalEvents: Int
+  totalTicketsSold: Int
+  totalRevenue: BigDecimal
+  averageRating: Float
+  submittedAt: DateTime
+  approvedAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type OrganizerStatistics {
+  organizerId: ID!
+  organizationId: ID
+  totalEvents: Int!
+  activeEvents: Int!
+  completedEvents: Int!
+  cancelledEvents: Int!
+  totalTicketsSold: Int!
+  totalRevenue: BigDecimal!
+  pendingPayouts: BigDecimal!
+  completedPayouts: BigDecimal!
+  averageRating: Float
+  totalReviews: Int!
+  period: String
+}
+type OtpRequestResponse {
+  success: Boolean!
+  message: String
+  expiresIn: Int!
+}
+type OtpResponse {
+  success: Boolean!
+  message: String
+  expiresAt: DateTime
+  cooldownSeconds: Int
+  attemptsRemaining: Int
+}
+type OwnershipTransferRequest {
+  id: ID!
+  organizationId: ID!
+  organization: Organization
+  currentOwnerId: ID!
+  currentOwner: User
+  newOwnerId: ID!
+  newOwner: User
+  reason: String
+  transferToken: String!
+  status: TransferStatus!
+  expiresAt: DateTime!
+  initiatedAt: DateTime!
+  completedAt: DateTime
+  cancelledAt: DateTime
+}
+type OwnershipTransferResponse {
+  success: Boolean!
+  message: String
+  transfer: OwnershipTransferRequest
+}
+type PageInfo {
+  hasNextPage: Boolean
+  hasPreviousPage: Boolean
+  startCursor: String
+  endCursor: String
+  totalCount: Int
+  totalElements: Int
+  totalPages: Int
+  currentPage: Int
+  pageSize: Int
+  hasNext: Boolean
+  hasPrevious: Boolean
+}
+type PaginationInfo {
+  pageNumber: Int
+  pageSize: Int!
+  totalElements: Int
+  totalPages: Int!
+  totalCount: Int
+  currentPage: Int
+  hasNext: Boolean
+  hasPrevious: Boolean
+  hasNextPage: Boolean
+  hasPreviousPage: Boolean
+}
+type PaymentAttempt {
+  id: ID!
+  depositId: String!
+  attemptNumber: String!
+  correlationId: String
+  ticketId: String!
+  eventId: String
+  organizerId: String
+  organizationId: String
+  buyerId: String!
+  clientReferenceId: String
+  amount: BigDecimal!
+  currency: String!
+  provider: String!
+  payerPhone: String!
+  customerMessage: String
+  status: PaymentAttemptStatus!
+  providerStatus: String
+  providerTransactionId: String
+  country: String
+  failureCode: String
+  failureMessage: String
+  customerErrorMessage: String
+  apiCalledAt: DateTime
+  apiRespondedAt: DateTime
+  apiHttpStatus: Int
+  apiDurationMs: Int
+  webhookReceivedAt: DateTime
+  webhookProcessed: Boolean!
+  webhookSignatureValid: Boolean
+  webhookSourceIp: String
+  pollCount: Int!
+  lastPolledAt: DateTime
+  lastPollResult: String
+  lastPollStatus: String
+  retryCount: Int!
+  nextRetryAt: DateTime
+  lastError: String
+  fulfilled: Boolean!
+  fulfilledAt: DateTime
+  journalEntryId: String
+  commissionId: String
+  escrowTransactionId: String
+  verifiedBeforeFulfillment: Boolean!
+  verifiedAt: DateTime
+  amountVerified: Boolean!
+  clientIpAddress: String
+  sessionId: String
+  requestId: String
+  reviewStatus: String
+  reviewedBy: String
+  reviewedAt: DateTime
+  reviewNotes: String
+  notes: String
+  createdAt: DateTime
+  updatedAt: DateTime
+  expiresAt: DateTime
+}
+type PaymentAttemptMutationResponse {
+  success: Boolean!
+  message: String
+  data: PaymentAttempt
+  errors: [String!]!
+  metadata: JSON
+}
+type PaymentInfo {
+  paymentId: String
+  paymentMethod: String
+  transactionId: String
+  amount: BigDecimal
+  currency: String
+  status: String
+  paymentDate: DateTime
+  providerReference: String
+}
+type PayoutIssueTypeStats {
+  issueType: PayoutIssueType!
+  count: Int!
+  percentage: Float!
+  unresolvedCount: Int!
+  totalAmount: BigDecimal!
+}
+type PayoutRecoverySummary {
+  totalPayoutsForReview: Int!
+  pendingReviewCount: Int!
+  underReviewCount: Int!
+  stuckPayoutsCount: Int!
+  retryablePayoutsCount: Int!
+  issuesByType: [PayoutIssueTypeStats!]!
+  recentlyResolvedCount: Int!
+  averageResolutionTimeMinutes: Float
+  totalAmountAtRisk: BigDecimal!
+}
+type PayoutRequest {
+  id: ID!
+  requestId: String!
+  organizerId: String!
+  organizationId: String
+  organizerName: String
+  eventId: String
+  eventTitle: String
+  escrowAccountId: String!
+  bankAccountId: String!
+  bankAccount: BankAccount
+  requestedAmount: BigDecimal!
+  platformFee: BigDecimal
+  processingFee: BigDecimal
+  taxAmount: BigDecimal
+  netPayoutAmount: BigDecimal!
+  currency: String!
+  status: PayoutRequestStatus!
+  payoutMethod: PayoutMethod
+  requestedAt: DateTime!
+  requestedBy: String!
+  approvedAt: DateTime
+  approvedBy: String
+  rejectedAt: DateTime
+  rejectedBy: String
+  rejectionReason: String
+  processedAt: DateTime
+  processedBy: String
+  expectedPayoutDate: DateTime
+  actualPayoutDate: DateTime
+  paymentReference: String
+  transactionId: String
+  externalTransactionId: String
+  bankAccountName: String
+  bankName: String
+  accountNumber: String
+  retryCount: Int
+  lastError: String
+  notes: String
+  metadata: JSON
+  createdAt: DateTime
+  updatedAt: DateTime
+  issueType: PayoutIssueType
+  resolutionType: PayoutResolutionType
+  reviewStatus: PayoutReviewStatus
+  isStuck: Boolean
+  stuckReason: String
+  stuckAt: DateTime
+  reviewedBy: String
+  reviewedAt: DateTime
+  reviewNotes: String
+  resolvedBy: String
+  resolvedAt: DateTime
+  resolutionNotes: String
+}
+type PayoutRequestConnection {
+  edges: [PayoutRequestEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type PayoutRequestEdge {
+  cursor: String!
+  node: PayoutRequest!
+}
+type PayoutRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: PayoutRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type PayoutRequestOffsetPage {
+  data: [PayoutRequest!]!
+  pagination: PaginationInfo!
+}
+type PayoutRequestStats {
+  totalPayoutRequests: Int!
+  pendingPayoutRequests: Int!
+  approvedPayoutRequests: Int!
+  processingPayoutRequests: Int!
+  completedPayoutRequests: Int!
+  failedPayoutRequests: Int!
+  totalPayoutAmount: BigDecimal!
+  pendingPayoutAmount: BigDecimal!
+}
+type Permission {
+  id: ID!
+  name: String!
+  code: String!
+  description: String
+  category: String
+  scope: PermissionScope!
+  active: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type PhoneAuthPayload {
+  success: Boolean!
+  message: String
+  accessToken: String
+  refreshToken: String
+  user: User
+}
+type PlatformAccount {
+  id: ID!
+  accountType: PlatformAccountType!
+  name: String!
+  balance: BigDecimal!
+  currency: String!
+  createdAt: DateTime!
+  lastUpdatedAt: DateTime
+}
+type PlatformAccountMutationResponse {
+  success: Boolean!
+  message: String
+  data: PlatformAccount
+  errors: [String!]!
+  metadata: JSON
+}
+type PlatformConfiguration {
+  id: ID!
+  approvalSlaHours: Int!
+  approvalWarningThresholdHours: Int!
+  autoEscalationEnabled: Boolean!
+  escalationDelayHours: Int!
+  escalationRecipientRole: String!
+  escalationReminderIntervalHours: Int!
+  maxEscalationReminders: Int!
+  organizerNotificationChannel: ApprovalNotificationChannel!
+  adminNotificationChannel: ApprovalNotificationChannel!
+  sendSlaWarningNotifications: Boolean!
+  sendEscalationNotifications: Boolean!
+  requireCommentsOnRejection: Boolean!
+  requireCommentsOnChangesRequested: Boolean!
+  allowSelfApproval: Boolean!
+  updatedAt: DateTime!
+  updatedBy: String!
+}
+type PlatformConfigurationMutationResponse {
+  success: Boolean!
+  message: String
+  data: PlatformConfiguration
+  errors: [String!]!
+}
+type PlatformStatistics {
+  totalUsers: Int!
+  totalOrganizers: Int!
+  totalOrganizations: Int!
+  pendingOrganizerApplications: Int!
+  totalEvents: Int!
+  totalTicketsSold: Int!
+  totalRevenue: BigDecimal!
+  activeUsers30Days: Int!
+  period: String
+}
+type PlatformSummary {
+  totalEscrowAccounts: Int!
+  activeEscrowAccounts: Int!
+  lockedEscrowAccounts: Int!
+  payoutEligibleAccounts: Int!
+  closedEscrowAccounts: Int!
+  totalEscrowBalance: BigDecimal!
+  totalDeposits: BigDecimal!
+  totalWithdrawals: BigDecimal!
+  totalRefunds: BigDecimal!
+  availableForPayout: BigDecimal!
+  totalTransactions: Int!
+  completedTransactions: Int!
+  pendingTransactions: Int!
+  failedTransactions: Int!
+  totalTransactionVolume: BigDecimal!
+  totalCommissions: BigDecimal!
+  totalPayoutRequests: Int!
+  pendingPayoutRequests: Int!
+  completedPayoutRequests: Int!
+  totalPayoutAmount: BigDecimal!
+  totalTicketsSold: Int!
+  totalTicketRevenue: BigDecimal!
+  primaryCurrency: String!
+}
+type ProcessPayoutRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: PayoutRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type ProcessRefundRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: RefundRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type PromoCode {
+  id: ID!
+  code: String!
+  eventId: ID
+  organizerId: ID
+  discountType: DiscountType!
+  discountValue: BigDecimal!
+  maxUses: Int
+  currentUses: Int!
+  validFrom: DateTime
+  validUntil: DateTime
+  minPurchaseAmount: BigDecimal
+  maxDiscountAmount: BigDecimal
+  applicableTiers: [String!]
+  isActive: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type PromoCodeValidation {
+  valid: Boolean!
+  promoCode: PromoCode
+  discountAmount: BigDecimal
+  errorMessage: String
+}
+type Province {
+  id: ID!
+  name: String!
+  code: String!
+  country: String!
+  formattedName: String
+  cityCount: Int
+  createdAt: DateTime
+  updatedAt: DateTime
+  createdBy: String
+  updatedBy: String
+  isActive: Boolean!
+}
+type ProvinceConnection {
+  edges: [ProvinceEdge!]!
+  pageInfo: PageInfo!
+}
+type ProvinceEdge {
+  node: Province!
+  cursor: String!
+}
+type ProvinceMutationResponse {
+  success: Boolean!
+  message: String
+  data: Province
+  errors: [String!]!
+  metadata: JSON
+}
+type ProvinceOffsetPage {
+  content: [Province!]!
+  pageNumber: Int!
+  pageSize: Int!
+  totalElements: Int!
+  totalPages: Int!
+  hasNext: Boolean!
+  hasPrevious: Boolean!
+}
+type PurchaseTicketMutationResponse {
+  success: Boolean!
+  message: String
+  data: Ticket
+  errors: [String!]!
+  metadata: JSON
+}
+type Query {
+  ticket(id: ID!): Ticket
+  ticketByNumber(ticketNumber: String!): Ticket
+  ticketsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): TicketOffsetPage!
+  ticketsByBuyerOffsetPagination(buyerId: String!, status: TicketStatus, pagination: OffsetPaginationInput): TicketOffsetPage!
+  ticketsByOrganizerOffsetPagination(organizerId: String!, filter: TicketFilterInput, pagination: OffsetPaginationInput): TicketOffsetPage!
+  searchTicketsOffsetPagination(filter: TicketFilterInput!, pagination: OffsetPaginationInput): TicketOffsetPage!
+  ticketsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): TicketConnection!
+  ticketsByBuyerCursorPagination(buyerId: String!, status: TicketStatus, pagination: CursorPaginationInput): TicketConnection!
+  ticketsByOrganizerCursorPagination(organizerId: String!, filter: TicketFilterInput, pagination: CursorPaginationInput): TicketConnection!
+  searchTicketsCursorPagination(filter: TicketFilterInput!, pagination: CursorPaginationInput): TicketConnection!
+  ticketCountByEvent(eventId: String!): Int!
+  ticketCountByBuyer(buyerId: String!): Int!
+  paymentAttempt(id: ID!): PaymentAttempt
+  paymentAttemptByDepositId(depositId: String!): PaymentAttempt
+  paymentAttemptByAttemptNumber(attemptNumber: String!): PaymentAttempt
+  paymentAttemptsByTicket(ticketId: String!): [PaymentAttempt!]!
+  latestPaymentAttemptByTicket(ticketId: String!): PaymentAttempt
+  successfulPaymentAttemptByTicket(ticketId: String!): PaymentAttempt
+  paymentAttemptsByStatus(status: PaymentAttemptStatus!): [PaymentAttempt!]!
+  pendingPaymentAttempts: [PaymentAttempt!]!
+  confirmedUnfulfilledPaymentAttempts: [PaymentAttempt!]!
+  paymentAttemptsByEvent(eventId: String!): [PaymentAttempt!]!
+  paymentAttemptsByBuyer(buyerId: String!): [PaymentAttempt!]!
+  paymentAttemptCountByStatus(status: PaymentAttemptStatus!): Int!
+  hasSuccessfulPayment(ticketId: String!): Boolean!
+  escrowAccount(id: ID!): EventEscrowAccount
+  escrowAccountByNumber(accountNumber: String!): EventEscrowAccount
+  escrowAccountByEvent(eventId: String!): EventEscrowAccount
+  escrowAccountsOffsetPagination(filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput): EscrowAccountOffsetPage!
+  escrowAccountsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EscrowAccountOffsetPage!
+  escrowAccountsCursorPagination(filter: EscrowAccountFilterInput, pagination: CursorPaginationInput): EscrowAccountConnection!
+  escrowAccountsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EscrowAccountConnection!
+  escrowAccountBalance(accountId: String!): BigDecimal
+  accountSummary(accountId: String!): AccountSummary
+  platformSummary: PlatformSummary!
+  refundRequest(id: ID!): RefundRequest
+  refundRequestByRequestId(requestId: String!): RefundRequest
+  refundRequestsByTicket(ticketId: String!): [RefundRequest!]!
+  refundRequestsOffsetPagination(filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+  refundRequestsByBuyerOffsetPagination(buyerId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+  refundRequestsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+  pendingRefundRequestsOffsetPagination(pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+  refundRequestsCursorPagination(filter: RefundRequestFilterInput!, pagination: CursorPaginationInput): RefundRequestConnection!
+  refundRequestsByBuyerCursorPagination(buyerId: String!, pagination: CursorPaginationInput): RefundRequestConnection!
+  refundRequestsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): RefundRequestConnection!
+  pendingRefundRequestsCursorPagination(pagination: CursorPaginationInput): RefundRequestConnection!
+  isTicketEligibleForRefund(ticketId: String!): Boolean!
+  calculateRefundAmount(ticketId: String!): RefundCalculation!
+  eventRefundSummary(eventId: String!): RefundSummary
+  payoutRequest(id: ID!): PayoutRequest
+  payoutRequestByRequestId(requestId: String!): PayoutRequest
+  payoutRequestsOffsetPagination(filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  payoutRequestsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  payoutRequestsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  pendingPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  failedPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  payoutRequestsCursorPagination(filter: PayoutRequestFilterInput!, pagination: CursorPaginationInput): PayoutRequestConnection!
+  payoutRequestsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): PayoutRequestConnection!
+  payoutRequestsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): PayoutRequestConnection!
+  pendingPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection!
+  failedPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection!
+  payoutRequestsForReviewOffsetPagination(reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  payoutRequestsForReviewCursorPagination(reviewStatus: PayoutReviewStatus, pagination: CursorPaginationInput): PayoutRequestConnection!
+  stuckPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  stuckPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection!
+  retryablePayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  recentlyResolvedPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  payoutRequestsByIssueTypeOffsetPagination(issueType: PayoutIssueType!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+  payoutRecoverySummary: PayoutRecoverySummary!
+  bankAccount(id: ID!): BankAccount
+  bankAccountsByOrganizer(organizerId: String!): [BankAccount!]!
+  defaultBankAccount(organizerId: String!): BankAccount
+  ticketStats(eventId: ID): TicketStats!
+  transactionStats(eventId: ID, organizerId: ID): TransactionStats!
+  payoutRequestStats(organizerId: ID): PayoutRequestStats!
+  financialReport(filter: FinancialReportFilterInput!): FinancialReport!
+  exportFinancialReport(filter: FinancialReportFilterInput!, format: ExportFormat!): ReportExport!
+  exportSalesReport(eventId: ID!, format: ExportFormat!): ReportExport!
+  reservation(id: ID!): TicketReservation
+  myActiveReservations(userId: ID!): [TicketReservation!]!
+  reservationsByEventOffsetPagination(eventId: ID!, pagination: OffsetPaginationInput): ReservationOffsetPage!
+  expiredReservationsOffsetPagination(eventId: ID, since: DateTime!, pagination: OffsetPaginationInput): ReservationOffsetPage!
+  reservationsByEventCursorPagination(eventId: ID!, pagination: CursorPaginationInput): ReservationConnection!
+  expiredReservationsCursorPagination(eventId: ID, since: DateTime!, pagination: CursorPaginationInput): ReservationConnection!
+  promoCode(id: ID!): PromoCode
+  promoCodeByCode(code: String!): PromoCode
+  validatePromoCode(code: String!, eventId: ID!, amount: BigDecimal): PromoCodeValidation!
+  eventPromoCodes(eventId: ID!): [PromoCode!]!
+  organizerPromoCodes(organizerId: ID!): [PromoCode!]!
+  eventLiveDashboard(eventId: ID!): LiveDashboard!
+  chartOfAccounts: [ChartOfAccountsEntry!]!
+  chartOfAccountsEntry(id: ID!): ChartOfAccountsEntry
+  chartOfAccountsByCode(accountCode: String!): ChartOfAccountsEntry
+  chartOfAccountsByType(accountType: AccountType!): [ChartOfAccountsEntry!]!
+  chartOfAccountsOffsetPagination(pagination: OffsetPaginationInput): ChartOfAccountsOffsetPage!
+  journalEntry(id: ID!): JournalEntry
+  journalEntryByNumber(entryNumber: String!): JournalEntry
+  journalEntriesByCorrelationId(correlationId: String!): [JournalEntry!]!
+  journalEntriesOffsetPagination(filter: JournalEntryFilterInput, pagination: OffsetPaginationInput): JournalEntryOffsetPage!
+  journalEntriesByAccountCode(accountCode: String!, pagination: OffsetPaginationInput): JournalEntryOffsetPage!
+  pendingJournalEntriesOffsetPagination(pagination: OffsetPaginationInput): JournalEntryOffsetPage!
+  trialBalance(asOf: DateTime): [AccountBalance!]!
+  accountBalance(accountCode: String!, asOf: DateTime): AccountBalance
+  platformAccounts: [PlatformAccount!]!
+  platformAccount(id: ID!): PlatformAccount
+  platformAccountByType(accountType: PlatformAccountType!): PlatformAccount
+  escrowTransaction(id: ID!): StandaloneEscrowTransaction
+  escrowTransactionsByAccount(escrowAccountId: String!, pagination: OffsetPaginationInput): EscrowTransactionOffsetPage!
+  escrowTransactionsByTicket(ticketId: String!): [StandaloneEscrowTransaction!]!
+  escrowTransactionsUnlinked: [StandaloneEscrowTransaction!]!
+  escrowBalance(escrowAccountId: String!): BigDecimal!
+  escrowBalanceAsOf(escrowAccountId: String!, asOf: DateTime!): BigDecimal!
+  chargeback(id: ID!): ChargebackRecord
+  chargebackByChargebackId(chargebackId: String!): ChargebackRecord
+  chargebacksOffsetPagination(filter: ChargebackFilterInput, pagination: OffsetPaginationInput): ChargebackOffsetPage!
+  chargebacksByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): ChargebackOffsetPage!
+  chargebacksByEvent(eventId: String!, pagination: OffsetPaginationInput): ChargebackOffsetPage!
+  pendingChargebacks: [ChargebackRecord!]!
+  chargebacksPendingRecovery: [ChargebackRecord!]!
+  chargebackStats(organizerId: String, eventId: String): ChargebackStats!
+  reconciliationRun(id: ID!): ReconciliationRun
+  reconciliationRunsOffsetPagination(filter: ReconciliationFilterInput, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage!
+  reconciliationRunsByType(type: ReconciliationType!, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage!
+  reconciliationRunsRequiringReview: [ReconciliationRun!]!
+  reconciliationSummary(type: ReconciliationType, startDate: DateTime, endDate: DateTime): ReconciliationSummary!
+  escrowJournalVerification(eventId: ID!): EscrowJournalVerificationResponse!
+  escrowJournalVerificationAll: [EscrowJournalVerificationResponse!]!
+  escrowJournalInconsistencies: [EscrowJournalVerificationResponse!]!
+  event(id: ID!): Event
+  discoverEvents(filter: EventDiscoveryFilterInput!, pagination: CursorPaginationInput): EventConnection!
+  publishedEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  searchEventsCursorPagination(query: String!, pagination: CursorPaginationInput): EventConnection!
+  upcomingEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  eventsByCategoryCursorPagination(categoryId: String!, pagination: CursorPaginationInput): EventConnection!
+  eventsByCityCursorPagination(city: String!, pagination: CursorPaginationInput): EventConnection!
+  eventsByDateRangeCursorPagination(startDate: DateTime!, endDate: DateTime!, pagination: CursorPaginationInput): EventConnection!
+  eventsByPriceRangeCursorPagination(minPrice: BigDecimal, maxPrice: BigDecimal, pagination: CursorPaginationInput): EventConnection!
+  featuredEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  freeEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  eventsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EventConnection!
+  publishedEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  searchEventsOffsetPagination(query: String!, pagination: OffsetPaginationInput): EventOffsetPage!
+  upcomingEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  eventsByCategoryOffsetPagination(categoryId: String!, pagination: OffsetPaginationInput): EventOffsetPage!
+  eventsByCityOffsetPagination(city: String!, pagination: OffsetPaginationInput): EventOffsetPage!
+  eventsByDateRangeOffsetPagination(startDate: DateTime!, endDate: DateTime!, pagination: OffsetPaginationInput): EventOffsetPage!
+  eventsByPriceRangeOffsetPagination(minPrice: BigDecimal, maxPrice: BigDecimal, pagination: OffsetPaginationInput): EventOffsetPage!
+  featuredEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  freeEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  eventsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EventOffsetPage!
+  eventCount: Int!
+  eventCountByOrganizer(organizerId: String!): Int!
+  eventCountByCategory(categoryId: String!): Int!
+  eventCountByCity(city: String!): Int!
+  eventCountByStatus(status: EventStatus!): Int!
+  eventStatistics(eventId: ID!): EventTicketStatistics
+  ticketTierStatistics(eventId: ID!, tierId: ID!): TicketTierStats
+  eventStats: EventStats!
+  eventsOffsetPagination(filter: EventFilterInput, pagination: OffsetPaginationInput): EventOffsetPage!
+  draftEventsOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EventOffsetPage!
+  pendingApprovalEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  overdueApprovalEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  approvedNotPublishedEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  eventsByStatusOffsetPagination(status: EventStatus!, pagination: OffsetPaginationInput): EventOffsetPage!
+  cancelledEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  completedEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage!
+  eventsCursorPagination(filter: EventFilterInput, pagination: CursorPaginationInput): EventConnection!
+  draftEventsCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EventConnection!
+  pendingApprovalEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  overdueApprovalEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  approvedNotPublishedEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  eventsByStatusCursorPagination(status: EventStatus!, pagination: CursorPaginationInput): EventConnection!
+  cancelledEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  completedEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+  location(id: ID!): Location
+  locationsCursorPagination(pagination: CursorPaginationInput): LocationConnection!
+  locationsByCityCursorPagination(city: String!, pagination: CursorPaginationInput): LocationConnection!
+  locationsByCountryCursorPagination(country: String!, pagination: CursorPaginationInput): LocationConnection!
+  searchLocationsCursorPagination(query: String!, pagination: CursorPaginationInput): LocationConnection!
+  locationsNearbyCursorPagination(input: NearbyLocationInput!, pagination: CursorPaginationInput): LocationConnection!
+  city(id: ID!): City
+  citiesCursorPagination(pagination: CursorPaginationInput): CityConnection!
+  citiesByProvinceCursorPagination(provinceId: String!, pagination: CursorPaginationInput): CityConnection!
+  citiesByCountryCursorPagination(country: String!, pagination: CursorPaginationInput): CityConnection!
+  searchCitiesCursorPagination(query: String!, pagination: CursorPaginationInput): CityConnection!
+  citiesOffsetPagination(pagination: OffsetPaginationInput): CityOffsetPage!
+  citiesByProvinceOffsetPagination(provinceId: String!, pagination: OffsetPaginationInput): CityOffsetPage!
+  citiesByCountryOffsetPagination(country: String!, pagination: OffsetPaginationInput): CityOffsetPage!
+  searchCitiesOffsetPagination(query: String!, pagination: OffsetPaginationInput): CityOffsetPage!
+  citiesWithEvents: [City!]!
+  province(id: ID!): Province
+  provincesCursorPagination(pagination: CursorPaginationInput): ProvinceConnection!
+  provincesByCountryCursorPagination(country: String!, pagination: CursorPaginationInput): ProvinceConnection!
+  searchProvincesCursorPagination(query: String!, pagination: CursorPaginationInput): ProvinceConnection!
+  provincesOffsetPagination(pagination: OffsetPaginationInput): ProvinceOffsetPage!
+  provincesByCountryOffsetPagination(country: String!, pagination: OffsetPaginationInput): ProvinceOffsetPage!
+  searchProvincesOffsetPagination(query: String!, pagination: OffsetPaginationInput): ProvinceOffsetPage!
+  eventCategory(id: ID!): EventCategory
+  eventCategoriesCursorPagination(pagination: CursorPaginationInput): EventCategoryConnection!
+  activeEventCategoriesCursorPagination(pagination: CursorPaginationInput): EventCategoryConnection!
+  searchEventCategoriesCursorPagination(query: String!, pagination: CursorPaginationInput): EventCategoryConnection!
+  eventCategoriesOffsetPagination(pagination: OffsetPaginationInput): EventCategoryOffsetPage!
+  activeEventCategoriesOffsetPagination(pagination: OffsetPaginationInput): EventCategoryOffsetPage!
+  searchEventCategoriesOffsetPagination(query: String!, pagination: OffsetPaginationInput): EventCategoryOffsetPage!
+  popularCategories(limit: Int = 10): [EventCategory!]!
+  platformConfiguration: PlatformConfiguration!
+  approvalTimeline(eventId: String!): ApprovalTimeline
+  approvalTimelinesOffsetPagination(filter: ApprovalTimelineFilterInput, pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage!
+  approvalTimelinesByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage!
+  pendingApprovalTimelinesOffsetPagination(pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage!
+  overdueApprovalTimelinesOffsetPagination(pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage!
+  approvalTimelinesCursorPagination(filter: ApprovalTimelineFilterInput, pagination: CursorPaginationInput): ApprovalTimelineConnection!
+  approvalTimelinesByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): ApprovalTimelineConnection!
+  pendingApprovalTimelinesCursorPagination(pagination: CursorPaginationInput): ApprovalTimelineConnection!
+  overdueApprovalTimelinesCursorPagination(pagination: CursorPaginationInput): ApprovalTimelineConnection!
+  approvalEscalation(id: ID!): ApprovalEscalation
+  activeEscalationsOffsetPagination(pagination: OffsetPaginationInput): ApprovalEscalationOffsetPage!
+  myEscalationsOffsetPagination(pagination: OffsetPaginationInput): ApprovalEscalationOffsetPage!
+  activeEscalationsCursorPagination(pagination: CursorPaginationInput): ApprovalEscalationConnection!
+  myEscalationsCursorPagination(pagination: CursorPaginationInput): ApprovalEscalationConnection!
+  approvalStats: ApprovalStats!
+  ticketTier(id: ID!): TicketTier
+  eventTicketTiers(eventId: ID!, includeHidden: Boolean = false): [TicketTier!]!
+  availableTicketTiers(eventId: ID!): [TicketTier!]!
+  eventLifecycle(eventId: String!): EventLifecycle
+  allowedStatusTransitions(eventId: String!): [EventStatus!]!
+  exportEventData(eventId: ID!, format: ExportFormat!): ReportExport!
+  exportEventsReport(filter: EventFilterInput!, format: ExportFormat!): ReportExport!
+  me: User
+  user(id: ID!): User
+  userByEmail(email: String!): User
+  userByPhone(phoneNumber: String!): User
+  usersOffsetPagination(search: String, userType: UserType, accountStatus: AccountStatus, pagination: OffsetPaginationInput): UserOffsetPage!
+  usersCursorPagination(search: String, userType: UserType, accountStatus: AccountStatus, pagination: CursorPaginationInput): UserConnection!
+  userStats: UserStats
+  organization(id: ID!): Organization
+  organizationBySlug(slug: String!): Organization
+  organizationByOrganizerProfileId(profileId: ID!): Organization
+  myOrganizations: [Organization!]!
+  myOwnedOrganization: Organization
+  organizationsOffsetPagination(search: String, status: OrganizationStatus, verified: Boolean, pagination: OffsetPaginationInput): OrganizationOffsetPage!
+  organizationsCursorPagination(search: String, status: OrganizationStatus, verified: Boolean, pagination: CursorPaginationInput): OrganizationConnection!
+  isSlugAvailable(slug: String!): Boolean!
+  organizationCount(status: OrganizationStatus): Long!
+  organizationMembersOffsetPagination(organizationId: ID!, role: OrganizationRole, status: MemberStatus, pagination: OffsetPaginationInput): OrganizationMemberOffsetPage!
+  organizationMembersCursorPagination(organizationId: ID!, role: OrganizationRole, status: MemberStatus, pagination: CursorPaginationInput): OrganizationMemberConnection!
+  organizationMember(organizationId: ID!, userId: ID!): OrganizationMember
+  myOrganizationMembership(organizationId: ID!): OrganizationMember
+  pendingInvitationsOffsetPagination(organizationId: ID!, pagination: OffsetPaginationInput): TeamInvitationOffsetPage!
+  pendingInvitationsCursorPagination(organizationId: ID!, pagination: CursorPaginationInput): TeamInvitationConnection!
+  invitationByToken(token: String!): TeamInvitation
+  myPendingInvitations: [TeamInvitation!]!
+  eventAccessGrant(id: ID!): EventAccessGrant
+  eventAccessGrantsOffsetPagination(eventId: ID!, status: AccessGrantStatus, pagination: OffsetPaginationInput): EventAccessGrantOffsetPage!
+  eventAccessGrantsCursorPagination(eventId: ID!, status: AccessGrantStatus, pagination: CursorPaginationInput): EventAccessGrantConnection!
+  userEventAccess(userId: ID!, eventId: ID!): EventAccessGrant
+  myEventAccess(eventId: ID!): EventAccessGrant
+  myEventAccessGrants: [EventAccessGrant!]!
+  ownershipTransfer(id: ID!): OwnershipTransferRequest
+  ownershipTransferByToken(token: String!): OwnershipTransferRequest
+  pendingOwnershipTransfer(organizationId: ID!): OwnershipTransferRequest
+  ownershipTransfers(organizationId: ID!): [OwnershipTransferRequest!]!
+  myPendingOwnershipTransfers: [OwnershipTransferRequest!]!
+  hasPendingOwnershipTransfer(organizationId: ID!): Boolean!
+  permission(id: ID!): Permission
+  permissionByName(name: String!): Permission
+  permissions: [Permission!]!
+  permissionsByCategory(category: String!): [Permission!]!
+  rolePermissions(roleId: String!): [Permission!]!
+  currentUserPermissions: [String!]!
+  hasOrganizationPermission(organizationId: ID!, permission: String!): Boolean!
+  hasEventPermission(eventId: ID!, permission: String!): Boolean!
+  myOrganizationRole(organizationId: ID!): OrganizationRole
+  myEventRole(eventId: ID!): EventRole
+  myEffectivePermissions(organizationId: ID, eventId: ID): EffectivePermissions!
+  allPermissions(scope: PermissionScope): [Permission!]!
+  myOrganizerProfile: OrganizerProfile
+  organizerProfile(id: ID!): OrganizerProfile
+  organizerProfileByUserId(userId: ID!): OrganizerProfile
+  organizerApplicationsOffsetPagination(status: OrganizerStatus, pagination: OffsetPaginationInput): OrganizerApplicationOffsetPage!
+  organizerApplicationsCursorPagination(status: OrganizerStatus, pagination: CursorPaginationInput): OrganizerApplicationConnection!
+  verificationDocument(id: ID!): VerificationDocument
+  myVerificationDocuments(status: DocumentStatus): [VerificationDocument!]!
+  verificationDocuments(organizerProfileId: ID!, status: DocumentStatus): [VerificationDocument!]!
+  pendingVerificationDocuments: [VerificationDocument!]!
+  myVerificationDocumentByType(documentType: String!): VerificationDocument
+  myVerificationDocumentCount: Long!
+  myApprovedDocumentCount: Long!
+  myNotificationsOffsetPagination(type: NotificationType, status: NotificationStatus, pagination: OffsetPaginationInput): NotificationOffsetPage!
+  myNotificationsCursorPagination(type: NotificationType, status: NotificationStatus, pagination: CursorPaginationInput): NotificationConnection!
+  unreadNotificationCount: Int!
+  myNotificationPreferences: NotificationPreferences
+  myDevices: [UserDevice!]!
+  myEventReminders(eventId: ID): [EventReminder!]!
+  organizerStatistics(organizerId: ID!): OrganizerStatistics
+  platformStatistics: PlatformStatistics
+  teamStatistics(organizationId: ID!): TeamStatistics
+}
+type ReconciliationItem {
+  externalId: String
+  internalId: String
+  externalAmount: BigDecimal
+  internalAmount: BigDecimal
+  status: ReconciliationItemStatus!
+  resolution: String
+  resolvedBy: String
+  resolvedAt: DateTime
+}
+type ReconciliationMutationResponse {
+  success: Boolean!
+  message: String
+  data: ReconciliationRun
+  errors: [String!]!
+  metadata: JSON
+}
+type ReconciliationRun {
+  id: ID!
+  reconciliationDate: DateTime!
+  type: ReconciliationType!
+  status: ReconciliationStatus!
+  dataSource: String
+  expectedTotal: BigDecimal
+  actualTotal: BigDecimal
+  variance: BigDecimal
+  matchedCount: Int!
+  unmatchedCount: Int!
+  items: [ReconciliationItem!]!
+  runBy: String
+  startedAt: DateTime!
+  completedAt: DateTime
+  notes: String
+}
+type ReconciliationRunOffsetPage {
+  data: [ReconciliationRun!]!
+  pagination: PaginationInfo!
+}
+type ReconciliationSummary {
+  totalRuns: Int!
+  completedRuns: Int!
+  pendingReviewRuns: Int!
+  failedRuns: Int!
+  totalVariance: BigDecimal!
+  resolvedVariance: BigDecimal!
+  unresolvedVariance: BigDecimal!
+  lastCompletedDate: DateTime
+  oldestPendingDate: DateTime
+}
+type RefundCalculation {
+  ticketId: ID!
+  ticketNumber: String!
+  eventId: ID!
+  eventDate: DateTime!
+  originalAmount: BigDecimal!
+  daysBeforeEvent: Int!
+  refundPercentage: Float!
+  refundAmount: BigDecimal!
+  commissionRefund: BigDecimal!
+  platformRetains: BigDecimal!
+  policyApplied: String!
+  isEligible: Boolean!
+  ineligibleReason: String
+}
+type RefundInfo {
+  refundId: String
+  refundAmount: BigDecimal
+  reason: String
+  status: String
+  refundDate: DateTime
+  processedBy: String
+  transactionId: String
+}
+type RefundRequest {
+  id: ID!
+  requestId: String!
+  ticketId: String!
+  ticketNumber: String!
+  eventId: String!
+  organizerId: String!
+  organizationId: String
+  buyerId: String!
+  originalTicketPrice: BigDecimal
+  refundAmount: BigDecimal!
+  refundPercentage: Float
+  platformRetains: BigDecimal
+  processingFee: BigDecimal
+  netRefundAmount: BigDecimal
+  currency: String!
+  status: RefundRequestStatus!
+  requestType: RefundRequestType!
+  reason: String!
+  additionalNotes: String
+  requestedBy: String
+  requestedAt: DateTime
+  reviewedBy: String
+  reviewedAt: DateTime
+  reviewComments: String
+  rejectionReason: String
+  processedAt: DateTime
+  processedBy: String
+  paymentReference: String
+  refundTransactionId: String
+  originalPaymentMethod: String
+  daysBeforeEvent: Int
+  policyApplied: String
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+type RefundRequestConnection {
+  edges: [RefundRequestEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type RefundRequestEdge {
+  cursor: String!
+  node: RefundRequest!
+}
+type RefundRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: RefundRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type RefundRequestOffsetPage {
+  data: [RefundRequest!]!
+  pagination: PaginationInfo!
+}
+type RefundStatusSummary {
+  status: RefundRequestStatus!
+  count: Int!
+  totalAmount: BigDecimal!
+  percentage: Float!
+}
+type RefundSummary {
+  totalRefunds: Int!
+  totalAmount: BigDecimal!
+  currency: String!
+  averageRefundAmount: BigDecimal
+  refundsByStatus: [RefundStatusSummary!]
+  refundsByType: [RefundTypeSummary!]
+}
+type RefundTicketMutationResponse {
+  success: Boolean!
+  message: String
+  data: Ticket
+  errors: [String!]!
+  metadata: JSON
+}
+type RefundTypeSummary {
+  requestType: RefundRequestType!
+  count: Int!
+  totalAmount: BigDecimal!
+  percentage: Float!
+}
+type RejectPayoutRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: PayoutRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type RejectRefundRequestMutationResponse {
+  success: Boolean!
+  message: String
+  data: RefundRequest
+  errors: [String!]!
+  metadata: JSON
+}
+type ReminderMutationResponse {
+  success: Boolean!
+  message: String
+  reminder: EventReminder
+}
+type ReportExport {
+  success: Boolean!
+  downloadUrl: String
+  expiresAt: DateTime
+  format: ExportFormat!
+  generatedAt: DateTime!
+  fileName: String
+  errorMessage: String
+}
+type ReservationConnection {
+  edges: [ReservationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type ReservationEdge {
+  cursor: String!
+  node: TicketReservation!
+}
+type ReservationItem {
+  ticketTierId: String!
+  tierName: String!
+  quantity: Int!
+  unitPrice: BigDecimal!
+  subtotal: BigDecimal!
+}
+type ReservationOffsetPage {
+  data: [TicketReservation!]!
+  pagination: PaginationInfo!
+}
+type RolePermissions {
+  role: String!
+  scope: PermissionScope!
+  permissions: [Permission!]!
+  inheritedFrom: [String!]
+}
+type SocialConnection {
+  provider: SocialProvider!
+  providerId: String!
+  email: String
+  name: String
+  connectedAt: DateTime!
+}
+type SocialLinks {
+  facebook: String
+  twitter: String
+  instagram: String
+  linkedin: String
+  youtube: String
+  tiktok: String
+}
+type StandaloneEscrowTransaction {
+  id: ID!
+  escrowAccountId: String!
+  type: String!
+  category: String!
+  amount: BigDecimal!
+  balanceAfter: BigDecimal!
+  currency: String!
+  ticketId: String
+  paymentIntentId: String
+  refundRequestId: String
+  payoutRequestId: String
+  chargebackId: String
+  journalEntryId: String
+  description: String
+  timestamp: DateTime!
+  createdAt: DateTime!
+}
+type StatusTransition {
+  fromStatus: EventStatus
+  toStatus: EventStatus!
+  transitionedAt: DateTime!
+  transitionedBy: String
+  reason: String
+  metadata: JSON
+}
+type TeamInvitation {
+  id: ID!
+  email: String!
+  phoneNumber: String
+  inviteeName: String
+  organizationId: ID!
+  organization: Organization
+  proposedRole: OrganizationRole!
+  eventAccessGrants: [EventAccessProposal!]
+  invitedById: ID!
+  invitedBy: User
+  message: String
+  invitationToken: String!
+  expiresAt: DateTime!
+  status: InvitationStatus!
+  createdAt: DateTime!
+  acceptedAt: DateTime
+  declinedAt: DateTime
+}
+type TeamInvitationConnection {
+  edges: [TeamInvitationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type TeamInvitationEdge {
+  cursor: String!
+  node: TeamInvitation!
+}
+type TeamInvitationOffsetPage {
+  content: [TeamInvitation!]!
+  pageInfo: PageInfo!
+}
+type TeamStatistics {
+  organizationId: ID!
+  totalMembers: Int!
+  activeMembers: Int!
+  pendingInvitations: Int!
+  membersByRole: JSON
+}
+type Ticket {
+  id: ID!
+  ticketNumber: String!
+  event: Event!
+  eventId: String!
+  buyer: User!
+  buyerId: String!
+  organizerId: String
+  organizationId: String
+  eventTitle: String!
+  eventDate: String
+  eventLocationName: String
+  eventLocationAddress: String
+  buyerName: String
+  buyerEmail: String
+  buyerPhone: String
+  ticketCategory: TicketCategory
+  ticketCategoryCode: String
+  ticketCategoryName: String
+  price: BigDecimal!
+  currency: String!
+  status: TicketStatus!
+  quantity: Int
+  purchaseDate: DateTime
+  validFrom: DateTime
+  validUntil: DateTime
+  validatedAt: DateTime
+  validatedBy: String
+  usedAt: DateTime
+  cancelledAt: DateTime
+  cancellationReason: String
+  refundedAt: DateTime
+  refundReason: String
+  qrCode: String
+  barcode: String
+  correlationId: String
+  paymentReference: String
+  commissionRate: BigDecimal
+  commissionAmount: BigDecimal
+  netAmount: BigDecimal
+  paymentInfo: PaymentInfo
+  refundInfo: RefundInfo
+  createdAt: DateTime
+  updatedAt: DateTime
+  isActive: Boolean!
+}
+type TicketCategoryStats {
+  category: String!
+  count: Int!
+  percentage: Float!
+  totalRevenue: BigDecimal
+}
+type TicketConnection {
+  edges: [TicketEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type TicketEdge {
+  cursor: String!
+  node: Ticket!
+}
+type TicketMutationResponse {
+  success: Boolean!
+  message: String
+  data: Ticket
+  errors: [String!]!
+  metadata: JSON
+}
+type TicketOffsetPage {
+  data: [Ticket!]!
+  pagination: PaginationInfo!
+}
+type TicketReservation {
+  id: ID!
+  eventId: ID!
+  userId: ID!
+  items: [ReservationItem!]!
+  totalAmount: BigDecimal!
+  currency: String!
+  status: ReservationStatus!
+  expiresAt: DateTime!
+  remainingSeconds: Int
+  promoCodeApplied: String
+  discountAmount: BigDecimal
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type TicketStats {
+  totalTickets: Int!
+  purchasedTickets: Int!
+  validatedTickets: Int!
+  usedTickets: Int!
+  refundedTickets: Int!
+  expiredTickets: Int!
+  cancelledTickets: Int!
+  pendingPaymentTickets: Int!
+  ticketsByStatus: [TicketStatusStats!]
+  ticketsByCategory: [TicketCategoryStats!]
+  recentTickets: [Ticket!]
+}
+type TicketStatusStats {
+  status: TicketStatus!
+  count: Int!
+  percentage: Float!
+}
+type TicketTier {
+  id: ID!
+  eventId: ID!
+  organizationId: String
+  code: String!
+  name: String!
+  description: String
+  price: BigDecimal!
+  originalPrice: BigDecimal
+  currency: String!
+  maxPerOrder: Int
+  minPerOrder: Int
+  benefits: [String!]
+  salesStartAt: DateTime
+  salesEndAt: DateTime
+  earlyBirdPrice: BigDecimal
+  earlyBirdEndsAt: DateTime
+  availableQuantity: Int!
+  quantity: Int!
+  soldQuantity: Int!
+  sortOrder: Int!
+  isActive: Boolean!
+  isHidden: Boolean!
+  accessCode: String
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+type TicketTierStats {
+  eventId: ID!
+  tierId: ID!
+  tierCode: String!
+  tierName: String!
+  price: BigDecimal!
+  totalQuantity: Int!
+  isActive: Boolean!
+  ticketsSold: Int!
+  ticketsRefunded: Int!
+  grossRevenue: BigDecimal
+  salesPercentage: Float!
+}
+type TierCheckInStats {
+  tierId: String!
+  tierName: String!
+  sold: Int!
+  checkedIn: Int!
+  checkInRate: Float!
+}
+type TierMutationResponse {
+  success: Boolean!
+  message: String
+  data: TicketTier
+  errors: [String!]!
+  metadata: JSON
+}
+type TimelineEvent {
+  id: ID!
+  eventId: String!
+  timestamp: DateTime!
+  action: ApprovalAction!
+  actorId: String!
+  actorName: String!
+  actorRole: String
+  previousStatus: EventStatus
+  newStatus: EventStatus
+  description: String!
+  comments: String
+  internalNotes: String
+  isEscalationRelated: Boolean!
+  metadata: JSON
+}
+type TokenValidation {
+  valid: Boolean!
+  userId: String
+  email: String
+  userType: String
+}
+type TransactionStats {
+  totalTransactions: Int!
+  completedTransactions: Int!
+  failedTransactions: Int!
+  pendingTransactions: Int!
+  timedOutTransactions: Int!
+  totalVolume: BigDecimal!
+  totalCommissions: BigDecimal!
+  averageTransactionValue: BigDecimal
+}
+type TwoFactorSetupResponse {
+  success: Boolean!
+  message: String
+  secret: String
+  qrCodeUrl: String
+  backupCodes: [String!]
+}
+type UpdateBankAccountMutationResponse {
+  success: Boolean!
+  message: String
+  data: BankAccount
+  errors: [String!]!
+  metadata: JSON
+}
+type User {
+  id: ID!
+  fullName: String!
+  email: String!
+  phoneNumber: String
+  purchasedTickets: [Ticket!]!
+  totalSpent: BigDecimal!
+  activeTicketCount: Int!
+  username: String!
+  firstName: String!
+  lastName: String!
+  avatarUrl: String
+  bio: String
+  dateOfBirth: DateTime
+  gender: String
+  locale: String
+  timezone: String
+  userType: UserType!
+  accountStatus: AccountStatus!
+  emailVerified: Boolean!
+  phoneVerified: Boolean!
+  identityVerified: Boolean!
+  active: Boolean!
+  locked: Boolean!
+  twoFactorEnabled: Boolean!
+  twoFactorMethod: TwoFactorMethod
+  socialConnections: [SocialConnection!]
+  organizationMemberships: [OrganizationMember!]
+  primaryOrganizationId: ID
+  primaryOrganization: Organization
+  organizerProfile: OrganizerProfile
+  notificationPreferences: NotificationPreferences
+  totalTicketsPurchased: Int
+  totalEventsAttended: Int
+  memberSince: DateTime
+  lastLoginAt: DateTime
+  lastActiveAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type UserConnection {
+  edges: [UserEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+type UserDevice {
+  id: ID!
+  userId: ID!
+  deviceToken: String!
+  platform: DevicePlatform!
+  deviceName: String
+  deviceModel: String
+  osVersion: String
+  appVersion: String
+  isActive: Boolean!
+  isPrimary: Boolean!
+  lastActiveAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+type UserEdge {
+  cursor: String!
+  node: User!
+}
+type UserMutationResponse {
+  success: Boolean!
+  message: String
+  user: User
+}
+type UserOffsetPage {
+  content: [User!]!
+  pageInfo: PageInfo!
+}
+type UserStats {
+  totalUsers: Int!
+  organizers: Int!
+  attendees: Int!
+  adminUsers: Int!
+  verifiedUsers: Int!
+  activeUsers: Int!
+  suspendedUsers: Int!
+  lockedUsers: Int!
+  pendingVerificationUsers: Int!
+  newUsersThisMonth: Int!
+  newUsersThisWeek: Int!
+  growthRate: Float
+  usersByType: [UserTypeStats!]!
+  usersByStatus: [UserStatusStats!]!
+}
+type UserStatusStats {
+  status: AccountStatus!
+  count: Int!
+  percentage: Float!
+}
+type UserTypeStats {
+  userType: UserType!
+  count: Int!
+  percentage: Float!
+}
+type UseTicketMutationResponse {
+  success: Boolean!
+  message: String
+  data: Ticket
+  errors: [String!]!
+  metadata: JSON
+}
+type ValidateTicketMutationResponse {
+  success: Boolean!
+  message: String
+  data: Ticket
+  errors: [String!]!
+  metadata: JSON
+}
+type VerificationDocument {
+  id: ID!
+  documentType: String!
+  documentUrl: String!
+  fileName: String
+  fileSize: Int
+  mimeType: String
+  status: DocumentStatus!
+  uploadedAt: DateTime!
+  verifiedAt: DateTime
+  verifiedById: String
+  verifiedBy: User
+  rejectionReason: String
+}
+type VerifyBankAccountMutationResponse {
+  success: Boolean!
+  message: String
+  data: BankAccount
+  errors: [String!]!
+  metadata: JSON
+}
+enum AccessGrantStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+  EXPIRED
+}
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  SUSPENDED
+  PENDING_VERIFICATION
+  PENDING_DELETION
+}
+enum AccountSubType {
+  BANK_ACCOUNT
+  GATEWAY_RECEIVABLE
+  COMMISSION_RECEIVABLE
+  CHARGEBACK_RECEIVABLE
+  ESCROW_PAYABLE
+  PAYOUTS_PAYABLE
+  REFUNDS_PAYABLE
+  TAX_PAYABLE
+  FEES_PAYABLE
+  DEFERRED_REVENUE
+  RETAINED_EARNINGS
+  RESERVE
+  COMMISSION_REVENUE
+  FEE_REVENUE
+  GATEWAY_FEES
+  CHARGEBACK_LOSS
+  CHARGEBACK_FEES
+  BAD_DEBT
+}
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+enum ApprovalAction {
+  SUBMITTED
+  ASSIGNED
+  VIEWED
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  RESUBMITTED
+  ESCALATED
+  ESCALATION_RESOLVED
+  COMMENT_ADDED
+}
+enum ApprovalNotificationChannel {
+  EMAIL
+  IN_APP
+  BOTH
+}
+enum ApprovalNotificationType {
+  SUBMISSION_RECEIVED
+  REVIEW_ASSIGNED
+  APPROVAL_GRANTED
+  REJECTION_ISSUED
+  CHANGES_REQUESTED
+  ESCALATION_TRIGGERED
+  REMINDER_PENDING
+  SLA_WARNING
+}
+enum BalanceDirection {
+  DEBIT
+  CREDIT
+}
+enum ChargebackFundSource {
+  ORGANIZER_ESCROW
+  ORGANIZER_FUTURE
+  PLATFORM_RESERVE
+  WRITE_OFF
+}
+enum ChargebackReason {
+  FRAUD
+  NOT_RECEIVED
+  NOT_AS_DESCRIBED
+  DUPLICATE
+  CANCELLED
+  OTHER
+}
+enum ChargebackStatus {
+  RECEIVED
+  UNDER_REVIEW
+  ACCEPTED
+  DISPUTED
+  WON
+  LOST
+}
+enum DevicePlatform {
+  IOS
+  ANDROID
+  WEB
+}
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+enum EscalationStatus {
+  PENDING
+  ACKNOWLEDGED
+  RESOLVED
+  EXPIRED
+}
+enum EscrowAccountStatus {
+  CREATED
+  ACTIVE
+  LOCKED
+  PAYOUT_ELIGIBLE
+  PROCESSING_PAYOUT
+  CLOSED
+  CANCELLED
+}
+enum EscrowJournalVerificationStatus {
+  CONSISTENT
+  BALANCE_MISMATCH
+  MISSING_JOURNAL_ACCOUNT
+  ORPHANED_JOURNAL_ACCOUNT
+  NOT_FOUND
+}
+enum EventRole {
+  EVENT_OWNER
+  EVENT_ADMIN
+  EDITOR
+  CHECK_IN
+  VIEWER
+}
+enum EventStatus {
+  DRAFT
+  PENDING_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+enum ExportFormat {
+  CSV
+  PDF
+  EXCEL
+  JSON
+}
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  REVOKED
+}
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+enum JournalEntryType {
+  STANDARD
+  ADJUSTMENT
+  REVERSAL
+}
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  REMOVED
+}
+enum NotificationChannel {
+  PUSH
+  SMS
+  WHATSAPP
+  EMAIL
+  IN_APP
+}
+enum NotificationStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  EXPIRED
+}
+enum NotificationType {
+  TICKET_PURCHASED
+  TICKET_TRANSFERRED
+  TICKET_TRANSFER_RECEIVED
+  TICKET_EXPIRING
+  TICKET_REFUND_REQUESTED
+  PAYMENT_SUCCESSFUL
+  PAYMENT_FAILED
+  PAYMENT_PENDING
+  REFUND_REQUESTED
+  REFUND_APPROVED
+  REFUND_REJECTED
+  REFUND_PROCESSED
+  EVENT_REMINDER
+  EVENT_CANCELLED
+  EVENT_UPDATED
+  EVENT_STARTING_SOON
+  EVENT_APPROVED
+  EVENT_REJECTED
+  EVENT_CHANGES_REQUESTED
+  WAITLIST_AVAILABLE
+  QUEUE_TURN
+  ORGANIZER_APPROVED
+  ORGANIZER_REJECTED
+  ORGANIZER_SUSPENDED
+  ORGANIZER_CHANGES_REQUESTED
+  TEAM_INVITATION_RECEIVED
+  TEAM_MEMBER_JOINED
+  TEAM_MEMBER_LEFT
+  TEAM_ROLE_CHANGED
+  OWNERSHIP_TRANSFER_REQUESTED
+  OWNERSHIP_TRANSFER_COMPLETED
+  PAYOUT_REQUESTED
+  PAYOUT_APPROVED
+  PAYOUT_COMPLETED
+  PAYOUT_FAILED
+  SYSTEM_ANNOUNCEMENT
+  ACCOUNT_SECURITY
+  WELCOME
+}
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MANAGER
+  MARKETER
+  CONTRIBUTOR
+}
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  PENDING_DELETION
+}
+enum OrganizerStatus {
+  DRAFT
+  PENDING_DOCUMENTS
+  PENDING_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+enum PaymentAttemptStatus {
+  CREATED
+  PENDING_APPROVAL
+  PROCESSING
+  CONFIRMED
+  COMPLETED
+  FAILED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+enum PaymentMethod {
+  MOBILE_MONEY
+  CARD
+  BANK_TRANSFER
+}
+enum PayoutIssueType {
+  BANK_REJECTED
+  INVALID_ACCOUNT_DETAILS
+  INSUFFICIENT_ESCROW
+  COMPLIANCE_HOLD
+  SUSPECTED_FRAUD
+  TECHNICAL_ERROR
+  PROVIDER_ERROR
+  TIMEOUT
+  DUPLICATE_REQUEST
+  OTHER
+}
+enum PayoutMethod {
+  BANK_TRANSFER
+  MOBILE_MONEY
+  CHEQUE
+}
+enum PayoutRequestStatus {
+  PENDING
+  APPROVED
+  PROCESSING
+  COMPLETED
+  FAILED
+  REJECTED
+  CANCELLED
+}
+enum PayoutResolutionType {
+  AUTO_RESOLVED
+  MANUAL_APPROVAL
+  MANUAL_REJECTION
+  RETRIED_SUCCESS
+  ACCOUNT_UPDATED
+  REFUNDED_TO_ESCROW
+  WRITTEN_OFF
+  ESCALATED
+}
+enum PayoutReviewStatus {
+  NONE
+  PENDING_REVIEW
+  UNDER_REVIEW
+  REVIEWED
+  ESCALATED
+}
+enum PermissionScope {
+  PLATFORM
+  ORGANIZATION
+  EVENT
+}
+enum PlatformAccountType {
+  OPERATING
+  RESERVE
+  TAX_HOLDING
+}
+enum ReconciliationItemStatus {
+  MATCHED
+  UNMATCHED_EXTERNAL
+  UNMATCHED_INTERNAL
+  AMOUNT_MISMATCH
+}
+enum ReconciliationStatus {
+  RUNNING
+  COMPLETED
+  REQUIRES_REVIEW
+  FAILED
+}
+enum ReconciliationType {
+  GATEWAY
+  BANK
+  ESCROW
+  ESCROW_JOURNAL
+}
+enum RecoveryStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  RECOVERED
+  WRITTEN_OFF
+}
+enum RefundRequestStatus {
+  PENDING
+  APPROVED
+  PROCESSING
+  COMPLETED
+  REJECTED
+  FAILED
+  CANCELLED
+}
+enum RefundRequestType {
+  USER_REQUESTED
+  ADMIN_INITIATED
+  SYSTEM_AUTOMATIC
+  EVENT_CANCELLED
+  TICKET_EXPIRED
+}
+enum ReminderStatus {
+  SCHEDULED
+  SENT
+  CANCELLED
+  FAILED
+}
+enum ReservationStatus {
+  ACTIVE
+  CONVERTED
+  EXPIRED
+  CANCELLED
+}
+enum SocialProvider {
+  GOOGLE
+  FACEBOOK
+  APPLE
+  TWITTER
+}
+enum SortDirection {
+  ASC
+  DESC
+}
+enum TicketCategory {
+  GENERAL
+  PRE_SALE
+  VIP
+  VVIP
+  PREMIUM
+  EARLY_BIRD
+  STUDENT
+  SENIOR
+  GROUP
+  CORPORATE
+  SPONSOR
+  FREE
+}
+enum TicketStatus {
+  PENDING_PAYMENT
+  PURCHASED
+  CONFIRMED
+  VALIDATED
+  USED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+  PAYMENT_FAILED
+  REFUND_PENDING
+}
+enum TimeUnit {
+  HOUR
+  DAY
+  WEEK
+  MONTH
+}
+enum TransactionIssueType {
+  PAYMENT_TIMEOUT
+  WEBHOOK_MISSED
+  AMOUNT_MISMATCH
+  DUPLICATE_TRANSACTION
+  PROVIDER_ERROR
+  NETWORK_FAILURE
+  VALIDATION_FAILURE
+  MANUAL_REVIEW_REQUIRED
+  RECONCILIATION_NEEDED
+  OTHER
+}
+enum TransactionResolutionType {
+  AUTO_RESOLVED
+  MANUAL_APPROVAL
+  MANUAL_REJECTION
+  RETRIED_SUCCESS
+  REFUNDED
+  WRITTEN_OFF
+  RECONCILED
+  ESCALATED
+}
+enum TransactionReviewStatus {
+  NONE
+  PENDING_REVIEW
+  UNDER_REVIEW
+  REVIEWED
+  ESCALATED
+}
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REVERSED
+  ROLLED_BACK
+  FULFILLED
+  RETRYING
+  TIMED_OUT
+  PENDING_VERIFICATION
+}
+enum TransferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+enum TwoFactorMethod {
+  SMS
+  EMAIL
+  AUTHENTICATOR_APP
+  BACKUP_CODE
+}
+enum UserType {
+  CUSTOMER
+  ORGANIZER
+  ADMIN
+  SUPER_ADMIN
+  FINANCE
+}
+input AcceptInvitationInput {
+  invitationToken: String!
+}
+input AdminTicketUpdateInput {
+  buyerName: String
+  buyerEmail: String
+  buyerPhone: String
+  ticketCategoryCode: String
+  notes: String
+}
+input ApplyToBeOrganizerInput {
+  companyName: String!
+  companyDescription: String
+  tagline: String
+  website: String
+  businessPhone: String!
+  businessEmail: String!
+  businessAddress: String
+  city: String
+  province: String
+  country: String = "ZM"
+  postalCode: String
+}
+input ApprovalTimelineFilterInput {
+  status: EventStatus
+  isOverdue: Boolean
+  hasActiveEscalation: Boolean
+  assignedReviewerId: String
+  submittedAfter: DateTime
+  submittedBefore: DateTime
+  organizerId: String
+  searchQuery: String
+}
+input ApproveOrganizerInput {
+  organizerProfileId: ID!
+  commissionRate: Float
+  payoutSchedule: String
+  reviewNotes: String
+}
+input AssignReviewerInput {
+  eventId: ID!
+  reviewerId: String!
+  reviewerName: String!
+  internalNotes: String
+}
+input BulkGrantEventAccessInput {
+  organizationId: ID!
+  eventId: ID!
+  grants: [GrantEventAccessInput!]!
+}
+input BulkInviteInput {
+  organizationId: ID!
+  invites: [InviteTeamMemberInput!]!
+}
+input ChargebackFilterInput {
+  status: ChargebackStatus
+  recoveryStatus: RecoveryStatus
+  eventId: String
+  organizerId: String
+  startDate: DateTime
+  endDate: DateTime
+}
+input CompleteReservationInput {
+  reservationId: ID!
+  paymentMethod: PaymentMethod!
+  phoneNumber: String!
+  promoCode: String
+}
+input ConfirmOwnershipTransferInput {
+  transferToken: String!
+  confirmationCode: String!
+}
+input CreateBankAccountInput {
+  organizerId: String!
+  accountHolderName: String!
+  bankName: String!
+  bankCode: String
+  branchName: String
+  branchCode: String
+  accountNumber: String!
+  accountType: String
+  currency: String!
+  swiftCode: String
+  isDefault: Boolean
+}
+input CreateChartOfAccountsInput {
+  accountCode: String!
+  accountName: String!
+  accountType: AccountType!
+  subType: AccountSubType
+  parentAccountCode: String
+  currency: String
+  description: String
+}
+input CreateCityInput {
+  name: String!
+  code: String!
+  provinceId: String!
+  country: String!
+}
+input CreateCoordinatesInput {
+  latitude: Float!
+  longitude: Float!
+}
+input CreateEscrowAccountInput {
+  eventId: String!
+  organizerId: String!
+  eventTitle: String
+  organizerName: String
+  currency: String!
+}
+input CreateEventCategoryInput {
+  name: String!
+  code: String!
+  description: String
+  iconUrl: String
+  color: String
+  sortOrder: Int
+}
+input CreateEventInput {
+  title: String!
+  description: String!
+  categoryId: String!
+  eventDateTime: DateTime!
+  endDateTime: DateTime!
+  location: EventLocationInput
+  totalCapacity: Int!
+  ticketTiers: [CreateTicketTierInput!]!
+  tags: [String!]
+  additionalInfo: JSON
+  bannerImageUrl: String
+  isVirtual: Boolean
+  isFreeEvent: Boolean
+  virtualEventUrl: String
+  refundPolicy: String
+  cancellationPolicy: String
+  termsAndConditions: String
+  enableWaitlist: Boolean
+  waitlistCapacity: Int
+  accessibility: EventAccessibilityInput
+}
+input CreateEventReminderInput {
+  eventId: ID!
+  ticketId: ID!
+  minutesBefore: Int!
+  channels: [NotificationChannel!]
+}
+input CreateJournalEntryInput {
+  correlationId: String!
+  entryDate: DateTime!
+  effectiveDate: DateTime
+  description: String!
+  type: JournalEntryType!
+  lines: [JournalLineInput!]!
+  metadata: JSON
+}
+input CreateOrganizerProfileInput {
+  companyName: String
+  companyDescription: String
+  website: String
+  businessPhone: String
+  businessEmail: String
+  businessAddress: String
+  city: String
+  province: String
+}
+input CreatePayoutRequestInput {
+  organizerId: String!
+  eventId: String
+  escrowAccountId: String!
+  bankAccountId: String!
+  requestedAmount: BigDecimal!
+  currency: String!
+  payoutMethod: PayoutMethod!
+  notes: String
+  metadata: JSON
+}
+input CreatePromoCodeInput {
+  code: String!
+  eventId: ID
+  organizerId: ID
+  discountType: DiscountType!
+  discountValue: BigDecimal!
+  maxUses: Int
+  validFrom: DateTime
+  validUntil: DateTime
+  minPurchaseAmount: BigDecimal
+  maxDiscountAmount: BigDecimal
+  applicableTiers: [String!]
+}
+input CreateProvinceInput {
+  name: String!
+  code: String!
+  country: String!
+}
+input CreateRefundRequestInput {
+  ticketId: String!
+  reason: String!
+  additionalNotes: String
+  requestedBy: String!
+  metadata: JSON
+}
+input CreateTicketTierInput {
+  code: String!
+  name: String!
+  description: String
+  price: BigDecimal!
+  currency: String!
+  quantity: Int!
+  maxPerOrder: Int
+  minPerOrder: Int
+  benefits: [String!]
+  sortOrder: Int
+  salesStartAt: DateTime
+  salesEndAt: DateTime
+  earlyBirdPrice: BigDecimal
+  earlyBirdEndsAt: DateTime
+  isHidden: Boolean
+  accessCode: String
+}
+input CreateUserInput {
+  email: String!
+  phoneNumber: String
+  firstName: String!
+  lastName: String!
+  password: String
+  userType: UserType = CUSTOMER
+}
+input CursorPaginationInput {
+  first: Int
+  after: String
+  last: Int
+  before: String
+}
+input DisputeChargebackInput {
+  ticketValidationProof: String
+  customerCommunicationLog: String
+  deliveryConfirmation: String
+  termsAcceptanceProof: String
+  additionalDocuments: String
+  notes: String!
+}
+input EscrowAccountFilterInput {
+  organizerId: String
+  eventId: String
+  status: EscrowAccountStatus
+  currency: String
+  hasBalance: Boolean
+}
+input EventAccessGrantInput {
+  eventId: ID!
+  role: EventRole!
+  customPermissions: [String!]
+  reason: String
+  expiresAt: DateTime
+}
+input EventAccessibilityInput {
+  wheelchairAccessible: Boolean
+  wheelchairSeatsAvailable: Int
+  signLanguageInterpreter: Boolean
+  hearingLoopAvailable: Boolean
+  accessibleParking: Boolean
+  accessibleRestrooms: Boolean
+  assistanceDogsAllowed: Boolean
+  additionalNotes: String
+}
+input EventAccessInput {
+  eventId: ID!
+  role: EventRole!
+  expiresAt: DateTime
+}
+input EventCancellationInput {
+  eventId: ID
+  reason: String!
+  notifyAttendees: Boolean = true
+  triggerRefunds: Boolean = true
+  notifyBuyers: Boolean = true
+  processRefundsImmediately: Boolean = true
+}
+input EventDiscoveryFilterInput {
+  searchQuery: String
+  categoryId: String
+  categoryIds: [String!]
+  cityId: String
+  cityName: String
+  country: String
+  provinceId: String
+  startDate: DateTime
+  endDate: DateTime
+  minPrice: BigDecimal
+  maxPrice: BigDecimal
+  isFreeEvent: Boolean
+  hasAvailableTickets: Boolean
+  isAccessible: Boolean
+  isVirtual: Boolean
+  isFeatured: Boolean
+  tags: [String!]
+  organizerId: String
+}
+input EventFilterInput {
+  categoryId: String
+  status: EventStatus
+  statuses: [EventStatus!]
+  organizerId: String
+  published: Boolean
+  cityId: String
+  country: String
+  eventDateAfter: DateTime
+  eventDateBefore: DateTime
+  createdAfter: DateTime
+  createdBefore: DateTime
+  approvedNotPublished: Boolean
+  overdue: Boolean
+  daysSinceApprovalMin: Int
+  daysSinceApprovalMax: Int
+  searchQuery: String
+}
+input EventLocationInput {
+  name: String!
+  address: String!
+  city: String!
+  province: String
+  country: String!
+  postalCode: String
+  coordinates: CreateCoordinatesInput
+  description: String
+}
+input FinancialReportFilterInput {
+  startDate: DateTime!
+  endDate: DateTime!
+  eventId: ID
+  organizerId: ID
+  groupBy: TimeUnit
+}
+input GrantEventAccessInput {
+  organizationId: ID!
+  eventId: ID!
+  userId: ID!
+  role: EventRole!
+  reason: String
+  expiresAt: DateTime
+}
+"""
+Input for initiating a payment attempt with PawaPay.
+Called during ticket checkout to start mobile money payment.
+"""
+input InitiatePaymentAttemptInput {
+  "Ticket being purchased"
+  ticketId: String!
+  "Event the ticket is for"
+  eventId: String!
+  "User making the payment"
+  buyerId: String!
+  "Payment amount"
+  amount: BigDecimal!
+  "Currency code (default: ZMW)"
+  currency: String
+  "Mobile money provider (e.g., MTN_MOMO_ZMB, AIRTEL_OAPI_ZMB)"
+  provider: String!
+  "Payer phone number in E.164 format (e.g., +260763456789)"
+  payerPhone: String!
+  "Optional correlation ID for tracing"
+  correlationId: String
+  "Client IP address for security"
+  clientIp: String
+  "Session ID for tracing"
+  sessionId: String
+}
+input InviteMemberInput {
+  email: String!
+  phoneNumber: String
+  inviteeName: String
+  role: OrganizationRole!
+  message: String
+  eventAccessGrants: [EventAccessGrantInput!]
+}
+input InviteTeamMemberInput {
+  organizationId: ID!
+  email: String!
+  phoneNumber: String
+  inviteeName: String
+  role: OrganizationRole!
+  message: String
+  eventAccessGrants: [EventAccessInput!]
+}
+input JournalEntryFilterInput {
+  status: JournalEntryStatus
+  type: JournalEntryType
+  correlationId: String
+  accountCode: String
+  startDate: DateTime
+  endDate: DateTime
+}
+input JournalLineInput {
+  accountCode: String!
+  accountName: String!
+  debit: BigDecimal
+  credit: BigDecimal
+  description: String
+  referenceType: String
+  referenceId: String
+}
+"Input for marking a payment as fulfilled after accounting operations complete."
+input MarkPaymentFulfilledInput {
+  "UUID of the payment attempt (depositId)"
+  depositId: String!
+  "ID of the journal entry created"
+  journalEntryId: String!
+  "ID of the commission record created"
+  commissionId: String
+  "ID of the escrow transaction created"
+  escrowTransactionId: String!
+}
+input NearbyLocationInput {
+  latitude: Float!
+  longitude: Float!
+  radiusKm: Float = 10
+  maxResults: Int = 10
+}
+input OffsetPaginationInput {
+  page: Int = 0
+  size: Int = 20
+  sortBy: String = "createdAt"
+  sortDirection: SortDirection = DESC
+}
+input PayoutRequestFilterInput {
+  organizerId: String
+  eventId: String
+  escrowAccountId: String
+  status: PayoutRequestStatus
+  payoutMethod: PayoutMethod
+  startDate: DateTime
+  endDate: DateTime
+}
+"Input for processing a PawaPay webhook callback."
+input ProcessPaymentWebhookInput {
+  "UUID of the payment attempt (depositId)"
+  depositId: String!
+  "Status from PawaPay (COMPLETED, FAILED, PROCESSING)"
+  providerStatus: String!
+  "PawaPay transaction ID (if COMPLETED)"
+  providerTransactionId: String
+  "Failure code (if FAILED)"
+  failureCode: String
+  "Failure message (if FAILED)"
+  failureMessage: String
+  "Raw webhook payload for audit"
+  webhookPayload: String!
+  "Source IP of webhook request"
+  sourceIp: String!
+  "Whether webhook signature was valid"
+  signatureValid: Boolean!
+}
+input ReceiveChargebackInput {
+  chargebackId: String!
+  originalTransactionId: String!
+  ticketId: String!
+  eventId: String!
+  organizerId: String!
+  organizationId: String
+  customerId: String!
+  originalAmount: BigDecimal!
+  chargebackAmount: BigDecimal!
+  chargebackFee: BigDecimal!
+  currency: String!
+  reason: ChargebackReason!
+  responseDeadline: DateTime!
+}
+input ReconciliationFilterInput {
+  type: ReconciliationType
+  status: ReconciliationStatus
+  startDate: DateTime
+  endDate: DateTime
+}
+"""
+Input for recording a gateway settlement in the accounting system.
+
+Called when payment gateway settles funds to our bank account.
+Creates journal entry:
+  DR Bank Account (1011)        - Net amount received
+  DR Gateway Fees Expense (5010) - Fees deducted by gateway
+  CR Gateway Receivable (1021)  - Gross amount cleared
+"""
+input RecordGatewaySettlementInput {
+  "Unique settlement ID from gateway (e.g., PAW-SETTLE-20260420)"
+  settlementId: String!
+  "Gross amount before fees"
+  grossAmount: BigDecimal!
+  "Fees deducted by gateway"
+  feeAmount: BigDecimal!
+  "Net amount received in bank"
+  netAmount: BigDecimal!
+  "Date of settlement"
+  settlementDate: DateTime!
+  "Bank transaction reference"
+  bankReference: String!
+  "Currency code (e.g., ZMW)"
+  currency: String!
+}
+input RecoverChargebackInput {
+  fundSource: ChargebackFundSource!
+  amount: BigDecimal
+  notes: String
+}
+input RefundRequestFilterInput {
+  ticketId: String
+  buyerId: String
+  eventId: String
+  organizerId: String
+  status: RefundRequestStatus
+  requestType: RefundRequestType
+  startDate: DateTime
+  endDate: DateTime
+}
+input RegisterDeviceInput {
+  deviceToken: String!
+  platform: DevicePlatform!
+  deviceName: String
+  deviceModel: String
+  osVersion: String
+  appVersion: String
+}
+input RegisterInput {
+  email: String!
+  password: String!
+  username: String
+  firstName: String
+  lastName: String
+  phoneNumber: String
+  userType: UserType
+}
+input RejectOrganizerInput {
+  organizerProfileId: ID!
+  reason: String!
+  reviewNotes: String
+}
+input RemoveMemberInput {
+  organizationId: ID!
+  memberId: ID!
+  reason: String
+}
+input RequestAccountDeletionInput {
+  reason: String
+  feedback: String
+  confirmPassword: String
+}
+input RequestOrganizerChangesInput {
+  organizerProfileId: ID!
+  changesRequired: String!
+  reviewNotes: String
+}
+input ReserveTicketsInput {
+  eventId: ID!
+  selections: [TicketSelectionInput!]!
+  promoCode: String
+}
+input ResolveEscalationInput {
+  escalationId: ID!
+  resolutionNotes: String!
+  action: ApprovalAction!
+}
+input ResolveReconciliationItemInput {
+  externalId: String!
+  resolution: String!
+}
+input RevokeEventAccessInput {
+  accessId: ID!
+  reason: String
+}
+input SendNotificationInput {
+  userId: ID!
+  type: NotificationType!
+  title: String!
+  body: String!
+  imageUrl: String
+  actionUrl: String
+  data: JSON
+  channels: [NotificationChannel!]!
+  priority: String
+  scheduledAt: DateTime
+}
+input SetEventReminderInput {
+  ticketId: ID!
+  minutesBefore: Int!
+}
+input SetupTwoFactorInput {
+  method: TwoFactorMethod!
+  phoneNumber: String
+  email: String
+}
+input SocialAuthInput {
+  provider: SocialProvider!
+  accessToken: String!
+  idToken: String
+}
+input SocialLinksInput {
+  facebook: String
+  twitter: String
+  instagram: String
+  linkedin: String
+  youtube: String
+  tiktok: String
+}
+input StartReconciliationInput {
+  reconciliationDate: DateTime!
+  type: ReconciliationType!
+  dataSource: String
+  """
+  For ESCROW_JOURNAL reconciliation only:
+  If true, includes CLOSED and CANCELLED accounts in verification.
+  Default is false (only verifies OPEN accounts for better performance).
+  Use true for full audit purposes.
+  """
+  includeClosed: Boolean = false
+}
+input SubmitOrganizerApplicationInput {
+  organizerProfileId: ID!
+}
+input SuspendOrganizerInput {
+  organizerProfileId: ID!
+  reason: String!
+}
+input TicketFilterInput {
+  eventId: String
+  buyerId: String
+  organizerId: String
+  status: TicketStatus
+  statuses: [TicketStatus!]
+  category: String
+  purchaseDateAfter: DateTime
+  purchaseDateBefore: DateTime
+  searchQuery: String
+}
+input TicketPurchaseInput {
+  eventId: String!
+  ticketCategoryCode: String!
+  quantity: Int!
+  buyerName: String!
+  buyerEmail: String!
+  buyerPhone: String
+  paymentMethod: PaymentMethod!
+  paymentReference: String
+  correlationId: String!
+  amount: BigDecimal
+  currency: String
+  promoCode: String
+  metadata: JSON
+}
+input TicketSelectionInput {
+  ticketTierId: String!
+  quantity: Int!
+}
+input TransferOwnershipInput {
+  organizationId: ID!
+  newOwnerId: ID!
+  reason: String
+}
+input UpdateBankAccountInput {
+  accountHolderName: String
+  bankName: String
+  bankCode: String
+  branchName: String
+  branchCode: String
+  accountNumber: String
+  accountType: String
+  swiftCode: String
+  isDefault: Boolean
+}
+input UpdateCityInput {
+  name: String
+  code: String
+  provinceId: String
+  country: String
+  isActive: Boolean
+}
+input UpdateCoordinatesInput {
+  latitude: Float
+  longitude: Float
+}
+input UpdateEscrowAccountInput {
+  status: EscrowAccountStatus
+  lockUntil: DateTime
+  lockReason: String
+}
+input UpdateEventAccessInput {
+  accessId: ID!
+  newRole: EventRole
+  customPermissions: [String!]
+  expiresAt: DateTime
+}
+input UpdateEventCategoryInput {
+  name: String
+  code: String
+  description: String
+  iconUrl: String
+  color: String
+  sortOrder: Int
+  isActive: Boolean
+}
+input UpdateEventInput {
+  title: String
+  description: String
+  categoryId: String
+  eventDateTime: DateTime
+  endDateTime: DateTime
+  location: EventLocationInput
+  totalCapacity: Int
+  tags: [String!]
+  additionalInfo: JSON
+  bannerImageUrl: String
+  thumbnailImageUrl: String
+  galleryImages: [String!]
+  isVirtual: Boolean
+  isFreeEvent: Boolean
+  virtualEventUrl: String
+  virtualEventPlatform: String
+  refundPolicy: String
+  cancellationPolicy: String
+  termsAndConditions: String
+  enableWaitlist: Boolean
+  waitlistCapacity: Int
+  featured: Boolean
+}
+input UpdateMemberRoleInput {
+  organizationId: ID!
+  memberId: ID!
+  newRole: OrganizationRole!
+  customPermissions: [String!]
+  deniedPermissions: [String!]
+}
+input UpdateNotificationPreferencesInput {
+  emailEnabled: Boolean
+  smsEnabled: Boolean
+  whatsappEnabled: Boolean
+  pushEnabled: Boolean
+  inAppEnabled: Boolean
+  ticketNotifications: Boolean
+  eventReminders: Boolean
+  eventUpdates: Boolean
+  paymentNotifications: Boolean
+  teamNotifications: Boolean
+  marketingEmails: Boolean
+  systemAnnouncements: Boolean
+  reminderHoursBefore: Int
+  quietHoursStart: String
+  quietHoursEnd: String
+  timezone: String
+}
+input UpdateOrganizationInput {
+  name: String
+  description: String
+  logoUrl: String
+  bannerUrl: String
+}
+input UpdateOrganizationSettingsInput {
+  organizationId: ID!
+  defaultEventVisibility: String
+  requireEventApproval: Boolean
+  allowMembersToInvite: Boolean
+  inviteRequiresApproval: Boolean
+  maxTeamMembers: Int
+  managersCanRequestPayouts: Boolean
+  marketersCanViewFinancials: Boolean
+  notifyOwnerOnMemberJoin: Boolean
+  notifyOwnerOnEventCreated: Boolean
+  notifyOwnerOnPayoutRequest: Boolean
+}
+input UpdateOrganizerProfileInput {
+  companyName: String
+  companyDescription: String
+  tagline: String
+  logoUrl: String
+  bannerUrl: String
+  website: String
+  socialLinks: SocialLinksInput
+  taxId: String
+  businessRegistrationNumber: String
+  businessType: String
+  yearEstablished: Int
+  businessPhone: String
+  businessEmail: String
+  businessAddress: String
+  city: String
+  province: String
+  country: String
+  postalCode: String
+}
+input UpdatePlatformConfigurationInput {
+  approvalSlaHours: Int
+  approvalWarningThresholdHours: Int
+  autoEscalationEnabled: Boolean
+  escalationDelayHours: Int
+  escalationRecipientRole: String
+  escalationReminderIntervalHours: Int
+  maxEscalationReminders: Int
+  organizerNotificationChannel: ApprovalNotificationChannel
+  adminNotificationChannel: ApprovalNotificationChannel
+  sendSlaWarningNotifications: Boolean
+  sendEscalationNotifications: Boolean
+  requireCommentsOnRejection: Boolean
+  requireCommentsOnChangesRequested: Boolean
+  allowSelfApproval: Boolean
+}
+input UpdatePromoCodeInput {
+  discountType: DiscountType
+  discountValue: BigDecimal
+  maxUses: Int
+  validFrom: DateTime
+  validUntil: DateTime
+  minPurchaseAmount: BigDecimal
+  maxDiscountAmount: BigDecimal
+  applicableTiers: [String!]
+  isActive: Boolean
+}
+input UpdateProvinceInput {
+  name: String
+  code: String
+  country: String
+  isActive: Boolean
+}
+input UpdateTicketTierInput {
+  name: String
+  description: String
+  price: BigDecimal
+  quantity: Int
+  maxPerOrder: Int
+  minPerOrder: Int
+  benefits: [String!]
+  sortOrder: Int
+  salesStartAt: DateTime
+  salesEndAt: DateTime
+  earlyBirdPrice: BigDecimal
+  earlyBirdEndsAt: DateTime
+  isHidden: Boolean
+  accessCode: String
+  isActive: Boolean
+}
+input UpdateUserInput {
+  firstName: String
+  lastName: String
+  phoneNumber: String
+  avatarUrl: String
+  bio: String
+  dateOfBirth: DateTime
+  gender: String
+  locale: String
+  timezone: String
+}
+input UploadVerificationDocumentInput {
+  organizerProfileId: ID!
+  documentType: String!
+  documentUrl: String!
+  fileName: String
+  fileSize: Int
+  mimeType: String
+}
+input VerifyTwoFactorInput {
+  code: String!
+  method: TwoFactorMethod!
+}
+"Exposes a URL that specifies the behavior of this scalar."
+directive @specifiedBy(
+    "The URL that specifies the behavior of this scalar."
+    url: String!
+  ) on SCALAR
+directive @defer(label: String, if: Boolean! = true) on FRAGMENT_SPREAD | INLINE_FRAGMENT
+

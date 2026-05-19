@@ -1,0 +1,43 @@
+# =============================================================================
+# USER OPERATIONS
+# =============================================================================
+
+# User Profile Fragment
+fragment UserProfileFields on User {
+  id
+  username
+  email
+  phoneNumber
+  firstName
+  lastName
+  fullName
+  avatarUrl
+  bio
+  dateOfBirth
+  gender
+  locale
+  timezone
+  userType
+  accountStatus
+  emailVerified
+  phoneVerified
+  active
+}
+
+# =============================================================================
+# QUERIES
+# =============================================================================
+
+# Get current authenticated user
+query GetCurrentUser {
+  me {
+    ...UserProfileFields
+  }
+}
+
+# Get user by ID
+query GetUser($id: ID!) {
+  user(id: $id) {
+    ...UserProfileFields
+  }
+}

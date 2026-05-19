@@ -1,0 +1,74 @@
+# =============================================================================
+# Authorization Directive Schema
+# =============================================================================
+#
+# This schema defines the @auth directive for field-level authorization.
+# Import this into your service schemas or place in the graphql/ resources folder.
+#
+# Each service that uses @auth must include this schema definition.
+# The AuthDirective implementation handles the runtime authorization checks.
+#
+# =============================================================================
+
+"""
+Authorization roles for GraphQL operations.
+
+Role Hierarchy (higher roles include lower):
+- SUPER_ADMIN: Full system access
+- ADMIN: Platform administration (includes ORGANIZER, CUSTOMER)
+- FINANCE: Financial operations
+- ORGANIZER: Event management (includes CUSTOMER)
+- CUSTOMER: Ticket purchasing
+- AUTHENTICATED: Any logged-in user
+- PUBLIC: No authentication required
+- INTERNAL: Service-to-service calls only
+"""
+enum Role {
+    """No authentication required. Field/operation is publicly accessible."""
+    PUBLIC
+
+    """Any authenticated user can access. Requires valid JWT token."""
+    AUTHENTICATED
+
+    """Customer role - regular ticket buyers."""
+    CUSTOMER
+
+    """Organizer role - event creators and managers."""
+    ORGANIZER
+
+    """Admin role - platform administrators."""
+    ADMIN
+
+    """Super Admin role - highest privilege level."""
+    SUPER_ADMIN
+
+    """Finance role - financial operations access."""
+    FINANCE
+
+    """Internal service role - service-to-service communication only."""
+    INTERNAL
+}
+
+"""
+Authorization directive for field-level access control.
+
+Apply to queries, mutations, or individual fields to enforce role-based authorization.
+Operations without @auth are PUBLIC by default.
+
+Examples:
+  # Require authentication
+  myProfile: User @auth
+
+  # Require specific role
+  createEvent(input: CreateEventInput!): Event @auth(requires: ORGANIZER)
+
+  # Admin only
+  adminDashboard: Dashboard @auth(requires: ADMIN)
+
+  # Explicit public access (same as no @auth)
+  events: [Event!]! @auth(requires: PUBLIC)
+"""
+directive @auth(
+    """The minimum role required to access this field. Defaults to AUTHENTICATED."""
+    requires: Role = AUTHENTICATED
+) on FIELD_DEFINITION | OBJECT

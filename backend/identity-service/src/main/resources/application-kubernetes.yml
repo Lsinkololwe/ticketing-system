@@ -1,0 +1,24 @@
+# ============================================================================
+# KUBERNETES PROFILE CONFIGURATION
+# Identity Service - Production-ready K8s settings
+# ============================================================================
+# Activate with: SPRING_PROFILES_ACTIVE=kubernetes
+# ============================================================================
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.pml.identity: ${LOG_LEVEL:INFO}
+  pattern:
+    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","service":"${spring.application.name}","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}","correlationId":"%X{correlationId:-}","class":"%logger{36}","message":"%msg"}%n'
+
+management:
+  endpoint:
+    health:
+      show-details: when_authorized
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      connect-timeout: 5000ms

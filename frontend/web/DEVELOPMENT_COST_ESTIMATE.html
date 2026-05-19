@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Ticketing System - Development Cost Estimate</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Gilroy, Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1F2937;
+            background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .section h2 {
+            color: #8B5CF6;
+            border-bottom: 3px solid #8B5CF6;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .section h3 {
+            color: #7C3AED;
+            margin: 25px 0 15px 0;
+            font-size: 1.3em;
+        }
+        
+        .project-overview {
+            background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
+            padding: 30px;
+            border-radius: 10px;
+            border-left: 5px solid #8B5CF6;
+            margin-bottom: 30px;
+        }
+        
+        .tech-stack {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .tech-card {
+            background: linear-gradient(135deg, #F3E8FF 0%, #E9D5FF 100%);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #A78BFA;
+        }
+        
+        .tech-card h4 {
+            color: #8B5CF6;
+            margin-bottom: 10px;
+        }
+        
+        .cost-breakdown {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin: 20px 0;
+        }
+        
+        .cost-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .cost-item:last-child {
+            border-bottom: none;
+            font-weight: bold;
+            font-size: 1.2em;
+            color: #8B5CF6;
+            border-top: 2px solid #8B5CF6;
+            margin-top: 10px;
+            padding-top: 20px;
+        }
+        
+        .cost-description {
+            flex: 1;
+        }
+        
+        .cost-hours {
+            margin-right: 20px;
+            color: #6c757d;
+        }
+        
+        .cost-rate {
+            margin-right: 20px;
+            color: #495057;
+        }
+        
+        .cost-amount {
+            font-weight: bold;
+            color: #8B5CF6;
+            min-width: 120px;
+            text-align: right;
+        }
+        
+        .feature-list {
+            background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #10B981;
+        }
+        
+        .feature-list ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .feature-list li {
+            margin: 8px 0;
+        }
+        
+        .timeline {
+            background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #F59E0B;
+        }
+        
+        .timeline-item {
+            display: flex;
+            align-items: center;
+            margin: 15px 0;
+        }
+        
+        .timeline-phase {
+            background: #F59E0B;
+            color: #1F2937;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-right: 20px;
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        .timeline-duration {
+            color: #D97706;
+            font-weight: bold;
+            margin-right: 20px;
+            min-width: 80px;
+        }
+        
+        .timeline-description {
+            flex: 1;
+        }
+        
+        .payment-terms {
+            background: linear-gradient(135deg, #F3E8FF 0%, #E9D5FF 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #8B5CF6;
+        }
+        
+        .contact-info {
+            background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-top: 30px;
+        }
+        
+        .contact-info h3 {
+            color: white;
+            margin-bottom: 15px;
+        }
+        
+        .contact-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        
+        .contact-item {
+            display: flex;
+            align-items: center;
+        }
+        
+        .contact-item strong {
+            margin-right: 10px;
+            min-width: 80px;
+        }
+        
+        .highlight {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
+            margin: 15px 0;
+        }
+        
+        .total-cost {
+            background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 30px 0;
+            border: 2px solid #10B981;
+        }
+        
+        .total-cost h2 {
+            color: #059669;
+            margin-bottom: 10px;
+        }
+        
+        .total-amount {
+            font-size: 3em;
+            font-weight: bold;
+            color: #10B981;
+            margin: 20px 0;
+        }
+        
+        .currency {
+            font-size: 0.6em;
+            color: #6c757d;
+        }
+        
+        .disclaimer {
+            background: #FEF2F2;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #EF4444;
+            margin: 20px 0;
+            font-size: 0.9em;
+        }
+        
+        .disclaimer h4 {
+            color: #DC2626;
+            margin-bottom: 10px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .header, .content {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .tech-stack {
+                grid-template-columns: 1fr;
+            }
+            
+            .cost-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .cost-hours, .cost-rate, .cost-amount {
+                margin: 5px 0;
+            }
+            
+            .timeline-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .timeline-phase {
+                margin-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Event Ticketing System</h1>
+            <p>Comprehensive Development Cost Estimate</p>
+        </div>
+        
+        <div class="content">
+            <div class="section">
+                <div class="project-overview">
+                    <h2>📋 Project Overview</h2>
+                    <p><strong>Client:</strong> Prince Shamambo</p>
+                    <p><strong>Project:</strong> Comprehensive Event Ticketing Platform for Zambian Market</p>
+                    <p><strong>Developer:</strong> Lazarous Sinkololwe, Software Engineer</p>
+                    <p><strong>Date:</strong> <span id="currentDate"></span></p>
+                    <p><strong>Project Duration:</strong> 3 months</p>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🏗️ System Architecture</h2>
+                <div class="tech-stack">
+                    <div class="tech-card">
+                        <h4>Backend (Spring Boot)</h4>
+                        <ul>
+                            <li>Java 21 with Spring Boot 3.5.4</li>
+                            <li>MongoDB Database</li>
+                            <li>GraphQL API</li>
+                            <li>RESTful Services</li>
+                            <li>Microservices Architecture</li>
+                        </ul>
+                    </div>
+                    <div class="tech-card">
+                        <h4>Frontend (Next.js)</h4>
+                        <ul>
+                            <li>React 18 with Next.js 14</li>
+                            <li>TypeScript</li>
+                            <li>Tailwind CSS</li>
+                            <li>Material Tailwind Components</li>
+                            <li>Apollo GraphQL Client</li>
+                        </ul>
+                    </div>
+                    <div class="tech-card">
+                        <h4>Payment Integration</h4>
+                        <ul>
+                            <li>Mobile Money (MTN, Airtel, Zamtel)</li>
+                            <li>Card Payment Processing</li>
+                            <li>Bank Transfer Integration</li>
+                            <li>Escrow Account Management</li>
+                        </ul>
+                    </div>
+                    <div class="tech-card">
+                        <h4>Infrastructure</h4>
+                        <ul>
+                            <li>AWS/Azure Cloud Deployment</li>
+                            <li>Docker Containerization</li>
+                            <li>CI/CD Pipeline</li>
+                            <li>Monitoring & Logging</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🎯 Core Features</h2>
+                <div class="feature-list">
+                    <h3>User Management System</h3>
+                    <ul>
+                        <li>Multi-role user system (Organizers, Attendees, Admins, Super Admins)</li>
+                        <li>Email and SMS verification</li>
+                        <li>Profile management with file uploads</li>
+                        <li>Role-based access control</li>
+                        <li>Authentication & authorization</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-list">
+                    <h3>Event Management</h3>
+                    <ul>
+                        <li>Event creation wizard with templates</li>
+                        <li>48-hour approval workflow</li>
+                        <li>Multi-category ticket management (VVIP, VIP, Standard, Pre-Sale)</li>
+                        <li>Real-time inventory management</li>
+                        <li>Event analytics and reporting</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-list">
+                    <h3>Financial System</h3>
+                    <ul>
+                        <li>Escrow payment system</li>
+                        <li>Automated commission calculation</li>
+                        <li>Payout management with approval workflows</li>
+                        <li>Double-entry bookkeeping</li>
+                        <li>Transaction monitoring and reconciliation</li>
+                        <li>Financial reporting and analytics</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-list">
+                    <h3>Ticket Management</h3>
+                    <ul>
+                        <li>QR code generation and validation</li>
+                        <li>Real-time ticket sales</li>
+                        <li>Ticket transfer capabilities</li>
+                        <li>24-hour refund policy</li>
+                        <li>Event check-in system</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-list">
+                    <h3>Admin Dashboard</h3>
+                    <ul>
+                        <li>Comprehensive analytics dashboard</li>
+                        <li>Event approval management</li>
+                        <li>User management</li>
+                        <li>Financial oversight</li>
+                        <li>System configuration</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>💰 Development Cost Breakdown</h2>
+                <div class="cost-breakdown">
+                    <div class="cost-item">
+                        <div class="cost-description">
+                            <strong>Core Backend Development</strong>
+                            <br>• User management & authentication system
+                            <br>• Event management with approval workflow
+                            <br>• Ticket sales & inventory management
+                            <br>• Basic payment processing
+                            <br>• Admin dashboard APIs
+                            <br>• Database design & setup
+                        </div>
+                        <div class="cost-amount">ZMW 60,000</div>
+                    </div>
+                    
+                    <div class="cost-item">
+                        <div class="cost-description">
+                            <strong>Frontend Development</strong>
+                            <br>• User-facing ticketing application
+                            <br>• Admin dashboard interface
+                            <br>• Responsive design implementation
+                            <br>• Basic component library
+                            <br>• User experience optimization
+                        </div>
+                        <div class="cost-amount">ZMW 45,000</div>
+                    </div>
+                    
+                    <div class="cost-item">
+                        <div class="cost-description">
+                            <strong>Payment Gateway Integration</strong>
+                            <br>• Mobile money integration (MTN, Airtel, Zamtel)
+                            <br>• Card payment processing
+                            <br>• Basic escrow functionality
+                            <br>• Transaction monitoring
+                        </div>
+                        <div class="cost-amount">ZMW 35,000</div>
+                    </div>
+                    
+                    <div class="cost-item">
+                        <div class="cost-description">
+                            <strong>Security & Testing</strong>
+                            <br>• Authentication & authorization
+                            <br>• Data encryption
+                            <br>• API security
+                            <br>• Basic testing & bug fixes
+                        </div>
+                        <div class="cost-amount">ZMW 20,000</div>
+                    </div>
+                    
+                    <div class="cost-item">
+                        <div class="cost-description">
+                            <strong>Deployment & Infrastructure</strong>
+                            <br>• Cloud server setup
+                            <br>• Domain & SSL setup
+                            <br>• Basic monitoring
+                            <br>• Performance optimization
+                        </div>
+                        <div class="cost-amount">ZMW 25,000</div>
+                    </div>
+                    
+                    <div class="cost-item">
+                        <div class="cost-description">
+                            <strong>Documentation & Support</strong>
+                            <br>• Basic technical documentation
+                            <br>• User guides
+                            <br>• 1 month post-deployment support
+                        </div>
+                        <div class="cost-amount">ZMW 15,000</div>
+                    </div>
+                    
+                    <div class="cost-item">
+                        <div class="cost-description">
+                            <strong>TOTAL PROJECT COST</strong>
+                        </div>
+                        <div class="cost-amount">ZMW 200,000</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="total-cost">
+                <h2>Total Project Cost</h2>
+                <div class="total-amount">
+                    ZMW 200,000
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📅 Project Timeline (3 Months)</h2>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-phase">Month 1</div>
+                        <div class="timeline-duration">4 weeks</div>
+                        <div class="timeline-description">Backend development, database setup, and core APIs</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-phase">Month 2</div>
+                        <div class="timeline-duration">4 weeks</div>
+                        <div class="timeline-description">Frontend development, payment integration, and admin dashboard</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-phase">Month 3</div>
+                        <div class="timeline-duration">4 weeks</div>
+                        <div class="timeline-description">Testing, deployment, documentation, and final delivery</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>💳 Payment Terms</h2>
+                <div class="payment-terms">
+                    <h3>Payment Schedule</h3>
+                    <ul>
+                        <li><strong>Initial Payment (40%):</strong> ZMW 80,000 - Due upon project commencement <em>(Payment percentages are negotiable)</em></li>
+                        <li><strong>Mid-Project Payment (40%):</strong> ZMW 80,000 - Due after Month 2 completion</li>
+                        <li><strong>Final Payment (20%):</strong> ZMW 40,000 - Due upon project delivery and deployment</li>
+                    </ul>
+                    
+                    <h3>Payment Methods</h3>
+                    <ul>
+                        <li>Bank Transfer (Preferred)</li>
+                        <li>Mobile Money (MTN, Airtel)</li>
+                        <li>Cash (for final payment)</li>
+                    </ul>
+                    
+                    <h3>Additional Costs (Client Responsibility)</h3>
+                    <ul>
+                        <li><strong>Domain & SSL:</strong> ZMW 1,500/year</li>
+                        <li><strong>Cloud Hosting:</strong> ZMW 2,000-5,000/month (depending on usage)</li>
+                        <li><strong>Third-party Services:</strong> ZMW 500-2,000/month (payment gateways, monitoring)</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📋 What's Included</h2>
+                <div class="feature-list">
+                    <h3>Core System Delivery</h3>
+                    <ul>
+                        <li>Full-stack web application (Backend + Frontend)</li>
+                        <li>Admin dashboard for system management</li>
+                        <li>Mobile-responsive design</li>
+                        <li>Basic payment gateway integration</li>
+                        <li>Database design and implementation</li>
+                        <li>Essential security features</li>
+                        <li>Basic testing and bug fixes</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-list">
+                    <h3>Deployment & Infrastructure</h3>
+                    <ul>
+                        <li>Cloud server setup and configuration</li>
+                        <li>Domain setup and SSL certificates</li>
+                        <li>Basic monitoring setup</li>
+                        <li>Performance optimization</li>
+                        <li>Basic backup system</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-list">
+                    <h3>Documentation & Support</h3>
+                    <ul>
+                        <li>Basic technical documentation</li>
+                        <li>User guides</li>
+                        <li>Deployment instructions</li>
+                        <li>1 month post-deployment support</li>
+                        <li>Basic training session</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="disclaimer">
+                <h4>Important Notes</h4>
+                <ul>
+                    <li>This is a fixed-price project - no hourly billing</li>
+                    <li>This estimate is valid for 30 days from the date of issue</li>
+                    <li>Additional features or major changes may incur extra costs</li>
+                    <li><strong>Payment gateway integration costs and cloud hosting costs will be handled by the system owner (Prince Shamambo)</strong></li>
+                    <li>Timeline assumes timely client feedback and approval</li>
+                    <li>Scope focuses on core functionality to meet budget and timeline</li>
+                </ul>
+            </div>
+            
+            <div class="contact-info">
+                <h3>Contact Information</h3>
+                <div class="contact-details">
+                    <div class="contact-item">
+                        <strong>Developer:</strong> Lazarous Sinkololwe
+                    </div>
+                    <div class="contact-item">
+                        <strong>Title:</strong> Software Engineer
+                    </div>
+                    <div class="contact-item">
+                        <strong>Phone:</strong> +260 969944454
+                    </div>
+                    <div class="contact-item">
+                        <strong>Email:</strong> lsinkololwe@gmail.com
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Set current date
+        document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    </script>
+</body>
+</html>

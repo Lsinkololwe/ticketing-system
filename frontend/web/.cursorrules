@@ -1,0 +1,513 @@
+---
+applyTo: '**/*.{ts,tsx,js,jsx}'
+description: "Comprehensive secure coding instructions for Next.js/React frontend with OWASP Top 10 and industry best practices."
+---
+# PML.Tickets Frontend - Secure Coding Guidelines
+
+## Instructions
+
+Your primary directive is to ensure all code you generate, review, or refactor is secure by default. You must operate with a security-first mindset. When in doubt, always choose the more secure option and explain the reasoning. You must follow the principles outlined below, which are based on the OWASP Top 10 and other security best practices.
+
+## Technology Stack
+- **Frontend**: Next.js 16, React 19, TypeScript
+- **State Management**: React Context, Apollo Client
+- **Authentication**: JWT tokens with secure storage
+- **API**: GraphQL client with Apollo
+- **Architecture**: NX monorepo (apps/admin, apps/ticketing, libs/shared)
+- **Styling**: Tailwind CSS
+- **Testing**: Jest, React Testing Library
+
+## OWASP Security Guidelines - TypeScript/React/Next.js Adapted
+
+### 1. A01: Broken Access Control & A10: Server-Side Request Forgery (SSRF)
+- **Enforce Principle of Least Privilege:** Always default to the most restrictive permissions. Implement client-side route protection and API authorization checks.
+- **Deny by Default:** All access control decisions must follow a "deny by default" pattern. Access should only be granted if there is an explicit rule allowing it.
+- **Validate All Incoming URLs for SSRF:** When handling user-provided URLs in admin panels (e.g., webhook URLs, redirect URLs), treat them as untrusted and validate against allow-lists.
+- **Prevent Path Traversal:** When handling file uploads or file paths, sanitize input to prevent directory traversal attacks.
+
+```typescript
+// GOOD: Route protection with permission checks
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
+  children, 
+  requiredPermission, 
+  fallback 
+}) => {
+  const { hasPermission, isAuthenticated } = useAuth();
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  if (requiredPermission && !hasPermission(requiredPermission)) {
+    return fallback || <AccessDenied />;
+  }
+  
+  return <>{children}</>;
+};
+
+// GOOD: URL validation for admin inputs
+const validateWebhookUrl = (url: string): boolean => {
+  try {
+    const parsedUrl = new URL(url);
+    const allowedHosts = ['api.stripe.com', 'api.paypal.com', 'webhooks.example.com'];
+    const allowedPorts = [443, 80];
+    
+    return allowedHosts.includes(parsedUrl.hostname) && 
+           (allowedPorts.includes(Number(parsedUrl.port)) || parsedUrl.port === '');
+  } catch {
+    return false;
+  }
+};
+
+// BAD: No access control
+const AdminPanel = () => {
+  return <div>Admin content</div>; // Anyone can access
+};
+```
+
+### 2. A02: Cryptographic Failures
+- **Use Strong, Modern Algorithms:** For client-side hashing (if needed), use Web Crypto API with strong algorithms. Never use weak algorithms like MD5 or SHA-1.
+- **Protect Data in Transit:** Always use HTTPS for API calls. Configure Next.js to enforce HTTPS in production.
+- **Protect Data at Rest:** Store sensitive data (tokens, user data) securely using secure storage mechanisms. Never store sensitive data in localStorage without encryption.
+- **Secure Secret Management:** Never hardcode API keys or secrets in client-side code. Use environment variables with proper prefixes.
+
+```typescript
+// GOOD: Secure token storage
+class SecureTokenStorage {
+  private static readonly TOKEN_KEY = 'auth_token';
+  private static readonly USER_KEY = 'auth_user';
+  
+  static setToken(tokenData: TokenData): void {
+    try {
+      // Store with expiration and secure flags
+      const secureData = {
+        ...tokenData,
+        storedAt: Date.now()
+      };
+      localStorage.setItem(this.TOKEN_KEY, JSON.stringify(secureData));
+    } catch (error) {
+      console.error('Failed to store token securely:', error);
+    }
+  }
+  
+  static getToken(): TokenData | null {
+    try {
+      const stored = localStorage.getItem(this.TOKEN_KEY);
+      if (!stored) return null;
+      
+      const tokenData = JSON.parse(stored);
+      
+      // Check expiration
+      if (tokenData.expiresAt && Date.now() > tokenData.expiresAt) {
+        this.clearToken();
+        return null;
+      }
+      
+      return tokenData;
+    } catch {
+      this.clearToken();
+      return null;
+    }
+  }
+}
+
+// GOOD: Environment-based configuration
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+const GRAPHQL_ENDPOINT = `${API_BASE_URL}/graphql`;
+
+// BAD: Hardcoded secrets
+const API_KEY = "sk_live_this_is_very_bad_12345";
+```
+
+### 3. A03: Injection (XSS Prevention)
+- **Prevent Cross-Site Scripting (XSS):** Use React's automatic escaping by default. When using `dangerouslySetInnerHTML`, sanitize HTML with DOMPurify.
+- **Context-Aware Output Encoding:** Always use appropriate React methods for displaying user-controlled data.
+- **Content Security Policy:** Implement CSP headers to prevent XSS attacks.
+
+```typescript
+// GOOD: Safe rendering of user content
+const UserProfile: React.FC<{ user: User }> = ({ user }) => {
+  return (
+    <div>
+      <h1>{user.name}</h1> {/* Automatically escaped */}
+      <p>{user.bio}</p> {/* Automatically escaped */}
+    </div>
+  );
+};
+
+// GOOD: Safe HTML rendering with DOMPurify
+import DOMPurify from 'dompurify';
+
+const RichTextContent: React.FC<{ content: string }> = ({ content }) => {
+  const sanitizedContent = DOMPurify.sanitize(content, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li'],
+    ALLOWED_ATTR: []
+  });
+  
+  return (
+    <div 
+      dangerouslySetInnerHTML={{ __html: sanitizedContent }}
+    />
+  );
+};
+
+// BAD: Unsafe HTML rendering
+const UnsafeContent: React.FC<{ content: string }> = ({ content }) => {
+  return <div dangerouslySetInnerHTML={{ __html: content }} />; // Vulnerable to XSS
+};
+```
+
+### 4. A05: Security Misconfiguration & A06: Vulnerable Components
+- **Secure by Default Configuration:** Disable debug features in production. Use Next.js environment variables to manage configurations.
+- **Set Security Headers:** Configure Next.js to add essential security headers like `Content-Security-Policy`, `Strict-Transport-Security`, and `X-Content-Type-Options`.
+- **Use Up-to-Date Dependencies:** Always use the latest stable versions of React, Next.js, and other dependencies. Run `npm audit` to check for vulnerabilities.
+
+```typescript
+// GOOD: Next.js security configuration
+// next.config.js
+const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;",
+          },
+        ],
+      },
+    ];
+  },
+};
+
+// GOOD: Environment-based configuration
+const isDevelopment = process.env.NODE_ENV === 'development';
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction) {
+  // Disable debug features
+  console.log = () => {};
+}
+```
+
+### 5. A07: Identification & Authentication Failures
+- **Secure Session Management:** Implement secure token storage with proper expiration handling. Use HttpOnly cookies when possible.
+- **Protect Against Brute Force:** Implement client-side rate limiting for login attempts and password reset requests.
+- **Secure Token Handling:** Validate JWT tokens properly, check expiration, and implement token refresh mechanisms.
+
+```typescript
+// GOOD: Secure authentication context
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const login = async (email: string, password: string) => {
+    try {
+      setIsLoading(true);
+      
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Login failed');
+      }
+
+      const data = await response.json();
+      
+      // Store token securely
+      SecureTokenStorage.setToken({
+        token: data.token,
+        expiresAt: Date.now() + (data.expiresIn * 1000),
+        issuedAt: Date.now(),
+      });
+      
+      setUser(data.user);
+      setToken(data.token);
+      
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = () => {
+    SecureTokenStorage.clearAll();
+    setUser(null);
+    setToken(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+```
+
+### 6. A08: Software and Data Integrity Failures
+- **Prevent Insecure Deserialization:** Use TypeScript's type system to validate data structures. Implement proper type guards for API responses.
+- **Secure State Management:** Use immutable state updates and validate data before storing in state.
+
+```typescript
+// GOOD: Type-safe API responses
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  error?: string;
+}
+
+const fetchUserData = async (userId: string): Promise<User> => {
+  const response = await fetch(`/api/users/${userId}`);
+  const result: ApiResponse<User> = await response.json();
+  
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to fetch user data');
+  }
+  
+  // Validate the response data
+  if (!isValidUser(result.data)) {
+    throw new Error('Invalid user data received');
+  }
+  
+  return result.data;
+};
+
+// Type guard for validation
+const isValidUser = (data: any): data is User => {
+  return data && 
+         typeof data.id === 'string' &&
+         typeof data.email === 'string' &&
+         typeof data.name === 'string';
+};
+```
+
+## TypeScript/React-Specific Secure Coding
+
+### Type Safety for Security
+- Use TypeScript's strict mode and enable all security-related compiler options
+- Implement proper type guards for runtime validation
+- Use branded types for sensitive data (e.g., `type UserId = string & { __brand: 'UserId' }`)
+
+### Form Validation
+- Implement client-side validation with proper error handling
+- Use libraries like Zod or Yup for schema validation
+- Always validate on both client and server side
+
+### GraphQL Client Security
+- Sanitize GraphQL queries to prevent injection
+- Implement query depth limiting
+- Use prepared queries instead of dynamic query building
+
+### Secure State Management
+- Use immutable state updates
+- Implement proper error boundaries
+- Validate data before storing in state
+
+## Project-Specific Patterns
+
+### NX Monorepo Structure
+- Follow the existing structure: `apps/admin`, `apps/ticketing`, `libs/shared`
+- Use shared libraries for common security utilities
+- Implement proper dependency management between apps
+
+### GraphQL Client Patterns
+- Use Apollo Client with proper error handling
+- Implement query caching with security considerations
+- Use GraphQL subscriptions securely
+
+### Authentication Context Usage
+- Use the existing `AuthContext` pattern
+- Implement proper permission checking
+- Handle token refresh automatically
+
+### Protected Route Implementation
+- Use the existing `ProtectedRoute` component
+- Implement role-based access control
+- Handle authentication state properly
+
+## Code Examples
+
+### Secure Form Component
+```typescript
+import { z } from 'zod';
+
+const loginSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
+
+const LoginForm: React.FC = () => {
+  const { login } = useAuth();
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (data: LoginFormData) => {
+    try {
+      setIsSubmitting(true);
+      setErrors({});
+      
+      // Validate on client side
+      const validatedData = loginSchema.parse(data);
+      
+      await login(validatedData.email, validatedData.password);
+      
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const fieldErrors: Record<string, string> = {};
+        error.errors.forEach((err) => {
+          if (err.path[0]) {
+            fieldErrors[err.path[0] as string] = err.message;
+          }
+        });
+        setErrors(fieldErrors);
+      } else {
+        setErrors({ general: 'Login failed. Please try again.' });
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* Form fields with proper validation */}
+    </form>
+  );
+};
+```
+
+### Secure API Client
+```typescript
+class SecureApiClient {
+  private baseURL: string;
+  private token: string | null = null;
+
+  constructor(baseURL: string) {
+    this.baseURL = baseURL;
+  }
+
+  setToken(token: string | null) {
+    this.token = token;
+  }
+
+  async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = `${this.baseURL}${endpoint}`;
+    
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (this.token) {
+      headers.Authorization = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        // Handle unauthorized - clear token and redirect
+        this.setToken(null);
+        window.location.href = '/login';
+        throw new Error('Unauthorized');
+      }
+      throw new Error(`API request failed: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+}
+```
+
+### Secure GraphQL Client
+```typescript
+import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client';
+import { setContext } from '@apollo/client/link/context';
+
+const httpLink = createHttpLink({
+  uri: process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT,
+});
+
+const authLink = setContext((_, { headers }) => {
+  const token = SecureTokenStorage.getToken()?.token;
+  
+  return {
+    headers: {
+      ...headers,
+      authorization: token ? `Bearer ${token}` : '',
+    },
+  };
+});
+
+const client = new ApolloClient({
+  link: authLink.concat(httpLink),
+  cache: new InMemoryCache({
+    typePolicies: {
+      Query: {
+        fields: {
+          // Implement proper cache policies for security
+        },
+      },
+    },
+  }),
+  defaultOptions: {
+    watchQuery: {
+      errorPolicy: 'all',
+    },
+    query: {
+      errorPolicy: 'all',
+    },
+  },
+});
+```
+
+## General Guidelines
+- **Be Explicit About Security:** When you suggest code that mitigates a security risk, explicitly state what you are protecting against.
+- **Educate During Code Reviews:** When you identify a security vulnerability, provide the corrected code and explain the risk associated with the original pattern.
+- **Follow React/Next.js Best Practices:** Use React's built-in security features and follow the framework's recommended patterns.
+- **Implement Defense in Depth:** Use multiple layers of security (authentication, authorization, input validation, output encoding).
+- **Log Security Events:** Implement proper logging for security-related events without exposing sensitive information.
+
+## File Organization
+- Components in `components/` directory
+- Hooks in `hooks/` directory
+- Utilities in `lib/` directory
+- Types in `types/` directory
+- Context providers in `contexts/` directory
+- API clients in `lib/api/` directory
+
+## Development Workflow
+- Always run tests before committing
+- Use TypeScript strict mode
+- Follow the existing patterns for new features
+- Consider the NX monorepo structure when adding new functionality
+- Run security scans on dependencies regularly
+- Use proper linting and formatting tools

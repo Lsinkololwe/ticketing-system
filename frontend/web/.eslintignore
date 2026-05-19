@@ -1,0 +1,17 @@
+# Cursor rules
+.cursorrules
+**/.cursorrules
+**/.cursorrules/**
+**/.cursorrules*
+
+# Build outputs
+dist/
+build/
+out/
+
+# Dependencies
+node_modules/
+
+# Cache
+.nx/
+.cache/

@@ -1,0 +1,280 @@
+# =============================================================================
+# EVENT OPERATIONS
+# =============================================================================
+
+# Ticket Tier Fragment (needed by Event)
+fragment TicketTierFields on TicketTier {
+  id
+  eventId
+  code
+  name
+  description
+  price
+  originalPrice
+  currency
+  maxPerOrder
+  minPerOrder
+  benefits
+  salesStartAt
+  salesEndAt
+  earlyBirdPrice
+  earlyBirdEndsAt
+  availableQuantity
+  quantity
+  soldQuantity
+  sortOrder
+}
+
+# Category Fragment (used by Event)
+fragment CategoryFields on EventCategory {
+  id
+  name
+  code
+  description
+  iconUrl
+  color
+  sortOrder
+  eventCount
+  isActive
+}
+
+# Event Card Fragment - for list displays
+fragment EventCardFields on Event {
+  id
+  title
+  description
+  eventDateTime
+  endDateTime
+  bannerImageUrl
+  locationName
+  locationAddress
+  cityName
+  organizerName
+  status
+  published
+  soldOut
+  minTicketPrice
+  maxTicketPrice
+  currency
+  ticketsAvailable
+  availableTickets
+  totalCapacity
+  category {
+    ...CategoryFields
+  }
+}
+
+# Event Detail Fragment - for detail page
+fragment EventDetailFields on Event {
+  id
+  title
+  description
+  eventDateTime
+  endDateTime
+  bannerImageUrl
+  locationName
+  locationAddress
+  cityName
+  organizerName
+  organizerEmail
+  organizerPhone
+  status
+  published
+  soldOut
+  minTicketPrice
+  maxTicketPrice
+  currency
+  ticketsAvailable
+  availableTickets
+  soldTickets
+  totalCapacity
+  salesPercentage
+  accessibility {
+    wheelchairAccessible
+    wheelchairSeatsAvailable
+    signLanguageInterpreter
+    hearingLoopAvailable
+    accessibleParking
+    accessibleRestrooms
+    assistanceDogsAllowed
+    additionalNotes
+  }
+  category {
+    ...CategoryFields
+  }
+  location {
+    id
+    name
+    address
+    city
+    province
+    country
+    coordinates {
+      latitude
+      longitude
+    }
+  }
+  ticketTiers {
+    ...TicketTierFields
+  }
+}
+
+# =============================================================================
+# QUERIES
+# =============================================================================
+
+# Get single event by ID
+query GetEvent($id: ID!) {
+  event(id: $id) {
+    ...EventDetailFields
+  }
+}
+
+# Get featured events (cursor pagination)
+query GetFeaturedEvents($first: Int, $after: String) {
+  featuredEventsCursorPagination(pagination: { first: $first, after: $after }) {
+    edges {
+      node {
+        ...EventCardFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}
+
+# Get upcoming events (cursor pagination)
+query GetUpcomingEvents($first: Int, $after: String) {
+  upcomingEventsCursorPagination(pagination: { first: $first, after: $after }) {
+    edges {
+      node {
+        ...EventCardFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}
+
+# Get events by category (cursor pagination)
+query GetEventsByCategory($categoryId: String!, $first: Int, $after: String) {
+  eventsByCategoryCursorPagination(
+    categoryId: $categoryId
+    pagination: { first: $first, after: $after }
+  ) {
+    edges {
+      node {
+        ...EventCardFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}
+
+# Search events (cursor pagination)
+query SearchEvents($query: String!, $first: Int, $after: String) {
+  searchEventsCursorPagination(
+    query: $query
+    pagination: { first: $first, after: $after }
+  ) {
+    edges {
+      node {
+        ...EventCardFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}
+
+# Discover events with filters (cursor pagination)
+query DiscoverEvents(
+  $searchQuery: String
+  $categoryId: String
+  $categoryIds: [String!]
+  $cityName: String
+  $startDate: DateTime
+  $endDate: DateTime
+  $minPrice: BigDecimal
+  $maxPrice: BigDecimal
+  $isFreeEvent: Boolean
+  $hasAvailableTickets: Boolean
+  $isFeatured: Boolean
+  $first: Int
+  $after: String
+) {
+  discoverEvents(
+    filter: {
+      searchQuery: $searchQuery
+      categoryId: $categoryId
+      categoryIds: $categoryIds
+      cityName: $cityName
+      startDate: $startDate
+      endDate: $endDate
+      minPrice: $minPrice
+      maxPrice: $maxPrice
+      isFreeEvent: $isFreeEvent
+      hasAvailableTickets: $hasAvailableTickets
+      isFeatured: $isFeatured
+    }
+    pagination: { first: $first, after: $after }
+  ) {
+    edges {
+      node {
+        ...EventCardFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}
+
+# Get free events (cursor pagination)
+query GetFreeEvents($first: Int, $after: String) {
+  freeEventsCursorPagination(pagination: { first: $first, after: $after }) {
+    edges {
+      node {
+        ...EventCardFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}

@@ -1,0 +1,75 @@
+# =============================================================================
+# RESERVATION OPERATIONS
+# =============================================================================
+
+# Reservation Item Fragment
+fragment ReservationItemFields on ReservationItem {
+  ticketTierId
+  tierName
+  quantity
+  unitPrice
+  subtotal
+}
+
+# Reservation Fragment
+fragment ReservationFields on TicketReservation {
+  id
+  userId
+  eventId
+  status
+  totalAmount
+  currency
+  expiresAt
+  remainingSeconds
+  promoCodeApplied
+  discountAmount
+  createdAt
+  updatedAt
+  items {
+    ...ReservationItemFields
+  }
+}
+
+# =============================================================================
+# QUERIES
+# =============================================================================
+
+# Get reservation by ID
+query GetReservation($id: ID!) {
+  reservation(id: $id) {
+    ...ReservationFields
+  }
+}
+
+# Get my active reservations
+query GetMyActiveReservations($userId: ID!) {
+  myActiveReservations(userId: $userId) {
+    ...ReservationFields
+  }
+}
+
+# =============================================================================
+# MUTATIONS
+# =============================================================================
+
+# Reserve tickets (hold before payment)
+mutation ReserveTickets($input: ReserveTicketsInput!) {
+  reserveTickets(input: $input) {
+    ...ReservationFields
+  }
+}
+
+# Cancel reservation
+mutation CancelReservation($reservationId: ID!) {
+  cancelReservation(reservationId: $reservationId)
+}
+
+# Extend reservation
+mutation ExtendReservation($reservationId: ID!, $minutes: Int!) {
+  extendReservation(reservationId: $reservationId, minutes: $minutes) {
+    id
+    expiresAt
+    remainingSeconds
+    status
+  }
+}

@@ -1,0 +1,2800 @@
+# ============================================================================
+# BOOKING SERVICE - GraphQL Federation 2 Subgraph Schema
+# ============================================================================
+#
+# This service is the OWNER of Ticket, Payment, and Financial entities.
+# It manages everything related to ticket purchases, payments, and refunds.
+#
+# FEDERATION CONCEPTS USED:
+# - @key: Marks Ticket as a federated entity
+# - @external: References fields owned by other services
+# - @requires: Declares dependencies on external fields for computed values
+# - @provides: Optimization hint for fields we can provide from cached data
+# - @shareable: Allows sharing of certain fields
+# - @tag: Client-specific schema filtering for code generation
+#
+# OWNERSHIP:
+# - Ticket (primary owner)
+# - PaymentAttempt, EventEscrowAccount, RefundRequest (exclusive)
+# - JournalEntry for double-entry bookkeeping records
+# - PayoutRequest, BankAccount (exclusive)
+# - TicketReservation, PromoCode (exclusive)
+#
+# TYPE EXTENSIONS (We ADD fields to types owned by other services):
+# - Event: We add tickets, ticketsSold, revenue, soldOut, ticketsAvailable
+# - User: We add purchasedTickets, totalSpent
+#
+# SCHEMA ORGANIZATION:
+# 1. Federation directives & Scalars
+# 2. Enums
+# 3. Entity stubs & extensions
+# 4. Primary types (Ticket, Financial, Escrow, etc.)
+# 5. Feature types (Reservation, PromoCode)
+# 6. Supporting types
+# 7. Statistics types
+# 8. Pagination types
+# 9. Input types
+# 10. Mutation response types
+# 11. Subscription payload types
+# 12. Query type (bottom)
+# 13. Mutation type (bottom)
+# 14. Subscription type (very bottom)
+#
+# ============================================================================
+# CLIENT-SPECIFIC TAGGING STRATEGY
+# ============================================================================
+# This schema uses @tag directives for operation-based code generation.
+# Tags indicate which client types should include specific fields/operations:
+#
+# - (no tag) = PUBLIC - Available to all clients
+# - @tag(name: "mobile") = Mobile app consumer features
+# - @tag(name: "organizer") = Organizer dashboard features
+# - @tag(name: "admin") = Platform administrator features
+# - @tag(name: "internal") = Service-to-service communication only
+#
+# BOOKING SERVICE TAGGING PRINCIPLES:
+# - Ticket purchase flow → mobile
+# - Ticket/payment management → organizer (own events), admin (all events)
+# - Financial reporting/escrow → admin
+# - Statistics → admin (platform-wide), organizer (own events)
+# ============================================================================
+
+# ============================================================================
+# SECTION 1: FEDERATION 2 SCHEMA EXTENSION
+# ============================================================================
+extend schema @link(
+    url: "https://specs.apollo.dev/federation/v2.9",
+    import: ["@key", "@shareable", "@external", "@requires", "@provides", "@extends", "@inaccessible", "@tag"]
+)
+
+# ============================================================================
+# SECTION 1.1: AUTHORIZATION DIRECTIVE
+# ============================================================================
+# Role enum and @auth directive are defined in shared-library/auth.graphqls
+# and automatically loaded. Use @auth(requires: ROLE) on operations.
+# ============================================================================
+
+# ============================================================================
+# SECTION 2: CUSTOM SCALARS
+# ============================================================================
+scalar DateTime
+scalar BigDecimal
+scalar JSON
+
+# ============================================================================
+# SECTION 3: ENUMS
+# ============================================================================
+
+# Ticket lifecycle status
+enum TicketStatus {
+    PENDING_PAYMENT    # Ticket reserved, awaiting payment
+    PURCHASED          # Payment received
+    CONFIRMED          # Ticket confirmed and issued
+    VALIDATED          # Scanned/checked at venue
+    USED               # Fully used (for multi-entry tickets)
+    EXPIRED            # Past event date, never used
+    CANCELLED          # Cancelled before event
+    REFUNDED           # Refund processed
+    PAYMENT_FAILED     # Payment attempt failed
+    REFUND_PENDING     # Queued for refund (e.g., event cancelled)
+}
+
+# Ticket category (shared value type with Catalog Service)
+enum TicketCategory {
+    GENERAL
+    PRE_SALE
+    VIP
+    VVIP
+    PREMIUM
+    EARLY_BIRD
+    STUDENT
+    SENIOR
+    GROUP
+    CORPORATE
+    SPONSOR
+    FREE
+}
+
+# Financial transaction status
+enum TransactionStatus {
+    PENDING
+    PROCESSING
+    COMPLETED
+    FAILED
+    CANCELLED
+    REVERSED
+    ROLLED_BACK
+    FULFILLED
+    RETRYING
+    TIMED_OUT
+    PENDING_VERIFICATION
+}
+
+# Transaction issue types for recovery operations
+enum TransactionIssueType @tag(name: "admin") {
+    PAYMENT_TIMEOUT           # Payment gateway timeout
+    WEBHOOK_MISSED            # Callback not received
+    AMOUNT_MISMATCH           # Payment amount doesn't match expected
+    DUPLICATE_TRANSACTION     # Potential duplicate detected
+    PROVIDER_ERROR            # Payment provider returned error
+    NETWORK_FAILURE           # Network communication failure
+    VALIDATION_FAILURE        # Transaction validation failed
+    MANUAL_REVIEW_REQUIRED    # Flagged for manual review
+    RECONCILIATION_NEEDED     # Needs reconciliation with external system
+    OTHER                     # Other unclassified issue
+}
+
+# How transaction issues are resolved
+enum TransactionResolutionType @tag(name: "admin") {
+    AUTO_RESOLVED             # System automatically resolved
+    MANUAL_APPROVAL           # Admin manually approved
+    MANUAL_REJECTION          # Admin manually rejected
+    RETRIED_SUCCESS           # Successfully retried
+    REFUNDED                  # Refunded to customer
+    WRITTEN_OFF               # Written off as loss
+    RECONCILED                # Reconciled with external system
+    ESCALATED                 # Escalated to higher authority
+}
+
+# Review status for transactions requiring attention
+enum TransactionReviewStatus @tag(name: "admin") {
+    NONE                      # No review needed
+    PENDING_REVIEW            # Waiting for review
+    UNDER_REVIEW              # Currently being reviewed
+    REVIEWED                  # Review completed
+    ESCALATED                 # Escalated for higher review
+}
+
+# Payment methods supported
+enum PaymentMethod {
+    MOBILE_MONEY       # MTN, Airtel, Zamtel
+    CARD               # Visa, Mastercard
+    BANK_TRANSFER      # Direct bank transfer
+}
+
+# Refund request status
+enum RefundRequestStatus {
+    PENDING
+    APPROVED
+    PROCESSING
+    COMPLETED
+    REJECTED
+    FAILED
+    CANCELLED
+}
+
+# How the refund was initiated
+enum RefundRequestType {
+    USER_REQUESTED
+    ADMIN_INITIATED
+    SYSTEM_AUTOMATIC
+    EVENT_CANCELLED
+    TICKET_EXPIRED
+}
+
+# Escrow account status
+enum EscrowAccountStatus {
+    CREATED
+    ACTIVE
+    LOCKED
+    PAYOUT_ELIGIBLE
+    PROCESSING_PAYOUT
+    CLOSED
+    CANCELLED
+}
+
+# Payout request status
+enum PayoutRequestStatus {
+    PENDING
+    APPROVED
+    PROCESSING
+    COMPLETED
+    FAILED
+    REJECTED
+    CANCELLED
+}
+
+# Payout method types
+enum PayoutMethod {
+    BANK_TRANSFER
+    MOBILE_MONEY
+    CHEQUE
+}
+
+# Payout issue types for recovery operations
+enum PayoutIssueType @tag(name: "admin") {
+    BANK_REJECTED             # Bank rejected the payout
+    INVALID_ACCOUNT_DETAILS   # Account details are invalid
+    INSUFFICIENT_ESCROW       # Not enough funds in escrow
+    COMPLIANCE_HOLD           # Held for compliance review
+    SUSPECTED_FRAUD           # Flagged for potential fraud
+    TECHNICAL_ERROR           # Technical failure during processing
+    PROVIDER_ERROR            # Payment provider error
+    TIMEOUT                   # Payout processing timed out
+    DUPLICATE_REQUEST         # Potential duplicate payout
+    OTHER                     # Other unclassified issue
+}
+
+# How payout issues are resolved
+enum PayoutResolutionType @tag(name: "admin") {
+    AUTO_RESOLVED             # System automatically resolved
+    MANUAL_APPROVAL           # Admin manually approved
+    MANUAL_REJECTION          # Admin manually rejected
+    RETRIED_SUCCESS           # Successfully retried
+    ACCOUNT_UPDATED           # Bank account details corrected
+    REFUNDED_TO_ESCROW        # Amount returned to escrow
+    WRITTEN_OFF               # Written off as loss
+    ESCALATED                 # Escalated to higher authority
+}
+
+# Review status for payout requests requiring attention
+enum PayoutReviewStatus @tag(name: "admin") {
+    NONE                      # No review needed
+    PENDING_REVIEW            # Waiting for review
+    UNDER_REVIEW              # Currently being reviewed
+    REVIEWED                  # Review completed
+    ESCALATED                 # Escalated for higher review
+}
+
+# Reservation status
+enum ReservationStatus {
+    ACTIVE
+    CONVERTED
+    EXPIRED
+    CANCELLED
+}
+
+# Promo code discount type
+enum DiscountType {
+    PERCENTAGE
+    FIXED_AMOUNT
+}
+
+# Time unit for reporting
+enum TimeUnit {
+    HOUR
+    DAY
+    WEEK
+    MONTH
+}
+
+# Export format
+enum ExportFormat {
+    CSV
+    PDF
+    EXCEL
+    JSON
+}
+
+# ============================================================================
+# FINANCIAL ENGINE ENUMS (Double-Entry Bookkeeping)
+# ============================================================================
+
+# Primary account classification in Chart of Accounts
+enum AccountType @tag(name: "admin") {
+    ASSET
+    LIABILITY
+    EQUITY
+    REVENUE
+    EXPENSE
+}
+
+# Detailed account sub-classification
+enum AccountSubType @tag(name: "admin") {
+    BANK_ACCOUNT
+    GATEWAY_RECEIVABLE
+    COMMISSION_RECEIVABLE
+    CHARGEBACK_RECEIVABLE
+    ESCROW_PAYABLE
+    PAYOUTS_PAYABLE
+    REFUNDS_PAYABLE
+    TAX_PAYABLE
+    FEES_PAYABLE
+    DEFERRED_REVENUE
+    RETAINED_EARNINGS
+    RESERVE
+    COMMISSION_REVENUE
+    FEE_REVENUE
+    GATEWAY_FEES
+    CHARGEBACK_LOSS
+    CHARGEBACK_FEES
+    BAD_DEBT
+}
+
+# Normal balance direction for accounts
+enum BalanceDirection @tag(name: "admin") {
+    DEBIT
+    CREDIT
+}
+
+# Journal entry type
+enum JournalEntryType @tag(name: "admin") {
+    STANDARD
+    ADJUSTMENT
+    REVERSAL
+}
+
+# Journal entry lifecycle status
+enum JournalEntryStatus @tag(name: "admin") {
+    DRAFT
+    POSTED
+    REVERSED
+}
+
+# Reconciliation type
+enum ReconciliationType @tag(name: "admin") {
+    GATEWAY
+    BANK
+    ESCROW
+    ESCROW_JOURNAL
+}
+
+# Escrow-Journal verification status
+enum EscrowJournalVerificationStatus @tag(name: "admin") {
+    CONSISTENT                # Balances match
+    BALANCE_MISMATCH          # Both exist but balances don't match
+    MISSING_JOURNAL_ACCOUNT   # Escrow exists but no journal account
+    ORPHANED_JOURNAL_ACCOUNT  # Journal account exists but no escrow
+    NOT_FOUND                 # Neither exists for this event
+}
+
+# Reconciliation run status
+enum ReconciliationStatus @tag(name: "admin") {
+    RUNNING
+    COMPLETED
+    REQUIRES_REVIEW
+    FAILED
+}
+
+# Reconciliation item matching status
+enum ReconciliationItemStatus @tag(name: "admin") {
+    MATCHED
+    UNMATCHED_EXTERNAL
+    UNMATCHED_INTERNAL
+    AMOUNT_MISMATCH
+}
+
+# Chargeback reason categories
+enum ChargebackReason @tag(name: "admin") {
+    FRAUD
+    NOT_RECEIVED
+    NOT_AS_DESCRIBED
+    DUPLICATE
+    CANCELLED
+    OTHER
+}
+
+# Chargeback lifecycle status
+enum ChargebackStatus @tag(name: "admin") {
+    RECEIVED
+    UNDER_REVIEW
+    ACCEPTED
+    DISPUTED
+    WON
+    LOST
+}
+
+# Chargeback recovery status
+enum RecoveryStatus @tag(name: "admin") {
+    NOT_STARTED
+    IN_PROGRESS
+    RECOVERED
+    WRITTEN_OFF
+}
+
+# Source of chargeback recovery funds
+enum ChargebackFundSource @tag(name: "admin") {
+    ORGANIZER_ESCROW
+    ORGANIZER_FUTURE
+    PLATFORM_RESERVE
+    WRITE_OFF
+}
+
+# Platform account types
+enum PlatformAccountType @tag(name: "admin") {
+    OPERATING
+    RESERVE
+    TAX_HOLDING
+}
+
+# Payment Attempt Status - Tracks the lifecycle of a payment operation
+# Used by PaymentAttempt to track PawaPay mobile money payment lifecycle
+enum PaymentAttemptStatus @tag(name: "admin") {
+    CREATED                # Record created, PawaPay API not yet called
+    PENDING_APPROVAL       # PawaPay accepted, waiting for customer to approve on phone
+    PROCESSING             # PawaPay is processing the payment
+    CONFIRMED              # Payment confirmed by PawaPay, ready for fulfillment
+    COMPLETED              # Fulfillment done (escrow credited, commission created, journal posted)
+    FAILED                 # Payment failed (customer declined, insufficient funds, etc.)
+    REJECTED               # PawaPay rejected our request (invalid phone, unsupported provider)
+    EXPIRED                # 15-minute timeout reached without confirmation
+    CANCELLED              # Cancelled by user or system
+}
+
+# ============================================================================
+# SECTION 4: ENTITY STUBS (Owned by other services)
+# ============================================================================
+
+# User stub - owned by Identity Service
+# Includes fields we can @provides from cached Ticket buyer data
+# NOTE: @external field types MUST match the owning service (identity)
+type User @key(fields: "id", resolvable: false) {
+    id: ID!
+    # These fields can be provided from Ticket's cached buyer data
+    # Types must match identity-service: fullName!, email!, phoneNumber (nullable)
+    fullName: String! @external
+    email: String! @external
+    phoneNumber: String @external
+}
+
+# Event stub - owned by Catalog Service
+type Event @key(fields: "id", resolvable: false) {
+    id: ID!
+}
+
+# ============================================================================
+# SECTION 5: ENTITY EXTENSIONS
+# These fields are added to types owned by other services
+# ============================================================================
+
+# User extension - add booking-related fields
+extend type User @key(fields: "id") {
+    # MOBILE - Customer's purchased tickets (my tickets list)
+    purchasedTickets: [Ticket!]! @tag(name: "mobile")
+    # ORGANIZER/ADMIN - Financial tracking for customer spending
+    totalSpent: BigDecimal! @tag(name: "organizer") @tag(name: "admin")
+    # MOBILE - Quick count for my tickets badge
+    activeTicketCount: Int! @tag(name: "mobile")
+}
+
+# Event extension - add ticket/sales-related fields
+extend type Event @key(fields: "id") {
+    # External fields from Catalog Service (needed for computation)
+    totalCapacity: Int! @external
+    title: String! @external
+    eventDateTime: DateTime! @external
+    organizerId: String! @external
+
+    # ORGANIZER/ADMIN - Full ticket list for event management
+    tickets: [Ticket!]! @tag(name: "organizer") @tag(name: "admin")
+    # ORGANIZER/ADMIN - Sales metrics for dashboard
+    ticketsSold: Int! @tag(name: "organizer") @tag(name: "admin")
+    revenue: BigDecimal! @tag(name: "organizer") @tag(name: "admin")
+
+    # PUBLIC - Availability info displayed on event listings
+    ticketsAvailable: Int! @requires(fields: "totalCapacity")
+    soldOut: Boolean! @shareable @requires(fields: "totalCapacity")
+    # ORGANIZER/ADMIN - Sales percentage for performance tracking
+    salesPercentage: Float! @requires(fields: "totalCapacity") @tag(name: "organizer") @tag(name: "admin")
+}
+
+# ============================================================================
+# SECTION 6: PRIMARY TYPES
+# ============================================================================
+
+# ------------------------------
+# TICKET (Primary Entity)
+# Core booking entity - different fields exposed to different clients
+# ------------------------------
+type Ticket @key(fields: "id") {
+    # ---------------------------------------------------------------------------
+    # PUBLIC FIELDS - Available to all clients including mobile
+    # Core ticket identification and display information
+    # ---------------------------------------------------------------------------
+    id: ID!
+    ticketNumber: String!
+
+    # Event reference - public for ticket display
+    event: Event! @provides(fields: "title eventDateTime organizerId")
+    eventId: String!
+
+    # Buyer reference - only own buyer sees full details
+    # @provides optimization: We cache buyer name/email/phone on Ticket for display
+    buyer: User! @provides(fields: "fullName email phoneNumber")
+    # ORGANIZER/ADMIN - Buyer ID for attendee management (privacy protection)
+    buyerId: String! @tag(name: "organizer") @tag(name: "admin")
+
+    # INTERNAL - Organizer and Organization IDs for multi-tenant tracking
+    # Used for authorization, reporting, and financial compliance
+    organizerId: String @tag(name: "internal")
+    organizationId: String @tag(name: "internal")
+
+    # Cached event data - public for ticket display
+    eventTitle: String!
+    eventDate: String
+    eventLocationName: String
+    eventLocationAddress: String
+
+    # ---------------------------------------------------------------------------
+    # ORGANIZER/ADMIN FIELDS - Buyer PII for attendee management
+    # Protected for privacy - only event organizers and admins can see buyer details
+    # ---------------------------------------------------------------------------
+    buyerName: String @tag(name: "organizer") @tag(name: "admin")
+    buyerEmail: String @tag(name: "organizer") @tag(name: "admin")
+    buyerPhone: String @tag(name: "organizer") @tag(name: "admin")
+
+    # ---------------------------------------------------------------------------
+    # PUBLIC FIELDS - Ticket details shown to ticket holder
+    # ---------------------------------------------------------------------------
+    ticketCategory: TicketCategory
+    ticketCategoryCode: String
+    ticketCategoryName: String
+    price: BigDecimal!
+    currency: String!
+    status: TicketStatus!
+    quantity: Int
+
+    # ---------------------------------------------------------------------------
+    # TICKET LIFECYCLE - Mixed visibility
+    # ---------------------------------------------------------------------------
+    purchaseDate: DateTime
+    validFrom: DateTime
+    validUntil: DateTime
+    # ORGANIZER/ADMIN - Entry validation tracking for venue management
+    validatedAt: DateTime @tag(name: "organizer") @tag(name: "admin")
+    validatedBy: String @tag(name: "organizer") @tag(name: "admin")  # Scanner ID who validated
+    usedAt: DateTime
+    cancelledAt: DateTime
+    cancellationReason: String
+    refundedAt: DateTime
+    refundReason: String
+
+    # PUBLIC - QR code for ticket holder's mobile app
+    qrCode: String
+    barcode: String
+
+    # ---------------------------------------------------------------------------
+    # INTERNAL/ADMIN - Transaction and financial tracking
+    # ---------------------------------------------------------------------------
+    # INTERNAL - Correlation ID for distributed tracing
+    correlationId: String @tag(name: "internal")
+    paymentReference: String @tag(name: "organizer") @tag(name: "admin")
+
+    # ORGANIZER/ADMIN - Financial breakdown for revenue tracking
+    commissionRate: BigDecimal @tag(name: "organizer") @tag(name: "admin")
+    commissionAmount: BigDecimal @tag(name: "organizer") @tag(name: "admin")
+    netAmount: BigDecimal @tag(name: "organizer") @tag(name: "admin")
+    paymentInfo: PaymentInfo @tag(name: "organizer") @tag(name: "admin")
+    refundInfo: RefundInfo @tag(name: "organizer") @tag(name: "admin")
+
+    # ---------------------------------------------------------------------------
+    # INTERNAL - Audit fields for system tracking
+    # ---------------------------------------------------------------------------
+    createdAt: DateTime @tag(name: "internal")
+    updatedAt: DateTime @tag(name: "internal")
+    isActive: Boolean!
+}
+
+# ------------------------------
+# FINANCIAL TRANSACTION - DEPRECATED / REMOVED
+# The FinancialTransaction type has been removed in favor of:
+# - PaymentAttempt: Tracks the operational lifecycle of payments through PawaPay
+# - JournalEntry: Records accounting entries for double-entry bookkeeping
+#
+# For payment tracking, use PaymentAttempt queries
+# For accounting/financial records, use JournalEntry queries
+# ------------------------------
+
+# ------------------------------
+# PAYMENT ATTEMPT
+# ADMIN-ONLY - Tracks the complete lifecycle of a payment operation
+# This is the OPERATIONAL layer tracking HOW a payment progresses through PawaPay,
+# distinct from JournalEntry which records THAT money moved in the accounting ledger.
+# ------------------------------
+type PaymentAttempt @tag(name: "admin") {
+    id: ID!
+    # Identity & Correlation
+    depositId: String!                    # UUID sent to PawaPay (idempotency key)
+    attemptNumber: String!                # Human-readable: PAY-{YYYYMMDD}-{XXXXX}
+    correlationId: String                 # Links related operations
+
+    # Business Entity References
+    ticketId: String!
+    eventId: String
+    organizerId: String
+    organizationId: String                # Multi-tenant tracking
+    buyerId: String!
+    clientReferenceId: String             # Ticket number sent to PawaPay
+
+    # Payment Details
+    amount: BigDecimal!
+    currency: String!
+    provider: String!                     # MTN_MOMO_ZMB, AIRTEL_OAPI_ZMB, ZAMTEL_ZMB
+    payerPhone: String!
+    customerMessage: String
+
+    # Status Tracking
+    status: PaymentAttemptStatus!
+    providerStatus: String                # PawaPay's status (ACCEPTED, PROCESSING, COMPLETED, FAILED)
+    providerTransactionId: String         # PawaPay's transaction ID (set after COMPLETED)
+    country: String
+
+    # Failure Tracking
+    failureCode: String
+    failureMessage: String
+    customerErrorMessage: String
+
+    # API Interaction Tracking
+    apiCalledAt: DateTime
+    apiRespondedAt: DateTime
+    apiHttpStatus: Int
+    apiDurationMs: Int
+
+    # Webhook Tracking
+    webhookReceivedAt: DateTime
+    webhookProcessed: Boolean!
+    webhookSignatureValid: Boolean
+    webhookSourceIp: String
+
+    # Polling & Recovery
+    pollCount: Int!
+    lastPolledAt: DateTime
+    lastPollResult: String
+    lastPollStatus: String
+    retryCount: Int!
+    nextRetryAt: DateTime
+    lastError: String
+
+    # Fulfillment Tracking
+    fulfilled: Boolean!
+    fulfilledAt: DateTime
+    journalEntryId: String
+    commissionId: String
+    escrowTransactionId: String
+
+    # Verification Flags (OWASP compliance)
+    verifiedBeforeFulfillment: Boolean!
+    verifiedAt: DateTime
+    amountVerified: Boolean!
+
+    # Security & Audit
+    clientIpAddress: String
+    sessionId: String
+    requestId: String
+
+    # Review
+    reviewStatus: String
+    reviewedBy: String
+    reviewedAt: DateTime
+    reviewNotes: String
+    notes: String
+
+    # Timestamps
+    createdAt: DateTime
+    updatedAt: DateTime
+    expiresAt: DateTime
+}
+
+# ------------------------------
+# EVENT ESCROW ACCOUNT
+# ADMIN-ONLY - Platform escrow management for event revenue holding
+# Escrow accounts hold ticket revenue until event completion
+# ------------------------------
+type EventEscrowAccount @tag(name: "admin") {
+    id: ID!
+    accountNumber: String!
+    eventId: String!
+    eventTitle: String
+    organizerId: String!
+    organizerName: String
+    currentBalance: BigDecimal!
+    totalDeposits: BigDecimal!
+    totalWithdrawals: BigDecimal!
+    totalRefunds: BigDecimal!
+    totalCommissions: BigDecimal!
+    pendingWithdrawals: BigDecimal
+    currency: String!
+    status: EscrowAccountStatus!
+    lockUntil: DateTime
+    lockReason: String
+    payoutEligibleAt: DateTime
+    closedAt: DateTime
+    closedReason: String
+    createdAt: DateTime
+    updatedAt: DateTime
+}
+
+# ------------------------------
+# BANK ACCOUNT
+# ORGANIZER/ADMIN - Bank account details for payout processing
+# Organizers manage their own bank accounts, admins can view/verify all
+# ------------------------------
+type BankAccount @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+    organizerId: String!
+    organizationId: String               # Multi-tenant tracking
+    accountHolderName: String!
+    bankName: String!
+    bankCode: String
+    branchName: String
+    branchCode: String
+    accountNumber: String!
+    accountType: String
+    currency: String!
+    swiftCode: String
+    isDefault: Boolean!
+    isVerified: Boolean!
+    verifiedAt: DateTime
+    verifiedBy: String
+    status: String!
+    createdAt: DateTime
+    updatedAt: DateTime
+}
+
+# ------------------------------
+# PAYOUT REQUEST
+# ORGANIZER/ADMIN - Payout request workflow
+# Organizers create and track their payout requests, admins approve/process
+# ------------------------------
+type PayoutRequest @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+    requestId: String!
+    organizerId: String!
+    organizationId: String               # Multi-tenant tracking
+    organizerName: String
+    eventId: String
+    eventTitle: String
+    escrowAccountId: String!
+    bankAccountId: String!
+    bankAccount: BankAccount
+    requestedAmount: BigDecimal!
+    platformFee: BigDecimal
+    processingFee: BigDecimal
+    taxAmount: BigDecimal
+    netPayoutAmount: BigDecimal!
+    currency: String!
+    status: PayoutRequestStatus!
+    payoutMethod: PayoutMethod
+    requestedAt: DateTime!
+    requestedBy: String!
+    approvedAt: DateTime
+    approvedBy: String
+    rejectedAt: DateTime
+    rejectedBy: String
+    rejectionReason: String
+    processedAt: DateTime
+    processedBy: String
+    expectedPayoutDate: DateTime
+    actualPayoutDate: DateTime
+    paymentReference: String
+    transactionId: String
+    externalTransactionId: String
+    bankAccountName: String
+    bankName: String
+    accountNumber: String
+    retryCount: Int
+    lastError: String
+    notes: String
+    metadata: JSON
+    createdAt: DateTime
+    updatedAt: DateTime
+
+    # Recovery and Review fields (admin only)
+    issueType: PayoutIssueType @tag(name: "admin")
+    resolutionType: PayoutResolutionType @tag(name: "admin")
+    reviewStatus: PayoutReviewStatus @tag(name: "admin")
+    isStuck: Boolean @tag(name: "admin")
+    stuckReason: String @tag(name: "admin")
+    stuckAt: DateTime @tag(name: "admin")
+    reviewedBy: String @tag(name: "admin")
+    reviewedAt: DateTime @tag(name: "admin")
+    reviewNotes: String @tag(name: "admin")
+    resolvedBy: String @tag(name: "admin")
+    resolvedAt: DateTime @tag(name: "admin")
+    resolutionNotes: String @tag(name: "admin")
+}
+
+# ------------------------------
+# REFUND REQUEST
+# ORGANIZER/ADMIN - Refund request workflow
+# Organizers see refunds for their events, admins process all refunds
+# Mobile users can see their own refund status via ticket.refundInfo
+# ------------------------------
+type RefundRequest @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+    requestId: String!
+    ticketId: String!
+    ticketNumber: String!
+    eventId: String!
+    organizerId: String!
+    organizationId: String               # Multi-tenant tracking
+    buyerId: String!
+    originalTicketPrice: BigDecimal
+    refundAmount: BigDecimal!
+    refundPercentage: Float
+    platformRetains: BigDecimal
+    processingFee: BigDecimal
+    netRefundAmount: BigDecimal
+    currency: String!
+    status: RefundRequestStatus!
+    requestType: RefundRequestType!
+    reason: String!
+    additionalNotes: String
+    requestedBy: String
+    requestedAt: DateTime
+    reviewedBy: String
+    reviewedAt: DateTime
+    reviewComments: String
+    rejectionReason: String
+    processedAt: DateTime
+    processedBy: String
+    paymentReference: String
+    refundTransactionId: String
+    originalPaymentMethod: String
+    daysBeforeEvent: Int
+    policyApplied: String
+    createdAt: DateTime
+    updatedAt: DateTime
+}
+
+# ============================================================================
+# SECTION 7: FEATURE TYPES
+# Consumer-facing features for ticket purchasing workflow
+# ============================================================================
+
+# ------------------------------
+# TICKET RESERVATION
+# MOBILE - Temporary ticket holds during checkout flow
+# Customers reserve tickets before payment completion
+# ------------------------------
+type TicketReservation @tag(name: "mobile") {
+    id: ID!
+    eventId: ID!
+    userId: ID!
+    items: [ReservationItem!]!
+    totalAmount: BigDecimal!
+    currency: String!
+    status: ReservationStatus!
+    expiresAt: DateTime!
+    remainingSeconds: Int
+    promoCodeApplied: String
+    discountAmount: BigDecimal
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+# MOBILE - Items in a reservation
+type ReservationItem @tag(name: "mobile") {
+    ticketTierId: String!
+    tierName: String!
+    quantity: Int!
+    unitPrice: BigDecimal!
+    subtotal: BigDecimal!
+}
+
+# ------------------------------
+# PROMO CODE
+# ORGANIZER - Promo code management for marketing campaigns
+# Organizers create and track promo codes for their events
+# ------------------------------
+type PromoCode @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+    code: String!
+    eventId: ID
+    organizerId: ID
+    discountType: DiscountType!
+    discountValue: BigDecimal!
+    maxUses: Int
+    currentUses: Int!
+    validFrom: DateTime
+    validUntil: DateTime
+    minPurchaseAmount: BigDecimal
+    maxDiscountAmount: BigDecimal
+    applicableTiers: [String!]
+    isActive: Boolean!
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+# MOBILE - Promo code validation result for checkout
+type PromoCodeValidation @tag(name: "mobile") {
+    valid: Boolean!
+    promoCode: PromoCode
+    discountAmount: BigDecimal
+    errorMessage: String
+}
+
+# MOBILE - Refund calculation preview for customer
+type RefundCalculation @tag(name: "mobile") {
+    ticketId: ID!
+    ticketNumber: String!
+    eventId: ID!
+    eventDate: DateTime!
+    originalAmount: BigDecimal!
+    daysBeforeEvent: Int!
+    refundPercentage: Float!
+    refundAmount: BigDecimal!
+    commissionRefund: BigDecimal!
+    platformRetains: BigDecimal!
+    policyApplied: String!
+    isEligible: Boolean!
+    ineligibleReason: String
+}
+
+# ============================================================================
+# SECTION 9: SUPPORTING TYPES
+# Embedded types used by primary entities
+# ============================================================================
+
+# ORGANIZER/ADMIN - Payment details embedded in ticket
+type PaymentInfo @tag(name: "organizer") @tag(name: "admin") {
+    paymentId: String
+    paymentMethod: String
+    transactionId: String
+    amount: BigDecimal
+    currency: String
+    status: String
+    paymentDate: DateTime
+    providerReference: String
+}
+
+# ORGANIZER/ADMIN - Refund details embedded in ticket
+type RefundInfo @tag(name: "organizer") @tag(name: "admin") {
+    refundId: String
+    refundAmount: BigDecimal
+    reason: String
+    status: String
+    refundDate: DateTime
+    processedBy: String
+    transactionId: String
+}
+
+# ============================================================================
+# SECTION 10: STATISTICS TYPES
+# Dashboard statistics for organizers (own events) and admins (platform-wide)
+# ============================================================================
+
+# ADMIN - Platform-wide ticket statistics
+type TicketStats @tag(name: "admin") {
+    totalTickets: Int!
+    purchasedTickets: Int!
+    validatedTickets: Int!
+    usedTickets: Int!
+    refundedTickets: Int!
+    expiredTickets: Int!
+    cancelledTickets: Int!
+    pendingPaymentTickets: Int!
+    ticketsByStatus: [TicketStatusStats!]
+    ticketsByCategory: [TicketCategoryStats!]
+    recentTickets: [Ticket!]
+}
+
+# ADMIN - Ticket status breakdown
+type TicketStatusStats @tag(name: "admin") {
+    status: TicketStatus!
+    count: Int!
+    percentage: Float!
+}
+
+# ORGANIZER/ADMIN - Ticket category analytics (organizers see for own events)
+type TicketCategoryStats @tag(name: "organizer") @tag(name: "admin") {
+    category: String!
+    count: Int!
+    percentage: Float!
+    totalRevenue: BigDecimal
+}
+
+# ADMIN - Platform-wide transaction statistics
+type TransactionStats @tag(name: "admin") {
+    totalTransactions: Int!
+    completedTransactions: Int!
+    failedTransactions: Int!
+    pendingTransactions: Int!
+    timedOutTransactions: Int!
+    totalVolume: BigDecimal!
+    totalCommissions: BigDecimal!
+    averageTransactionValue: BigDecimal
+}
+
+# TransactionRecoverySummary - REMOVED (replaced by PaymentAttempt tracking)
+# TransactionIssueTypeStats - REMOVED
+
+# ADMIN - Payout request statistics for financial dashboard
+type PayoutRequestStats @tag(name: "admin") {
+    totalPayoutRequests: Int!
+    pendingPayoutRequests: Int!
+    approvedPayoutRequests: Int!
+    processingPayoutRequests: Int!
+    completedPayoutRequests: Int!
+    failedPayoutRequests: Int!
+    totalPayoutAmount: BigDecimal!
+    pendingPayoutAmount: BigDecimal!
+}
+
+# ADMIN - Payout recovery summary for admin dashboard
+type PayoutRecoverySummary @tag(name: "admin") {
+    totalPayoutsForReview: Int!
+    pendingReviewCount: Int!
+    underReviewCount: Int!
+    stuckPayoutsCount: Int!
+    retryablePayoutsCount: Int!
+    issuesByType: [PayoutIssueTypeStats!]!
+    recentlyResolvedCount: Int!
+    averageResolutionTimeMinutes: Float
+    totalAmountAtRisk: BigDecimal!
+}
+
+# ADMIN - Payout issue type breakdown
+type PayoutIssueTypeStats @tag(name: "admin") {
+    issueType: PayoutIssueType!
+    count: Int!
+    percentage: Float!
+    unresolvedCount: Int!
+    totalAmount: BigDecimal!
+}
+
+# ORGANIZER/ADMIN - Refund summary (organizers see for own events)
+type RefundSummary @tag(name: "organizer") @tag(name: "admin") {
+    totalRefunds: Int!
+    totalAmount: BigDecimal!
+    currency: String!
+    averageRefundAmount: BigDecimal
+    refundsByStatus: [RefundStatusSummary!]
+    refundsByType: [RefundTypeSummary!]
+}
+
+# ORGANIZER/ADMIN - Refund status breakdown
+type RefundStatusSummary @tag(name: "organizer") @tag(name: "admin") {
+    status: RefundRequestStatus!
+    count: Int!
+    totalAmount: BigDecimal!
+    percentage: Float!
+}
+
+# ORGANIZER/ADMIN - Refund type breakdown
+type RefundTypeSummary @tag(name: "organizer") @tag(name: "admin") {
+    requestType: RefundRequestType!
+    count: Int!
+    totalAmount: BigDecimal!
+    percentage: Float!
+}
+
+# ADMIN - Individual escrow account summary for admin dashboard
+type AccountSummary @tag(name: "admin") {
+    accountId: ID!
+    accountNumber: String!
+    eventId: String!
+    eventTitle: String!
+    organizerId: String!
+    organizerName: String!
+    currentBalance: BigDecimal!
+    totalDeposits: BigDecimal!
+    totalWithdrawals: BigDecimal!
+    totalRefunds: BigDecimal!
+    totalCommissions: BigDecimal!
+    availableForPayout: BigDecimal!
+    status: EscrowAccountStatus!
+    currency: String!
+    transactionCount: Int!
+}
+
+# ADMIN - Platform-wide financial summary for admin dashboard
+type PlatformSummary @tag(name: "admin") {
+    # Escrow Account Metrics
+    totalEscrowAccounts: Int!
+    activeEscrowAccounts: Int!
+    lockedEscrowAccounts: Int!
+    payoutEligibleAccounts: Int!
+    closedEscrowAccounts: Int!
+
+    # Balance Metrics
+    totalEscrowBalance: BigDecimal!
+    totalDeposits: BigDecimal!
+    totalWithdrawals: BigDecimal!
+    totalRefunds: BigDecimal!
+    availableForPayout: BigDecimal!
+
+    # Transaction Metrics
+    totalTransactions: Int!
+    completedTransactions: Int!
+    pendingTransactions: Int!
+    failedTransactions: Int!
+    totalTransactionVolume: BigDecimal!
+    totalCommissions: BigDecimal!
+
+    # Payout Metrics
+    totalPayoutRequests: Int!
+    pendingPayoutRequests: Int!
+    completedPayoutRequests: Int!
+    totalPayoutAmount: BigDecimal!
+
+    # Ticket Metrics
+    totalTicketsSold: Int!
+    totalTicketRevenue: BigDecimal!
+
+    # Currency
+    primaryCurrency: String!
+}
+
+# ADMIN - Financial reporting for platform management
+type FinancialReport @tag(name: "admin") {
+    startDate: DateTime!
+    endDate: DateTime!
+    totalRevenue: BigDecimal!
+    totalCommissions: BigDecimal!
+    totalRefunds: BigDecimal!
+    totalPayouts: BigDecimal!
+    pendingPayouts: BigDecimal!
+    escrowBalance: BigDecimal!
+    netPlatformRevenue: BigDecimal!
+    dataPoints: [FinancialDataPoint!]!
+    eventBreakdown: [EventFinancialSummary!]
+}
+
+# ADMIN - Time-series financial data points
+type FinancialDataPoint @tag(name: "admin") {
+    period: String!
+    revenue: BigDecimal!
+    commissions: BigDecimal!
+    refunds: BigDecimal!
+    payouts: BigDecimal!
+    ticketsSold: Int!
+}
+
+# ORGANIZER/ADMIN - Event-level financial summary
+type EventFinancialSummary @tag(name: "organizer") @tag(name: "admin") {
+    eventId: ID!
+    eventTitle: String!
+    totalRevenue: BigDecimal!
+    totalCommissions: BigDecimal!
+    totalRefunds: BigDecimal!
+    escrowBalance: BigDecimal!
+    payoutStatus: String!
+}
+
+# Shared type - must have @shareable on all fields for federation
+type ReportExport @shareable {
+    success: Boolean! @shareable
+    downloadUrl: String @shareable
+    expiresAt: DateTime @shareable
+    format: ExportFormat! @shareable
+    generatedAt: DateTime! @shareable
+    fileName: String @shareable
+    errorMessage: String @shareable
+}
+
+# ORGANIZER - Real-time event day dashboard for entry management
+type LiveDashboard @tag(name: "organizer") {
+    eventId: ID!
+    eventTitle: String!
+    totalSold: Int!
+    totalCapacity: Int!
+    checkedIn: Int!
+    checkInRate: Float!
+    checkInsLastHour: Int!
+    peakCheckInTime: DateTime
+    currentCheckInRate: Float  # per minute
+    checkInsByTier: [TierCheckInStats!]!
+    recentCheckIns: [CheckInEvent!]
+}
+
+# ORGANIZER - Tier-level check-in statistics
+type TierCheckInStats @tag(name: "organizer") {
+    tierId: String!
+    tierName: String!
+    sold: Int!
+    checkedIn: Int!
+    checkInRate: Float!
+}
+
+# ORGANIZER - Individual check-in event for live dashboard feed
+type CheckInEvent @tag(name: "organizer") {
+    ticketId: ID!
+    ticketNumber: String!
+    tierName: String!
+    buyerName: String
+    checkedInAt: DateTime!
+    scannerId: String
+    scannerName: String
+    totalCheckedIn: Int!
+}
+
+# ============================================================================
+# SECTION 10b: FINANCIAL ENGINE TYPES (Double-Entry Bookkeeping)
+# ============================================================================
+
+# Chart of Accounts Entry
+type ChartOfAccountsEntry @tag(name: "admin") {
+    id: ID!
+    accountCode: String!
+    accountName: String!
+    accountType: AccountType!
+    subType: AccountSubType
+    parentAccountCode: String
+    currency: String!
+    isActive: Boolean!
+    description: String
+    normalBalance: BalanceDirection!
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+# Journal Entry Line (embedded in JournalEntry)
+type JournalLine @tag(name: "admin") {
+    accountCode: String!
+    accountName: String!
+    debit: BigDecimal
+    credit: BigDecimal
+    description: String
+    referenceType: String
+    referenceId: String
+}
+
+# Journal Entry (core double-entry record)
+type JournalEntry @tag(name: "admin") {
+    id: ID!
+    entryNumber: String!
+    correlationId: String
+    entryDate: DateTime!
+    effectiveDate: DateTime
+    description: String!
+    type: JournalEntryType!
+    status: JournalEntryStatus!
+    lines: [JournalLine!]!
+    createdBy: String
+    postedBy: String
+    postedAt: DateTime
+    reversedBy: String
+    reversedAt: DateTime
+    reversalEntryId: String
+    reversedByEntryId: String
+    totalDebits: BigDecimal!
+    totalCredits: BigDecimal!
+    isBalanced: Boolean!
+    metadata: JSON
+    createdAt: DateTime!
+}
+
+# Platform Account (OPERATING, RESERVE, TAX_HOLDING)
+type PlatformAccount @tag(name: "admin") {
+    id: ID!
+    accountType: PlatformAccountType!
+    name: String!
+    balance: BigDecimal!
+    currency: String!
+    createdAt: DateTime!
+    lastUpdatedAt: DateTime
+}
+
+# Standalone Escrow Transaction (for audit trail)
+type StandaloneEscrowTransaction @tag(name: "admin") {
+    id: ID!
+    escrowAccountId: String!
+    type: String!
+    category: String!
+    amount: BigDecimal!
+    balanceAfter: BigDecimal!
+    currency: String!
+    ticketId: String
+    paymentIntentId: String
+    refundRequestId: String
+    payoutRequestId: String
+    chargebackId: String
+    journalEntryId: String
+    description: String
+    timestamp: DateTime!
+    createdAt: DateTime!
+}
+
+# Chargeback Record
+type ChargebackRecord @tag(name: "admin") {
+    id: ID!
+    chargebackId: String!
+    originalTransactionId: String!
+    ticketId: String!
+    eventId: String!
+    organizerId: String!
+    organizationId: String               # Multi-tenant tracking
+    customerId: String!
+    originalAmount: BigDecimal!
+    chargebackAmount: BigDecimal!
+    chargebackFee: BigDecimal!
+    currency: String!
+    reason: ChargebackReason!
+    status: ChargebackStatus!
+    receivedAt: DateTime!
+    responseDeadline: DateTime!
+    evidenceSubmitted: String
+    resolvedAt: DateTime
+    recoveryStatus: RecoveryStatus!
+    recoveredAmount: BigDecimal
+    commissionClawbackId: String
+    fundSource: ChargebackFundSource
+    journalEntryId: String
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+# Reconciliation Item (embedded in ReconciliationRun)
+type ReconciliationItem @tag(name: "admin") {
+    externalId: String
+    internalId: String
+    externalAmount: BigDecimal
+    internalAmount: BigDecimal
+    status: ReconciliationItemStatus!
+    resolution: String
+    resolvedBy: String
+    resolvedAt: DateTime
+}
+
+# Reconciliation Run
+type ReconciliationRun @tag(name: "admin") {
+    id: ID!
+    reconciliationDate: DateTime!
+    type: ReconciliationType!
+    status: ReconciliationStatus!
+    dataSource: String
+    expectedTotal: BigDecimal
+    actualTotal: BigDecimal
+    variance: BigDecimal
+    matchedCount: Int!
+    unmatchedCount: Int!
+    items: [ReconciliationItem!]!
+    runBy: String
+    startedAt: DateTime!
+    completedAt: DateTime
+    notes: String
+}
+
+# Account Balance for Trial Balance
+type AccountBalance @tag(name: "admin") {
+    accountCode: String!
+    accountName: String!
+    accountType: String!
+    debitBalance: BigDecimal!
+    creditBalance: BigDecimal!
+    netBalance: BigDecimal!
+}
+
+# Chargeback Statistics
+type ChargebackStats @tag(name: "admin") {
+    totalCount: Int!
+    pendingCount: Int!
+    disputedCount: Int!
+    wonCount: Int!
+    lostCount: Int!
+    totalAmount: BigDecimal!
+    recoveredAmount: BigDecimal!
+    writtenOffAmount: BigDecimal!
+    chargebackRate: Float!
+    winRate: Float!
+}
+
+# Reconciliation Summary
+type ReconciliationSummary @tag(name: "admin") {
+    totalRuns: Int!
+    completedRuns: Int!
+    pendingReviewRuns: Int!
+    failedRuns: Int!
+    totalVariance: BigDecimal!
+    resolvedVariance: BigDecimal!
+    unresolvedVariance: BigDecimal!
+    lastCompletedDate: DateTime
+    oldestPendingDate: DateTime
+}
+
+# ============================================================================
+# SECTION 11: PAGINATION TYPES
+# ============================================================================
+
+# Shared type - must have @shareable on all fields for federation
+type PaginationInfo @shareable {
+    pageNumber: Int @shareable
+    pageSize: Int! @shareable
+    totalElements: Int @shareable
+    totalPages: Int! @shareable
+    totalCount: Int @shareable
+    currentPage: Int @shareable
+    hasNext: Boolean @shareable
+    hasPrevious: Boolean @shareable
+    hasNextPage: Boolean @shareable
+    hasPreviousPage: Boolean @shareable
+}
+
+type TicketOffsetPage {
+    data: [Ticket!]!
+    pagination: PaginationInfo!
+}
+
+type EscrowAccountOffsetPage {
+    data: [EventEscrowAccount!]!
+    pagination: PaginationInfo!
+}
+
+type RefundRequestOffsetPage {
+    data: [RefundRequest!]!
+    pagination: PaginationInfo!
+}
+
+type PayoutRequestOffsetPage {
+    data: [PayoutRequest!]!
+    pagination: PaginationInfo!
+}
+
+# TransactionOffsetPage - REMOVED (use PaymentAttemptOffsetPage for payment tracking)
+
+type ReservationOffsetPage {
+    data: [TicketReservation!]!
+    pagination: PaginationInfo!
+}
+
+# Financial Engine Pagination Types
+type ChartOfAccountsOffsetPage @tag(name: "admin") {
+    data: [ChartOfAccountsEntry!]!
+    pagination: PaginationInfo!
+}
+
+type JournalEntryOffsetPage @tag(name: "admin") {
+    data: [JournalEntry!]!
+    pagination: PaginationInfo!
+}
+
+type ChargebackOffsetPage @tag(name: "admin") {
+    data: [ChargebackRecord!]!
+    pagination: PaginationInfo!
+}
+
+type ReconciliationRunOffsetPage @tag(name: "admin") {
+    data: [ReconciliationRun!]!
+    pagination: PaginationInfo!
+}
+
+type EscrowTransactionOffsetPage @tag(name: "admin") {
+    data: [StandaloneEscrowTransaction!]!
+    pagination: PaginationInfo!
+}
+
+# ============================================================================
+# SECTION 11b: CURSOR PAGINATION TYPES (Relay-style Connections)
+# ============================================================================
+# Cursor-based pagination following the Relay Connection Specification.
+# Used for infinite scroll, mobile apps, and real-time feeds.
+
+# Shared type for cursor-based pagination - must have @shareable for federation
+type PageInfo @shareable {
+    hasNextPage: Boolean @shareable
+    hasPreviousPage: Boolean @shareable
+    startCursor: String @shareable
+    endCursor: String @shareable
+    totalCount: Int @shareable
+    totalElements: Int @shareable
+    totalPages: Int @shareable
+    currentPage: Int @shareable
+    pageSize: Int @shareable
+    hasNext: Boolean @shareable
+    hasPrevious: Boolean @shareable
+}
+
+# Ticket cursor pagination
+type TicketConnection {
+    edges: [TicketEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type TicketEdge {
+    cursor: String!
+    node: Ticket!
+}
+
+# Escrow Account cursor pagination
+type EscrowAccountConnection {
+    edges: [EscrowAccountEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type EscrowAccountEdge {
+    cursor: String!
+    node: EventEscrowAccount!
+}
+
+# Refund Request cursor pagination
+type RefundRequestConnection {
+    edges: [RefundRequestEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type RefundRequestEdge {
+    cursor: String!
+    node: RefundRequest!
+}
+
+# Payout Request cursor pagination
+type PayoutRequestConnection {
+    edges: [PayoutRequestEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type PayoutRequestEdge {
+    cursor: String!
+    node: PayoutRequest!
+}
+
+# Financial Transaction cursor pagination - REMOVED (use PaymentAttempt for payment tracking)
+
+
+# Reservation cursor pagination
+type ReservationConnection {
+    edges: [ReservationEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type ReservationEdge {
+    cursor: String!
+    node: TicketReservation!
+}
+
+# ============================================================================
+# SECTION 12: INPUT TYPES
+# ============================================================================
+
+# Offset-based pagination input for admin/dashboard tables
+input OffsetPaginationInput {
+    page: Int = 0
+    size: Int = 20
+    sortBy: String = "createdAt"
+    sortDirection: SortDirection = DESC
+}
+
+enum SortDirection {
+    ASC
+    DESC
+}
+
+# Cursor-based pagination input (Relay style) for mobile/infinite scroll
+input CursorPaginationInput {
+    first: Int
+    after: String
+    last: Int
+    before: String
+}
+
+input TicketPurchaseInput {
+    eventId: String!
+    ticketCategoryCode: String!
+    quantity: Int!
+    buyerName: String!
+    buyerEmail: String!
+    buyerPhone: String
+    paymentMethod: PaymentMethod!
+    paymentReference: String
+    correlationId: String!
+    amount: BigDecimal
+    currency: String
+    promoCode: String
+    metadata: JSON
+}
+
+input TicketFilterInput {
+    eventId: String
+    buyerId: String
+    organizerId: String
+    status: TicketStatus
+    statuses: [TicketStatus!]
+    category: String
+    purchaseDateAfter: DateTime
+    purchaseDateBefore: DateTime
+    searchQuery: String
+}
+
+input AdminTicketUpdateInput {
+    buyerName: String
+    buyerEmail: String
+    buyerPhone: String
+    ticketCategoryCode: String
+    notes: String
+}
+
+# TransactionFilterInput - REMOVED (use PaymentAttempt queries instead)
+
+input EscrowAccountFilterInput {
+    organizerId: String
+    eventId: String
+    status: EscrowAccountStatus
+    currency: String
+    hasBalance: Boolean
+}
+
+input CreateEscrowAccountInput {
+    eventId: String!
+    organizerId: String!
+    eventTitle: String
+    organizerName: String
+    currency: String!
+}
+
+input UpdateEscrowAccountInput {
+    status: EscrowAccountStatus
+    lockUntil: DateTime
+    lockReason: String
+}
+
+input RefundRequestFilterInput {
+    ticketId: String
+    buyerId: String
+    eventId: String
+    organizerId: String
+    status: RefundRequestStatus
+    requestType: RefundRequestType
+    startDate: DateTime
+    endDate: DateTime
+}
+
+input CreateRefundRequestInput {
+    ticketId: String!
+    reason: String!
+    additionalNotes: String
+    requestedBy: String!
+    metadata: JSON
+}
+
+input PayoutRequestFilterInput {
+    organizerId: String
+    eventId: String
+    escrowAccountId: String
+    status: PayoutRequestStatus
+    payoutMethod: PayoutMethod
+    startDate: DateTime
+    endDate: DateTime
+}
+
+input CreatePayoutRequestInput {
+    organizerId: String!
+    eventId: String
+    escrowAccountId: String!
+    bankAccountId: String!
+    requestedAmount: BigDecimal!
+    currency: String!
+    payoutMethod: PayoutMethod!
+    notes: String
+    metadata: JSON
+}
+
+input CreateBankAccountInput {
+    organizerId: String!
+    accountHolderName: String!
+    bankName: String!
+    bankCode: String
+    branchName: String
+    branchCode: String
+    accountNumber: String!
+    accountType: String
+    currency: String!
+    swiftCode: String
+    isDefault: Boolean
+}
+
+input UpdateBankAccountInput {
+    accountHolderName: String
+    bankName: String
+    bankCode: String
+    branchName: String
+    branchCode: String
+    accountNumber: String
+    accountType: String
+    swiftCode: String
+    isDefault: Boolean
+}
+
+input ReserveTicketsInput {
+    eventId: ID!
+    selections: [TicketSelectionInput!]!
+    promoCode: String
+}
+
+input TicketSelectionInput {
+    ticketTierId: String!
+    quantity: Int!
+}
+
+input CompleteReservationInput {
+    reservationId: ID!
+    paymentMethod: PaymentMethod!
+    phoneNumber: String!
+    promoCode: String
+}
+
+input CreatePromoCodeInput {
+    code: String!
+    eventId: ID
+    organizerId: ID
+    discountType: DiscountType!
+    discountValue: BigDecimal!
+    maxUses: Int
+    validFrom: DateTime
+    validUntil: DateTime
+    minPurchaseAmount: BigDecimal
+    maxDiscountAmount: BigDecimal
+    applicableTiers: [String!]
+}
+
+input UpdatePromoCodeInput {
+    discountType: DiscountType
+    discountValue: BigDecimal
+    maxUses: Int
+    validFrom: DateTime
+    validUntil: DateTime
+    minPurchaseAmount: BigDecimal
+    maxDiscountAmount: BigDecimal
+    applicableTiers: [String!]
+    isActive: Boolean
+}
+
+
+input FinancialReportFilterInput {
+    startDate: DateTime!
+    endDate: DateTime!
+    eventId: ID
+    organizerId: ID
+    groupBy: TimeUnit
+}
+
+# ============================================================================
+# FINANCIAL ENGINE INPUT TYPES
+# ============================================================================
+
+input CreateChartOfAccountsInput @tag(name: "admin") {
+    accountCode: String!
+    accountName: String!
+    accountType: AccountType!
+    subType: AccountSubType
+    parentAccountCode: String
+    currency: String
+    description: String
+}
+
+input JournalLineInput @tag(name: "admin") {
+    accountCode: String!
+    accountName: String!
+    debit: BigDecimal
+    credit: BigDecimal
+    description: String
+    referenceType: String
+    referenceId: String
+}
+
+input CreateJournalEntryInput @tag(name: "admin") {
+    correlationId: String!
+    entryDate: DateTime!
+    effectiveDate: DateTime
+    description: String!
+    type: JournalEntryType!
+    lines: [JournalLineInput!]!
+    metadata: JSON
+}
+
+input JournalEntryFilterInput @tag(name: "admin") {
+    status: JournalEntryStatus
+    type: JournalEntryType
+    correlationId: String
+    accountCode: String
+    startDate: DateTime
+    endDate: DateTime
+}
+
+input ReceiveChargebackInput @tag(name: "admin") {
+    chargebackId: String!
+    originalTransactionId: String!
+    ticketId: String!
+    eventId: String!
+    organizerId: String!
+    organizationId: String               # Multi-tenant tracking
+    customerId: String!
+    originalAmount: BigDecimal!
+    chargebackAmount: BigDecimal!
+    chargebackFee: BigDecimal!
+    currency: String!
+    reason: ChargebackReason!
+    responseDeadline: DateTime!
+}
+
+input DisputeChargebackInput @tag(name: "admin") {
+    ticketValidationProof: String
+    customerCommunicationLog: String
+    deliveryConfirmation: String
+    termsAcceptanceProof: String
+    additionalDocuments: String
+    notes: String!
+}
+
+input RecoverChargebackInput @tag(name: "admin") {
+    fundSource: ChargebackFundSource!
+    amount: BigDecimal
+    notes: String
+}
+
+input ChargebackFilterInput @tag(name: "admin") {
+    status: ChargebackStatus
+    recoveryStatus: RecoveryStatus
+    eventId: String
+    organizerId: String
+    startDate: DateTime
+    endDate: DateTime
+}
+
+input StartReconciliationInput @tag(name: "admin") {
+    reconciliationDate: DateTime!
+    type: ReconciliationType!
+    dataSource: String
+    """
+    For ESCROW_JOURNAL reconciliation only:
+    If true, includes CLOSED and CANCELLED accounts in verification.
+    Default is false (only verifies OPEN accounts for better performance).
+    Use true for full audit purposes.
+    """
+    includeClosed: Boolean = false
+}
+
+input ResolveReconciliationItemInput @tag(name: "admin") {
+    externalId: String!
+    resolution: String!
+}
+
+input ReconciliationFilterInput @tag(name: "admin") {
+    type: ReconciliationType
+    status: ReconciliationStatus
+    startDate: DateTime
+    endDate: DateTime
+}
+
+"""
+Input for recording a gateway settlement in the accounting system.
+
+Called when payment gateway settles funds to our bank account.
+Creates journal entry:
+  DR Bank Account (1011)        - Net amount received
+  DR Gateway Fees Expense (5010) - Fees deducted by gateway
+  CR Gateway Receivable (1021)  - Gross amount cleared
+"""
+input RecordGatewaySettlementInput @tag(name: "admin") {
+    "Unique settlement ID from gateway (e.g., PAW-SETTLE-20260420)"
+    settlementId: String!
+    "Gross amount before fees"
+    grossAmount: BigDecimal!
+    "Fees deducted by gateway"
+    feeAmount: BigDecimal!
+    "Net amount received in bank"
+    netAmount: BigDecimal!
+    "Date of settlement"
+    settlementDate: DateTime!
+    "Bank transaction reference"
+    bankReference: String!
+    "Currency code (e.g., ZMW)"
+    currency: String!
+}
+
+# ============================================================================
+# PAYMENT ATTEMPT INPUT TYPES
+# ============================================================================
+
+"""
+Input for initiating a payment attempt with PawaPay.
+Called during ticket checkout to start mobile money payment.
+"""
+input InitiatePaymentAttemptInput @tag(name: "internal") {
+    "Ticket being purchased"
+    ticketId: String!
+    "Event the ticket is for"
+    eventId: String!
+    "User making the payment"
+    buyerId: String!
+    "Payment amount"
+    amount: BigDecimal!
+    "Currency code (default: ZMW)"
+    currency: String
+    "Mobile money provider (e.g., MTN_MOMO_ZMB, AIRTEL_OAPI_ZMB)"
+    provider: String!
+    "Payer phone number in E.164 format (e.g., +260763456789)"
+    payerPhone: String!
+    "Optional correlation ID for tracing"
+    correlationId: String
+    "Client IP address for security"
+    clientIp: String
+    "Session ID for tracing"
+    sessionId: String
+}
+
+"""
+Input for processing a PawaPay webhook callback.
+"""
+input ProcessPaymentWebhookInput @tag(name: "internal") {
+    "UUID of the payment attempt (depositId)"
+    depositId: String!
+    "Status from PawaPay (COMPLETED, FAILED, PROCESSING)"
+    providerStatus: String!
+    "PawaPay transaction ID (if COMPLETED)"
+    providerTransactionId: String
+    "Failure code (if FAILED)"
+    failureCode: String
+    "Failure message (if FAILED)"
+    failureMessage: String
+    "Raw webhook payload for audit"
+    webhookPayload: String!
+    "Source IP of webhook request"
+    sourceIp: String!
+    "Whether webhook signature was valid"
+    signatureValid: Boolean!
+}
+
+"""
+Input for marking a payment as fulfilled after accounting operations complete.
+"""
+input MarkPaymentFulfilledInput @tag(name: "internal") {
+    "UUID of the payment attempt (depositId)"
+    depositId: String!
+    "ID of the journal entry created"
+    journalEntryId: String!
+    "ID of the commission record created"
+    commissionId: String
+    "ID of the escrow transaction created"
+    escrowTransactionId: String!
+}
+
+# ============================================================================
+# SECTION 13: MUTATION RESPONSE TYPES (Consolidated)
+# ============================================================================
+
+type TicketMutationResponse {
+    success: Boolean!
+    message: String
+    data: Ticket
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Specific ticket mutation response types matching resolver return types
+type ValidateTicketMutationResponse @tag(name: "organizer") {
+    success: Boolean!
+    message: String
+    data: Ticket
+    errors: [String!]!
+    metadata: JSON
+}
+
+type UseTicketMutationResponse @tag(name: "organizer") {
+    success: Boolean!
+    message: String
+    data: Ticket
+    errors: [String!]!
+    metadata: JSON
+}
+
+type RefundTicketMutationResponse @tag(name: "organizer") @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: Ticket
+    errors: [String!]!
+    metadata: JSON
+}
+
+type CancelTicketMutationResponse @tag(name: "organizer") @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: Ticket
+    errors: [String!]!
+    metadata: JSON
+}
+
+type PurchaseTicketMutationResponse @tag(name: "mobile") {
+    success: Boolean!
+    message: String
+    data: Ticket
+    errors: [String!]!
+    metadata: JSON
+}
+
+type RefundRequestMutationResponse {
+    success: Boolean!
+    message: String
+    data: RefundRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Specific refund request mutation response types matching resolver return types
+type CreateRefundRequestMutationResponse @tag(name: "mobile") {
+    success: Boolean!
+    message: String
+    data: RefundRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+type ApproveRefundRequestMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: RefundRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+type RejectRefundRequestMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: RefundRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+type ProcessRefundRequestMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: RefundRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+type PayoutRequestMutationResponse {
+    success: Boolean!
+    message: String
+    data: PayoutRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Specific payout request mutation response types matching resolver return types
+type CreatePayoutRequestMutationResponse @tag(name: "organizer") {
+    success: Boolean!
+    message: String
+    data: PayoutRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+type ApprovePayoutRequestMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: PayoutRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+type RejectPayoutRequestMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: PayoutRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+type ProcessPayoutRequestMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: PayoutRequest
+    errors: [String!]!
+    metadata: JSON
+}
+
+type BankAccountMutationResponse {
+    success: Boolean!
+    message: String
+    data: BankAccount
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Specific bank account mutation response types matching resolver return types
+type CreateBankAccountMutationResponse @tag(name: "organizer") {
+    success: Boolean!
+    message: String
+    data: BankAccount
+    errors: [String!]!
+    metadata: JSON
+}
+
+type UpdateBankAccountMutationResponse @tag(name: "organizer") {
+    success: Boolean!
+    message: String
+    data: BankAccount
+    errors: [String!]!
+    metadata: JSON
+}
+
+type DeleteBankAccountMutationResponse @tag(name: "organizer") {
+    success: Boolean!
+    message: String
+    errors: [String!]!
+    metadata: JSON
+}
+
+type VerifyBankAccountMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: BankAccount
+    errors: [String!]!
+    metadata: JSON
+}
+
+# TransactionMutationResponse - REMOVED (replaced by PaymentAttemptMutationResponse)
+
+# ProcessTransactionMutationResponse - REMOVED (use PaymentAttemptMutationResponse)
+
+# Payment Attempt mutation response type
+type PaymentAttemptMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: PaymentAttempt
+    errors: [String!]!
+    metadata: JSON
+}
+
+type EscrowAccountMutationResponse {
+    success: Boolean!
+    message: String
+    data: EventEscrowAccount
+    errors: [String!]!
+    metadata: JSON
+}
+
+type BulkOperationResponse {
+    success: Boolean!
+    message: String
+    processedCount: Int!
+    failedCount: Int!
+    errors: [String!]!
+}
+
+# BulkTransactionOperationResponse - REMOVED (use BulkPaymentAttemptOperationResponse)
+
+# ADMIN - Bulk payout operation response with payout request details
+type BulkPayoutOperationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    processedCount: Int!
+    failedCount: Int!
+    processedPayouts: [PayoutRequest!]!
+    failedPayoutIds: [String!]!
+    errors: [String!]!
+}
+
+# Shared type - must have @shareable on all fields for federation
+type DeleteMutationResponse @shareable {
+    success: Boolean! @shareable
+    message: String @shareable
+    errors: [String!]! @shareable
+    metadata: JSON @shareable
+}
+
+# ============================================================================
+# FINANCIAL ENGINE MUTATION RESPONSE TYPES
+# ============================================================================
+
+# Chart of Accounts mutation response
+type ChartOfAccountsMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: ChartOfAccountsEntry
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Journal Entry mutation response
+type JournalEntryMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: JournalEntry
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Chargeback mutation response
+type ChargebackMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: ChargebackRecord
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Reconciliation mutation response
+type ReconciliationMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: ReconciliationRun
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Escrow-Journal cross-verification response
+# Compares EventEscrowAccount balance with Journal Entry calculated balance
+type EscrowJournalVerificationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    eventId: String!
+    escrowAccountId: String
+    journalAccountCode: String
+    escrowBalance: BigDecimal
+    journalBalance: BigDecimal
+    variance: BigDecimal
+    isConsistent: Boolean!
+    status: EscrowJournalVerificationStatus
+    details: [String!]!
+    errors: [String!]!
+}
+
+# Platform Account mutation response
+type PlatformAccountMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: PlatformAccount
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Escrow Transaction mutation response
+type EscrowTransactionMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: StandaloneEscrowTransaction
+    errors: [String!]!
+    metadata: JSON
+}
+
+
+# ============================================================================
+# SECTION 15: ROOT QUERY TYPE
+# Tags indicate which clients should include these queries in their operations
+# ============================================================================
+type Query {
+    # ========================================================================
+    # TICKET QUERIES
+    # PUBLIC - Single ticket lookup (owner can view their own ticket)
+    # ORGANIZER/ADMIN - Paginated lists for management
+    # ========================================================================
+
+    # PUBLIC - Ticket lookup for ticket holders
+    ticket(id: ID!): Ticket
+    ticketByNumber(ticketNumber: String!): Ticket
+
+    # ORGANIZER/ADMIN - Offset pagination for dashboard tables
+    ticketsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "organizer") @tag(name: "admin")
+    ticketsByBuyerOffsetPagination(buyerId: String!, status: TicketStatus, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "admin")
+    ticketsByOrganizerOffsetPagination(organizerId: String!, filter: TicketFilterInput, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "organizer") @tag(name: "admin")
+    searchTicketsOffsetPagination(filter: TicketFilterInput!, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "admin")
+
+    # ORGANIZER/ADMIN - Cursor pagination for dashboard lists
+    ticketsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): TicketConnection! @tag(name: "organizer") @tag(name: "admin")
+    # MOBILE - Customer views their own tickets
+    ticketsByBuyerCursorPagination(buyerId: String!, status: TicketStatus, pagination: CursorPaginationInput): TicketConnection! @tag(name: "mobile")
+    ticketsByOrganizerCursorPagination(organizerId: String!, filter: TicketFilterInput, pagination: CursorPaginationInput): TicketConnection! @tag(name: "organizer") @tag(name: "admin")
+    searchTicketsCursorPagination(filter: TicketFilterInput!, pagination: CursorPaginationInput): TicketConnection! @tag(name: "admin")
+
+    # ORGANIZER/ADMIN - Ticket counts for dashboard stats
+    ticketCountByEvent(eventId: String!): Int! @tag(name: "organizer") @tag(name: "admin")
+    ticketCountByBuyer(buyerId: String!): Int! @tag(name: "mobile")
+
+    # ========================================================================
+    # FINANCIAL TRANSACTION QUERIES - REMOVED
+    # Replaced by:
+    # - PaymentAttempt queries for payment lifecycle tracking
+    # - JournalEntry queries for accounting records
+    # ========================================================================
+
+    # ========================================================================
+    # PAYMENT ATTEMPT QUERIES
+    # ADMIN-ONLY - Payment attempt lifecycle tracking
+    # Tracks the operational journey of payments through PawaPay
+    # ========================================================================
+
+    # ADMIN - Single payment attempt lookup
+    paymentAttempt(id: ID!): PaymentAttempt @tag(name: "admin")
+    paymentAttemptByDepositId(depositId: String!): PaymentAttempt @tag(name: "admin")
+    paymentAttemptByAttemptNumber(attemptNumber: String!): PaymentAttempt @tag(name: "admin")
+
+    # ADMIN - Payment attempts by ticket (all attempts for a purchase)
+    paymentAttemptsByTicket(ticketId: String!): [PaymentAttempt!]! @tag(name: "admin")
+    latestPaymentAttemptByTicket(ticketId: String!): PaymentAttempt @tag(name: "admin")
+    successfulPaymentAttemptByTicket(ticketId: String!): PaymentAttempt @tag(name: "admin")
+
+    # ADMIN - Payment attempts by status (for monitoring/recovery)
+    paymentAttemptsByStatus(status: PaymentAttemptStatus!): [PaymentAttempt!]! @tag(name: "admin")
+    pendingPaymentAttempts: [PaymentAttempt!]! @tag(name: "admin")
+    confirmedUnfulfilledPaymentAttempts: [PaymentAttempt!]! @tag(name: "admin")
+
+    # ADMIN - Payment attempts by event/buyer
+    paymentAttemptsByEvent(eventId: String!): [PaymentAttempt!]! @tag(name: "admin")
+    paymentAttemptsByBuyer(buyerId: String!): [PaymentAttempt!]! @tag(name: "admin")
+
+    # ADMIN - Statistics
+    paymentAttemptCountByStatus(status: PaymentAttemptStatus!): Int! @tag(name: "admin")
+    hasSuccessfulPayment(ticketId: String!): Boolean! @tag(name: "admin")
+
+    # ========================================================================
+    # ESCROW ACCOUNT QUERIES
+    # ADMIN-ONLY - Escrow account management is platform-level
+    # ========================================================================
+
+    # ADMIN - Single escrow account lookup
+    escrowAccount(id: ID!): EventEscrowAccount @tag(name: "admin")
+    escrowAccountByNumber(accountNumber: String!): EventEscrowAccount @tag(name: "admin")
+    escrowAccountByEvent(eventId: String!): EventEscrowAccount @tag(name: "admin")
+
+    # ADMIN - Offset pagination for escrow dashboard tables
+    escrowAccountsOffsetPagination(filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput): EscrowAccountOffsetPage! @tag(name: "admin")
+    escrowAccountsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EscrowAccountOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Cursor pagination for escrow lists
+    escrowAccountsCursorPagination(filter: EscrowAccountFilterInput, pagination: CursorPaginationInput): EscrowAccountConnection! @tag(name: "admin")
+    escrowAccountsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EscrowAccountConnection! @tag(name: "admin")
+
+    # ADMIN - Escrow balance and summary
+    escrowAccountBalance(accountId: String!): BigDecimal @tag(name: "admin")
+    accountSummary(accountId: String!): AccountSummary @tag(name: "admin")
+    platformSummary: PlatformSummary! @tag(name: "admin")
+
+    # ========================================================================
+    # REFUND REQUEST QUERIES
+    # ORGANIZER - See refunds for own events
+    # ADMIN - See all refunds platform-wide
+    # ========================================================================
+
+    # ORGANIZER/ADMIN - Single refund lookup
+    refundRequest(id: ID!): RefundRequest @tag(name: "organizer") @tag(name: "admin")
+    refundRequestByRequestId(requestId: String!): RefundRequest @tag(name: "organizer") @tag(name: "admin")
+    refundRequestsByTicket(ticketId: String!): [RefundRequest!]! @tag(name: "organizer") @tag(name: "admin")
+
+    # ADMIN - Offset pagination for refund dashboard tables
+    refundRequestsOffsetPagination(filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
+    refundRequestsByBuyerOffsetPagination(buyerId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
+    # ORGANIZER/ADMIN - Refunds by event
+    refundRequestsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "organizer") @tag(name: "admin")
+    pendingRefundRequestsOffsetPagination(pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Cursor pagination for refund lists
+    refundRequestsCursorPagination(filter: RefundRequestFilterInput!, pagination: CursorPaginationInput): RefundRequestConnection! @tag(name: "admin")
+    refundRequestsByBuyerCursorPagination(buyerId: String!, pagination: CursorPaginationInput): RefundRequestConnection! @tag(name: "admin")
+    refundRequestsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): RefundRequestConnection! @tag(name: "organizer") @tag(name: "admin")
+    pendingRefundRequestsCursorPagination(pagination: CursorPaginationInput): RefundRequestConnection! @tag(name: "admin")
+
+    # MOBILE - Refund eligibility and calculation for customer
+    isTicketEligibleForRefund(ticketId: String!): Boolean! @tag(name: "mobile")
+    calculateRefundAmount(ticketId: String!): RefundCalculation! @tag(name: "mobile")
+    # ORGANIZER/ADMIN - Refund summary for event
+    eventRefundSummary(eventId: String!): RefundSummary @tag(name: "organizer") @tag(name: "admin")
+
+    # ========================================================================
+    # PAYOUT REQUEST QUERIES
+    # ORGANIZER - Track own payout requests
+    # ADMIN - Manage all payout requests
+    # ========================================================================
+
+    # ORGANIZER/ADMIN - Single payout lookup
+    payoutRequest(id: ID!): PayoutRequest @tag(name: "organizer") @tag(name: "admin")
+    payoutRequestByRequestId(requestId: String!): PayoutRequest @tag(name: "organizer") @tag(name: "admin")
+
+    # ADMIN - Offset pagination for all payouts
+    payoutRequestsOffsetPagination(filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    # ORGANIZER/ADMIN - Payouts by organizer
+    payoutRequestsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "organizer") @tag(name: "admin")
+    payoutRequestsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "organizer") @tag(name: "admin")
+    # ADMIN - Pending and failed payouts queue
+    pendingPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    failedPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Cursor pagination for payout lists
+    payoutRequestsCursorPagination(filter: PayoutRequestFilterInput!, pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
+    # ORGANIZER - Own payout request history
+    payoutRequestsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "organizer") @tag(name: "admin")
+    payoutRequestsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "organizer") @tag(name: "admin")
+    pendingPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
+    failedPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
+
+    # ADMIN - Payout Recovery Queries
+    payoutRequestsForReviewOffsetPagination(reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    payoutRequestsForReviewCursorPagination(reviewStatus: PayoutReviewStatus, pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
+    stuckPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    stuckPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
+    retryablePayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    recentlyResolvedPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    payoutRequestsByIssueTypeOffsetPagination(issueType: PayoutIssueType!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    payoutRecoverySummary: PayoutRecoverySummary! @tag(name: "admin")
+
+    # ========================================================================
+    # BANK ACCOUNT QUERIES
+    # ORGANIZER - Manage own bank accounts
+    # ADMIN - View and verify all bank accounts
+    # ========================================================================
+
+    # ORGANIZER/ADMIN - Bank account lookups
+    bankAccount(id: ID!): BankAccount @tag(name: "organizer") @tag(name: "admin")
+    bankAccountsByOrganizer(organizerId: String!): [BankAccount!]! @tag(name: "organizer") @tag(name: "admin")
+    defaultBankAccount(organizerId: String!): BankAccount @tag(name: "organizer") @tag(name: "admin")
+
+    # ========================================================================
+    # STATISTICS QUERIES
+    # ADMIN - Platform-wide statistics
+    # ========================================================================
+
+    # ADMIN - Ticket statistics (platform-wide)
+    ticketStats(eventId: ID): TicketStats! @tag(name: "admin")
+    # ADMIN - Transaction statistics
+    transactionStats(eventId: ID, organizerId: ID): TransactionStats! @tag(name: "admin")
+    # ADMIN - Payout request statistics
+    payoutRequestStats(organizerId: ID): PayoutRequestStats! @tag(name: "admin")
+
+    # ========================================================================
+    # FINANCIAL REPORTING QUERIES
+    # ADMIN - Platform financial reporting
+    # ========================================================================
+
+    # ADMIN - Financial reports and exports
+    financialReport(filter: FinancialReportFilterInput!): FinancialReport! @tag(name: "admin")
+    exportFinancialReport(filter: FinancialReportFilterInput!, format: ExportFormat!): ReportExport! @tag(name: "admin")
+    # ORGANIZER/ADMIN - Event sales report
+    exportSalesReport(eventId: ID!, format: ExportFormat!): ReportExport! @tag(name: "organizer") @tag(name: "admin")
+
+    # ========================================================================
+    # RESERVATION QUERIES
+    # MOBILE - Customer checkout flow
+    # ========================================================================
+
+    # MOBILE - Reservation lookup during checkout
+    reservation(id: ID!): TicketReservation @tag(name: "mobile")
+    myActiveReservations(userId: ID!): [TicketReservation!]! @tag(name: "mobile")
+
+    # ADMIN - Reservation monitoring for event management
+    reservationsByEventOffsetPagination(eventId: ID!, pagination: OffsetPaginationInput): ReservationOffsetPage! @tag(name: "admin")
+    expiredReservationsOffsetPagination(eventId: ID, since: DateTime!, pagination: OffsetPaginationInput): ReservationOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Cursor pagination for reservation lists
+    reservationsByEventCursorPagination(eventId: ID!, pagination: CursorPaginationInput): ReservationConnection! @tag(name: "admin")
+    expiredReservationsCursorPagination(eventId: ID, since: DateTime!, pagination: CursorPaginationInput): ReservationConnection! @tag(name: "admin")
+
+    # ========================================================================
+    # PROMO CODE QUERIES
+    # ORGANIZER - Promo code management
+    # MOBILE - Promo code validation during checkout
+    # ========================================================================
+
+    # ORGANIZER/ADMIN - Promo code lookups
+    promoCode(id: ID!): PromoCode @tag(name: "organizer") @tag(name: "admin")
+    promoCodeByCode(code: String!): PromoCode @tag(name: "organizer") @tag(name: "admin")
+    # MOBILE - Validate promo code during checkout
+    validatePromoCode(code: String!, eventId: ID!, amount: BigDecimal): PromoCodeValidation! @tag(name: "mobile")
+    # ORGANIZER - Promo code management
+    eventPromoCodes(eventId: ID!): [PromoCode!]! @tag(name: "organizer") @tag(name: "admin")
+    organizerPromoCodes(organizerId: ID!): [PromoCode!]! @tag(name: "organizer") @tag(name: "admin")
+
+    # ========================================================================
+    # LIVE DASHBOARD QUERIES
+    # ORGANIZER - Real-time event day dashboard
+    # ========================================================================
+
+    # ORGANIZER - Live check-in dashboard for event day
+    eventLiveDashboard(eventId: ID!): LiveDashboard! @tag(name: "organizer")
+
+    # ========================================================================
+    # FINANCIAL ENGINE QUERIES - Double-Entry Bookkeeping
+    # ADMIN-ONLY - Core accounting infrastructure
+    # ========================================================================
+
+    # ADMIN - Chart of Accounts queries
+    chartOfAccounts: [ChartOfAccountsEntry!]! @tag(name: "admin")
+    chartOfAccountsEntry(id: ID!): ChartOfAccountsEntry @tag(name: "admin")
+    chartOfAccountsByCode(accountCode: String!): ChartOfAccountsEntry @tag(name: "admin")
+    chartOfAccountsByType(accountType: AccountType!): [ChartOfAccountsEntry!]! @tag(name: "admin")
+    chartOfAccountsOffsetPagination(pagination: OffsetPaginationInput): ChartOfAccountsOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Journal Entry queries
+    journalEntry(id: ID!): JournalEntry @tag(name: "admin")
+    journalEntryByNumber(entryNumber: String!): JournalEntry @tag(name: "admin")
+    journalEntriesByCorrelationId(correlationId: String!): [JournalEntry!]! @tag(name: "admin")
+    journalEntriesOffsetPagination(filter: JournalEntryFilterInput, pagination: OffsetPaginationInput): JournalEntryOffsetPage! @tag(name: "admin")
+    journalEntriesByAccountCode(accountCode: String!, pagination: OffsetPaginationInput): JournalEntryOffsetPage! @tag(name: "admin")
+    pendingJournalEntriesOffsetPagination(pagination: OffsetPaginationInput): JournalEntryOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Trial Balance and Account Balance queries
+    trialBalance(asOf: DateTime): [AccountBalance!]! @tag(name: "admin")
+    accountBalance(accountCode: String!, asOf: DateTime): AccountBalance @tag(name: "admin")
+
+    # ADMIN - Platform Account queries
+    platformAccounts: [PlatformAccount!]! @tag(name: "admin")
+    platformAccount(id: ID!): PlatformAccount @tag(name: "admin")
+    platformAccountByType(accountType: PlatformAccountType!): PlatformAccount @tag(name: "admin")
+
+    # ADMIN - Standalone Escrow Transaction queries
+    escrowTransaction(id: ID!): StandaloneEscrowTransaction @tag(name: "admin")
+    escrowTransactionsByAccount(escrowAccountId: String!, pagination: OffsetPaginationInput): EscrowTransactionOffsetPage! @tag(name: "admin")
+    escrowTransactionsByTicket(ticketId: String!): [StandaloneEscrowTransaction!]! @tag(name: "admin")
+    escrowTransactionsUnlinked: [StandaloneEscrowTransaction!]! @tag(name: "admin")
+    escrowBalance(escrowAccountId: String!): BigDecimal! @tag(name: "admin")
+    escrowBalanceAsOf(escrowAccountId: String!, asOf: DateTime!): BigDecimal! @tag(name: "admin")
+
+    # ========================================================================
+    # CHARGEBACK QUERIES
+    # ADMIN-ONLY - Chargeback management
+    # ========================================================================
+
+    # ADMIN - Chargeback queries
+    chargeback(id: ID!): ChargebackRecord @tag(name: "admin")
+    chargebackByChargebackId(chargebackId: String!): ChargebackRecord @tag(name: "admin")
+    chargebacksOffsetPagination(filter: ChargebackFilterInput, pagination: OffsetPaginationInput): ChargebackOffsetPage! @tag(name: "admin")
+    chargebacksByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): ChargebackOffsetPage! @tag(name: "admin")
+    chargebacksByEvent(eventId: String!, pagination: OffsetPaginationInput): ChargebackOffsetPage! @tag(name: "admin")
+    pendingChargebacks: [ChargebackRecord!]! @tag(name: "admin")
+    chargebacksPendingRecovery: [ChargebackRecord!]! @tag(name: "admin")
+    chargebackStats(organizerId: String, eventId: String): ChargebackStats! @tag(name: "admin")
+
+    # ========================================================================
+    # RECONCILIATION QUERIES
+    # ADMIN-ONLY - Reconciliation engine
+    # ========================================================================
+
+    # ADMIN - Reconciliation queries
+    reconciliationRun(id: ID!): ReconciliationRun @tag(name: "admin")
+    reconciliationRunsOffsetPagination(filter: ReconciliationFilterInput, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage! @tag(name: "admin")
+    reconciliationRunsByType(type: ReconciliationType!, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage! @tag(name: "admin")
+    reconciliationRunsRequiringReview: [ReconciliationRun!]! @tag(name: "admin")
+    reconciliationSummary(type: ReconciliationType, startDate: DateTime, endDate: DateTime): ReconciliationSummary! @tag(name: "admin")
+
+    # ========================================================================
+    # ESCROW-JOURNAL CROSS-VERIFICATION QUERIES
+    # ADMIN-ONLY - Verify escrow balances match journal entries
+    # ========================================================================
+
+    # ADMIN - Verify single event's escrow-journal consistency
+    escrowJournalVerification(eventId: ID!): EscrowJournalVerificationResponse! @tag(name: "admin")
+
+    # ADMIN - Verify all escrow accounts against journal entries
+    escrowJournalVerificationAll: [EscrowJournalVerificationResponse!]! @tag(name: "admin")
+
+    # ADMIN - Get only inconsistencies (filtered view)
+    escrowJournalInconsistencies: [EscrowJournalVerificationResponse!]! @tag(name: "admin")
+
+}
+
+# ============================================================================
+# SECTION 16: ROOT MUTATION TYPE
+# Tags indicate which clients should include these mutations in their operations
+# ============================================================================
+type Mutation {
+    # ========================================================================
+    # TICKET MUTATIONS
+    # MOBILE - Purchase flow, ORGANIZER - Validation
+    # ========================================================================
+
+    # MOBILE - Customer ticket purchase
+    # NOTE: buyerId extracted from JWT authentication - not passed as parameter (OWASP A01:2021)
+    purchaseTicket(input: TicketPurchaseInput!): PurchaseTicketMutationResponse! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    # ORGANIZER - Ticket validation at venue (scanner app)
+    validateTicket(ticketNumber: String!): ValidateTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    useTicket(ticketNumber: String!): UseTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    # ORGANIZER/ADMIN - Cancel and refund tickets
+    # NOTE: processedBy extracted from JWT authentication (OWASP A01:2021 compliance)
+    cancelTicket(ticketNumber: String!, reason: String!): CancelTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    refundTicket(ticketNumber: String!, reason: String!): RefundTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+
+    # ADMIN - Administrative ticket operations
+    adminUpdateTicket(ticketId: ID!, input: AdminTicketUpdateInput!): TicketMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    regenerateTicketQrCode(ticketId: ID!): TicketMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    bulkCancelTickets(ticketIds: [ID!]!, reason: String!): BulkOperationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # REFUND REQUEST MUTATIONS
+    # MOBILE - Customer requests, ADMIN - Approval workflow
+    # ========================================================================
+
+    # MOBILE - Customer initiates refund request
+    createUserRefundRequest(input: CreateRefundRequestInput!): CreateRefundRequestMutationResponse! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    # ADMIN - Admin-initiated refund
+    createAdminRefundRequest(ticketId: ID!, reason: String!, bypassApproval: Boolean): RefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    # ADMIN - Refund approval workflow
+    # NOTE: Actor IDs (reviewerId, processedBy, etc.) extracted from JWT - OWASP A01:2021
+    approveRefundRequest(refundRequestId: ID!, reviewComments: String): ApproveRefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    rejectRefundRequest(refundRequestId: ID!, rejectionReason: String!): RejectRefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    processRefundRequest(refundRequestId: ID!): ProcessRefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    cancelRefundRequest(refundRequestId: ID!, reason: String!): RefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    bulkApproveRefunds(refundRequestIds: [ID!]!): BulkOperationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # FINANCIAL TRANSACTION MUTATIONS - REMOVED
+    # Replaced by:
+    # - PaymentAttempt mutations for payment lifecycle
+    # - JournalEntry mutations for accounting
+    # ========================================================================
+
+    # ========================================================================
+    # PAYMENT ATTEMPT MUTATIONS
+    # ADMIN/INTERNAL - Payment attempt lifecycle management
+    # ========================================================================
+
+    # INTERNAL - Initiate payment (called by checkout flow)
+    initiatePaymentAttempt(input: InitiatePaymentAttemptInput!): PaymentAttemptMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
+    # INTERNAL - Retry failed payment
+    retryPaymentAttempt(depositId: String!): PaymentAttemptMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
+
+    # INTERNAL - Webhook processing (called by PawaPay webhook handler)
+    processPaymentWebhook(input: ProcessPaymentWebhookInput!): PaymentAttemptMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
+
+    # ADMIN - Manual status verification with gateway
+    verifyPaymentWithGateway(depositId: String!): PaymentAttemptMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Mark fulfillment complete
+    markPaymentFulfilled(input: MarkPaymentFulfilledInput!): PaymentAttemptMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
+
+    # ADMIN - Cancel payment
+    cancelPaymentAttempt(depositId: String!, reason: String!): PaymentAttemptMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Add note for audit trail
+    # NOTE: author extracted from JWT authentication (OWASP A01:2021 compliance)
+    addPaymentAttemptNote(depositId: String!, note: String!): PaymentAttemptMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Set review status for investigation
+    # NOTE: reviewedBy extracted from JWT authentication (OWASP A01:2021 compliance)
+    setPaymentAttemptReviewStatus(depositId: String!, reviewStatus: String!, notes: String): PaymentAttemptMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # INTERNAL - Scheduled job operations
+    pollPendingPayments: Int! @auth(requires: INTERNAL) @tag(name: "internal")
+    expireTimedOutPayments: Int! @auth(requires: INTERNAL) @tag(name: "internal")
+
+    # ========================================================================
+    # ESCROW ACCOUNT MUTATIONS
+    # ADMIN - Escrow account management
+    # ========================================================================
+
+    # INTERNAL - Auto-create escrow on event publish
+    createEscrowAccount(input: CreateEscrowAccountInput!): EscrowAccountMutationResponse! @tag(name: "internal")
+    # ADMIN - Escrow account management
+    updateEscrowAccountStatus(accountId: ID!, status: EscrowAccountStatus!, reason: String): EscrowAccountMutationResponse! @tag(name: "admin")
+    lockEscrowAccount(accountId: ID!, lockUntil: DateTime!, reason: String!): EscrowAccountMutationResponse! @tag(name: "admin")
+    unlockEscrowAccount(accountId: ID!, reason: String!): EscrowAccountMutationResponse! @tag(name: "admin")
+    markPayoutEligible(accountId: ID!): EscrowAccountMutationResponse! @tag(name: "admin")
+    closeEscrowAccount(accountId: ID!, reason: String!): EscrowAccountMutationResponse! @tag(name: "admin")
+
+    # ========================================================================
+    # PAYOUT REQUEST MUTATIONS
+    # ORGANIZER - Request payouts, ADMIN - Approve/process
+    # ========================================================================
+
+    # ORGANIZER - Request payout of event revenue
+    # NOTE: Actor IDs extracted from JWT authentication - OWASP A01:2021
+    createPayoutRequest(input: CreatePayoutRequestInput!): CreatePayoutRequestMutationResponse! @tag(name: "organizer")
+    # ADMIN - Payout approval workflow
+    approvePayoutRequest(payoutRequestId: ID!, notes: String): ApprovePayoutRequestMutationResponse! @tag(name: "admin")
+    rejectPayoutRequest(payoutRequestId: ID!, rejectionReason: String!): RejectPayoutRequestMutationResponse! @tag(name: "admin")
+    processPayoutRequest(payoutRequestId: ID!): ProcessPayoutRequestMutationResponse! @tag(name: "admin")
+    # ADMIN - Complete payout after bank transfer (records accounting entries)
+    completePayoutRequest(payoutRequestId: ID!, bankReference: String!): PayoutRequestMutationResponse! @tag(name: "admin")
+    # ORGANIZER - Cancel own payout request
+    cancelPayoutRequest(payoutRequestId: ID!, reason: String!): RejectPayoutRequestMutationResponse! @tag(name: "organizer") @tag(name: "admin")
+    retryPayoutRequest(payoutRequestId: ID!): PayoutRequestMutationResponse! @tag(name: "admin")
+
+    # ADMIN - Payout Recovery Operations
+    resumePayoutRequest(payoutRequestId: ID!): PayoutRequestMutationResponse! @tag(name: "admin")
+    markPayoutForReview(payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String): PayoutRequestMutationResponse! @tag(name: "admin")
+    resolvePayoutIssue(payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!, newBankAccountId: ID): PayoutRequestMutationResponse! @tag(name: "admin")
+    bulkRetryFailedPayouts(payoutRequestIds: [ID!]!): BulkPayoutOperationResponse! @tag(name: "admin")
+    bulkMarkPayoutsForReview(payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String): BulkPayoutOperationResponse! @tag(name: "admin")
+    escalatePayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequestMutationResponse! @tag(name: "admin")
+
+    # ========================================================================
+    # BANK ACCOUNT MUTATIONS
+    # ORGANIZER - Manage own bank accounts, ADMIN - Verify
+    # ========================================================================
+
+    # ORGANIZER - Bank account CRUD
+    # NOTE: organizerId/verifiedBy extracted from JWT authentication (OWASP A01:2021 compliance)
+    createBankAccount(input: CreateBankAccountInput!): CreateBankAccountMutationResponse! @tag(name: "organizer")
+    updateBankAccount(id: ID!, input: UpdateBankAccountInput!): UpdateBankAccountMutationResponse! @tag(name: "organizer")
+    deleteBankAccount(id: ID!): DeleteBankAccountMutationResponse! @tag(name: "organizer")
+    setDefaultBankAccount(id: ID!): UpdateBankAccountMutationResponse! @tag(name: "organizer")
+    # ADMIN - Bank account verification
+    verifyBankAccount(id: ID!): VerifyBankAccountMutationResponse! @tag(name: "admin")
+
+    # ========================================================================
+    # RESERVATION MUTATIONS
+    # MOBILE - Ticket checkout flow
+    # ========================================================================
+
+    # MOBILE - Customer checkout flow (userId extracted from JWT for security)
+    reserveTickets(input: ReserveTicketsInput!): TicketReservation! @tag(name: "mobile")
+    completeReservation(input: CompleteReservationInput!): [Ticket!]! @tag(name: "mobile")
+    cancelReservation(reservationId: ID!): Boolean! @tag(name: "mobile")
+    extendReservation(reservationId: ID!, minutes: Int!): TicketReservation! @tag(name: "mobile")
+    # ADMIN - Force expire stuck reservations
+    forceExpireReservation(reservationId: ID!): Boolean! @tag(name: "admin")
+
+    # ========================================================================
+    # PROMO CODE MUTATIONS
+    # ORGANIZER - Promo code management for marketing
+    # ========================================================================
+
+    # ORGANIZER - Promo code CRUD
+    # NOTE: createdBy extracted from JWT authentication (OWASP A01:2021 compliance)
+    createPromoCode(input: CreatePromoCodeInput!): PromoCode! @tag(name: "organizer")
+    updatePromoCode(id: ID!, input: UpdatePromoCodeInput!): PromoCode! @tag(name: "organizer")
+    activatePromoCode(id: ID!): PromoCode! @tag(name: "organizer")
+    deactivatePromoCode(id: ID!): PromoCode! @tag(name: "organizer")
+    deletePromoCode(id: ID!): DeleteMutationResponse! @tag(name: "organizer")
+
+    # ========================================================================
+    # FINANCIAL ENGINE MUTATIONS - Double-Entry Bookkeeping
+    # ADMIN-ONLY - Core accounting infrastructure
+    # ========================================================================
+
+    # ADMIN - Chart of Accounts management
+    createChartOfAccountsEntry(input: CreateChartOfAccountsInput!): ChartOfAccountsMutationResponse! @tag(name: "admin")
+    updateChartOfAccountsEntry(id: ID!, input: CreateChartOfAccountsInput!): ChartOfAccountsMutationResponse! @tag(name: "admin")
+    deactivateChartOfAccountsEntry(id: ID!): ChartOfAccountsMutationResponse! @tag(name: "admin")
+    seedChartOfAccounts: Boolean! @tag(name: "admin")
+
+    # ADMIN - Journal Entry management
+    # NOTE: Actor IDs (postedBy, reversedBy) extracted from JWT authentication (OWASP A01:2021 compliance)
+    createJournalEntry(input: CreateJournalEntryInput!): JournalEntryMutationResponse! @tag(name: "admin")
+    postJournalEntry(id: ID!): JournalEntryMutationResponse! @tag(name: "admin")
+    reverseJournalEntry(id: ID!, reason: String!): JournalEntryMutationResponse! @tag(name: "admin")
+
+    # ADMIN - Platform Account management
+    createPlatformAccount(accountType: PlatformAccountType!, name: String!, currency: String!): PlatformAccountMutationResponse! @tag(name: "admin")
+    creditPlatformAccount(id: ID!, amount: BigDecimal!, description: String!): PlatformAccountMutationResponse! @tag(name: "admin")
+    debitPlatformAccount(id: ID!, amount: BigDecimal!, description: String!): PlatformAccountMutationResponse! @tag(name: "admin")
+
+    # ========================================================================
+    # CHARGEBACK MUTATIONS
+    # ADMIN-ONLY - Chargeback lifecycle management
+    # ========================================================================
+
+    # ADMIN - Chargeback lifecycle management
+    receiveChargeback(input: ReceiveChargebackInput!): ChargebackMutationResponse! @tag(name: "admin")
+    startChargebackReview(id: ID!, notes: String): ChargebackMutationResponse! @tag(name: "admin")
+    acceptChargeback(id: ID!, reason: String): ChargebackMutationResponse! @tag(name: "admin")
+    disputeChargeback(id: ID!, input: DisputeChargebackInput!): ChargebackMutationResponse! @tag(name: "admin")
+    recordChargebackOutcome(id: ID!, won: Boolean!, notes: String): ChargebackMutationResponse! @tag(name: "admin")
+    recoverChargebackFunds(id: ID!, input: RecoverChargebackInput!): ChargebackMutationResponse! @tag(name: "admin")
+
+    # ========================================================================
+    # RECONCILIATION MUTATIONS
+    # ADMIN-ONLY - Reconciliation engine
+    # ========================================================================
+
+    # ADMIN - Reconciliation management
+    startReconciliation(input: StartReconciliationInput!): ReconciliationMutationResponse! @tag(name: "admin")
+    resolveReconciliationItem(runId: ID!, input: ResolveReconciliationItemInput!): ReconciliationMutationResponse! @tag(name: "admin")
+    completeReconciliation(runId: ID!, notes: String): ReconciliationMutationResponse! @tag(name: "admin")
+    failReconciliation(runId: ID!, reason: String!): ReconciliationMutationResponse! @tag(name: "admin")
+
+    # ADMIN - Escrow-Journal Cross-Verification
+    # Verifies that EventEscrowAccount balances match journal entry calculated balances
+    verifyEscrowJournalConsistency(eventId: ID!): EscrowJournalVerificationResponse! @tag(name: "admin")
+
+    """
+    Records a gateway settlement in the accounting system.
+
+    Called when:
+    1. Gateway webhook confirms settlement completed
+    2. Admin manually records a settlement from bank statement
+    3. Reconciliation process confirms matched transactions
+
+    Accounting Entry (IN/OUT):
+    - DR Bank Account (1011)        - IN: Money received in bank
+    - DR Gateway Fees Expense (5010) - IN: Fee cost to platform
+    - CR Gateway Receivable (1021)  - OUT: Receivable cleared
+    """
+    recordGatewaySettlement(input: RecordGatewaySettlementInput!): JournalEntryMutationResponse! @tag(name: "admin")
+
+}
+

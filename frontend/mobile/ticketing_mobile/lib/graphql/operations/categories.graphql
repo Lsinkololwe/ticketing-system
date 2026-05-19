@@ -1,0 +1,70 @@
+# =============================================================================
+# CATEGORY OPERATIONS
+# =============================================================================
+
+# Category Fragment
+fragment CategoryListFields on EventCategory {
+  id
+  name
+  code
+  description
+  iconUrl
+  color
+  sortOrder
+  eventCount
+  isActive
+}
+
+# =============================================================================
+# QUERIES
+# =============================================================================
+
+# Get popular categories
+query GetPopularCategories($limit: Int) {
+  popularCategories(limit: $limit) {
+    ...CategoryListFields
+  }
+}
+
+# Get all active categories (cursor pagination)
+query GetActiveCategories($first: Int, $after: String) {
+  activeEventCategoriesCursorPagination(
+    pagination: { first: $first, after: $after }
+  ) {
+    edges {
+      node {
+        ...CategoryListFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}
+
+# Search categories
+query SearchCategories($query: String!, $first: Int, $after: String) {
+  searchEventCategoriesCursorPagination(
+    query: $query
+    pagination: { first: $first, after: $after }
+  ) {
+    edges {
+      node {
+        ...CategoryListFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}

@@ -1,0 +1,1851 @@
+# ============================================================================
+# CATALOG SERVICE - GraphQL Federation 2 Subgraph Schema
+# ============================================================================
+#
+# This service is the OWNER of Event and Category entities.
+# It manages the event catalog - what events exist, where they are, and
+# their categorization. Location is a simple embedded type for event addresses.
+#
+# FEDERATION CONCEPTS USED:
+# - @key: Marks Event as a federated entity
+# - @shareable: Allows Booking Service to also resolve certain fields
+# - @tag: Marks fields/types for client-specific code generation
+# - Entity stubs: We define User stub to reference Identity Service's User
+#
+# OWNERSHIP:
+# - Event (primary owner)
+# - EventCategory, Province, City (exclusive)
+# - TicketTier (exclusive)
+# - Location (simple type, embedded in Event)
+#
+# REFERENCES:
+# - User (owned by Identity Service) - referenced via organizerId
+#
+# ============================================================================
+# CLIENT-SPECIFIC TAGGING STRATEGY
+# ============================================================================
+#
+# We use @tag directives to document which clients should use which fields.
+# This enables operation-based code generation where each frontend only
+# generates types for the operations it actually uses.
+#
+# TAG CATEGORIES:
+# - (no tag)     = Public/shared - all clients can use
+# - "mobile"     = Mobile app consumer features (Expo/React Native)
+# - "organizer"  = Event organizer dashboard features (Next.js)
+# - "admin"      = Platform administrator features only
+# - "internal"   = Service-to-service communication (not for clients)
+#
+# TAGGING RULES:
+# 1. Fields without tags are considered public (available to all)
+# 2. Tags are additive - multiple tags mean multiple audiences
+# 3. Queries/mutations inherit tagging from their use case
+# 4. Statistics and reporting types are typically admin-only
+# 5. Approval workflow fields/operations are admin-only
+#
+# ============================================================================
+# SCHEMA ORGANIZATION:
+# 1. Federation directives & Scalars
+# 2. Enums
+# 3. Entity stubs
+# 4. Primary types (Event, Location)
+# 5. Supporting types (TicketTier, EventCategory, etc.)
+# 6. Statistics types
+# 7. Pagination types
+# 8. Input types
+# 9. Mutation response types (consolidated)
+# 10. Subscription payload types
+# 11. Query type (bottom)
+# 12. Mutation type (bottom)
+# 13. Subscription type (very bottom)
+#
+# ============================================================================
+
+# ============================================================================
+# SECTION 1: FEDERATION 2 SCHEMA EXTENSION
+# ============================================================================
+#
+# We import @tag directive to enable client-specific schema filtering.
+# This allows Apollo GraphOS Contracts or operation-based codegen to
+# generate optimized types for each frontend client.
+#
+extend schema @link(
+    url: "https://specs.apollo.dev/federation/v2.9",
+    import: ["@key", "@shareable", "@external", "@requires", "@provides", "@extends", "@inaccessible", "@tag"]
+)
+
+# ============================================================================
+# SECTION 1.1: AUTHORIZATION DIRECTIVE
+# ============================================================================
+# Role enum and @auth directive are defined in shared-library/auth.graphqls
+# and automatically loaded. Use @auth(requires: ROLE) on operations.
+# ============================================================================
+
+# ============================================================================
+# SECTION 2: CUSTOM SCALARS
+# ============================================================================
+scalar DateTime
+scalar BigDecimal
+scalar JSON
+
+# ============================================================================
+# SECTION 3: ENUMS
+# ============================================================================
+
+# Event lifecycle status - controls what actions are available
+enum EventStatus {
+    DRAFT              # Initial state, not visible to public
+    PENDING_REVIEW     # Submitted for admin review
+    CHANGES_REQUESTED  # Admin requested changes
+    APPROVED           # Approved but not yet published
+    PUBLISHED          # Live and visible to public
+    CANCELLED          # Event cancelled
+    COMPLETED          # Event has ended
+}
+
+# Ticket category enum (shared value type with Booking Service)
+enum TicketCategory {
+    GENERAL
+    PRE_SALE
+    VIP
+    VVIP
+    PREMIUM
+    EARLY_BIRD
+    STUDENT
+    SENIOR
+    GROUP
+    CORPORATE
+    SPONSOR
+    FREE
+}
+
+# Pagination sort direction
+enum SortDirection {
+    ASC
+    DESC
+}
+
+
+# Export format options
+enum ExportFormat {
+    CSV
+    PDF
+    EXCEL
+    JSON
+}
+
+# Approval action types for timeline tracking
+enum ApprovalAction {
+    SUBMITTED              # Organizer submitted event for review
+    ASSIGNED               # Event assigned to reviewer
+    VIEWED                 # Reviewer viewed event details
+    APPROVED               # Event approved
+    REJECTED               # Event rejected (final)
+    CHANGES_REQUESTED      # Reviewer requested changes
+    RESUBMITTED            # Organizer resubmitted after changes
+    ESCALATED              # Auto-escalated due to SLA breach
+    ESCALATION_RESOLVED    # Escalation was handled
+    COMMENT_ADDED          # Internal comment added
+}
+
+# Escalation status
+enum EscalationStatus {
+    PENDING                # Escalation triggered, not yet handled
+    ACKNOWLEDGED           # Senior admin acknowledged
+    RESOLVED               # Escalation resolved
+    EXPIRED                # Escalation expired without action
+}
+
+# Notification channel for approval workflow
+enum ApprovalNotificationChannel {
+    EMAIL
+    IN_APP
+    BOTH
+}
+
+# Notification type for approval workflow
+enum ApprovalNotificationType {
+    SUBMISSION_RECEIVED    # Organizer: your event was submitted
+    REVIEW_ASSIGNED        # Admin: event assigned to you
+    APPROVAL_GRANTED       # Organizer: your event was approved
+    REJECTION_ISSUED       # Organizer: your event was rejected
+    CHANGES_REQUESTED      # Organizer: changes requested
+    ESCALATION_TRIGGERED   # Senior Admin: SLA breach escalation
+    REMINDER_PENDING       # Admin: reminder for pending review
+    SLA_WARNING            # Admin: approaching SLA deadline
+}
+
+# ============================================================================
+# SECTION 4: ENTITY STUBS (Owned by other services)
+# ============================================================================
+
+# User stub - owned by Identity Service
+type User @key(fields: "id", resolvable: false) {
+    id: ID!
+}
+
+# Organization stub - owned by Identity Service
+# Events belong to organizations, enabling team-based access control
+type Organization @key(fields: "id", resolvable: false) {
+    id: ID!
+}
+
+# ============================================================================
+# SECTION 5: PRIMARY TYPES
+# ============================================================================
+
+# ------------------------------
+# EVENT (Primary Entity)
+# ------------------------------
+# The Event type is the core entity for event discovery. Most fields are public
+# for consumers browsing events. Organizer-specific fields are tagged for
+# dashboard use, and approval workflow fields are admin-only.
+#
+type Event @key(fields: "id") {
+    id: ID!
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # PUBLIC FIELDS - Available to all clients (mobile, web, admin)
+    # These fields are needed for event discovery and display
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Basic event information - PUBLIC
+    title: String! @shareable
+    description: String!
+    category: EventCategory
+    categoryId: String
+    eventDateTime: DateTime! @shareable
+    endDateTime: DateTime!
+
+    # Location information - PUBLIC (where is the event?)
+    location: Location
+    locationId: String
+    locationName: String @shareable
+    locationAddress: String @shareable
+    cityName: String @shareable
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # ORGANIZER FIELDS - For organizer dashboards and admin portals
+    # These fields identify who created the event and their contact info
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Organizer reference - needed by organizer dashboard and admin
+    organizer: User @tag(name: "organizer") @tag(name: "admin")
+    organizerId: String! @shareable @tag(name: "organizer") @tag(name: "admin")
+
+    # Organization that owns this event (for team-based access control)
+    # Team members of this organization can manage this event based on their roles
+    organization: Organization @tag(name: "organizer") @tag(name: "admin")
+    organizationId: String @tag(name: "organizer") @tag(name: "admin")
+
+    # Public organizer name for attribution on event pages
+    organizerName: String!
+
+    # Contact info - private, only for organizer dashboard and admin
+    organizerEmail: String @tag(name: "organizer") @tag(name: "admin")
+    organizerPhone: String @tag(name: "organizer") @tag(name: "admin")
+    organizerBusinessEmail: String @tag(name: "organizer") @tag(name: "admin")
+    organizerBusinessPhone: String @tag(name: "organizer") @tag(name: "admin")
+    organizerCompanyName: String @tag(name: "organizer") @tag(name: "admin")
+    organizerFirstName: String @tag(name: "organizer") @tag(name: "admin")
+    organizerLastName: String @tag(name: "organizer") @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STATUS FIELDS - Event lifecycle management
+    # Status is public (users see "PUBLISHED"), management fields are restricted
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Event status - public so consumers know if event is live
+    status: EventStatus!
+    published: Boolean!
+    publishedAt: DateTime
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # ADMIN-ONLY FIELDS - Approval workflow (platform administrators only)
+    # These fields track the approval process and are not shown to organizers
+    # until after approval/rejection
+    # ─────────────────────────────────────────────────────────────────────────
+
+    submittedForApprovalAt: DateTime @tag(name: "admin")
+    approvalDeadline: DateTime @tag(name: "admin")
+    approvedAt: DateTime @tag(name: "admin")
+    approvedBy: String @tag(name: "admin")
+    rejectedAt: DateTime @tag(name: "admin")
+    rejectedBy: String @tag(name: "admin")
+    rejectionReason: String @tag(name: "organizer") @tag(name: "admin")  # Organizer needs to see why rejected
+    isOverdue: Boolean @tag(name: "admin")
+
+    # Capacity and tickets
+    totalCapacity: Int!
+    availableTickets: Int!
+    soldTickets: Int!
+    ticketTiers: [TicketTier!]
+
+    # Pricing info (denormalized for filtering)
+    minTicketPrice: BigDecimal
+    maxTicketPrice: BigDecimal
+    currency: String
+
+    # Accessibility metadata
+    accessibility: EventAccessibility
+
+    # Media and branding
+    bannerImageUrl: String
+    thumbnailImageUrl: String
+    galleryImages: [String!]
+    tags: [String!]
+    additionalInfo: JSON
+
+    # Flags
+    featured: Boolean!
+    isFreeEvent: Boolean!
+    soldOut: Boolean! @shareable
+    hasWaitlist: Boolean!
+    waitlistEnabled: Boolean!
+    waitlistCapacity: Int
+
+    # Virtual event support
+    isVirtual: Boolean!
+    virtualEventUrl: String
+    virtualEventPlatform: String
+
+    # Recurring event support
+    isRecurring: Boolean!
+    recurrencePattern: String
+    parentEventId: String
+
+    # Refund/cancellation policies
+    refundPolicy: String
+    cancellationPolicy: String
+    termsAndConditions: String
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # AUDIT FIELDS - For tracking changes (internal/admin use)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Timestamps are useful for organizers to see when event was created/updated
+    createdAt: DateTime @tag(name: "organizer") @tag(name: "admin")
+    updatedAt: DateTime @tag(name: "organizer") @tag(name: "admin")
+
+    # Actor tracking is internal - used for audit logs
+    createdBy: String @tag(name: "internal")
+    updatedBy: String @tag(name: "internal")
+
+    # Active flag is needed by organizers to see soft-deleted events
+    isActive: Boolean! @tag(name: "organizer") @tag(name: "admin")
+
+    # Version field is for internal optimistic locking only
+    version: Int @tag(name: "internal")
+}
+
+# ------------------------------
+# LOCATION (Simple Address Type)
+# ------------------------------
+# Location is now a simple address type for events, not a managed entity.
+# The platform does not own/manage venues - they are just location info for events.
+#
+type Location {
+    # PUBLIC - for event discovery and maps
+    id: ID!
+    name: String!
+    address: String!
+    city: String!
+    province: String
+    country: String!
+    postalCode: String
+    coordinates: Coordinates
+    description: String
+}
+
+type Coordinates {
+    latitude: Float
+    longitude: Float
+}
+
+# ------------------------------
+# EVENT ACCESSIBILITY
+# ------------------------------
+type EventAccessibility {
+    wheelchairAccessible: Boolean!
+    wheelchairSeatsAvailable: Int
+    signLanguageInterpreter: Boolean!
+    hearingLoopAvailable: Boolean!
+    accessibleParking: Boolean!
+    accessibleRestrooms: Boolean!
+    assistanceDogsAllowed: Boolean!
+    additionalNotes: String
+}
+
+# ============================================================================
+# SECTION 6: SUPPORTING TYPES
+# ============================================================================
+
+# ------------------------------
+# TICKET TIER
+# ------------------------------
+# Ticket tier info is mostly public for ticket selection.
+# Inventory details and hidden tiers are restricted to organizers/admins.
+#
+type TicketTier {
+    # PUBLIC - for ticket selection UI
+    id: ID!
+    eventId: ID!
+    organizationId: String @tag(name: "internal") # Multi-tenant tracking
+    code: String!
+    name: String!
+    description: String
+    price: BigDecimal!
+    originalPrice: BigDecimal
+    currency: String!
+    maxPerOrder: Int
+    minPerOrder: Int
+    benefits: [String!]
+    salesStartAt: DateTime
+    salesEndAt: DateTime
+    earlyBirdPrice: BigDecimal
+    earlyBirdEndsAt: DateTime
+
+    # PUBLIC - availability info for consumers
+    availableQuantity: Int!
+
+    # ORGANIZER/ADMIN - inventory management (full quantity/sold info)
+    quantity: Int! @tag(name: "organizer") @tag(name: "admin")
+    soldQuantity: Int! @tag(name: "organizer") @tag(name: "admin")
+    sortOrder: Int! @tag(name: "organizer") @tag(name: "admin")
+    isActive: Boolean! @tag(name: "organizer") @tag(name: "admin")
+    isHidden: Boolean! @tag(name: "organizer") @tag(name: "admin")
+
+    # ORGANIZER/ADMIN - access code for hidden/restricted tiers
+    accessCode: String @tag(name: "organizer") @tag(name: "admin")
+
+    # AUDIT - internal tracking
+    createdAt: DateTime @tag(name: "admin")
+    updatedAt: DateTime @tag(name: "admin")
+}
+
+# ------------------------------
+# EVENT CATEGORY
+# ------------------------------
+type EventCategory {
+    id: ID!
+    name: String!
+    code: String!
+    description: String
+    iconUrl: String
+    color: String
+    sortOrder: Int
+    eventCount: Int
+    isActive: Boolean!
+    createdAt: DateTime
+    updatedAt: DateTime
+}
+
+# ------------------------------
+# PROVINCE
+# ------------------------------
+type Province {
+    id: ID!
+    name: String!
+    code: String!
+    country: String!
+    formattedName: String
+    cityCount: Int
+    createdAt: DateTime
+    updatedAt: DateTime
+    createdBy: String
+    updatedBy: String
+    isActive: Boolean!
+}
+
+# ------------------------------
+# CITY
+# ------------------------------
+type City {
+    id: ID!
+    name: String!
+    code: String
+    provinceId: String
+    province: String
+    country: String
+    eventCount: Int
+    createdAt: DateTime
+    updatedAt: DateTime
+    createdBy: String
+    updatedBy: String
+    isActive: Boolean!
+}
+
+# ------------------------------
+# APPROVAL TIMELINE
+# ------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# APPROVAL WORKFLOW TYPES (Admin Only)
+# ─────────────────────────────────────────────────────────────────────────────
+# These types track the event approval process. Only platform administrators
+# reviewing and approving events should access this data.
+
+type ApprovalTimeline @tag(name: "admin") {
+    eventId: String!
+    eventTitle: String!
+    organizerId: String!
+    organizerName: String!
+
+    # Current state
+    currentStatus: EventStatus!
+    assignedReviewerId: String
+    assignedReviewerName: String
+
+    # Timeline events (audit trail)
+    timelineEvents: [TimelineEvent!]!
+
+    # SLA tracking
+    submittedAt: DateTime
+    slaDeadline: DateTime
+    expectedApprovalAt: DateTime
+    actualApprovalAt: DateTime
+    totalProcessingTimeHours: Int
+    isOverdue: Boolean!
+    hoursUntilDeadline: Int
+    slaCompliancePercentage: Float
+
+    # Escalation tracking
+    escalation: ApprovalEscalation
+    hasActiveEscalation: Boolean!
+
+    # Iteration tracking (for changes requested flow)
+    submissionCount: Int!
+    currentIteration: Int!
+
+    # Quick stats
+    totalComments: Int!
+    lastActivityAt: DateTime
+}
+
+type TimelineEvent @tag(name: "admin") {
+    id: ID!
+    eventId: String!
+    timestamp: DateTime!
+    action: ApprovalAction!
+
+    # Actor information
+    actorId: String!
+    actorName: String!
+    actorRole: String
+
+    # Status at this point
+    previousStatus: EventStatus
+    newStatus: EventStatus
+
+    # Details
+    description: String!
+    comments: String
+    internalNotes: String @tag(name: "internal")
+
+    # For escalations
+    isEscalationRelated: Boolean!
+
+    # Metadata for extensibility
+    metadata: JSON
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLATFORM CONFIGURATION (Admin Only)
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuration is stored in database for runtime flexibility.
+# Admin can update these settings without deployment.
+
+type PlatformConfiguration @tag(name: "admin") {
+    id: ID!
+
+    # APPROVAL SLA SETTINGS
+    approvalSlaHours: Int!                        # Default: 72 hours (3 days)
+    approvalWarningThresholdHours: Int!           # Warning at X hours before deadline
+
+    # AUTO-ESCALATION SETTINGS
+    autoEscalationEnabled: Boolean!
+    escalationDelayHours: Int!                    # Hours after SLA breach to escalate
+    escalationRecipientRole: String!              # Role to escalate to (e.g., "SENIOR_ADMIN")
+    escalationReminderIntervalHours: Int!         # Reminder interval after escalation
+    maxEscalationReminders: Int!                  # Max reminders before marking critical
+
+    # NOTIFICATION SETTINGS
+    organizerNotificationChannel: ApprovalNotificationChannel!
+    adminNotificationChannel: ApprovalNotificationChannel!
+    sendSlaWarningNotifications: Boolean!
+    sendEscalationNotifications: Boolean!
+
+    # WORKFLOW SETTINGS
+    requireCommentsOnRejection: Boolean!
+    requireCommentsOnChangesRequested: Boolean!
+    allowSelfApproval: Boolean!                   # Can organizer approve own events?
+
+    # Audit fields
+    updatedAt: DateTime!
+    updatedBy: String!
+}
+
+input UpdatePlatformConfigurationInput {
+    approvalSlaHours: Int
+    approvalWarningThresholdHours: Int
+    autoEscalationEnabled: Boolean
+    escalationDelayHours: Int
+    escalationRecipientRole: String
+    escalationReminderIntervalHours: Int
+    maxEscalationReminders: Int
+    organizerNotificationChannel: ApprovalNotificationChannel
+    adminNotificationChannel: ApprovalNotificationChannel
+    sendSlaWarningNotifications: Boolean
+    sendEscalationNotifications: Boolean
+    requireCommentsOnRejection: Boolean
+    requireCommentsOnChangesRequested: Boolean
+    allowSelfApproval: Boolean
+}
+
+type PlatformConfigurationMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: PlatformConfiguration
+    errors: [String!]!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APPROVAL ESCALATION (Admin Only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+type ApprovalEscalation @tag(name: "admin") {
+    id: ID!
+    eventId: String!
+    eventTitle: String!
+
+    # Escalation details
+    status: EscalationStatus!
+    reason: String!                               # e.g., "SLA breach - 24 hours overdue"
+
+    # Timing
+    triggeredAt: DateTime!
+    acknowledgedAt: DateTime
+    resolvedAt: DateTime
+
+    # Actors
+    escalatedTo: String!                          # User ID of senior admin
+    escalatedToName: String!
+    acknowledgedBy: String
+    acknowledgedByName: String
+    resolvedBy: String
+    resolvedByName: String
+    resolutionNotes: String
+
+    # Original assignment
+    originalReviewerId: String
+    originalReviewerName: String
+
+    # Reminder tracking
+    remindersSent: Int!
+    lastReminderAt: DateTime
+    nextReminderAt: DateTime
+
+    # SLA context
+    hoursOverdue: Int!
+    slaDeadline: DateTime!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APPROVAL NOTIFICATION (Admin Only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+type ApprovalNotification @tag(name: "admin") {
+    id: ID!
+    eventId: String!
+    eventTitle: String!
+
+    # Notification details
+    type: ApprovalNotificationType!
+    channel: ApprovalNotificationChannel!
+    recipientId: String!
+    recipientEmail: String
+    recipientName: String!
+
+    # Content
+    subject: String!
+    message: String!
+    actionUrl: String                             # Deep link to event/approval page
+
+    # Status
+    sentAt: DateTime
+    deliveredAt: DateTime
+    readAt: DateTime
+    failedAt: DateTime
+    failureReason: String
+
+    # Retry tracking
+    retryCount: Int!
+    nextRetryAt: DateTime
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APPROVAL STATISTICS (Admin Only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+type ApprovalStats @tag(name: "admin") {
+    # Volume metrics
+    totalPendingReviews: Int!
+    totalOverdue: Int!
+    totalEscalated: Int!
+
+    # Today's metrics
+    submittedToday: Int!
+    approvedToday: Int!
+    rejectedToday: Int!
+    changesRequestedToday: Int!
+
+    # SLA metrics
+    averageProcessingTimeHours: Float!
+    slaComplianceRate: Float!                     # Percentage approved within SLA
+
+    # Breakdown by status
+    pendingByDaysWaiting: [DaysWaitingBreakdown!]!
+
+    # Escalation metrics
+    activeEscalations: Int!
+    escalationsThisWeek: Int!
+    averageEscalationResolutionHours: Float
+}
+
+type DaysWaitingBreakdown @tag(name: "admin") {
+    daysWaiting: Int!                             # 0, 1, 2, 3+
+    count: Int!
+    percentage: Float!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APPROVAL WORKFLOW PAGINATION TYPES (Admin Only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Cursor pagination for approval timelines
+type ApprovalTimelineConnection @tag(name: "admin") {
+    edges: [ApprovalTimelineEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
+}
+
+type ApprovalTimelineEdge @tag(name: "admin") {
+    node: ApprovalTimeline!
+    cursor: String!
+}
+
+# Offset pagination for approval timelines
+type ApprovalTimelineOffsetPage @tag(name: "admin") {
+    content: [ApprovalTimeline!]!
+    pageNumber: Int!
+    pageSize: Int!
+    totalElements: Int!
+    totalPages: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
+}
+
+# Cursor pagination for escalations
+type ApprovalEscalationConnection @tag(name: "admin") {
+    edges: [ApprovalEscalationEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
+}
+
+type ApprovalEscalationEdge @tag(name: "admin") {
+    node: ApprovalEscalation!
+    cursor: String!
+}
+
+# Offset pagination for escalations
+type ApprovalEscalationOffsetPage @tag(name: "admin") {
+    content: [ApprovalEscalation!]!
+    pageNumber: Int!
+    pageSize: Int!
+    totalElements: Int!
+    totalPages: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APPROVAL WORKFLOW INPUT TYPES
+# ─────────────────────────────────────────────────────────────────────────────
+
+input ApprovalTimelineFilterInput {
+    status: EventStatus
+    isOverdue: Boolean
+    hasActiveEscalation: Boolean
+    assignedReviewerId: String
+    submittedAfter: DateTime
+    submittedBefore: DateTime
+    organizerId: String
+    searchQuery: String                           # Search by event title
+}
+
+input AssignReviewerInput {
+    eventId: ID!
+    reviewerId: String!
+    reviewerName: String!
+    internalNotes: String
+}
+
+input ResolveEscalationInput {
+    escalationId: ID!
+    resolutionNotes: String!
+    action: ApprovalAction!                       # APPROVED, REJECTED, CHANGES_REQUESTED
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# APPROVAL WORKFLOW MUTATION RESPONSES
+# ─────────────────────────────────────────────────────────────────────────────
+
+type ApprovalTimelineMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: ApprovalTimeline
+    errors: [String!]!
+}
+
+type ApprovalEscalationMutationResponse @tag(name: "admin") {
+    success: Boolean!
+    message: String
+    data: ApprovalEscalation
+    errors: [String!]!
+}
+
+# ------------------------------
+# EVENT LIFECYCLE
+# ------------------------------
+# Event lifecycle tracking is useful for organizers managing their events
+# and admins monitoring the platform. Not needed by mobile consumers.
+
+type EventLifecycle @tag(name: "organizer") @tag(name: "admin") {
+    eventId: String!
+    currentStatus: EventStatus!
+    createdAt: DateTime
+    lastStatusChange: DateTime
+    createdBy: String @tag(name: "internal")  # Internal audit
+    statusTransitions: [StatusTransition!]
+    allowedTransitions: [EventStatus!]
+}
+
+type StatusTransition @tag(name: "organizer") @tag(name: "admin") {
+    fromStatus: EventStatus
+    toStatus: EventStatus!
+    transitionedAt: DateTime!
+    transitionedBy: String @tag(name: "internal")  # Internal audit
+    reason: String
+    metadata: JSON @tag(name: "internal")  # Internal debugging
+}
+
+# ============================================================================
+# SECTION 8: STATISTICS TYPES
+# ============================================================================
+#
+# Statistics types are used for dashboards and analytics. Platform-wide stats
+# are admin-only, while per-event stats are available to organizers for their
+# own events.
+#
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLATFORM-WIDE STATISTICS (Admin Dashboard Only)
+# ─────────────────────────────────────────────────────────────────────────────
+# These aggregate stats across all events on the platform.
+# Only platform administrators should see this data.
+
+type EventStats @tag(name: "admin") {
+    totalEvents: Int!
+    publishedEvents: Int!
+    approvedNotPublishedEvents: Int!
+    draftEvents: Int!
+    pendingApprovalEvents: Int!
+    cancelledEvents: Int!
+    completedEvents: Int!
+    rejectedEvents: Int!
+    totalCapacity: Int!
+    totalSoldTickets: Int!
+    totalRevenue: BigDecimal
+    eventsByCategory: [EventCategoryStats!]
+    eventsByStatus: [EventStatusStats!]
+    eventsByOrganizer: [EventOrganizerStats!]
+    recentEvents: [Event!]
+}
+
+type EventCategoryStats @tag(name: "admin") {
+    categoryId: String!
+    category: String!
+    count: Int!
+    percentage: Float!
+    totalCapacity: Int!
+    totalSoldTickets: Int!
+    totalRevenue: BigDecimal
+}
+
+type EventStatusStats @tag(name: "admin") {
+    status: EventStatus!
+    count: Int!
+    percentage: Float!
+}
+
+type EventOrganizerStats @tag(name: "admin") {
+    organizerId: String!
+    organizerName: String!
+    eventCount: Int!
+    totalCapacity: Int!
+    totalSoldTickets: Int!
+    totalRevenue: BigDecimal
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PER-EVENT STATISTICS (Organizer Dashboard + Admin)
+# ─────────────────────────────────────────────────────────────────────────────
+# These stats are for a specific event. Organizers can see stats for their
+# own events, admins can see stats for any event.
+
+type EventTicketStatistics @tag(name: "organizer") @tag(name: "admin") {
+    eventId: ID!
+    eventTitle: String!
+    eventDate: DateTime!
+    totalTicketsAvailable: Int!
+    totalTicketsSold: Int!
+    totalTicketsRefunded: Int!
+    totalCommissionEarned: BigDecimal
+    totalGrossRevenue: BigDecimal
+    tierStatistics: [TicketTierStats!]
+    overallSalesPercentage: Float!
+    bestSellingTier: String
+}
+
+type TicketTierStats @tag(name: "organizer") @tag(name: "admin") {
+    eventId: ID!
+    tierId: ID!
+    tierCode: String!
+    tierName: String!
+    price: BigDecimal!
+    totalQuantity: Int!
+    isActive: Boolean!
+    ticketsSold: Int!
+    ticketsRefunded: Int!
+    grossRevenue: BigDecimal
+    salesPercentage: Float!
+}
+
+# City statistics for event analytics (admin only)
+type CityStats @tag(name: "admin") {
+    cityId: String
+    cityName: String!
+    country: String!
+    eventCount: Int!
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXPORT TYPES (Admin Only)
+# ─────────────────────────────────────────────────────────────────────────────
+# Report exports are only available to platform administrators.
+# Shared across services via federation.
+
+type ReportExport @shareable @tag(name: "admin") {
+    success: Boolean! @shareable
+    downloadUrl: String @shareable
+    expiresAt: DateTime @shareable
+    format: ExportFormat! @shareable
+    generatedAt: DateTime! @shareable
+    fileName: String @shareable
+    errorMessage: String @shareable
+}
+
+# ============================================================================
+# SECTION 9: PAGINATION TYPES
+# ============================================================================
+
+# Cursor-based pagination (Relay spec) for infinite scroll
+input CursorPaginationInput {
+    first: Int
+    after: String
+    last: Int
+    before: String
+}
+
+# Shared type for cursor-based pagination - must have @shareable for federation
+type PageInfo @shareable {
+    hasNextPage: Boolean @shareable
+    hasPreviousPage: Boolean @shareable
+    startCursor: String @shareable
+    endCursor: String @shareable
+    totalCount: Int @shareable
+    totalElements: Int @shareable
+    totalPages: Int @shareable
+    currentPage: Int @shareable
+    pageSize: Int @shareable
+    hasNext: Boolean @shareable
+    hasPrevious: Boolean @shareable
+}
+
+type EventConnection {
+    edges: [EventEdge!]!
+    pageInfo: PageInfo!
+}
+
+type EventEdge {
+    node: Event!
+    cursor: String!
+}
+
+type LocationConnection {
+    edges: [LocationEdge!]!
+    pageInfo: PageInfo!
+}
+
+type LocationEdge {
+    node: Location!
+    cursor: String!
+}
+
+type CityConnection {
+    edges: [CityEdge!]!
+    pageInfo: PageInfo!
+}
+
+type CityEdge {
+    node: City!
+    cursor: String!
+}
+
+type ProvinceConnection {
+    edges: [ProvinceEdge!]!
+    pageInfo: PageInfo!
+}
+
+type ProvinceEdge {
+    node: Province!
+    cursor: String!
+}
+
+type EventCategoryConnection {
+    edges: [EventCategoryEdge!]!
+    pageInfo: PageInfo!
+}
+
+type EventCategoryEdge {
+    node: EventCategory!
+    cursor: String!
+}
+
+# NOTE: ApprovalTimelineConnection and ApprovalTimelineEdge are defined above with @tag(name: "admin")
+
+# Offset-based pagination (Spring Data) for admin/dashboard tables
+input OffsetPaginationInput {
+    page: Int = 0
+    size: Int = 20
+    sortBy: String = "createdAt"
+    sortDirection: SortDirection = DESC
+}
+
+# Shared type - must have @shareable on all fields for federation
+type PaginationInfo @shareable {
+    pageNumber: Int @shareable
+    pageSize: Int! @shareable
+    totalElements: Int @shareable
+    totalPages: Int! @shareable
+    totalCount: Int @shareable
+    currentPage: Int @shareable
+    hasNext: Boolean @shareable
+    hasPrevious: Boolean @shareable
+    hasNextPage: Boolean @shareable
+    hasPreviousPage: Boolean @shareable
+}
+
+type EventOffsetPage {
+    content: [Event!]!
+    pageNumber: Int!
+    pageSize: Int!
+    totalElements: Int!
+    totalPages: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
+}
+
+
+type CityOffsetPage {
+    content: [City!]!
+    pageNumber: Int!
+    pageSize: Int!
+    totalElements: Int!
+    totalPages: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
+}
+
+type ProvinceOffsetPage {
+    content: [Province!]!
+    pageNumber: Int!
+    pageSize: Int!
+    totalElements: Int!
+    totalPages: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
+}
+
+type EventCategoryOffsetPage {
+    content: [EventCategory!]!
+    pageNumber: Int!
+    pageSize: Int!
+    totalElements: Int!
+    totalPages: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
+}
+
+# NOTE: ApprovalTimelineOffsetPage is defined above with @tag(name: "admin")
+
+# ============================================================================
+# SECTION 10: INPUT TYPES
+# ============================================================================
+
+input CreateCoordinatesInput {
+    latitude: Float!
+    longitude: Float!
+}
+
+input UpdateCoordinatesInput {
+    latitude: Float
+    longitude: Float
+}
+
+# Event discovery filter (combined filter for buyers)
+input EventDiscoveryFilterInput {
+    searchQuery: String
+    categoryId: String
+    categoryIds: [String!]
+    cityId: String
+    cityName: String
+    country: String
+    provinceId: String
+    startDate: DateTime
+    endDate: DateTime
+    minPrice: BigDecimal
+    maxPrice: BigDecimal
+    isFreeEvent: Boolean
+    hasAvailableTickets: Boolean
+    isAccessible: Boolean
+    isVirtual: Boolean
+    isFeatured: Boolean
+    tags: [String!]
+    organizerId: String
+}
+
+# Admin event filter
+input EventFilterInput {
+    categoryId: String
+    status: EventStatus
+    statuses: [EventStatus!]
+    organizerId: String
+    published: Boolean
+    cityId: String
+    country: String
+    eventDateAfter: DateTime
+    eventDateBefore: DateTime
+    createdAfter: DateTime
+    createdBefore: DateTime
+    approvedNotPublished: Boolean
+    overdue: Boolean
+    daysSinceApprovalMin: Int
+    daysSinceApprovalMax: Int
+    searchQuery: String
+}
+
+input CreateEventInput {
+    title: String!
+    description: String!
+    categoryId: String!
+    eventDateTime: DateTime!
+    endDateTime: DateTime!
+    location: EventLocationInput
+    totalCapacity: Int!
+    ticketTiers: [CreateTicketTierInput!]!
+    tags: [String!]
+    additionalInfo: JSON
+    bannerImageUrl: String
+    isVirtual: Boolean
+    isFreeEvent: Boolean
+    virtualEventUrl: String
+    refundPolicy: String
+    cancellationPolicy: String
+    termsAndConditions: String
+    enableWaitlist: Boolean
+    waitlistCapacity: Int
+    accessibility: EventAccessibilityInput
+}
+
+input UpdateEventInput {
+    title: String
+    description: String
+    categoryId: String
+    eventDateTime: DateTime
+    endDateTime: DateTime
+    location: EventLocationInput
+    totalCapacity: Int
+    tags: [String!]
+    additionalInfo: JSON
+    bannerImageUrl: String
+    thumbnailImageUrl: String
+    galleryImages: [String!]
+    isVirtual: Boolean
+    isFreeEvent: Boolean
+    virtualEventUrl: String
+    virtualEventPlatform: String
+    refundPolicy: String
+    cancellationPolicy: String
+    termsAndConditions: String
+    enableWaitlist: Boolean
+    waitlistCapacity: Int
+    featured: Boolean
+}
+
+input EventAccessibilityInput {
+    wheelchairAccessible: Boolean
+    wheelchairSeatsAvailable: Int
+    signLanguageInterpreter: Boolean
+    hearingLoopAvailable: Boolean
+    accessibleParking: Boolean
+    accessibleRestrooms: Boolean
+    assistanceDogsAllowed: Boolean
+    additionalNotes: String
+}
+
+input CreateTicketTierInput {
+    code: String!
+    name: String!
+    description: String
+    price: BigDecimal!
+    currency: String!
+    quantity: Int!
+    maxPerOrder: Int
+    minPerOrder: Int
+    benefits: [String!]
+    sortOrder: Int
+    salesStartAt: DateTime
+    salesEndAt: DateTime
+    earlyBirdPrice: BigDecimal
+    earlyBirdEndsAt: DateTime
+    isHidden: Boolean
+    accessCode: String
+}
+
+input UpdateTicketTierInput {
+    name: String
+    description: String
+    price: BigDecimal
+    quantity: Int
+    maxPerOrder: Int
+    minPerOrder: Int
+    benefits: [String!]
+    sortOrder: Int
+    salesStartAt: DateTime
+    salesEndAt: DateTime
+    earlyBirdPrice: BigDecimal
+    earlyBirdEndsAt: DateTime
+    isHidden: Boolean
+    accessCode: String
+    isActive: Boolean
+}
+
+# Event location input - simplified address information for events
+input EventLocationInput {
+    name: String!
+    address: String!
+    city: String!
+    province: String
+    country: String!
+    postalCode: String
+    coordinates: CreateCoordinatesInput
+    description: String
+}
+
+input NearbyLocationInput {
+    latitude: Float!
+    longitude: Float!
+    radiusKm: Float = 10
+    maxResults: Int = 10
+}
+
+input CreateEventCategoryInput {
+    name: String!
+    code: String!
+    description: String
+    iconUrl: String
+    color: String
+    sortOrder: Int
+}
+
+input UpdateEventCategoryInput {
+    name: String
+    code: String
+    description: String
+    iconUrl: String
+    color: String
+    sortOrder: Int
+    isActive: Boolean
+}
+
+input CreateProvinceInput {
+    name: String!
+    code: String!
+    country: String!
+}
+
+input UpdateProvinceInput {
+    name: String
+    code: String
+    country: String
+    isActive: Boolean
+}
+
+input CreateCityInput {
+    name: String!
+    code: String!
+    provinceId: String!
+    country: String!
+}
+
+input UpdateCityInput {
+    name: String
+    code: String
+    provinceId: String
+    country: String
+    isActive: Boolean
+}
+
+# Catalog-specific event cancellation (used by catalog mutations)
+# Note: Booking service has its own EventCancellationInput with eventId
+input EventCancellationInput {
+    eventId: ID
+    reason: String!
+    notifyAttendees: Boolean = true
+    triggerRefunds: Boolean = true
+    notifyBuyers: Boolean = true
+    processRefundsImmediately: Boolean = true
+}
+
+# ============================================================================
+# SECTION 11: MUTATION RESPONSE TYPES (Consolidated)
+# ============================================================================
+
+type EventMutationResponse {
+    success: Boolean!
+    message: String
+    data: Event
+    errors: [String!]!
+    metadata: JSON
+}
+
+type EventCancellationResponse {
+    success: Boolean!
+    message: String
+    event: Event
+    ticketsAffected: Int!
+    refundSagaInitiated: Boolean!
+    sagaId: ID
+    errors: [String!]!
+}
+
+
+type CategoryMutationResponse {
+    success: Boolean!
+    message: String
+    data: EventCategory
+    errors: [String!]!
+    metadata: JSON
+}
+
+type ProvinceMutationResponse {
+    success: Boolean!
+    message: String
+    data: Province
+    errors: [String!]!
+    metadata: JSON
+}
+
+type CityMutationResponse {
+    success: Boolean!
+    message: String
+    data: City
+    errors: [String!]!
+    metadata: JSON
+}
+
+type TierMutationResponse {
+    success: Boolean!
+    message: String
+    data: TicketTier
+    errors: [String!]!
+    metadata: JSON
+}
+
+# Shared type - must have @shareable on all fields for federation
+type DeleteMutationResponse @shareable {
+    success: Boolean! @shareable
+    message: String @shareable
+    errors: [String!]! @shareable
+    metadata: JSON @shareable
+}
+
+type BulkApprovalResponse {
+    success: Boolean!
+    message: String
+    processedCount: Int!
+    failedCount: Int!
+    results: [EventApprovalResult!]!
+    errors: [String!]!
+}
+
+type EventApprovalResult {
+    eventId: ID!
+    eventTitle: String
+    success: Boolean!
+    message: String
+    newStatus: EventStatus
+}
+
+type BulkReminderResponse {
+    success: Boolean!
+    message: String
+    sentCount: Int!
+    failedCount: Int!
+    errors: [String!]!
+}
+
+
+# ============================================================================
+# SECTION 13: ROOT QUERY TYPE
+# ============================================================================
+#
+# Queries are tagged by their intended audience:
+# - (no tag) = Public - available to all clients (mobile, web, admin)
+# - "mobile" = Mobile app specific features
+# - "organizer" = Organizer dashboard features
+# - "admin" = Platform administrator features only
+# - "internal" = Service-to-service communication only
+#
+type Query {
+    # ========================================================================
+    # EVENT DISCOVERY QUERIES (PUBLIC - For all consumers)
+    # ========================================================================
+    # These queries are used by mobile apps and web to browse/search events.
+    # No tags needed - available to all clients.
+
+    # Get single event by ID - PUBLIC
+    event(id: ID!): Event
+
+    # Combined discovery with all filters - PRIMARY PUBLIC QUERY
+    # This is the main query for event discovery on mobile and web
+    discoverEvents(filter: EventDiscoveryFilterInput!, pagination: CursorPaginationInput): EventConnection!
+
+    # Cursor pagination queries (mobile/infinite scroll) - PUBLIC
+    # Used by mobile apps for infinite scroll event lists
+    publishedEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+    searchEventsCursorPagination(query: String!, pagination: CursorPaginationInput): EventConnection!
+    upcomingEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+    eventsByCategoryCursorPagination(categoryId: String!, pagination: CursorPaginationInput): EventConnection!
+    eventsByCityCursorPagination(city: String!, pagination: CursorPaginationInput): EventConnection!
+    eventsByDateRangeCursorPagination(startDate: DateTime!, endDate: DateTime!, pagination: CursorPaginationInput): EventConnection!
+    eventsByPriceRangeCursorPagination(minPrice: BigDecimal, maxPrice: BigDecimal, pagination: CursorPaginationInput): EventConnection!
+    featuredEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+    freeEventsCursorPagination(pagination: CursorPaginationInput): EventConnection!
+
+    # Organizer's public events - available to see organizer's profile page
+    eventsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EventConnection!
+
+    # ========================================================================
+    # OFFSET PAGINATION QUERIES (ADMIN/ORGANIZER - Dashboard tables)
+    # ========================================================================
+    # Offset pagination is used for admin dashboard tables with page numbers.
+    # These are not needed by mobile consumers.
+
+    publishedEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    searchEventsOffsetPagination(query: String!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    upcomingEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    eventsByCategoryOffsetPagination(categoryId: String!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    eventsByCityOffsetPagination(city: String!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    eventsByDateRangeOffsetPagination(startDate: DateTime!, endDate: DateTime!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    eventsByPriceRangeOffsetPagination(minPrice: BigDecimal, maxPrice: BigDecimal, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    featuredEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    freeEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    eventsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+
+    # ========================================================================
+    # EVENT COUNT QUERIES (ADMIN - Dashboard statistics)
+    # ========================================================================
+    # Count queries for admin dashboard statistics cards
+
+    eventCount: Int! @auth(requires: ADMIN) @tag(name: "admin")
+    eventCountByOrganizer(organizerId: String!): Int! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    eventCountByCategory(categoryId: String!): Int! @auth(requires: ADMIN) @tag(name: "admin")
+    eventCountByCity(city: String!): Int! @auth(requires: ADMIN) @tag(name: "admin")
+    eventCountByStatus(status: EventStatus!): Int! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # EVENT STATISTICS QUERIES (ORGANIZER/ADMIN)
+    # ========================================================================
+    # Per-event statistics - organizers can see their own event stats
+
+    # Per-event ticket statistics - for organizer dashboard
+    eventStatistics(eventId: ID!): EventTicketStatistics @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    ticketTierStatistics(eventId: ID!, tierId: ID!): TicketTierStats @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+
+    # Platform-wide event statistics - ADMIN ONLY
+    eventStats: EventStats! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # ADMIN EVENT MANAGEMENT QUERIES
+    # ========================================================================
+    # These queries are for managing events - approval workflow, drafts, etc.
+
+    # General event list with filters - ADMIN dashboard
+    eventsOffsetPagination(filter: EventFilterInput, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # Draft events - Organizer sees their own, admin sees all
+    draftEventsOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+
+    # Approval workflow queries - ADMIN ONLY
+    pendingApprovalEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    overdueApprovalEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    approvedNotPublishedEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    eventsByStatusOffsetPagination(status: EventStatus!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    cancelledEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    completedEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # Cursor versions for mobile admin app (if needed)
+    eventsCursorPagination(filter: EventFilterInput, pagination: CursorPaginationInput): EventConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    draftEventsCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EventConnection! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    pendingApprovalEventsCursorPagination(pagination: CursorPaginationInput): EventConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    overdueApprovalEventsCursorPagination(pagination: CursorPaginationInput): EventConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    approvedNotPublishedEventsCursorPagination(pagination: CursorPaginationInput): EventConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    eventsByStatusCursorPagination(status: EventStatus!, pagination: CursorPaginationInput): EventConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    cancelledEventsCursorPagination(pagination: CursorPaginationInput): EventConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    completedEventsCursorPagination(pagination: CursorPaginationInput): EventConnection! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # LOCATION QUERIES
+    # ========================================================================
+
+    location(id: ID!): Location
+
+    # Cursor pagination (mobile/infinite scroll)
+    locationsCursorPagination(pagination: CursorPaginationInput): LocationConnection!
+    locationsByCityCursorPagination(city: String!, pagination: CursorPaginationInput): LocationConnection!
+    locationsByCountryCursorPagination(country: String!, pagination: CursorPaginationInput): LocationConnection!
+    # PUBLIC - Mobile search with cursor pagination for infinite scroll
+    searchLocationsCursorPagination(query: String!, pagination: CursorPaginationInput): LocationConnection!
+    # PUBLIC - Mobile nearby locations with cursor pagination
+    locationsNearbyCursorPagination(input: NearbyLocationInput!, pagination: CursorPaginationInput): LocationConnection!
+
+
+    # ========================================================================
+    # CITY QUERIES
+    # Cities are reference data used for filtering - public for event discovery
+    # ========================================================================
+
+    # PUBLIC - Single city lookup for event location display
+    city(id: ID!): City
+
+    # ---------------------------------------------------------------------------
+    # PUBLIC CITY QUERIES - Cursor pagination for mobile infinite scroll
+    # Cities are public reference data needed for location-based filtering
+    # ---------------------------------------------------------------------------
+    citiesCursorPagination(pagination: CursorPaginationInput): CityConnection!
+    citiesByProvinceCursorPagination(provinceId: String!, pagination: CursorPaginationInput): CityConnection!
+    citiesByCountryCursorPagination(country: String!, pagination: CursorPaginationInput): CityConnection!
+    searchCitiesCursorPagination(query: String!, pagination: CursorPaginationInput): CityConnection!
+
+    # ---------------------------------------------------------------------------
+    # ADMIN CITY QUERIES - Offset pagination for admin dashboard tables
+    # Only platform admins manage city reference data
+    # ---------------------------------------------------------------------------
+    citiesOffsetPagination(pagination: OffsetPaginationInput): CityOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    citiesByProvinceOffsetPagination(provinceId: String!, pagination: OffsetPaginationInput): CityOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    citiesByCountryOffsetPagination(country: String!, pagination: OffsetPaginationInput): CityOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    searchCitiesOffsetPagination(query: String!, pagination: OffsetPaginationInput): CityOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # PUBLIC - Used for filtering events to cities that have events
+    citiesWithEvents: [City!]!
+
+    # ========================================================================
+    # PROVINCE QUERIES
+    # Provinces are reference data used for regional filtering - public for discovery
+    # ========================================================================
+
+    # PUBLIC - Single province lookup for regional display
+    province(id: ID!): Province
+
+    # ---------------------------------------------------------------------------
+    # PUBLIC PROVINCE QUERIES - Cursor pagination for mobile infinite scroll
+    # Provinces are public reference data needed for regional filtering
+    # ---------------------------------------------------------------------------
+    provincesCursorPagination(pagination: CursorPaginationInput): ProvinceConnection!
+    provincesByCountryCursorPagination(country: String!, pagination: CursorPaginationInput): ProvinceConnection!
+    searchProvincesCursorPagination(query: String!, pagination: CursorPaginationInput): ProvinceConnection!
+
+    # ---------------------------------------------------------------------------
+    # ADMIN PROVINCE QUERIES - Offset pagination for admin dashboard tables
+    # Only platform admins manage province reference data
+    # ---------------------------------------------------------------------------
+    provincesOffsetPagination(pagination: OffsetPaginationInput): ProvinceOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    provincesByCountryOffsetPagination(country: String!, pagination: OffsetPaginationInput): ProvinceOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    searchProvincesOffsetPagination(query: String!, pagination: OffsetPaginationInput): ProvinceOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # EVENT CATEGORY QUERIES
+    # Categories are essential for event discovery - public for filtering
+    # ========================================================================
+
+    # PUBLIC - Single category lookup for event categorization display
+    eventCategory(id: ID!): EventCategory
+
+    # ---------------------------------------------------------------------------
+    # PUBLIC CATEGORY QUERIES - Cursor pagination for mobile infinite scroll
+    # Categories are public reference data needed for event filtering/browsing
+    # ---------------------------------------------------------------------------
+    eventCategoriesCursorPagination(pagination: CursorPaginationInput): EventCategoryConnection!
+    activeEventCategoriesCursorPagination(pagination: CursorPaginationInput): EventCategoryConnection!
+    searchEventCategoriesCursorPagination(query: String!, pagination: CursorPaginationInput): EventCategoryConnection!
+
+    # ---------------------------------------------------------------------------
+    # ADMIN CATEGORY QUERIES - Offset pagination for admin dashboard tables
+    # Only platform admins manage category reference data
+    # ---------------------------------------------------------------------------
+    eventCategoriesOffsetPagination(pagination: OffsetPaginationInput): EventCategoryOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    activeEventCategoriesOffsetPagination(pagination: OffsetPaginationInput): EventCategoryOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    searchEventCategoriesOffsetPagination(query: String!, pagination: OffsetPaginationInput): EventCategoryOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # PUBLIC - Popular categories for mobile home screen and event discovery
+    popularCategories(limit: Int = 10): [EventCategory!]!
+
+    # ========================================================================
+    # PLATFORM CONFIGURATION QUERIES (Admin Only)
+    # Platform settings for SLA, escalation, and notification configuration
+    # ========================================================================
+
+    # ADMIN - Get current platform configuration
+    platformConfiguration: PlatformConfiguration! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # APPROVAL TIMELINE QUERIES
+    # Approval workflows are admin-only - platform administrators manage event approvals
+    # Organizers can see their own approval status via event.status field
+    # ========================================================================
+
+    # ADMIN - View approval timeline for any event (approval workflow visibility)
+    approvalTimeline(eventId: String!): ApprovalTimeline @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ---------------------------------------------------------------------------
+    # ADMIN APPROVAL QUERIES - Offset pagination for admin dashboard tables
+    # Approval workflow management is admin-only functionality
+    # ---------------------------------------------------------------------------
+    approvalTimelinesOffsetPagination(filter: ApprovalTimelineFilterInput, pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    approvalTimelinesByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    pendingApprovalTimelinesOffsetPagination(pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    overdueApprovalTimelinesOffsetPagination(pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Cursor pagination for approval timeline lists (if admin uses mobile)
+    approvalTimelinesCursorPagination(filter: ApprovalTimelineFilterInput, pagination: CursorPaginationInput): ApprovalTimelineConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    approvalTimelinesByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): ApprovalTimelineConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    pendingApprovalTimelinesCursorPagination(pagination: CursorPaginationInput): ApprovalTimelineConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    overdueApprovalTimelinesCursorPagination(pagination: CursorPaginationInput): ApprovalTimelineConnection! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # APPROVAL ESCALATION QUERIES (Admin Only)
+    # ========================================================================
+
+    # ADMIN - Get specific escalation by ID
+    approvalEscalation(id: ID!): ApprovalEscalation @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Get active escalations (offset pagination for dashboard)
+    activeEscalationsOffsetPagination(pagination: OffsetPaginationInput): ApprovalEscalationOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Get escalations assigned to current admin (adminId from JWT - OWASP A01:2021)
+    myEscalationsOffsetPagination(pagination: OffsetPaginationInput): ApprovalEscalationOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Cursor pagination for escalations (mobile admin)
+    activeEscalationsCursorPagination(pagination: CursorPaginationInput): ApprovalEscalationConnection! @auth(requires: ADMIN) @tag(name: "admin")
+    # adminId extracted from JWT - OWASP A01:2021 compliance
+    myEscalationsCursorPagination(pagination: CursorPaginationInput): ApprovalEscalationConnection! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # APPROVAL STATISTICS QUERIES (Admin Only)
+    # ========================================================================
+
+    # ADMIN - Get approval workflow statistics for dashboard
+    approvalStats: ApprovalStats! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # TICKET TIER QUERIES
+    # Ticket tiers are essential for the ticket purchase flow
+    # PUBLIC - Needed by mobile app for displaying ticket options
+    # ========================================================================
+
+    # PUBLIC - Single ticket tier lookup for purchase flow
+    ticketTier(id: ID!): TicketTier
+    # ORGANIZER/ADMIN - Include hidden tiers (draft tiers not visible to customers)
+    # Organizers need to see all tiers including hidden ones when managing events
+    eventTicketTiers(eventId: ID!, includeHidden: Boolean = false): [TicketTier!]! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    # PUBLIC - Available tiers for customer ticket purchase (mobile app)
+    availableTicketTiers(eventId: ID!): [TicketTier!]!
+
+    # ========================================================================
+    # EVENT LIFECYCLE QUERIES
+    # Lifecycle management is for event management (organizers and admins)
+    # Customers don't need to see internal lifecycle/status transition logic
+    # ========================================================================
+
+    # ORGANIZER/ADMIN - View event lifecycle state and history
+    eventLifecycle(eventId: String!): EventLifecycle @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    # ORGANIZER/ADMIN - Determine valid status transitions for workflow UI
+    allowedStatusTransitions(eventId: String!): [EventStatus!]! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+
+    # ========================================================================
+    # EXPORT QUERIES
+    # Export functionality is admin-only for platform reporting
+    # Organizers get their own reporting via separate organizer dashboard queries
+    # ========================================================================
+
+    # ADMIN - Export single event data for compliance/reporting
+    exportEventData(eventId: ID!, format: ExportFormat!): ReportExport! @auth(requires: ADMIN) @tag(name: "admin")
+    # ADMIN - Export filtered events report for platform analytics
+    exportEventsReport(filter: EventFilterInput!, format: ExportFormat!): ReportExport! @auth(requires: ADMIN) @tag(name: "admin")
+}
+
+# ============================================================================
+# SECTION 14: ROOT MUTATION TYPE
+# Tags indicate which clients should include these mutations in their operations:
+# - organizer: Organizer dashboard for event management
+# - admin: Platform administrator operations
+# - mobile: Consumer mobile app actions
+# ============================================================================
+type Mutation {
+    # ========================================================================
+    # EVENT MUTATIONS
+    # Organizers create and manage their own events
+    # Admin can also perform these operations for platform management
+    # ========================================================================
+
+    # ORGANIZER - Core event CRUD operations
+    # NOTE: organizerId is extracted from JWT authentication, not passed as parameter
+    # This prevents OWASP A01:2021 Broken Access Control vulnerabilities
+    createEvent(input: CreateEventInput!): EventMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    updateEvent(id: ID!, input: UpdateEventInput!): EventMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    deleteEvent(id: ID!): DeleteMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    # ORGANIZER - Event publishing workflow
+    publishEvent(id: ID!): EventMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    unpublishEvent(id: ID!): EventMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    # ORGANIZER - Event cancellation (triggers refund workflows)
+    cancelEvent(id: ID!, input: EventCancellationInput!): EventCancellationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    # INTERNAL - Auto-completion triggered by system when event date passes
+    completeEvent(id: ID!): EventMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
+    # ORGANIZER - Duplicate event for recurring events workflow
+    duplicateEvent(eventId: ID!, newTitle: String!): EventMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    # ORGANIZER - Capacity and accessibility management
+    updateEventCapacity(eventId: ID!, newCapacity: Int!): EventMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    updateEventAccessibility(eventId: ID!, input: EventAccessibilityInput!): EventMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    # ADMIN - Featured events are platform decisions (homepage promotion)
+    featureEvent(eventId: ID!, featured: Boolean!): EventMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # PLATFORM CONFIGURATION MUTATIONS (Admin Only)
+    # ========================================================================
+
+    # ADMIN - Update platform configuration (SLA settings, escalation, notifications)
+    updatePlatformConfiguration(input: UpdatePlatformConfigurationInput!): PlatformConfigurationMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # EVENT APPROVAL MUTATIONS
+    # Approval workflow: Organizers submit, Admins approve/reject
+    # ========================================================================
+
+    # ORGANIZER - Submit event for platform review
+    # NOTE: organizerId is extracted from JWT authentication
+    submitEventForApproval(eventId: ID!): EventMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    # ADMIN - Approval decisions are admin-only platform operations
+    # NOTE: reviewerId/adminId extracted from JWT authentication (OWASP A01:2021 compliance)
+    approveEvent(eventId: ID!, comments: String): EventMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    rejectEvent(eventId: ID!, comments: String!): EventMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    requestEventChanges(eventId: ID!, comments: String!): EventMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Reviewer assignment for approval workflow
+    assignEventReviewer(input: AssignReviewerInput!): ApprovalTimelineMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    unassignEventReviewer(eventId: ID!, reason: String): ApprovalTimelineMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Add internal comment to approval timeline (without status change)
+    # NOTE: adminId extracted from JWT authentication (OWASP A01:2021 compliance)
+    addApprovalComment(eventId: ID!, comment: String!, isInternal: Boolean = true): ApprovalTimelineMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # ESCALATION MUTATIONS (Admin Only)
+    # NOTE: All adminId parameters extracted from JWT authentication (OWASP A01:2021 compliance)
+    # ========================================================================
+
+    # ADMIN - Acknowledge an escalation
+    acknowledgeEscalation(escalationId: ID!, notes: String): ApprovalEscalationMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Resolve an escalation (must also approve/reject/request changes)
+    resolveEscalation(input: ResolveEscalationInput!): ApprovalEscalationMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Manually trigger escalation (for testing or manual override)
+    triggerManualEscalation(eventId: ID!, reason: String!, escalateTo: String!): ApprovalEscalationMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # EVENT REMINDER MUTATIONS
+    # Platform sends reminders to organizers - admin operation
+    # ========================================================================
+
+    # ADMIN - Platform nudges organizers to publish their events
+    sendEventPublishReminder(eventId: ID!, triggeredBy: String!): EventMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    sendBulkEventPublishReminders(eventIds: [ID!]!, triggeredBy: String!): BulkReminderResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # TICKET TIER MUTATIONS
+    # Organizers manage ticket tiers for their events
+    # ========================================================================
+
+    # ORGANIZER - Ticket tier CRUD for event pricing structure
+    createTicketTier(eventId: ID!, input: CreateTicketTierInput!): TierMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    updateTicketTier(tierId: ID!, input: UpdateTicketTierInput!): TierMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    deleteTicketTier(tierId: ID!): DeleteMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    reorderTicketTiers(eventId: ID!, tierIds: [ID!]!): [TicketTier!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    activateTicketTier(tierId: ID!): TierMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    deactivateTicketTier(tierId: ID!): TierMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+
+    # ========================================================================
+    # EVENT CATEGORY MUTATIONS
+    # Platform manages category reference data - admin only
+    # ========================================================================
+
+    # ADMIN - Category CRUD for platform taxonomy
+    createEventCategory(input: CreateEventCategoryInput!): CategoryMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    updateEventCategory(id: ID!, input: UpdateEventCategoryInput!): CategoryMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    deleteEventCategory(id: ID!): DeleteMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    activateEventCategory(id: ID!): CategoryMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    deactivateEventCategory(id: ID!): CategoryMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # PROVINCE MUTATIONS
+    # Platform manages province reference data - admin only
+    # ========================================================================
+
+    # ADMIN - Province CRUD for regional data management
+    createProvince(input: CreateProvinceInput!): ProvinceMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    updateProvince(id: ID!, input: UpdateProvinceInput!): ProvinceMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    deleteProvince(id: ID!): DeleteMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ========================================================================
+    # CITY MUTATIONS
+    # Platform manages city reference data - admin only
+    # ========================================================================
+
+    # ADMIN - City CRUD for geographic reference data
+    createCity(input: CreateCityInput!): CityMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    updateCity(id: ID!, input: UpdateCityInput!): CityMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    deleteCity(id: ID!): DeleteMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+}
+

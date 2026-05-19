@@ -1,0 +1,77 @@
+# =============================================================================
+# PAYMENT OPERATIONS
+# =============================================================================
+
+# Payment Attempt Fragment
+fragment PaymentAttemptFields on PaymentAttempt {
+  id
+  depositId
+  attemptNumber
+  correlationId
+  ticketId
+  eventId
+  organizerId
+  buyerId
+  amount
+  currency
+  provider
+  payerPhone
+  customerMessage
+  status
+  providerStatus
+  providerTransactionId
+  failureCode
+  failureMessage
+  customerErrorMessage
+  webhookReceivedAt
+  webhookProcessed
+  fulfilled
+  fulfilledAt
+  retryCount
+  lastError
+  createdAt
+  updatedAt
+}
+
+# =============================================================================
+# MUTATIONS
+# =============================================================================
+
+# Initiate payment attempt (for mobile money)
+mutation InitiatePayment($input: InitiatePaymentAttemptInput!) {
+  initiatePaymentAttempt(input: $input) {
+    success
+    message
+    errors
+    data {
+      ...PaymentAttemptFields
+    }
+  }
+}
+
+# Retry failed payment
+mutation RetryPayment($depositId: String!) {
+  retryPaymentAttempt(depositId: $depositId) {
+    success
+    message
+    errors
+    data {
+      ...PaymentAttemptFields
+    }
+  }
+}
+
+# Verify payment with gateway
+mutation VerifyPayment($depositId: String!) {
+  verifyPaymentWithGateway(depositId: $depositId) {
+    success
+    message
+    errors
+    data {
+      id
+      depositId
+      status
+      fulfilledAt
+    }
+  }
+}

@@ -1,0 +1,46 @@
+# =============================================================================
+# Ferry GraphQL Code Generation Configuration
+# =============================================================================
+#
+# SCHEMA SOURCE OPTIONS:
+#
+# Option 1 (RECOMMENDED): Download from Apollo Router
+#   rover graph introspect http://localhost:4000/graphql > lib/graphql/schema.graphql
+#
+# Option 2: Generate from backend schema files
+#   ./scripts/generate_schema.sh
+#
+# THEN RUN CODE GENERATION:
+#   dart run build_runner build --delete-conflicting-outputs
+#
+# =============================================================================
+
+targets:
+  $default:
+    sources:
+      - $package$
+      - lib/**
+    builders:
+      # Ferry GraphQL Builder - generates Dart types from schema and operations
+      ferry_generator|graphql_builder:
+        enabled: true
+        options:
+          # Schema file path (use package|path format)
+          schema: ticketing_mobile|lib/graphql/schema.graphql
+
+          # Custom scalar mappings (GraphQL scalar -> Dart type)
+          type_overrides:
+            DateTime:
+              name: DateTime
+            BigDecimal:
+              name: double
+            Long:
+              name: int
+            JSON:
+              name: 'Map<String, dynamic>'
+
+      # Ferry Serializer Builder - generates JSON serialization
+      ferry_generator|serializer_builder:
+        enabled: true
+        options:
+          schema: ticketing_mobile|lib/graphql/schema.graphql

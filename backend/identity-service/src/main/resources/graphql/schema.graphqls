@@ -1,0 +1,2715 @@
+# ============================================================================
+# IDENTITY SERVICE - GraphQL Federation 2 Subgraph Schema
+# ============================================================================
+#
+# This service is the OWNER of User-related entities in our federated graph.
+# Other services (Catalog, Booking) can REFERENCE users but cannot modify
+# user data directly.
+#
+# FEDERATION CONCEPTS USED:
+# - @key: Marks entities that can be referenced by other services
+# - @shareable: Allows other services to also resolve certain fields
+# - @external: References fields owned by other services
+#
+# ============================================================================
+# DOMAIN MODEL - ORGANIZATIONAL HIERARCHY
+# ============================================================================
+#
+#   PLATFORM LEVEL (System-wide roles)
+#   ===================================
+#        SUPER_ADMIN → Full system access
+#             │
+#        ADMIN → Manage organizers, approve events
+#             │
+#        FINANCE → Manage payouts, commissions
+#
+#   ORGANIZATION LEVEL (Tenant-scoped roles)
+#   ========================================
+#        OWNER → Single person, full org access, can transfer ownership
+#             │
+#        ADMIN → Full access except ownership transfer
+#             │
+#    ┌─────────┼─────────┐
+#    │         │         │
+# MANAGER  MARKETER  CONTRIBUTOR
+#    │         │         │
+# Events   Analytics   View-only
+# Finance  Promotions  Check-in
+#
+#   EVENT LEVEL (Event-scoped roles - override org roles)
+#   =====================================================
+#        EVENT_OWNER → Created the event, full control
+#             │
+#        EVENT_ADMIN → Full access to this event
+#             │
+#    ┌─────────┼─────────┐
+#    │         │         │
+# EDITOR   CHECK_IN   VIEWER
+#    │         │         │
+# Edit     Scan tix   Read-only
+# Tickets  at venue
+#
+# ============================================================================
+# KEYCLOAK INTEGRATION ARCHITECTURE
+# ============================================================================
+#
+#   ┌─────────────────────────────────────────────────────────────────────┐
+#   │                    KEYCLOAK REALM: event-ticketing                   │
+#   ├─────────────────────────────────────────────────────────────────────┤
+#   │                                                                     │
+#   │   REALM ROLES (Platform-level)                                      │
+#   │   ───────────────────────────                                       │
+#   │   • SUPER_ADMIN    - Full system access                             │
+#   │   • ADMIN          - Platform administration                        │
+#   │   • FINANCE        - Financial operations                           │
+#   │   • ORGANIZER      - Can create/manage organizations                │
+#   │   • CUSTOMER       - Default role for all users                     │
+#   │                                                                     │
+#   │   GROUPS (Organization mapping)                                     │
+#   │   ─────────────────────────────                                     │
+#   │   /organizations/{org-slug}           - Organization group          │
+#   │   /organizations/{org-slug}/owners    - Organization owners         │
+#   │   /organizations/{org-slug}/admins    - Organization admins         │
+#   │   /organizations/{org-slug}/managers  - Organization managers       │
+#   │   /organizations/{org-slug}/marketers - Organization marketers      │
+#   │   /organizations/{org-slug}/members   - Organization contributors   │
+#   │                                                                     │
+#   │   USER ATTRIBUTES                                                   │
+#   │   ───────────────                                                   │
+#   │   • mongodb_user_id     - Links to MongoDB User.id                  │
+#   │   • phone_number        - Primary phone (E.164 format)              │
+#   │   • phone_verified      - Phone verification status                 │
+#   │   • primary_org_id      - User's primary organization               │
+#   │                                                                     │
+#   └─────────────────────────────────────────────────────────────────────┘
+#
+# ============================================================================
+# ORGANIZATION CREATION FLOW
+# ============================================================================
+#
+#   1. USER REGISTRATION (Customer)
+#   ───────────────────────────────
+#   User signs up via Phone OTP or Email → Creates User in:
+#     • Keycloak (with CUSTOMER role)
+#     • MongoDB (User document)
+#
+#   2. ORGANIZER APPLICATION
+#   ────────────────────────
+#   User requests to become organizer:
+#     a) Frontend calls: mutation { applyToBeOrganizer(input: {...}) }
+#     b) System creates OrganizerProfile with status: DRAFT
+#     c) User completes business profile and uploads documents
+#     d) User submits application → status: PENDING_REVIEW
+#
+#   3. ADMIN REVIEW & APPROVAL
+#   ──────────────────────────
+#   Platform admin reviews application:
+#     a) Admin calls: mutation { approveOrganizer(organizerId: "...") }
+#     b) System:
+#        - Updates OrganizerProfile.status → APPROVED
+#        - Creates Organization entity
+#        - Creates OrganizationMember (OWNER role) for the user
+#        - Updates User.userType → ORGANIZER
+#        - Grants ORGANIZER role in Keycloak
+#        - Creates Keycloak group: /organizations/{org-slug}
+#        - Adds user to /organizations/{org-slug}/owners group
+#        - Publishes OrganizerApprovedEvent to Azure Service Bus
+#
+#   4. ORGANIZATION ACTIVE
+#   ──────────────────────
+#   Organization owner can now:
+#     • Create events (in Catalog Service)
+#     • Invite team members
+#     • Manage organization settings
+#     • Request payouts (in Booking Service)
+#
+# ============================================================================
+# PRE-APPROVAL CAPABILITIES (DRAFT/PENDING Status)
+# ============================================================================
+#
+#   ALLOWED before approval:
+#   • Complete organizer profile
+#   • Upload verification documents
+#   • Create events in DRAFT mode (cannot publish)
+#   • Configure ticket types (saved as drafts)
+#   • Preview how events will look
+#   • View platform tutorials
+#
+#   NOT ALLOWED before approval:
+#   • Publish events (make public)
+#   • Accept payments
+#   • Invite team members
+#   • Request payouts
+#   • Access financial reports
+#
+# ============================================================================
+# TEAM INVITATION FLOW
+# ============================================================================
+#
+#   1. Owner/Admin invites member:
+#      mutation { inviteTeamMember(input: { email, role, ... }) }
+#
+#   2. System creates TeamInvitation with unique token
+#
+#   3. System sends invitation email/SMS with link:
+#      https://app.example.com/invitations/accept?token={token}
+#
+#   4. Invitee clicks link:
+#      a) If not registered → Sign up flow with invitation context
+#      b) If registered → Accept invitation directly
+#
+#   5. On acceptance:
+#      a) Create OrganizationMember with specified role
+#      b) Add user to Keycloak group: /organizations/{org-slug}/{role}
+#      c) Publish TeamMemberJoinedEvent
+#      d) Notify organization owner
+#
+# ============================================================================
+# OWNERSHIP:
+# - User (primary owner)
+# - Organization (primary owner - NEW)
+# - OrganizationMember (primary owner - NEW)
+# - TeamInvitation (primary owner - NEW)
+# - EventAccessGrant (primary owner - NEW)
+# - OrganizerProfile (primary owner)
+# - Permission, Notification, UserDevice, EventReminder (exclusive)
+#
+# NOTE: BankAccount and PayoutRequest are owned by Booking Service
+#
+# ============================================================================
+# SCHEMA ORGANIZATION:
+# 1. Federation directives & Scalars
+# 2. Enums - Platform & Account
+# 3. Enums - Organization & Team
+# 4. Enums - Notification & Device
+# 5. Primary Types - User
+# 6. Primary Types - Organization & Team
+# 7. Primary Types - OrganizerProfile
+# 8. Notification Types
+# 9. Device & Reminder Types
+# 10. Permission Types
+# 11. Authentication Types
+# 12. Statistics Types
+# 13. Pagination Types
+# 14. Input Types - User & Profile
+# 15. Input Types - Organization & Team
+# 16. Input Types - Notification & Device
+# 17. Mutation Response Types
+# 18. Subscription Payload Types
+# 19. Query type (bottom)
+# 20. Mutation type (bottom)
+# 21. Subscription type (very bottom)
+# ============================================================================
+
+# ============================================================================
+# SECTION 1: FEDERATION 2 SCHEMA EXTENSION
+# ============================================================================
+extend schema @link(
+    url: "https://specs.apollo.dev/federation/v2.9",
+    import: ["@key", "@shareable", "@external", "@requires", "@provides", "@extends", "@inaccessible", "@tag"]
+)
+
+# ============================================================================
+# AUTHORIZATION DIRECTIVE
+# ============================================================================
+# Role enum and @auth directive are defined in shared-library/auth.graphqls
+# and automatically loaded. Use @auth(requires: ROLE) on operations.
+# ============================================================================
+
+# ============================================================================
+# CLIENT-SPECIFIC TAGGING STRATEGY
+# ============================================================================
+# This schema uses @tag directives for operation-based code generation.
+# Tags indicate which client types should include specific fields/operations:
+#
+# - (no tag) = PUBLIC - Available to all clients
+# - @tag(name: "mobile") = Mobile app consumer features
+# - @tag(name: "organizer") = Organizer dashboard features
+# - @tag(name: "admin") = Platform administrator features
+# - @tag(name: "internal") = Service-to-service communication only
+#
+# IDENTITY SERVICE TAGGING PRINCIPLES:
+# - User profile (me, myProfile) → mobile
+# - User management (list, suspend, etc.) → admin
+# - Organizer profile management → organizer
+# - Organizer approval workflow → admin
+# - Organization management → organizer
+# - Platform statistics → admin
+# - Keycloak sync → internal
+# ============================================================================
+
+# ============================================================================
+# SECTION 2: CUSTOM SCALARS
+# ============================================================================
+scalar DateTime
+scalar BigDecimal
+scalar JSON
+scalar Long
+
+# ============================================================================
+# SECTION 3: ENUMS - PLATFORM & ACCOUNT
+# ============================================================================
+
+# Platform-level user type (Keycloak realm roles)
+# Determines system-wide capabilities
+enum UserType {
+    CUSTOMER      # Regular customer who buys tickets
+    ORGANIZER     # Event organizer who creates and manages events
+    ADMIN         # Platform administrator
+    SUPER_ADMIN   # Super administrator with full system access
+    FINANCE       # Finance team member for payouts and reconciliation
+}
+
+# User account status
+enum AccountStatus {
+    ACTIVE                # Account is active
+    INACTIVE              # Account is inactive (user-initiated)
+    LOCKED                # Temporarily locked (security)
+    SUSPENDED             # Suspended by admin
+    PENDING_VERIFICATION  # Awaiting email/phone verification
+    PENDING_DELETION      # GDPR deletion requested
+}
+
+# Organizer application status (staged approval)
+enum OrganizerStatus {
+    DRAFT               # Just applied, filling profile
+    PENDING_DOCUMENTS   # Profile complete, awaiting document upload
+    PENDING_REVIEW      # Documents submitted, awaiting admin review
+    CHANGES_REQUESTED   # Admin requested modifications
+    APPROVED            # Approved - can create Organization
+    REJECTED            # Application rejected
+    SUSPENDED           # Temporarily suspended
+}
+
+# ============================================================================
+# SECTION 4: ENUMS - ORGANIZATION & TEAM
+# ============================================================================
+
+# Organization status (tenant status)
+enum OrganizationStatus {
+    ACTIVE              # Organization is active
+    SUSPENDED           # Suspended by admin
+    INACTIVE            # Deactivated by owner
+    PENDING_DELETION    # Deletion requested
+}
+
+# Organization-level roles (within a tenant)
+# These roles determine what a user can do within their organization
+enum OrganizationRole {
+    # OWNER: Single person who owns the organization
+    # - Full access to all organization features
+    # - Can transfer ownership to another member
+    # - Can delete the organization
+    # - Can manage billing and payouts
+    # - Only ONE owner per organization
+    OWNER
+
+    # ADMIN: Full administrative access
+    # - Full access except ownership transfer
+    # - Can invite/remove team members
+    # - Can manage all events
+    # - Can view financial reports
+    # - Can request payouts (if enabled by owner)
+    ADMIN
+
+    # MANAGER: Event management focus
+    # - Can create and manage events
+    # - Can publish events
+    # - Can view event analytics
+    # - Limited financial access (view only)
+    # - Cannot invite members
+    MANAGER
+
+    # MARKETER: Marketing and analytics focus
+    # - Can view all events
+    # - Can manage promotions and discounts
+    # - Can view analytics and reports
+    # - Cannot create or edit events
+    # - No financial access
+    MARKETER
+
+    # CONTRIBUTOR: Limited access
+    # - View-only access to events
+    # - Can view attendee lists
+    # - Can assist with check-in
+    # - No event editing capabilities
+    CONTRIBUTOR
+}
+
+# Event-level roles (override organization roles for specific events)
+enum EventRole {
+    # EVENT_OWNER: Person who created the event
+    # - Full control over this specific event
+    # - Can delete the event
+    # - Can assign event roles to others
+    EVENT_OWNER
+
+    # EVENT_ADMIN: Full access to this event
+    # - Can edit all event details
+    # - Can manage tickets and pricing
+    # - Can issue refunds
+    # - Can assign event roles (except EVENT_OWNER)
+    EVENT_ADMIN
+
+    # EDITOR: Can edit event content
+    # - Can edit event details (title, description, etc.)
+    # - Can manage ticket types
+    # - Cannot issue refunds
+    # - Cannot assign roles
+    EDITOR
+
+    # CHECK_IN: Venue staff for scanning tickets
+    # - Can scan/validate tickets
+    # - Can view attendee list
+    # - Cannot edit anything
+    CHECK_IN
+
+    # VIEWER: Read-only access
+    # - Can view event details
+    # - Can view sales data
+    # - Cannot edit or scan
+    VIEWER
+}
+
+# Team member status within organization
+enum MemberStatus {
+    ACTIVE              # Active member
+    INACTIVE            # Deactivated (by admin)
+    SUSPENDED           # Temporarily suspended
+    REMOVED             # Removed from organization
+}
+
+# Team invitation status
+enum InvitationStatus {
+    PENDING             # Awaiting response
+    ACCEPTED            # Invitation accepted
+    DECLINED            # Invitation declined by invitee
+    EXPIRED             # Invitation expired
+    REVOKED             # Revoked by inviter
+}
+
+# Event access grant status
+enum AccessGrantStatus {
+    ACTIVE              # Access is active
+    SUSPENDED           # Access suspended
+    REVOKED             # Access revoked
+    EXPIRED             # Access expired (time-limited)
+}
+
+# ============================================================================
+# SECTION 5: ENUMS - NOTIFICATION & DEVICE
+# ============================================================================
+
+# Notification types
+enum NotificationType {
+    # Ticket-related
+    TICKET_PURCHASED
+    TICKET_TRANSFERRED
+    TICKET_TRANSFER_RECEIVED
+    TICKET_EXPIRING
+    TICKET_REFUND_REQUESTED
+
+    # Payment-related
+    PAYMENT_SUCCESSFUL
+    PAYMENT_FAILED
+    PAYMENT_PENDING
+
+    # Refund-related
+    REFUND_REQUESTED
+    REFUND_APPROVED
+    REFUND_REJECTED
+    REFUND_PROCESSED
+
+    # Event-related
+    EVENT_REMINDER
+    EVENT_CANCELLED
+    EVENT_UPDATED
+    EVENT_STARTING_SOON
+    EVENT_APPROVED
+    EVENT_REJECTED
+    EVENT_CHANGES_REQUESTED
+
+    # Waitlist/Queue
+    WAITLIST_AVAILABLE
+    QUEUE_TURN
+
+    # Organizer-related
+    ORGANIZER_APPROVED
+    ORGANIZER_REJECTED
+    ORGANIZER_SUSPENDED
+    ORGANIZER_CHANGES_REQUESTED
+
+    # Organization/Team-related
+    TEAM_INVITATION_RECEIVED
+    TEAM_MEMBER_JOINED
+    TEAM_MEMBER_LEFT
+    TEAM_ROLE_CHANGED
+    OWNERSHIP_TRANSFER_REQUESTED
+    OWNERSHIP_TRANSFER_COMPLETED
+
+    # Payout-related
+    PAYOUT_REQUESTED
+    PAYOUT_APPROVED
+    PAYOUT_COMPLETED
+    PAYOUT_FAILED
+
+    # System
+    SYSTEM_ANNOUNCEMENT
+    ACCOUNT_SECURITY
+    WELCOME
+}
+
+# Notification delivery channels
+enum NotificationChannel {
+    PUSH        # Mobile push notification
+    SMS         # SMS message
+    WHATSAPP    # WhatsApp message
+    EMAIL       # Email
+    IN_APP      # In-app notification
+}
+
+# Notification status
+enum NotificationStatus {
+    PENDING     # Not yet sent
+    QUEUED      # Queued for delivery
+    SENT        # Sent to delivery provider
+    DELIVERED   # Confirmed delivered
+    READ        # Read by user
+    FAILED      # Delivery failed
+    EXPIRED     # Notification expired
+}
+
+# Reminder status
+enum ReminderStatus {
+    SCHEDULED   # Scheduled for future
+    SENT        # Reminder sent
+    CANCELLED   # Cancelled
+    FAILED      # Failed to send
+}
+
+# Device platform
+enum DevicePlatform {
+    IOS         # iOS device
+    ANDROID     # Android device
+    WEB         # Web browser
+}
+
+# Social login provider
+enum SocialProvider {
+    GOOGLE
+    FACEBOOK
+    APPLE
+    TWITTER
+}
+
+# Two-factor authentication method
+enum TwoFactorMethod {
+    SMS
+    EMAIL
+    AUTHENTICATOR_APP
+    BACKUP_CODE
+}
+
+# ============================================================================
+# SECTION 6: PRIMARY TYPES - USER
+# ============================================================================
+
+# User is the core identity entity, synchronized with Keycloak
+# Every person on the platform has exactly ONE User record
+# NOTE: User.id IS the Keycloak user ID (no separate keycloakUserId field needed)
+# Tags applied at field level to control client access:
+# - PUBLIC fields: Basic profile info anyone can see
+# - ADMIN fields: User management and audit data
+# - ORGANIZER fields: Organizer-related information
+type User @key(fields: "id") {
+    id: ID!                         # Keycloak user ID (sub claim from JWT)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Core Identity (synced with Keycloak)
+    # PUBLIC - Basic profile information
+    # ─────────────────────────────────────────────────────────────────────
+    username: String!               # Unique username
+    # ADMIN - Email is PII, only visible to admins or the user themselves
+    # @shareable allows booking-service to @provides this from cached Ticket data
+    email: String! @shareable @tag(name: "admin")
+    firstName: String!
+    lastName: String!
+    # @shareable allows booking-service to @provides this from cached Ticket data
+    fullName: String! @shareable    # Computed: firstName + lastName
+    # ADMIN - Phone number is PII
+    # @shareable allows booking-service to @provides this from cached Ticket data
+    phoneNumber: String @shareable @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Profile Information
+    # PUBLIC - Optional profile details
+    # ─────────────────────────────────────────────────────────────────────
+    avatarUrl: String               # Profile picture URL
+    bio: String                     # User bio/description
+    dateOfBirth: DateTime
+    gender: String
+    locale: String                  # Preferred locale (e.g., "en-ZM")
+    timezone: String                # Preferred timezone
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Platform Role & Status
+    # ADMIN - User management requires these fields
+    # ─────────────────────────────────────────────────────────────────────
+    userType: UserType! @tag(name: "admin")
+    accountStatus: AccountStatus! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Verification Status
+    # ADMIN - Verification status for user management
+    # ─────────────────────────────────────────────────────────────────────
+    emailVerified: Boolean! @tag(name: "admin")
+    phoneVerified: Boolean! @tag(name: "admin")
+    identityVerified: Boolean! @tag(name: "admin")  # KYC verification for organizers
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Account Flags
+    # ADMIN - Account state management
+    # ─────────────────────────────────────────────────────────────────────
+    active: Boolean! @tag(name: "admin")
+    locked: Boolean! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Two-Factor Authentication
+    # MOBILE - User can manage their own 2FA settings
+    # ─────────────────────────────────────────────────────────────────────
+    twoFactorEnabled: Boolean! @tag(name: "mobile")
+    twoFactorMethod: TwoFactorMethod @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Social Connections
+    # MOBILE - User manages their own social connections
+    # ─────────────────────────────────────────────────────────────────────
+    socialConnections: [SocialConnection!] @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organization Memberships
+    # ORGANIZER - Organizer dashboard needs organization access
+    # ─────────────────────────────────────────────────────────────────────
+    organizationMemberships: [OrganizationMember!] @tag(name: "organizer")
+
+    # Primary organization (for quick access)
+    primaryOrganizationId: ID @tag(name: "organizer")
+    primaryOrganization: Organization @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organizer Profile (if ORGANIZER)
+    # ORGANIZER/ADMIN - Organizer profile access
+    # ─────────────────────────────────────────────────────────────────────
+    organizerProfile: OrganizerProfile @tag(name: "organizer") @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Notification Preferences
+    # MOBILE - User manages their own notification preferences
+    # ─────────────────────────────────────────────────────────────────────
+    notificationPreferences: NotificationPreferences @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Statistics (as customer)
+    # PUBLIC - Gamification/profile stats
+    # ─────────────────────────────────────────────────────────────────────
+    totalTicketsPurchased: Int
+    totalEventsAttended: Int
+    memberSince: DateTime
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Audit Fields
+    # ADMIN - Audit trail for user management
+    # ─────────────────────────────────────────────────────────────────────
+    lastLoginAt: DateTime @tag(name: "admin")
+    lastActiveAt: DateTime @tag(name: "admin")
+    createdAt: DateTime! @tag(name: "admin")
+    updatedAt: DateTime @tag(name: "admin")
+}
+
+# Social login connection
+type SocialConnection {
+    provider: SocialProvider!
+    providerId: String!
+    email: String
+    name: String
+    connectedAt: DateTime!
+}
+
+# ============================================================================
+# SECTION 7: PRIMARY TYPES - ORGANIZATION & TEAM
+# ============================================================================
+
+# Organization represents the business entity (the "tenant")
+# An Organization is created when an OrganizerProfile is approved
+# ORGANIZER/ADMIN - Organizers manage their organizations, admins oversee all
+type Organization @key(fields: "id") @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Basic Information
+    # ─────────────────────────────────────────────────────────────────────
+    name: String!                   # Display name
+    slug: String!                   # URL-friendly identifier (unique)
+    description: String
+    logoUrl: String
+    bannerUrl: String
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Linked Organizer Profile
+    # ─────────────────────────────────────────────────────────────────────
+    organizerProfileId: ID!
+    organizerProfile: OrganizerProfile
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Keycloak Integration
+    # ─────────────────────────────────────────────────────────────────────
+    keycloakGroupId: String         # Keycloak group ID for this org
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Ownership
+    # ─────────────────────────────────────────────────────────────────────
+    ownerId: ID!                    # User ID of the owner
+    owner: User                     # Only ONE owner per organization
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Team Members
+    # ─────────────────────────────────────────────────────────────────────
+    members: [OrganizationMember!]
+    memberCount: Int!
+    activeMembers: [OrganizationMember!]
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Pending Invitations
+    # ─────────────────────────────────────────────────────────────────────
+    pendingInvitations: [TeamInvitation!]
+    pendingInvitationCount: Int!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organization Settings
+    # ─────────────────────────────────────────────────────────────────────
+    settings: OrganizationSettings
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Status & Verification
+    # ─────────────────────────────────────────────────────────────────────
+    status: OrganizationStatus!
+    verified: Boolean!              # Business verification status
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Statistics (computed from Catalog/Booking services)
+    # ─────────────────────────────────────────────────────────────────────
+    totalEvents: Int
+    totalTicketsSold: Int
+    totalRevenue: BigDecimal
+    averageRating: Float
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Audit Fields
+    # ─────────────────────────────────────────────────────────────────────
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+# Organization member - links User to Organization with a role
+# ORGANIZER - Team management for organization owners and admins
+type OrganizationMember @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Links
+    # ─────────────────────────────────────────────────────────────────────
+    userId: ID!
+    user: User
+    organizationId: ID!
+    organization: Organization
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Role & Permissions
+    # ─────────────────────────────────────────────────────────────────────
+    role: OrganizationRole!
+
+    # Custom permissions that override role defaults
+    # Example: ["PAYOUT_REQUEST"] grants a Manager payout access
+    customPermissions: [String!]
+
+    # Permissions explicitly denied
+    # Example: ["EVENT_DELETE"] prevents deletion even for Admins
+    deniedPermissions: [String!]
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Status
+    # ─────────────────────────────────────────────────────────────────────
+    status: MemberStatus!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Invitation Tracking
+    # ─────────────────────────────────────────────────────────────────────
+    invitedById: ID
+    invitedBy: User
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Timestamps
+    # ─────────────────────────────────────────────────────────────────────
+    joinedAt: DateTime!
+    lastActiveAt: DateTime
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+# Team invitation for pending members
+# ORGANIZER - Team invitation management
+type TeamInvitation @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Invitee Information
+    # ─────────────────────────────────────────────────────────────────────
+    email: String!                  # Email to send invitation
+    phoneNumber: String             # Optional phone number
+    inviteeName: String             # Optional name of invitee
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organization
+    # ─────────────────────────────────────────────────────────────────────
+    organizationId: ID!
+    organization: Organization
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Proposed Role
+    # ─────────────────────────────────────────────────────────────────────
+    proposedRole: OrganizationRole!
+
+    # Event-specific access to grant upon acceptance
+    eventAccessGrants: [EventAccessProposal!]
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Invitation Details
+    # ─────────────────────────────────────────────────────────────────────
+    invitedById: ID!
+    invitedBy: User
+    message: String                 # Personal message from inviter
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Token & Expiry
+    # ─────────────────────────────────────────────────────────────────────
+    invitationToken: String!        # Unique token for acceptance link
+    expiresAt: DateTime!            # Invitation expiry (default 7 days)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Status
+    # ─────────────────────────────────────────────────────────────────────
+    status: InvitationStatus!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Timestamps
+    # ─────────────────────────────────────────────────────────────────────
+    createdAt: DateTime!
+    acceptedAt: DateTime
+    declinedAt: DateTime
+}
+
+# Proposed event access in an invitation (output type)
+# Mirrors EventAccessInput but for reading, not writing
+# ORGANIZER - Part of team invitation workflow
+type EventAccessProposal @tag(name: "organizer") @tag(name: "admin") {
+    eventId: ID!
+    role: EventRole!
+    expiresAt: DateTime
+}
+
+# Event-level access assignment
+# Allows granting specific users access to specific events
+# Overrides organization-level role for that event
+# ORGANIZER - Event access management for team
+type EventAccessGrant @key(fields: "id") @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Links
+    # ─────────────────────────────────────────────────────────────────────
+    userId: ID!
+    user: User
+    eventId: ID!                    # References Event in Catalog service
+    organizationId: ID!
+    organization: Organization
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Event Role
+    # ─────────────────────────────────────────────────────────────────────
+    eventRole: EventRole!
+
+    # Custom permissions for this event
+    customPermissions: [String!]
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Assignment Details
+    # ─────────────────────────────────────────────────────────────────────
+    grantedById: ID!
+    grantedBy: User
+    reason: String                  # Why access was granted
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Status & Expiry
+    # ─────────────────────────────────────────────────────────────────────
+    status: AccessGrantStatus!
+    expiresAt: DateTime             # Optional time-limited access
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Revocation (if revoked)
+    # ─────────────────────────────────────────────────────────────────────
+    revokedById: ID
+    revokedBy: User
+    revokedAt: DateTime
+    revocationReason: String
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Timestamps
+    # ─────────────────────────────────────────────────────────────────────
+    grantedAt: DateTime!
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+# Ownership transfer request
+type OwnershipTransferRequest {
+    id: ID!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organization
+    # ─────────────────────────────────────────────────────────────────────
+    organizationId: ID!
+    organization: Organization
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Transfer Parties
+    # ─────────────────────────────────────────────────────────────────────
+    currentOwnerId: ID!
+    currentOwner: User
+    newOwnerId: ID!
+    newOwner: User
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Transfer Details
+    # ─────────────────────────────────────────────────────────────────────
+    reason: String
+    transferToken: String!          # Token for new owner to accept
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Status
+    # ─────────────────────────────────────────────────────────────────────
+    status: TransferStatus!
+    expiresAt: DateTime!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Timestamps
+    # ─────────────────────────────────────────────────────────────────────
+    initiatedAt: DateTime!
+    completedAt: DateTime
+    cancelledAt: DateTime
+}
+
+# Ownership transfer status - synchronized with booking service
+enum TransferStatus {
+    PENDING             # Transfer initiated, waiting for recipient acceptance
+    ACCEPTED            # Recipient accepted
+    REJECTED            # Recipient rejected the transfer
+    COMPLETED           # Transfer completed
+    EXPIRED             # Transfer expired after timeout
+    CANCELLED           # Transfer cancelled
+}
+
+# Organization settings
+type OrganizationSettings {
+    id: ID!
+    organizationId: ID!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Event Defaults
+    # ─────────────────────────────────────────────────────────────────────
+    defaultEventVisibility: String  # PUBLIC, PRIVATE, UNLISTED
+    requireEventApproval: Boolean!  # Events need owner/admin approval
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Team Settings
+    # ─────────────────────────────────────────────────────────────────────
+    allowMembersToInvite: Boolean!  # Can non-owners invite members
+    inviteRequiresApproval: Boolean! # Invites need owner approval
+    maxTeamMembers: Int             # Max team size (null = unlimited)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Permission Settings
+    # ─────────────────────────────────────────────────────────────────────
+    managersCanRequestPayouts: Boolean!
+    marketersCanViewFinancials: Boolean!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Notification Settings
+    # ─────────────────────────────────────────────────────────────────────
+    notifyOwnerOnMemberJoin: Boolean!
+    notifyOwnerOnEventCreated: Boolean!
+    notifyOwnerOnPayoutRequest: Boolean!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Audit
+    # ─────────────────────────────────────────────────────────────────────
+    updatedAt: DateTime
+    updatedById: ID
+}
+
+# ============================================================================
+# SECTION 8: PRIMARY TYPES - ORGANIZER PROFILE
+# ============================================================================
+
+# OrganizerProfile contains business information for organizer verification
+# Created when a user applies to become an organizer
+# Organization is created when OrganizerProfile is APPROVED
+#
+# NOTE: userId IS the Keycloak user ID (no separate keycloakUserId needed)
+# NOTE: logoUrl/bannerUrl are in Organization (public branding), not here
+# NOTE: To get Organization, query via Organization.organizerProfileId
+# ORGANIZER/ADMIN - Organizer profile management and approval workflow
+type OrganizerProfile @key(fields: "id") @tag(name: "organizer") @tag(name: "admin") {
+    id: ID!
+    userId: String!                     # Keycloak user ID
+    user: User
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Business Information
+    # ─────────────────────────────────────────────────────────────────────
+    companyName: String
+    companyDescription: String
+    tagline: String
+    website: String
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Social Media
+    # ─────────────────────────────────────────────────────────────────────
+    socialLinks: SocialLinks
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Business Registration (KYB)
+    # ─────────────────────────────────────────────────────────────────────
+    taxId: String                       # TPIN in Zambia
+    businessRegistrationNumber: String  # PACRA number
+    businessType: String                # LLC, Sole Proprietor, etc.
+    yearEstablished: Int
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Contact Information
+    # ─────────────────────────────────────────────────────────────────────
+    businessPhone: String
+    businessEmail: String
+    businessAddress: String
+    city: String
+    province: String
+    country: String
+    postalCode: String
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Verification Documents
+    # ─────────────────────────────────────────────────────────────────────
+    verificationDocuments: [VerificationDocument!]
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Platform Settings (set by admin)
+    # ─────────────────────────────────────────────────────────────────────
+    commissionRate: Float               # Platform commission percentage
+    payoutSchedule: String              # DAILY, WEEKLY, MONTHLY
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Application Status
+    # ─────────────────────────────────────────────────────────────────────
+    status: OrganizerStatus!
+    statusReason: String                # Reason for rejection/changes
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Verification Flags
+    # ─────────────────────────────────────────────────────────────────────
+    verified: Boolean!                  # Business is verified
+    documentsVerified: Boolean!         # All documents verified
+    bankVerified: Boolean!              # Bank account verified
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Review Information
+    # ─────────────────────────────────────────────────────────────────────
+    reviewedById: String
+    reviewedBy: User
+    reviewedAt: DateTime
+    reviewNotes: String                 # Internal notes from reviewer
+
+    # ─────────────────────────────────────────────────────────────────────
+    # NOTE: To get the linked Organization, use:
+    # query { organizationByOrganizerProfileId(profileId: "...") }
+    # This avoids bidirectional references and keeps data consistency
+    # ─────────────────────────────────────────────────────────────────────
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Statistics
+    # ─────────────────────────────────────────────────────────────────────
+    totalEvents: Int
+    totalTicketsSold: Int
+    totalRevenue: BigDecimal
+    averageRating: Float
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Audit Fields
+    # ─────────────────────────────────────────────────────────────────────
+    submittedAt: DateTime               # When application was submitted
+    approvedAt: DateTime                # When application was approved
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+type SocialLinks {
+    facebook: String
+    twitter: String
+    instagram: String
+    linkedin: String
+    youtube: String
+    tiktok: String
+}
+
+type VerificationDocument {
+    id: ID!
+    documentType: String!           # ID_DOCUMENT, BUSINESS_LICENSE, TAX_CERT, etc.
+    documentUrl: String!
+    fileName: String
+    fileSize: Int
+    mimeType: String
+    status: DocumentStatus!
+    uploadedAt: DateTime!
+    verifiedAt: DateTime
+    verifiedById: String
+    verifiedBy: User
+    rejectionReason: String
+}
+
+enum DocumentStatus {
+    PENDING             # Uploaded, awaiting review
+    APPROVED            # Document verified
+    REJECTED            # Document rejected
+    EXPIRED             # Document has expired
+}
+
+# ============================================================================
+# SECTION 9: NOTIFICATION TYPES
+# ============================================================================
+
+type Notification {
+    id: ID!
+    userId: ID!
+
+    # Content
+    type: NotificationType!
+    title: String!
+    body: String!
+    imageUrl: String
+    actionUrl: String
+    data: JSON
+
+    # Delivery
+    channels: [NotificationChannel!]!
+    priority: String
+
+    # Status tracking per channel
+    channelStatuses: [ChannelStatus!]
+    status: NotificationStatus!
+
+    # Timestamps
+    scheduledAt: DateTime
+    sentAt: DateTime
+    deliveredAt: DateTime
+    readAt: DateTime
+    expiresAt: DateTime
+
+    # Audit
+    createdAt: DateTime!
+}
+
+type ChannelStatus {
+    channel: NotificationChannel!
+    status: NotificationStatus!
+    sentAt: DateTime
+    deliveredAt: DateTime
+    errorMessage: String
+}
+
+type NotificationPreferences {
+    id: ID!
+    userId: ID!
+
+    # Channel preferences
+    emailEnabled: Boolean!
+    smsEnabled: Boolean!
+    whatsappEnabled: Boolean!
+    pushEnabled: Boolean!
+    inAppEnabled: Boolean!
+
+    # Category preferences
+    ticketNotifications: Boolean!
+    eventReminders: Boolean!
+    eventUpdates: Boolean!
+    paymentNotifications: Boolean!
+    teamNotifications: Boolean!
+    marketingEmails: Boolean!
+    systemAnnouncements: Boolean!
+
+    # Timing preferences
+    reminderHoursBefore: Int!
+    quietHoursStart: String
+    quietHoursEnd: String
+    timezone: String
+
+    # Audit
+    updatedAt: DateTime
+}
+
+# ============================================================================
+# SECTION 10: DEVICE & REMINDER TYPES
+# ============================================================================
+
+type UserDevice {
+    id: ID!
+    userId: ID!
+
+    # Device info
+    deviceToken: String!
+    platform: DevicePlatform!
+    deviceName: String
+    deviceModel: String
+    osVersion: String
+    appVersion: String
+
+    # Status
+    isActive: Boolean!
+    isPrimary: Boolean!
+
+    # Timestamps
+    lastActiveAt: DateTime
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+type EventReminder {
+    id: ID!
+    userId: ID!
+    eventId: ID!
+    ticketId: ID!
+
+    # Reminder details
+    eventTitle: String
+    eventDateTime: DateTime
+    reminderAt: DateTime!
+    minutesBefore: Int!
+
+    # Delivery
+    channels: [NotificationChannel!]
+
+    # Status
+    status: ReminderStatus!
+    sentAt: DateTime
+    errorMessage: String
+
+    # Audit
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+# ============================================================================
+# SECTION 11: PERMISSION TYPES
+# ============================================================================
+
+# Permission definition
+type Permission {
+    id: ID!
+    name: String!                   # Human-readable name
+    code: String!                   # System code (e.g., EVENT_CREATE)
+    description: String
+    category: String                # ORGANIZATION, EVENT, FINANCIAL, etc.
+    scope: PermissionScope!         # Where this permission applies
+    active: Boolean!
+    createdAt: DateTime!
+    updatedAt: DateTime
+}
+
+enum PermissionScope {
+    PLATFORM            # Platform-wide permission
+    ORGANIZATION        # Organization-scoped permission
+    EVENT               # Event-scoped permission
+}
+
+# Role with its default permissions
+type RolePermissions {
+    role: String!                   # Role name
+    scope: PermissionScope!         # Role scope
+    permissions: [Permission!]!     # Default permissions for this role
+    inheritedFrom: [String!]        # Roles this inherits from
+}
+
+# Effective permissions for a user in a context
+type EffectivePermissions {
+    userId: ID!
+    organizationId: ID
+    eventId: ID
+    permissions: [String!]!         # List of permission codes
+    role: String                    # Applicable role
+    source: String                  # Where permissions come from
+}
+
+# ============================================================================
+# SECTION 12: AUTHENTICATION TYPES
+# ============================================================================
+
+type AuthPayload {
+    success: Boolean!
+    message: String
+    user: User
+    accessToken: String
+    refreshToken: String
+    expiresIn: Int
+    tokenType: String
+}
+
+# Token validation response
+type TokenValidation {
+    valid: Boolean!
+    userId: String
+    email: String
+    userType: String
+}
+
+# User registration input
+input RegisterInput {
+    email: String!
+    password: String!
+    username: String
+    firstName: String
+    lastName: String
+    phoneNumber: String
+    userType: UserType
+}
+
+type OtpResponse {
+    success: Boolean!
+    message: String
+    expiresAt: DateTime
+    cooldownSeconds: Int
+    attemptsRemaining: Int
+}
+
+type TwoFactorSetupResponse {
+    success: Boolean!
+    message: String
+    secret: String                  # For AUTHENTICATOR_APP
+    qrCodeUrl: String               # QR code for authenticator
+    backupCodes: [String!]          # One-time backup codes
+}
+
+# ============================================================================
+# SECTION 13: STATISTICS TYPES
+# ============================================================================
+
+type OrganizerStatistics {
+    organizerId: ID!
+    organizationId: ID
+    totalEvents: Int!
+    activeEvents: Int!
+    completedEvents: Int!
+    cancelledEvents: Int!
+    totalTicketsSold: Int!
+    totalRevenue: BigDecimal!
+    pendingPayouts: BigDecimal!
+    completedPayouts: BigDecimal!
+    averageRating: Float
+    totalReviews: Int!
+    period: String
+}
+
+type PlatformStatistics {
+    totalUsers: Int!
+    totalOrganizers: Int!
+    totalOrganizations: Int!
+    pendingOrganizerApplications: Int!
+    totalEvents: Int!
+    totalTicketsSold: Int!
+    totalRevenue: BigDecimal!
+    activeUsers30Days: Int!
+    period: String
+}
+
+type TeamStatistics {
+    organizationId: ID!
+    totalMembers: Int!
+    activeMembers: Int!
+    pendingInvitations: Int!
+    membersByRole: JSON
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# USER STATISTICS (Admin Dashboard)
+# ─────────────────────────────────────────────────────────────────────────────
+# Comprehensive user statistics for admin dashboard.
+# Uses MongoDB aggregation pipelines for efficient computation.
+
+# ADMIN - Main container for user statistics
+type UserStats @tag(name: "admin") {
+    # Core counts
+    totalUsers: Int!
+    organizers: Int!
+    attendees: Int!
+    adminUsers: Int!
+    verifiedUsers: Int!
+    activeUsers: Int!
+
+    # Account status counts
+    suspendedUsers: Int!
+    lockedUsers: Int!
+    pendingVerificationUsers: Int!
+
+    # Time-based counts
+    newUsersThisMonth: Int!
+    newUsersThisWeek: Int!
+
+    # Growth metric (month-over-month percentage)
+    growthRate: Float
+
+    # Breakdowns
+    usersByType: [UserTypeStats!]!
+    usersByStatus: [UserStatusStats!]!
+}
+
+# ADMIN - Statistics for users grouped by type
+type UserTypeStats @tag(name: "admin") {
+    userType: UserType!
+    count: Int!
+    percentage: Float!
+}
+
+# ADMIN - Statistics for users grouped by account status
+type UserStatusStats @tag(name: "admin") {
+    status: AccountStatus!
+    count: Int!
+    percentage: Float!
+}
+
+# ============================================================================
+# SECTION 14: PAGINATION TYPES
+# ============================================================================
+
+# Offset-based pagination input for admin/dashboard tables
+input OffsetPaginationInput {
+    page: Int = 0
+    size: Int = 20
+    sortBy: String = "createdAt"
+    sortDirection: SortDirection = DESC
+}
+
+# Cursor-based pagination input (Relay style) for mobile/infinite scroll
+input CursorPaginationInput {
+    first: Int
+    after: String
+    last: Int
+    before: String
+}
+
+enum SortDirection {
+    ASC
+    DESC
+}
+
+# Shared type for cursor-based pagination - must have @shareable for federation
+type PageInfo @shareable {
+    hasNextPage: Boolean @shareable
+    hasPreviousPage: Boolean @shareable
+    startCursor: String @shareable
+    endCursor: String @shareable
+    totalCount: Int @shareable
+    totalElements: Int @shareable
+    totalPages: Int @shareable
+    currentPage: Int @shareable
+    pageSize: Int @shareable
+    hasNext: Boolean @shareable
+    hasPrevious: Boolean @shareable
+}
+
+# Paged results
+type UserOffsetPage {
+    content: [User!]!
+    pageInfo: PageInfo!
+}
+
+type OrganizationOffsetPage {
+    content: [Organization!]!
+    pageInfo: PageInfo!
+}
+
+type OrganizationMemberOffsetPage {
+    content: [OrganizationMember!]!
+    pageInfo: PageInfo!
+}
+
+type OrganizerApplicationOffsetPage {
+    content: [OrganizerProfile!]!
+    pageInfo: PageInfo!
+}
+
+type NotificationOffsetPage {
+    content: [Notification!]!
+    pageInfo: PageInfo!
+}
+
+type TeamInvitationOffsetPage {
+    content: [TeamInvitation!]!
+    pageInfo: PageInfo!
+}
+
+type EventAccessGrantOffsetPage {
+    content: [EventAccessGrant!]!
+    pageInfo: PageInfo!
+}
+
+# ============================================================================
+# SECTION 14b: CURSOR PAGINATION TYPES (Relay-style Connections)
+# ============================================================================
+# Cursor-based pagination following the Relay Connection Specification.
+# Used for infinite scroll, mobile apps, and real-time feeds.
+# https://relay.dev/graphql/connections.htm
+
+# User cursor pagination
+type UserConnection {
+    edges: [UserEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type UserEdge {
+    cursor: String!
+    node: User!
+}
+
+# Organization cursor pagination
+type OrganizationConnection {
+    edges: [OrganizationEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type OrganizationEdge {
+    cursor: String!
+    node: Organization!
+}
+
+# Notification cursor pagination
+type NotificationConnection {
+    edges: [NotificationEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type NotificationEdge {
+    cursor: String!
+    node: Notification!
+}
+
+# OrganizationMember cursor pagination
+type OrganizationMemberConnection {
+    edges: [OrganizationMemberEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type OrganizationMemberEdge {
+    cursor: String!
+    node: OrganizationMember!
+}
+
+# TeamInvitation cursor pagination
+type TeamInvitationConnection {
+    edges: [TeamInvitationEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type TeamInvitationEdge {
+    cursor: String!
+    node: TeamInvitation!
+}
+
+# OrganizerProfile/Application cursor pagination
+type OrganizerApplicationConnection {
+    edges: [OrganizerApplicationEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type OrganizerApplicationEdge {
+    cursor: String!
+    node: OrganizerProfile!
+}
+
+# EventAccessGrant cursor pagination
+type EventAccessGrantConnection {
+    edges: [EventAccessGrantEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type EventAccessGrantEdge {
+    cursor: String!
+    node: EventAccessGrant!
+}
+
+# ============================================================================
+# SECTION 15: INPUT TYPES - USER & PROFILE
+# ============================================================================
+
+input CreateUserInput {
+    email: String!
+    phoneNumber: String
+    firstName: String!
+    lastName: String!
+    password: String
+    userType: UserType = CUSTOMER
+}
+
+input UpdateUserInput {
+    firstName: String
+    lastName: String
+    phoneNumber: String
+    avatarUrl: String
+    bio: String
+    dateOfBirth: DateTime
+    gender: String
+    locale: String
+    timezone: String
+}
+
+input UpdateNotificationPreferencesInput {
+    emailEnabled: Boolean
+    smsEnabled: Boolean
+    whatsappEnabled: Boolean
+    pushEnabled: Boolean
+    inAppEnabled: Boolean
+    ticketNotifications: Boolean
+    eventReminders: Boolean
+    eventUpdates: Boolean
+    paymentNotifications: Boolean
+    teamNotifications: Boolean
+    marketingEmails: Boolean
+    systemAnnouncements: Boolean
+    reminderHoursBefore: Int
+    quietHoursStart: String
+    quietHoursEnd: String
+    timezone: String
+}
+
+input SetupTwoFactorInput {
+    method: TwoFactorMethod!
+    phoneNumber: String             # Required for SMS
+    email: String                   # Required for EMAIL
+}
+
+input VerifyTwoFactorInput {
+    code: String!
+    method: TwoFactorMethod!
+}
+
+input SocialAuthInput {
+    provider: SocialProvider!
+    accessToken: String!
+    idToken: String
+}
+
+input RequestAccountDeletionInput {
+    reason: String
+    feedback: String
+    confirmPassword: String         # For security verification
+}
+
+# ============================================================================
+# SECTION 16: INPUT TYPES - ORGANIZER APPLICATION
+# ============================================================================
+
+input ApplyToBeOrganizerInput {
+    # Basic business info
+    companyName: String!
+    companyDescription: String
+    tagline: String
+    website: String
+
+    # Contact
+    businessPhone: String!
+    businessEmail: String!
+    businessAddress: String
+    city: String
+    province: String
+    country: String = "ZM"
+    postalCode: String
+}
+
+input UpdateOrganizerProfileInput {
+    companyName: String
+    companyDescription: String
+    tagline: String
+    logoUrl: String
+    bannerUrl: String
+    website: String
+
+    # Social media
+    socialLinks: SocialLinksInput
+
+    # Business registration
+    taxId: String
+    businessRegistrationNumber: String
+    businessType: String
+    yearEstablished: Int
+
+    # Contact
+    businessPhone: String
+    businessEmail: String
+    businessAddress: String
+    city: String
+    province: String
+    country: String
+    postalCode: String
+}
+
+input SocialLinksInput {
+    facebook: String
+    twitter: String
+    instagram: String
+    linkedin: String
+    youtube: String
+    tiktok: String
+}
+
+input UploadVerificationDocumentInput {
+    organizerProfileId: ID!
+    documentType: String!
+    documentUrl: String!
+    fileName: String
+    fileSize: Int
+    mimeType: String
+}
+
+input SubmitOrganizerApplicationInput {
+    organizerProfileId: ID!
+}
+
+# Admin inputs for organizer review
+input ApproveOrganizerInput {
+    organizerProfileId: ID!
+    commissionRate: Float
+    payoutSchedule: String
+    reviewNotes: String
+}
+
+input RejectOrganizerInput {
+    organizerProfileId: ID!
+    reason: String!
+    reviewNotes: String
+}
+
+input RequestOrganizerChangesInput {
+    organizerProfileId: ID!
+    changesRequired: String!
+    reviewNotes: String
+}
+
+input SuspendOrganizerInput {
+    organizerProfileId: ID!
+    reason: String!
+}
+
+# ============================================================================
+# SECTION 17: INPUT TYPES - ORGANIZATION & TEAM
+# ============================================================================
+
+input UpdateOrganizationInput {
+    name: String
+    description: String
+    logoUrl: String
+    bannerUrl: String
+}
+
+input UpdateOrganizationSettingsInput {
+    organizationId: ID!
+    defaultEventVisibility: String
+    requireEventApproval: Boolean
+    allowMembersToInvite: Boolean
+    inviteRequiresApproval: Boolean
+    maxTeamMembers: Int
+    managersCanRequestPayouts: Boolean
+    marketersCanViewFinancials: Boolean
+    notifyOwnerOnMemberJoin: Boolean
+    notifyOwnerOnEventCreated: Boolean
+    notifyOwnerOnPayoutRequest: Boolean
+}
+
+input InviteTeamMemberInput {
+    organizationId: ID!
+    email: String!
+    phoneNumber: String
+    inviteeName: String
+    role: OrganizationRole!
+    message: String
+    eventAccessGrants: [EventAccessInput!]
+}
+
+input EventAccessInput {
+    eventId: ID!
+    role: EventRole!
+    expiresAt: DateTime
+}
+
+input AcceptInvitationInput {
+    invitationToken: String!
+}
+
+input UpdateMemberRoleInput {
+    organizationId: ID!
+    memberId: ID!
+    newRole: OrganizationRole!
+    customPermissions: [String!]
+    deniedPermissions: [String!]
+}
+
+input RemoveMemberInput {
+    organizationId: ID!
+    memberId: ID!
+    reason: String
+}
+
+input TransferOwnershipInput {
+    organizationId: ID!
+    newOwnerId: ID!
+    reason: String
+}
+
+input ConfirmOwnershipTransferInput {
+    transferToken: String!
+    confirmationCode: String!       # 2FA code
+}
+
+input GrantEventAccessInput {
+    organizationId: ID!
+    eventId: ID!
+    userId: ID!
+    role: EventRole!
+    reason: String
+    expiresAt: DateTime
+}
+
+input UpdateEventAccessInput {
+    accessId: ID!
+    newRole: EventRole
+    customPermissions: [String!]
+    expiresAt: DateTime
+}
+
+input RevokeEventAccessInput {
+    accessId: ID!
+    reason: String
+}
+
+# Bulk operations
+input BulkInviteInput {
+    organizationId: ID!
+    invites: [InviteTeamMemberInput!]!
+}
+
+input BulkGrantEventAccessInput {
+    organizationId: ID!
+    eventId: ID!
+    grants: [GrantEventAccessInput!]!
+}
+
+# ============================================================================
+# SECTION 18: INPUT TYPES - NOTIFICATION & DEVICE
+# ============================================================================
+
+input RegisterDeviceInput {
+    deviceToken: String!
+    platform: DevicePlatform!
+    deviceName: String
+    deviceModel: String
+    osVersion: String
+    appVersion: String
+}
+
+input CreateEventReminderInput {
+    eventId: ID!
+    ticketId: ID!
+    minutesBefore: Int!
+    channels: [NotificationChannel!]
+}
+
+input SendNotificationInput {
+    userId: ID!
+    type: NotificationType!
+    title: String!
+    body: String!
+    imageUrl: String
+    actionUrl: String
+    data: JSON
+    channels: [NotificationChannel!]!
+    priority: String
+    scheduledAt: DateTime
+}
+
+# ============================================================================
+# SECTION 19: MUTATION RESPONSE TYPES
+# ============================================================================
+
+# Generic mutation response
+type MutationResponse {
+    success: Boolean!
+    message: String
+    code: String
+}
+
+# User-related responses
+type UserMutationResponse {
+    success: Boolean!
+    message: String
+    user: User
+}
+
+# Organization responses
+type OrganizationMutationResponse {
+    success: Boolean!
+    message: String
+    organization: Organization
+}
+
+# Member responses
+type MemberMutationResponse {
+    success: Boolean!
+    message: String
+    member: OrganizationMember
+}
+
+# Invitation responses
+type InvitationMutationResponse {
+    success: Boolean!
+    message: String
+    invitation: TeamInvitation
+}
+
+type BulkInvitationResponse {
+    success: Boolean!
+    message: String
+    sentCount: Int!
+    failedCount: Int!
+    invitations: [TeamInvitation!]
+    errors: [BulkOperationError!]
+}
+
+# Event access responses
+type EventAccessMutationResponse {
+    success: Boolean!
+    message: String
+    accessGrant: EventAccessGrant
+}
+
+type BulkAccessGrantResponse {
+    success: Boolean!
+    message: String
+    grantedCount: Int!
+    failedCount: Int!
+    grants: [EventAccessGrant!]
+    errors: [BulkOperationError!]
+}
+
+# Ownership transfer response
+type OwnershipTransferResponse {
+    success: Boolean!
+    message: String
+    transfer: OwnershipTransferRequest
+}
+
+# Organizer responses
+type OrganizerMutationResponse {
+    success: Boolean!
+    message: String
+    organizerProfile: OrganizerProfile
+    organization: Organization      # Returned on approval
+}
+
+# Document responses
+type DocumentMutationResponse {
+    success: Boolean!
+    message: String
+    document: VerificationDocument
+}
+
+# Notification responses
+type NotificationMutationResponse {
+    success: Boolean!
+    message: String
+    notification: Notification
+}
+
+type DeviceMutationResponse {
+    success: Boolean!
+    message: String
+    device: UserDevice
+}
+
+# ============================================================================
+# SECTION 19b: ADDITIONAL INPUT TYPES
+# These input types are used by resolver-style mutations
+# ============================================================================
+
+input SetEventReminderInput {
+    ticketId: ID!
+    minutesBefore: Int!
+}
+
+input CreateOrganizerProfileInput {
+    companyName: String
+    companyDescription: String
+    website: String
+    businessPhone: String
+    businessEmail: String
+    businessAddress: String
+    city: String
+    province: String
+}
+
+input InviteMemberInput {
+    email: String!
+    phoneNumber: String
+    inviteeName: String
+    role: OrganizationRole!
+    message: String
+    eventAccessGrants: [EventAccessGrantInput!]
+}
+
+input EventAccessGrantInput {
+    eventId: ID!
+    role: EventRole!
+    customPermissions: [String!]
+    reason: String
+    expiresAt: DateTime
+}
+
+# ============================================================================
+# SECTION 19c: PHONE OTP RESPONSE TYPES
+# ============================================================================
+
+type OtpRequestResponse {
+    success: Boolean!
+    message: String
+    expiresIn: Int!
+}
+
+type PhoneAuthPayload {
+    success: Boolean!
+    message: String
+    accessToken: String
+    refreshToken: String
+    user: User
+}
+
+type ReminderMutationResponse {
+    success: Boolean!
+    message: String
+    reminder: EventReminder
+}
+
+# Error type for bulk operations
+type BulkOperationError {
+    index: Int!
+    identifier: String
+    message: String!
+    code: String
+}
+
+
+# ============================================================================
+# SECTION 21: QUERY TYPE
+# Tags indicate which clients should include these queries in their operations
+# ============================================================================
+
+type Query {
+    # ─────────────────────────────────────────────────────────────────────
+    # User Queries
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Get current authenticated user's profile
+    me: User @tag(name: "mobile")
+
+    # ADMIN - Get user by ID for user management
+    user(id: ID!): User @tag(name: "admin")
+
+    # ADMIN - User lookup by email
+    userByEmail(email: String!): User @tag(name: "admin")
+
+    # ADMIN - User lookup by phone number
+    userByPhone(phoneNumber: String!): User @tag(name: "admin")
+
+    # ADMIN - Search users with offset pagination for admin tables
+    usersOffsetPagination(
+        search: String
+        userType: UserType
+        accountStatus: AccountStatus
+        pagination: OffsetPaginationInput
+    ): UserOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Search users with cursor pagination
+    usersCursorPagination(
+        search: String
+        userType: UserType
+        accountStatus: AccountStatus
+        pagination: CursorPaginationInput
+    ): UserConnection! @tag(name: "admin")
+
+    # ADMIN - User statistics for admin dashboard
+    userStats: UserStats @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organization Queries
+    # ORGANIZER - Manage own organization, ADMIN - Manage all organizations
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER/ADMIN - Get organization by ID
+    organization(id: ID!): Organization @tag(name: "organizer") @tag(name: "admin")
+
+    # ORGANIZER/ADMIN - Get organization by slug
+    organizationBySlug(slug: String!): Organization @tag(name: "organizer") @tag(name: "admin")
+
+    # ORGANIZER/ADMIN - Get organization by organizer profile ID
+    organizationByOrganizerProfileId(profileId: ID!): Organization @tag(name: "organizer") @tag(name: "admin")
+
+    # ORGANIZER - Get organizations I belong to (for dashboard switcher)
+    myOrganizations: [Organization!]! @tag(name: "organizer")
+
+    # ORGANIZER - Get organization I own
+    myOwnedOrganization: Organization @tag(name: "organizer")
+
+    # ADMIN - Search organizations with offset pagination for admin tables
+    organizationsOffsetPagination(
+        search: String
+        status: OrganizationStatus
+        verified: Boolean
+        pagination: OffsetPaginationInput
+    ): OrganizationOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Search organizations with cursor pagination
+    organizationsCursorPagination(
+        search: String
+        status: OrganizationStatus
+        verified: Boolean
+        pagination: CursorPaginationInput
+    ): OrganizationConnection! @tag(name: "admin")
+
+    # ORGANIZER - Check if slug is available
+    isSlugAvailable(slug: String!): Boolean! @tag(name: "organizer")
+
+    # ADMIN - Count organizations by status
+    organizationCount(status: OrganizationStatus): Long! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Team Member Queries
+    # ORGANIZER - Team management for organization owners/admins
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Get organization members with offset pagination
+    organizationMembersOffsetPagination(
+        organizationId: ID!
+        role: OrganizationRole
+        status: MemberStatus
+        pagination: OffsetPaginationInput
+    ): OrganizationMemberOffsetPage! @tag(name: "organizer")
+
+    # ORGANIZER - Get organization members with cursor pagination
+    organizationMembersCursorPagination(
+        organizationId: ID!
+        role: OrganizationRole
+        status: MemberStatus
+        pagination: CursorPaginationInput
+    ): OrganizationMemberConnection! @tag(name: "organizer")
+
+    # ORGANIZER - Get specific member
+    organizationMember(organizationId: ID!, userId: ID!): OrganizationMember @tag(name: "organizer")
+
+    # ORGANIZER - Get my membership in an organization
+    myOrganizationMembership(organizationId: ID!): OrganizationMember @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Team Invitation Queries
+    # ORGANIZER - Team invitation management
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Get pending invitations for organization with offset pagination
+    pendingInvitationsOffsetPagination(
+        organizationId: ID!
+        pagination: OffsetPaginationInput
+    ): TeamInvitationOffsetPage! @tag(name: "organizer")
+
+    # ORGANIZER - Get pending invitations with cursor pagination
+    pendingInvitationsCursorPagination(
+        organizationId: ID!
+        pagination: CursorPaginationInput
+    ): TeamInvitationConnection! @tag(name: "organizer")
+
+    # PUBLIC - Get invitation by token (for acceptance page - anyone with link)
+    invitationByToken(token: String!): TeamInvitation
+
+    # ORGANIZER - Get my pending invitations (invites sent to me)
+    myPendingInvitations: [TeamInvitation!]! @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Event Access Queries
+    # ORGANIZER - Event-level access control for team members
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Get event access grant by ID
+    eventAccessGrant(id: ID!): EventAccessGrant @tag(name: "organizer")
+
+    # ORGANIZER - Get event access grants for an event with offset pagination
+    eventAccessGrantsOffsetPagination(
+        eventId: ID!
+        status: AccessGrantStatus
+        pagination: OffsetPaginationInput
+    ): EventAccessGrantOffsetPage! @tag(name: "organizer")
+
+    # ORGANIZER - Get event access grants with cursor pagination
+    eventAccessGrantsCursorPagination(
+        eventId: ID!
+        status: AccessGrantStatus
+        pagination: CursorPaginationInput
+    ): EventAccessGrantConnection! @tag(name: "organizer")
+
+    # ORGANIZER - Get user's access to a specific event
+    userEventAccess(userId: ID!, eventId: ID!): EventAccessGrant @tag(name: "organizer")
+
+    # ORGANIZER - Get my access to a specific event
+    myEventAccess(eventId: ID!): EventAccessGrant @tag(name: "organizer")
+
+    # ORGANIZER - Get all my event access grants
+    myEventAccessGrants: [EventAccessGrant!]! @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Ownership Transfer Queries
+    # ORGANIZER - Organization ownership transfer
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Get ownership transfer by ID
+    ownershipTransfer(id: ID!): OwnershipTransferRequest @tag(name: "organizer")
+
+    # ORGANIZER - Get ownership transfer by token
+    ownershipTransferByToken(token: String!): OwnershipTransferRequest @tag(name: "organizer")
+
+    # ORGANIZER - Get pending ownership transfer for organization
+    pendingOwnershipTransfer(organizationId: ID!): OwnershipTransferRequest @tag(name: "organizer")
+
+    # ORGANIZER - Get all transfers for an organization
+    ownershipTransfers(organizationId: ID!): [OwnershipTransferRequest!]! @tag(name: "organizer")
+
+    # ORGANIZER - Get my pending ownership transfer requests (where I'm the new owner)
+    myPendingOwnershipTransfers: [OwnershipTransferRequest!]! @tag(name: "organizer")
+
+    # ORGANIZER - Check if organization has pending transfer
+    hasPendingOwnershipTransfer(organizationId: ID!): Boolean! @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Permission Queries
+    # ORGANIZER - Permission checks for UI rendering
+    # ─────────────────────────────────────────────────────────────────────
+    # ADMIN - Get permission by ID
+    permission(id: ID!): Permission @tag(name: "admin")
+
+    # ADMIN - Get permission by name
+    permissionByName(name: String!): Permission @tag(name: "admin")
+
+    # ADMIN - Get all active permissions
+    permissions: [Permission!]! @tag(name: "admin")
+
+    # ADMIN - Get permissions by category
+    permissionsByCategory(category: String!): [Permission!]! @tag(name: "admin")
+
+    # ADMIN - Get permissions assigned to a role
+    rolePermissions(roleId: String!): [Permission!]! @tag(name: "admin")
+
+    # Get current user's permissions based on their JWT roles
+    currentUserPermissions: [String!]!
+
+    # ORGANIZER - Check if user has permission
+    hasOrganizationPermission(organizationId: ID!, permission: String!): Boolean! @tag(name: "organizer")
+    hasEventPermission(eventId: ID!, permission: String!): Boolean! @tag(name: "organizer")
+
+    # ORGANIZER - Get my role in organization
+    myOrganizationRole(organizationId: ID!): OrganizationRole @tag(name: "organizer")
+
+    # ORGANIZER - Get my role for event
+    myEventRole(eventId: ID!): EventRole @tag(name: "organizer")
+
+    # ORGANIZER - Get my effective permissions
+    myEffectivePermissions(
+        organizationId: ID
+        eventId: ID
+    ): EffectivePermissions! @tag(name: "organizer")
+
+    # ADMIN - Get all permissions with optional scope filter
+    allPermissions(scope: PermissionScope): [Permission!]! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organizer Profile Queries
+    # ORGANIZER - Own profile, ADMIN - All profiles and approval queue
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Get my organizer profile
+    myOrganizerProfile: OrganizerProfile @tag(name: "organizer")
+
+    # ADMIN - Get organizer profile by ID
+    organizerProfile(id: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Get organizer profile by user ID
+    organizerProfileByUserId(userId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Get organizer applications with offset pagination for admin queue
+    organizerApplicationsOffsetPagination(
+        status: OrganizerStatus
+        pagination: OffsetPaginationInput
+    ): OrganizerApplicationOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Get organizer applications with cursor pagination
+    organizerApplicationsCursorPagination(
+        status: OrganizerStatus
+        pagination: CursorPaginationInput
+    ): OrganizerApplicationConnection! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Verification Document Queries
+    # ORGANIZER - Own documents, ADMIN - All documents
+    # ─────────────────────────────────────────────────────────────────────
+    # Get verification document by ID
+    verificationDocument(id: ID!): VerificationDocument
+
+    # ORGANIZER - Get my verification documents
+    myVerificationDocuments(status: DocumentStatus): [VerificationDocument!]! @tag(name: "organizer")
+
+    # ADMIN - Get documents for organizer profile
+    verificationDocuments(organizerProfileId: ID!, status: DocumentStatus): [VerificationDocument!]! @tag(name: "admin")
+
+    # ADMIN - Get pending documents queue
+    pendingVerificationDocuments: [VerificationDocument!]! @tag(name: "admin")
+
+    # ORGANIZER - Get document by type for organizer
+    myVerificationDocumentByType(documentType: String!): VerificationDocument @tag(name: "organizer")
+
+    # ORGANIZER - Count my documents
+    myVerificationDocumentCount: Long! @tag(name: "organizer")
+
+    # ORGANIZER - Count my approved documents
+    myApprovedDocumentCount: Long! @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Notification Queries
+    # MOBILE - User notification management
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Get my notifications with offset pagination
+    myNotificationsOffsetPagination(
+        type: NotificationType
+        status: NotificationStatus
+        pagination: OffsetPaginationInput
+    ): NotificationOffsetPage! @tag(name: "mobile")
+
+    # MOBILE - Get my notifications with cursor pagination (mobile/infinite scroll)
+    myNotificationsCursorPagination(
+        type: NotificationType
+        status: NotificationStatus
+        pagination: CursorPaginationInput
+    ): NotificationConnection! @tag(name: "mobile")
+
+    # MOBILE - Get unread notification count (for badge)
+    unreadNotificationCount: Int! @tag(name: "mobile")
+
+    # MOBILE - Get my notification preferences
+    myNotificationPreferences: NotificationPreferences @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Device Queries
+    # MOBILE - Device management for push notifications
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Get my registered devices
+    myDevices: [UserDevice!]! @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Event Reminder Queries
+    # MOBILE - Event reminder management
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Get my event reminders
+    myEventReminders(eventId: ID): [EventReminder!]! @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Statistics Queries
+    # ORGANIZER - Own stats, ADMIN - Platform stats
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER/ADMIN - Get organizer statistics
+    organizerStatistics(organizerId: ID!): OrganizerStatistics @tag(name: "organizer") @tag(name: "admin")
+
+    # ADMIN - Get platform statistics (admin dashboard)
+    platformStatistics: PlatformStatistics @tag(name: "admin")
+
+    # ORGANIZER - Get team statistics for organization
+    teamStatistics(organizationId: ID!): TeamStatistics @tag(name: "organizer")
+}
+
+# ============================================================================
+# SECTION 22: MUTATION TYPE
+# Tags indicate which clients should include these mutations in their operations
+# ============================================================================
+
+type Mutation {
+    # ─────────────────────────────────────────────────────────────────────
+    # Authentication - Core auth operations
+    # ─────────────────────────────────────────────────────────────────────
+    # Login with email and password
+    login(email: String!, password: String!): AuthPayload!
+
+    # Register a new user
+    register(input: RegisterInput!): User!
+
+    # Refresh access token using refresh token
+    refreshToken(refreshToken: String!): AuthPayload!
+
+    # Logout and invalidate session
+    logout: Boolean!
+
+    # Validate a token and get its claims
+    validateToken(token: String!): TokenValidation!
+
+    # ─────────────────────────────────────────────────────────────────────
+    # User Management
+    # MOBILE - Self-service profile management
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Update my profile
+    updateMyProfile(input: UpdateUserInput!): UserMutationResponse! @tag(name: "mobile")
+
+    # MOBILE - Two-factor authentication setup
+    setupTwoFactor(input: SetupTwoFactorInput!): TwoFactorSetupResponse! @tag(name: "mobile")
+    verifyTwoFactor(input: VerifyTwoFactorInput!): MutationResponse! @tag(name: "mobile")
+    disableTwoFactor(confirmationCode: String!): MutationResponse! @tag(name: "mobile")
+
+    # MOBILE - Social login and account linking
+    socialAuth(input: SocialAuthInput!): AuthPayload! @tag(name: "mobile")
+    linkSocialAccount(input: SocialAuthInput!): MutationResponse! @tag(name: "mobile")
+    unlinkSocialAccount(provider: SocialProvider!): MutationResponse! @tag(name: "mobile")
+
+    # MOBILE - Account deletion (GDPR)
+    requestAccountDeletion(input: RequestAccountDeletionInput!): MutationResponse! @tag(name: "mobile")
+    cancelAccountDeletion: MutationResponse! @tag(name: "mobile")
+
+    # ADMIN - User management
+    createUser(input: CreateUserInput!): UserMutationResponse! @tag(name: "admin")
+    updateUser(id: ID!, input: UpdateUserInput!): UserMutationResponse! @tag(name: "admin")
+    suspendUser(id: ID!, reason: String!): MutationResponse! @tag(name: "admin")
+    unsuspendUser(id: ID!): MutationResponse! @tag(name: "admin")
+    lockUser(id: ID!, reason: String!): MutationResponse! @tag(name: "admin")
+    unlockUser(id: ID!): MutationResponse! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organizer Application
+    # ORGANIZER - Self-service organizer application
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Apply to become an organizer
+    applyToBeOrganizer(input: ApplyToBeOrganizerInput!): OrganizerMutationResponse! @tag(name: "organizer")
+
+    # ORGANIZER - Update organizer profile (during application)
+    updateOrganizerProfile(input: UpdateOrganizerProfileInput!): OrganizerMutationResponse! @tag(name: "organizer")
+
+    # ORGANIZER - Upload verification document
+    uploadVerificationDocument(
+        documentType: String!
+        documentUrl: String!
+        fileName: String
+        fileSize: Int
+        mimeType: String
+    ): VerificationDocument @tag(name: "organizer")
+
+    # ORGANIZER - Delete verification document
+    deleteVerificationDocument(documentId: ID!): Boolean! @tag(name: "organizer")
+
+    # ORGANIZER - Submit application for review
+    submitOrganizerApplication(
+        input: SubmitOrganizerApplicationInput!
+    ): OrganizerMutationResponse! @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organizer Review (Admin)
+    # ADMIN - Organizer approval workflow
+    # ─────────────────────────────────────────────────────────────────────
+    # ADMIN - Approve organizer application (creates Organization)
+    approveOrganizer(profileId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Reject organizer application
+    rejectOrganizer(profileId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Request changes to application
+    requestOrganizerChanges(profileId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Suspend organizer
+    suspendOrganizer(profileId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Unsuspend organizer
+    unsuspendOrganizer(profileId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organization Management
+    # ORGANIZER - Organization settings management
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Update organization (owner/admin only)
+    updateOrganization(
+        id: ID!
+        input: UpdateOrganizationInput!
+    ): Organization @tag(name: "organizer")
+
+    # ORGANIZER - Update organization settings
+    updateOrganizationSettings(
+        id: ID!
+        input: UpdateOrganizationSettingsInput!
+    ): Organization @tag(name: "organizer")
+
+    # ADMIN - Suspend organization
+    suspendOrganization(id: ID!, reason: String!): Organization @tag(name: "admin")
+
+    # ADMIN - Unsuspend organization
+    unsuspendOrganization(id: ID!): Organization @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Team Management
+    # ORGANIZER - Team invitation and management
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Invite team member (matches resolver signature)
+    inviteTeamMember(organizationId: ID!, input: InviteMemberInput!): TeamInvitation @tag(name: "organizer")
+
+    # ORGANIZER - Bulk invite team members
+    bulkInviteTeamMembers(organizationId: ID!, invitations: [InviteMemberInput!]!): [TeamInvitation!] @tag(name: "organizer")
+
+    # ORGANIZER - Resend invitation
+    resendInvitation(invitationId: ID!): TeamInvitation @tag(name: "organizer")
+
+    # ORGANIZER - Revoke invitation
+    revokeInvitation(invitationId: ID!): TeamInvitation @tag(name: "organizer")
+
+    # ORGANIZER - Accept invitation (by invitee)
+    acceptInvitation(token: String!): OrganizationMember @tag(name: "organizer")
+
+    # ORGANIZER - Decline invitation (by invitee)
+    declineInvitation(token: String!): TeamInvitation @tag(name: "organizer")
+
+    # ORGANIZER - Update member role
+    updateMemberRole(memberId: ID!, input: UpdateMemberRoleInput!): OrganizationMember @tag(name: "organizer")
+
+    # ORGANIZER - Remove member
+    removeMember(memberId: ID!, reason: String): Boolean! @tag(name: "organizer")
+
+    # ORGANIZER - Suspend member
+    suspendMember(memberId: ID!, reason: String): OrganizationMember @tag(name: "organizer")
+
+    # ORGANIZER - Reactivate member
+    reactivateMember(memberId: ID!): OrganizationMember @tag(name: "organizer")
+
+    # ORGANIZER - Leave organization (self-removal)
+    leaveOrganization(organizationId: ID!): Boolean! @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Ownership Transfer
+    # ORGANIZER - Organization ownership transfer workflow
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Initiate ownership transfer (current owner)
+    initiateOwnershipTransfer(organizationId: ID!, newOwnerId: ID!, reason: String): OwnershipTransferRequest @tag(name: "organizer")
+
+    # ORGANIZER - Cancel ownership transfer (current owner)
+    cancelOwnershipTransfer(organizationId: ID!): OwnershipTransferRequest @tag(name: "organizer")
+
+    # ORGANIZER - Accept ownership transfer (new owner)
+    acceptOwnershipTransfer(token: String!, confirmationCode: String!): OwnershipTransferRequest @tag(name: "organizer")
+
+    # ORGANIZER - Decline ownership transfer (new owner)
+    declineOwnershipTransfer(token: String!): OwnershipTransferRequest @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Event Access Management
+    # ORGANIZER - Event-level access control for team members
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Create event owner (internal)
+    createEventOwner(eventId: ID!, organizationId: ID!): EventAccessGrant @tag(name: "internal")
+
+    # ORGANIZER - Grant event access
+    grantEventAccess(eventId: ID!, organizationId: ID!, userId: ID!, role: EventRole!, customPermissions: [String!], reason: String, expiresAt: DateTime): EventAccessGrant @tag(name: "organizer")
+
+    # ORGANIZER - Bulk grant event access
+    bulkGrantEventAccess(eventId: ID!, organizationId: ID!, grants: [EventAccessGrantInput!]!): [EventAccessGrant!] @tag(name: "organizer")
+
+    # ORGANIZER - Update event access
+    updateEventAccess(accessId: ID!, newRole: EventRole, customPermissions: [String!], expiresAt: DateTime): EventAccessGrant @tag(name: "organizer")
+
+    # ORGANIZER - Revoke event access
+    revokeEventAccess(accessId: ID!, reason: String): EventAccessGrant @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Notification Management
+    # MOBILE - User notification management
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Mark notification as read
+    markNotificationRead(notificationId: ID!): Notification @tag(name: "mobile")
+
+    # MOBILE - Mark all notifications as read
+    markAllNotificationsRead: Int! @tag(name: "mobile")
+
+    # MOBILE - Delete notification
+    deleteNotification(notificationId: ID!): Boolean! @tag(name: "mobile")
+
+    # MOBILE - Update notification preferences
+    updateNotificationPreferences(input: UpdateNotificationPreferencesInput!): NotificationPreferences @tag(name: "mobile")
+
+    # ADMIN - Send notification (admin/system)
+    sendNotification(input: SendNotificationInput!): Notification @tag(name: "admin")
+
+    # ADMIN - Send bulk notification
+    sendBulkNotification(userIds: [ID!]!, input: SendNotificationInput!): Int! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Device Management
+    # MOBILE - Push notification device management
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Register device for push notifications
+    registerDevice(input: RegisterDeviceInput!): UserDevice @tag(name: "mobile")
+
+    # MOBILE - Unregister device
+    unregisterDevice(deviceId: ID!): Boolean! @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Event Reminder Management
+    # MOBILE - Event reminder management
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Set event reminder
+    setEventReminder(input: SetEventReminderInput!): EventReminder @tag(name: "mobile")
+
+    # MOBILE - Cancel event reminder
+    cancelEventReminder(reminderId: ID!): Boolean! @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organization Management (additional)
+    # ─────────────────────────────────────────────────────────────────────
+    # ADMIN - Update organization status
+    updateOrganizationStatus(id: ID!, status: OrganizationStatus!): Organization @tag(name: "admin")
+
+    # ORGANIZER - Transfer ownership (alternative method)
+    transferOrganizationOwnership(organizationId: ID!, newOwnerId: ID!): OrganizationMember @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organizer Profile Management
+    # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Create organizer profile
+    createOrganizerProfile(input: CreateOrganizerProfileInput!): OrganizerProfile @tag(name: "organizer")
+
+    # ORGANIZER - Submit profile for review
+    submitOrganizerProfileForReview: OrganizerProfile @tag(name: "organizer")
+
+    # ORGANIZER - Delete organizer profile
+    deleteOrganizerProfile: Boolean! @tag(name: "organizer")
+
+    # ADMIN - Approve organizer by user ID
+    approveOrganizerByUserId(userId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Reject organizer by user ID
+    rejectOrganizerByUserId(userId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Suspend organizer by user ID
+    suspendOrganizerByUserId(userId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Reactivate organizer
+    reactivateOrganizer(profileId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Reactivate organizer by user ID
+    reactivateOrganizerByUserId(userId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Verify organizer business
+    verifyOrganizerBusiness(profileId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Verify organizer documents
+    verifyOrganizerDocuments(profileId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ADMIN - Verify organizer bank account
+    verifyOrganizerBankAccount(profileId: ID!): OrganizerProfile @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Permission Management
+    # ─────────────────────────────────────────────────────────────────────
+    # ADMIN - Create permission
+    createPermission(name: String!, description: String, category: String): Permission @tag(name: "admin")
+
+    # ADMIN - Update permission
+    updatePermission(id: ID!, name: String, description: String, category: String): Permission @tag(name: "admin")
+
+    # ADMIN - Delete permission
+    deletePermission(id: ID!): Boolean! @tag(name: "admin")
+
+    # ADMIN - Assign permission to role
+    assignPermissionToRole(roleId: ID!, permissionId: ID!): Boolean! @tag(name: "admin")
+
+    # ADMIN - Remove permission from role
+    removePermissionFromRole(roleId: ID!, permissionId: ID!): Boolean! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Phone OTP Authentication
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Request phone OTP
+    requestPhoneOtp(phoneNumber: String!, channel: String): OtpRequestResponse! @tag(name: "mobile")
+
+    # MOBILE - Verify phone OTP
+    verifyPhoneOtp(phoneNumber: String!, otp: String!): PhoneAuthPayload! @tag(name: "mobile")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # User Profile & Verification
+    # ─────────────────────────────────────────────────────────────────────
+    # MOBILE - Send email verification
+    sendEmailVerification: Boolean! @tag(name: "mobile")
+
+    # MOBILE - Verify email
+    verifyEmail(token: String!): User @tag(name: "mobile")
+
+    # MOBILE - Sync email verification status
+    syncEmailVerificationStatus: User @tag(name: "mobile")
+
+    # MOBILE - Update profile
+    updateProfile(input: JSON!): User @tag(name: "mobile")
+
+    # MOBILE - Change password
+    changePassword(oldPassword: String!, newPassword: String!): Boolean! @tag(name: "mobile")
+
+    # MOBILE - Reset password
+    resetPassword(email: String!): Boolean! @tag(name: "mobile")
+
+    # MOBILE - Send phone verification
+    sendPhoneVerification: Boolean! @tag(name: "mobile")
+
+    # MOBILE - Verify phone
+    verifyPhone(code: String!): User @tag(name: "mobile")
+
+    # ADMIN - Deactivate user
+    deactivateUser(id: ID!): Boolean! @tag(name: "admin")
+
+    # ADMIN - Activate user
+    activateUser(id: ID!): Boolean! @tag(name: "admin")
+
+    # ADMIN - Update user roles
+    updateUserRoles(userId: ID!, roles: [String!]!): Boolean! @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Verification Document Management
+    # ─────────────────────────────────────────────────────────────────────
+    # ADMIN - Approve verification document
+    approveVerificationDocument(documentId: ID!): VerificationDocument @tag(name: "admin")
+
+    # ADMIN - Reject verification document
+    rejectVerificationDocument(documentId: ID!, reason: String!): VerificationDocument @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Keycloak Sync (Internal)
+    # ─────────────────────────────────────────────────────────────────────
+    # ADMIN - Sync user from Keycloak
+    syncUserFromKeycloak(userId: ID!): User @tag(name: "admin")
+
+    # ADMIN - Full sync all users
+    syncAllUsersFromKeycloak: Boolean! @tag(name: "admin")
+}
+

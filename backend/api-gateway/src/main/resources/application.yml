@@ -1,0 +1,296 @@
+# ═══════════════════════════════════════════════════════════════════════════════════
+# API GATEWAY CONFIGURATION
+# Spring Cloud Gateway 4.x with Spring Cloud 2025.0
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+server:
+  port: 8080
+  # Kubernetes-native graceful shutdown
+  shutdown: graceful
+
+spring:
+  # Graceful shutdown timeout - allow in-flight requests to complete
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
+
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      # ─────────────────────────────────────────────────────────────────────────────
+      # SERVER WEBFLUX CONFIGURATION
+      # In Spring Cloud Gateway 4.x, all gateway properties moved under 'server.webflux'
+      # Old: spring.cloud.gateway.routes
+      # New: spring.cloud.gateway.server.webflux.routes
+      # ─────────────────────────────────────────────────────────────────────────────
+      server:
+        webflux:
+          # Trusted proxies for X-Forwarded-* headers (required in Gateway 4.x)
+          # Regex matches: localhost, private IP ranges (10.x, 172.16-31.x, 192.168.x)
+          trusted-proxies: "127\\.0\\.0\\.1|10\\..*|172\\.(1[6-9]|2[0-9]|3[0-1])\\..*|192\\.168\\..*"
+
+          # ─────────────────────────────────────────────────────────────────────────
+          # CORS Configuration
+          # When browser sends cross-origin request:
+          #   1. Browser sends OPTIONS preflight with Origin header
+          #   2. Gateway checks if origin is in allowedOrigins list
+          #   3. If allowed → responds with Access-Control-Allow-* headers
+          #   4. Browser then sends actual request
+          # ─────────────────────────────────────────────────────────────────────────
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - "http://localhost:3000"
+                  - "http://localhost:3030"
+                  - "http://localhost:5173"
+                  - "${FRONTEND_URL:http://localhost:3000}"
+                allowedMethods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+                allowedHeaders: "*"
+                allowCredentials: true
+                maxAge: 3600
+
+          # ═══════════════════════════════════════════════════════════════════════
+          # ROUTE DEFINITIONS
+          #
+          # How Gateway Routing Works:
+          #   1. Request arrives at gateway (e.g., POST /graphql)
+          #   2. Gateway iterates through routes IN ORDER (top to bottom)
+          #   3. For each route, evaluates ALL predicates:
+          #      - Path=/graphql → does request path match /graphql? YES
+          #   4. First route where ALL predicates = true → MATCH
+          #   5. Execute filters in order:
+          #      a. Pre-filters modify request (RewritePath, AddHeader)
+          #      b. Forward to URI
+          #      c. Post-filters modify response
+          #   6. If NO route matches → 404 Not Found
+          # ═══════════════════════════════════════════════════════════════════════
+          routes:
+
+            # ─────────────────────────────────────────────────────────────────────
+            # GRAPHQL FEDERATION - Apollo Router
+            #
+            # Match Condition: Path exactly equals /graphql
+            # Flow: Client → Gateway → Apollo Router → Subgraphs
+            #
+            # CircuitBreaker: Resilience pattern from Resilience4j library
+            #   - CLOSED: Normal operation, requests pass through
+            #   - OPEN: Service failing, all requests go to fallbackUri
+            #   - HALF-OPEN: Testing if service recovered
+            # ─────────────────────────────────────────────────────────────────────
+            - id: graphql-federation
+              uri: ${APOLLO_ROUTER_URL:http://localhost:4001}
+              predicates:
+                - Path=/graphql
+              filters:
+                - RewritePath=/graphql, /
+                - name: CircuitBreaker
+                  args:
+                    name: apolloRouterCircuitBreaker
+                    fallbackUri: forward:/fallback/graphql
+                - name: Retry
+                  args:
+                    retries: 2
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+                    methods: POST
+                    backoff:
+                      firstBackoff: 100ms
+                      maxBackoff: 500ms
+                      factor: 2
+
+            # ─────────────────────────────────────────────────────────────────────
+            # PAYMENT WEBHOOKS - Only public REST endpoint
+            # Security: No JWT required, webhook signature verified in service
+            # ─────────────────────────────────────────────────────────────────────
+            - id: payment-webhooks
+              uri: ${BOOKING_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/webhooks/payment/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 100
+                    redis-rate-limiter.burstCapacity: 200
+                    key-resolver: "#{@ipKeyResolver}"
+
+            # ─────────────────────────────────────────────────────────────────────
+            # KEYCLOAK - OAuth2/OIDC Authorization Server
+            # ─────────────────────────────────────────────────────────────────────
+            - id: keycloak-openid
+              uri: ${KEYCLOAK_URL:http://localhost:8084}
+              predicates:
+                - Path=/realms/event-ticketing/protocol/openid-connect/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: keycloakCircuitBreaker
+                    fallbackUri: forward:/fallback/identity
+
+            - id: keycloak-well-known
+              uri: ${KEYCLOAK_URL:http://localhost:8084}
+              predicates:
+                - Path=/realms/event-ticketing/.well-known/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: keycloakCircuitBreaker
+
+            - id: keycloak-login
+              uri: ${KEYCLOAK_URL:http://localhost:8084}
+              predicates:
+                - Path=/realms/event-ticketing/login-actions/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: keycloakCircuitBreaker
+
+            - id: keycloak-account
+              uri: ${KEYCLOAK_URL:http://localhost:8084}
+              predicates:
+                - Path=/realms/event-ticketing/account/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: keycloakCircuitBreaker
+
+            - id: keycloak-broker
+              uri: ${KEYCLOAK_URL:http://localhost:8084}
+              predicates:
+                - Path=/realms/event-ticketing/broker/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: keycloakCircuitBreaker
+
+            - id: keycloak-resources
+              uri: ${KEYCLOAK_URL:http://localhost:8084}
+              predicates:
+                - Path=/resources/**
+
+            # ─────────────────────────────────────────────────────────────────────
+            # LEGACY OAUTH2 ROUTES
+            # ─────────────────────────────────────────────────────────────────────
+            - id: oauth2-legacy
+              uri: ${KEYCLOAK_URL:http://localhost:8084}
+              predicates:
+                - Path=/oauth2/**
+              filters:
+                - RewritePath=/oauth2/(?<segment>.*), /realms/event-ticketing/protocol/openid-connect/${segment}
+                - name: CircuitBreaker
+                  args:
+                    name: keycloakCircuitBreaker
+                    fallbackUri: forward:/fallback/identity
+
+            - id: wellknown-legacy
+              uri: ${KEYCLOAK_URL:http://localhost:8084}
+              predicates:
+                - Path=/.well-known/openid-configuration
+              filters:
+                - RewritePath=/.well-known/openid-configuration, /realms/event-ticketing/.well-known/openid-configuration
+
+          # ─────────────────────────────────────────────────────────────────────────
+          # DEFAULT FILTERS - Applied to ALL routes
+          # ─────────────────────────────────────────────────────────────────────────
+          default-filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                key-resolver: "#{@ipKeyResolver}"
+
+  # Redis for rate limiting and session blacklist
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# RESILIENCE4J - Circuit Breaker Configuration
+#
+# Source: spring-cloud-starter-circuitbreaker-reactor-resilience4j dependency
+#
+# Circuit Breaker States:
+#   CLOSED (normal) → OPEN (failing fast) → HALF-OPEN (testing recovery)
+# ═══════════════════════════════════════════════════════════════════════════════════
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        slowCallDurationThreshold: 2s
+        slowCallRateThreshold: 50
+    instances:
+      apolloRouterCircuitBreaker:
+        baseConfig: default
+        failureRateThreshold: 30
+        slowCallDurationThreshold: 5s
+      keycloakCircuitBreaker:
+        baseConfig: default
+
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 30s
+    instances:
+      apolloRouterCircuitBreaker:
+        timeoutDuration: 45s
+      keycloakCircuitBreaker:
+        timeoutDuration: 15s
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# OAUTH2 RESOURCE SERVER - JWT Validation
+# ═══════════════════════════════════════════════════════════════════════════════════
+spring.security:
+  oauth2:
+    resourceserver:
+      jwt:
+        issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/event-ticketing}
+        jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/certs}
+
+keycloak:
+  url: ${KEYCLOAK_URL:http://localhost:8084}
+  realm: event-ticketing
+  client-id: ${KEYCLOAK_CLIENT_ID:api-gateway}
+
+# Actuator: Health checks, metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway,circuitbreakers
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+    gateway:
+      access: unrestricted
+  # Kubernetes health probe groups
+  health:
+    circuitbreakers:
+      enabled: true
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+    group:
+      liveness:
+        include: livenessState,ping
+      readiness:
+        include: readinessState,circuitBreakers
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    com.pml.gateway: DEBUG
+    io.github.resilience4j: INFO

@@ -1,0 +1,1180 @@
+/**
+ * Admin Design System - Global Styles
+ *
+ * This file implements the design system while
+ * maintaining compatibility with Radix UI Themes.
+ *
+ * Design Principles:
+ * - Minimalist & Clean: White surfaces, subtle shadows
+ * - Google-inspired: Light shadows, clean lines
+ * - Semantic Colors: Soft tints for status colors
+ */
+
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ===========================================
+   CSS Layers for proper cascade management
+   =========================================== */
+@layer tailwind-base, radix, tailwind-components, tailwind-utilities;
+
+@layer tailwind-base {
+  @tailwind base;
+}
+
+@layer tailwind-components {
+  @tailwind components;
+}
+
+@layer tailwind-utilities {
+  @tailwind utilities;
+}
+
+/* ===========================================
+   Design Tokens (CSS Variables)
+   Change these to update the entire theme
+   =========================================== */
+:root {
+  /* Surface Colors */
+  --surface-primary: #FFFFFF;
+  --surface-secondary: #F8FAFC;
+  --surface-tertiary: #F1F5F9;
+  --surface-hover: #E2E8F0;
+  --surface-border: #E5E7EB;
+  --surface-border-light: #F1F5F9;
+
+  /* Content Colors */
+  --content-primary: #1F2937;
+  --content-secondary: #4B5563;
+  --content-tertiary: #6B7280;
+  --content-muted: #9CA3AF;
+  --content-inverse: #FFFFFF;
+
+  /* Brand Colors */
+  --brand-50: #EFF6FF;
+  --brand-100: #DBEAFE;
+  --brand-200: #BFDBFE;
+  --brand-300: #93C5FD;
+  --brand-400: #60A5FA;
+  --brand-500: #3B82F6;
+  --brand-600: #2563EB;
+  --brand-700: #1D4ED8;
+
+  /* Status Colors */
+  --success-50: #F0FDF4;
+  --success-100: #DCFCE7;
+  --success-500: #22C55E;
+  --success-600: #16A34A;
+  --warning-50: #FFFBEB;
+  --warning-100: #FEF3C7;
+  --warning-500: #F59E0B;
+  --warning-600: #D97706;
+  --danger-50: #FEF2F2;
+  --danger-100: #FEE2E2;
+  --danger-500: #EF4444;
+  --danger-600: #DC2626;
+
+  /* Shadows - Google-inspired, subtle */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.03);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.03);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.03);
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.02);
+  --shadow-card-hover: 0 4px 12px 0 rgb(0 0 0 / 0.06), 0 2px 4px -1px rgb(0 0 0 / 0.03);
+  --shadow-elevated: 0 2px 8px 0 rgb(0 0 0 / 0.06);
+  --shadow-dropdown: 0 4px 16px 0 rgb(0 0 0 / 0.08), 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  --shadow-modal: 0 25px 50px -12px rgb(0 0 0 / 0.15);
+
+  /* Border Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
+
+  /* ===========================================
+     CARD TOKENS - Centralized Card Styling
+     All cards must use these tokens
+     =========================================== */
+  --card-radius: var(--radius-xl);           /* 1rem - matches status card */
+  --card-border-color: rgba(229, 231, 235, 0.6);
+  --card-border-width: 1px;
+  --card-border: var(--card-border-width) solid var(--card-border-color);
+  --card-shadow: var(--shadow-card);
+  --card-shadow-hover: var(--shadow-card-hover);
+  --card-bg: var(--surface-primary);
+  --card-transition: box-shadow 0.2s ease, border-color 0.2s ease;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', Menlo, Monaco, monospace;
+
+  /* Transitions */
+  --transition-fast: 150ms;
+  --transition-default: 200ms;
+  --transition-slow: 300ms;
+
+  /* ===========================================
+     TONAL SURFACE SYSTEM
+     Surface elevation using color tints
+     =========================================== */
+  --surface-base: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-lowered: #F8FAFC;
+  --surface-sunken: #F1F5F9;
+
+  /* Brand-tinted surfaces (subtle brand presence) */
+  --surface-tinted: rgba(59, 130, 246, 0.02);
+  --surface-tinted-hover: rgba(59, 130, 246, 0.04);
+  --surface-tinted-strong: rgba(59, 130, 246, 0.06);
+
+  /* Gradient zone colors */
+  --gradient-brand-start: rgba(59, 130, 246, 0.03);
+  --gradient-brand-end: rgba(147, 197, 253, 0.02);
+  --gradient-success-start: rgba(34, 197, 94, 0.03);
+  --gradient-success-end: rgba(187, 247, 208, 0.02);
+  --gradient-warning-start: rgba(245, 158, 11, 0.03);
+  --gradient-warning-end: rgba(253, 230, 138, 0.02);
+
+  /* Ambient glow colors */
+  --glow-brand: rgba(59, 130, 246, 0.08);
+  --glow-success: rgba(34, 197, 94, 0.08);
+  --glow-warning: rgba(245, 158, 11, 0.08);
+
+  /* ===========================================
+     Dashboard Layout Backgrounds - Light Mode
+     Layered system: Sidebar (dark) → Header (glass) → Main (subtle pattern)
+     =========================================== */
+  --dashboard-sidebar-bg: linear-gradient(180deg, #0F172A 0%, #1E1B4B 50%, #0F172A 100%);
+  --dashboard-sidebar-border: rgba(255, 255, 255, 0.08);
+  --dashboard-header-bg: rgba(255, 255, 255, 0.85);
+  --dashboard-header-blur: 12px;
+  --dashboard-header-border: rgba(0, 0, 0, 0.06);
+  --dashboard-main-bg: #F8FAFC;
+  --dashboard-main-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  --dashboard-accent-glow: radial-gradient(ellipse at top right, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+}
+
+/* ===========================================
+   Dark Mode Design Tokens
+   Applied when .dark class is on html/body
+   =========================================== */
+.dark {
+  /* Surface Colors - Deep OLED blacks */
+  --surface-primary: #0A0A0F;
+  --surface-secondary: #0F0F14;
+  --surface-tertiary: #16161D;
+  --surface-hover: #1E1E28;
+  --surface-border: #27272F;
+  --surface-border-light: #1E1E26;
+
+  /* Content Colors - High contrast text */
+  --content-primary: #F4F4F5;
+  --content-secondary: #A1A1AA;
+  --content-tertiary: #71717A;
+  --content-muted: #52525B;
+  --content-inverse: #09090B;
+
+  /* Brand Colors - Violet for dark mode */
+  --brand-50: #1E1B4B;
+  --brand-100: #2E2A5E;
+  --brand-200: #3F3A72;
+  --brand-300: #6366F1;
+  --brand-400: #818CF8;
+  --brand-500: #8B5CF6;
+  --brand-600: #A78BFA;
+  --brand-700: #C4B5FD;
+
+  /* Status Colors - Dark mode optimized */
+  --success-50: #052E16;
+  --success-100: #14532D;
+  --success-500: #22C55E;
+  --success-600: #4ADE80;
+  --warning-50: #422006;
+  --warning-100: #713F12;
+  --warning-500: #F59E0B;
+  --warning-600: #FBBF24;
+  --danger-50: #450A0A;
+  --danger-100: #7F1D1D;
+  --danger-500: #EF4444;
+  --danger-600: #F87171;
+
+  /* Shadows - Subtle glows for dark mode */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.03);
+  --shadow-card-hover: 0 4px 12px 0 rgb(0 0 0 / 0.5), 0 0 0 1px rgb(139 92 246 / 0.1);
+  --shadow-elevated: 0 2px 8px 0 rgb(0 0 0 / 0.5);
+  --shadow-dropdown: 0 4px 16px 0 rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shadow-modal: 0 25px 50px -12px rgb(0 0 0 / 0.8);
+
+  /* Card tokens for dark mode */
+  --card-border-color: rgba(255, 255, 255, 0.06);
+  --card-shadow: var(--shadow-card);
+  --card-shadow-hover: var(--shadow-card-hover);
+  --card-bg: var(--surface-secondary);
+
+  /* Tonal surfaces - dark mode */
+  --surface-base: #0A0A0F;
+  --surface-raised: #0F0F14;
+  --surface-lowered: #060608;
+  --surface-sunken: #050507;
+
+  /* Brand-tinted surfaces (subtle violet glow) */
+  --surface-tinted: rgba(139, 92, 246, 0.04);
+  --surface-tinted-hover: rgba(139, 92, 246, 0.08);
+  --surface-tinted-strong: rgba(139, 92, 246, 0.12);
+
+  /* Gradient zone colors - dark mode */
+  --gradient-brand-start: rgba(139, 92, 246, 0.08);
+  --gradient-brand-end: rgba(99, 102, 241, 0.04);
+
+  /* Ambient glow colors - more visible in dark mode */
+  --glow-brand: rgba(139, 92, 246, 0.15);
+  --glow-success: rgba(34, 197, 94, 0.12);
+  --glow-warning: rgba(245, 158, 11, 0.12);
+
+  /* ===========================================
+     Dashboard Layout Backgrounds - Dark Mode
+     Deep OLED blacks with violet accents
+     =========================================== */
+  --dashboard-sidebar-bg: linear-gradient(180deg, #030305 0%, #0A0A12 50%, #030305 100%);
+  --dashboard-sidebar-border: rgba(139, 92, 246, 0.15);
+  --dashboard-header-bg: rgba(10, 10, 15, 0.8);
+  --dashboard-header-blur: 16px;
+  --dashboard-header-border: rgba(139, 92, 246, 0.1);
+  --dashboard-main-bg: #050507;
+  --dashboard-main-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%238B5CF6' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  --dashboard-accent-glow: radial-gradient(ellipse at top right, rgba(139, 92, 246, 0.08) 0%, transparent 60%);
+  --dashboard-mesh-gradient:
+    radial-gradient(at 20% 80%, rgba(139, 92, 246, 0.12) 0%, transparent 50%),
+    radial-gradient(at 80% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.04) 0%, transparent 70%);
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-thumb {
+  background: #3F3F46;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #52525B;
+}
+
+/* ===========================================
+   Radix Themes Customization
+   All Radix components inherit from these tokens
+   =========================================== */
+.radix-themes {
+  /* Cursor - All interactive elements show pointer */
+  --cursor-button: pointer;
+  --cursor-checkbox: pointer;
+  --cursor-disabled: not-allowed;
+  --cursor-link: pointer;
+  --cursor-menu-item: pointer;
+  --cursor-radio: pointer;
+  --cursor-slider-thumb: grab;
+  --cursor-slider-thumb-active: grabbing;
+  --cursor-switch: pointer;
+
+  /* Typography */
+  --default-font-family: var(--font-sans);
+  --heading-font-family: var(--font-sans);
+  --code-font-family: var(--font-mono);
+
+  /* Map theme colors to Radix accent */
+  --accent-1: var(--brand-50);
+  --accent-2: var(--brand-100);
+  --accent-3: var(--brand-200);
+  --accent-9: var(--brand-600);
+  --accent-10: var(--brand-700);
+  --accent-11: var(--brand-600);
+  --accent-12: var(--brand-700);
+
+  /* Override Radix shadow tokens with theme shadows */
+  --shadow-1: var(--shadow-xs);
+  --shadow-2: var(--card-shadow);              /* Card shadow */
+  --shadow-3: var(--card-shadow-hover);        /* Card hover shadow */
+  --shadow-4: var(--shadow-dropdown);          /* Popover, hover card */
+  --shadow-5: var(--shadow-elevated);          /* Elevated panels */
+  --shadow-6: var(--shadow-modal);             /* Dialog, modal */
+
+  /* Override Radix radius tokens */
+  --radius-1: var(--radius-sm);
+  --radius-2: var(--radius-md);
+  --radius-3: var(--radius-lg);
+  --radius-4: var(--radius-xl);                /* Default card radius */
+  --radius-5: var(--radius-2xl);
+  --radius-6: var(--radius-3xl);
+
+  /* Card-specific overrides */
+  --card-background-color: var(--card-bg);
+
+  /* Subtle focus ring */
+  --focus-8: var(--brand-400);
+}
+
+/* ===========================================
+   Base Styles
+   =========================================== */
+@layer tailwind-base {
+  * {
+    border-color: var(--surface-border);
+    font-family: var(--font-sans);
+  }
+
+  body {
+    background-color: var(--surface-secondary);
+    color: var(--content-primary);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Refined scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--content-muted);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--content-tertiary);
+  }
+}
+
+/* ===========================================
+   Component Classes - Theme Components
+   =========================================== */
+@layer tailwind-components {
+
+  /* ----------------------------------------
+     Cards - Using centralized card tokens
+     All cards use --card-* tokens for consistency
+     ---------------------------------------- */
+  .card {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    border: var(--card-border);
+    box-shadow: var(--card-shadow);
+    transition: var(--card-transition);
+  }
+
+  .card:hover {
+    box-shadow: var(--card-shadow-hover);
+  }
+
+  .card-elevated {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    border: none;
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .card-flat {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    border: var(--card-border);
+    box-shadow: none;
+  }
+
+  .card-interactive {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    border: var(--card-border);
+    box-shadow: var(--card-shadow);
+    transition: var(--card-transition);
+    cursor: pointer;
+  }
+
+  .card-interactive:hover {
+    box-shadow: var(--card-shadow-hover);
+    border-color: var(--brand-200);
+  }
+
+  /* ----------------------------------------
+     Inputs - Clean and minimal
+     ---------------------------------------- */
+  .input {
+    @apply w-full px-4 py-2.5
+           bg-surface-primary
+           rounded-lg
+           text-sm text-content-primary
+           placeholder:text-content-muted
+           transition-all duration-150;
+    border: 1px solid var(--surface-border);
+  }
+
+  .input:focus {
+    @apply outline-none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    border-color: var(--brand-500);
+  }
+
+  .input-filled {
+    @apply w-full px-4 py-2.5
+           bg-surface-tertiary
+           border-transparent
+           rounded-lg
+           text-sm text-content-primary
+           placeholder:text-content-muted
+           transition-all duration-150;
+  }
+
+  .input-filled:hover {
+    @apply bg-surface-hover;
+  }
+
+  .input-filled:focus {
+    @apply outline-none bg-surface-primary;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    border-color: var(--brand-500);
+  }
+
+  /* ----------------------------------------
+     Buttons
+     ---------------------------------------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           px-4 py-2.5
+           rounded-lg
+           text-sm font-medium
+           transition-all duration-150
+           focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-sm;
+  }
+
+  .btn-primary:hover {
+    @apply bg-brand-700;
+  }
+
+  .btn-primary:focus {
+    --tw-ring-color: var(--brand-500);
+  }
+
+  .btn-secondary {
+    @apply btn bg-surface-primary text-content-primary;
+    border: 1px solid var(--surface-border);
+  }
+
+  .btn-secondary:hover {
+    @apply bg-surface-tertiary;
+    border-color: var(--surface-hover);
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-content-secondary;
+  }
+
+  .btn-ghost:hover {
+    @apply bg-surface-tertiary text-content-primary;
+  }
+
+  /* ----------------------------------------
+     Badges - Soft tints
+     ---------------------------------------- */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5
+           rounded-md text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply badge;
+    background-color: var(--success-50);
+    color: var(--success-600);
+  }
+
+  .badge-warning {
+    @apply badge;
+    background-color: var(--warning-50);
+    color: var(--warning-600);
+  }
+
+  .badge-danger {
+    @apply badge;
+    background-color: var(--danger-50);
+    color: var(--danger-600);
+  }
+
+  .badge-brand {
+    @apply badge;
+    background-color: var(--brand-50);
+    color: var(--brand-600);
+  }
+
+  .badge-neutral {
+    @apply badge bg-surface-tertiary text-content-secondary;
+  }
+
+  /* ----------------------------------------
+     Navigation - Sidebar styling
+     ---------------------------------------- */
+  .nav-section-label {
+    @apply px-3 mb-2 text-content-tertiary uppercase tracking-wider;
+    font-size: 0.625rem; /* 10px */
+    font-weight: 600;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5
+           rounded-lg text-sm font-medium
+           text-content-secondary
+           transition-all duration-150;
+  }
+
+  .nav-item:hover {
+    @apply bg-surface-tertiary text-content-primary;
+  }
+
+  .nav-item-active {
+    @apply flex items-center gap-3 px-3 py-2.5
+           rounded-lg text-sm font-medium;
+    background-color: var(--brand-50);
+    color: var(--brand-600);
+  }
+
+  /* Dark sidebar variant */
+  .nav-item-dark {
+    @apply flex items-center gap-3 px-3 py-2.5
+           rounded-lg text-sm font-medium
+           transition-all duration-150;
+    color: rgba(148, 163, 184, 1); /* slate-400 */
+  }
+
+  .nav-item-dark:hover {
+    color: rgba(226, 232, 240, 1); /* slate-200 */
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .nav-item-dark-active {
+    @apply flex items-center gap-3 px-3 py-2.5
+           rounded-lg text-sm font-medium shadow-sm;
+    background-color: rgba(59, 130, 246, 0.2);
+    color: rgba(96, 165, 250, 1); /* blue-400 */
+  }
+
+  /* ----------------------------------------
+     Tables
+     ---------------------------------------- */
+  .table-header {
+    @apply text-left px-4 py-3 text-xs font-semibold text-content-tertiary uppercase tracking-wider bg-surface-secondary;
+  }
+
+  .table-cell {
+    @apply px-4 py-3.5 text-sm text-content-secondary;
+  }
+
+  .table-row {
+    @apply transition-colors;
+    border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+  }
+
+  .table-row:hover {
+    background-color: rgba(248, 250, 252, 0.5);
+  }
+
+  /* ----------------------------------------
+     Dropdown/Popover - Uses card tokens
+     ---------------------------------------- */
+  .dropdown {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    border: var(--card-border);
+    box-shadow: var(--shadow-dropdown);
+    overflow: hidden;
+  }
+
+  /* ----------------------------------------
+     Modal - Uses card tokens
+     ---------------------------------------- */
+  .modal-overlay {
+    @apply fixed inset-0;
+    background-color: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+  }
+
+  .modal-content {
+    background: var(--card-bg);
+    border-radius: var(--radius-2xl);
+    border: var(--card-border);
+    box-shadow: var(--shadow-modal);
+    max-width: 42rem;
+    width: 100%;
+    max-height: 90vh;
+    overflow: hidden;
+  }
+
+  /* ----------------------------------------
+     Status indicators
+     ---------------------------------------- */
+  .status-online {
+    background-color: var(--success-50);
+    color: var(--success-600);
+    border: 1px solid var(--success-100);
+  }
+
+  .status-offline {
+    background-color: var(--danger-50);
+    color: var(--danger-600);
+    border: 1px solid var(--danger-100);
+  }
+
+  .status-pending {
+    background-color: var(--warning-50);
+    color: var(--warning-600);
+    border: 1px solid var(--warning-100);
+  }
+
+  /* ----------------------------------------
+     Typography Presets
+     ---------------------------------------- */
+  .section-title {
+    @apply text-lg font-semibold text-content-primary;
+  }
+
+  .section-subtitle {
+    @apply text-sm text-content-tertiary;
+  }
+
+  .label {
+    @apply block text-xs font-medium text-content-tertiary uppercase tracking-wider mb-1.5;
+  }
+
+  .page-title {
+    @apply text-xl font-semibold text-content-primary;
+  }
+
+  .card-title {
+    @apply text-sm font-semibold text-content-primary;
+  }
+
+  .card-subtitle {
+    @apply text-xs text-content-muted;
+  }
+
+  .stat-value {
+    @apply text-2xl font-semibold text-content-primary;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-label {
+    @apply text-xs font-medium text-content-tertiary;
+  }
+
+  .body-primary {
+    @apply text-sm font-medium text-content-primary;
+  }
+
+  .body-secondary {
+    @apply text-xs text-content-muted;
+  }
+
+  .meta-text {
+    font-size: 0.6875rem; /* 11px */
+    @apply text-content-muted;
+  }
+
+  /* ----------------------------------------
+     TONAL SURFACES - Elevation through color
+     ---------------------------------------- */
+  .surface-base {
+    background-color: var(--surface-base);
+  }
+
+  .surface-raised {
+    background-color: var(--surface-raised);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .surface-lowered {
+    background-color: var(--surface-lowered);
+  }
+
+  .surface-sunken {
+    background-color: var(--surface-sunken);
+  }
+
+  .surface-tinted {
+    background-color: var(--surface-tinted);
+  }
+
+  .surface-tinted-hover:hover {
+    background-color: var(--surface-tinted-hover);
+  }
+
+  .surface-card {
+    background-color: var(--surface-primary);
+    border: 1px solid var(--surface-border-light);
+    border-radius: var(--radius-lg);
+  }
+
+  .surface-card-tinted {
+    background-color: var(--surface-tinted);
+    border: 1px solid rgba(59, 130, 246, 0.08);
+    border-radius: var(--radius-lg);
+  }
+
+  /* ----------------------------------------
+     GRADIENT ZONES - Subtle branded sections
+     ---------------------------------------- */
+  .gradient-zone-brand {
+    background: linear-gradient(
+      180deg,
+      var(--gradient-brand-start) 0%,
+      var(--gradient-brand-end) 50%,
+      transparent 100%
+    );
+  }
+
+  .gradient-zone-brand-horizontal {
+    background: linear-gradient(
+      90deg,
+      var(--gradient-brand-start) 0%,
+      var(--gradient-brand-end) 50%,
+      transparent 100%
+    );
+  }
+
+  .gradient-zone-success {
+    background: linear-gradient(
+      180deg,
+      var(--gradient-success-start) 0%,
+      var(--gradient-success-end) 50%,
+      transparent 100%
+    );
+  }
+
+  .gradient-zone-warning {
+    background: linear-gradient(
+      180deg,
+      var(--gradient-warning-start) 0%,
+      var(--gradient-warning-end) 50%,
+      transparent 100%
+    );
+  }
+
+  /* Hero gradient - spans full width at top */
+  .hero-gradient {
+    background: linear-gradient(
+      180deg,
+      var(--gradient-brand-start) 0%,
+      var(--surface-tinted) 40%,
+      transparent 100%
+    );
+  }
+
+  .hero-gradient-strong {
+    background: linear-gradient(
+      180deg,
+      rgba(59, 130, 246, 0.06) 0%,
+      rgba(59, 130, 246, 0.03) 40%,
+      transparent 100%
+    );
+  }
+
+  /* Section alternating backgrounds */
+  .section-tinted {
+    background-color: var(--surface-tinted);
+    border-top: 1px solid rgba(59, 130, 246, 0.05);
+    border-bottom: 1px solid rgba(59, 130, 246, 0.05);
+  }
+
+  .section-lowered {
+    background-color: var(--surface-lowered);
+    border-top: 1px solid var(--surface-border-light);
+    border-bottom: 1px solid var(--surface-border-light);
+  }
+
+  /* ----------------------------------------
+     AMBIENT GLOW - Soft background orbs
+     ---------------------------------------- */
+  .ambient-glow {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ambient-glow::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -25%;
+    width: 150%;
+    height: 150%;
+    background: radial-gradient(
+      ellipse at 30% 20%,
+      var(--glow-brand) 0%,
+      transparent 50%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .ambient-glow > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .ambient-glow-success::before {
+    background: radial-gradient(
+      ellipse at 70% 30%,
+      var(--glow-success) 0%,
+      transparent 50%
+    );
+  }
+
+  .ambient-glow-warning::before {
+    background: radial-gradient(
+      ellipse at 30% 40%,
+      var(--glow-warning) 0%,
+      transparent 50%
+    );
+  }
+
+  /* ----------------------------------------
+     PAGE CONTAINER with gradient backdrop
+     ---------------------------------------- */
+  .page-container {
+    min-height: 100%;
+    background: linear-gradient(
+      180deg,
+      var(--gradient-brand-start) 0%,
+      transparent 300px
+    );
+  }
+
+  .page-container-neutral {
+    min-height: 100%;
+    background: linear-gradient(
+      180deg,
+      var(--surface-lowered) 0%,
+      var(--surface-base) 200px
+    );
+  }
+
+  /* ----------------------------------------
+     CARD ZONE - Cards on tinted background
+     ---------------------------------------- */
+  .card-zone {
+    background-color: var(--surface-tinted);
+    border-radius: var(--radius-xl);
+    padding: 1.5rem;
+  }
+
+  .card-zone-bordered {
+    background-color: var(--surface-tinted);
+    border: 1px solid rgba(59, 130, 246, 0.08);
+    border-radius: var(--radius-xl);
+    padding: 1.5rem;
+  }
+}
+
+/* ===========================================
+   Utilities
+   =========================================== */
+@layer tailwind-utilities {
+  /* Text utilities */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Animation utilities */
+  .animate-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Focus ring */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    --tw-ring-color: rgba(59, 130, 246, 0.2);
+  }
+}
+
+/* ===========================================
+   Radix UI Component Overrides
+   Make Radix components blend with theme design
+   =========================================== */
+
+/* TextField focus styling */
+.rt-TextFieldRoot:focus-within {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+}
+
+.rt-TextFieldInput:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Select trigger focus */
+.rt-SelectTrigger:focus-within,
+.rt-SelectTrigger:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* TextArea focus */
+.rt-TextAreaRoot:focus-within {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+}
+
+.rt-TextAreaInput:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Button focus - subtle ring */
+.rt-Button:focus-visible,
+.rt-IconButton:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* ===========================================
+   Radix Card - Uses centralized card tokens
+   =========================================== */
+.rt-Card {
+  border-radius: var(--card-radius) !important;
+  box-shadow: var(--card-shadow) !important;
+  border: var(--card-border) !important;
+  transition: var(--card-transition) !important;
+}
+
+.rt-Card:hover {
+  box-shadow: var(--card-shadow-hover) !important;
+}
+
+.rt-Card:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--brand-200) !important;
+}
+
+/* Checkbox and Radio focus */
+.rt-CheckboxRoot:focus-within,
+.rt-RadioGroupItem:focus-within {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* Switch focus */
+.rt-SwitchRoot:focus-within {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* Tabs trigger focus */
+.rt-TabsTrigger:focus-visible {
+  outline: none !important;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* ===========================================
+   Tab System - Active state styling via CSS
+   Uses Radix data-state attribute for styling
+   without passing isActive prop (prevents re-renders)
+   =========================================== */
+.tab-trigger[data-state="active"] .tab-badge {
+  background-color: var(--blue-3) !important;
+  color: var(--blue-11) !important;
+}
+
+.tab-trigger[data-state="inactive"] .tab-badge {
+  background-color: var(--gray-3) !important;
+  color: var(--gray-11) !important;
+}
+
+/* Ensure smooth transition for badge color change */
+.tab-badge {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* ===========================================
+   Cursor Pointer for Interactive Elements
+   =========================================== */
+.rt-Button,
+.rt-IconButton,
+.rt-TabsTrigger,
+.rt-Link,
+.rt-SelectTrigger,
+.rt-DropdownMenuTrigger,
+.rt-DropdownMenuItem,
+.rt-ContextMenuItem,
+.rt-CheckboxRoot,
+.rt-RadioGroupItem,
+.rt-SwitchRoot,
+.rt-SliderThumb,
+.rt-AlertDialogAction,
+.rt-AlertDialogCancel,
+.rt-DialogClose,
+.rt-PopoverTrigger,
+.rt-TooltipTrigger,
+.rt-AccordionTrigger,
+.rt-NavigationMenuTrigger,
+.rt-NavigationMenuLink,
+.rt-ToggleGroupItem,
+.rt-Card[data-interactive="true"],
+[role="button"],
+[role="tab"],
+[role="link"],
+[role="menuitem"],
+[role="option"],
+button,
+a {
+  cursor: pointer !important;
+}
+
+/* Disabled state cursor */
+.rt-Button:disabled,
+.rt-IconButton:disabled,
+[disabled],
+[aria-disabled="true"] {
+  cursor: not-allowed !important;
+}
+
+/* General input smoothing */
+input, textarea, select {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+/* Remove browser default focus styles */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+}
+
+/* ===========================================
+   Radix Data-State Animations
+   =========================================== */
+.DialogOverlay[data-state="open"],
+.DialogContent[data-state="open"],
+.AlertDialogOverlay[data-state="open"],
+.AlertDialogContent[data-state="open"] {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.DialogOverlay[data-state="closed"],
+.DialogContent[data-state="closed"],
+.AlertDialogOverlay[data-state="closed"],
+.AlertDialogContent[data-state="closed"] {
+  animation: fadeOut 0.15s ease-in;
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Dropdown menu animations */
+.DropdownMenuContent[data-state="open"],
+.ContextMenuContent[data-state="open"],
+.PopoverContent[data-state="open"] {
+  animation: scaleIn 0.15s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Accordion animations */
+.AccordionContent[data-state="open"] {
+  animation: slideDown 0.3s ease-out;
+}
+
+.AccordionContent[data-state="closed"] {
+  animation: slideUp 0.3s ease-in;
+}
+
+@keyframes slideDown {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    height: var(--radix-accordion-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+/* ===========================================
+   Responsive utilities
+   =========================================== */
+@media (max-width: 1023px) {
+  .hidden-mobile {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .lg\:hidden {
+    display: none !important;
+  }
+  .lg\:flex {
+    display: flex !important;
+  }
+  .lg\:block {
+    display: block !important;
+  }
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Focus visible styles for accessibility */
+:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+}

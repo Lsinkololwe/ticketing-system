@@ -1,0 +1,277 @@
+# Identity and Platform Service Configuration
+# Microservice 3 of 3: User Management & Platform Operations
+
+# ============================================================================
+# SECURITY DEBUG MODE (DEVELOPMENT ONLY)
+# ============================================================================
+# Logs JWT tokens and authorization headers for debugging
+# WARNING: Disable in production!
+# ============================================================================
+security:
+  debug:
+    enabled: ${SECURITY_DEBUG_ENABLED:true}
+
+server:
+  port: 8083
+  # Kubernetes-native graceful shutdown
+  shutdown: graceful
+
+spring:
+  # Graceful shutdown timeout - allow in-flight requests to complete
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
+
+  application:
+    name: identity-service
+  main:
+    allow-bean-definition-overriding: true
+
+  # ============================================================================
+  # AZURE SERVICE BUS CONFIGURATION (Spring Cloud Stream)
+  # ============================================================================
+  # Identity Service publishes user-related domain events.
+  #
+  # EVENTS PUBLISHED:
+  # - UserCreated: New user registration
+  # - UserVerified: User email/phone verified
+  # - UserRoleChanged: User role updated
+  # - OrganizerApproved: Organizer account approved
+  # - OrganizerSuspended: Organizer account suspended
+  #
+  # ============================================================================
+  cloud:
+    azure:
+      servicebus:
+        connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:}
+        namespace: ${AZURE_SERVICEBUS_NAMESPACE:}
+        producer:
+          send-timeout: 30s
+    stream:
+      default-binder: servicebus
+      function:
+        definition: ""
+      bindings:
+        # Output binding for user domain events
+        userOutput-out-0:
+          destination: identity-events
+          producer:
+            partition-key-expression: headers['partitionKey']
+      servicebus:
+        bindings:
+          userOutput-out-0:
+            producer:
+              entity-type: topic
+
+  # MongoDB Connection (Centralized Docker)
+  # Database: dev_ticketing (shared by all ticketing services)
+  # Requires MongoDB replica set for transaction support
+  # Using directConnection=true for single-node replica set in dev
+  # NOTE: directConnection and replicaSet are mutually exclusive
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin&directConnection=true}
+      database: ${MONGODB_DATABASE:dev_ticketing}
+      auto-index-creation: true
+
+  # GraphQL Configuration
+  graphql:
+    graphiql:
+      enabled: true
+    path: /graphql
+    websocket:
+      path: /graphql
+      connection-init-timeout: 60s
+
+# DGS Framework Configuration
+dgs:
+  graphql:
+    schema-locations: classpath*:graphql/**/*.graphql*
+    # Disable schema inspection to avoid ClassCastException with mixed DGS/Spring GraphQL
+    schema-json:
+      enabled: false
+    introspection:
+      enabled: true
+
+# Keycloak Configuration
+keycloak:
+  server-url: ${KEYCLOAK_URL:http://localhost:8084}
+  realm: ${KEYCLOAK_REALM:event-ticketing}
+  admin-username: ${KEYCLOAK_ADMIN_USER:admin}
+  admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
+  admin-realm: master
+  client-id: identity-service
+  client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+
+# Service URLs for inter-service communication
+services:
+  catalog:
+    url: ${CATALOG_SERVICE_URL:http://localhost:8081}
+  booking:
+    url: ${BOOKING_SERVICE_URL:http://localhost:8082}
+
+# Redis Configuration (for OTP storage and caching)
+spring.data.redis:
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+  password: ${REDIS_PASSWORD:}
+  timeout: 2000ms
+
+# OAuth2 Client Configuration for token delegation (Keycloak)
+spring.security:
+  oauth2:
+    resourceserver:
+      jwt:
+        issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/event-ticketing}
+        jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/certs}
+    client:
+      registration:
+        identity-service:
+          client-id: identity-service
+          client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+          authorization-grant-type: client_credentials
+          scope: internal-read,internal-write
+      provider:
+        identity-service:
+          token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/token}
+
+# Actuator for Health Checks and Metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+      # Kubernetes-native health probes
+      probes:
+        enabled: true
+  # Kubernetes health probe groups
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+    group:
+      liveness:
+        include: livenessState,ping
+      readiness:
+        include: readinessState,mongo,redis
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      service: identity
+
+# Logging - Enhanced Security Debugging
+logging:
+  level:
+    root: INFO
+    com.pml.identity: DEBUG
+    org.springframework.data.mongodb: DEBUG
+    org.springframework.web: DEBUG
+    # ============================================================================
+    # SPRING SECURITY DEBUG LOGGING
+    # ============================================================================
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: DEBUG
+    org.springframework.security.oauth2.server.resource: DEBUG
+    org.springframework.security.oauth2.jwt: DEBUG
+    org.springframework.security.web: DEBUG
+    org.springframework.security.authentication: DEBUG
+    org.springframework.security.access: DEBUG
+    # Keycloak JWT processing
+    com.pml.shared.security: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# ============================================================================
+# GRAPHQL SECURITY CONFIGURATION (OWASP Compliance)
+# ============================================================================
+# Defense-in-depth security limits for GraphQL queries.
+# These limits work alongside Apollo Router limits at the gateway level.
+#
+# INDUSTRY STANDARDS FOR EVENT TICKETING PLATFORMS:
+# - Max Depth: 10 (allows deep queries while preventing abuse)
+# - Max Complexity: 200 (prevents excessively wide queries)
+# ============================================================================
+graphql:
+  security:
+    enabled: true
+    max-depth: ${GRAPHQL_MAX_DEPTH:10}
+    max-complexity: ${GRAPHQL_MAX_COMPLEXITY:200}
+    log-rejected-queries: ${GRAPHQL_LOG_REJECTED:true}
+    depth-exceeded-message: "Query depth limit exceeded"
+    complexity-exceeded-message: "Query complexity limit exceeded"
+
+# Application-Specific Configuration
+identity:
+  service:
+    version: 1.0.0
+    description: User Management and Platform Operations Microservice
+
+  # CDC Configuration
+  cdc:
+    webhook:
+      enabled: true
+      path: /api/cdc/events
+      # Debezium Server URL (for reference)
+      debezium-server-url: http://debezium-server-identity:8100
+
+  # Feature Flags
+  features:
+    email-verification: true
+    sms-verification: false
+    two-factor-auth: false
+    file-upload: true
+
+  # OTP Configuration
+  otp:
+    expiration-minutes: ${OTP_EXPIRATION_MINUTES:5}
+    length: ${OTP_LENGTH:6}
+    max-attempts: ${OTP_MAX_ATTEMPTS:3}
+    cooldown-minutes: ${OTP_COOLDOWN_MINUTES:1}
+
+  # Notification Configuration
+  notifications:
+    email:
+      enabled: true
+      provider: sendgrid  # sendgrid, ses, smtp
+    sms:
+      enabled: false
+      provider: twilio
+    push:
+      enabled: false
+      provider: fcm
+
+# Messaging Configuration (WhatsApp/SMS)
+messaging:
+  provider: ${MESSAGING_PROVIDER:whatsapp}
+  whatsapp:
+    api-url: https://graph.facebook.com/v17.0
+    phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+    access-token: ${WHATSAPP_ACCESS_TOKEN:}
+    otp-template: ${WHATSAPP_OTP_TEMPLATE:otp_verification}
+  twilio:
+    account-sid: ${TWILIO_ACCOUNT_SID:}
+    auth-token: ${TWILIO_AUTH_TOKEN:}
+    from-number: ${TWILIO_FROM_NUMBER:}
+
+  # File Storage Configuration
+  storage:
+    type: s3  # s3, local, gcs
+    bucket: ${S3_BUCKET:event-ticketing-files}
+    region: ${AWS_REGION:us-east-1}
+
+# Mongock Configuration (MongoDB Migrations)
+# Transactions enabled - requires MongoDB replica set
+mongock:
+  migration-scan-package:
+    - com.pml.identity.migration
+  enabled: ${MONGOCK_ENABLED:true}
+  transactional: ${MONGOCK_TRANSACTIONAL:true}
+  lock-acquired-for-millis: 60000
+  lock-quit-trying-after-millis: 180000
+  lock-try-frequency-millis: 1000

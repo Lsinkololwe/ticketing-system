@@ -1,0 +1,280 @@
+# Event Catalog Service Configuration
+# Microservice 1 of 3: Event Discovery & Management
+
+# ============================================================================
+# SECURITY DEBUG MODE (DEVELOPMENT ONLY)
+# ============================================================================
+# Logs JWT tokens and authorization headers for debugging
+# WARNING: Disable in production!
+# ============================================================================
+security:
+  debug:
+    enabled: ${SECURITY_DEBUG_ENABLED:true}
+
+server:
+  port: 8085
+  # Kubernetes-native graceful shutdown
+  shutdown: graceful
+
+spring:
+  # Graceful shutdown timeout - allow in-flight requests to complete
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
+
+  application:
+    name: catalog-service
+  main:
+    allow-bean-definition-overriding: true
+
+  # ============================================================================
+  # SPRING MODULITH CONFIGURATION
+  # ============================================================================
+  # Spring Modulith provides module structure and internal event handling.
+  #
+  # ARCHITECTURE DECISION:
+  # ----------------------
+  # Spring Modulith's event publication registry (spring-modulith-events-mongodb)
+  # requires a BLOCKING MongoDB driver for transactional event storage.
+  # Since this application uses WebFlux with REACTIVE MongoDB, the event
+  # publication registry is DISABLED.
+  #
+  # EVENT HANDLING STRATEGY:
+  # ------------------------
+  # 1. INTRA-SERVICE EVENTS: Use Spring's ApplicationEventPublisher
+  #    - Works with WebFlux/reactive stack
+  #    - Use @Async + @EventListener for async processing
+  #
+  # 2. CROSS-SERVICE EVENTS: Use Azure Service Bus (Spring Cloud Stream)
+  #    - This service PUBLISHES events to catalog-events topic
+  #    - Booking Service subscribes and processes these events
+  #
+  # ============================================================================
+  modulith:
+    events:
+      jdbc:
+        enabled: false
+      externalization:
+        enabled: false
+    republish-outstanding-events-on-restart: false
+
+  # ============================================================================
+  # AZURE SERVICE BUS CONFIGURATION (Spring Cloud Stream)
+  # ============================================================================
+  # Production-ready configuration for event-driven messaging.
+  #
+  # CATALOG SERVICE ROLE:
+  # - PUBLISHER: Publishes domain events when events are created/updated/published
+  # - Does NOT consume messages from other services
+  #
+  # EVENT FLOW:
+  # 1. Event created/published in Catalog Service
+  # 2. Domain event fired via Spring Modulith @Externalized
+  # 3. Event sent to Azure Service Bus topic
+  # 4. Booking Service consumes the event
+  # ============================================================================
+  cloud:
+    azure:
+      servicebus:
+        # Connection string with Shared Access Signature (SAS)
+        # Use Azure Key Vault in production: @Microsoft.KeyVault(SecretUri=...)
+        connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:}
+        namespace: ${AZURE_SERVICEBUS_NAMESPACE:}
+
+        # ======================================================================
+        # PRODUCER CONFIGURATION
+        # ======================================================================
+        producer:
+          # Maximum send operation timeout
+          send-timeout: 30s
+
+    stream:
+      # Default binder for all bindings
+      default-binder: servicebus
+
+      # ======================================================================
+      # FUNCTION DEFINITIONS
+      # ======================================================================
+      # Catalog Service only publishes events, no consumers defined here.
+      # Output bindings are auto-created by StreamBridge or @Externalized
+      function:
+        definition: ""
+
+      # ======================================================================
+      # BINDING CONFIGURATION
+      # ======================================================================
+      bindings:
+        # Output binding for event domain events (created, published, cancelled, etc.)
+        eventOutput-out-0:
+          destination: catalog-events
+          producer:
+            # Partition key expression for ordered processing per event
+            partition-key-expression: headers['partitionKey']
+
+      # ======================================================================
+      # SERVICE BUS SPECIFIC BINDINGS
+      # ======================================================================
+      servicebus:
+        bindings:
+          eventOutput-out-0:
+            producer:
+              # Entity type: topic (pub/sub) or queue (point-to-point)
+              entity-type: topic
+              # Enable message batching for better throughput
+              # sync: false  # async sending for better performance
+
+  # MongoDB Connection (Centralized Docker)
+  # Database: dev_ticketing (shared by all ticketing services)
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin}
+      database: ${MONGODB_DATABASE:dev_ticketing}
+      auto-index-creation: true
+
+  # GraphQL Configuration
+  graphql:
+    path: /graphql
+    graphiql:
+      enabled: true
+      path: /graphiql
+    websocket:
+      path: /graphql
+      connection-init-timeout: 60s
+
+  # ============================================================================
+  # OAUTH2 SECURITY CONFIGURATION
+  # ============================================================================
+  # Resource Server: Validates JWT tokens from Keycloak
+  # Client: Used for service-to-service authentication (client_credentials)
+  # ============================================================================
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/event-ticketing}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/certs}
+      # OAuth2 Client Configuration for service-to-service auth
+      client:
+        registration:
+          catalog-service:
+            client-id: catalog-service
+            client-secret: ${CATALOG_SERVICE_SECRET:catalog-service-secret}
+            authorization-grant-type: client_credentials
+            scope: internal-read,internal-write,users-read
+        provider:
+          catalog-service:
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/token}
+
+# DGS Framework Configuration
+dgs:
+  graphql:
+    schema-locations: classpath*:graphql/**/*.graphql*
+
+# Keycloak Configuration
+keycloak:
+  client-id: ${KEYCLOAK_CLIENT_ID:catalog-service}
+
+# Service URLs for inter-service communication
+services:
+  identity:
+    url: ${IDENTITY_SERVICE_URL:http://localhost:8083}
+  booking:
+    url: ${BOOKING_SERVICE_URL:http://localhost:8082}
+
+# Actuator for Health Checks and Metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+      # Kubernetes-native health probes
+      probes:
+        enabled: true
+  # Kubernetes health probe groups
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+    group:
+      liveness:
+        include: livenessState,ping
+      readiness:
+        include: readinessState,mongo
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      service: catalog
+
+# Logging - Enhanced Security Debugging
+logging:
+  level:
+    root: INFO
+    com.pml.catalog: DEBUG
+    org.springframework.data.mongodb: DEBUG
+    org.springframework.web: DEBUG
+    # ============================================================================
+    # SPRING SECURITY DEBUG LOGGING
+    # ============================================================================
+    org.springframework.security: DEBUG
+    org.springframework.security.oauth2: DEBUG
+    org.springframework.security.oauth2.server.resource: DEBUG
+    org.springframework.security.oauth2.jwt: DEBUG
+    org.springframework.security.web: DEBUG
+    org.springframework.security.authentication: DEBUG
+    org.springframework.security.access: DEBUG
+    # Keycloak JWT processing
+    com.pml.shared.security: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# ============================================================================
+# GRAPHQL SECURITY CONFIGURATION (OWASP Compliance)
+# ============================================================================
+# Defense-in-depth security limits for GraphQL queries.
+# These limits work alongside Apollo Router limits at the gateway level.
+#
+# INDUSTRY STANDARDS FOR EVENT TICKETING PLATFORMS:
+# - Max Depth: 10 (allows deep queries while preventing abuse)
+# - Max Complexity: 200 (prevents excessively wide queries)
+#
+# QUERY DEPTH EXAMPLES:
+# - event { ticketTiers }: depth 2
+# - ticket { buyer { organization } }: depth 3
+# - user { tickets { event { location } } }: depth 4
+# - event { tickets { edges { node { buyer } } } }: depth 5
+# ============================================================================
+graphql:
+  security:
+    enabled: true
+    # Maximum query nesting depth (recommended: 10 for ticketing platforms)
+    max-depth: ${GRAPHQL_MAX_DEPTH:10}
+    # Maximum total field count in query (recommended: 200)
+    max-complexity: ${GRAPHQL_MAX_COMPLEXITY:200}
+    # Log queries that exceed limits (useful for debugging)
+    log-rejected-queries: ${GRAPHQL_LOG_REJECTED:true}
+    # Custom error messages
+    depth-exceeded-message: "Query depth limit exceeded"
+    complexity-exceeded-message: "Query complexity limit exceeded"
+
+# Application-Specific Configuration
+catalog:
+  service:
+    version: 1.0.0
+    description: Event Discovery and Management Microservice
+
+  # Event approval configuration
+  event-approval:
+    # Deadline for platform to review events (hours)
+    review-deadline-hours: 48
+
+  # Feature Flags
+  features:
+    event-approval: true
+    auto-publish: false
+    search-indexing: true

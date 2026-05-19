@@ -1,0 +1,77 @@
+# .claudeignore - Prevent Claude from loading unnecessary files
+# This saves context window space and improves performance
+
+# Dependencies & Package Management
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build Artifacts
+target/
+dist/
+build/
+.next/
+.expo/
+.nx/
+out/
+
+# IDE & Editor Files
+.idea/
+.vscode/
+.cursor/
+.cursorrules
+*.swp
+*.swo
+*~
+
+# Version Control
+.git/
+
+# Environment & Secrets
+.env
+.env.*
+.env.local
+.env*.local
+.data/
+*.jks
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+
+# Logs & Debug Files
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+logs/
+
+# Test & Coverage
+coverage/
+.nyc_output/
+test-output/
+
+# Generated/Temporary Files
+__generated__/
+*.generated.ts
+*.generated.tsx
+.tsbuildinfo
+tmp/
+temp/
+*.tmp
+
+# OS & System Files
+.DS_Store
+Thumbs.db
+.AppleDouble/
+.LSOverride
+
+# Native Mobile Build Artifacts
+ios/
+android/
+
+# Large Documentation (uncomment if needed)
+# *.html
+# *.pdf

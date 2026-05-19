@@ -1,0 +1,93 @@
+name: ticketing_mobile
+description: "Event Ticketing Mobile App - Ticket buyers mobile application"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI
+  cupertino_icons: ^1.0.8
+  flutter_svg: ^2.0.10+1
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  flutter_animate: ^4.5.0
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Networking & API
+  dio: ^5.4.3+1
+  connectivity_plus: ^6.0.3
+
+  # GraphQL (Ferry)
+  ferry: ^0.16.0
+  gql_http_link: ^1.0.0
+  gql_code_builder_serializers: ^0.1.0
+
+  # Authentication (Keycloak/OIDC)
+  flutter_appauth: ^7.0.1
+  flutter_secure_storage: ^9.2.2
+
+  # Navigation
+  go_router: ^14.2.0
+
+  # Data & Serialization
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+  intl: ^0.19.0
+
+  # Local Storage
+  shared_preferences: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Utilities
+  logger: ^2.3.0
+  url_launcher: ^6.2.6
+  share_plus: ^9.0.0
+  qr_flutter: ^4.1.0
+  permission_handler: ^11.3.1
+
+  # Environment
+  envied: ^0.5.4+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Code Generation
+  build_runner: ^2.4.9
+  freezed: ^2.5.2
+  json_serializable: ^6.8.0
+  riverpod_generator: ^2.4.0
+  envied_generator: ^0.5.4+1
+  go_router_builder: ^2.4.1
+
+  # GraphQL Code Generation (Ferry)
+  ferry_generator: ^0.12.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/fonts/
+
+  fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/SpaceGrotesk-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/SpaceGrotesk-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/SpaceGrotesk-Bold.ttf
+          weight: 700

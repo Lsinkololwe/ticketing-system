@@ -1,0 +1,72 @@
+# Test Configuration for Identity Service
+# Used for integration tests with Keycloak
+
+spring:
+  application:
+    name: identity-service-test
+
+  # Test MongoDB (use Testcontainers or embedded)
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/event_ticketing_test}
+      database: event_ticketing_test
+
+# Keycloak Configuration (override with env vars for CI/CD)
+keycloak:
+  server-url: ${KEYCLOAK_URL:http://localhost:8084}
+  realm: event-ticketing
+  admin-username: ${KEYCLOAK_ADMIN:admin}
+  admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
+  admin-realm: master
+  client-id: identity-service
+  client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+
+# OAuth2 Resource Server
+spring.security:
+  oauth2:
+    resourceserver:
+      jwt:
+        issuer-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/event-ticketing
+        jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/event-ticketing/protocol/openid-connect/certs
+    client:
+      registration:
+        identity-service:
+          client-id: identity-service
+          client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+          authorization-grant-type: client_credentials
+          scope: internal-read,internal-write
+      provider:
+        identity-service:
+          token-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/event-ticketing/protocol/openid-connect/token
+
+# Redis (use embedded or Testcontainers)
+spring.data.redis:
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+
+# Test OTP Configuration (faster expiry for tests)
+identity:
+  features:
+    use-keycloak: true
+  otp:
+    expiration-minutes: 1
+    length: 6
+    max-attempts: 3
+    cooldown-minutes: 0
+
+# Messaging (disabled for tests)
+messaging:
+  provider: mock
+  whatsapp:
+    phone-number-id: test-phone-id
+    access-token: test-token
+  twilio:
+    account-sid: test-sid
+    auth-token: test-token
+    from-number: +1234567890
+
+# Logging for tests
+logging:
+  level:
+    com.pml.identity: DEBUG
+    org.springframework.security: DEBUG

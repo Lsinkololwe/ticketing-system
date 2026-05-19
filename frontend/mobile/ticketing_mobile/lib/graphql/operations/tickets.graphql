@@ -1,0 +1,196 @@
+# =============================================================================
+# TICKET OPERATIONS
+# =============================================================================
+
+# Ticket Fragment - for my tickets list
+fragment TicketFields on Ticket {
+  id
+  ticketNumber
+  eventId
+  eventTitle
+  eventDate
+  eventLocationName
+  eventLocationAddress
+  buyerId
+  buyerName
+  buyerEmail
+  buyerPhone
+  ticketCategoryCode
+  ticketCategoryName
+  price
+  currency
+  status
+  quantity
+  purchaseDate
+  validFrom
+  validUntil
+  validatedAt
+  usedAt
+  cancelledAt
+  cancellationReason
+  qrCode
+  barcode
+}
+
+# Ticket Detail Fragment - for ticket detail page with event info
+fragment TicketDetailFields on Ticket {
+  id
+  ticketNumber
+  eventId
+  eventTitle
+  eventDate
+  eventLocationName
+  eventLocationAddress
+  buyerId
+  buyerName
+  buyerEmail
+  buyerPhone
+  ticketCategoryCode
+  ticketCategoryName
+  price
+  currency
+  status
+  quantity
+  purchaseDate
+  validFrom
+  validUntil
+  validatedAt
+  usedAt
+  cancelledAt
+  cancellationReason
+  qrCode
+  barcode
+  event {
+    id
+    title
+    description
+    eventDateTime
+    endDateTime
+    bannerImageUrl
+    locationName
+    locationAddress
+    cityName
+    organizerName
+    status
+  }
+}
+
+# =============================================================================
+# QUERIES
+# =============================================================================
+
+# Get tickets by buyer (my tickets) - cursor pagination
+query GetMyTickets($buyerId: String!, $status: TicketStatus, $first: Int, $after: String) {
+  ticketsByBuyerCursorPagination(
+    buyerId: $buyerId
+    status: $status
+    pagination: { first: $first, after: $after }
+  ) {
+    edges {
+      node {
+        ...TicketDetailFields
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+      totalCount
+    }
+  }
+}
+
+# Get single ticket by ID
+query GetTicket($id: ID!) {
+  ticket(id: $id) {
+    ...TicketDetailFields
+  }
+}
+
+# Get ticket by ticket number
+query GetTicketByNumber($ticketNumber: String!) {
+  ticketByNumber(ticketNumber: $ticketNumber) {
+    ...TicketDetailFields
+  }
+}
+
+# Get ticket count by buyer
+query GetMyTicketCount($buyerId: String!) {
+  ticketCountByBuyer(buyerId: $buyerId)
+}
+
+# Check if ticket is eligible for refund
+query CheckTicketRefundEligibility($ticketId: String!) {
+  isTicketEligibleForRefund(ticketId: $ticketId)
+}
+
+# Calculate refund amount
+query CalculateRefundAmount($ticketId: String!) {
+  calculateRefundAmount(ticketId: $ticketId) {
+    ticketId
+    ticketNumber
+    eventId
+    eventDate
+    originalAmount
+    daysBeforeEvent
+    refundPercentage
+    refundAmount
+    commissionRefund
+    platformRetains
+    policyApplied
+    isEligible
+  }
+}
+
+# =============================================================================
+# MUTATIONS
+# =============================================================================
+
+# Purchase ticket
+mutation PurchaseTicket($input: TicketPurchaseInput!) {
+  purchaseTicket(input: $input) {
+    success
+    message
+    errors
+    data {
+      ...TicketFields
+    }
+  }
+}
+
+# Create refund request
+mutation CreateRefundRequest($input: CreateRefundRequestInput!) {
+  createUserRefundRequest(input: $input) {
+    success
+    message
+    errors
+    data {
+      id
+      requestId
+      ticketId
+      ticketNumber
+      eventId
+      status
+      reason
+      originalTicketPrice
+      refundAmount
+      netRefundAmount
+      currency
+      requestedAt
+    }
+  }
+}
+
+# Cancel ticket
+mutation CancelTicket($ticketNumber: String!, $reason: String!) {
+  cancelTicket(ticketNumber: $ticketNumber, reason: $reason) {
+    success
+    message
+    errors
+    data {
+      ...TicketFields
+    }
+  }
+}

@@ -1,0 +1,364 @@
+# =============================================================================
+# GRAPHQL SCHEMA CI/CD WORKFLOW
+# =============================================================================
+# Event Ticketing System - Apollo Federation Schema Management
+#
+# This workflow handles:
+# - Schema validation and composition checks on Pull Requests
+# - Schema publishing to Apollo GraphOS on merge to main
+# - Automated supergraph composition
+#
+# PREREQUISITES:
+# Set these secrets in GitHub repository settings:
+#   - APOLLO_KEY: API key from Apollo Studio (service:<graph-id>:<secret>)
+#
+# Set these variables in GitHub repository settings:
+#   - APOLLO_GRAPH_REF: Graph reference (default: event-ticketing-graph@dev)
+#
+# =============================================================================
+
+name: GraphQL Schema CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/*/src/main/resources/graphql/**'
+      - '.github/workflows/graphql-schema.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/*/src/main/resources/graphql/**'
+      - '.github/workflows/graphql-schema.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'check'
+        type: choice
+        options:
+          - check
+          - publish
+          - compose
+
+env:
+  # Use @dev for develop branch, @current for main branch
+  APOLLO_GRAPH_REF: ${{ vars.APOLLO_GRAPH_REF || (github.ref == 'refs/heads/main' && 'event-ticketing-graph@current' || 'event-ticketing-graph@dev') }}
+  # Production routing URLs (used when publishing to GraphOS)
+  IDENTITY_ROUTING_URL: ${{ vars.IDENTITY_ROUTING_URL || 'http://identity-service:8083/graphql' }}
+  CATALOG_ROUTING_URL: ${{ vars.CATALOG_ROUTING_URL || 'http://catalog-service:8085/graphql' }}
+  BOOKING_ROUTING_URL: ${{ vars.BOOKING_ROUTING_URL || 'http://booking-service:8082/graphql' }}
+
+jobs:
+  # ===========================================================================
+  # JOB: Detect Changed Subgraphs
+  # ===========================================================================
+  detect-changes:
+    name: Detect Schema Changes
+    runs-on: ubuntu-latest
+    outputs:
+      identity-changed: ${{ steps.changes.outputs.identity }}
+      catalog-changed: ${{ steps.changes.outputs.catalog }}
+      booking-changed: ${{ steps.changes.outputs.booking }}
+      any-changed: ${{ steps.changes.outputs.any }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: changes
+        run: |
+          # For PRs, compare against base branch
+          # For pushes, compare against previous commit
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BASE_SHA=${{ github.event.pull_request.base.sha }}
+          else
+            BASE_SHA=${{ github.event.before }}
+          fi
+
+          echo "Comparing against: $BASE_SHA"
+
+          # Check each subgraph for changes
+          IDENTITY_CHANGED=$(git diff --name-only $BASE_SHA HEAD -- 'backend/identity-service/src/main/resources/graphql/' | wc -l)
+          CATALOG_CHANGED=$(git diff --name-only $BASE_SHA HEAD -- 'backend/catalog-service/src/main/resources/graphql/' | wc -l)
+          BOOKING_CHANGED=$(git diff --name-only $BASE_SHA HEAD -- 'backend/booking-service/src/main/resources/graphql/' | wc -l)
+
+          echo "identity=$([[ $IDENTITY_CHANGED -gt 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "catalog=$([[ $CATALOG_CHANGED -gt 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "booking=$([[ $BOOKING_CHANGED -gt 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "any=$([[ $((IDENTITY_CHANGED + CATALOG_CHANGED + BOOKING_CHANGED)) -gt 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+          echo "Changes detected:"
+          echo "  - Identity: $IDENTITY_CHANGED files"
+          echo "  - Catalog: $CATALOG_CHANGED files"
+          echo "  - Booking: $BOOKING_CHANGED files"
+
+  # ===========================================================================
+  # JOB: Schema Check (PR Only)
+  # ===========================================================================
+  schema-check:
+    name: Schema Check
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      github.event_name == 'pull_request' &&
+      needs.detect-changes.outputs.any-changed == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rover CLI
+        run: |
+          curl -sSL https://rover.apollo.dev/nix/latest | sh
+          echo "$HOME/.rover/bin" >> $GITHUB_PATH
+
+      - name: Check Identity Subgraph
+        if: needs.detect-changes.outputs.identity-changed == 'true'
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        run: |
+          echo "Checking identity subgraph schema..."
+          rover subgraph check ${{ env.APOLLO_GRAPH_REF }} \
+            --name identity \
+            --schema backend/identity-service/src/main/resources/graphql/schema.graphqls
+
+      - name: Check Catalog Subgraph
+        if: needs.detect-changes.outputs.catalog-changed == 'true'
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        run: |
+          echo "Checking catalog subgraph schema..."
+          rover subgraph check ${{ env.APOLLO_GRAPH_REF }} \
+            --name catalog \
+            --schema backend/catalog-service/src/main/resources/graphql/schema.graphqls
+
+      - name: Check Booking Subgraph
+        if: needs.detect-changes.outputs.booking-changed == 'true'
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        run: |
+          echo "Checking booking subgraph schema..."
+          rover subgraph check ${{ env.APOLLO_GRAPH_REF }} \
+            --name booking \
+            --schema backend/booking-service/src/main/resources/graphql/schema.graphqls
+
+  # ===========================================================================
+  # JOB: Local Composition Check
+  # ===========================================================================
+  composition-check:
+    name: Composition Check
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any-changed == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rover CLI
+        run: |
+          curl -sSL https://rover.apollo.dev/nix/latest | sh
+          echo "$HOME/.rover/bin" >> $GITHUB_PATH
+
+      - name: Create supergraph config
+        run: |
+          cat > supergraph.yaml << 'EOF'
+          federation_version: =2.9.0
+          subgraphs:
+            identity:
+              routing_url: ${{ env.IDENTITY_ROUTING_URL }}
+              schema:
+                file: backend/identity-service/src/main/resources/graphql/schema.graphqls
+            catalog:
+              routing_url: ${{ env.CATALOG_ROUTING_URL }}
+              schema:
+                file: backend/catalog-service/src/main/resources/graphql/schema.graphqls
+            booking:
+              routing_url: ${{ env.BOOKING_ROUTING_URL }}
+              schema:
+                file: backend/booking-service/src/main/resources/graphql/schema.graphqls
+          EOF
+
+      - name: Compose Supergraph
+        run: |
+          echo "Composing supergraph locally..."
+          rover supergraph compose --config supergraph.yaml --output supergraph.graphql
+          echo "Composition successful!"
+
+          # Print some stats
+          echo ""
+          echo "Supergraph stats:"
+          echo "  - Lines: $(wc -l < supergraph.graphql)"
+          echo "  - Types: $(grep -c '^type ' supergraph.graphql || echo '0')"
+
+      - name: Upload Supergraph Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supergraph-schema
+          path: supergraph.graphql
+          retention-days: 7
+
+  # ===========================================================================
+  # JOB: Publish to GraphOS (Main Branch Only)
+  # ===========================================================================
+  publish-schemas:
+    name: Publish Schemas
+    runs-on: ubuntu-latest
+    needs: [detect-changes, composition-check]
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.detect-changes.outputs.any-changed == 'true'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rover CLI
+        run: |
+          curl -sSL https://rover.apollo.dev/nix/latest | sh
+          echo "$HOME/.rover/bin" >> $GITHUB_PATH
+
+      - name: Publish Identity Subgraph
+        if: needs.detect-changes.outputs.identity-changed == 'true'
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        run: |
+          echo "Publishing identity subgraph..."
+          rover subgraph publish ${{ env.APOLLO_GRAPH_REF }} \
+            --name identity \
+            --schema backend/identity-service/src/main/resources/graphql/schema.graphqls \
+            --routing-url ${{ env.IDENTITY_ROUTING_URL }}
+
+      - name: Publish Catalog Subgraph
+        if: needs.detect-changes.outputs.catalog-changed == 'true'
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        run: |
+          echo "Publishing catalog subgraph..."
+          rover subgraph publish ${{ env.APOLLO_GRAPH_REF }} \
+            --name catalog \
+            --schema backend/catalog-service/src/main/resources/graphql/schema.graphqls \
+            --routing-url ${{ env.CATALOG_ROUTING_URL }}
+
+      - name: Publish Booking Subgraph
+        if: needs.detect-changes.outputs.booking-changed == 'true'
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        run: |
+          echo "Publishing booking subgraph..."
+          rover subgraph publish ${{ env.APOLLO_GRAPH_REF }} \
+            --name booking \
+            --schema backend/booking-service/src/main/resources/graphql/schema.graphqls \
+            --routing-url ${{ env.BOOKING_ROUTING_URL }}
+
+      - name: Summary
+        run: |
+          echo "## Schema Publish Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Published to: \`${{ env.APOLLO_GRAPH_REF }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Subgraph | Published |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Identity | ${{ needs.detect-changes.outputs.identity-changed }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Catalog | ${{ needs.detect-changes.outputs.catalog-changed }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Booking | ${{ needs.detect-changes.outputs.booking-changed }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # JOB: Manual Publish (Workflow Dispatch)
+  # ===========================================================================
+  manual-publish:
+    name: Manual Schema Publish
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'publish'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rover CLI
+        run: |
+          curl -sSL https://rover.apollo.dev/nix/latest | sh
+          echo "$HOME/.rover/bin" >> $GITHUB_PATH
+
+      - name: Publish All Subgraphs
+        env:
+          APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
+        run: |
+          echo "Publishing all subgraphs to ${{ env.APOLLO_GRAPH_REF }}..."
+
+          echo "Publishing identity..."
+          rover subgraph publish ${{ env.APOLLO_GRAPH_REF }} \
+            --name identity \
+            --schema backend/identity-service/src/main/resources/graphql/schema.graphqls \
+            --routing-url ${{ env.IDENTITY_ROUTING_URL }}
+
+          echo "Publishing catalog..."
+          rover subgraph publish ${{ env.APOLLO_GRAPH_REF }} \
+            --name catalog \
+            --schema backend/catalog-service/src/main/resources/graphql/schema.graphqls \
+            --routing-url ${{ env.CATALOG_ROUTING_URL }}
+
+          echo "Publishing booking..."
+          rover subgraph publish ${{ env.APOLLO_GRAPH_REF }} \
+            --name booking \
+            --schema backend/booking-service/src/main/resources/graphql/schema.graphqls \
+            --routing-url ${{ env.BOOKING_ROUTING_URL }}
+
+          echo "All subgraphs published!"
+
+  # ===========================================================================
+  # JOB: Manual Compose (Workflow Dispatch)
+  # ===========================================================================
+  manual-compose:
+    name: Manual Supergraph Compose
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'compose'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rover CLI
+        run: |
+          curl -sSL https://rover.apollo.dev/nix/latest | sh
+          echo "$HOME/.rover/bin" >> $GITHUB_PATH
+
+      - name: Compose Supergraph
+        run: |
+          cat > supergraph.yaml << 'EOF'
+          federation_version: =2.9.0
+          subgraphs:
+            identity:
+              routing_url: ${{ env.IDENTITY_ROUTING_URL }}
+              schema:
+                file: backend/identity-service/src/main/resources/graphql/schema.graphqls
+            catalog:
+              routing_url: ${{ env.CATALOG_ROUTING_URL }}
+              schema:
+                file: backend/catalog-service/src/main/resources/graphql/schema.graphqls
+            booking:
+              routing_url: ${{ env.BOOKING_ROUTING_URL }}
+              schema:
+                file: backend/booking-service/src/main/resources/graphql/schema.graphqls
+          EOF
+
+          rover supergraph compose --config supergraph.yaml --output supergraph.graphql
+
+          echo "Supergraph composed successfully!"
+
+      - name: Upload Supergraph
+        uses: actions/upload-artifact@v4
+        with:
+          name: supergraph-manual
+          path: supergraph.graphql
+          retention-days: 30
