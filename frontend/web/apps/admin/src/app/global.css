@@ -32,47 +32,48 @@
 
 /* ===========================================
    Design Tokens (CSS Variables)
-   Change these to update the entire theme
+   Radix UI Themes - Light Mode
+   Clean whites with violet accent
    =========================================== */
 :root {
-  /* Surface Colors */
+  /* Surface Colors - Radix light grays */
   --surface-primary: #FFFFFF;
-  --surface-secondary: #F8FAFC;
-  --surface-tertiary: #F1F5F9;
-  --surface-hover: #E2E8F0;
-  --surface-border: #E5E7EB;
-  --surface-border-light: #F1F5F9;
+  --surface-secondary: #FAFAFA;
+  --surface-tertiary: #F4F4F5;
+  --surface-hover: #EBEBEF;
+  --surface-border: #E4E4E9;
+  --surface-border-light: #F0F0F3;
 
-  /* Content Colors */
-  --content-primary: #1F2937;
-  --content-secondary: #4B5563;
-  --content-tertiary: #6B7280;
-  --content-muted: #9CA3AF;
+  /* Content Colors - Radix text scale */
+  --content-primary: #1C1C1E;
+  --content-secondary: #3C3C43;
+  --content-tertiary: #6E6E76;
+  --content-muted: #9D9DA5;
   --content-inverse: #FFFFFF;
 
-  /* Brand Colors */
-  --brand-50: #EFF6FF;
-  --brand-100: #DBEAFE;
-  --brand-200: #BFDBFE;
-  --brand-300: #93C5FD;
-  --brand-400: #60A5FA;
-  --brand-500: #3B82F6;
-  --brand-600: #2563EB;
-  --brand-700: #1D4ED8;
+  /* Brand Colors - Violet accent (Radix violet) */
+  --brand-50: #F5F2FF;
+  --brand-100: #EDE9FE;
+  --brand-200: #DDD6FE;
+  --brand-300: #C4B5FD;
+  --brand-400: #A78BFA;
+  --brand-500: #8B5CF6;
+  --brand-600: #7C3AED;
+  --brand-700: #6D28D9;
 
-  /* Status Colors */
-  --success-50: #F0FDF4;
-  --success-100: #DCFCE7;
-  --success-500: #22C55E;
-  --success-600: #16A34A;
-  --warning-50: #FFFBEB;
-  --warning-100: #FEF3C7;
-  --warning-500: #F59E0B;
-  --warning-600: #D97706;
-  --danger-50: #FEF2F2;
-  --danger-100: #FEE2E2;
-  --danger-500: #EF4444;
-  --danger-600: #DC2626;
+  /* Status Colors - Radix semantic colors */
+  --success-50: #E6F6EC;
+  --success-100: #D3F0DF;
+  --success-500: #30A46C;
+  --success-600: #299764;
+  --warning-50: #FFF4D5;
+  --warning-100: #FFECBC;
+  --warning-500: #F5A623;
+  --warning-600: #E09516;
+  --danger-50: #FFEFEF;
+  --danger-100: #FFE0E0;
+  --danger-500: #E5484D;
+  --danger-600: #D93D42;
 
   /* Shadows - Google-inspired, subtle */
   --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
@@ -122,139 +123,140 @@
      =========================================== */
   --surface-base: #FFFFFF;
   --surface-raised: #FFFFFF;
-  --surface-lowered: #F8FAFC;
-  --surface-sunken: #F1F5F9;
+  --surface-lowered: #FAFAFA;
+  --surface-sunken: #F4F4F5;
 
-  /* Brand-tinted surfaces (subtle brand presence) */
-  --surface-tinted: rgba(59, 130, 246, 0.02);
-  --surface-tinted-hover: rgba(59, 130, 246, 0.04);
-  --surface-tinted-strong: rgba(59, 130, 246, 0.06);
+  /* Brand-tinted surfaces (subtle violet presence) */
+  --surface-tinted: rgba(139, 92, 246, 0.02);
+  --surface-tinted-hover: rgba(139, 92, 246, 0.04);
+  --surface-tinted-strong: rgba(139, 92, 246, 0.06);
 
   /* Gradient zone colors */
-  --gradient-brand-start: rgba(59, 130, 246, 0.03);
-  --gradient-brand-end: rgba(147, 197, 253, 0.02);
-  --gradient-success-start: rgba(34, 197, 94, 0.03);
-  --gradient-success-end: rgba(187, 247, 208, 0.02);
-  --gradient-warning-start: rgba(245, 158, 11, 0.03);
-  --gradient-warning-end: rgba(253, 230, 138, 0.02);
+  --gradient-brand-start: rgba(139, 92, 246, 0.03);
+  --gradient-brand-end: rgba(167, 139, 250, 0.02);
+  --gradient-success-start: rgba(48, 164, 108, 0.03);
+  --gradient-success-end: rgba(48, 164, 108, 0.02);
+  --gradient-warning-start: rgba(245, 166, 35, 0.03);
+  --gradient-warning-end: rgba(245, 166, 35, 0.02);
 
   /* Ambient glow colors */
-  --glow-brand: rgba(59, 130, 246, 0.08);
-  --glow-success: rgba(34, 197, 94, 0.08);
-  --glow-warning: rgba(245, 158, 11, 0.08);
+  --glow-brand: rgba(139, 92, 246, 0.08);
+  --glow-success: rgba(48, 164, 108, 0.08);
+  --glow-warning: rgba(245, 166, 35, 0.08);
 
   /* ===========================================
      Dashboard Layout Backgrounds - Light Mode
-     Layered system: Sidebar (dark) → Header (glass) → Main (subtle pattern)
+     Clean Radix-inspired surfaces with dark sidebar
      =========================================== */
-  --dashboard-sidebar-bg: linear-gradient(180deg, #0F172A 0%, #1E1B4B 50%, #0F172A 100%);
-  --dashboard-sidebar-border: rgba(255, 255, 255, 0.08);
-  --dashboard-header-bg: rgba(255, 255, 255, 0.85);
+  --dashboard-sidebar-bg: linear-gradient(180deg, #111113 0%, #19191B 50%, #111113 100%);
+  --dashboard-sidebar-border: rgba(110, 86, 207, 0.15);
+  --dashboard-header-bg: rgba(255, 255, 255, 0.95);
   --dashboard-header-blur: 12px;
   --dashboard-header-border: rgba(0, 0, 0, 0.06);
-  --dashboard-main-bg: #F8FAFC;
-  --dashboard-main-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-  --dashboard-accent-glow: radial-gradient(ellipse at top right, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+  --dashboard-main-bg: #FFFFFF;
+  --dashboard-main-pattern: none;
+  --dashboard-accent-glow: radial-gradient(ellipse at top right, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
 }
 
 /* ===========================================
    Dark Mode Design Tokens
-   Applied when .dark class is on html/body
+   Radix UI Themes - Slate Gray Scale
+   Cool neutral grays with violet accent
    =========================================== */
 .dark {
-  /* Surface Colors - Deep OLED blacks */
-  --surface-primary: #0A0A0F;
-  --surface-secondary: #0F0F14;
-  --surface-tertiary: #16161D;
-  --surface-hover: #1E1E28;
-  --surface-border: #27272F;
-  --surface-border-light: #1E1E26;
+  /* Surface Colors - Radix Slate scale (cool neutral) */
+  --surface-primary: #111113;
+  --surface-secondary: #19191B;
+  --surface-tertiary: #222225;
+  --surface-hover: #2A2A2D;
+  --surface-border: #313136;
+  --surface-border-light: #27272B;
 
-  /* Content Colors - High contrast text */
-  --content-primary: #F4F4F5;
-  --content-secondary: #A1A1AA;
+  /* Content Colors - Radix gray text scale */
+  --content-primary: #EEEEF0;
+  --content-secondary: #B0B0B5;
   --content-tertiary: #71717A;
-  --content-muted: #52525B;
-  --content-inverse: #09090B;
+  --content-muted: #52525A;
+  --content-inverse: #111113;
 
-  /* Brand Colors - Violet for dark mode */
-  --brand-50: #1E1B4B;
-  --brand-100: #2E2A5E;
-  --brand-200: #3F3A72;
-  --brand-300: #6366F1;
-  --brand-400: #818CF8;
-  --brand-500: #8B5CF6;
-  --brand-600: #A78BFA;
-  --brand-700: #C4B5FD;
+  /* Brand Colors - Violet accent for dark mode (Radix violet) */
+  --brand-50: #1D1B2F;
+  --brand-100: #2E2B4A;
+  --brand-200: #3D3866;
+  --brand-300: #6E56CF;
+  --brand-400: #8B7BD8;
+  --brand-500: #A89DE2;
+  --brand-600: #C5BDEB;
+  --brand-700: #E2DFF4;
 
-  /* Status Colors - Dark mode optimized */
-  --success-50: #052E16;
-  --success-100: #14532D;
-  --success-500: #22C55E;
-  --success-600: #4ADE80;
-  --warning-50: #422006;
-  --warning-100: #713F12;
-  --warning-500: #F59E0B;
-  --warning-600: #FBBF24;
-  --danger-50: #450A0A;
-  --danger-100: #7F1D1D;
-  --danger-500: #EF4444;
-  --danger-600: #F87171;
+  /* Status Colors - Radix dark mode optimized */
+  --success-50: #0D2818;
+  --success-100: #113B22;
+  --success-500: #30A46C;
+  --success-600: #3DD68C;
+  --warning-50: #271700;
+  --warning-100: #3D2200;
+  --warning-500: #F5A623;
+  --warning-600: #FFB938;
+  --danger-50: #2D1515;
+  --danger-100: #3C1F1F;
+  --danger-500: #E5484D;
+  --danger-600: #F16A6D;
 
-  /* Shadows - Subtle glows for dark mode */
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.4);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.4);
-  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.03);
-  --shadow-card-hover: 0 4px 12px 0 rgb(0 0 0 / 0.5), 0 0 0 1px rgb(139 92 246 / 0.1);
-  --shadow-elevated: 0 2px 8px 0 rgb(0 0 0 / 0.5);
-  --shadow-dropdown: 0 4px 16px 0 rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.05);
-  --shadow-modal: 0 25px 50px -12px rgb(0 0 0 / 0.8);
+  /* Shadows - Radix style for dark mode */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.6), 0 1px 2px -1px rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.6), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.6), 0 4px 6px -4px rgb(0 0 0 / 0.5);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.7), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-card-hover: 0 0 0 1px rgba(110, 86, 207, 0.3), 0 4px 12px 0 rgb(0 0 0 / 0.6);
+  --shadow-elevated: 0 2px 8px 0 rgb(0 0 0 / 0.6);
+  --shadow-dropdown: 0 4px 16px 0 rgb(0 0 0 / 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-modal: 0 25px 50px -12px rgb(0 0 0 / 0.9);
 
   /* Card tokens for dark mode */
   --card-border-color: rgba(255, 255, 255, 0.06);
   --card-shadow: var(--shadow-card);
   --card-shadow-hover: var(--shadow-card-hover);
-  --card-bg: var(--surface-secondary);
+  --card-bg: #19191B;
 
   /* Tonal surfaces - dark mode */
-  --surface-base: #0A0A0F;
-  --surface-raised: #0F0F14;
-  --surface-lowered: #060608;
-  --surface-sunken: #050507;
+  --surface-base: #111113;
+  --surface-raised: #19191B;
+  --surface-lowered: #0E0E10;
+  --surface-sunken: #09090B;
 
   /* Brand-tinted surfaces (subtle violet glow) */
-  --surface-tinted: rgba(139, 92, 246, 0.04);
-  --surface-tinted-hover: rgba(139, 92, 246, 0.08);
-  --surface-tinted-strong: rgba(139, 92, 246, 0.12);
+  --surface-tinted: rgba(110, 86, 207, 0.06);
+  --surface-tinted-hover: rgba(110, 86, 207, 0.10);
+  --surface-tinted-strong: rgba(110, 86, 207, 0.15);
 
   /* Gradient zone colors - dark mode */
-  --gradient-brand-start: rgba(139, 92, 246, 0.08);
-  --gradient-brand-end: rgba(99, 102, 241, 0.04);
+  --gradient-brand-start: rgba(110, 86, 207, 0.08);
+  --gradient-brand-end: rgba(139, 123, 216, 0.04);
 
   /* Ambient glow colors - more visible in dark mode */
-  --glow-brand: rgba(139, 92, 246, 0.15);
-  --glow-success: rgba(34, 197, 94, 0.12);
-  --glow-warning: rgba(245, 158, 11, 0.12);
+  --glow-brand: rgba(110, 86, 207, 0.15);
+  --glow-success: rgba(48, 164, 108, 0.12);
+  --glow-warning: rgba(245, 166, 35, 0.12);
 
   /* ===========================================
      Dashboard Layout Backgrounds - Dark Mode
-     Deep OLED blacks with violet accents
+     Radix dark theme - pure cool blacks
      =========================================== */
-  --dashboard-sidebar-bg: linear-gradient(180deg, #030305 0%, #0A0A12 50%, #030305 100%);
-  --dashboard-sidebar-border: rgba(139, 92, 246, 0.15);
-  --dashboard-header-bg: rgba(10, 10, 15, 0.8);
+  --dashboard-sidebar-bg: linear-gradient(180deg, #0E0E10 0%, #111113 50%, #0E0E10 100%);
+  --dashboard-sidebar-border: rgba(110, 86, 207, 0.15);
+  --dashboard-header-bg: rgba(17, 17, 19, 0.92);
   --dashboard-header-blur: 16px;
-  --dashboard-header-border: rgba(139, 92, 246, 0.1);
-  --dashboard-main-bg: #050507;
-  --dashboard-main-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%238B5CF6' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-  --dashboard-accent-glow: radial-gradient(ellipse at top right, rgba(139, 92, 246, 0.08) 0%, transparent 60%);
+  --dashboard-header-border: rgba(255, 255, 255, 0.06);
+  --dashboard-main-bg: #111113;
+  --dashboard-main-pattern: none;
+  --dashboard-accent-glow: radial-gradient(ellipse at top right, rgba(110, 86, 207, 0.06) 0%, transparent 60%);
   --dashboard-mesh-gradient:
-    radial-gradient(at 20% 80%, rgba(139, 92, 246, 0.12) 0%, transparent 50%),
-    radial-gradient(at 80% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-    radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.04) 0%, transparent 70%);
+    radial-gradient(at 20% 80%, rgba(110, 86, 207, 0.06) 0%, transparent 50%),
+    radial-gradient(at 80% 20%, rgba(139, 123, 216, 0.04) 0%, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(110, 86, 207, 0.02) 0%, transparent 70%);
 }
 
 /* Dark mode scrollbar */
@@ -287,14 +289,14 @@
   --heading-font-family: var(--font-sans);
   --code-font-family: var(--font-mono);
 
-  /* Map theme colors to Radix accent */
-  --accent-1: var(--brand-50);
-  --accent-2: var(--brand-100);
-  --accent-3: var(--brand-200);
-  --accent-9: var(--brand-600);
-  --accent-10: var(--brand-700);
-  --accent-11: var(--brand-600);
-  --accent-12: var(--brand-700);
+  /* Map theme colors to Radix violet accent */
+  --accent-1: #FDFCFE;
+  --accent-2: #F5F2FF;
+  --accent-3: #EDE9FE;
+  --accent-9: #8B5CF6;
+  --accent-10: #7C3AED;
+  --accent-11: #6D28D9;
+  --accent-12: #5B21B6;
 
   /* Override Radix shadow tokens with theme shadows */
   --shadow-1: var(--shadow-xs);
@@ -315,8 +317,8 @@
   /* Card-specific overrides */
   --card-background-color: var(--card-bg);
 
-  /* Subtle focus ring */
-  --focus-8: var(--brand-400);
+  /* Subtle focus ring - violet */
+  --focus-8: #A78BFA;
 }
 
 /* ===========================================
@@ -421,7 +423,7 @@
 
   .input:focus {
     @apply outline-none;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
     border-color: var(--brand-500);
   }
 
@@ -441,7 +443,7 @@
 
   .input-filled:focus {
     @apply outline-none bg-surface-primary;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
     border-color: var(--brand-500);
   }
 
@@ -566,7 +568,7 @@
   .nav-item-dark-active {
     @apply flex items-center gap-3 px-3 py-2.5
            rounded-lg text-sm font-medium shadow-sm;
-    background-color: rgba(59, 130, 246, 0.2);
+    background-color: rgba(139, 92, 246, 0.2);
     color: rgba(96, 165, 250, 1); /* blue-400 */
   }
 
@@ -727,7 +729,7 @@
 
   .surface-card-tinted {
     background-color: var(--surface-tinted);
-    border: 1px solid rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.08);
     border-radius: var(--radius-lg);
   }
 
@@ -783,8 +785,8 @@
   .hero-gradient-strong {
     background: linear-gradient(
       180deg,
-      rgba(59, 130, 246, 0.06) 0%,
-      rgba(59, 130, 246, 0.03) 40%,
+      rgba(139, 92, 246, 0.06) 0%,
+      rgba(139, 92, 246, 0.03) 40%,
       transparent 100%
     );
   }
@@ -792,8 +794,8 @@
   /* Section alternating backgrounds */
   .section-tinted {
     background-color: var(--surface-tinted);
-    border-top: 1px solid rgba(59, 130, 246, 0.05);
-    border-bottom: 1px solid rgba(59, 130, 246, 0.05);
+    border-top: 1px solid rgba(139, 92, 246, 0.05);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.05);
   }
 
   .section-lowered {
@@ -879,7 +881,7 @@
 
   .card-zone-bordered {
     background-color: var(--surface-tinted);
-    border: 1px solid rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.08);
     border-radius: var(--radius-xl);
     padding: 1.5rem;
   }
@@ -918,7 +920,7 @@
   /* Focus ring */
   .focus-ring {
     @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
-    --tw-ring-color: rgba(59, 130, 246, 0.2);
+    --tw-ring-color: rgba(139, 92, 246, 0.2);
   }
 }
 
@@ -930,7 +932,7 @@
 /* TextField focus styling */
 .rt-TextFieldRoot:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
 }
 
 .rt-TextFieldInput:focus {
@@ -942,13 +944,13 @@
 .rt-SelectTrigger:focus-within,
 .rt-SelectTrigger:focus {
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
 }
 
 /* TextArea focus */
 .rt-TextAreaRoot:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
 }
 
 .rt-TextAreaInput:focus {
@@ -960,7 +962,7 @@
 .rt-Button:focus-visible,
 .rt-IconButton:focus-visible {
   outline: none !important;
-  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(59, 130, 246, 0.4) !important;
+  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(139, 92, 246, 0.4) !important;
 }
 
 /* ===========================================
@@ -986,19 +988,19 @@
 .rt-CheckboxRoot:focus-within,
 .rt-RadioGroupItem:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(59, 130, 246, 0.4) !important;
+  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(139, 92, 246, 0.4) !important;
 }
 
 /* Switch focus */
 .rt-SwitchRoot:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(59, 130, 246, 0.4) !important;
+  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(139, 92, 246, 0.4) !important;
 }
 
 /* Tabs trigger focus */
 .rt-TabsTrigger:focus-visible {
   outline: none !important;
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.4) !important;
+  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.4) !important;
 }
 
 /* ===========================================

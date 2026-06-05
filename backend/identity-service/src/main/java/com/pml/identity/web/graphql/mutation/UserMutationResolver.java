@@ -17,7 +17,13 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import com.pml.identity.web.graphql.dto.user.UserMutationResponse;
 
 /**
  * GraphQL Mutation Resolver for User operations.
@@ -242,25 +248,26 @@ public class UserMutationResolver {
      * ARCHITECTURE NOTE: Keycloak is the source of truth for authentication.
      * Creates user in Keycloak FIRST with the password, then stores profile in MongoDB
      * with the Keycloak user ID as the document ID.
+     *
+     * <p>Multi-role support: All users automatically get the CUSTOMER role as the base role.
+     * Use the grantRoleToUser mutation to add additional roles after creation.</p>
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> createUser(@InputArgument Map<String, Object> input) {
         log.info("Admin creating new user with email: {}", input.get("email"));
 
-        String userTypeStr = (String) input.get("userType");
-        UserType userType = userTypeStr != null ? UserType.valueOf(userTypeStr) : UserType.CUSTOMER;
         String password = (String) input.get("password");
 
         // Build user profile data (NO password - Keycloak handles authentication)
         // Note: timestamps are automatically set by Spring Data MongoDB via @CreatedDate/@LastModifiedDate
+        // All users automatically get CUSTOMER role via builder default
         User newUser = User.builder()
                 .username((String) input.get("username"))
                 .email((String) input.get("email"))
                 .firstName((String) input.get("firstName"))
                 .lastName((String) input.get("lastName"))
                 .phoneNumber((String) input.get("phoneNumber"))
-                .userType(userType)
                 .active(true)
                 .build();
 
@@ -271,11 +278,15 @@ public class UserMutationResolver {
                     newUser.setId(keycloakUserId);
                     return userService.createUser(newUser);
                 })
-                .doOnSuccess(u -> log.info("Admin created user: {} (keycloakId={})", u.getEmail(), u.getId()));
+                .doOnSuccess(u -> log.info("Admin created user: {} (keycloakId={}) with roles: {}",
+                        u.getEmail(), u.getId(), u.getRoles()));
     }
 
     /**
      * Update a user (admin only).
+     *
+     * <p>Multi-role support: For role management, use the grantRoleToUser and
+     * revokeRoleFromUser mutations instead.</p>
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
@@ -293,9 +304,6 @@ public class UserMutationResolver {
                     if (input.get("phoneNumber") != null) {
                         existingUser.setPhoneNumber((String) input.get("phoneNumber"));
                     }
-                    if (input.get("userType") != null) {
-                        existingUser.setUserType(UserType.valueOf((String) input.get("userType")));
-                    }
                     if (input.get("bio") != null) {
                         existingUser.setBio((String) input.get("bio"));
                     }
@@ -308,7 +316,7 @@ public class UserMutationResolver {
                     return userService.updateUser(id, existingUser);
                 })
                 .flatMap(user -> keycloakService.updateUser(user).thenReturn(user))
-                .doOnSuccess(u -> log.info("Admin updated user: {}", u.getEmail()));
+                .doOnSuccess(u -> log.info("Admin updated user: {} with roles: {}", u.getEmail(), u.getRoles()));
     }
 
     /**
@@ -393,39 +401,188 @@ public class UserMutationResolver {
                 });
     }
 
+    // ==========================================
+    // Multi-Role Management Mutations (OWASP Compliant)
+    // ==========================================
+
     /**
-     * Update user roles in Keycloak (admin only).
+     * Add a role to a user.
+     *
+     * OWASP Compliance:
+     * - A01:2021 Broken Access Control: Admin-only operation with audit logging
+     * - A04:2021 Insecure Design: Validates role combinations before applying
+     * - A09:2021 Security Logging: Logs role changes with actor information
+     *
+     * @param userId The user ID to add the role to
+     * @param role The role to add
+     * @return UserMutationResponse with success/failure and updated user
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<Boolean> updateUserRoles(
+    public Mono<UserMutationResponse> addUserRole(
+            @AuthenticationPrincipal Jwt jwt,
             @InputArgument String userId,
-            @InputArgument java.util.List<String> roles) {
-        log.info("Admin updating roles for user {} to: {}", userId, roles);
+            @InputArgument UserType role) {
 
-        return keycloakService.getUserRoles(userId)
-                .flatMap(currentRoles -> {
-                    // Remove roles not in new list
-                    java.util.List<Mono<Void>> removeOperations = currentRoles.stream()
-                            .filter(r -> !roles.contains(r) && !r.equals("offline_access") && !r.equals("uma_authorization"))
-                            .map(r -> keycloakService.removeRoleFromUser(userId, r))
-                            .toList();
+        if (jwt == null) {
+            log.warn("addUserRole called without authentication");
+            return Mono.just(UserMutationResponse.failure("Authentication required"));
+        }
 
-                    // Add new roles
-                    java.util.List<Mono<Void>> addOperations = roles.stream()
-                            .filter(r -> !currentRoles.contains(r))
-                            .map(r -> keycloakService.addRoleToUser(userId, r))
-                            .toList();
+        String adminId = jwt.getSubject();
+        log.info("SECURITY_AUDIT: Admin {} adding role {} to user {}", adminId, role, userId);
 
-                    return Mono.when(removeOperations)
-                            .then(Mono.when(addOperations));
+        // Validate input
+        if (userId == null || userId.isBlank()) {
+            return Mono.just(UserMutationResponse.failure("User ID is required"));
+        }
+        if (role == null) {
+            return Mono.just(UserMutationResponse.failure("Role is required"));
+        }
+
+        // CUSTOMER role is already present for all users
+        if (role == UserType.CUSTOMER) {
+            return userService.findById(userId)
+                    .map(user -> UserMutationResponse.success(user, "CUSTOMER role is already present for all users"))
+                    .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+        }
+
+        return userService.addRole(userId, role, adminId)
+                .map(user -> {
+                    log.info("SECURITY_AUDIT: Role {} added to user {} by admin {}", role, userId, adminId);
+                    return UserMutationResponse.success(user, "Role " + role + " added successfully");
                 })
-                .thenReturn(true)
-                .doOnSuccess(v -> log.info("Roles updated for user: {}", userId))
-                .onErrorResume(e -> {
-                    log.error("Failed to update roles for user {}: {}", userId, e.getMessage());
-                    return Mono.just(false);
-                });
+                .onErrorResume(IllegalArgumentException.class, e -> {
+                    log.warn("SECURITY_AUDIT: Failed to add role {} to user {}: {}", role, userId, e.getMessage());
+                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                })
+                .onErrorResume(IllegalStateException.class, e -> {
+                    log.warn("SECURITY_AUDIT: Invalid state when adding role {} to user {}: {}", role, userId, e.getMessage());
+                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                })
+                .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+    }
+
+    /**
+     * Remove a role from a user.
+     *
+     * OWASP Compliance:
+     * - A01:2021 Broken Access Control: Admin-only operation, CUSTOMER role cannot be removed
+     * - A04:2021 Insecure Design: Validates role removal rules before applying
+     * - A09:2021 Security Logging: Logs role changes with actor information
+     *
+     * @param userId The user ID to remove the role from
+     * @param role The role to remove
+     * @return UserMutationResponse with success/failure and updated user
+     */
+    @DgsMutation
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public Mono<UserMutationResponse> removeUserRole(
+            @AuthenticationPrincipal Jwt jwt,
+            @InputArgument String userId,
+            @InputArgument UserType role) {
+
+        if (jwt == null) {
+            log.warn("removeUserRole called without authentication");
+            return Mono.just(UserMutationResponse.failure("Authentication required"));
+        }
+
+        String adminId = jwt.getSubject();
+        log.info("SECURITY_AUDIT: Admin {} removing role {} from user {}", adminId, role, userId);
+
+        // Validate input
+        if (userId == null || userId.isBlank()) {
+            return Mono.just(UserMutationResponse.failure("User ID is required"));
+        }
+        if (role == null) {
+            return Mono.just(UserMutationResponse.failure("Role is required"));
+        }
+
+        // CUSTOMER role cannot be removed (it's the base role)
+        if (role == UserType.CUSTOMER) {
+            log.warn("SECURITY_AUDIT: Attempted to remove CUSTOMER role from user {} by admin {}", userId, adminId);
+            return Mono.just(UserMutationResponse.failure("CUSTOMER role cannot be removed - it is the base role for all users"));
+        }
+
+        return userService.removeRole(userId, role, adminId)
+                .map(user -> {
+                    log.info("SECURITY_AUDIT: Role {} removed from user {} by admin {}", role, userId, adminId);
+                    return UserMutationResponse.success(user, "Role " + role + " removed successfully");
+                })
+                .onErrorResume(IllegalArgumentException.class, e -> {
+                    log.warn("SECURITY_AUDIT: Failed to remove role {} from user {}: {}", role, userId, e.getMessage());
+                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                })
+                .onErrorResume(IllegalStateException.class, e -> {
+                    log.warn("SECURITY_AUDIT: Invalid state when removing role {} from user {}: {}", role, userId, e.getMessage());
+                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                })
+                .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+    }
+
+    /**
+     * Set all roles for a user (replaces existing roles).
+     *
+     * OWASP Compliance:
+     * - A01:2021 Broken Access Control: Admin-only operation, validates CUSTOMER role is included
+     * - A04:2021 Insecure Design: Validates role combinations before applying
+     * - A09:2021 Security Logging: Logs complete role changes with actor information
+     *
+     * @param userId The user ID to set roles for
+     * @param roles The complete set of roles (must include CUSTOMER)
+     * @return UserMutationResponse with success/failure and updated user
+     */
+    @DgsMutation
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public Mono<UserMutationResponse> setUserRoles(
+            @AuthenticationPrincipal Jwt jwt,
+            @InputArgument String userId,
+            @InputArgument List<UserType> roles) {
+
+        if (jwt == null) {
+            log.warn("setUserRoles called without authentication");
+            return Mono.just(UserMutationResponse.failure("Authentication required"));
+        }
+
+        String adminId = jwt.getSubject();
+        log.info("SECURITY_AUDIT: Admin {} setting roles for user {} to: {}", adminId, userId, roles);
+
+        // Validate input
+        if (userId == null || userId.isBlank()) {
+            return Mono.just(UserMutationResponse.failure("User ID is required"));
+        }
+        if (roles == null || roles.isEmpty()) {
+            return Mono.just(UserMutationResponse.failure("At least one role is required"));
+        }
+
+        // CUSTOMER role must be included
+        if (!roles.contains(UserType.CUSTOMER)) {
+            log.warn("SECURITY_AUDIT: Attempted to set roles without CUSTOMER for user {} by admin {}", userId, adminId);
+            return Mono.just(UserMutationResponse.failure("CUSTOMER role must be included - it is the base role for all users"));
+        }
+
+        // Convert to Set for the service
+        Set<UserType> roleSet = EnumSet.copyOf(roles);
+
+        // Validate role combination
+        if (!UserType.isValidRoleCombination(roleSet)) {
+            return Mono.just(UserMutationResponse.failure("Invalid role combination"));
+        }
+
+        return userService.setRoles(userId, roleSet, adminId)
+                .map(user -> {
+                    log.info("SECURITY_AUDIT: Roles set to {} for user {} by admin {}", roleSet, userId, adminId);
+                    return UserMutationResponse.success(user, "Roles updated successfully");
+                })
+                .onErrorResume(IllegalArgumentException.class, e -> {
+                    log.warn("SECURITY_AUDIT: Failed to set roles for user {}: {}", userId, e.getMessage());
+                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                })
+                .onErrorResume(IllegalStateException.class, e -> {
+                    log.warn("SECURITY_AUDIT: Invalid state when setting roles for user {}: {}", userId, e.getMessage());
+                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                })
+                .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
     }
 
     // ==========================================

@@ -1,0 +1,37 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Provinces Schema - OWASP Compliant",
+    "description": "Provinces/regions/states",
+    "required": [
+      "name",
+      "country",
+      "isActive"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "code": {
+        "bsonType": ["string", "null"],
+        "maxLength": 10,
+        "description": "Province code or abbreviation"
+      },
+      "country": {
+        "bsonType": "string",
+        "minLength": 2,
+        "maxLength": 2,
+        "description": "ISO 3166-1 alpha-2 country code (e.g., ZM for Zambia)"
+      },
+      "isActive": {
+        "bsonType": "bool"
+      }
+    },
+    "additionalProperties": false
+  }
+}

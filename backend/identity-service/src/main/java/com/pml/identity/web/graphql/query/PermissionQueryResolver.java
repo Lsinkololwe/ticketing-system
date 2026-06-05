@@ -84,7 +84,7 @@ public class PermissionQueryResolver {
      * Get permissions for the currently authenticated user based on their roles.
      *
      * <p>This query extracts roles from the JWT token (realm_access.roles,
-     * resource_access, and userType claim) and looks up the associated
+     * resource_access) and looks up the associated
      * permissions from the role_permissions collection.</p>
      *
      * @param jwt The authenticated user's JWT token
@@ -103,10 +103,9 @@ public class PermissionQueryResolver {
 
         if (userRoles.isEmpty()) {
             log.warn("GraphQL query: currentUserPermissions - no valid roles found in JWT. " +
-                    "JWT claims: realm_access={}, resource_access={}, userType={}",
+                    "JWT claims: realm_access={}, resource_access={}",
                     jwt.getClaim("realm_access"),
-                    jwt.getClaim("resource_access"),
-                    jwt.getClaimAsString("userType"));
+                    jwt.getClaim("resource_access"));
             return Mono.just(List.of());
         }
 
@@ -120,7 +119,7 @@ public class PermissionQueryResolver {
      * <ul>
      *   <li>realm_access.roles (Keycloak realm roles)</li>
      *   <li>resource_access.{client}.roles (Keycloak client roles)</li>
-     *   <li>userType claim (application-specific role)</li>
+     *   <li>realm_access.roles (realm-level roles)</li>
      * </ul>
      *
      * <p>Note: Role names are normalized to UPPERCASE to match the role_permissions
@@ -159,12 +158,6 @@ public class PermissionQueryResolver {
                     }
                 }
             });
-        }
-
-        // Extract userType claim
-        String userType = jwt.getClaimAsString("userType");
-        if (userType != null && !userType.isBlank()) {
-            roles.add(userType.toUpperCase());
         }
 
         return roles.stream().distinct().toList();

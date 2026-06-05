@@ -1,7 +1,10 @@
 package com.pml.catalog;
 
+import com.pml.shared.config.MongoSchemaValidationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.ComponentScan;
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
 
 /**
@@ -31,6 +34,8 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
  */
 @SpringBootApplication
 @EnableReactiveMongoRepositories
+@EnableConfigurationProperties(MongoSchemaValidationProperties.class)
+@ComponentScan(basePackages = {"com.pml.catalog", "com.pml.shared"})
 public class CatalogServiceApplication {
 
     public static void main(String[] args) {

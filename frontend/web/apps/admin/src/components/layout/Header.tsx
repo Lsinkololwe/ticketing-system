@@ -6,7 +6,6 @@
  * Visual design:
  * - Frosted glass effect with backdrop blur
  * - Subtle border with accent color
- * - Floating search bar
  * - Professional user menu
  *
  * Features:
@@ -17,7 +16,7 @@
  */
 
 import { Box, Flex, Text, Button, DropdownMenu, Avatar, IconButton } from '@radix-ui/themes';
-import { Bell, Search, LogOut, Settings, UserCircle, Menu } from 'iconoir-react';
+import { Bell, LogOut, Settings, UserCircle, Menu } from 'iconoir-react';
 import { useSession, signOutComplete } from '@/lib/auth/client';
 import { ThemeToggleDropdown } from '@/components/ui/ThemeToggle';
 
@@ -81,9 +80,8 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
             px="4"
             style={{ height: '100%' }}
           >
-            {/* Left: Menu + Search */}
-            <Flex align="center" gap="3" style={{ flex: 1 }}>
-              {/* Mobile Menu Button */}
+            {/* Left: Menu Button (mobile) */}
+            <Flex align="center" gap="3">
               {showMenuButton && (
                 <IconButton
                   variant="ghost"
@@ -94,57 +92,6 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
                   <Menu style={{ width: 20, height: 20 }} />
                 </IconButton>
               )}
-
-              {/* Search Bar - Glass style */}
-              <Box
-                className="header-search"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '10px 14px',
-                  backgroundColor: 'var(--gray-a3)',
-                  borderRadius: '10px',
-                  border: '1px solid var(--gray-a4)',
-                  flex: 1,
-                  maxWidth: '420px',
-                  cursor: 'pointer',
-                  transition: 'all 150ms ease',
-                }}
-              >
-                <Search
-                  style={{
-                    width: 16,
-                    height: 16,
-                    color: 'var(--gray-10)',
-                    flexShrink: 0,
-                  }}
-                />
-                <Text size="2" style={{ color: 'var(--gray-10)', flex: 1 }}>
-                  Search events, organizers...
-                </Text>
-                <Flex
-                  align="center"
-                  gap="1"
-                  style={{
-                    backgroundColor: 'var(--gray-a3)',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--gray-a4)',
-                  }}
-                >
-                  <Text
-                    size="1"
-                    style={{
-                      color: 'var(--gray-9)',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '11px',
-                    }}
-                  >
-                    ⌘K
-                  </Text>
-                </Flex>
-              </Box>
             </Flex>
 
             {/* Right: Actions */}
@@ -263,28 +210,12 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
 
       {/* Hover styles */}
       <style jsx global>{`
-        .header-search:hover {
-          border-color: var(--violet-a6) !important;
-          background-color: var(--gray-a4) !important;
-        }
-        .header-search:focus-within {
-          border-color: var(--violet-8) !important;
-          box-shadow: 0 0 0 3px var(--violet-a4);
-        }
         .user-menu-trigger:hover {
           background-color: var(--gray-a3) !important;
         }
         @media (max-width: 640px) {
           .user-info {
             display: none !important;
-          }
-        }
-        @media (max-width: 480px) {
-          .header-search {
-            max-width: 200px !important;
-          }
-          .header-search .search-text {
-            display: none;
           }
         }
       `}</style>

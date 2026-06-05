@@ -10,7 +10,20 @@
  * @see https://better-auth.com/docs/integrations/next
  */
 
-import { auth } from '@/lib/auth';
+import { authPromise } from '@/lib/auth';
 import { toNextJsHandler } from 'better-auth/next-js';
 
-export const { GET, POST } = toNextJsHandler(auth);
+// Create handlers that await the auth instance
+const getHandler = async (request: Request) => {
+  const auth = await authPromise;
+  const { GET } = toNextJsHandler(auth);
+  return GET(request);
+};
+
+const postHandler = async (request: Request) => {
+  const auth = await authPromise;
+  const { POST } = toNextJsHandler(auth);
+  return POST(request);
+};
+
+export { getHandler as GET, postHandler as POST };

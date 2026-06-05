@@ -1,0 +1,50 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Permissions Schema - OWASP Compliant",
+    "description": "System permissions that can be assigned to roles",
+    "required": [
+      "name",
+      "isActive",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 3,
+        "maxLength": 200,
+        "description": "Unique permission name (e.g., MANAGE_EVENTS, VIEW_REPORTS)"
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "category": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100,
+        "description": "Permission category (e.g., EVENT_MANAGEMENT, USER_MANAGEMENT)"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "createdBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "updatedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "isActive": {
+        "bsonType": "bool"
+      }
+    },
+    "additionalProperties": false
+  }
+}

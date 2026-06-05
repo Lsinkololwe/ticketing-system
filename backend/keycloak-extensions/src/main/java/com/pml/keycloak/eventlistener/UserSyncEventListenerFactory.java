@@ -46,7 +46,9 @@ public class UserSyncEventListenerFactory implements EventListenerProviderFactor
             return new NoOpEventListener();
         }
 
-        return new UserSyncEventListener(identityServiceClient, realmName);
+        // Pass KeycloakSession to EventListener for direct user data access
+        // This follows Keycloak best practices - no admin credentials needed
+        return new UserSyncEventListener(session, identityServiceClient, realmName);
     }
 
     @Override

@@ -1,0 +1,247 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Payout Requests Schema - OWASP Compliant",
+    "description": "Organizer payout requests with approval workflow",
+    "required": [
+      "requestId",
+      "organizerId",
+      "organizationId",
+      "escrowAccountId",
+      "bankAccountId",
+      "requestedAmount",
+      "netPayoutAmount",
+      "currency",
+      "status",
+      "requestedAt",
+      "requestedBy",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "requestId": {
+        "bsonType": "string",
+        "pattern": "^OUT-\\d{8}-[A-Z0-9]{8}$",
+        "description": "OWASP A03 - Request ID format"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "organizerName": {
+        "bsonType": ["string", "null"],
+        "maxLength": 200
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation for payout tracking"
+      },
+      "eventId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "eventTitle": {
+        "bsonType": ["string", "null"],
+        "maxLength": 300
+      },
+      "escrowAccountId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "bankAccountId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "bankAccountName": {
+        "bsonType": ["string", "null"],
+        "maxLength": 200
+      },
+      "bankName": {
+        "bsonType": ["string", "null"],
+        "maxLength": 200
+      },
+      "accountNumber": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[0-9]{10,20}$"
+      },
+      "requestedAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "platformFee": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "processingFee": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "taxAmount": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "netPayoutAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "PENDING_FINANCE_APPROVAL", "APPROVED", "PROCESSING", "COMPLETED", "FAILED", "REJECTED", "CANCELLED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "payoutMethod": {
+        "bsonType": ["string", "null"],
+        "enum": ["BANK_TRANSFER", "MOBILE_MONEY", null]
+      },
+      "requestedAt": {
+        "bsonType": "date"
+      },
+      "requestedBy": {
+        "bsonType": "string",
+        "maxLength": 100
+      },
+      "approvedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "approvedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "rejectedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "rejectedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "rejectionReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "processedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "processedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "expectedPayoutDate": {
+        "bsonType": ["date", "null"]
+      },
+      "actualPayoutDate": {
+        "bsonType": ["date", "null"]
+      },
+      "paymentReference": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "transactionId": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "externalTransactionId": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "pawaPayPayoutId": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "notes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
+      },
+      "metadata": {
+        "bsonType": ["object", "null"]
+      },
+      "history": {
+        "bsonType": ["array", "null"]
+      },
+      "issueType": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "resolutionType": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "reviewStatus": {
+        "bsonType": ["string", "null"],
+        "maxLength": 50
+      },
+      "isStuck": {
+        "bsonType": ["bool", "null"]
+      },
+      "stuckReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "stuckAt": {
+        "bsonType": ["date", "null"]
+      },
+      "reviewedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "reviewedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "reviewNotes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
+      },
+      "resolvedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "resolvedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "resolutionNotes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
+      },
+      "retryCount": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "lastRetryAt": {
+        "bsonType": ["date", "null"]
+      },
+      "lastError": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000
+      },
+      "nextRetryAt": {
+        "bsonType": ["date", "null"]
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "createdBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "updatedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "version": {
+        "bsonType": ["long", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

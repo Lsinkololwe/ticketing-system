@@ -1,0 +1,59 @@
+{
+  "name": "@pml.tickets/organization-admin",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/organization-admin/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/next:build",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/organization-admin"
+      },
+      "configurations": {
+        "development": {
+          "outputPath": "apps/organization-admin"
+        },
+        "production": {}
+      }
+    },
+    "dev": {
+      "executor": "@nx/next:server",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "@pml.tickets/organization-admin:build",
+        "dev": true,
+        "port": 3003
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "@pml.tickets/organization-admin:build:development",
+          "dev": true,
+          "port": 3003
+        },
+        "production": {
+          "buildTarget": "@pml.tickets/organization-admin:build:production",
+          "dev": false
+        }
+      }
+    },
+    "start": {
+      "executor": "@nx/next:server",
+      "defaultConfiguration": "production",
+      "options": {
+        "buildTarget": "@pml.tickets/organization-admin:build",
+        "port": 3003
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "@pml.tickets/organization-admin:build:development"
+        },
+        "production": {
+          "buildTarget": "@pml.tickets/organization-admin:build:production"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Event Categories Schema - OWASP Compliant",
+    "description": "Categories for organizing and filtering events",
+    "required": [
+      "name",
+      "slug",
+      "isActive"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "slug": {
+        "bsonType": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        "description": "OWASP A03 - URL-safe slug format"
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "iconUrl": {
+        "bsonType": ["string", "null"],
+        "pattern": "^https?://.*",
+        "maxLength": 500
+      },
+      "parentCategoryId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "For hierarchical categories"
+      },
+      "sortOrder": {
+        "bsonType": ["int", "null"],
+        "minimum": 0
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "createdAt": {
+        "bsonType": ["date", "null"]
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -11,7 +11,12 @@ import reactor.core.publisher.Mono;
  * Organization Service Interface
  *
  * Manages organization lifecycle and operations.
- * Organizations are created automatically when an OrganizerProfile is approved.
+ *
+ * PROGRESSIVE ONBOARDING (Industry Standard):
+ * Organizations are created LAZILY via OrganizationOnboardingService when a user
+ * creates their first event. This interface manages existing organizations.
+ *
+ * @see OrganizationOnboardingService For lazy organization creation
  */
 public interface OrganizationService {
 
@@ -35,15 +40,6 @@ public interface OrganizationService {
     Mono<Organization> findByOwnerId(String ownerId);
 
     /**
-     * Find organization by organizer profile ID.
-     * Use this to find the Organization created from a specific OrganizerProfile.
-     *
-     * @param organizerProfileId The OrganizerProfile ID
-     * @return The Organization if found
-     */
-    Mono<Organization> findByOrganizerProfileId(String organizerProfileId);
-
-    /**
      * Find all organizations with pagination (admin only)
      */
     Flux<Organization> findAll(Pageable pageable);
@@ -59,6 +55,16 @@ public interface OrganizationService {
     Flux<Organization> findByStatus(OrganizationStatus status, Pageable pageable);
 
     /**
+     * Find organizations by status (no pagination)
+     */
+    Flux<Organization> findByStatus(OrganizationStatus status);
+
+    /**
+     * Find organizations in approval workflow (DRAFT, PENDING_REVIEW, CHANGES_REQUESTED, APPROVED, REJECTED)
+     */
+    Flux<Organization> findInApprovalWorkflow();
+
+    /**
      * Search organizations by name
      */
     Flux<Organization> searchByName(String query, OrganizationStatus status, Pageable pageable);
@@ -70,12 +76,8 @@ public interface OrganizationService {
 
     // ─────────────────────────────────────────────────────────────────────
     // Write Operations
+    // NOTE: Organization creation is now handled by OrganizationOnboardingService
     // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Create organization (internal - called when organizer is approved)
-     */
-    Mono<Organization> createFromOrganizerProfile(String organizerProfileId, String ownerId);
 
     /**
      * Update organization details

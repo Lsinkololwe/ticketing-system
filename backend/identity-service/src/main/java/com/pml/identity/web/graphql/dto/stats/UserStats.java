@@ -38,6 +38,6 @@ public class UserStats {
     private Double growthRate;  // Month-over-month percentage
 
     // Breakdowns
-    private List<UserTypeStats> usersByType;
+    private List<UserRoleStats> usersByRole;
     private List<UserStatusStats> usersByStatus;
 }

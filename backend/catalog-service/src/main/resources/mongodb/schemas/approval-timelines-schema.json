@@ -1,0 +1,43 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Approval Timelines Schema - OWASP Compliant",
+    "description": "Tracks timeline entries for event approval workflow",
+    "required": [
+      "eventId",
+      "action",
+      "performedBy",
+      "timestamp"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "action": {
+        "bsonType": "string",
+        "enum": ["SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "REVISION_REQUESTED", "RESUBMITTED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "performedBy": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "comments": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000
+      },
+      "timestamp": {
+        "bsonType": "date"
+      },
+      "metadata": {
+        "bsonType": ["object", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

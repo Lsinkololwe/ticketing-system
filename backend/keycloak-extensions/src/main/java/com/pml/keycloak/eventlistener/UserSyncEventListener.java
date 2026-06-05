@@ -2,6 +2,7 @@ package com.pml.keycloak.eventlistener;
 
 import com.pml.keycloak.client.IdentityServiceClient;
 import com.pml.keycloak.client.IdentityServiceClient.KeycloakEventData;
+import com.pml.keycloak.client.IdentityServiceClient.KeycloakUserData;
 import org.jboss.logging.Logger;
 import org.keycloak.events.Event;
 import org.keycloak.events.EventListenerProvider;
@@ -9,24 +10,35 @@ import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.events.admin.OperationType;
 import org.keycloak.events.admin.ResourceType;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleModel;
+import org.keycloak.models.UserModel;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Keycloak EventListener that synchronizes user changes to MongoDB via the Identity Service.
+ *
+ * OWASP Best Practice Implementation:
+ * - Uses KeycloakSession for direct user data access (no admin credentials needed)
+ * - Sends full user data to Identity Service (no callback required)
+ * - No sensitive credentials stored in Identity Service
  *
  * This listener handles:
  * - User events (REGISTER, UPDATE_PROFILE, LOGIN, etc.)
  * - Admin events (CREATE, UPDATE, DELETE users via Admin Console/API)
  *
- * When events occur, this listener calls the Identity Service webhook endpoints
- * to ensure MongoDB stays in sync with Keycloak as the source of truth.
+ * When events occur, this listener fetches user data directly from the session
+ * and sends it to the Identity Service for storage in MongoDB.
  *
  * Configuration:
- * - Requires IDENTITY_SERVICE_URL environment variable (or OTP_SERVICE_URL for backward compatibility)
- * - Requires OTP_CLIENT_ID and OTP_CLIENT_SECRET for OAuth2 authentication
- * - Requires KEYCLOAK_TOKEN_URL for token endpoint
+ * - Requires IDENTITY_SERVICE_URL environment variable
+ * - Optional: OTP_CLIENT_ID/SECRET for authenticated sync endpoint
  */
 public class UserSyncEventListener implements EventListenerProvider {
 
@@ -49,10 +61,12 @@ public class UserSyncEventListener implements EventListenerProvider {
             EventType.LOGOUT
     );
 
+    private final KeycloakSession session;
     private final IdentityServiceClient identityServiceClient;
     private final String realmName;
 
-    public UserSyncEventListener(IdentityServiceClient identityServiceClient, String realmName) {
+    public UserSyncEventListener(KeycloakSession session, IdentityServiceClient identityServiceClient, String realmName) {
+        this.session = session;
         this.identityServiceClient = identityServiceClient;
         this.realmName = realmName;
         LOG.infof("UserSyncEventListener initialized for realm: %s", realmName);
@@ -128,7 +142,30 @@ public class UserSyncEventListener implements EventListenerProvider {
     private void handleUserSyncEvent(String userId, EventType eventType, Event event) {
         LOG.infof("Syncing user %s due to event: %s", userId, eventType);
 
-        IdentityServiceClient.SyncResult result = identityServiceClient.syncUser(userId, eventType.name());
+        // Get realm from session context
+        RealmModel realm = session.getContext().getRealm();
+        if (realm == null) {
+            // Try to get realm by name
+            realm = session.realms().getRealmByName(realmName);
+        }
+
+        if (realm == null) {
+            LOG.errorf("Could not find realm for user sync: %s", realmName);
+            return;
+        }
+
+        // Fetch user data directly from Keycloak session (OWASP best practice - no admin credentials needed)
+        UserModel user = session.users().getUserById(realm, userId);
+        if (user == null) {
+            LOG.warnf("User not found in Keycloak: %s", userId);
+            return;
+        }
+
+        // Build full user data payload
+        KeycloakUserData userData = buildUserData(user, realm, eventType.name());
+
+        // Send full user data to Identity Service
+        IdentityServiceClient.SyncResult result = identityServiceClient.syncUserWithData(userData);
 
         if (result.isSuccess()) {
             LOG.infof("Successfully synced user %s for event %s", userId, eventType);
@@ -136,6 +173,54 @@ public class UserSyncEventListener implements EventListenerProvider {
             LOG.warnf("Failed to sync user %s for event %s: %s",
                     userId, eventType, result.getMessage());
         }
+    }
+
+    /**
+     * Build user data payload from Keycloak UserModel.
+     * Extracts all relevant user information including roles and attributes.
+     */
+    private KeycloakUserData buildUserData(UserModel user, RealmModel realm, String eventType) {
+        KeycloakUserData data = new KeycloakUserData();
+        data.setId(user.getId());
+        data.setUsername(user.getUsername());
+        data.setEmail(user.getEmail());
+        data.setFirstName(user.getFirstName());
+        data.setLastName(user.getLastName());
+        data.setEmailVerified(user.isEmailVerified());
+        data.setEnabled(user.isEnabled());
+        data.setEventType(eventType);
+        data.setTimestamp(Instant.now().toEpochMilli());
+
+        // Extract realm roles
+        Set<String> roles = user.getRealmRoleMappingsStream()
+                .map(RoleModel::getName)
+                .collect(Collectors.toSet());
+        data.setRoles(roles);
+
+        // Extract attributes
+        Map<String, List<String>> attributes = user.getAttributes();
+        if (attributes != null) {
+            data.setAttributes(attributes);
+
+            // Extract specific attributes for convenience
+            List<String> phoneNumbers = attributes.get("phoneNumber");
+            if (phoneNumbers != null && !phoneNumbers.isEmpty()) {
+                data.setPhoneNumber(phoneNumbers.get(0));
+            }
+
+            List<String> phoneVerified = attributes.get("phoneVerified");
+            if (phoneVerified != null && !phoneVerified.isEmpty()) {
+                data.setPhoneVerified(Boolean.parseBoolean(phoneVerified.get(0)));
+            }
+
+            // Extract accountType (from registration)
+            List<String> accountTypes = attributes.get("accountType");
+            if (accountTypes != null && !accountTypes.isEmpty()) {
+                data.setAccountTypes(accountTypes);
+            }
+        }
+
+        return data;
     }
 
     private void handleLoginEvent(String userId, EventType eventType, Event event) {
@@ -162,19 +247,11 @@ public class UserSyncEventListener implements EventListenerProvider {
 
         LOG.infof("Processing admin %s for user: %s", operationType, userId);
 
-        KeycloakEventData eventData = createAdminEventData(event, userId, operationType);
-
         switch (operationType) {
             case CREATE:
-                // New user created via admin console
-                IdentityServiceClient.SyncResult createResult = identityServiceClient.syncUser(userId, "ADMIN_CREATE");
-                logSyncResult("CREATE", userId, createResult);
-                break;
-
             case UPDATE:
-                // User updated via admin console
-                IdentityServiceClient.SyncResult updateResult = identityServiceClient.syncUser(userId, "ADMIN_UPDATE");
-                logSyncResult("UPDATE", userId, updateResult);
+                // Sync user using full data from session (OWASP best practice)
+                syncUserWithFullData(userId, "ADMIN_" + operationType.name());
                 break;
 
             case DELETE:
@@ -198,9 +275,39 @@ public class UserSyncEventListener implements EventListenerProvider {
 
         LOG.infof("Processing role mapping change for user: %s (operation: %s)", userId, operationType);
 
-        // Sync user to update role information
-        IdentityServiceClient.SyncResult result = identityServiceClient.syncUser(userId, "ROLE_MAPPING_CHANGE");
-        logSyncResult("ROLE_MAPPING", userId, result);
+        // Sync user with full data to update role information (OWASP best practice)
+        syncUserWithFullData(userId, "ROLE_MAPPING_CHANGE");
+    }
+
+    /**
+     * Sync user using full data from Keycloak session.
+     * This is the OWASP-compliant approach - no admin credentials needed in Identity Service.
+     */
+    private void syncUserWithFullData(String userId, String eventType) {
+        // Get realm from session context
+        RealmModel realm = session.getContext().getRealm();
+        if (realm == null) {
+            realm = session.realms().getRealmByName(realmName);
+        }
+
+        if (realm == null) {
+            LOG.errorf("Could not find realm for user sync: %s", realmName);
+            return;
+        }
+
+        // Fetch user data directly from Keycloak session
+        UserModel user = session.users().getUserById(realm, userId);
+        if (user == null) {
+            LOG.warnf("User not found in Keycloak: %s", userId);
+            return;
+        }
+
+        // Build full user data payload
+        KeycloakUserData userData = buildUserData(user, realm, eventType);
+
+        // Send full user data to Identity Service
+        IdentityServiceClient.SyncResult result = identityServiceClient.syncUserWithData(userData);
+        logSyncResult(eventType, userId, result);
     }
 
     // ========================================================================
@@ -231,12 +338,16 @@ public class UserSyncEventListener implements EventListenerProvider {
             return false;
         }
 
-        // Optionally filter by realm name if configured
-        if (realmName != null && !realmName.isEmpty() && !realmName.equals(event.getRealmId())) {
-            // Admin events use realmId instead of realmName
-            // This comparison may need adjustment based on how Keycloak represents the realm
-            LOG.debugf("Ignoring admin event from realm %s", event.getRealmId());
-            return false;
+        // Filter by realm - admin events use realmId (UUID), so we need to look up the realm
+        if (realmName != null && !realmName.isEmpty()) {
+            String eventRealmId = event.getRealmId();
+            // Try to get realm from session and compare names
+            RealmModel eventRealm = session.realms().getRealm(eventRealmId);
+            if (eventRealm == null || !realmName.equals(eventRealm.getName())) {
+                LOG.debugf("Ignoring admin event from realm %s (configured realm: %s)",
+                        eventRealm != null ? eventRealm.getName() : eventRealmId, realmName);
+                return false;
+            }
         }
 
         return true;

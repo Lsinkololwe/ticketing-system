@@ -1,0 +1,291 @@
+# ═══════════════════════════════════════════════════════════════════════════════════
+# PRODUCTION CONFIGURATION - API GATEWAY
+# Optimized for 10+ million concurrent requests
+# OWASP Top 10 Compliant
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+server:
+  port: 8080
+
+  # ─────────────────────────────────────────────────────────────────────────────────
+  # TLS/SSL Configuration (A02:2021 - Cryptographic Failures)
+  # ─────────────────────────────────────────────────────────────────────────────────
+  ssl:
+    enabled: ${SSL_ENABLED:true}
+    key-store: ${SSL_KEYSTORE_PATH:classpath:keystore.p12}
+    key-store-password: ${SSL_KEYSTORE_PASSWORD}
+    key-store-type: PKCS12
+    protocol: TLS
+    enabled-protocols: TLSv1.3,TLSv1.2
+    ciphers:
+      - TLS_AES_256_GCM_SHA384
+      - TLS_AES_128_GCM_SHA256
+      - TLS_CHACHA20_POLY1305_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+
+  # ─────────────────────────────────────────────────────────────────────────────────
+  # Netty Server Tuning for High Scale
+  # ─────────────────────────────────────────────────────────────────────────────────
+  netty:
+    # Connection handling
+    connection-timeout: 5s
+    idle-timeout: 60s
+
+    # Request size limits (A03:2021 - Injection)
+    max-initial-line-length: 8192        # Max URI length
+    max-chunk-size: 8192                 # Max chunk in chunked encoding
+    h2c-max-content-length: 1048576      # 1MB for HTTP/2 clear text
+
+  # Graceful shutdown for zero-downtime deployments
+  shutdown: graceful
+
+  # Compression for bandwidth savings
+  compression:
+    enabled: true
+    mime-types: application/json,application/graphql+json,text/html,text/plain
+    min-response-size: 1024
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
+
+  # ─────────────────────────────────────────────────────────────────────────────────
+  # Request Size Limits (A03:2021 - Injection Prevention)
+  # ─────────────────────────────────────────────────────────────────────────────────
+  codec:
+    max-in-memory-size: 10MB      # Max request body in memory
+
+  webflux:
+    # Request buffer limits
+    max-in-memory-size: 10MB
+
+  # ─────────────────────────────────────────────────────────────────────────────────
+  # Redis Configuration - Clustered for Scale
+  # ─────────────────────────────────────────────────────────────────────────────────
+  data:
+    redis:
+      # For Redis Cluster (10M scale)
+      cluster:
+        nodes: ${REDIS_CLUSTER_NODES:redis-node-1:6379,redis-node-2:6379,redis-node-3:6379}
+        max-redirects: 3
+      # Connection pool for high concurrency
+      lettuce:
+        pool:
+          max-active: 1000           # Max connections (scale requirement)
+          max-idle: 200              # Keep connections ready
+          min-idle: 50               # Minimum hot connections
+          max-wait: 100ms            # Fail fast if no connection available
+        cluster:
+          refresh:
+            adaptive: true
+            period: 30s
+
+  cloud:
+    gateway:
+      # ─────────────────────────────────────────────────────────────────────────
+      # Global Gateway Settings
+      # ─────────────────────────────────────────────────────────────────────────
+      httpclient:
+        # Connection pool for downstream services
+        pool:
+          type: elastic                    # Grows/shrinks based on demand
+          max-connections: 10000           # 10K connections for 10M requests
+          acquire-timeout: 1000            # 1s to acquire connection
+          max-idle-time: 60s               # Release idle connections
+          max-life-time: 300s              # Recycle connections every 5min
+          eviction-interval: 30s           # Check for stale connections
+
+        # Timeouts (prevent slow backends from blocking gateway)
+        connect-timeout: 2000              # 2s to establish connection
+        response-timeout: 10s              # 10s max for response
+
+        # Compression
+        compression: true
+
+        # SSL for downstream services
+        ssl:
+          use-insecure-trust-manager: false
+          handshake-timeout: 5s
+
+      server:
+        webflux:
+          # ─────────────────────────────────────────────────────────────────────
+          # CORS - Restrict to production domains only
+          # ─────────────────────────────────────────────────────────────────────
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - "${FRONTEND_URL}"
+                  - "${ADMIN_URL}"
+                  - "${MOBILE_API_URL}"
+                allowedOriginPatterns:
+                  - "https://*.yourdomain.com"
+                allowedMethods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+                allowedHeaders:
+                  - Authorization
+                  - Content-Type
+                  - X-Correlation-Id
+                  - X-Request-Id
+                exposedHeaders:
+                  - X-Correlation-Id
+                  - X-RateLimit-Remaining
+                  - X-RateLimit-Reset
+                  - Retry-After
+                allowCredentials: true
+                maxAge: 7200  # 2 hour preflight cache
+
+          # ─────────────────────────────────────────────────────────────────────
+          # DEFAULT FILTERS - Applied to ALL routes
+          # ─────────────────────────────────────────────────────────────────────
+          default-filters:
+            # Rate limiting (scaled for 10M requests)
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10000    # 10K req/s sustained
+                redis-rate-limiter.burstCapacity: 50000    # 50K burst
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: false
+                empty-key-status-code: 429
+
+            # Request timeout
+            - name: SetRequestHeader
+              args:
+                name: X-Gateway-Timestamp
+                value: "#{T(java.time.Instant).now().toEpochMilli()}"
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# RESILIENCE4J - Production Circuit Breaker Configuration
+# Tuned for high throughput with fast failure detection
+# ═══════════════════════════════════════════════════════════════════════════════════
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        # Sliding window for failure rate calculation
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 100              # Last 100 calls (larger window for scale)
+        minimumNumberOfCalls: 20            # Need 20 calls before evaluating
+        failureRateThreshold: 50            # Open circuit at 50% failure rate
+        slowCallRateThreshold: 80           # Open circuit at 80% slow calls
+        slowCallDurationThreshold: 3s       # Consider >3s as slow
+
+        # Circuit state transitions
+        waitDurationInOpenState: 30s        # Stay open 30s before testing
+        permittedNumberOfCallsInHalfOpenState: 10
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+
+        # Recording
+        recordExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.reactive.function.client.WebClientResponseException
+        ignoreExceptions:
+          - com.pml.gateway.exception.BusinessException
+
+    instances:
+      apolloRouterCircuitBreaker:
+        baseConfig: default
+        slidingWindowSize: 200              # Larger window for GraphQL
+        failureRateThreshold: 30            # More sensitive (GraphQL is critical)
+        slowCallDurationThreshold: 5s       # GraphQL can be slower
+
+      keycloakCircuitBreaker:
+        baseConfig: default
+        slidingWindowSize: 50               # Smaller window (auth is simpler)
+        waitDurationInOpenState: 15s        # Recover faster (auth is critical)
+
+  # Bulkhead: Limit concurrent calls to each service
+  bulkhead:
+    configs:
+      default:
+        maxConcurrentCalls: 1000            # Max 1K concurrent per service
+        maxWaitDuration: 100ms              # Fail fast if bulkhead full
+    instances:
+      apolloRouterBulkhead:
+        maxConcurrentCalls: 5000            # GraphQL gets more capacity
+      keycloakBulkhead:
+        maxConcurrentCalls: 500             # Auth needs less
+
+  # Rate limiter at service level (in addition to gateway rate limiter)
+  ratelimiter:
+    configs:
+      default:
+        limitForPeriod: 5000                # 5K requests per refresh period
+        limitRefreshPeriod: 1s              # Reset every second
+        timeoutDuration: 100ms              # Wait max 100ms for permit
+    instances:
+      apolloRouterRateLimiter:
+        limitForPeriod: 10000               # 10K/s for GraphQL
+      keycloakRateLimiter:
+        limitForPeriod: 2000                # 2K/s for auth
+
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 10s                # 10s timeout (not 30s)
+        cancelRunningFuture: true
+    instances:
+      apolloRouterCircuitBreaker:
+        timeoutDuration: 15s                # GraphQL can be slower
+      keycloakCircuitBreaker:
+        timeoutDuration: 5s                 # Auth should be fast
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# GATEWAY SECURITY SETTINGS (Custom Properties)
+# ═══════════════════════════════════════════════════════════════════════════════════
+gateway:
+  security:
+    # Request size limits (A03:2021)
+    max-request-size: 10485760              # 10 MB default
+    max-graphql-size: 1048576               # 1 MB for GraphQL
+    max-upload-size: 52428800               # 50 MB for uploads
+    max-uri-length: 8192                    # 8 KB URI
+    max-header-size: 8192                   # 8 KB per header
+
+    # Brute force protection (A07:2021)
+    auth-rate-limit:
+      enabled: true
+      max-attempts: 5                       # 5 attempts per window
+      window-seconds: 300                   # 5 minute window
+      lockout-seconds: 900                  # 15 minute lockout
+
+    # IP allowlisting for admin endpoints
+    admin-allowed-ips:
+      - "10.0.0.0/8"                        # Internal network
+      - "192.168.0.0/16"                    # Internal network
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# ACTUATOR - Secured for Production (A05:2021)
+# ═══════════════════════════════════════════════════════════════════════════════════
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /internal/actuator         # Non-standard path (security by obscurity)
+  endpoint:
+    health:
+      show-details: when_authorized         # Only show details to authenticated
+      probes:
+        enabled: true
+    gateway:
+      enabled: false                        # Disable gateway actuator in prod
+  server:
+    port: 9090                              # Separate port for actuator (not exposed publicly)
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# LOGGING - Structured JSON for ELK/Splunk (A09:2021)
+# ═══════════════════════════════════════════════════════════════════════════════════
+logging:
+  level:
+    root: WARN
+    org.springframework.cloud.gateway: INFO
+    com.pml.gateway: INFO
+    io.github.resilience4j: INFO
+
+  # JSON logging for production
+  pattern:
+    console: '{"timestamp":"%d{ISO8601}","level":"%p","logger":"%c","correlationId":"%X{correlationId}","message":"%m"}%n'

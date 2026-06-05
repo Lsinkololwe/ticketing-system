@@ -1,0 +1,93 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Promo Codes Schema - OWASP Compliant",
+    "description": "Discount codes for events with usage limits and validity periods",
+    "required": [
+      "code",
+      "eventId",
+      "organizerId",
+      "organizationId",
+      "discountType",
+      "discountValue",
+      "validFrom",
+      "validUntil",
+      "isActive",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "code": {
+        "bsonType": "string",
+        "pattern": "^[A-Z0-9]{4,20}$",
+        "description": "OWASP A03 - Alphanumeric promo code format"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation for promo code management"
+      },
+      "discountType": {
+        "bsonType": "string",
+        "enum": ["PERCENTAGE", "FIXED_AMOUNT"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "discountValue": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04 - Positive value validation"
+      },
+      "maxUses": {
+        "bsonType": ["int", "null"],
+        "minimum": 1
+      },
+      "currentUses": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "validFrom": {
+        "bsonType": "date"
+      },
+      "validUntil": {
+        "bsonType": "date"
+      },
+      "minPurchaseAmount": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "maxDiscountAmount": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "applicableTiers": {
+        "bsonType": ["array", "null"],
+        "items": {
+          "bsonType": "string",
+          "pattern": "^[a-fA-F0-9]{24}$"
+        }
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

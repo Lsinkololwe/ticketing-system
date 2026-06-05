@@ -220,14 +220,11 @@ public class OrganizerProfileServiceImpl implements OrganizerProfileService {
                     profile.setApprovedAt(Instant.now());
                     profile.setRejectionReason(null);
 
-                    return profileRepository.save(profile)
-                            .flatMap(savedProfile ->
-                                    // Create the Organization
-                                    organizationService.createFromOrganizerProfile(
-                                                    savedProfile.getId(),
-                                                    savedProfile.getUserId())
-                                            .thenReturn(savedProfile)
-                            );
+                    // NOTE: Organization is no longer created here.
+                    // Organizations are now created LAZILY via OrganizationOnboardingService
+                    // when the user creates their first event.
+                    // This follows the industry standard progressive onboarding pattern.
+                    return profileRepository.save(profile);
                 })
                 .doOnSuccess(profile -> log.info("Profile {} approved by admin {}", id, adminId));
     }

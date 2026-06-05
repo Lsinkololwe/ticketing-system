@@ -1,0 +1,179 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "User Schema - OWASP Compliant",
+    "description": "MongoDB JSON Schema for users collection - Identity data with strict validation",
+    "required": [
+      "username",
+      "email",
+      "firstName",
+      "lastName",
+      "roles",
+      "accountStatus",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "string",
+        "description": "User ID (matches Keycloak sub claim)"
+      },
+      "username": {
+        "bsonType": "string",
+        "minLength": 3,
+        "maxLength": 320,
+        "pattern": "^[a-zA-Z0-9._%+@-]+$",
+        "description": "OWASP A03 - Username pattern validation (alphanumeric, email chars allowed for Keycloak compatibility)"
+      },
+      "email": {
+        "bsonType": "string",
+        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+        "maxLength": 320,
+        "description": "OWASP A03 - Email format validation"
+      },
+      "firstName": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "User's first name"
+      },
+      "lastName": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "User's last name"
+      },
+      "phoneNumber": {
+        "bsonType": ["string", "null"],
+        "pattern": "^\\+[1-9]\\d{1,14}$",
+        "description": "OWASP A03 - E.164 phone format"
+      },
+      "roles": {
+        "bsonType": "array",
+        "description": "OWASP A01/A04 - User roles array. Users can have multiple roles. CUSTOMER is the base role that cannot be removed.",
+        "minItems": 1,
+        "maxItems": 6,
+        "uniqueItems": true,
+        "items": {
+          "bsonType": "string",
+          "enum": [
+            "CUSTOMER",
+            "ORGANIZER",
+            "ADMIN",
+            "SUPER_ADMIN",
+            "SCANNER",
+            "FINANCE"
+          ]
+        }
+      },
+      "accountStatus": {
+        "enum": [
+          "ACTIVE",
+          "INACTIVE",
+          "LOCKED",
+          "SUSPENDED",
+          "PENDING_VERIFICATION",
+          "PENDING_DELETION"
+        ],
+        "description": "OWASP A04 - Valid account status enum"
+      },
+      "active": {
+        "bsonType": "bool",
+        "description": "Application-level soft delete flag"
+      },
+      "locked": {
+        "bsonType": "bool",
+        "description": "Account locked (synced from Keycloak)"
+      },
+      "emailVerified": {
+        "bsonType": "bool",
+        "description": "Email verification status"
+      },
+      "phoneVerified": {
+        "bsonType": "bool",
+        "description": "Phone verification status"
+      },
+      "identityVerified": {
+        "bsonType": "bool",
+        "description": "KYC verification status"
+      },
+      "twoFactorEnabled": {
+        "bsonType": "bool",
+        "description": "2FA enabled flag"
+      },
+      "twoFactorMethod": {
+        "bsonType": ["string", "null"],
+        "enum": ["SMS", "TOTP", "EMAIL", null],
+        "description": "2FA method if enabled"
+      },
+      "avatarUrl": {
+        "bsonType": ["string", "null"],
+        "pattern": "^https?://.*",
+        "description": "OWASP A03 - URL pattern validation"
+      },
+      "bio": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000,
+        "description": "User bio/description"
+      },
+      "dateOfBirth": {
+        "bsonType": ["date", "null"],
+        "description": "User's date of birth"
+      },
+      "gender": {
+        "bsonType": ["string", "null"],
+        "enum": ["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY", null],
+        "description": "User's gender"
+      },
+      "locale": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+        "description": "Preferred locale (e.g., en-ZM)"
+      },
+      "timezone": {
+        "bsonType": ["string", "null"],
+        "maxLength": 50,
+        "description": "Preferred timezone"
+      },
+      "primaryOrganizationId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Primary organization ID for organizers"
+      },
+      "totalTicketsPurchased": {
+        "bsonType": "int",
+        "minimum": 0,
+        "description": "Total tickets purchased (denormalized stat)"
+      },
+      "totalEventsAttended": {
+        "bsonType": "int",
+        "minimum": 0,
+        "description": "Total events attended (denormalized stat)"
+      },
+      "lastLoginAt": {
+        "bsonType": ["date", "null"],
+        "description": "Last login timestamp"
+      },
+      "lastActiveAt": {
+        "bsonType": ["date", "null"],
+        "description": "Last activity timestamp"
+      },
+      "createdAt": {
+        "bsonType": "date",
+        "description": "Account creation timestamp"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"],
+        "description": "Last update timestamp"
+      },
+      "createdBy": {
+        "bsonType": ["string", "null"],
+        "description": "Creator user ID"
+      },
+      "updatedBy": {
+        "bsonType": ["string", "null"],
+        "description": "Last updater user ID"
+      }
+    },
+    "additionalProperties": true
+  }
+}

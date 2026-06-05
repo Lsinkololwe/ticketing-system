@@ -200,14 +200,15 @@ public class PermissionResolutionServiceImpl implements PermissionResolutionServ
     @Override
     public Mono<Boolean> isPlatformAdmin(String userId) {
         return userRepository.findById(userId)
-                .map(user -> user.getUserType() == UserType.ADMIN)
+                .map(user -> user.hasRole(UserType.ADMIN) || user.hasRole(UserType.SUPER_ADMIN))
                 .defaultIfEmpty(false);
     }
 
     @Override
     public Mono<Boolean> isSuperAdmin(String userId) {
-        // For now, same as platform admin. Can be extended for super admin role
-        return isPlatformAdmin(userId);
+        return userRepository.findById(userId)
+                .map(user -> user.hasRole(UserType.SUPER_ADMIN))
+                .defaultIfEmpty(false);
     }
 
     // ========================================================================

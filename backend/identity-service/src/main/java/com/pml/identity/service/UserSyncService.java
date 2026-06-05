@@ -1,6 +1,7 @@
 package com.pml.identity.service;
 
 import com.pml.identity.dto.sync.KeycloakEventDto;
+import com.pml.identity.dto.sync.KeycloakUserDataDto;
 import com.pml.identity.dto.sync.SyncResponse;
 import com.pml.identity.domain.model.User;
 import reactor.core.publisher.Mono;
@@ -26,8 +27,20 @@ public interface UserSyncService {
      *
      * @param keycloakUserId The Keycloak user ID (sub claim)
      * @return The synced user or error if sync failed
+     * @deprecated Use {@link #syncUserFromData(KeycloakUserDataDto)} instead.
+     *             This method requires admin credentials which is a security concern.
      */
+    @Deprecated
     Mono<User> syncUserFromKeycloak(String keycloakUserId);
+
+    /**
+     * Sync a user from full data received from Keycloak EventListener.
+     * OWASP Best Practice: No admin credentials needed, data comes directly from Keycloak.
+     *
+     * @param userData The full user data from Keycloak
+     * @return The synced user
+     */
+    Mono<User> syncUserFromData(KeycloakUserDataDto userData);
 
     /**
      * Sync all users from Keycloak to MongoDB.

@@ -13,7 +13,7 @@
  * - Persistent sidebar on desktop (1024px+)
  */
 
-import { ReactNode, useState, useEffect, createContext, useContext } from 'react';
+import { ReactNode, useState, useEffect, createContext } from 'react';
 import { Box, Flex } from '@radix-ui/themes';
 import { Sidebar } from '../../components/layout/Sidebar';
 import { Header } from '../../components/layout/Header';
@@ -34,9 +34,6 @@ const SidebarContext = createContext<SidebarContextType>({
   setIsOpen: () => {},
   isMobile: false,
 });
-
-export const useSidebar = () => useContext(SidebarContext);
-
 // =============================================================================
 // LAYOUT COMPONENT
 // =============================================================================
@@ -65,7 +62,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }, []);
 
   return (
-    <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+    <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN', 'FINANCE']}>
       <SidebarContext.Provider value={{ isOpen, setIsOpen, isMobile }}>
         {/* Root container with main background */}
         <Box
@@ -125,7 +122,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               className="dashboard-main"
               style={{
                 flex: 1,
-                marginLeft: isMobile ? 0 : '260px',
+                marginLeft: isMobile ? 0 : '280px',
                 minHeight: '100vh',
                 transition: 'margin-left 200ms ease',
                 position: 'relative',

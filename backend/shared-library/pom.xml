@@ -87,6 +87,20 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Spring Data Redis Reactive (provided - for token blacklist filter) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Spring WebFlux (provided - for reactive web filters) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

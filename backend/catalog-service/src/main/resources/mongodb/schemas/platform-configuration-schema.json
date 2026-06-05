@@ -1,0 +1,55 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Platform Configuration Schema - OWASP Compliant",
+    "description": "Global platform settings and configuration",
+    "required": [
+      "key",
+      "value",
+      "isActive",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "key": {
+        "bsonType": "string",
+        "pattern": "^[A-Z_]{3,100}$",
+        "description": "OWASP A03 - Configuration key format (e.g., COMMISSION_RATE)"
+      },
+      "value": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 5000
+      },
+      "dataType": {
+        "bsonType": "string",
+        "enum": ["STRING", "NUMBER", "BOOLEAN", "JSON"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "category": {
+        "bsonType": ["string", "null"],
+        "enum": ["FINANCIAL", "OPERATIONAL", "SECURITY", "FEATURE_FLAG", null]
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "updatedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      }
+    },
+    "additionalProperties": false
+  }
+}

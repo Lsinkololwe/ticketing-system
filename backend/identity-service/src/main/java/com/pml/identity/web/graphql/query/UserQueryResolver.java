@@ -95,20 +95,20 @@ public class UserQueryResolver {
 
     /**
      * Search users with offset pagination (admin only).
-     * Schema: usersOffsetPagination(search: String, userType: UserType, accountStatus: AccountStatus, pagination: OffsetPaginationInput): UserOffsetPage!
+     * Schema: usersOffsetPagination(search: String, role: UserType, accountStatus: AccountStatus, pagination: OffsetPaginationInput): UserOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<UserOffsetPage> usersOffsetPagination(
             @InputArgument String search,
-            @InputArgument UserType userType,
+            @InputArgument UserType role,
             @InputArgument AccountStatus accountStatus,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: usersOffsetPagination(search={}, userType={}, accountStatus={})",
-                search, userType, accountStatus);
+        log.debug("GraphQL query: usersOffsetPagination(search={}, role={}, accountStatus={})",
+                search, role, accountStatus);
 
-        Flux<User> userFlux = applyFilters(userService.findAll(), search, userType, accountStatus);
+        Flux<User> userFlux = applyFilters(userService.findAll(), search, role, accountStatus);
         return buildOffsetPage(userFlux, pagination);
     }
 
@@ -118,21 +118,53 @@ public class UserQueryResolver {
 
     /**
      * Search users with cursor pagination (admin only, mobile/infinite scroll).
-     * Schema: usersCursorPagination(search: String, userType: UserType, accountStatus: AccountStatus, pagination: CursorPaginationInput): UserConnection!
+     * Schema: usersCursorPagination(search: String, role: UserType, accountStatus: AccountStatus, pagination: CursorPaginationInput): UserConnection!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<UserConnection> usersCursorPagination(
             @InputArgument String search,
-            @InputArgument UserType userType,
+            @InputArgument UserType role,
             @InputArgument AccountStatus accountStatus,
             @InputArgument CursorPaginationInput pagination
     ) {
-        log.debug("GraphQL query: usersCursorPagination(search={}, userType={}, accountStatus={})",
-                search, userType, accountStatus);
+        log.debug("GraphQL query: usersCursorPagination(search={}, role={}, accountStatus={})",
+                search, role, accountStatus);
 
-        Flux<User> userFlux = applyFilters(userService.findAll(), search, userType, accountStatus);
+        Flux<User> userFlux = applyFilters(userService.findAll(), search, role, accountStatus);
         return buildCursorConnection(userFlux, pagination);
+    }
+
+    // ========================================================================
+    // ROLE-BASED QUERIES (Multi-role support)
+    // ========================================================================
+
+    /**
+     * Find all users who have a specific role.
+     * Schema: usersByRole(role: UserType!, activeOnly: Boolean, pagination: OffsetPaginationInput): UserOffsetPage
+     *
+     * OWASP Compliance:
+     * - A01:2021 Broken Access Control: Admin-only access enforced
+     * - A04:2021 Insecure Design: Uses MongoDB query, not in-memory filtering
+     */
+    @DgsQuery
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public Mono<UserOffsetPage> usersByRole(
+            @InputArgument UserType role,
+            @InputArgument Boolean activeOnly,
+            @InputArgument OffsetPaginationInput pagination
+    ) {
+        Objects.requireNonNull(role, "Role is required");
+        log.debug("GraphQL query: usersByRole(role={}, activeOnly={})", role, activeOnly);
+
+        Flux<User> userFlux = userService.findByRole(role);
+
+        // Apply active filter if specified
+        if (Boolean.TRUE.equals(activeOnly)) {
+            userFlux = userFlux.filter(User::isActive);
+        }
+
+        return buildOffsetPage(userFlux, pagination);
     }
 
     // ========================================================================
@@ -156,8 +188,11 @@ public class UserQueryResolver {
 
     /**
      * Apply filters to a Flux of users.
+     *
+     * <p>Multi-role support: The userType filter now checks if the user has the specified role,
+     * not if it's their only or primary role.</p>
      */
-    private Flux<User> applyFilters(Flux<User> users, String search, UserType userType, AccountStatus accountStatus) {
+    private Flux<User> applyFilters(Flux<User> users, String search, UserType role, AccountStatus accountStatus) {
         return users.filter(user -> {
             // Filter by search term (name or email)
             if (search != null && !search.isBlank()) {
@@ -171,8 +206,8 @@ public class UserQueryResolver {
                 }
             }
 
-            // Filter by user type
-            if (userType != null && user.getUserType() != userType) {
+            // Filter by role (multi-role: check if user HAS the role)
+            if (role != null && !user.hasRole(role)) {
                 return false;
             }
 

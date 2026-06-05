@@ -85,6 +85,16 @@ public class OrganizerProfile implements Identifiable<String>, Timestamped {
     private String tagline;
 
     /**
+     * Logo URL for the organizer profile
+     */
+    private String logoUrl;
+
+    /**
+     * Banner/cover image URL
+     */
+    private String bannerUrl;
+
+    /**
      * Company website URL
      */
     private String website;

@@ -31,9 +31,9 @@ public interface OrganizationRepository extends ReactiveMongoRepository<Organiza
     Mono<Organization> findByOwnerId(String ownerId);
 
     /**
-     * Find organization by organizer profile ID
+     * Check if owner already has an organization
      */
-    Mono<Organization> findByOrganizerProfileId(String organizerProfileId);
+    Mono<Boolean> existsByOwnerId(String ownerId);
 
     /**
      * Find all organizations by status
@@ -77,4 +77,9 @@ public interface OrganizationRepository extends ReactiveMongoRepository<Organiza
      */
     @Query(value = "{ 'status': 'ACTIVE' }", count = true)
     Mono<Long> countActive();
+
+    /**
+     * Find organizations by multiple statuses (for approval workflow)
+     */
+    Flux<Organization> findByStatusIn(java.util.List<OrganizationStatus> statuses);
 }

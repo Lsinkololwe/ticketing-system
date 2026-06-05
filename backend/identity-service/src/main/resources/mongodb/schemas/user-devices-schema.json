@@ -1,0 +1,57 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "User Devices Schema - OWASP Compliant",
+    "description": "User registered devices for push notifications",
+    "required": [
+      "userId",
+      "deviceToken",
+      "platform",
+      "isActive",
+      "registeredAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "userId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "deviceToken": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "FCM or APNs token"
+      },
+      "platform": {
+        "bsonType": "string",
+        "enum": ["IOS", "ANDROID", "WEB"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "deviceModel": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "osVersion": {
+        "bsonType": ["string", "null"],
+        "maxLength": 50
+      },
+      "appVersion": {
+        "bsonType": ["string", "null"],
+        "maxLength": 20
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "registeredAt": {
+        "bsonType": "date"
+      },
+      "lastActiveAt": {
+        "bsonType": ["date", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -1,6 +1,7 @@
 package com.pml.identity.service.impl;
 
 import com.pml.identity.dto.sync.KeycloakEventDto;
+import com.pml.identity.dto.sync.KeycloakUserDataDto;
 import com.pml.identity.dto.sync.SyncResponse;
 import com.pml.identity.event.domain.UserRegisteredEvent;
 import com.pml.identity.domain.model.User;
@@ -14,11 +15,13 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Implementation of UserSyncService.
@@ -27,6 +30,13 @@ import java.util.Map;
  * This service is called by:
  * - KeycloakSyncController (webhook from Keycloak EventListener)
  * - GraphQL mutations (manual sync operations)
+ *
+ * PROGRESSIVE ONBOARDING (Industry Standard - Eventbrite/Stripe Connect model):
+ * - User registration creates ONLY the User entity
+ * - Organization is created LAZILY when user attempts to create their first event
+ * - KYB verification is required to PUBLISH events and receive payouts
+ *
+ * @see com.pml.identity.service.OrganizationOnboardingService For lazy organization creation
  */
 @Slf4j
 @Service
@@ -51,6 +61,105 @@ public class UserSyncServiceImpl implements UserSyncService {
                     UserRepresentation keycloakUser = optionalUser.get();
                     return syncKeycloakUserToMongo(keycloakUser);
                 });
+    }
+
+    @Override
+    public Mono<User> syncUserFromData(KeycloakUserDataDto userData) {
+        log.info("Syncing user from data: {} (event: {})", userData.getId(), userData.getEventType());
+
+        return userRepository.findById(userData.getId())
+                .flatMap(existingUser -> {
+                    // Update existing user
+                    log.debug("Updating existing user from data: {}", userData.getId());
+                    updateUserFromData(existingUser, userData);
+                    return userRepository.save(existingUser);
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    // Create new user
+                    // Note: Organization is NOT created here - uses lazy creation on first event
+                    log.info("Creating new user from data: {}", userData.getId());
+                    User newUser = createUserFromData(userData);
+                    return userRepository.save(newUser)
+                            .doOnSuccess(this::publishUserRegisteredEvent);
+                }))
+                .doOnSuccess(user -> log.info("User synced successfully from data: {}", userData.getId()));
+    }
+
+    /**
+     * Create a new User entity from Keycloak user data DTO.
+     */
+    private User createUserFromData(KeycloakUserDataDto data) {
+        Set<UserType> roles = extractRolesFromData(data);
+
+        return User.builder()
+                .id(data.getId())
+                .username(data.getUsername())
+                .email(data.getEmail())
+                .firstName(data.getFirstName() != null ? data.getFirstName() : "")
+                .lastName(data.getLastName() != null ? data.getLastName() : "")
+                .phoneNumber(data.getPhoneNumber())
+                .phoneVerified(data.isPhoneVerified())
+                .emailVerified(data.isEmailVerified())
+                .active(data.isEnabled())
+                .roles(roles)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+    }
+
+    /**
+     * Update an existing User entity from Keycloak user data DTO.
+     */
+    private void updateUserFromData(User user, KeycloakUserDataDto data) {
+        user.setUsername(data.getUsername());
+        user.setEmail(data.getEmail());
+        user.setFirstName(data.getFirstName() != null ? data.getFirstName() : user.getFirstName());
+        user.setLastName(data.getLastName() != null ? data.getLastName() : user.getLastName());
+        user.setEmailVerified(data.isEmailVerified());
+        user.setActive(data.isEnabled());
+        user.setUpdatedAt(Instant.now());
+
+        if (data.getPhoneNumber() != null) {
+            user.setPhoneNumber(data.getPhoneNumber());
+            user.setPhoneVerified(data.isPhoneVerified());
+        }
+
+        // Extract and update roles
+        Set<UserType> roles = extractRolesFromData(data);
+        if (!roles.isEmpty()) {
+            user.getRoles().clear();
+            user.getRoles().addAll(roles);
+        }
+    }
+
+    /**
+     * Extract roles from Keycloak user data DTO.
+     */
+    private Set<UserType> extractRolesFromData(KeycloakUserDataDto data) {
+        Set<UserType> roles = EnumSet.of(UserType.CUSTOMER); // Always include CUSTOMER
+
+        // Add roles from the roles set
+        if (data.getRoles() != null) {
+            for (String roleName : data.getRoles()) {
+                UserType role = parseUserType(roleName);
+                if (role != null) {
+                    roles.add(role);
+                }
+            }
+        }
+
+        // Add roles from accountTypes (from registration form)
+        if (data.getAccountTypes() != null) {
+            for (String accountType : data.getAccountTypes()) {
+                UserType role = parseUserType(accountType);
+                if (role != null) {
+                    roles.add(role);
+                }
+            }
+        }
+
+        log.debug("Extracted roles from data for user {}: {}", data.getId(), roles);
+        return roles;
     }
 
     @Override
@@ -159,6 +268,12 @@ public class UserSyncServiceImpl implements UserSyncService {
     /**
      * Sync a Keycloak user representation to MongoDB.
      * Creates or updates the user document.
+     *
+     * <p>PROGRESSIVE ONBOARDING: Organization is NOT created during user sync.
+     * Organization is created lazily when the user attempts to create their first event.
+     * This follows industry standard patterns (Eventbrite, Stripe Connect).</p>
+     *
+     * @see com.pml.identity.service.OrganizationOnboardingService#getOrCreateOrganization
      */
     private Mono<User> syncKeycloakUserToMongo(UserRepresentation keycloakUser) {
         String keycloakUserId = keycloakUser.getId();
@@ -172,10 +287,11 @@ public class UserSyncServiceImpl implements UserSyncService {
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Create new user
+                    // Note: Organization is NOT created here - uses lazy creation on first event
                     log.info("Creating new user from Keycloak: {}", keycloakUserId);
                     User newUser = createUserFromKeycloak(keycloakUser);
                     return userRepository.save(newUser)
-                            .doOnSuccess(user -> publishUserRegisteredEvent(user));
+                            .doOnSuccess(this::publishUserRegisteredEvent);
                 }))
                 .doOnSuccess(user -> log.debug("User synced successfully: {}", keycloakUserId));
     }
@@ -186,6 +302,9 @@ public class UserSyncServiceImpl implements UserSyncService {
     private User createUserFromKeycloak(UserRepresentation keycloakUser) {
         Map<String, List<String>> attributes = keycloakUser.getAttributes();
 
+        // Extract roles from Keycloak
+        Set<UserType> roles = extractRolesFromKeycloak(keycloakUser, attributes);
+
         User user = User.builder()
                 .id(keycloakUser.getId())  // Use Keycloak ID as MongoDB ID
                 .username(keycloakUser.getUsername())
@@ -194,26 +313,83 @@ public class UserSyncServiceImpl implements UserSyncService {
                 .lastName(keycloakUser.getLastName() != null ? keycloakUser.getLastName() : "")
                 .emailVerified(keycloakUser.isEmailVerified())
                 .active(keycloakUser.isEnabled())
+                .roles(roles)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
 
         // Extract custom attributes
-        // Note: Business fields (companyName, etc.) belong to OrganizerProfile, not User
+        // Note: Business fields (companyName, etc.) belong to Organization, not User
         if (attributes != null) {
             extractAttribute(attributes, "phoneNumber").ifPresent(user::setPhoneNumber);
             extractAttribute(attributes, "phoneVerified")
                     .ifPresent(v -> user.setPhoneVerified(Boolean.parseBoolean(v)));
-            extractAttribute(attributes, "userType")
-                    .ifPresent(v -> user.setUserType(parseUserType(v)));
-        }
-
-        // Default user type if not set
-        if (user.getUserType() == null) {
-            user.setUserType(UserType.CUSTOMER);
         }
 
         return user;
+    }
+
+    /**
+     * Extract roles from Keycloak user representation.
+     * Checks realm roles, 'roles' attribute, and 'accountType' attribute.
+     *
+     * <p>Priority order:</p>
+     * <ol>
+     *   <li>Keycloak realm roles (most authoritative)</li>
+     *   <li>'roles' attribute (set by AccountTypeRoleMapper)</li>
+     *   <li>'accountType' attribute (from registration form)</li>
+     * </ol>
+     */
+    private Set<UserType> extractRolesFromKeycloak(UserRepresentation keycloakUser, Map<String, List<String>> attributes) {
+        Set<UserType> roles = EnumSet.of(UserType.CUSTOMER); // Always include CUSTOMER
+
+        // 1. Try to get roles from Keycloak realm roles (most authoritative)
+        if (keycloakUser.getRealmRoles() != null) {
+            for (String roleName : keycloakUser.getRealmRoles()) {
+                UserType role = parseUserType(roleName);
+                if (role != null && role != UserType.CUSTOMER) {
+                    roles.add(role);
+                    log.debug("Added role from realmRoles: {}", role);
+                }
+            }
+        }
+
+        // 2. Check attributes for roles
+        if (attributes != null) {
+            // Check for 'roles' attribute (set by AccountTypeRoleMapper)
+            if (attributes.containsKey("roles")) {
+                List<String> roleValues = attributes.get("roles");
+                for (String roleValue : roleValues) {
+                    // Handle comma-separated values
+                    for (String roleName : roleValue.split(",")) {
+                        UserType role = parseUserType(roleName.trim());
+                        if (role != null && role != UserType.CUSTOMER) {
+                            roles.add(role);
+                            log.debug("Added role from 'roles' attribute: {}", role);
+                        }
+                    }
+                }
+            }
+
+            // 3. Check for 'accountType' attribute (from registration form)
+            // This is the primary source during registration
+            if (attributes.containsKey("accountType")) {
+                List<String> accountTypes = attributes.get("accountType");
+                for (String accountType : accountTypes) {
+                    // Handle comma-separated values (just in case)
+                    for (String typeName : accountType.split(",")) {
+                        UserType role = parseUserType(typeName.trim());
+                        if (role != null) {
+                            roles.add(role);
+                            log.debug("Added role from 'accountType' attribute: {}", role);
+                        }
+                    }
+                }
+            }
+        }
+
+        log.info("Extracted roles for user {}: {}", keycloakUser.getUsername(), roles);
+        return roles;
     }
 
     /**
@@ -231,14 +407,20 @@ public class UserSyncServiceImpl implements UserSyncService {
         user.setActive(keycloakUser.isEnabled());
         user.setUpdatedAt(Instant.now());
 
+        // Extract and update roles from Keycloak
+        Set<UserType> keycloakRoles = extractRolesFromKeycloak(keycloakUser, attributes);
+        if (!keycloakRoles.isEmpty()) {
+            // Merge Keycloak roles with existing roles (Keycloak is authoritative for realm roles)
+            user.getRoles().clear();
+            user.getRoles().addAll(keycloakRoles);
+        }
+
         // Extract and update custom attributes
-        // Note: Business fields (companyName, etc.) belong to OrganizerProfile, not User
+        // Note: Business fields (companyName, etc.) belong to Organization, not User
         if (attributes != null) {
             extractAttribute(attributes, "phoneNumber").ifPresent(user::setPhoneNumber);
             extractAttribute(attributes, "phoneVerified")
                     .ifPresent(v -> user.setPhoneVerified(Boolean.parseBoolean(v)));
-            extractAttribute(attributes, "userType")
-                    .ifPresent(v -> user.setUserType(parseUserType(v)));
         }
     }
 
@@ -276,16 +458,21 @@ public class UserSyncServiceImpl implements UserSyncService {
      */
     private void publishUserRegisteredEvent(User user) {
         try {
+            // Convert EnumSet<UserType> to Set<String> for the event
+            Set<String> roleNames = user.getRoles() != null && !user.getRoles().isEmpty()
+                    ? user.getRoles().stream().map(Enum::name).collect(Collectors.toSet())
+                    : Set.of("CUSTOMER");
+
             UserRegisteredEvent event = new UserRegisteredEvent(
                     user.getId(),
                     user.getEmail(),
                     user.getPhoneNumber(),
-                    user.getUserType() != null ? user.getUserType().name() : "CUSTOMER"
+                    roleNames
             );
 
             boolean sent = streamBridge.send("userOutput-out-0", event);
             if (sent) {
-                log.info("Published UserRegisteredEvent for user: {}", user.getId());
+                log.info("Published UserRegisteredEvent for user: {} with roles: {}", user.getId(), roleNames);
             } else {
                 log.warn("Failed to publish UserRegisteredEvent for user: {}", user.getId());
             }

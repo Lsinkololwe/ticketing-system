@@ -1,0 +1,41 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Cities Schema - OWASP Compliant",
+    "description": "Cities within provinces",
+    "required": [
+      "name",
+      "provinceId",
+      "isActive"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "provinceId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "code": {
+        "bsonType": ["string", "null"],
+        "maxLength": 10,
+        "description": "City code or abbreviation"
+      },
+      "timezone": {
+        "bsonType": ["string", "null"],
+        "maxLength": 50,
+        "description": "IANA timezone (e.g., Africa/Lusaka)"
+      },
+      "isActive": {
+        "bsonType": "bool"
+      }
+    },
+    "additionalProperties": false
+  }
+}

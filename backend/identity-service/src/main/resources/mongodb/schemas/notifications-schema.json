@@ -1,0 +1,66 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Notifications Schema - OWASP Compliant",
+    "description": "User notifications for system events",
+    "required": [
+      "userId",
+      "type",
+      "title",
+      "message",
+      "isRead",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "userId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "type": {
+        "bsonType": "string",
+        "enum": ["TICKET_PURCHASE", "EVENT_REMINDER", "EVENT_CANCELLED", "REFUND_APPROVED", "PAYOUT_COMPLETED", "SYSTEM_ANNOUNCEMENT"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "title": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "message": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "isRead": {
+        "bsonType": "bool"
+      },
+      "readAt": {
+        "bsonType": ["date", "null"]
+      },
+      "eventId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "ticketId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "actionUrl": {
+        "bsonType": ["string", "null"],
+        "pattern": "^https?://.*",
+        "maxLength": 500
+      },
+      "metadata": {
+        "bsonType": ["object", "null"]
+      },
+      "createdAt": {
+        "bsonType": "date"
+      }
+    },
+    "additionalProperties": false
+  }
+}

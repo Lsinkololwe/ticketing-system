@@ -1,0 +1,288 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Event Schema - OWASP Compliant",
+    "description": "MongoDB JSON Schema for events collection - Core business entity with tenant isolation",
+    "required": [
+      "title",
+      "organizerId",
+      "organizationId",
+      "status",
+      "eventDateTime",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "title": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "Event title"
+      },
+      "slug": {
+        "bsonType": "string",
+        "pattern": "^[a-z0-9-]+$",
+        "maxLength": 200,
+        "description": "URL-friendly event identifier"
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 10000,
+        "description": "Event description"
+      },
+      "shortDescription": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500,
+        "description": "Short description for listings"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "description": "Event organizer user ID"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation: Organization that owns this event"
+      },
+      "categoryId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Event category reference"
+      },
+      "locationId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Venue/location reference"
+      },
+      "status": {
+        "enum": [
+          "DRAFT",
+          "PENDING_APPROVAL",
+          "APPROVED",
+          "PUBLISHED",
+          "CANCELLED",
+          "POSTPONED",
+          "COMPLETED",
+          "ARCHIVED"
+        ],
+        "description": "OWASP A04 - Valid event status"
+      },
+      "visibility": {
+        "enum": [
+          "PUBLIC",
+          "PRIVATE",
+          "UNLISTED"
+        ],
+        "description": "Event visibility setting"
+      },
+      "eventDateTime": {
+        "bsonType": "date",
+        "description": "Event start date and time"
+      },
+      "endDateTime": {
+        "bsonType": ["date", "null"],
+        "description": "Event end date and time"
+      },
+      "timezone": {
+        "bsonType": "string",
+        "maxLength": 50,
+        "description": "Event timezone"
+      },
+      "venue": {
+        "bsonType": "object",
+        "properties": {
+          "name": {
+            "bsonType": "string",
+            "maxLength": 300
+          },
+          "address": {
+            "bsonType": "string",
+            "maxLength": 500
+          },
+          "city": {
+            "bsonType": "string",
+            "maxLength": 200
+          },
+          "province": {
+            "bsonType": "string",
+            "maxLength": 100
+          },
+          "country": {
+            "bsonType": "string",
+            "maxLength": 100
+          },
+          "postalCode": {
+            "bsonType": ["string", "null"],
+            "maxLength": 20
+          },
+          "coordinates": {
+            "bsonType": "object",
+            "properties": {
+              "latitude": {
+                "bsonType": "double",
+                "minimum": -90,
+                "maximum": 90
+              },
+              "longitude": {
+                "bsonType": "double",
+                "minimum": -180,
+                "maximum": 180
+              }
+            }
+          }
+        },
+        "description": "Embedded venue details"
+      },
+      "images": {
+        "bsonType": "array",
+        "items": {
+          "bsonType": "object",
+          "properties": {
+            "url": {
+              "bsonType": "string",
+              "pattern": "^https?://.*"
+            },
+            "type": {
+              "enum": ["COVER", "THUMBNAIL", "GALLERY", "BANNER"]
+            },
+            "alt": {
+              "bsonType": "string",
+              "maxLength": 200
+            }
+          }
+        },
+        "description": "Event images with URL validation"
+      },
+      "ticketTiers": {
+        "bsonType": "array",
+        "items": {
+          "bsonType": "object",
+          "required": ["name", "price", "quantity"],
+          "properties": {
+            "id": {
+              "bsonType": "string"
+            },
+            "name": {
+              "bsonType": "string",
+              "maxLength": 200
+            },
+            "description": {
+              "bsonType": ["string", "null"],
+              "maxLength": 1000
+            },
+            "price": {
+              "bsonType": "decimal",
+              "minimum": 0,
+              "description": "OWASP A04 - Price cannot be negative"
+            },
+            "quantity": {
+              "bsonType": "int",
+              "minimum": 0,
+              "description": "Available quantity"
+            },
+            "soldCount": {
+              "bsonType": "int",
+              "minimum": 0
+            },
+            "maxPerOrder": {
+              "bsonType": "int",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "salesStartAt": {
+              "bsonType": ["date", "null"]
+            },
+            "salesEndAt": {
+              "bsonType": ["date", "null"]
+            }
+          }
+        },
+        "description": "Embedded ticket tiers"
+      },
+      "totalCapacity": {
+        "bsonType": "int",
+        "minimum": 0,
+        "description": "Total event capacity"
+      },
+      "ticketsSold": {
+        "bsonType": "int",
+        "minimum": 0,
+        "description": "Total tickets sold (denormalized)"
+      },
+      "revenue": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "Total revenue (denormalized)"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD", "EUR", "GBP", "ZAR"],
+        "description": "Event currency"
+      },
+      "isFeatured": {
+        "bsonType": "bool",
+        "description": "Featured event flag"
+      },
+      "isFree": {
+        "bsonType": "bool",
+        "description": "Free event flag"
+      },
+      "tags": {
+        "bsonType": "array",
+        "items": {
+          "bsonType": "string",
+          "maxLength": 50
+        },
+        "description": "Event tags for search"
+      },
+      "ageRestriction": {
+        "bsonType": ["string", "null"],
+        "enum": ["ALL_AGES", "13+", "16+", "18+", "21+", null],
+        "description": "Age restriction"
+      },
+      "refundPolicy": {
+        "enum": [
+          "FULL_REFUND",
+          "PARTIAL_REFUND",
+          "NO_REFUND",
+          "CUSTOM"
+        ],
+        "description": "Refund policy"
+      },
+      "publishedAt": {
+        "bsonType": ["date", "null"],
+        "description": "When event was published"
+      },
+      "cancelledAt": {
+        "bsonType": ["date", "null"],
+        "description": "When event was cancelled"
+      },
+      "cancellationReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000,
+        "description": "Reason for cancellation"
+      },
+      "metadata": {
+        "bsonType": "object",
+        "description": "Additional event metadata"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "createdBy": {
+        "bsonType": ["string", "null"],
+        "description": "Creator user ID"
+      },
+      "updatedBy": {
+        "bsonType": ["string", "null"],
+        "description": "Last updater user ID"
+      }
+    },
+    "additionalProperties": true
+  }
+}

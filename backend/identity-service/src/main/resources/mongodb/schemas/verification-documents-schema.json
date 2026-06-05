@@ -1,0 +1,67 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Verification Documents Schema - OWASP Compliant",
+    "description": "KYB documents uploaded by organizers for verification",
+    "required": [
+      "organizerProfileId",
+      "documentType",
+      "documentUrl",
+      "status",
+      "uploadedAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "organizerProfileId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "documentType": {
+        "bsonType": "string",
+        "enum": ["ID_DOCUMENT", "BUSINESS_LICENSE", "TAX_CERTIFICATE", "BANK_STATEMENT", "PROOF_OF_ADDRESS", "OTHER"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "documentUrl": {
+        "bsonType": "string",
+        "pattern": "^https?://.*",
+        "description": "OWASP A03 - URL format validation",
+        "maxLength": 1000
+      },
+      "fileName": {
+        "bsonType": ["string", "null"],
+        "maxLength": 255
+      },
+      "fileSize": {
+        "bsonType": ["long", "null"],
+        "minimum": 0
+      },
+      "mimeType": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "APPROVED", "REJECTED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "uploadedAt": {
+        "bsonType": "date"
+      },
+      "verifiedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "verifiedById": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "rejectionReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      }
+    },
+    "additionalProperties": false
+  }
+}

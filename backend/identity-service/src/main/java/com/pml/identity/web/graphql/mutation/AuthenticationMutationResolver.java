@@ -72,7 +72,7 @@ public class AuthenticationMutationResolver {
                                                     .firstName(keycloakUser.getFirstName())
                                                     .lastName(keycloakUser.getLastName())
                                                     .emailVerified(keycloakUser.isEmailVerified())
-                                                    .userType(UserType.CUSTOMER)
+                                                    .roles(java.util.EnumSet.of(UserType.CUSTOMER))
                                                     .active(true)
                                                     .createdAt(Instant.now())
                                                     .updatedAt(Instant.now())
@@ -111,13 +111,13 @@ public class AuthenticationMutationResolver {
         return userService.findByEmail(input.email())
                 .flatMap(existing -> Mono.<User>error(new RuntimeException("Email already registered")))
                 .switchIfEmpty(Mono.defer(() -> {
+                    // All new users get CUSTOMER role by default (via builder default)
                     User newUser = User.builder()
                             .username(input.username())
                             .email(input.email())
                             .firstName(input.firstName())
                             .lastName(input.lastName())
                             .phoneNumber(input.phoneNumber())
-                            .userType(input.userType() != null ? input.userType() : UserType.CUSTOMER)
                             .emailVerified(false)
                             .phoneVerified(false)
                             .active(true)
@@ -231,23 +231,25 @@ public class AuthenticationMutationResolver {
                         return new TokenValidation(false, null, null, null);
                     }
 
-                    // Extract user type from realm roles
-                    String userType = null;
+                    // Extract user roles from realm roles
+                    java.util.Set<String> roles = new java.util.HashSet<>();
                     if (introspection.getRealmAccess() != null &&
                         introspection.getRealmAccess().getRoles() != null) {
                         for (String role : introspection.getRealmAccess().getRoles()) {
-                            if (isUserTypeRole(role)) {
-                                userType = role;
-                                break;
+                            // Filter to only include our defined user roles
+                            if (isValidUserRole(role)) {
+                                roles.add(role);
                             }
                         }
                     }
+                    // Ensure CUSTOMER is always present
+                    roles.add("CUSTOMER");
 
                     return new TokenValidation(
                             true,
                             introspection.getSub(),
                             introspection.getEmail(),
-                            userType
+                            roles
                     );
                 })
                 .onErrorResume(e -> {
@@ -257,9 +259,9 @@ public class AuthenticationMutationResolver {
     }
 
     /**
-     * Check if a role name corresponds to a user type.
+     * Check if a role name is a valid user role.
      */
-    private boolean isUserTypeRole(String role) {
+    private boolean isValidUserRole(String role) {
         return role.equals("CUSTOMER") ||
                role.equals("ORGANIZER") ||
                role.equals("ADMIN") ||

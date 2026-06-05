@@ -213,5 +213,43 @@ public class IdentityServiceClient {
     }
 
     public record TokenValidationRequest(String token) {}
-    public record TokenValidationResponse(boolean valid, String userId, String userType) {}
+
+    /**
+     * Response for token validation.
+     *
+     * <p>Multi-role support: The {@code roles} field contains all user roles.</p>
+     */
+    public record TokenValidationResponse(
+            boolean valid,
+            String userId,
+            java.util.Set<String> roles
+    ) {
+        /**
+         * Check if user has a specific role.
+         *
+         * @param role the role to check (e.g., "ORGANIZER", "ADMIN")
+         * @return true if user has the role
+         */
+        public boolean hasRole(String role) {
+            return roles != null && roles.contains(role);
+        }
+
+        /**
+         * Check if user is an organizer.
+         *
+         * @return true if user has ORGANIZER role
+         */
+        public boolean isOrganizer() {
+            return hasRole("ORGANIZER");
+        }
+
+        /**
+         * Check if user is an admin.
+         *
+         * @return true if user has ADMIN or SUPER_ADMIN role
+         */
+        public boolean isAdmin() {
+            return hasRole("ADMIN") || hasRole("SUPER_ADMIN");
+        }
+    }
 }

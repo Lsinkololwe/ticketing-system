@@ -1,0 +1,100 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Ticket Reservations Schema - OWASP Compliant",
+    "description": "Temporary ticket reservations with TTL expiration",
+    "required": [
+      "eventId",
+      "userId",
+      "organizationId",
+      "items",
+      "status",
+      "expiresAt",
+      "totalAmount",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "userId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "organizerId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation for reservation analytics"
+      },
+      "items": {
+        "bsonType": "array",
+        "minItems": 1,
+        "items": {
+          "bsonType": "object",
+          "required": ["ticketTierId", "tierName", "quantity", "unitPrice", "subtotal"],
+          "properties": {
+            "ticketTierId": {
+              "bsonType": "string",
+              "pattern": "^[a-fA-F0-9]{24}$"
+            },
+            "tierName": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "quantity": {
+              "bsonType": "int",
+              "minimum": 1
+            },
+            "unitPrice": {
+              "bsonType": "decimal",
+              "minimum": 0
+            },
+            "subtotal": {
+              "bsonType": "decimal",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["ACTIVE", "CONVERTED", "EXPIRED", "CANCELLED"],
+        "description": "OWASP A04 - Enum constraint for status"
+      },
+      "expiresAt": {
+        "bsonType": "date",
+        "description": "Reservation expiration timestamp (typically 10 minutes from creation)"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "convertedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "promoCode": {
+        "bsonType": ["string", "null"],
+        "maxLength": 50
+      },
+      "totalAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "discountAmount": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  }
+}

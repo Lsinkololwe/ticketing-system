@@ -29,6 +29,9 @@ export {
   filterGraphQLErrors,
   getUserFriendlyErrorMessage,
   isGraphQLAuthError,
+  // Network error detection (for graceful degradation)
+  isNetworkError,
+  isServerUnavailable,
 } from './api/graphql/client';
 
 // ============== GraphQL Feature APIs ==============

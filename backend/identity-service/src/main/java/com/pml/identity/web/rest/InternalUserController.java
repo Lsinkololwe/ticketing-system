@@ -1,10 +1,13 @@
 package com.pml.identity.web.rest;
 
+import com.pml.identity.domain.model.Organization;
+import com.pml.identity.service.OrganizationOnboardingService;
 import com.pml.identity.service.UserService;
 import com.pml.shared.dto.UserSummaryDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -21,6 +24,7 @@ import reactor.core.publisher.Mono;
 public class InternalUserController {
 
     private final UserService userService;
+    private final OrganizationOnboardingService organizationOnboardingService;
 
     /**
      * Get user summary by ID
@@ -31,17 +35,7 @@ public class InternalUserController {
         log.debug("Internal request for user: {}", id);
 
         return userService.findById(id)
-                .map(user -> UserSummaryDto.builder()
-                        .id(user.getId())
-                        .email(user.getEmail())
-                        .firstName(user.getFirstName())
-                        .lastName(user.getLastName())
-                        .phoneNumber(user.getPhoneNumber())
-                        .userType(user.getUserType().name())
-                        .emailVerified(user.isEmailVerified())
-                        .phoneVerified(user.isPhoneVerified())
-                        .active(user.isActive())
-                        .build())
+                .map(this::toUserSummaryDto)
                 .map(ResponseEntity::ok)
                 .defaultIfEmpty(ResponseEntity.notFound().build());
     }
@@ -54,19 +48,35 @@ public class InternalUserController {
         log.debug("Internal request for user by email: {}", email);
 
         return userService.findByEmail(email)
-                .map(user -> UserSummaryDto.builder()
-                        .id(user.getId())
-                        .email(user.getEmail())
-                        .firstName(user.getFirstName())
-                        .lastName(user.getLastName())
-                        .phoneNumber(user.getPhoneNumber())
-                        .userType(user.getUserType().name())
-                        .emailVerified(user.isEmailVerified())
-                        .phoneVerified(user.isPhoneVerified())
-                        .active(user.isActive())
-                        .build())
+                .map(this::toUserSummaryDto)
                 .map(ResponseEntity::ok)
                 .defaultIfEmpty(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Convert User domain model to UserSummaryDto.
+     *
+     * <p>Multi-role support: Converts the user's roles set to string role names.</p>
+     */
+    private UserSummaryDto toUserSummaryDto(com.pml.identity.domain.model.User user) {
+        // Convert EnumSet<UserType> to Set<String>
+        java.util.Set<String> roleNames = user.getRoles() != null
+                ? user.getRoles().stream()
+                        .map(Enum::name)
+                        .collect(java.util.stream.Collectors.toSet())
+                : java.util.Set.of("CUSTOMER");
+
+        return UserSummaryDto.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .phoneNumber(user.getPhoneNumber())
+                .roles(roleNames)
+                .emailVerified(user.isEmailVerified())
+                .phoneVerified(user.isPhoneVerified())
+                .active(user.isActive())
+                .build();
     }
 
     /**
@@ -81,5 +91,64 @@ public class InternalUserController {
         return userService.findById(id)
                 .map(user -> ResponseEntity.ok(user.isActive()))
                 .defaultIfEmpty(ResponseEntity.ok(false));
+    }
+
+    // =============================================
+    // ORGANIZATION ONBOARDING (Progressive/Lazy)
+    // =============================================
+
+    /**
+     * Get or create organization for a user.
+     *
+     * This endpoint supports the progressive onboarding pattern where organizations
+     * are created lazily when a user needs one (e.g., when creating their first event).
+     *
+     * Security: Requires internal service authentication.
+     *
+     * @param userId The user ID (Keycloak subject)
+     * @return The user's organization (created if it didn't exist)
+     */
+    @PostMapping("/{userId}/organization")
+    @PreAuthorize("hasAnyAuthority('SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE')")
+    public Mono<ResponseEntity<Organization>> getOrCreateOrganization(@PathVariable String userId) {
+        log.info("Internal request to get or create organization for user: {}", userId);
+
+        return organizationOnboardingService.getOrCreateOrganization(userId)
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    log.error("Failed to get/create organization for user {}: {}", userId, e.getMessage());
+                    return Mono.just(ResponseEntity.badRequest().build());
+                });
+    }
+
+    /**
+     * Check if a user has an organization.
+     *
+     * @param userId The user ID
+     * @return true if user has an organization, false otherwise
+     */
+    @GetMapping("/{userId}/has-organization")
+    @PreAuthorize("hasAnyAuthority('SCOPE_internal-read', 'SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE')")
+    public Mono<ResponseEntity<Boolean>> hasOrganization(@PathVariable String userId) {
+        log.debug("Checking if user {} has organization", userId);
+
+        return organizationOnboardingService.hasOrganization(userId)
+                .map(ResponseEntity::ok);
+    }
+
+    /**
+     * Get organization by owner ID.
+     *
+     * @param userId The owner's user ID
+     * @return The organization if found
+     */
+    @GetMapping("/{userId}/organization")
+    @PreAuthorize("hasAnyAuthority('SCOPE_internal-read', 'SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE')")
+    public Mono<ResponseEntity<Organization>> getOrganizationByOwnerId(@PathVariable String userId) {
+        log.debug("Fetching organization for user: {}", userId);
+
+        return organizationOnboardingService.findOrganizationByOwnerId(userId)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
     }
 }

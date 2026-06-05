@@ -1,0 +1,123 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Payment Intents Schema - OWASP Compliant",
+    "description": "Represents payment attempts through pawaPay mobile money integration",
+    "required": [
+      "idempotencyKey",
+      "transactionRef",
+      "ticketId",
+      "eventId",
+      "userId",
+      "amount",
+      "currency",
+      "provider",
+      "phoneNumber",
+      "status",
+      "expiresAt",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "idempotencyKey": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "Client-generated key to prevent duplicate payments"
+      },
+      "transactionRef": {
+        "bsonType": "string",
+        "pattern": "^TXN-\\d{8}-[A-Z0-9]{8}$",
+        "description": "OWASP A03 - Strict transaction reference format"
+      },
+      "providerTransactionId": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "ticketId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "userId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "amount": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04 - Positive amount validation"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "provider": {
+        "bsonType": "string",
+        "enum": ["PAWAPAY", "MTN_MOMO_ZMB", "AIRTEL_ZMB", "ZAMTEL_ZMB"],
+        "description": "OWASP A04 - Enum constraint for payment provider"
+      },
+      "correspondent": {
+        "bsonType": ["string", "null"],
+        "enum": ["MTN_MOMO_ZMB", "AIRTEL_ZMB", "ZAMTEL_ZMB", null]
+      },
+      "phoneNumber": {
+        "bsonType": "string",
+        "pattern": "^\\+[1-9]\\d{1,14}$",
+        "description": "OWASP A03 - E.164 phone number format validation"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "PROCESSING", "SUCCEEDED", "FAILED", "EXPIRED", "CANCELLED", "REFUNDED"],
+        "description": "OWASP A04 - Enum constraint for status"
+      },
+      "failureReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "failureCode": {
+        "bsonType": ["string", "null"],
+        "maxLength": 50
+      },
+      "webhookAttempts": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "lastWebhookAt": {
+        "bsonType": ["date", "null"]
+      },
+      "pollAttempts": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "lastPolledAt": {
+        "bsonType": ["date", "null"]
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "expiresAt": {
+        "bsonType": "date"
+      },
+      "processedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "version": {
+        "bsonType": ["long", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

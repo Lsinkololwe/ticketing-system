@@ -1,0 +1,65 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Platform Accounts Schema - OWASP Compliant",
+    "description": "Platform-owned financial accounts (OPERATING, RESERVE, TAX_HOLDING)",
+    "required": [
+      "accountType",
+      "name",
+      "balance",
+      "currency",
+      "isActive",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "accountType": {
+        "bsonType": "string",
+        "enum": ["OPERATING", "RESERVE", "TAX_HOLDING"],
+        "description": "OWASP A04 - Enum constraint for account type"
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "balance": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04 - Non-negative balance"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000
+      },
+      "targetBalance": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "minimumBalanceThreshold": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "lastUpdatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "version": {
+        "bsonType": ["long", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

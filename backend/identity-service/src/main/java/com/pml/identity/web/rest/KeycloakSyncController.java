@@ -1,9 +1,10 @@
 package com.pml.identity.web.rest;
 
 import com.pml.identity.dto.sync.KeycloakEventDto;
+import com.pml.identity.dto.sync.KeycloakUserDataDto;
 import com.pml.identity.dto.sync.SyncResponse;
-import com.pml.identity.dto.sync.SyncUserRequest;
 import com.pml.identity.domain.model.User;
+import com.pml.identity.repository.UserRepository;
 import com.pml.identity.service.UserSyncService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -36,47 +37,43 @@ import reactor.core.publisher.Mono;
 public class KeycloakSyncController {
 
     private final UserSyncService userSyncService;
+    private final UserRepository userRepository;
 
     /**
-     * Sync a single user from Keycloak to MongoDB.
+     * Sync a user with full data from Keycloak (OWASP Best Practice).
      *
-     * Called by UserSyncEventListener when user data changes in Keycloak:
-     * - User registration
-     * - Profile updates
-     * - Email/phone verification
-     * - Admin creates/updates user
+     * This endpoint receives complete user data from the Keycloak EventListener,
+     * eliminating the need for Identity Service to call back to Keycloak Admin API.
      *
-     * @param request The sync request containing Keycloak user ID
+     * Benefits:
+     * - No admin credentials needed in Identity Service
+     * - No extra round-trip to Keycloak
+     * - Reduced attack surface
+     *
+     * @param userData The full user data from Keycloak
      * @return SyncResponse with the result
      */
-    @PostMapping("/user")
+    @PostMapping("/user-data")
     @PreAuthorize("hasAnyAuthority('SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE')")
-    public Mono<ResponseEntity<SyncResponse>> syncUser(@Valid @RequestBody SyncUserRequest request) {
-        log.info("Received sync request for user: {} (event: {})",
-                request.getKeycloakUserId(), request.getEventType());
+    public Mono<ResponseEntity<SyncResponse>> syncUserWithData(@Valid @RequestBody KeycloakUserDataDto userData) {
+        log.info("Received user data sync for user: {} (event: {})",
+                userData.getId(), userData.getEventType());
 
-        return userSyncService.syncUserFromKeycloak(request.getKeycloakUserId())
+        return userSyncService.syncUserFromData(userData)
                 .map(user -> {
                     SyncResponse response = SyncResponse.success(
                             user.getId(),
                             "SYNCED",
-                            "User synced successfully from Keycloak"
+                            "User synced successfully from Keycloak data"
                     );
                     return ResponseEntity.ok(response);
                 })
-                .switchIfEmpty(Mono.just(
-                        ResponseEntity.status(HttpStatus.NOT_FOUND)
-                                .body(SyncResponse.error(
-                                        request.getKeycloakUserId(),
-                                        "User not found in Keycloak"
-                                ))
-                ))
                 .onErrorResume(e -> {
-                    log.error("Failed to sync user {}: {}", request.getKeycloakUserId(), e.getMessage());
+                    log.error("Failed to sync user {} from data: {}", userData.getId(), e.getMessage());
                     return Mono.just(
                             ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                                     .body(SyncResponse.error(
-                                            request.getKeycloakUserId(),
+                                            userData.getId(),
                                             "Sync failed: " + e.getMessage()
                                     ))
                     );
@@ -170,8 +167,9 @@ public class KeycloakSyncController {
      * Get sync status for a specific user.
      *
      * Returns whether the user exists in MongoDB and when they were last synced.
+     * This endpoint only checks MongoDB - it does not trigger a sync.
      *
-     * @param userId The Keycloak user ID
+     * @param userId The Keycloak user ID (same as MongoDB document ID)
      * @return User details if found
      */
     @GetMapping("/user/{userId}")
@@ -179,7 +177,7 @@ public class KeycloakSyncController {
     public Mono<ResponseEntity<User>> getUserSyncStatus(@PathVariable String userId) {
         log.debug("Checking sync status for user: {}", userId);
 
-        return userSyncService.syncUserFromKeycloak(userId)
+        return userRepository.findById(userId)
                 .map(ResponseEntity::ok)
                 .switchIfEmpty(Mono.just(ResponseEntity.notFound().build()));
     }

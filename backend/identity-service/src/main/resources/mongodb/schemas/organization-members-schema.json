@@ -1,0 +1,88 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Organization Member Schema - OWASP Compliant",
+    "description": "MongoDB JSON Schema for organization_members - User-Tenant relationship with RBAC",
+    "required": [
+      "userId",
+      "organizationId",
+      "role",
+      "status",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "userId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        "description": "OWASP A03 - User ID (Keycloak UUID format)"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation: Organization this membership belongs to"
+      },
+      "role": {
+        "enum": [
+          "OWNER",
+          "ADMIN",
+          "MANAGER",
+          "MARKETER",
+          "CONTRIBUTOR"
+        ],
+        "description": "OWASP A04 - Valid organization role (defines permissions)"
+      },
+      "customPermissions": {
+        "bsonType": "array",
+        "items": {
+          "bsonType": "string",
+          "maxLength": 100
+        },
+        "description": "Permissions added to role defaults"
+      },
+      "deniedPermissions": {
+        "bsonType": "array",
+        "items": {
+          "bsonType": "string",
+          "maxLength": 100
+        },
+        "description": "Permissions explicitly revoked"
+      },
+      "status": {
+        "enum": [
+          "ACTIVE",
+          "INACTIVE",
+          "SUSPENDED",
+          "REMOVED"
+        ],
+        "description": "Member status"
+      },
+      "invitedById": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        "description": "OWASP A03 - User ID of inviter (Keycloak UUID, null for owner)"
+      },
+      "joinedAt": {
+        "bsonType": ["date", "null"],
+        "description": "When member joined"
+      },
+      "lastActiveAt": {
+        "bsonType": ["date", "null"],
+        "description": "Last activity timestamp"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB type discriminator"
+      }
+    },
+    "additionalProperties": true
+  }
+}

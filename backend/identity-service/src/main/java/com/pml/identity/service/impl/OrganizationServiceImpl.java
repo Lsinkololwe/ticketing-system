@@ -4,13 +4,11 @@ import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.enums.OrganizationStatus;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.model.OrganizationMember;
-import com.pml.identity.domain.model.OrganizerProfile;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.domain.valueobject.OrganizationSettings;
 import com.pml.identity.domain.valueobject.OrganizationStats;
 import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
-import com.pml.identity.repository.OrganizerProfileRepository;
 import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.service.OrganizationService;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +27,12 @@ import java.util.regex.Pattern;
 /**
  * Organization Service Implementation
  *
- * Manages organization lifecycle including creation, updates, and status management.
- * Organizations are created automatically when an OrganizerProfile is approved.
+ * Manages organization lifecycle including updates and status management.
+ *
+ * PROGRESSIVE ONBOARDING (Industry Standard):
+ * ==========================================
+ * Organizations are now created LAZILY via OrganizationOnboardingService when a user
+ * creates their first event. This class handles existing organization management.
  *
  * KEYCLOAK INTEGRATION:
  * ====================
@@ -38,6 +40,8 @@ import java.util.regex.Pattern;
  * 1. Creates a Keycloak group structure: /organizations/{slug}
  * 2. Creates sub-groups for each role: /owners, /admins, /managers, /marketers, /contributors
  * 3. Adds the owner to the /owners sub-group
+ *
+ * @see OrganizationOnboardingService For lazy organization creation
  */
 @Slf4j
 @Service
@@ -46,7 +50,6 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     private final OrganizationRepository organizationRepository;
     private final OrganizationMemberRepository memberRepository;
-    private final OrganizerProfileRepository organizerProfileRepository;
     private final KeycloakService keycloakService;
     private final StreamBridge streamBridge;
 
@@ -70,11 +73,6 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Override
     public Mono<Organization> findByOwnerId(String ownerId) {
         return organizationRepository.findByOwnerId(ownerId);
-    }
-
-    @Override
-    public Mono<Organization> findByOrganizerProfileId(String organizerProfileId) {
-        return organizationRepository.findByOrganizerProfileId(organizerProfileId);
     }
 
     @Override
@@ -109,41 +107,29 @@ public class OrganizationServiceImpl implements OrganizationService {
         return organizationRepository.countByStatus(status);
     }
 
+    @Override
+    public Flux<Organization> findByStatus(OrganizationStatus status) {
+        return organizationRepository.findByStatus(status);
+    }
+
+    @Override
+    public Flux<Organization> findInApprovalWorkflow() {
+        // Find organizations in approval workflow statuses
+        return organizationRepository.findByStatusIn(java.util.List.of(
+                OrganizationStatus.DRAFT,
+                OrganizationStatus.PENDING_REVIEW,
+                OrganizationStatus.CHANGES_REQUESTED,
+                OrganizationStatus.APPROVED,
+                OrganizationStatus.REJECTED
+        ));
+    }
+
     // ========================================================================
     // WRITE OPERATIONS
     // ========================================================================
 
-    @Override
-    public Mono<Organization> createFromOrganizerProfile(String organizerProfileId, String ownerId) {
-        log.info("Creating organization from organizer profile: {} with owner: {}", organizerProfileId, ownerId);
-
-        return organizerProfileRepository.findById(organizerProfileId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Organizer profile not found: " + organizerProfileId)))
-                .flatMap(profile -> generateUniqueSlug(profile.getCompanyName())
-                        .flatMap(slug -> {
-                            // Note: logoUrl/bannerUrl are set later when organizer customizes their public profile
-                            Organization organization = Organization.builder()
-                                    .name(profile.getCompanyName())
-                                    .slug(slug)
-                                    .description(profile.getTagline())
-                                    .organizerProfileId(organizerProfileId)
-                                    .ownerId(ownerId)
-                                    .status(OrganizationStatus.ACTIVE)
-                                    .verified(profile.isDocumentsVerified() && profile.isBankVerified())
-                                    .settings(new OrganizationSettings())
-                                    .stats(new OrganizationStats())
-                                    .build();
-
-                            return organizationRepository.save(organization)
-                                    .flatMap(savedOrg -> createKeycloakGroupStructure(savedOrg)
-                                            .then(createOwnerMember(savedOrg.getId(), ownerId))
-                                            .thenReturn(savedOrg))
-                                    .doOnSuccess(org -> {
-                                        log.info("Organization created successfully: {} ({})", org.getName(), org.getId());
-                                        publishOrganizationCreatedEvent(org);
-                                    });
-                        }));
-    }
+    // NOTE: Organization creation is now handled by OrganizationOnboardingService
+    // using lazy creation when a user creates their first event.
 
     /**
      * Create Keycloak group structure for the organization

@@ -1,0 +1,66 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Chart of Accounts Schema - OWASP Compliant",
+    "description": "Foundation for double-entry bookkeeping with hierarchical account structure",
+    "required": [
+      "accountCode",
+      "accountName",
+      "accountType",
+      "currency",
+      "isActive",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "accountCode": {
+        "bsonType": "string",
+        "pattern": "^\\d{4}(-[A-Z0-9]+)?$",
+        "description": "OWASP A03 - Account code format (e.g., 1021, 2010-0001)"
+      },
+      "accountName": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "accountType": {
+        "bsonType": "string",
+        "enum": ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"],
+        "description": "OWASP A04 - Enum constraint for account type"
+      },
+      "subType": {
+        "bsonType": ["string", "null"],
+        "enum": ["BANK_ACCOUNT", "RECEIVABLE", "ESCROW_PAYABLE", "COMMISSION_REVENUE", "GATEWAY_FEE", null]
+      },
+      "parentAccountCode": {
+        "bsonType": ["string", "null"],
+        "pattern": "^\\d{4}$",
+        "description": "Parent account for hierarchical structure"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "version": {
+        "bsonType": ["long", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

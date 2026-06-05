@@ -1,0 +1,134 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Event Escrow Account Schema - OWASP Compliant",
+    "description": "MongoDB JSON Schema for event_escrow_accounts - Critical financial data",
+    "required": [
+      "eventId",
+      "organizerId",
+      "organizationId",
+      "status",
+      "totalDeposited",
+      "availableBalance",
+      "pendingBalance",
+      "currency",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "accountNumber": {
+        "bsonType": "string",
+        "pattern": "^ESC-[A-Z0-9]{10,16}$",
+        "description": "Unique escrow account number"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Event this escrow belongs to (unique per event)"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        "description": "Event organizer user ID (Keycloak UUID format)"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation: Required for financial data"
+      },
+      "status": {
+        "enum": [
+          "ACTIVE",
+          "FROZEN",
+          "PENDING_RELEASE",
+          "RELEASED",
+          "CLOSED",
+          "DISPUTED"
+        ],
+        "description": "Escrow account status"
+      },
+      "totalDeposited": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "Total amount deposited into escrow"
+      },
+      "availableBalance": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "Balance available for payout"
+      },
+      "pendingBalance": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "Balance pending clearance"
+      },
+      "releasedBalance": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "Total amount released to organizer"
+      },
+      "refundedAmount": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "Total amount refunded"
+      },
+      "platformCommission": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "Platform commission held"
+      },
+      "commissionRate": {
+        "bsonType": "double",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Commission rate (0.0 to 1.0)"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD", "EUR", "GBP", "ZAR"],
+        "description": "Account currency"
+      },
+      "holdPeriodDays": {
+        "bsonType": "int",
+        "minimum": 0,
+        "maximum": 90,
+        "description": "Days to hold funds after event"
+      },
+      "releaseDate": {
+        "bsonType": ["date", "null"],
+        "description": "Scheduled release date"
+      },
+      "lastTransactionAt": {
+        "bsonType": ["date", "null"],
+        "description": "Last transaction timestamp"
+      },
+      "freezeReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500,
+        "description": "Reason for account freeze"
+      },
+      "frozenAt": {
+        "bsonType": ["date", "null"],
+        "description": "When account was frozen"
+      },
+      "frozenBy": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        "description": "OWASP A03 - Admin user ID who froze account (Keycloak UUID)"
+      },
+      "metadata": {
+        "bsonType": "object",
+        "description": "Additional metadata"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": "date"
+      }
+    },
+    "additionalProperties": false
+  }
+}

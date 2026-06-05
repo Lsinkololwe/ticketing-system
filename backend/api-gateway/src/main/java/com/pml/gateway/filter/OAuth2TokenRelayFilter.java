@@ -26,9 +26,10 @@ import reactor.core.publisher.Mono;
  * <pre>
  * X-User-Id       → userId claim (or sub if not present)
  * X-User-Email    → email claim
- * X-User-Type     → userType claim (ATTENDEE, ORGANIZER, ADMIN)
  * X-User-Username → username claim
  * Authorization   → Bearer {token} (original JWT for services that need full token)
+ *
+ * Note: Roles are extracted from JWT realm_access and resource_access claims by each service.
  * </pre>
  *
  * <h2>Request Flow</h2>
@@ -77,7 +78,6 @@ public class OAuth2TokenRelayFilter implements GlobalFilter, Ordered {
                     // These claims are set by Keycloak based on user attributes and mappers
                     String userId = jwt.getClaimAsString("userId");
                     String email = jwt.getClaimAsString("email");
-                    String userType = jwt.getClaimAsString("userType");
                     String username = jwt.getClaimAsString("username");
 
                     // Fallback: use 'sub' claim if custom userId not present
@@ -96,9 +96,6 @@ public class OAuth2TokenRelayFilter implements GlobalFilter, Ordered {
                     if (email != null) {
                         requestBuilder.header("X-User-Email", email);
                     }
-                    if (userType != null) {
-                        requestBuilder.header("X-User-Type", userType);
-                    }
                     if (username != null) {
                         requestBuilder.header("X-User-Username", username);
                     }
@@ -109,8 +106,8 @@ public class OAuth2TokenRelayFilter implements GlobalFilter, Ordered {
 
                     ServerHttpRequest modifiedRequest = requestBuilder.build();
 
-                    log.debug("[TokenRelay] Forwarding user context: userId={}, email={}, userType={}",
-                            userId, email, userType);
+                    log.debug("[TokenRelay] Forwarding user context: userId={}, email={}, username={}",
+                            userId, email, username);
 
                     return chain.filter(exchange.mutate().request(modifiedRequest).build());
                 })

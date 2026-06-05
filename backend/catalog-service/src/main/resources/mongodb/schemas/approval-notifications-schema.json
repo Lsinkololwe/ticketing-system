@@ -1,0 +1,57 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Approval Notifications Schema - OWASP Compliant",
+    "description": "Notification log for approval workflow events",
+    "required": [
+      "eventId",
+      "recipientId",
+      "notificationType",
+      "status",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "recipientId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "notificationType": {
+        "bsonType": "string",
+        "enum": ["SUBMITTED", "APPROVED", "REJECTED", "REVISION_REQUESTED", "ESCALATED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "channel": {
+        "bsonType": "string",
+        "enum": ["EMAIL", "SMS", "PUSH", "IN_APP"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "SENT", "DELIVERED", "FAILED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "sentAt": {
+        "bsonType": ["date", "null"]
+      },
+      "deliveredAt": {
+        "bsonType": ["date", "null"]
+      },
+      "errorMessage": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "createdAt": {
+        "bsonType": "date"
+      }
+    },
+    "additionalProperties": false
+  }
+}

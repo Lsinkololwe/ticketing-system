@@ -79,9 +79,6 @@ public class KeycloakGrantedAuthoritiesConverter implements Converter<Jwt, Colle
             authorities.addAll(extractClientRoles(jwt, clientId));
         }
 
-        // Extract custom userType claim (application-specific)
-        authorities.addAll(extractUserTypeAuthority(jwt));
-
         return authorities;
     }
 
@@ -151,18 +148,6 @@ public class KeycloakGrantedAuthoritiesConverter implements Converter<Jwt, Colle
                 .filter(this::isValidRole)
                 .map(role -> new SimpleGrantedAuthority(ROLE_PREFIX + role))
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * Extracts userType from custom claim and converts to role.
-     * This is application-specific for the event ticketing system.
-     */
-    private Collection<GrantedAuthority> extractUserTypeAuthority(Jwt jwt) {
-        String userType = jwt.getClaimAsString("userType");
-        if (userType == null || userType.isBlank()) {
-            return Collections.emptyList();
-        }
-        return List.of(new SimpleGrantedAuthority(ROLE_PREFIX + userType));
     }
 
     /**

@@ -1,0 +1,48 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Event Reminders Schema - OWASP Compliant",
+    "description": "User reminders for upcoming events",
+    "required": [
+      "userId",
+      "eventId",
+      "reminderDate",
+      "status",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "userId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "reminderDate": {
+        "bsonType": "date",
+        "description": "When to send the reminder"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "SENT", "FAILED", "CANCELLED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "sentAt": {
+        "bsonType": ["date", "null"]
+      },
+      "notificationChannel": {
+        "bsonType": ["string", "null"],
+        "enum": ["EMAIL", "SMS", "PUSH", null]
+      },
+      "createdAt": {
+        "bsonType": "date"
+      }
+    },
+    "additionalProperties": false
+  }
+}

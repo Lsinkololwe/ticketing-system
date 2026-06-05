@@ -73,7 +73,16 @@ public class KeycloakService {
             // Set custom attributes
             Map<String, List<String>> attributes = new HashMap<>();
             attributes.put("userId", Collections.singletonList(user.getId()));
-            attributes.put("userType", Collections.singletonList(user.getUserType().name()));
+
+            // Store roles as comma-separated string for backup/reference
+            String rolesStr = user.getRoles() != null && !user.getRoles().isEmpty()
+                    ? user.getRoles().stream()
+                        .map(Enum::name)
+                        .reduce((a, b) -> a + "," + b)
+                        .orElse("CUSTOMER")
+                    : "CUSTOMER";
+            attributes.put("roles", Collections.singletonList(rolesStr));
+
             if (user.getPhoneNumber() != null) {
                 attributes.put("phoneNumber", Collections.singletonList(user.getPhoneNumber()));
                 attributes.put("phoneVerified", Collections.singletonList(String.valueOf(user.isPhoneVerified())));
@@ -99,8 +108,15 @@ public class KeycloakService {
                 String keycloakUserId = location.substring(location.lastIndexOf('/') + 1);
                 log.info("User created in Keycloak with ID: {}", keycloakUserId);
 
-                // Assign role based on userType
-                assignRole(keycloakUserId, user.getUserType().name());
+                // Assign all roles from the user's role set
+                if (user.getRoles() != null) {
+                    for (var role : user.getRoles()) {
+                        assignRole(keycloakUserId, role.name());
+                    }
+                } else {
+                    // Default to CUSTOMER role
+                    assignRole(keycloakUserId, "CUSTOMER");
+                }
 
                 return keycloakUserId;
             } else if (status == 409) {
@@ -126,7 +142,10 @@ public class KeycloakService {
      * - firstName, lastName: Synced for display purposes
      * - emailVerified: Synced for verification status
      * - isActive (MongoDB) → enabled (Keycloak): Controls authentication ability
-     * - Attributes: userType, phoneNumber, phoneVerified
+     * - Attributes: roles, phoneNumber, phoneVerified
+     *
+     * Note: Role synchronization is handled separately via addRoleToUser/removeRoleFromUser
+     * or syncUserRoles methods. This method only updates the 'roles' attribute for reference.
      *
      * @param user The updated user entity
      * @return Mono signaling completion
@@ -160,7 +179,16 @@ public class KeycloakService {
             if (attributes == null) {
                 attributes = new HashMap<>();
             }
-            attributes.put("userType", Collections.singletonList(user.getUserType().name()));
+
+            // Store roles as comma-separated string for backup/reference
+            String rolesStr = user.getRoles() != null && !user.getRoles().isEmpty()
+                    ? user.getRoles().stream()
+                        .map(Enum::name)
+                        .reduce((a, b) -> a + "," + b)
+                        .orElse("CUSTOMER")
+                    : "CUSTOMER";
+            attributes.put("roles", Collections.singletonList(rolesStr));
+
             if (user.getPhoneNumber() != null) {
                 attributes.put("phoneNumber", Collections.singletonList(user.getPhoneNumber()));
                 attributes.put("phoneVerified", Collections.singletonList(String.valueOf(user.isPhoneVerified())));
@@ -170,6 +198,51 @@ public class KeycloakService {
             userResource.update(keycloakUser);
             log.info("User updated in Keycloak: {}", user.getEmail());
         }).subscribeOn(Schedulers.boundedElastic()).then();
+    }
+
+    /**
+     * Sync user roles to Keycloak.
+     * This method ensures the user has exactly the specified roles in Keycloak.
+     *
+     * @param keycloakUserId The Keycloak user ID
+     * @param roles The set of roles the user should have
+     * @return Mono signaling completion
+     */
+    public Mono<Void> syncUserRoles(String keycloakUserId, java.util.Set<com.pml.shared.constants.UserType> roles) {
+        return getUserRoles(keycloakUserId)
+                .flatMap(currentRoles -> {
+                    // Convert current roles to UserType set
+                    java.util.Set<String> targetRoleNames = roles.stream()
+                            .map(Enum::name)
+                            .collect(java.util.stream.Collectors.toSet());
+
+                    java.util.Set<String> currentRoleNames = new java.util.HashSet<>(currentRoles);
+
+                    // Roles to add
+                    java.util.Set<String> rolesToAdd = new java.util.HashSet<>(targetRoleNames);
+                    rolesToAdd.removeAll(currentRoleNames);
+
+                    // Roles to remove
+                    java.util.Set<String> rolesToRemove = new java.util.HashSet<>(currentRoleNames);
+                    rolesToRemove.removeAll(targetRoleNames);
+
+                    // Add new roles
+                    reactor.core.publisher.Mono<Void> addRoles = reactor.core.publisher.Flux.fromIterable(rolesToAdd)
+                            .flatMap(role -> addRoleToUser(keycloakUserId, role))
+                            .then();
+
+                    // Remove old roles
+                    reactor.core.publisher.Mono<Void> removeRoles = reactor.core.publisher.Flux.fromIterable(rolesToRemove)
+                            .flatMap(role -> removeRoleFromUser(keycloakUserId, role))
+                            .then();
+
+                    return reactor.core.publisher.Mono.when(addRoles, removeRoles);
+                })
+                .doOnSuccess(v -> log.info("Synced roles for user {}: {}", keycloakUserId, roles))
+                .onErrorResume(e -> {
+                    log.warn("Failed to sync roles for user {}: {}", keycloakUserId, e.getMessage());
+                    return reactor.core.publisher.Mono.empty();
+                });
     }
 
     /**

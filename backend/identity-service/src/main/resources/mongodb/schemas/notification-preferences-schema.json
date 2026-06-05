@@ -1,0 +1,51 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Notification Preferences Schema - OWASP Compliant",
+    "description": "User preferences for notification channels and types",
+    "required": [
+      "userId",
+      "emailEnabled",
+      "smsEnabled",
+      "pushEnabled",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "userId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "emailEnabled": {
+        "bsonType": "bool"
+      },
+      "smsEnabled": {
+        "bsonType": "bool"
+      },
+      "pushEnabled": {
+        "bsonType": "bool"
+      },
+      "preferences": {
+        "bsonType": ["object", "null"],
+        "properties": {
+          "ticketPurchase": {"bsonType": "bool"},
+          "eventReminders": {"bsonType": "bool"},
+          "eventCancellations": {"bsonType": "bool"},
+          "refundUpdates": {"bsonType": "bool"},
+          "payoutNotifications": {"bsonType": "bool"},
+          "promotionalEmails": {"bsonType": "bool"}
+        }
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

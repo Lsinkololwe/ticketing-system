@@ -14,6 +14,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -285,27 +288,30 @@ public class IdentityServiceClient {
     // ========================================================================
 
     /**
-     * Sync a user from Keycloak to MongoDB.
-     * Called when user data changes in Keycloak (registration, profile update, etc.)
+     * Sync a user with full data payload (OWASP Best Practice).
+     * Called when user data changes in Keycloak. Sends complete user data
+     * so Identity Service doesn't need to call back to Keycloak.
      *
-     * @param keycloakUserId The Keycloak user ID
-     * @param eventType      The type of event that triggered the sync
+     * This eliminates the need for:
+     * - Admin credentials in Identity Service
+     * - Extra round-trip to Keycloak
+     * - Potential security issues with storing admin passwords
+     *
+     * @param userData The full user data from Keycloak
      * @return SyncResult indicating success or failure
      */
-    public SyncResult syncUser(String keycloakUserId, String eventType) {
+    public SyncResult syncUserWithData(KeycloakUserData userData) {
         try {
-            String url = serviceUrl + "/api/internal/keycloak/sync/user";
+            String url = serviceUrl + "/api/internal/keycloak/sync/user-data";
 
-            JsonObject requestBody = new JsonObject();
-            requestBody.addProperty("keycloakUserId", keycloakUserId);
-            requestBody.addProperty("eventType", eventType);
+            String jsonBody = GSON.toJson(userData);
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/json")
                     .timeout(Duration.ofSeconds(30))
-                    .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(requestBody)));
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
 
             // Add authorization header if token is available
             String token = getAccessToken();
@@ -315,22 +321,24 @@ public class IdentityServiceClient {
 
             HttpRequest request = requestBuilder.build();
 
-            LOG.infof("Syncing user %s (event: %s) to Identity Service", keycloakUserId, eventType);
+            LOG.infof("Syncing user %s (event: %s) with full data to Identity Service",
+                    userData.getId(), userData.getEventType());
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            LOG.debugf("Sync user response status: %d", response.statusCode());
+            LOG.debugf("Sync user with data response status: %d", response.statusCode());
 
             if (response.statusCode() == 200 || response.statusCode() == 201) {
-                LOG.infof("User %s synced successfully", keycloakUserId);
+                LOG.infof("User %s synced successfully with full data", userData.getId());
                 return new SyncResult(true, "User synced successfully");
             } else {
-                String errorMsg = String.format("Failed to sync user: %d - %s", response.statusCode(), response.body());
+                String errorMsg = String.format("Failed to sync user with data: %d - %s",
+                        response.statusCode(), response.body());
                 LOG.errorf(errorMsg);
                 return new SyncResult(false, errorMsg);
             }
         } catch (IOException | InterruptedException e) {
-            LOG.errorf(e, "Failed to sync user %s", keycloakUserId);
+            LOG.errorf(e, "Failed to sync user with data %s", userData.getId());
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -593,5 +601,70 @@ public class IdentityServiceClient {
         public void setIpAddress(String ipAddress) {
             this.ipAddress = ipAddress;
         }
+    }
+
+    /**
+     * Full user data object for OWASP-compliant sync.
+     * Contains all user information from Keycloak, eliminating the need
+     * for Identity Service to call back to Keycloak Admin API.
+     */
+    public static class KeycloakUserData {
+        private String id;
+        private String username;
+        private String email;
+        private String firstName;
+        private String lastName;
+        private boolean emailVerified;
+        private boolean enabled;
+        private String phoneNumber;
+        private boolean phoneVerified;
+        private Set<String> roles;
+        private List<String> accountTypes;
+        private Map<String, List<String>> attributes;
+        private String eventType;
+        private long timestamp;
+
+        // Getters and setters
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
+
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+
+        public String getFirstName() { return firstName; }
+        public void setFirstName(String firstName) { this.firstName = firstName; }
+
+        public String getLastName() { return lastName; }
+        public void setLastName(String lastName) { this.lastName = lastName; }
+
+        public boolean isEmailVerified() { return emailVerified; }
+        public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public String getPhoneNumber() { return phoneNumber; }
+        public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
+
+        public boolean isPhoneVerified() { return phoneVerified; }
+        public void setPhoneVerified(boolean phoneVerified) { this.phoneVerified = phoneVerified; }
+
+        public Set<String> getRoles() { return roles; }
+        public void setRoles(Set<String> roles) { this.roles = roles; }
+
+        public List<String> getAccountTypes() { return accountTypes; }
+        public void setAccountTypes(List<String> accountTypes) { this.accountTypes = accountTypes; }
+
+        public Map<String, List<String>> getAttributes() { return attributes; }
+        public void setAttributes(Map<String, List<String>> attributes) { this.attributes = attributes; }
+
+        public String getEventType() { return eventType; }
+        public void setEventType(String eventType) { this.eventType = eventType; }
+
+        public long getTimestamp() { return timestamp; }
+        public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
     }
 }

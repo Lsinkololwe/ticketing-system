@@ -1,0 +1,361 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": [
+      "ticketNumber",
+      "eventId",
+      "buyerId",
+      "organizerId",
+      "organizationId",
+      "eventTitle",
+      "eventDate",
+      "ticketCategory",
+      "price",
+      "status",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "string",
+        "description": "MongoDB document ID"
+      },
+      "version": {
+        "bsonType": "long",
+        "minimum": 0,
+        "description": "Optimistic locking version field - prevents double-booking"
+      },
+      "ticketNumber": {
+        "bsonType": "string",
+        "pattern": "^TKT-[A-Z0-9]{8}$",
+        "description": "Unique ticket number (format: TKT-XXXXXXXX)"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Reference to event in catalog-service"
+      },
+      "reservationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Links ticket to its original reservation"
+      },
+      "ticketTierId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Ticket tier ID from catalog-service"
+      },
+      "buyerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "User ID of buyer"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Denormalized organizer ID for efficient querying"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01:2021 - Tenant isolation required for multi-tenant operations"
+      },
+      "eventTitle": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "Event title (denormalized)"
+      },
+      "eventDate": {
+        "bsonType": "string",
+        "description": "Event date (denormalized)"
+      },
+      "eventLocationName": {
+        "bsonType": "string",
+        "maxLength": 300,
+        "description": "Event location name"
+      },
+      "eventLocationAddress": {
+        "bsonType": "string",
+        "maxLength": 500,
+        "description": "Event location address"
+      },
+      "eventLocationCity": {
+        "bsonType": "string",
+        "maxLength": 200,
+        "description": "Event location city"
+      },
+      "ticketCategory": {
+        "enum": [
+          "GENERAL_ADMISSION",
+          "VIP",
+          "PREMIUM",
+          "EARLY_BIRD",
+          "GROUP",
+          "STUDENT",
+          "SENIOR",
+          "CHILD",
+          "STANDING",
+          "SEATED",
+          "MEET_AND_GREET",
+          "BACKSTAGE_PASS",
+          "PRESALE",
+          "REGULAR",
+          "LAST_MINUTE"
+        ],
+        "description": "Ticket category enum value"
+      },
+      "ticketCategoryCode": {
+        "bsonType": "string",
+        "maxLength": 50,
+        "description": "Ticket category code"
+      },
+      "ticketCategoryName": {
+        "bsonType": "string",
+        "maxLength": 200,
+        "description": "Ticket category name"
+      },
+      "price": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04: Ticket price in ZMW - Must be non-negative"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW"],
+        "description": "Currency code (default: ZMW)"
+      },
+      "status": {
+        "enum": [
+          "PENDING_PAYMENT",
+          "PENDING_VERIFICATION",
+          "PURCHASED",
+          "CONFIRMED",
+          "VALIDATED",
+          "USED",
+          "EXPIRED",
+          "CANCELLED",
+          "REFUNDED",
+          "CHARGEDBACK",
+          "PAYMENT_FAILED"
+        ],
+        "description": "Ticket status - enforced enum constraint"
+      },
+      "qrCode": {
+        "bsonType": "string",
+        "maxLength": 1000,
+        "description": "QR code for ticket validation"
+      },
+      "barcode": {
+        "bsonType": "string",
+        "maxLength": 500,
+        "description": "Barcode for ticket validation"
+      },
+      "purchaseDate": {
+        "bsonType": "date",
+        "description": "When ticket was purchased"
+      },
+      "validFrom": {
+        "bsonType": "date",
+        "description": "Ticket validity start date"
+      },
+      "validUntil": {
+        "bsonType": "date",
+        "description": "Ticket validity end date"
+      },
+      "validatedAt": {
+        "bsonType": "date",
+        "description": "When ticket was validated at venue"
+      },
+      "validatedBy": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "ID of user/device that validated the ticket"
+      },
+      "usedAt": {
+        "bsonType": "date",
+        "description": "When ticket was used for entry"
+      },
+      "cancelledAt": {
+        "bsonType": "date",
+        "description": "When ticket was cancelled"
+      },
+      "cancellationReason": {
+        "bsonType": "string",
+        "maxLength": 1000,
+        "description": "Reason for cancellation"
+      },
+      "refundedAt": {
+        "bsonType": "date",
+        "description": "When ticket was refunded"
+      },
+      "refundReason": {
+        "bsonType": "string",
+        "maxLength": 1000,
+        "description": "Reason for refund"
+      },
+      "buyerName": {
+        "bsonType": "string",
+        "maxLength": 300,
+        "description": "Buyer full name"
+      },
+      "buyerEmail": {
+        "bsonType": "string",
+        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+        "maxLength": 320,
+        "description": "OWASP A03: Email pattern validation"
+      },
+      "buyerPhone": {
+        "bsonType": "string",
+        "pattern": "^\\+[1-9]\\d{1,14}$",
+        "description": "OWASP A03: E.164 phone number validation"
+      },
+      "correlationId": {
+        "bsonType": "string",
+        "maxLength": 100,
+        "description": "Correlation ID for payment tracking"
+      },
+      "paymentReference": {
+        "bsonType": "string",
+        "maxLength": 200,
+        "description": "Payment gateway reference"
+      },
+      "paymentUrl": {
+        "bsonType": "string",
+        "pattern": "^https?://.*",
+        "maxLength": 2000,
+        "description": "OWASP A03: URL pattern validation"
+      },
+      "quantity": {
+        "bsonType": "int",
+        "minimum": 0,
+        "description": "Ticket quantity"
+      },
+      "metadata": {
+        "bsonType": "object",
+        "description": "Additional metadata"
+      },
+      "originalBuyerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Original buyer if ticket was transferred"
+      },
+      "transferredToId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "User ID ticket was transferred to"
+      },
+      "transferredAt": {
+        "bsonType": "date",
+        "description": "When ticket was transferred"
+      },
+      "transferReason": {
+        "bsonType": "string",
+        "maxLength": 1000,
+        "description": "Reason for transfer"
+      },
+      "commissionRate": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Platform commission rate (0-1)"
+      },
+      "commissionAmount": {
+        "bsonType": "decimal",
+        "description": "Platform commission amount"
+      },
+      "netAmount": {
+        "bsonType": "decimal",
+        "description": "Net amount to organizer (price - commission)"
+      },
+      "paymentInfo": {
+        "bsonType": "object",
+        "properties": {
+          "paymentId": {
+            "bsonType": "string",
+            "pattern": "^[a-fA-F0-9]{24}$"
+          },
+          "paymentMethod": {
+            "bsonType": "string",
+            "maxLength": 100
+          },
+          "transactionId": {
+            "bsonType": "string",
+            "maxLength": 200
+          },
+          "amount": {
+            "bsonType": "decimal"
+          },
+          "currency": {
+            "bsonType": "string",
+            "enum": ["ZMW"]
+          },
+          "status": {
+            "enum": ["PENDING", "COMPLETED", "FAILED", "REFUNDED"]
+          },
+          "paymentDate": {
+            "bsonType": "date"
+          },
+          "providerReference": {
+            "bsonType": "string",
+            "maxLength": 300
+          }
+        },
+        "description": "Embedded payment information"
+      },
+      "refundInfo": {
+        "bsonType": "object",
+        "properties": {
+          "refundId": {
+            "bsonType": "string",
+            "pattern": "^[a-fA-F0-9]{24}$"
+          },
+          "refundAmount": {
+            "bsonType": "decimal"
+          },
+          "reason": {
+            "bsonType": "string",
+            "maxLength": 1000
+          },
+          "status": {
+            "enum": ["PENDING", "APPROVED", "REJECTED", "PROCESSING", "COMPLETED", "FAILED"]
+          },
+          "refundDate": {
+            "bsonType": "date"
+          },
+          "processedBy": {
+            "bsonType": "string",
+            "pattern": "^[a-fA-F0-9]{24}$"
+          },
+          "transactionId": {
+            "bsonType": "string",
+            "maxLength": 200
+          }
+        },
+        "description": "Embedded refund information"
+      },
+      "createdAt": {
+        "bsonType": "date",
+        "description": "Timestamp when ticket was created"
+      },
+      "updatedAt": {
+        "bsonType": "date",
+        "description": "Timestamp when ticket was last updated"
+      },
+      "createdBy": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "User who created the ticket"
+      },
+      "updatedBy": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "User who last updated the ticket"
+      },
+      "isActive": {
+        "bsonType": "bool",
+        "description": "Soft delete flag"
+      }
+    },
+    "additionalProperties": false
+  }
+}

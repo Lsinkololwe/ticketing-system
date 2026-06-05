@@ -4,9 +4,17 @@ import com.pml.shared.security.KeycloakJwtAuthenticationConverter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Security configuration for the API Gateway.
@@ -71,8 +79,13 @@ public class GatewaySecurityConfig {
                 // CSRF protection is for session-based auth where browser auto-sends cookies
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
 
+                // Enable CORS - uses corsConfigurationSource bean below
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
                 // Define authorization rules for paths
                 .authorizeExchange(exchanges -> exchanges
+                        // Allow CORS preflight requests (OPTIONS) without authentication
+                        .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // ─────────────────────────────────────────────────────────────
                         // PUBLIC ENDPOINTS - No authentication required
                         // ─────────────────────────────────────────────────────────────
@@ -124,5 +137,51 @@ public class GatewaySecurityConfig {
                         )
                 )
                 .build();
+    }
+
+    /**
+     * CORS configuration source for Spring Security.
+     * Defines allowed origins, methods, and headers for cross-origin requests.
+     *
+     * <p>This is required because Spring Security intercepts requests BEFORE
+     * the Gateway's CORS filter runs. Without this, preflight OPTIONS requests
+     * would be rejected with 401/403.</p>
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        // Allowed origins - must match frontend URLs
+        configuration.setAllowedOrigins(Arrays.asList(
+                "http://localhost:3000",   // Customer web
+                "http://localhost:3003",   // Organization admin
+                "http://localhost:3030",   // Platform admin
+                "http://localhost:5173"    // Vite dev server
+        ));
+
+        // Allowed HTTP methods
+        configuration.setAllowedMethods(Arrays.asList(
+                "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
+        ));
+
+        // Allow all headers (Authorization, Content-Type, etc.)
+        configuration.setAllowedHeaders(List.of("*"));
+
+        // Allow credentials (cookies, authorization headers)
+        configuration.setAllowCredentials(true);
+
+        // Cache preflight response for 1 hour
+        configuration.setMaxAge(3600L);
+
+        // Expose headers that frontend can read
+        configuration.setExposedHeaders(Arrays.asList(
+                "Authorization",
+                "X-Request-Id",
+                "X-Correlation-Id"
+        ));
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 }

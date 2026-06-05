@@ -1,0 +1,60 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Ticket Tiers Schema - OWASP Compliant",
+    "description": "Embedded ticket tier pricing within events (note: not a standalone collection)",
+    "required": [
+      "name",
+      "price",
+      "totalQuantity",
+      "availableQuantity"
+    ],
+    "properties": {
+      "id": {
+        "bsonType": ["string", "null"]
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "Tier name (e.g., VIP, General Admission, Early Bird)"
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "price": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04 - Non-negative price"
+      },
+      "totalQuantity": {
+        "bsonType": "int",
+        "minimum": 1,
+        "description": "Total tickets available for this tier"
+      },
+      "availableQuantity": {
+        "bsonType": "int",
+        "minimum": 0,
+        "description": "Remaining tickets available"
+      },
+      "maxPerOrder": {
+        "bsonType": ["int", "null"],
+        "minimum": 1,
+        "description": "Maximum tickets per order"
+      },
+      "saleStartDate": {
+        "bsonType": ["date", "null"],
+        "description": "When sales open for this tier"
+      },
+      "saleEndDate": {
+        "bsonType": ["date", "null"],
+        "description": "When sales close for this tier"
+      },
+      "isActive": {
+        "bsonType": ["bool", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Escrow Accounts Schema - OWASP Compliant",
+    "description": "Platform escrow accounts for holding organizer funds",
+    "required": [
+      "accountName",
+      "accountNumber",
+      "currency",
+      "currentBalance",
+      "totalDeposits",
+      "totalWithdrawals",
+      "totalCommissions",
+      "status",
+      "isActive",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "accountName": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "accountNumber": {
+        "bsonType": "string",
+        "pattern": "^ESC-[A-Z0-9]{6,20}$",
+        "description": "OWASP A03 - Escrow account number format"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "currentBalance": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04 - Non-negative balance"
+      },
+      "totalDeposits": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "totalWithdrawals": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "totalCommissions": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "minimumBalance": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "maximumPayoutAmount": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "dailyPayoutLimit": {
+        "bsonType": ["int", "null"],
+        "minimum": 1
+      },
+      "monthlyPayoutLimit": {
+        "bsonType": ["int", "null"],
+        "minimum": 1
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["ACTIVE", "INACTIVE", "SUSPENDED", "CLOSED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "contactPerson": {
+        "bsonType": ["string", "null"],
+        "maxLength": 200
+      },
+      "contactEmail": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+        "description": "OWASP A03 - Email validation"
+      },
+      "contactPhone": {
+        "bsonType": ["string", "null"],
+        "pattern": "^\\+[1-9]\\d{1,14}$",
+        "description": "OWASP A03 - E.164 phone format"
+      },
+      "createdBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "updatedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "lastTransactionAt": {
+        "bsonType": ["date", "null"]
+      },
+      "associatedBankAccountNumber": {
+        "bsonType": ["string", "null"],
+        "maxLength": 50
+      },
+      "metadata": {
+        "bsonType": ["object", "null"]
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000
+      }
+    },
+    "additionalProperties": false
+  }
+}

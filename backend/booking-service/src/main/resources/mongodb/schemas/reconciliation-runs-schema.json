@@ -1,0 +1,107 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Reconciliation Runs Schema - OWASP Compliant",
+    "description": "Single reconciliation execution comparing external vs internal records",
+    "required": [
+      "runNumber",
+      "reconciliationDate",
+      "type",
+      "status",
+      "startedAt",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "runNumber": {
+        "bsonType": "string",
+        "pattern": "^REC-(GATEWAY|BANK|ESCROW)-\\d{8}-\\d{3}$",
+        "description": "OWASP A03 - Format: REC-{TYPE}-{YYYYMMDD}-{NNN}"
+      },
+      "reconciliationDate": {
+        "bsonType": "date",
+        "description": "Business date being reconciled"
+      },
+      "type": {
+        "bsonType": "string",
+        "enum": ["GATEWAY", "BANK", "ESCROW"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["RUNNING", "COMPLETED", "REQUIRES_REVIEW", "FAILED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "dataSource": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "expectedTotal": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "actualTotal": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "variance": {
+        "bsonType": "decimal"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "totalRecords": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "matchedCount": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "unmatchedCount": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "resolvedCount": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "items": {
+        "bsonType": ["array", "null"],
+        "description": "Embedded reconciliation items"
+      },
+      "runBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "startedAt": {
+        "bsonType": "date"
+      },
+      "completedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "notes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
+      },
+      "errorMessage": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "version": {
+        "bsonType": ["long", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

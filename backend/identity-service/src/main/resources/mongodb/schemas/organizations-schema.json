@@ -1,0 +1,284 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Organization Schema - OWASP Compliant",
+    "description": "MongoDB JSON Schema for organizations collection. Follows progressive onboarding pattern - Organizations are created lazily when users create their first event.",
+    "required": [
+      "name",
+      "slug",
+      "ownerId",
+      "type",
+      "status",
+      "kybStatus",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB type discriminator"
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "Organization display name"
+      },
+      "slug": {
+        "bsonType": "string",
+        "pattern": "^[a-z0-9-]+$",
+        "minLength": 2,
+        "maxLength": 100,
+        "description": "URL-friendly unique identifier"
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000,
+        "description": "Organization description"
+      },
+      "tagline": {
+        "bsonType": ["string", "null"],
+        "maxLength": 200,
+        "description": "Short tagline for the organization"
+      },
+      "logoUrl": {
+        "bsonType": ["string", "null"],
+        "pattern": "^https?://.*",
+        "maxLength": 500,
+        "description": "OWASP A03 - Logo URL pattern validation"
+      },
+      "bannerUrl": {
+        "bsonType": ["string", "null"],
+        "pattern": "^https?://.*",
+        "maxLength": 500,
+        "description": "OWASP A03 - Banner URL pattern validation"
+      },
+      "website": {
+        "bsonType": ["string", "null"],
+        "pattern": "^https?://.*",
+        "maxLength": 500,
+        "description": "Organization website URL"
+      },
+      "socialLinks": {
+        "bsonType": ["object", "null"],
+        "properties": {
+          "facebook": { "bsonType": ["string", "null"], "maxLength": 500 },
+          "twitter": { "bsonType": ["string", "null"], "maxLength": 500 },
+          "instagram": { "bsonType": ["string", "null"], "maxLength": 500 },
+          "linkedin": { "bsonType": ["string", "null"], "maxLength": 500 },
+          "youtube": { "bsonType": ["string", "null"], "maxLength": 500 },
+          "tiktok": { "bsonType": ["string", "null"], "maxLength": 500 }
+        },
+        "description": "Social media links"
+      },
+      "type": {
+        "bsonType": "string",
+        "enum": ["INDIVIDUAL", "BUSINESS"],
+        "description": "OWASP A04 - Organization type (INDIVIDUAL created lazily, BUSINESS requires formal registration)"
+      },
+      "keycloakGroupId": {
+        "bsonType": ["string", "null"],
+        "description": "Keycloak group ID for RBAC"
+      },
+      "ownerId": {
+        "bsonType": "string",
+        "description": "Single owner user ID - Keycloak user ID (OWASP A01 - one owner per org)"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["ACTIVE", "SUSPENDED", "INACTIVE", "PENDING_DELETION"],
+        "description": "OWASP A04 - Organization operational status"
+      },
+      "kybStatus": {
+        "bsonType": "string",
+        "enum": ["NOT_STARTED", "IN_PROGRESS", "PENDING_REVIEW", "CHANGES_REQUESTED", "VERIFIED", "REJECTED"],
+        "description": "OWASP A04 - Know Your Business verification status"
+      },
+      "businessType": {
+        "bsonType": ["string", "null"],
+        "enum": ["SOLE_PROPRIETORSHIP", "PARTNERSHIP", "LIMITED_COMPANY", "NGO", "GOVERNMENT", "INDIVIDUAL", null],
+        "description": "Legal business structure (KYB)"
+      },
+      "taxId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[A-Za-z0-9-]*$",
+        "maxLength": 50,
+        "description": "Tax identification number (TPIN in Zambia)"
+      },
+      "businessRegistrationNumber": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[A-Za-z0-9-/]*$",
+        "maxLength": 50,
+        "description": "Business registration number (PACRA number in Zambia)"
+      },
+      "yearEstablished": {
+        "bsonType": ["int", "null"],
+        "minimum": 1800,
+        "maximum": 2100,
+        "description": "Year the business was established"
+      },
+      "businessPhone": {
+        "bsonType": ["string", "null"],
+        "pattern": "^\\+?[0-9\\s-]{7,30}$",
+        "maxLength": 30,
+        "description": "OWASP A03 - Business phone validation"
+      },
+      "businessEmail": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+        "maxLength": 254,
+        "description": "OWASP A03 - Business email validation"
+      },
+      "businessAddress": {
+        "bsonType": ["object", "null"],
+        "properties": {
+          "addressLine1": { "bsonType": ["string", "null"], "maxLength": 200 },
+          "addressLine2": { "bsonType": ["string", "null"], "maxLength": 200 },
+          "city": { "bsonType": ["string", "null"], "maxLength": 100 },
+          "province": { "bsonType": ["string", "null"], "maxLength": 100 },
+          "postalCode": { "bsonType": ["string", "null"], "maxLength": 20 },
+          "country": { "bsonType": ["string", "null"], "maxLength": 100 },
+          "countryCode": { "bsonType": ["string", "null"], "pattern": "^[A-Z]{2}$" }
+        },
+        "description": "Physical business address"
+      },
+      "payoutConfig": {
+        "bsonType": ["object", "null"],
+        "properties": {
+          "preferredMethod": {
+            "bsonType": ["string", "null"],
+            "enum": ["BANK_TRANSFER", "MOBILE_MONEY", null]
+          },
+          "schedule": {
+            "bsonType": ["string", "null"],
+            "enum": ["DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY", "MANUAL", null]
+          },
+          "commissionRate": {
+            "bsonType": ["double", "null"],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minimumPayoutAmount": {
+            "bsonType": ["double", "null"],
+            "minimum": 0
+          },
+          "bankAccount": {
+            "bsonType": ["object", "null"],
+            "properties": {
+              "bankName": { "bsonType": ["string", "null"], "maxLength": 100 },
+              "bankCode": { "bsonType": ["string", "null"], "maxLength": 20 },
+              "branchName": { "bsonType": ["string", "null"], "maxLength": 100 },
+              "branchCode": { "bsonType": ["string", "null"], "maxLength": 20 },
+              "accountNumber": { "bsonType": ["string", "null"], "maxLength": 50 },
+              "accountHolderName": { "bsonType": ["string", "null"], "maxLength": 200 },
+              "accountType": { "bsonType": ["string", "null"], "maxLength": 20 },
+              "verified": { "bsonType": "bool" }
+            }
+          },
+          "mobileMoneyAccount": {
+            "bsonType": ["object", "null"],
+            "properties": {
+              "provider": {
+                "bsonType": ["string", "null"],
+                "enum": ["MTN", "AIRTEL", "ZAMTEL", null]
+              },
+              "phoneNumber": {
+                "bsonType": ["string", "null"],
+                "pattern": "^\\+[1-9]\\d{1,14}$"
+              },
+              "accountHolderName": { "bsonType": ["string", "null"], "maxLength": 200 },
+              "verified": { "bsonType": "bool" }
+            }
+          },
+          "verified": { "bsonType": "bool" }
+        },
+        "description": "Payout configuration (bank or mobile money)"
+      },
+      "verified": {
+        "bsonType": "bool",
+        "description": "Business verification status"
+      },
+      "documentsVerified": {
+        "bsonType": "bool",
+        "description": "KYB documents verified"
+      },
+      "payoutAccountVerified": {
+        "bsonType": "bool",
+        "description": "Payout account (bank/mobile money) verified"
+      },
+      "verifiedAt": {
+        "bsonType": ["date", "null"],
+        "description": "When the organization was verified"
+      },
+      "verifiedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100,
+        "description": "Admin who verified the organization"
+      },
+      "rejectionReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500,
+        "description": "Reason for KYB rejection or changes requested"
+      },
+      "reviewedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100,
+        "description": "Admin who reviewed the KYB"
+      },
+      "reviewedAt": {
+        "bsonType": ["date", "null"],
+        "description": "When the KYB was reviewed"
+      },
+      "adminNotes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000,
+        "description": "Admin notes (internal)"
+      },
+      "kybSubmittedAt": {
+        "bsonType": ["date", "null"],
+        "description": "When KYB was submitted for review"
+      },
+      "settings": {
+        "bsonType": ["object", "null"],
+        "properties": {
+          "defaultEventVisibility": {
+            "bsonType": ["string", "null"],
+            "enum": ["PUBLIC", "PRIVATE", "UNLISTED", null]
+          },
+          "requireEventApproval": { "bsonType": "bool" },
+          "allowMembersToInvite": { "bsonType": "bool" },
+          "inviteRequiresApproval": { "bsonType": "bool" },
+          "maxTeamMembers": { "bsonType": ["int", "null"], "minimum": 1 },
+          "managersCanRequestPayouts": { "bsonType": "bool" },
+          "marketersCanViewFinancials": { "bsonType": "bool" },
+          "notifyOwnerOnMemberJoin": { "bsonType": "bool" },
+          "notifyOwnerOnEventCreated": { "bsonType": "bool" },
+          "notifyOwnerOnPayoutRequest": { "bsonType": "bool" }
+        },
+        "description": "Organization settings"
+      },
+      "stats": {
+        "bsonType": ["object", "null"],
+        "properties": {
+          "memberCount": { "bsonType": "int", "minimum": 0 },
+          "totalEvents": { "bsonType": "int", "minimum": 0 },
+          "totalTicketsSold": { "bsonType": "int", "minimum": 0 },
+          "totalRevenue": { "bsonType": "decimal", "minimum": 0 },
+          "averageRating": { "bsonType": ["double", "null"], "minimum": 0, "maximum": 5 }
+        },
+        "description": "Denormalized organization statistics"
+      },
+      "createdAt": {
+        "bsonType": "date",
+        "description": "Document creation timestamp"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"],
+        "description": "Document last update timestamp"
+      }
+    },
+    "additionalProperties": true
+  }
+}

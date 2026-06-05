@@ -8,6 +8,14 @@ server:
   # Kubernetes-native graceful shutdown
   shutdown: graceful
 
+  # ─────────────────────────────────────────────────────────────────────────────────
+  # Request Size Limits (OWASP A03:2021 - Injection Prevention)
+  # ─────────────────────────────────────────────────────────────────────────────────
+  max-http-request-header-size: 8KB
+  netty:
+    max-initial-line-length: 8192      # Max URI length (8KB)
+    max-chunk-size: 8192               # Max chunk size
+
 spring:
   # Graceful shutdown timeout - allow in-flight requests to complete
   lifecycle:
@@ -16,8 +24,27 @@ spring:
   application:
     name: api-gateway
 
+  # ─────────────────────────────────────────────────────────────────────────────────
+  # Request Body Limits (OWASP A03:2021 - Injection Prevention)
+  # ─────────────────────────────────────────────────────────────────────────────────
+  codec:
+    max-in-memory-size: 10MB              # Max request body in memory
+
   cloud:
     gateway:
+      # ─────────────────────────────────────────────────────────────────────────────
+      # HTTP CLIENT - Connection Pooling for Scale
+      # Required for handling high concurrent requests (10M+)
+      # ─────────────────────────────────────────────────────────────────────────────
+      httpclient:
+        pool:
+          type: elastic                       # Grows/shrinks based on demand
+          max-connections: 1000               # Increase for production
+          acquire-timeout: 1000               # 1s to acquire connection
+          max-idle-time: 30s                  # Release idle connections
+        connect-timeout: 5000                 # 5s to establish connection
+        response-timeout: 30s                 # 30s max for response
+
       # ─────────────────────────────────────────────────────────────────────────────
       # SERVER WEBFLUX CONFIGURATION
       # In Spring Cloud Gateway 4.x, all gateway properties moved under 'server.webflux'
@@ -44,6 +71,7 @@ spring:
                 allowedOrigins:
                   - "http://localhost:3000"
                   - "http://localhost:3030"
+                  - "http://localhost:3003"
                   - "http://localhost:5173"
                   - "${FRONTEND_URL:http://localhost:3000}"
                 allowedMethods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
@@ -73,6 +101,11 @@ spring:
             #
             # Match Condition: Path exactly equals /graphql
             # Flow: Client → Gateway → Apollo Router → Subgraphs
+            #
+            # Protocol handling:
+            #   - Internal traffic typically HTTP (TLS terminated at edge)
+            #   - X-Forwarded-Proto header passed to Apollo Router
+            #   - Set APOLLO_ROUTER_URL for different environments
             #
             # CircuitBreaker: Resilience pattern from Resilience4j library
             #   - CLOSED: Normal operation, requests pass through
@@ -116,67 +149,55 @@ spring:
 
             # ─────────────────────────────────────────────────────────────────────
             # KEYCLOAK - OAuth2/OIDC Authorization Server
+            #
+            # Consolidated routing: Single route matches ALL realm endpoints
+            # using wildcard pattern instead of separate routes per path.
+            #
+            # Protocol handling:
+            #   - Dev: http://localhost:8084 (default)
+            #   - Prod: Set KEYCLOAK_URL=https://auth.example.com
+            #   - X-Forwarded-Proto header is automatically added for downstream
+            #
+            # Matches:
+            #   - /realms/event-ticketing/protocol/openid-connect/**
+            #   - /realms/event-ticketing/.well-known/**
+            #   - /realms/event-ticketing/login-actions/**
+            #   - /realms/event-ticketing/account/**
+            #   - /realms/event-ticketing/broker/**
             # ─────────────────────────────────────────────────────────────────────
-            - id: keycloak-openid
+            - id: keycloak-realm
               uri: ${KEYCLOAK_URL:http://localhost:8084}
               predicates:
-                - Path=/realms/event-ticketing/protocol/openid-connect/**
+                - Path=/realms/event-ticketing/**
               filters:
                 - name: CircuitBreaker
                   args:
                     name: keycloakCircuitBreaker
                     fallbackUri: forward:/fallback/identity
 
-            - id: keycloak-well-known
-              uri: ${KEYCLOAK_URL:http://localhost:8084}
-              predicates:
-                - Path=/realms/event-ticketing/.well-known/**
-              filters:
-                - name: CircuitBreaker
-                  args:
-                    name: keycloakCircuitBreaker
-
-            - id: keycloak-login
-              uri: ${KEYCLOAK_URL:http://localhost:8084}
-              predicates:
-                - Path=/realms/event-ticketing/login-actions/**
-              filters:
-                - name: CircuitBreaker
-                  args:
-                    name: keycloakCircuitBreaker
-
-            - id: keycloak-account
-              uri: ${KEYCLOAK_URL:http://localhost:8084}
-              predicates:
-                - Path=/realms/event-ticketing/account/**
-              filters:
-                - name: CircuitBreaker
-                  args:
-                    name: keycloakCircuitBreaker
-
-            - id: keycloak-broker
-              uri: ${KEYCLOAK_URL:http://localhost:8084}
-              predicates:
-                - Path=/realms/event-ticketing/broker/**
-              filters:
-                - name: CircuitBreaker
-                  args:
-                    name: keycloakCircuitBreaker
-
+            # Keycloak static resources (CSS, JS, images for login pages)
             - id: keycloak-resources
               uri: ${KEYCLOAK_URL:http://localhost:8084}
               predicates:
                 - Path=/resources/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: keycloakCircuitBreaker
 
             # ─────────────────────────────────────────────────────────────────────
-            # LEGACY OAUTH2 ROUTES
+            # LEGACY OAUTH2 ROUTES - Path rewriting for backwards compatibility
+            #
+            # These routes CANNOT be consolidated because they require different
+            # RewritePath transformations. Each route kept separate to ensure
+            # correct path rewriting behavior.
             # ─────────────────────────────────────────────────────────────────────
             - id: oauth2-legacy
               uri: ${KEYCLOAK_URL:http://localhost:8084}
               predicates:
                 - Path=/oauth2/**
               filters:
-                - RewritePath=/oauth2/(?<segment>.*), /realms/event-ticketing/protocol/openid-connect/${segment}
+                - RewritePath=/oauth2/(?<segment>.*), /realms/event-ticketing/protocol/openid-connect/$\{segment}
                 - name: CircuitBreaker
                   args:
                     name: keycloakCircuitBreaker
@@ -188,6 +209,9 @@ spring:
                 - Path=/.well-known/openid-configuration
               filters:
                 - RewritePath=/.well-known/openid-configuration, /realms/event-ticketing/.well-known/openid-configuration
+                - name: CircuitBreaker
+                  args:
+                    name: keycloakCircuitBreaker
 
           # ─────────────────────────────────────────────────────────────────────────
           # DEFAULT FILTERS - Applied to ALL routes
@@ -258,19 +282,26 @@ keycloak:
   realm: event-ticketing
   client-id: ${KEYCLOAK_CLIENT_ID:api-gateway}
 
-# Actuator: Health checks, metrics
+# ═══════════════════════════════════════════════════════════════════════════════════
+# ACTUATOR - Health checks, metrics (OWASP A05:2021 - Security Misconfiguration)
+#
+# Security Notes:
+# - Production: Use application-production.yml which moves actuator to separate port
+# - Development: Limited exposure below is acceptable
+# ═══════════════════════════════════════════════════════════════════════════════════
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,gateway,circuitbreakers
+        # Only expose necessary endpoints (avoid env, configprops, beans in prod)
+        include: health,info,metrics,prometheus,circuitbreakers
   endpoint:
     health:
-      show-details: when_authorized
+      show-details: when_authorized       # Don't expose health details to unauthenticated
       probes:
         enabled: true
     gateway:
-      access: unrestricted
+      enabled: false                      # Disable gateway actuator (exposes route config)
   # Kubernetes health probe groups
   health:
     circuitbreakers:
@@ -294,3 +325,22 @@ logging:
     org.springframework.cloud.gateway: INFO
     com.pml.gateway: DEBUG
     io.github.resilience4j: INFO
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# GATEWAY SECURITY SETTINGS (OWASP Compliance)
+# ═══════════════════════════════════════════════════════════════════════════════════
+gateway:
+  security:
+    # Request size limits (A03:2021 - Injection)
+    max-request-size: 10485760              # 10 MB default
+    max-graphql-size: 1048576               # 1 MB for GraphQL
+    max-upload-size: 52428800               # 50 MB for uploads
+    max-uri-length: 8192                    # 8 KB URI
+    max-header-size: 8192                   # 8 KB per header
+
+    # Brute force protection (A07:2021 - Authentication Failures)
+    auth-rate-limit:
+      enabled: true
+      max-attempts: 5                       # 5 attempts per window
+      window-seconds: 300                   # 5 minute window
+      lockout-seconds: 900                  # 15 minute lockout

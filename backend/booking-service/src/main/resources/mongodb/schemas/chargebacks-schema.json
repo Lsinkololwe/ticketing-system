@@ -1,0 +1,180 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Chargebacks Schema - OWASP Compliant",
+    "description": "Tracking involuntary payment reversals with dispute workflow",
+    "required": [
+      "chargebackId",
+      "originalTransactionId",
+      "eventId",
+      "organizerId",
+      "organizationId",
+      "customerId",
+      "originalAmount",
+      "chargebackAmount",
+      "chargebackFee",
+      "currency",
+      "reason",
+      "status",
+      "recoveryStatus",
+      "receivedAt",
+      "responseDeadline",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "chargebackId": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "External chargeback ID from payment provider"
+      },
+      "originalTransactionId": {
+        "bsonType": "string",
+        "maxLength": 100
+      },
+      "ticketId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation for chargeback tracking"
+      },
+      "customerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "originalAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "chargebackAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "chargebackFee": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "reason": {
+        "bsonType": "string",
+        "enum": ["FRAUD", "DUPLICATE", "NOT_RECEIVED", "CANCELED", "CREDIT_NOT_PROCESSED", "GENERAL"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "reasonDetails": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["RECEIVED", "UNDER_REVIEW", "ACCEPTED", "DISPUTED", "WON", "LOST"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "receivedAt": {
+        "bsonType": "date"
+      },
+      "responseDeadline": {
+        "bsonType": "date"
+      },
+      "resolvedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "evidenceSubmitted": {
+        "bsonType": "bool"
+      },
+      "evidenceSubmittedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "evidenceDocuments": {
+        "bsonType": ["array", "null"],
+        "items": {
+          "bsonType": "string",
+          "maxLength": 500
+        }
+      },
+      "disputeNotes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
+      },
+      "recoveryStatus": {
+        "bsonType": "string",
+        "enum": ["NOT_STARTED", "IN_PROGRESS", "RECOVERED", "PARTIALLY_RECOVERED", "WRITTEN_OFF"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "recoveredAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "fundSources": {
+        "bsonType": ["array", "null"]
+      },
+      "primaryFundSource": {
+        "bsonType": ["string", "null"],
+        "enum": ["ORGANIZER_ESCROW", "FUTURE_PAYOUTS", "PLATFORM_RESERVE", "WRITE_OFF", null]
+      },
+      "writtenOffAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "commissionClawbackId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "commissionClawbackAmount": {
+        "bsonType": ["decimal", "null"],
+        "minimum": 0
+      },
+      "journalEntryId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "recoveryJournalEntryId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "processedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "disputedBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "recoveredBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "internalNotes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "version": {
+        "bsonType": ["long", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

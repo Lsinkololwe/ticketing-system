@@ -176,13 +176,29 @@ public final class SecurityContextUtils {
     // ========================================================================
 
     /**
-     * Get the user type from JWT custom claim.
+     * Get user roles from JWT realm_access.roles claim.
      *
-     * @return Mono containing user type (CUSTOMER, ORGANIZER, ADMIN), or empty
+     * @return Mono containing set of roles (CUSTOMER, ORGANIZER, ADMIN, etc.)
      */
-    public static Mono<String> getUserType() {
+    @SuppressWarnings("unchecked")
+    public static Mono<java.util.Set<String>> getUserRoles() {
         return getJwt()
-                .mapNotNull(jwt -> jwt.getClaimAsString("userType"));
+                .map(jwt -> {
+                    java.util.Set<String> roles = new java.util.HashSet<>();
+                    Map<String, Object> realmAccess = jwt.getClaim("realm_access");
+                    if (realmAccess != null) {
+                        Object rolesObj = realmAccess.get("roles");
+                        if (rolesObj instanceof List) {
+                            ((List<String>) rolesObj).forEach(roles::add);
+                        }
+                    }
+                    // Ensure CUSTOMER is always present
+                    if (roles.isEmpty()) {
+                        roles.add("CUSTOMER");
+                    }
+                    return roles;
+                })
+                .defaultIfEmpty(java.util.Set.of("CUSTOMER"));
     }
 
     /**
@@ -305,20 +321,36 @@ public final class SecurityContextUtils {
      *
      * @return Mono containing AuthenticationContext with all relevant info
      */
+    @SuppressWarnings("unchecked")
     public static Mono<AuthenticationContext> getAuthenticationContext() {
         return getJwt()
                 .flatMap(jwt -> getCurrentAuthorities()
-                        .map(authorities -> AuthenticationContext.builder()
-                                .userId(jwt.getSubject())
-                                .username(jwt.getClaimAsString("preferred_username"))
-                                .email(jwt.getClaimAsString("email"))
-                                .phoneNumber(jwt.getClaimAsString("phone_number"))
-                                .userType(jwt.getClaimAsString("userType"))
-                                .authorities(authorities)
-                                .tokenId(jwt.getId())
-                                .issuedAt(jwt.getIssuedAt())
-                                .expiresAt(jwt.getExpiresAt())
-                                .build()));
+                        .map(authorities -> {
+                            // Extract roles from realm_access
+                            java.util.Set<String> roles = new java.util.HashSet<>();
+                            Map<String, Object> realmAccess = jwt.getClaim("realm_access");
+                            if (realmAccess != null) {
+                                Object rolesObj = realmAccess.get("roles");
+                                if (rolesObj instanceof List) {
+                                    ((List<String>) rolesObj).forEach(roles::add);
+                                }
+                            }
+                            if (roles.isEmpty()) {
+                                roles.add("CUSTOMER");
+                            }
+
+                            return AuthenticationContext.builder()
+                                    .userId(jwt.getSubject())
+                                    .username(jwt.getClaimAsString("preferred_username"))
+                                    .email(jwt.getClaimAsString("email"))
+                                    .phoneNumber(jwt.getClaimAsString("phone_number"))
+                                    .roles(roles)
+                                    .authorities(authorities)
+                                    .tokenId(jwt.getId())
+                                    .issuedAt(jwt.getIssuedAt())
+                                    .expiresAt(jwt.getExpiresAt())
+                                    .build();
+                        }));
     }
 
     /**
@@ -332,14 +364,15 @@ public final class SecurityContextUtils {
         String username;
         String email;
         String phoneNumber;
-        String userType;
+        Set<String> roles;
         Set<String> authorities;
         String tokenId;
         java.time.Instant issuedAt;
         java.time.Instant expiresAt;
 
         public boolean hasRole(String role) {
-            return authorities != null && authorities.contains("ROLE_" + role);
+            return (roles != null && roles.contains(role)) ||
+                   (authorities != null && authorities.contains("ROLE_" + role));
         }
 
         public boolean isAdmin() {

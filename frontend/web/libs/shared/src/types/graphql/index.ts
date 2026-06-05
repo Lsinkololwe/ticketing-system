@@ -1080,7 +1080,6 @@ export type CreateUserInput = {
   lastName: Scalars['String']['input'];
   password: InputMaybe<Scalars['String']['input']>;
   phoneNumber: InputMaybe<Scalars['String']['input']>;
-  userType: InputMaybe<UserType>;
 };
 
 /**  Cursor-based pagination input (Relay style) for mobile/infinite scroll */
@@ -2508,6 +2507,12 @@ export type Mutation = {
    * NOTE: author extracted from JWT authentication (OWASP A01:2021 compliance)
    */
   addPaymentAttemptNote: PaymentAttemptMutationResponse;
+  /**
+   * Add a role to a user.
+   * A user can have multiple roles (e.g., CUSTOMER + ORGANIZER).
+   * The CUSTOMER role is the base role that all users have.
+   */
+  addUserRole: UserMutationResponse;
   /**  ADMIN - Administrative ticket operations */
   adminUpdateTicket: TicketMutationResponse;
   /**
@@ -2887,6 +2892,11 @@ export type Mutation = {
   removeMember: Scalars['Boolean']['output'];
   /**  ADMIN - Remove permission from role */
   removePermissionFromRole: Scalars['Boolean']['output'];
+  /**
+   * Remove a role from a user.
+   * Note: The CUSTOMER role cannot be removed as it is the base role.
+   */
+  removeUserRole: UserMutationResponse;
   reorderTicketTiers: Array<TicketTier>;
   /**  MOBILE - Account deletion (GDPR) */
   requestAccountDeletion: MutationResponse;
@@ -2963,6 +2973,11 @@ export type Mutation = {
    * NOTE: reviewedBy extracted from JWT authentication (OWASP A01:2021 compliance)
    */
   setPaymentAttemptReviewStatus: PaymentAttemptMutationResponse;
+  /**
+   * Set all roles for a user (replaces existing roles).
+   * The roles set must include CUSTOMER.
+   */
+  setUserRoles: UserMutationResponse;
   /**  MOBILE - Two-factor authentication setup */
   setupTwoFactor: TwoFactorSetupResponse;
   /**  MOBILE - Social login and account linking */
@@ -3083,8 +3098,6 @@ export type Mutation = {
   updateProvince: ProvinceMutationResponse;
   updateTicketTier: TierMutationResponse;
   updateUser: UserMutationResponse;
-  /**  ADMIN - Update user roles */
-  updateUserRoles: Scalars['Boolean']['output'];
   /**  ORGANIZER - Upload verification document */
   uploadVerificationDocument: Maybe<VerificationDocument>;
   useTicket: UseTicketMutationResponse;
@@ -3230,6 +3243,18 @@ export type MutationAddApprovalCommentArgs = {
 export type MutationAddPaymentAttemptNoteArgs = {
   depositId: Scalars['String']['input'];
   note: Scalars['String']['input'];
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 16: ROOT MUTATION TYPE
+ * Tags indicate which clients should include these mutations in their operations
+ * ============================================================================
+ */
+export type MutationAddUserRoleArgs = {
+  role: UserType;
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -4558,6 +4583,18 @@ export type MutationRemovePermissionFromRoleArgs = {
  * Tags indicate which clients should include these mutations in their operations
  * ============================================================================
  */
+export type MutationRemoveUserRoleArgs = {
+  role: UserType;
+  userId: Scalars['ID']['input'];
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 16: ROOT MUTATION TYPE
+ * Tags indicate which clients should include these mutations in their operations
+ * ============================================================================
+ */
 export type MutationReorderTicketTiersArgs = {
   eventId: Scalars['ID']['input'];
   tierIds: Array<Scalars['ID']['input']>;
@@ -4828,6 +4865,18 @@ export type MutationSetPaymentAttemptReviewStatusArgs = {
   depositId: Scalars['String']['input'];
   notes: InputMaybe<Scalars['String']['input']>;
   reviewStatus: Scalars['String']['input'];
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 16: ROOT MUTATION TYPE
+ * Tags indicate which clients should include these mutations in their operations
+ * ============================================================================
+ */
+export type MutationSetUserRolesArgs = {
+  roles: Array<UserType>;
+  userId: Scalars['ID']['input'];
 };
 
 
@@ -5368,18 +5417,6 @@ export type MutationUpdateTicketTierArgs = {
 export type MutationUpdateUserArgs = {
   id: Scalars['ID']['input'];
   input: UpdateUserInput;
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationUpdateUserRolesArgs = {
-  roles: Array<Scalars['String']['input']>;
-  userId: Scalars['ID']['input'];
 };
 
 
@@ -6093,9 +6130,11 @@ export type OrganizerProfile = {
   averageRating: Maybe<Scalars['Float']['output']>;
   /**  All documents verified */
   bankVerified: Scalars['Boolean']['output'];
+  bannerUrl: Maybe<Scalars['String']['output']>;
   businessAddress: Maybe<Scalars['String']['output']>;
   businessEmail: Maybe<Scalars['String']['output']>;
   /**
+   * LLC, Sole Proprietor, etc.
    * ─────────────────────────────────────────────────────────────────────
    * Contact Information
    * ─────────────────────────────────────────────────────────────────────
@@ -6125,6 +6164,7 @@ export type OrganizerProfile = {
   /**  Business is verified */
   documentsVerified: Scalars['Boolean']['output'];
   id: Scalars['ID']['output'];
+  logoUrl: Maybe<Scalars['String']['output']>;
   /**  Platform commission percentage */
   payoutSchedule: Maybe<Scalars['String']['output']>;
   postalCode: Maybe<Scalars['String']['output']>;
@@ -6139,12 +6179,6 @@ export type OrganizerProfile = {
    * ─────────────────────────────────────────────────────────────────────
    */
   reviewedById: Maybe<Scalars['String']['output']>;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Social Media
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  socialLinks: Maybe<SocialLinks>;
   /**
    * DAILY, WEEKLY, MONTHLY
    * ─────────────────────────────────────────────────────────────────────
@@ -6198,8 +6232,6 @@ export type OrganizerProfile = {
    */
   verified: Scalars['Boolean']['output'];
   website: Maybe<Scalars['String']['output']>;
-  /**  LLC, Sole Proprietor, etc. */
-  yearEstablished: Maybe<Scalars['Int']['output']>;
 };
 
 /**
@@ -7797,6 +7829,13 @@ export type Query = {
   userEventAccess: Maybe<EventAccessGrant>;
   /**  ADMIN - User statistics for admin dashboard */
   userStats: Maybe<UserStats>;
+  /**
+   * Find all users who have a specific role.
+   * Example: usersByRole(role: ORGANIZER) returns all users with ORGANIZER role.
+   */
+  usersByRole: UserOffsetPage;
+  /** Count users who have a specific role. */
+  usersCountByRole: Scalars['Long']['output'];
   /**  ADMIN - Search users with cursor pagination */
   usersCursorPagination: UserConnection;
   /**  ADMIN - Search users with offset pagination for admin tables */
@@ -10789,11 +10828,35 @@ export type QueryUserEventAccessArgs = {
  * Tags indicate which clients should include these queries in their operations
  * ============================================================================
  */
+export type QueryUsersByRoleArgs = {
+  activeOnly?: InputMaybe<Scalars['Boolean']['input']>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+  role: UserType;
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 15: ROOT QUERY TYPE
+ * Tags indicate which clients should include these queries in their operations
+ * ============================================================================
+ */
+export type QueryUsersCountByRoleArgs = {
+  role: UserType;
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 15: ROOT QUERY TYPE
+ * Tags indicate which clients should include these queries in their operations
+ * ============================================================================
+ */
 export type QueryUsersCursorPaginationArgs = {
   accountStatus: InputMaybe<AccountStatus>;
   pagination: InputMaybe<CursorPaginationInput>;
+  role: InputMaybe<UserType>;
   search: InputMaybe<Scalars['String']['input']>;
-  userType: InputMaybe<UserType>;
 };
 
 
@@ -10806,8 +10869,8 @@ export type QueryUsersCursorPaginationArgs = {
 export type QueryUsersOffsetPaginationArgs = {
   accountStatus: InputMaybe<AccountStatus>;
   pagination: InputMaybe<OffsetPaginationInput>;
+  role: InputMaybe<UserType>;
   search: InputMaybe<Scalars['String']['input']>;
-  userType: InputMaybe<UserType>;
 };
 
 
@@ -11180,14 +11243,16 @@ export type RegisterDeviceInput = {
   platform: DevicePlatform;
 };
 
-/**  User registration input */
+/**
+ * User registration input
+ * All new users are automatically assigned the CUSTOMER role by default
+ */
 export type RegisterInput = {
   email: Scalars['String']['input'];
   firstName: InputMaybe<Scalars['String']['input']>;
   lastName: InputMaybe<Scalars['String']['input']>;
   password: Scalars['String']['input'];
   phoneNumber: InputMaybe<Scalars['String']['input']>;
-  userType: InputMaybe<UserType>;
   username: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -11980,8 +12045,8 @@ export type TimelineEvent = {
 export type TokenValidation = {
   __typename: 'TokenValidation';
   email: Maybe<Scalars['String']['output']>;
+  roles: Maybe<Array<Scalars['String']['output']>>;
   userId: Maybe<Scalars['String']['output']>;
-  userType: Maybe<Scalars['String']['output']>;
   valid: Scalars['Boolean']['output'];
 };
 
@@ -12252,13 +12317,10 @@ export type UpdateOrganizerProfileInput = {
   logoUrl: InputMaybe<Scalars['String']['input']>;
   postalCode: InputMaybe<Scalars['String']['input']>;
   province: InputMaybe<Scalars['String']['input']>;
-  /**  Social media */
-  socialLinks: InputMaybe<SocialLinksInput>;
   tagline: InputMaybe<Scalars['String']['input']>;
   /**  Business registration */
   taxId: InputMaybe<Scalars['String']['input']>;
   website: InputMaybe<Scalars['String']['input']>;
-  yearEstablished: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type UpdatePlatformConfigurationInput = {
@@ -12443,6 +12505,12 @@ export type User = {
   /**  MOBILE - Customer's purchased tickets (my tickets list) */
   purchasedTickets: Array<Ticket>;
   /**
+   * All roles assigned to the user.
+   * A user can have multiple roles. CUSTOMER is the base role that all users have.
+   * Example: [CUSTOMER, ORGANIZER] for an event organizer
+   */
+  roles: Array<UserType>;
+  /**
    * ─────────────────────────────────────────────────────────────────────
    * Social Connections
    * MOBILE - User manages their own social connections
@@ -12470,14 +12538,6 @@ export type User = {
   twoFactorEnabled: Scalars['Boolean']['output'];
   twoFactorMethod: Maybe<TwoFactorMethod>;
   updatedAt: Maybe<Scalars['DateTime']['output']>;
-  /**
-   * Preferred timezone
-   * ─────────────────────────────────────────────────────────────────────
-   * Platform Role & Status
-   * ADMIN - User management requires these fields
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  userType: UserType;
   /**
    * Keycloak user ID (sub claim from JWT)
    * ─────────────────────────────────────────────────────────────────────
@@ -12551,6 +12611,18 @@ export type UserOffsetPage = {
 };
 
 /**
+ * ADMIN - Statistics for users grouped by role
+ * Note: Since users can have multiple roles, the total count across all
+ * roles may exceed the total number of users (one user counted per role)
+ */
+export type UserRoleStats = {
+  __typename: 'UserRoleStats';
+  count: Scalars['Int']['output'];
+  percentage: Scalars['Float']['output'];
+  role: UserType;
+};
+
+/**
  * ─────────────────────────────────────────────────────────────────────────────
  * USER STATISTICS (Admin Dashboard)
  * ─────────────────────────────────────────────────────────────────────────────
@@ -12575,9 +12647,9 @@ export type UserStats = {
   suspendedUsers: Scalars['Int']['output'];
   /**  Core counts */
   totalUsers: Scalars['Int']['output'];
-  usersByStatus: Array<UserStatusStats>;
   /**  Breakdowns */
-  usersByType: Array<UserTypeStats>;
+  usersByRole: Array<UserRoleStats>;
+  usersByStatus: Array<UserStatusStats>;
   verifiedUsers: Scalars['Int']['output'];
 };
 
@@ -12606,14 +12678,6 @@ export type UserType =
   | 'ORGANIZER'
   /**  Platform administrator */
   | 'SUPER_ADMIN';
-
-/**  ADMIN - Statistics for users grouped by type */
-export type UserTypeStats = {
-  __typename: 'UserTypeStats';
-  count: Scalars['Int']['output'];
-  percentage: Scalars['Float']['output'];
-  userType: UserType;
-};
 
 /**  Specific ticket mutation response types matching resolver return types */
 export type ValidateTicketMutationResponse = {
@@ -12655,1811 +12719,3 @@ export type VerifyTwoFactorInput = {
   code: Scalars['String']['input'];
   method: TwoFactorMethod;
 };
-
-export type UpdatePlatformConfigurationMutationVariables = Exact<{
-  input: UpdatePlatformConfigurationInput;
-}>;
-
-
-export type UpdatePlatformConfigurationMutation = { __typename: 'Mutation', updatePlatformConfiguration: { __typename: 'PlatformConfigurationMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PlatformConfiguration', id: string, approvalSlaHours: number, approvalWarningThresholdHours: number, autoEscalationEnabled: boolean, escalationDelayHours: number, escalationRecipientRole: string, escalationReminderIntervalHours: number, maxEscalationReminders: number, organizerNotificationChannel: ApprovalNotificationChannel, adminNotificationChannel: ApprovalNotificationChannel, sendSlaWarningNotifications: boolean, sendEscalationNotifications: boolean, requireCommentsOnRejection: boolean, requireCommentsOnChangesRequested: boolean, allowSelfApproval: boolean, updatedAt: string, updatedBy: string } | null } };
-
-export type AssignEventReviewerMutationVariables = Exact<{
-  input: AssignReviewerInput;
-}>;
-
-
-export type AssignEventReviewerMutation = { __typename: 'Mutation', assignEventReviewer: { __typename: 'ApprovalTimelineMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> } | null } };
-
-export type UnassignEventReviewerMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  reason: InputMaybe<Scalars['String']['input']>;
-}>;
-
-
-export type UnassignEventReviewerMutation = { __typename: 'Mutation', unassignEventReviewer: { __typename: 'ApprovalTimelineMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> } | null } };
-
-export type AddApprovalCommentMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  comment: Scalars['String']['input'];
-  isInternal: InputMaybe<Scalars['Boolean']['input']>;
-}>;
-
-
-export type AddApprovalCommentMutation = { __typename: 'Mutation', addApprovalComment: { __typename: 'ApprovalTimelineMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> } | null } };
-
-export type AcknowledgeEscalationMutationVariables = Exact<{
-  escalationId: Scalars['ID']['input'];
-  notes: InputMaybe<Scalars['String']['input']>;
-}>;
-
-
-export type AcknowledgeEscalationMutation = { __typename: 'Mutation', acknowledgeEscalation: { __typename: 'ApprovalEscalationMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null } | null } };
-
-export type ResolveEscalationMutationVariables = Exact<{
-  input: ResolveEscalationInput;
-}>;
-
-
-export type ResolveEscalationMutation = { __typename: 'Mutation', resolveEscalation: { __typename: 'ApprovalEscalationMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null } | null } };
-
-export type TriggerManualEscalationMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-  escalateTo: Scalars['String']['input'];
-}>;
-
-
-export type TriggerManualEscalationMutation = { __typename: 'Mutation', triggerManualEscalation: { __typename: 'ApprovalEscalationMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null } | null } };
-
-export type TimelineEventFieldsFragment = { __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean };
-
-export type ApprovalTimelineFieldsFragment = { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> };
-
-export type ApprovalEscalationFieldsFragment = { __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null };
-
-export type PlatformConfigurationFieldsFragment = { __typename: 'PlatformConfiguration', id: string, approvalSlaHours: number, approvalWarningThresholdHours: number, autoEscalationEnabled: boolean, escalationDelayHours: number, escalationRecipientRole: string, escalationReminderIntervalHours: number, maxEscalationReminders: number, organizerNotificationChannel: ApprovalNotificationChannel, adminNotificationChannel: ApprovalNotificationChannel, sendSlaWarningNotifications: boolean, sendEscalationNotifications: boolean, requireCommentsOnRejection: boolean, requireCommentsOnChangesRequested: boolean, allowSelfApproval: boolean, updatedAt: string, updatedBy: string };
-
-export type GetPlatformConfigurationQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetPlatformConfigurationQuery = { __typename: 'Query', platformConfiguration: { __typename: 'PlatformConfiguration', id: string, approvalSlaHours: number, approvalWarningThresholdHours: number, autoEscalationEnabled: boolean, escalationDelayHours: number, escalationRecipientRole: string, escalationReminderIntervalHours: number, maxEscalationReminders: number, organizerNotificationChannel: ApprovalNotificationChannel, adminNotificationChannel: ApprovalNotificationChannel, sendSlaWarningNotifications: boolean, sendEscalationNotifications: boolean, requireCommentsOnRejection: boolean, requireCommentsOnChangesRequested: boolean, allowSelfApproval: boolean, updatedAt: string, updatedBy: string } };
-
-export type GetApprovalTimelineQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-}>;
-
-
-export type GetApprovalTimelineQuery = { __typename: 'Query', approvalTimeline: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> } | null };
-
-export type GetApprovalTimelinesOffsetQueryVariables = Exact<{
-  filter: InputMaybe<ApprovalTimelineFilterInput>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetApprovalTimelinesOffsetQuery = { __typename: 'Query', approvalTimelinesOffsetPagination: { __typename: 'ApprovalTimelineOffsetPage', pageNumber: number, pageSize: number, totalPages: number, totalElements: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> }> } };
-
-export type GetApprovalTimelinesByOrganizerOffsetQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetApprovalTimelinesByOrganizerOffsetQuery = { __typename: 'Query', approvalTimelinesByOrganizerOffsetPagination: { __typename: 'ApprovalTimelineOffsetPage', pageNumber: number, pageSize: number, totalPages: number, totalElements: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> }> } };
-
-export type GetPendingApprovalTimelinesOffsetQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPendingApprovalTimelinesOffsetQuery = { __typename: 'Query', pendingApprovalTimelinesOffsetPagination: { __typename: 'ApprovalTimelineOffsetPage', pageNumber: number, pageSize: number, totalPages: number, totalElements: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> }> } };
-
-export type GetOverdueApprovalTimelinesOffsetQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetOverdueApprovalTimelinesOffsetQuery = { __typename: 'Query', overdueApprovalTimelinesOffsetPagination: { __typename: 'ApprovalTimelineOffsetPage', pageNumber: number, pageSize: number, totalPages: number, totalElements: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> }> } };
-
-export type GetApprovalTimelinesCursorQueryVariables = Exact<{
-  filter: InputMaybe<ApprovalTimelineFilterInput>;
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetApprovalTimelinesCursorQuery = { __typename: 'Query', approvalTimelinesCursorPagination: { __typename: 'ApprovalTimelineConnection', totalCount: number, edges: Array<{ __typename: 'ApprovalTimelineEdge', cursor: string, node: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetPendingApprovalTimelinesCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetPendingApprovalTimelinesCursorQuery = { __typename: 'Query', pendingApprovalTimelinesCursorPagination: { __typename: 'ApprovalTimelineConnection', totalCount: number, edges: Array<{ __typename: 'ApprovalTimelineEdge', cursor: string, node: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetOverdueApprovalTimelinesCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetOverdueApprovalTimelinesCursorQuery = { __typename: 'Query', overdueApprovalTimelinesCursorPagination: { __typename: 'ApprovalTimelineConnection', totalCount: number, edges: Array<{ __typename: 'ApprovalTimelineEdge', cursor: string, node: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerId: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, expectedApprovalAt: string | null, actualApprovalAt: string | null, totalProcessingTimeHours: number | null, isOverdue: boolean, hoursUntilDeadline: number | null, slaCompliancePercentage: number | null, hasActiveEscalation: boolean, submissionCount: number, currentIteration: number, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, eventId: string, timestamp: string, action: ApprovalAction, actorId: string, actorName: string, actorRole: string | null, previousStatus: EventStatus | null, newStatus: EventStatus | null, description: string, comments: string | null, isEscalationRelated: boolean }> } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetApprovalEscalationQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetApprovalEscalationQuery = { __typename: 'Query', approvalEscalation: { __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null } | null };
-
-export type GetActiveEscalationsOffsetQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetActiveEscalationsOffsetQuery = { __typename: 'Query', activeEscalationsOffsetPagination: { __typename: 'ApprovalEscalationOffsetPage', pageNumber: number, pageSize: number, totalPages: number, totalElements: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null }> } };
-
-export type GetMyEscalationsOffsetQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetMyEscalationsOffsetQuery = { __typename: 'Query', myEscalationsOffsetPagination: { __typename: 'ApprovalEscalationOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null }> } };
-
-export type GetActiveEscalationsCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetActiveEscalationsCursorQuery = { __typename: 'Query', activeEscalationsCursorPagination: { __typename: 'ApprovalEscalationConnection', totalCount: number, edges: Array<{ __typename: 'ApprovalEscalationEdge', cursor: string, node: { __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetMyEscalationsCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetMyEscalationsCursorQuery = { __typename: 'Query', myEscalationsCursorPagination: { __typename: 'ApprovalEscalationConnection', totalCount: number, edges: Array<{ __typename: 'ApprovalEscalationEdge', cursor: string, node: { __typename: 'ApprovalEscalation', id: string, eventId: string, eventTitle: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, resolvedAt: string | null, escalatedTo: string, escalatedToName: string, acknowledgedBy: string | null, acknowledgedByName: string | null, resolvedBy: string | null, resolvedByName: string | null, resolutionNotes: string | null, originalReviewerId: string | null, originalReviewerName: string | null, remindersSent: number, lastReminderAt: string | null, nextReminderAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetApprovalStatsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetApprovalStatsQuery = { __typename: 'Query', approvalStats: { __typename: 'ApprovalStats', totalPendingReviews: number, totalOverdue: number, totalEscalated: number, submittedToday: number, approvedToday: number, rejectedToday: number, changesRequestedToday: number, averageProcessingTimeHours: number, slaComplianceRate: number, activeEscalations: number, escalationsThisWeek: number, pendingByDaysWaiting: Array<{ __typename: 'DaysWaitingBreakdown', daysWaiting: number, count: number, percentage: number }> } };
-
-export type GetEventCategoriesAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetEventCategoriesAdminQuery = { __typename: 'Query', eventCategoriesOffsetPagination: { __typename: 'EventCategoryOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null }> } };
-
-export type GetActiveEventCategoriesAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetActiveEventCategoriesAdminQuery = { __typename: 'Query', activeEventCategoriesOffsetPagination: { __typename: 'EventCategoryOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null }> } };
-
-export type SearchEventCategoriesAdminQueryVariables = Exact<{
-  query: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type SearchEventCategoriesAdminQuery = { __typename: 'Query', searchEventCategoriesOffsetPagination: { __typename: 'EventCategoryOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null }> } };
-
-export type CategoryFieldsFragment = { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null };
-
-export type GetEventCategoryQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetEventCategoryQuery = { __typename: 'Query', eventCategory: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null };
-
-export type GetEventCategoriesCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetEventCategoriesCursorQuery = { __typename: 'Query', eventCategoriesCursorPagination: { __typename: 'EventCategoryConnection', edges: Array<{ __typename: 'EventCategoryEdge', cursor: string, node: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetActiveEventCategoriesCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetActiveEventCategoriesCursorQuery = { __typename: 'Query', activeEventCategoriesCursorPagination: { __typename: 'EventCategoryConnection', edges: Array<{ __typename: 'EventCategoryEdge', cursor: string, node: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type SearchEventCategoriesCursorQueryVariables = Exact<{
-  query: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type SearchEventCategoriesCursorQuery = { __typename: 'Query', searchEventCategoriesCursorPagination: { __typename: 'EventCategoryConnection', edges: Array<{ __typename: 'EventCategoryEdge', cursor: string, node: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetPopularCategoriesQueryVariables = Exact<{
-  limit: InputMaybe<Scalars['Int']['input']>;
-}>;
-
-
-export type GetPopularCategoriesQuery = { __typename: 'Query', popularCategories: Array<{ __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null }> };
-
-export type CreateEventCategoryMutationVariables = Exact<{
-  input: CreateEventCategoryInput;
-}>;
-
-
-export type CreateEventCategoryMutation = { __typename: 'Mutation', createEventCategory: { __typename: 'CategoryMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type UpdateEventCategoryMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  input: UpdateEventCategoryInput;
-}>;
-
-
-export type UpdateEventCategoryMutation = { __typename: 'Mutation', updateEventCategory: { __typename: 'CategoryMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type DeleteEventCategoryMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type DeleteEventCategoryMutation = { __typename: 'Mutation', deleteEventCategory: { __typename: 'DeleteMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type ActivateEventCategoryMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type ActivateEventCategoryMutation = { __typename: 'Mutation', activateEventCategory: { __typename: 'CategoryMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type DeactivateEventCategoryMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type DeactivateEventCategoryMutation = { __typename: 'Mutation', deactivateEventCategory: { __typename: 'CategoryMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null, iconUrl: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type GetEventsAdminQueryVariables = Exact<{
-  filter: InputMaybe<EventFilterInput>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetEventsAdminQuery = { __typename: 'Query', eventsOffsetPagination: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null }> } };
-
-export type GetPendingApprovalEventsAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPendingApprovalEventsAdminQuery = { __typename: 'Query', pendingApprovalEventsOffsetPagination: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null }> } };
-
-export type GetOverdueApprovalEventsAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetOverdueApprovalEventsAdminQuery = { __typename: 'Query', overdueApprovalEventsOffsetPagination: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null }> } };
-
-export type GetApprovedNotPublishedEventsAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetApprovedNotPublishedEventsAdminQuery = { __typename: 'Query', approvedNotPublishedEventsOffsetPagination: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null }> } };
-
-export type GetDraftEventsAdminQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetDraftEventsAdminQuery = { __typename: 'Query', draftEventsOffsetPagination: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null }> } };
-
-export type GetEventsByStatusAdminQueryVariables = Exact<{
-  status: EventStatus;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetEventsByStatusAdminQuery = { __typename: 'Query', eventsByStatusOffsetPagination: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null }> } };
-
-export type GetCancelledEventsAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetCancelledEventsAdminQuery = { __typename: 'Query', cancelledEventsOffsetPagination: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null }> } };
-
-export type GetCompletedEventsAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetCompletedEventsAdminQuery = { __typename: 'Query', completedEventsOffsetPagination: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null }> } };
-
-export type GetEventStatsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetEventStatsQuery = { __typename: 'Query', eventStats: { __typename: 'EventStats', totalEvents: number, publishedEvents: number, draftEvents: number, cancelledEvents: number, completedEvents: number, totalCapacity: number, totalSoldTickets: number, totalRevenue: string | null, eventsByCategory: Array<{ __typename: 'EventCategoryStats', category: string, count: number, percentage: number, totalCapacity: number, totalSoldTickets: number, totalRevenue: string | null }> | null, eventsByStatus: Array<{ __typename: 'EventStatusStats', status: EventStatus, count: number, percentage: number }> | null, eventsByOrganizer: Array<{ __typename: 'EventOrganizerStats', organizerId: string, organizerName: string, eventCount: number, totalCapacity: number, totalSoldTickets: number, totalRevenue: string | null }> | null, recentEvents: Array<{ __typename: 'Event', id: string, title: string, eventDateTime: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', name: string, city: string } | null }> | null } };
-
-export type GetEventStatisticsQueryVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-}>;
-
-
-export type GetEventStatisticsQuery = { __typename: 'Query', eventStatistics: { __typename: 'EventTicketStatistics', eventId: string, eventTitle: string, eventDate: string, totalTicketsAvailable: number, totalTicketsSold: number, totalTicketsRefunded: number, totalCommissionEarned: string | null, totalGrossRevenue: string | null, overallSalesPercentage: number, bestSellingTier: string | null, tierStatistics: Array<{ __typename: 'TicketTierStats', eventId: string, tierId: string, tierCode: string, tierName: string, price: string, totalQuantity: number, isActive: boolean, ticketsSold: number, ticketsRefunded: number, grossRevenue: string | null, salesPercentage: number }> | null } | null };
-
-export type GetEventCountQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetEventCountQuery = { __typename: 'Query', eventCount: number };
-
-export type GetEventCountByOrganizerQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-}>;
-
-
-export type GetEventCountByOrganizerQuery = { __typename: 'Query', eventCountByOrganizer: number };
-
-export type GetEventCountByStatusQueryVariables = Exact<{
-  status: EventStatus;
-}>;
-
-
-export type GetEventCountByStatusQuery = { __typename: 'Query', eventCountByStatus: number };
-
-export type GetEventLifecycleQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-}>;
-
-
-export type GetEventLifecycleQuery = { __typename: 'Query', eventLifecycle: { __typename: 'EventLifecycle', eventId: string, currentStatus: EventStatus, createdAt: string | null, lastStatusChange: string | null, createdBy: string | null, allowedTransitions: Array<EventStatus> | null, statusTransitions: Array<{ __typename: 'StatusTransition', fromStatus: EventStatus | null, toStatus: EventStatus, reason: string | null, transitionedBy: string | null, transitionedAt: string }> | null } | null };
-
-export type GetAllowedStatusTransitionsQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-}>;
-
-
-export type GetAllowedStatusTransitionsQuery = { __typename: 'Query', allowedStatusTransitions: Array<EventStatus> };
-
-export type TicketTierFieldsFragment = { __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null };
-
-export type EventFieldsFragment = { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null };
-
-export type EventListFieldsFragment = { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null };
-
-export type GetEventByIdQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetEventByIdQuery = { __typename: 'Query', event: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null };
-
-export type GetPublishedEventsCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetPublishedEventsCursorQuery = { __typename: 'Query', publishedEventsCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetUpcomingEventsCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetUpcomingEventsCursorQuery = { __typename: 'Query', upcomingEventsCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetFeaturedEventsCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetFeaturedEventsCursorQuery = { __typename: 'Query', featuredEventsCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type SearchEventsCursorQueryVariables = Exact<{
-  query: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type SearchEventsCursorQuery = { __typename: 'Query', searchEventsCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetEventsByCategoryCursorQueryVariables = Exact<{
-  categoryId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetEventsByCategoryCursorQuery = { __typename: 'Query', eventsByCategoryCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetEventsByCityCursorQueryVariables = Exact<{
-  city: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetEventsByCityCursorQuery = { __typename: 'Query', eventsByCityCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetEventsByDateRangeCursorQueryVariables = Exact<{
-  startDate: Scalars['DateTime']['input'];
-  endDate: Scalars['DateTime']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetEventsByDateRangeCursorQuery = { __typename: 'Query', eventsByDateRangeCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetEventsByOrganizerCursorQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetEventsByOrganizerCursorQuery = { __typename: 'Query', eventsByOrganizerCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type DiscoverEventsQueryVariables = Exact<{
-  filter: EventDiscoveryFilterInput;
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type DiscoverEventsQuery = { __typename: 'Query', discoverEvents: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, status: EventStatus, totalCapacity: number, soldTickets: number, published: boolean, featured: boolean, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, country: string, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type CreateEventMutationVariables = Exact<{
-  input: CreateEventInput;
-}>;
-
-
-export type CreateEventMutation = { __typename: 'Mutation', createEvent: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type UpdateEventMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  input: UpdateEventInput;
-}>;
-
-
-export type UpdateEventMutation = { __typename: 'Mutation', updateEvent: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type DeleteEventMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type DeleteEventMutation = { __typename: 'Mutation', deleteEvent: { __typename: 'DeleteMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type PublishEventMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type PublishEventMutation = { __typename: 'Mutation', publishEvent: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type UnpublishEventMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type UnpublishEventMutation = { __typename: 'Mutation', unpublishEvent: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type CancelEventMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  input: EventCancellationInput;
-}>;
-
-
-export type CancelEventMutation = { __typename: 'Mutation', cancelEvent: { __typename: 'EventCancellationResponse', success: boolean, message: string | null, ticketsAffected: number, refundSagaInitiated: boolean, sagaId: string | null, errors: Array<string>, event: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type SubmitEventForApprovalMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-}>;
-
-
-export type SubmitEventForApprovalMutation = { __typename: 'Mutation', submitEventForApproval: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type UpdateEventCapacityMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  newCapacity: Scalars['Int']['input'];
-}>;
-
-
-export type UpdateEventCapacityMutation = { __typename: 'Mutation', updateEventCapacity: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type DuplicateEventMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  newTitle: Scalars['String']['input'];
-}>;
-
-
-export type DuplicateEventMutation = { __typename: 'Mutation', duplicateEvent: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type ApproveEventMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  comments: InputMaybe<Scalars['String']['input']>;
-}>;
-
-
-export type ApproveEventMutation = { __typename: 'Mutation', approveEvent: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type RejectEventMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  comments: Scalars['String']['input'];
-}>;
-
-
-export type RejectEventMutation = { __typename: 'Mutation', rejectEvent: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type RequestEventChangesMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  comments: Scalars['String']['input'];
-}>;
-
-
-export type RequestEventChangesMutation = { __typename: 'Mutation', requestEventChanges: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type FeatureEventMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  featured: Scalars['Boolean']['input'];
-}>;
-
-
-export type FeatureEventMutation = { __typename: 'Mutation', featureEvent: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Event', id: string, title: string, description: string, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, organizerId: string, organizerName: string, organizerEmail: string | null, organizerPhone: string | null, organizerBusinessEmail: string | null, organizerBusinessPhone: string | null, organizerCompanyName: string | null, organizerFirstName: string | null, organizerLastName: string | null, status: EventStatus, published: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, totalCapacity: number, availableTickets: number, soldTickets: number, bannerImageUrl: string | null, tags: Array<string> | null, additionalInfo: Record<string, unknown> | null, isActive: boolean, featured: boolean, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null, category: { __typename: 'EventCategory', id: string, name: string, code: string, description: string | null } | null, location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, originalPrice: string | null, currency: string, maxPerOrder: number | null, minPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, availableQuantity: number, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null } };
-
-export type SendEventPublishReminderMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  triggeredBy: Scalars['String']['input'];
-}>;
-
-
-export type SendEventPublishReminderMutation = { __typename: 'Mutation', sendEventPublishReminder: { __typename: 'EventMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type CreateTicketTierMutationVariables = Exact<{
-  eventId: Scalars['ID']['input'];
-  input: CreateTicketTierInput;
-}>;
-
-
-export type CreateTicketTierMutation = { __typename: 'Mutation', createTicketTier: { __typename: 'TierMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'TicketTier', id: string, name: string, code: string, description: string | null, price: string, currency: string, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean } | null } };
-
-export type UpdateTicketTierMutationVariables = Exact<{
-  tierId: Scalars['ID']['input'];
-  input: UpdateTicketTierInput;
-}>;
-
-
-export type UpdateTicketTierMutation = { __typename: 'Mutation', updateTicketTier: { __typename: 'TierMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'TicketTier', id: string, name: string, code: string, description: string | null, price: string, currency: string, quantity: number, soldQuantity: number, sortOrder: number, isActive: boolean } | null } };
-
-export type DeleteTicketTierMutationVariables = Exact<{
-  tierId: Scalars['ID']['input'];
-}>;
-
-
-export type DeleteTicketTierMutation = { __typename: 'Mutation', deleteTicketTier: { __typename: 'DeleteMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type ActivateTicketTierMutationVariables = Exact<{
-  tierId: Scalars['ID']['input'];
-}>;
-
-
-export type ActivateTicketTierMutation = { __typename: 'Mutation', activateTicketTier: { __typename: 'TierMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type DeactivateTicketTierMutationVariables = Exact<{
-  tierId: Scalars['ID']['input'];
-}>;
-
-
-export type DeactivateTicketTierMutation = { __typename: 'Mutation', deactivateTicketTier: { __typename: 'TierMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type GetCitiesAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetCitiesAdminQuery = { __typename: 'Query', citiesOffsetPagination: { __typename: 'CityOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'City', id: string, name: string, code: string | null, province: string | null, provinceId: string | null, country: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null }> } };
-
-export type GetProvincesAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetProvincesAdminQuery = { __typename: 'Query', provincesOffsetPagination: { __typename: 'ProvinceOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Province', id: string, name: string, code: string, country: string, isActive: boolean, createdAt: string | null, updatedAt: string | null }> } };
-
-export type LocationFieldsFragment = { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null };
-
-export type CityFieldsFragment = { __typename: 'City', id: string, name: string, code: string | null, province: string | null, provinceId: string | null, country: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null };
-
-export type ProvinceFieldsFragment = { __typename: 'Province', id: string, name: string, code: string, country: string, isActive: boolean, createdAt: string | null, updatedAt: string | null };
-
-export type GetLocationQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetLocationQuery = { __typename: 'Query', location: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } | null };
-
-export type GetLocationsCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetLocationsCursorQuery = { __typename: 'Query', locationsCursorPagination: { __typename: 'LocationConnection', edges: Array<{ __typename: 'LocationEdge', cursor: string, node: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetLocationsByCityCursorQueryVariables = Exact<{
-  city: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetLocationsByCityCursorQuery = { __typename: 'Query', locationsByCityCursorPagination: { __typename: 'LocationConnection', edges: Array<{ __typename: 'LocationEdge', cursor: string, node: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetLocationsByCountryCursorQueryVariables = Exact<{
-  country: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetLocationsByCountryCursorQuery = { __typename: 'Query', locationsByCountryCursorPagination: { __typename: 'LocationConnection', edges: Array<{ __typename: 'LocationEdge', cursor: string, node: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type SearchLocationsCursorQueryVariables = Exact<{
-  query: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type SearchLocationsCursorQuery = { __typename: 'Query', searchLocationsCursorPagination: { __typename: 'LocationConnection', edges: Array<{ __typename: 'LocationEdge', cursor: string, node: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetLocationsNearbyCursorQueryVariables = Exact<{
-  input: NearbyLocationInput;
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetLocationsNearbyCursorQuery = { __typename: 'Query', locationsNearbyCursorPagination: { __typename: 'LocationConnection', edges: Array<{ __typename: 'LocationEdge', cursor: string, node: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null, description: string | null, coordinates: { __typename: 'Coordinates', latitude: number | null, longitude: number | null } | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetCityQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetCityQuery = { __typename: 'Query', city: { __typename: 'City', id: string, name: string, code: string | null, province: string | null, provinceId: string | null, country: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null };
-
-export type GetCitiesCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetCitiesCursorQuery = { __typename: 'Query', citiesCursorPagination: { __typename: 'CityConnection', edges: Array<{ __typename: 'CityEdge', cursor: string, node: { __typename: 'City', id: string, name: string, code: string | null, province: string | null, provinceId: string | null, country: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetCitiesByProvinceCursorQueryVariables = Exact<{
-  provinceId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetCitiesByProvinceCursorQuery = { __typename: 'Query', citiesByProvinceCursorPagination: { __typename: 'CityConnection', edges: Array<{ __typename: 'CityEdge', cursor: string, node: { __typename: 'City', id: string, name: string, code: string | null, province: string | null, provinceId: string | null, country: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type SearchCitiesCursorQueryVariables = Exact<{
-  query: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type SearchCitiesCursorQuery = { __typename: 'Query', searchCitiesCursorPagination: { __typename: 'CityConnection', edges: Array<{ __typename: 'CityEdge', cursor: string, node: { __typename: 'City', id: string, name: string, code: string | null, province: string | null, provinceId: string | null, country: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetProvinceQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetProvinceQuery = { __typename: 'Query', province: { __typename: 'Province', id: string, name: string, code: string, country: string, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null };
-
-export type GetProvincesCursorQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetProvincesCursorQuery = { __typename: 'Query', provincesCursorPagination: { __typename: 'ProvinceConnection', edges: Array<{ __typename: 'ProvinceEdge', cursor: string, node: { __typename: 'Province', id: string, name: string, code: string, country: string, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetProvincesByCountryCursorQueryVariables = Exact<{
-  country: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetProvincesByCountryCursorQuery = { __typename: 'Query', provincesByCountryCursorPagination: { __typename: 'ProvinceConnection', edges: Array<{ __typename: 'ProvinceEdge', cursor: string, node: { __typename: 'Province', id: string, name: string, code: string, country: string, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type SearchProvincesCursorQueryVariables = Exact<{
-  query: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type SearchProvincesCursorQuery = { __typename: 'Query', searchProvincesCursorPagination: { __typename: 'ProvinceConnection', edges: Array<{ __typename: 'ProvinceEdge', cursor: string, node: { __typename: 'Province', id: string, name: string, code: string, country: string, isActive: boolean, createdAt: string | null, updatedAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type CreateCityMutationVariables = Exact<{
-  input: CreateCityInput;
-}>;
-
-
-export type CreateCityMutation = { __typename: 'Mutation', createCity: { __typename: 'CityMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'City', id: string, name: string, code: string | null, province: string | null, provinceId: string | null, country: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type UpdateCityMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  input: UpdateCityInput;
-}>;
-
-
-export type UpdateCityMutation = { __typename: 'Mutation', updateCity: { __typename: 'CityMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'City', id: string, name: string, code: string | null, province: string | null, provinceId: string | null, country: string | null, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type DeleteCityMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type DeleteCityMutation = { __typename: 'Mutation', deleteCity: { __typename: 'DeleteMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type CreateProvinceMutationVariables = Exact<{
-  input: CreateProvinceInput;
-}>;
-
-
-export type CreateProvinceMutation = { __typename: 'Mutation', createProvince: { __typename: 'ProvinceMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Province', id: string, name: string, code: string, country: string, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type UpdateProvinceMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  input: UpdateProvinceInput;
-}>;
-
-
-export type UpdateProvinceMutation = { __typename: 'Mutation', updateProvince: { __typename: 'ProvinceMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Province', id: string, name: string, code: string, country: string, isActive: boolean, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type DeleteProvinceMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type DeleteProvinceMutation = { __typename: 'Mutation', deleteProvince: { __typename: 'DeleteMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type GetOrganizerApplicationsAdminQueryVariables = Exact<{
-  status: InputMaybe<OrganizerStatus>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetOrganizerApplicationsAdminQuery = { __typename: 'Query', organizerApplicationsOffsetPagination: { __typename: 'OrganizerApplicationOffsetPage', content: Array<{ __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, hasNext: boolean | null, hasPrevious: boolean | null, startCursor: string | null, endCursor: string | null, currentPage: number | null, pageSize: number | null, totalCount: number | null, totalElements: number | null } } };
-
-export type GetPendingOrganizerApplicationsAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPendingOrganizerApplicationsAdminQuery = { __typename: 'Query', organizerApplicationsOffsetPagination: { __typename: 'OrganizerApplicationOffsetPage', content: Array<{ __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, hasNext: boolean | null, hasPrevious: boolean | null, startCursor: string | null, endCursor: string | null, currentPage: number | null, pageSize: number | null, totalCount: number | null, totalElements: number | null } } };
-
-export type GetApprovedOrganizersAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetApprovedOrganizersAdminQuery = { __typename: 'Query', organizerApplicationsOffsetPagination: { __typename: 'OrganizerApplicationOffsetPage', content: Array<{ __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, city: string | null, province: string | null, status: OrganizerStatus, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, createdAt: string }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, hasNext: boolean | null, hasPrevious: boolean | null, startCursor: string | null, endCursor: string | null, currentPage: number | null, pageSize: number | null, totalCount: number | null, totalElements: number | null } } };
-
-export type GetSuspendedOrganizersAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetSuspendedOrganizersAdminQuery = { __typename: 'Query', organizerApplicationsOffsetPagination: { __typename: 'OrganizerApplicationOffsetPage', content: Array<{ __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, hasNext: boolean | null, hasPrevious: boolean | null, startCursor: string | null, endCursor: string | null, currentPage: number | null, pageSize: number | null, totalCount: number | null, totalElements: number | null } } };
-
-export type GetRejectedOrganizersAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetRejectedOrganizersAdminQuery = { __typename: 'Query', organizerApplicationsOffsetPagination: { __typename: 'OrganizerApplicationOffsetPage', content: Array<{ __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, hasNext: boolean | null, hasPrevious: boolean | null, startCursor: string | null, endCursor: string | null, currentPage: number | null, pageSize: number | null, totalCount: number | null, totalElements: number | null } } };
-
-export type GetChangesRequestedOrganizersAdminQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetChangesRequestedOrganizersAdminQuery = { __typename: 'Query', organizerApplicationsOffsetPagination: { __typename: 'OrganizerApplicationOffsetPage', content: Array<{ __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, hasNext: boolean | null, hasPrevious: boolean | null, startCursor: string | null, endCursor: string | null, currentPage: number | null, pageSize: number | null, totalCount: number | null, totalElements: number | null } } };
-
-export type GetOrganizerStatsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetOrganizerStatsQuery = { __typename: 'Query', platformStatistics: { __typename: 'PlatformStatistics', totalUsers: number, totalOrganizers: number, totalOrganizations: number, pendingOrganizerApplications: number } | null };
-
-export type GetOrganizerStatisticsQueryVariables = Exact<{
-  organizerId: Scalars['ID']['input'];
-}>;
-
-
-export type GetOrganizerStatisticsQuery = { __typename: 'Query', organizerStatistics: { __typename: 'OrganizerStatistics', organizerId: string, organizationId: string | null, totalEvents: number, activeEvents: number, completedEvents: number, cancelledEvents: number, totalTicketsSold: number, totalRevenue: string, pendingPayouts: string, completedPayouts: string, averageRating: number | null, totalReviews: number } | null };
-
-export type GetVerificationDocumentsQueryVariables = Exact<{
-  organizerProfileId: Scalars['ID']['input'];
-  status: InputMaybe<DocumentStatus>;
-}>;
-
-
-export type GetVerificationDocumentsQuery = { __typename: 'Query', verificationDocuments: Array<{ __typename: 'VerificationDocument', id: string, documentType: string, documentUrl: string, fileName: string | null, fileSize: number | null, mimeType: string | null, status: DocumentStatus, uploadedAt: string, verifiedAt: string | null, verifiedById: string | null, rejectionReason: string | null, verifiedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null }> };
-
-export type GetPendingVerificationDocumentsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetPendingVerificationDocumentsQuery = { __typename: 'Query', pendingVerificationDocuments: Array<{ __typename: 'VerificationDocument', id: string, documentType: string, documentUrl: string, fileName: string | null, fileSize: number | null, mimeType: string | null, status: DocumentStatus, uploadedAt: string }> };
-
-export type OrganizerProfileFieldsFragment = { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null };
-
-export type OrganizerProfileSummaryFieldsFragment = { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, city: string | null, province: string | null, status: OrganizerStatus, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, createdAt: string };
-
-export type GetMyOrganizerProfileQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetMyOrganizerProfileQuery = { __typename: 'Query', myOrganizerProfile: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type CheckMyOrganizerStatusQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type CheckMyOrganizerStatusQuery = { __typename: 'Query', myOrganizerProfile: { __typename: 'OrganizerProfile', id: string, status: OrganizerStatus, verified: boolean } | null };
-
-export type GetOrganizerProfileQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetOrganizerProfileQuery = { __typename: 'Query', organizerProfile: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type GetOrganizerProfileByUserIdQueryVariables = Exact<{
-  userId: Scalars['ID']['input'];
-}>;
-
-
-export type GetOrganizerProfileByUserIdQuery = { __typename: 'Query', organizerProfileByUserId: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type GetOrganizerApplicationsCursorQueryVariables = Exact<{
-  status: InputMaybe<OrganizerStatus>;
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetOrganizerApplicationsCursorQuery = { __typename: 'Query', organizerApplicationsCursorPagination: { __typename: 'OrganizerApplicationConnection', totalCount: number | null, edges: Array<{ __typename: 'OrganizerApplicationEdge', cursor: string, node: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, city: string | null, province: string | null, status: OrganizerStatus, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, createdAt: string } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type CreateOrganizerProfileMutationVariables = Exact<{
-  input: CreateOrganizerProfileInput;
-}>;
-
-
-export type CreateOrganizerProfileMutation = { __typename: 'Mutation', createOrganizerProfile: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type UpdateOrganizerProfileMutationVariables = Exact<{
-  input: UpdateOrganizerProfileInput;
-}>;
-
-
-export type UpdateOrganizerProfileMutation = { __typename: 'Mutation', updateOrganizerProfile: { __typename: 'OrganizerMutationResponse', success: boolean, message: string | null, organizerProfile: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null, organization: { __typename: 'Organization', id: string, name: string, slug: string } | null } };
-
-export type SubmitOrganizerProfileForReviewMutationVariables = Exact<{ [key: string]: never; }>;
-
-
-export type SubmitOrganizerProfileForReviewMutation = { __typename: 'Mutation', submitOrganizerProfileForReview: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type DeleteOrganizerProfileMutationVariables = Exact<{ [key: string]: never; }>;
-
-
-export type DeleteOrganizerProfileMutation = { __typename: 'Mutation', deleteOrganizerProfile: boolean };
-
-export type ApproveOrganizerMutationVariables = Exact<{
-  profileId: Scalars['ID']['input'];
-}>;
-
-
-export type ApproveOrganizerMutation = { __typename: 'Mutation', approveOrganizer: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type ApproveOrganizerByUserIdMutationVariables = Exact<{
-  userId: Scalars['ID']['input'];
-}>;
-
-
-export type ApproveOrganizerByUserIdMutation = { __typename: 'Mutation', approveOrganizerByUserId: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type RejectOrganizerMutationVariables = Exact<{
-  profileId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type RejectOrganizerMutation = { __typename: 'Mutation', rejectOrganizer: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type RejectOrganizerByUserIdMutationVariables = Exact<{
-  userId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type RejectOrganizerByUserIdMutation = { __typename: 'Mutation', rejectOrganizerByUserId: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type RequestOrganizerChangesMutationVariables = Exact<{
-  profileId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type RequestOrganizerChangesMutation = { __typename: 'Mutation', requestOrganizerChanges: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type SuspendOrganizerMutationVariables = Exact<{
-  profileId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type SuspendOrganizerMutation = { __typename: 'Mutation', suspendOrganizer: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type SuspendOrganizerByUserIdMutationVariables = Exact<{
-  userId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type SuspendOrganizerByUserIdMutation = { __typename: 'Mutation', suspendOrganizerByUserId: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type ReactivateOrganizerMutationVariables = Exact<{
-  profileId: Scalars['ID']['input'];
-}>;
-
-
-export type ReactivateOrganizerMutation = { __typename: 'Mutation', reactivateOrganizer: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type ReactivateOrganizerByUserIdMutationVariables = Exact<{
-  userId: Scalars['ID']['input'];
-}>;
-
-
-export type ReactivateOrganizerByUserIdMutation = { __typename: 'Mutation', reactivateOrganizerByUserId: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type VerifyOrganizerBusinessMutationVariables = Exact<{
-  profileId: Scalars['ID']['input'];
-}>;
-
-
-export type VerifyOrganizerBusinessMutation = { __typename: 'Mutation', verifyOrganizerBusiness: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type VerifyOrganizerDocumentsMutationVariables = Exact<{
-  profileId: Scalars['ID']['input'];
-}>;
-
-
-export type VerifyOrganizerDocumentsMutation = { __typename: 'Mutation', verifyOrganizerDocuments: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type VerifyOrganizerBankAccountMutationVariables = Exact<{
-  profileId: Scalars['ID']['input'];
-}>;
-
-
-export type VerifyOrganizerBankAccountMutation = { __typename: 'Mutation', verifyOrganizerBankAccount: { __typename: 'OrganizerProfile', id: string, userId: string, companyName: string | null, companyDescription: string | null, tagline: string | null, website: string | null, businessEmail: string | null, businessPhone: string | null, businessAddress: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null, taxId: string | null, businessRegistrationNumber: string | null, businessType: string | null, yearEstablished: number | null, commissionRate: number | null, payoutSchedule: string | null, status: OrganizerStatus, statusReason: string | null, reviewNotes: string | null, verified: boolean, documentsVerified: boolean, bankVerified: boolean, submittedAt: string | null, reviewedAt: string | null, reviewedById: string | null, approvedAt: string | null, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, twitter: string | null, instagram: string | null, linkedin: string | null, youtube: string | null } | null, reviewedBy: { __typename: 'User', id: string, firstName: string, lastName: string, fullName: string } | null } | null };
-
-export type CreateAdminRefundRequestMutationVariables = Exact<{
-  ticketId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-  bypassApproval: InputMaybe<Scalars['Boolean']['input']>;
-}>;
-
-
-export type CreateAdminRefundRequestMutation = { __typename: 'Mutation', createAdminRefundRequest: { __typename: 'RefundRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type ApproveRefundRequestMutationVariables = Exact<{
-  refundRequestId: Scalars['ID']['input'];
-  reviewComments: InputMaybe<Scalars['String']['input']>;
-}>;
-
-
-export type ApproveRefundRequestMutation = { __typename: 'Mutation', approveRefundRequest: { __typename: 'ApproveRefundRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type RejectRefundRequestMutationVariables = Exact<{
-  refundRequestId: Scalars['ID']['input'];
-  rejectionReason: Scalars['String']['input'];
-}>;
-
-
-export type RejectRefundRequestMutation = { __typename: 'Mutation', rejectRefundRequest: { __typename: 'RejectRefundRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type ProcessRefundRequestMutationVariables = Exact<{
-  refundRequestId: Scalars['ID']['input'];
-}>;
-
-
-export type ProcessRefundRequestMutation = { __typename: 'Mutation', processRefundRequest: { __typename: 'ProcessRefundRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type CancelRefundRequestMutationVariables = Exact<{
-  refundRequestId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type CancelRefundRequestMutation = { __typename: 'Mutation', cancelRefundRequest: { __typename: 'RefundRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type BulkApproveRefundsMutationVariables = Exact<{
-  refundRequestIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
-}>;
-
-
-export type BulkApproveRefundsMutation = { __typename: 'Mutation', bulkApproveRefunds: { __typename: 'BulkOperationResponse', success: boolean, message: string | null, processedCount: number, failedCount: number, errors: Array<string> } };
-
-export type CreateEscrowAccountMutationVariables = Exact<{
-  input: CreateEscrowAccountInput;
-}>;
-
-
-export type CreateEscrowAccountMutation = { __typename: 'Mutation', createEscrowAccount: { __typename: 'EscrowAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type UpdateEscrowAccountStatusMutationVariables = Exact<{
-  accountId: Scalars['ID']['input'];
-  status: EscrowAccountStatus;
-  reason: InputMaybe<Scalars['String']['input']>;
-}>;
-
-
-export type UpdateEscrowAccountStatusMutation = { __typename: 'Mutation', updateEscrowAccountStatus: { __typename: 'EscrowAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type LockEscrowAccountMutationVariables = Exact<{
-  accountId: Scalars['ID']['input'];
-  lockUntil: Scalars['DateTime']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type LockEscrowAccountMutation = { __typename: 'Mutation', lockEscrowAccount: { __typename: 'EscrowAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type UnlockEscrowAccountMutationVariables = Exact<{
-  accountId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type UnlockEscrowAccountMutation = { __typename: 'Mutation', unlockEscrowAccount: { __typename: 'EscrowAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type MarkPayoutEligibleMutationVariables = Exact<{
-  accountId: Scalars['ID']['input'];
-}>;
-
-
-export type MarkPayoutEligibleMutation = { __typename: 'Mutation', markPayoutEligible: { __typename: 'EscrowAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type CloseEscrowAccountMutationVariables = Exact<{
-  accountId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type CloseEscrowAccountMutation = { __typename: 'Mutation', closeEscrowAccount: { __typename: 'EscrowAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type ApprovePayoutRequestMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-  notes: InputMaybe<Scalars['String']['input']>;
-}>;
-
-
-export type ApprovePayoutRequestMutation = { __typename: 'Mutation', approvePayoutRequest: { __typename: 'ApprovePayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type RejectPayoutRequestMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-  rejectionReason: Scalars['String']['input'];
-}>;
-
-
-export type RejectPayoutRequestMutation = { __typename: 'Mutation', rejectPayoutRequest: { __typename: 'RejectPayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type ProcessPayoutRequestMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-}>;
-
-
-export type ProcessPayoutRequestMutation = { __typename: 'Mutation', processPayoutRequest: { __typename: 'ProcessPayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type RetryPayoutRequestMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-}>;
-
-
-export type RetryPayoutRequestMutation = { __typename: 'Mutation', retryPayoutRequest: { __typename: 'PayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type ResumePayoutRequestMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-}>;
-
-
-export type ResumePayoutRequestMutation = { __typename: 'Mutation', resumePayoutRequest: { __typename: 'PayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type MarkPayoutForReviewMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-  issueType: PayoutIssueType;
-  notes: InputMaybe<Scalars['String']['input']>;
-}>;
-
-
-export type MarkPayoutForReviewMutation = { __typename: 'Mutation', markPayoutForReview: { __typename: 'PayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type ResolvePayoutIssueMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-  resolutionType: PayoutResolutionType;
-  notes: Scalars['String']['input'];
-  newBankAccountId: InputMaybe<Scalars['ID']['input']>;
-}>;
-
-
-export type ResolvePayoutIssueMutation = { __typename: 'Mutation', resolvePayoutIssue: { __typename: 'PayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type BulkRetryFailedPayoutsMutationVariables = Exact<{
-  payoutRequestIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
-}>;
-
-
-export type BulkRetryFailedPayoutsMutation = { __typename: 'Mutation', bulkRetryFailedPayouts: { __typename: 'BulkPayoutOperationResponse', success: boolean, message: string | null, processedCount: number, failedCount: number, failedPayoutIds: Array<string>, errors: Array<string>, processedPayouts: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }> } };
-
-export type BulkMarkPayoutsForReviewMutationVariables = Exact<{
-  payoutRequestIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
-  issueType: PayoutIssueType;
-  notes: InputMaybe<Scalars['String']['input']>;
-}>;
-
-
-export type BulkMarkPayoutsForReviewMutation = { __typename: 'Mutation', bulkMarkPayoutsForReview: { __typename: 'BulkPayoutOperationResponse', success: boolean, message: string | null, processedCount: number, failedCount: number, failedPayoutIds: Array<string>, errors: Array<string>, processedPayouts: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }> } };
-
-export type EscalatePayoutRequestMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type EscalatePayoutRequestMutation = { __typename: 'Mutation', escalatePayoutRequest: { __typename: 'PayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null } };
-
-export type VerifyBankAccountMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type VerifyBankAccountMutation = { __typename: 'Mutation', verifyBankAccount: { __typename: 'VerifyBankAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'BankAccount', id: string, accountNumber: string, accountHolderName: string, bankName: string, isVerified: boolean, verifiedAt: string | null } | null } };
-
-export type CreatePromoCodeMutationVariables = Exact<{
-  input: CreatePromoCodeInput;
-}>;
-
-
-export type CreatePromoCodeMutation = { __typename: 'Mutation', createPromoCode: { __typename: 'PromoCode', id: string, code: string, eventId: string | null, organizerId: string | null, discountType: DiscountType, discountValue: string, maxUses: number | null, currentUses: number, validFrom: string | null, validUntil: string | null, minPurchaseAmount: string | null, maxDiscountAmount: string | null, applicableTiers: Array<string> | null, isActive: boolean, createdAt: string } };
-
-export type UpdatePromoCodeMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  input: UpdatePromoCodeInput;
-}>;
-
-
-export type UpdatePromoCodeMutation = { __typename: 'Mutation', updatePromoCode: { __typename: 'PromoCode', id: string, code: string, discountType: DiscountType, discountValue: string, maxUses: number | null, validFrom: string | null, validUntil: string | null, isActive: boolean, updatedAt: string | null } };
-
-export type ActivatePromoCodeMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type ActivatePromoCodeMutation = { __typename: 'Mutation', activatePromoCode: { __typename: 'PromoCode', id: string, code: string, isActive: boolean, updatedAt: string | null } };
-
-export type DeactivatePromoCodeMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type DeactivatePromoCodeMutation = { __typename: 'Mutation', deactivatePromoCode: { __typename: 'PromoCode', id: string, code: string, isActive: boolean, updatedAt: string | null } };
-
-export type DeletePromoCodeMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type DeletePromoCodeMutation = { __typename: 'Mutation', deletePromoCode: { __typename: 'DeleteMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type RefundRequestFieldsFragment = { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null };
-
-export type PayoutRequestFieldsFragment = { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null };
-
-export type EventEscrowAccountFieldsFragment = { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null };
-
-export type GetEscrowAccountQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetEscrowAccountQuery = { __typename: 'Query', escrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null } | null };
-
-export type GetEscrowAccountByEventQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-}>;
-
-
-export type GetEscrowAccountByEventQuery = { __typename: 'Query', escrowAccountByEvent: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null } | null };
-
-export type GetEscrowAccountsOffsetQueryVariables = Exact<{
-  filter: InputMaybe<EscrowAccountFilterInput>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetEscrowAccountsOffsetQuery = { __typename: 'Query', escrowAccountsOffsetPagination: { __typename: 'EscrowAccountOffsetPage', data: Array<{ __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetEscrowAccountsByOrganizerQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetEscrowAccountsByOrganizerQuery = { __typename: 'Query', escrowAccountsByOrganizerOffsetPagination: { __typename: 'EscrowAccountOffsetPage', data: Array<{ __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, lockReason: string | null, payoutEligibleAt: string | null, closedAt: string | null, closedReason: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetPlatformSummaryQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetPlatformSummaryQuery = { __typename: 'Query', platformSummary: { __typename: 'PlatformSummary', totalEscrowAccounts: number, activeEscrowAccounts: number, lockedEscrowAccounts: number, payoutEligibleAccounts: number, closedEscrowAccounts: number, totalEscrowBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, availableForPayout: string, totalTransactions: number, completedTransactions: number, pendingTransactions: number, failedTransactions: number, totalTransactionVolume: string } };
-
-export type GetRefundRequestQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetRefundRequestQuery = { __typename: 'Query', refundRequest: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null } | null };
-
-export type GetRefundRequestsOffsetQueryVariables = Exact<{
-  filter: RefundRequestFilterInput;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetRefundRequestsOffsetQuery = { __typename: 'Query', refundRequestsOffsetPagination: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetRefundRequestsByEventQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetRefundRequestsByEventQuery = { __typename: 'Query', refundRequestsByEventOffsetPagination: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetPendingRefundRequestsQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPendingRefundRequestsQuery = { __typename: 'Query', pendingRefundRequestsOffsetPagination: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, organizerId: string, organizationId: string | null, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedBy: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, paymentReference: string | null, refundTransactionId: string | null, originalPaymentMethod: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetEventRefundSummaryQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-}>;
-
-
-export type GetEventRefundSummaryQuery = { __typename: 'Query', eventRefundSummary: { __typename: 'RefundSummary', totalRefunds: number, totalAmount: string, currency: string, averageRefundAmount: string | null, refundsByStatus: Array<{ __typename: 'RefundStatusSummary', status: RefundRequestStatus, count: number, totalAmount: string, percentage: number }> | null, refundsByType: Array<{ __typename: 'RefundTypeSummary', requestType: RefundRequestType, count: number, totalAmount: string }> | null } | null };
-
-export type GetPayoutRequestQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetPayoutRequestQuery = { __typename: 'Query', payoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null } | null };
-
-export type GetPayoutRequestsOffsetQueryVariables = Exact<{
-  filter: PayoutRequestFilterInput;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPayoutRequestsOffsetQuery = { __typename: 'Query', payoutRequestsOffsetPagination: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetPayoutRequestsByOrganizerQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPayoutRequestsByOrganizerQuery = { __typename: 'Query', payoutRequestsByOrganizerOffsetPagination: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetPayoutRequestsByEventQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPayoutRequestsByEventQuery = { __typename: 'Query', payoutRequestsByEventOffsetPagination: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetPendingPayoutRequestsQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPendingPayoutRequestsQuery = { __typename: 'Query', pendingPayoutRequestsOffsetPagination: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetFailedPayoutRequestsQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetFailedPayoutRequestsQuery = { __typename: 'Query', failedPayoutRequestsOffsetPagination: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetPayoutRequestsForReviewQueryVariables = Exact<{
-  reviewStatus: InputMaybe<PayoutReviewStatus>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetPayoutRequestsForReviewQuery = { __typename: 'Query', payoutRequestsForReviewOffsetPagination: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetStuckPayoutRequestsQueryVariables = Exact<{
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetStuckPayoutRequestsQuery = { __typename: 'Query', stuckPayoutRequestsOffsetPagination: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizationId: string | null, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, platformFee: string | null, processingFee: string | null, taxAmount: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedBy: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, processedAt: string | null, processedBy: string | null, expectedPayoutDate: string | null, actualPayoutDate: string | null, paymentReference: string | null, createdAt: string | null, updatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, currentPage: number | null, pageSize: number, totalCount: number | null, totalElements: number | null } } };
-
-export type GetPayoutRecoverySummaryQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetPayoutRecoverySummaryQuery = { __typename: 'Query', payoutRecoverySummary: { __typename: 'PayoutRecoverySummary', totalPayoutsForReview: number, pendingReviewCount: number, underReviewCount: number, stuckPayoutsCount: number, retryablePayoutsCount: number, recentlyResolvedCount: number, averageResolutionTimeMinutes: number | null, totalAmountAtRisk: string, issuesByType: Array<{ __typename: 'PayoutIssueTypeStats', issueType: PayoutIssueType, count: number }> } };
-
-export type CreateUserRefundRequestMutationVariables = Exact<{
-  input: CreateRefundRequestInput;
-}>;
-
-
-export type CreateUserRefundRequestMutation = { __typename: 'Mutation', createUserRefundRequest: { __typename: 'CreateRefundRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, requestedAt: string | null, createdAt: string | null } | null } };
-
-export type CreatePayoutRequestMutationVariables = Exact<{
-  input: CreatePayoutRequestInput;
-}>;
-
-
-export type CreatePayoutRequestMutation = { __typename: 'Mutation', createPayoutRequest: { __typename: 'CreatePayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, requestedAmount: string, platformFee: string | null, processingFee: string | null, netPayoutAmount: string, currency: string, status: PayoutRequestStatus, requestedAt: string, expectedPayoutDate: string | null, createdAt: string | null } | null } };
-
-export type CancelPayoutRequestMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type CancelPayoutRequestMutation = { __typename: 'Mutation', cancelPayoutRequest: { __typename: 'RejectPayoutRequestMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'PayoutRequest', id: string, requestId: string, status: PayoutRequestStatus, updatedAt: string | null } | null } };
-
-export type CreateBankAccountMutationVariables = Exact<{
-  input: CreateBankAccountInput;
-}>;
-
-
-export type CreateBankAccountMutation = { __typename: 'Mutation', createBankAccount: { __typename: 'CreateBankAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'BankAccount', id: string, accountNumber: string, accountHolderName: string, bankName: string, bankCode: string | null, branchCode: string | null, swiftCode: string | null, currency: string, isDefault: boolean, isVerified: boolean, createdAt: string | null } | null } };
-
-export type UpdateBankAccountMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  input: UpdateBankAccountInput;
-}>;
-
-
-export type UpdateBankAccountMutation = { __typename: 'Mutation', updateBankAccount: { __typename: 'UpdateBankAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'BankAccount', id: string, accountNumber: string, accountHolderName: string, bankName: string, bankCode: string | null, branchCode: string | null, swiftCode: string | null, currency: string, isDefault: boolean, isVerified: boolean, updatedAt: string | null } | null } };
-
-export type DeleteBankAccountMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type DeleteBankAccountMutation = { __typename: 'Mutation', deleteBankAccount: { __typename: 'DeleteBankAccountMutationResponse', success: boolean, message: string | null, errors: Array<string> } };
-
-export type SetDefaultBankAccountMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type SetDefaultBankAccountMutation = { __typename: 'Mutation', setDefaultBankAccount: { __typename: 'UpdateBankAccountMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'BankAccount', id: string, accountNumber: string, accountHolderName: string, bankName: string, isDefault: boolean } | null } };
-
-export type BankAccountFieldsFragment = { __typename: 'BankAccount', id: string, organizerId: string, accountHolderName: string, accountNumber: string, accountType: string | null, bankName: string, bankCode: string | null, branchName: string | null, branchCode: string | null, swiftCode: string | null, currency: string, isDefault: boolean, isVerified: boolean, verifiedAt: string | null, verifiedBy: string | null, status: string, createdAt: string | null, updatedAt: string | null };
-
-export type GetReservationQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetReservationQuery = { __typename: 'Query', reservation: { __typename: 'TicketReservation', id: string, eventId: string, userId: string, status: ReservationStatus, expiresAt: string, remainingSeconds: number | null, promoCodeApplied: string | null, discountAmount: string | null, totalAmount: string, currency: string, createdAt: string, updatedAt: string | null, items: Array<{ __typename: 'ReservationItem', ticketTierId: string, tierName: string, quantity: number, unitPrice: string, subtotal: string }> } | null };
-
-export type GetMyActiveReservationsQueryVariables = Exact<{
-  userId: Scalars['ID']['input'];
-}>;
-
-
-export type GetMyActiveReservationsQuery = { __typename: 'Query', myActiveReservations: Array<{ __typename: 'TicketReservation', id: string, eventId: string, userId: string, status: ReservationStatus, expiresAt: string, remainingSeconds: number | null, promoCodeApplied: string | null, discountAmount: string | null, totalAmount: string, currency: string, createdAt: string, updatedAt: string | null, items: Array<{ __typename: 'ReservationItem', ticketTierId: string, tierName: string, quantity: number, unitPrice: string, subtotal: string }> }> };
-
-export type ValidatePromoCodeQueryVariables = Exact<{
-  code: Scalars['String']['input'];
-  eventId: Scalars['ID']['input'];
-  amount: InputMaybe<Scalars['BigDecimal']['input']>;
-}>;
-
-
-export type ValidatePromoCodeQuery = { __typename: 'Query', validatePromoCode: { __typename: 'PromoCodeValidation', valid: boolean, discountAmount: string | null, errorMessage: string | null, promoCode: { __typename: 'PromoCode', id: string, code: string, discountType: DiscountType, discountValue: string } | null } };
-
-export type GetBankAccountsByOrganizerQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-}>;
-
-
-export type GetBankAccountsByOrganizerQuery = { __typename: 'Query', bankAccountsByOrganizer: Array<{ __typename: 'BankAccount', id: string, organizerId: string, accountHolderName: string, accountNumber: string, accountType: string | null, bankName: string, bankCode: string | null, branchName: string | null, branchCode: string | null, swiftCode: string | null, currency: string, isDefault: boolean, isVerified: boolean, verifiedAt: string | null, verifiedBy: string | null, status: string, createdAt: string | null, updatedAt: string | null }> };
-
-export type GetDefaultBankAccountQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-}>;
-
-
-export type GetDefaultBankAccountQuery = { __typename: 'Query', defaultBankAccount: { __typename: 'BankAccount', id: string, organizerId: string, accountHolderName: string, accountNumber: string, accountType: string | null, bankName: string, bankCode: string | null, branchName: string | null, branchCode: string | null, swiftCode: string | null, currency: string, isDefault: boolean, isVerified: boolean, verifiedAt: string | null, verifiedBy: string | null, status: string, createdAt: string | null, updatedAt: string | null } | null };
-
-export type IsTicketEligibleForRefundQueryVariables = Exact<{
-  ticketId: Scalars['String']['input'];
-}>;
-
-
-export type IsTicketEligibleForRefundQuery = { __typename: 'Query', isTicketEligibleForRefund: boolean };
-
-export type CalculateRefundAmountQueryVariables = Exact<{
-  ticketId: Scalars['String']['input'];
-}>;
-
-
-export type CalculateRefundAmountQuery = { __typename: 'Query', calculateRefundAmount: { __typename: 'RefundCalculation', ticketId: string, ticketNumber: string, eventId: string, eventDate: string, originalAmount: string, daysBeforeEvent: number, refundPercentage: number, refundAmount: string, commissionRefund: string, platformRetains: string, policyApplied: string, isEligible: boolean, ineligibleReason: string | null } };
-
-export type MyEffectivePermissionsQueryVariables = Exact<{
-  organizationId: InputMaybe<Scalars['ID']['input']>;
-  eventId: InputMaybe<Scalars['ID']['input']>;
-}>;
-
-
-export type MyEffectivePermissionsQuery = { __typename: 'Query', myEffectivePermissions: { __typename: 'EffectivePermissions', userId: string, organizationId: string | null, eventId: string | null, permissions: Array<string>, role: string | null, source: string | null } };
-
-export type RolePermissionsQueryVariables = Exact<{
-  roleId: Scalars['String']['input'];
-}>;
-
-
-export type RolePermissionsQuery = { __typename: 'Query', rolePermissions: Array<{ __typename: 'Permission', id: string, name: string, code: string, description: string | null, category: string | null, scope: PermissionScope, active: boolean }> };
-
-export type AllPermissionsQueryVariables = Exact<{
-  scope: InputMaybe<PermissionScope>;
-}>;
-
-
-export type AllPermissionsQuery = { __typename: 'Query', allPermissions: Array<{ __typename: 'Permission', code: string, name: string, description: string | null, scope: PermissionScope, category: string | null }> };
-
-export type GetTicketsByEventAdminQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetTicketsByEventAdminQuery = { __typename: 'Query', ticketsByEventOffsetPagination: { __typename: 'TicketOffsetPage', data: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean }>, pagination: { __typename: 'PaginationInfo', pageNumber: number | null, pageSize: number, totalElements: number | null, totalPages: number, hasNext: boolean | null, hasPrevious: boolean | null } } };
-
-export type GetTicketsByBuyerAdminQueryVariables = Exact<{
-  buyerId: Scalars['String']['input'];
-  status: InputMaybe<TicketStatus>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetTicketsByBuyerAdminQuery = { __typename: 'Query', ticketsByBuyerOffsetPagination: { __typename: 'TicketOffsetPage', data: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean }>, pagination: { __typename: 'PaginationInfo', pageNumber: number | null, pageSize: number, totalElements: number | null, totalPages: number, hasNext: boolean | null, hasPrevious: boolean | null } } };
-
-export type GetTicketsByOrganizerAdminQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-  filter: InputMaybe<TicketFilterInput>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetTicketsByOrganizerAdminQuery = { __typename: 'Query', ticketsByOrganizerOffsetPagination: { __typename: 'TicketOffsetPage', data: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean }>, pagination: { __typename: 'PaginationInfo', pageNumber: number | null, pageSize: number, totalElements: number | null, totalPages: number, hasNext: boolean | null, hasPrevious: boolean | null } } };
-
-export type SearchTicketsAdminQueryVariables = Exact<{
-  filter: TicketFilterInput;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type SearchTicketsAdminQuery = { __typename: 'Query', searchTicketsOffsetPagination: { __typename: 'TicketOffsetPage', data: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean }>, pagination: { __typename: 'PaginationInfo', pageNumber: number | null, pageSize: number, totalElements: number | null, totalPages: number, hasNext: boolean | null, hasPrevious: boolean | null } } };
-
-export type GetTicketStatsQueryVariables = Exact<{
-  eventId: InputMaybe<Scalars['ID']['input']>;
-}>;
-
-
-export type GetTicketStatsQuery = { __typename: 'Query', ticketStats: { __typename: 'TicketStats', totalTickets: number, purchasedTickets: number, validatedTickets: number, usedTickets: number, refundedTickets: number, expiredTickets: number, cancelledTickets: number, pendingPaymentTickets: number, ticketsByStatus: Array<{ __typename: 'TicketStatusStats', status: TicketStatus, count: number }> | null, ticketsByCategory: Array<{ __typename: 'TicketCategoryStats', category: string, count: number, percentage: number, totalRevenue: string | null }> | null, recentTickets: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean }> | null } };
-
-export type GetTicketCountByEventQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-}>;
-
-
-export type GetTicketCountByEventQuery = { __typename: 'Query', ticketCountByEvent: number };
-
-export type GetTicketCountByBuyerQueryVariables = Exact<{
-  buyerId: Scalars['String']['input'];
-}>;
-
-
-export type GetTicketCountByBuyerQuery = { __typename: 'Query', ticketCountByBuyer: number };
-
-export type TicketFieldsFragment = { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean };
-
-export type GetTicketQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetTicketQuery = { __typename: 'Query', ticket: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null };
-
-export type GetTicketByNumberQueryVariables = Exact<{
-  ticketNumber: Scalars['String']['input'];
-}>;
-
-
-export type GetTicketByNumberQuery = { __typename: 'Query', ticketByNumber: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null };
-
-export type GetTicketsByEventCursorQueryVariables = Exact<{
-  eventId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetTicketsByEventCursorQuery = { __typename: 'Query', ticketsByEventCursorPagination: { __typename: 'TicketConnection', totalCount: number | null, edges: Array<{ __typename: 'TicketEdge', cursor: string, node: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetTicketsByBuyerCursorQueryVariables = Exact<{
-  buyerId: Scalars['String']['input'];
-  status: InputMaybe<TicketStatus>;
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetTicketsByBuyerCursorQuery = { __typename: 'Query', ticketsByBuyerCursorPagination: { __typename: 'TicketConnection', totalCount: number | null, edges: Array<{ __typename: 'TicketEdge', cursor: string, node: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetTicketsByOrganizerCursorQueryVariables = Exact<{
-  organizerId: Scalars['String']['input'];
-  filter: InputMaybe<TicketFilterInput>;
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetTicketsByOrganizerCursorQuery = { __typename: 'Query', ticketsByOrganizerCursorPagination: { __typename: 'TicketConnection', totalCount: number | null, edges: Array<{ __typename: 'TicketEdge', cursor: string, node: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type SearchTicketsCursorQueryVariables = Exact<{
-  filter: TicketFilterInput;
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type SearchTicketsCursorQuery = { __typename: 'Query', searchTicketsCursorPagination: { __typename: 'TicketConnection', totalCount: number | null, edges: Array<{ __typename: 'TicketEdge', cursor: string, node: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type PurchaseTicketMutationVariables = Exact<{
-  input: TicketPurchaseInput;
-}>;
-
-
-export type PurchaseTicketMutation = { __typename: 'Mutation', purchaseTicket: { __typename: 'PurchaseTicketMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null } };
-
-export type ReserveTicketsMutationVariables = Exact<{
-  input: ReserveTicketsInput;
-}>;
-
-
-export type ReserveTicketsMutation = { __typename: 'Mutation', reserveTickets: { __typename: 'TicketReservation', id: string, eventId: string, userId: string, totalAmount: string, currency: string, status: ReservationStatus, expiresAt: string, remainingSeconds: number | null, promoCodeApplied: string | null, discountAmount: string | null, createdAt: string, updatedAt: string | null, items: Array<{ __typename: 'ReservationItem', ticketTierId: string, tierName: string, quantity: number, unitPrice: string, subtotal: string }> } };
-
-export type CompleteReservationMutationVariables = Exact<{
-  input: CompleteReservationInput;
-}>;
-
-
-export type CompleteReservationMutation = { __typename: 'Mutation', completeReservation: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean }> };
-
-export type CancelReservationMutationVariables = Exact<{
-  reservationId: Scalars['ID']['input'];
-}>;
-
-
-export type CancelReservationMutation = { __typename: 'Mutation', cancelReservation: boolean };
-
-export type ExtendReservationMutationVariables = Exact<{
-  reservationId: Scalars['ID']['input'];
-  minutes: Scalars['Int']['input'];
-}>;
-
-
-export type ExtendReservationMutation = { __typename: 'Mutation', extendReservation: { __typename: 'TicketReservation', id: string, eventId: string, userId: string, totalAmount: string, currency: string, status: ReservationStatus, expiresAt: string, remainingSeconds: number | null, promoCodeApplied: string | null, discountAmount: string | null, createdAt: string, updatedAt: string | null, items: Array<{ __typename: 'ReservationItem', ticketTierId: string, tierName: string, quantity: number, unitPrice: string, subtotal: string }> } };
-
-export type CancelTicketMutationVariables = Exact<{
-  ticketNumber: Scalars['String']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type CancelTicketMutation = { __typename: 'Mutation', cancelTicket: { __typename: 'CancelTicketMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null } };
-
-export type RefundTicketMutationVariables = Exact<{
-  ticketNumber: Scalars['String']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type RefundTicketMutation = { __typename: 'Mutation', refundTicket: { __typename: 'RefundTicketMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null } };
-
-export type ValidateTicketMutationVariables = Exact<{
-  ticketNumber: Scalars['String']['input'];
-}>;
-
-
-export type ValidateTicketMutation = { __typename: 'Mutation', validateTicket: { __typename: 'ValidateTicketMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null } };
-
-export type UseTicketMutationVariables = Exact<{
-  ticketNumber: Scalars['String']['input'];
-}>;
-
-
-export type UseTicketMutation = { __typename: 'Mutation', useTicket: { __typename: 'UseTicketMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null } };
-
-export type AdminUpdateTicketMutationVariables = Exact<{
-  ticketId: Scalars['ID']['input'];
-  input: AdminTicketUpdateInput;
-}>;
-
-
-export type AdminUpdateTicketMutation = { __typename: 'Mutation', adminUpdateTicket: { __typename: 'TicketMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null } };
-
-export type RegenerateTicketQrCodeMutationVariables = Exact<{
-  ticketId: Scalars['ID']['input'];
-}>;
-
-
-export type RegenerateTicketQrCodeMutation = { __typename: 'Mutation', regenerateTicketQrCode: { __typename: 'TicketMutationResponse', success: boolean, message: string | null, errors: Array<string>, data: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, eventLocationAddress: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, buyerId: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, price: string, currency: string, status: TicketStatus, quantity: number | null, purchaseDate: string | null, validFrom: string | null, validUntil: string | null, validatedAt: string | null, validatedBy: string | null, usedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, qrCode: string | null, barcode: string | null, correlationId: string | null, paymentReference: string | null, commissionRate: string | null, commissionAmount: string | null, netAmount: string | null, isActive: boolean } | null } };
-
-export type BulkCancelTicketsMutationVariables = Exact<{
-  ticketIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type BulkCancelTicketsMutation = { __typename: 'Mutation', bulkCancelTickets: { __typename: 'BulkOperationResponse', success: boolean, message: string | null, processedCount: number, failedCount: number, errors: Array<string> } };
-
-export type GetUserByEmailQueryVariables = Exact<{
-  email: Scalars['String']['input'];
-}>;
-
-
-export type GetUserByEmailQuery = { __typename: 'Query', userByEmail: { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean } | null };
-
-export type GetUserByPhoneQueryVariables = Exact<{
-  phoneNumber: Scalars['String']['input'];
-}>;
-
-
-export type GetUserByPhoneQuery = { __typename: 'Query', userByPhone: { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean } | null };
-
-export type GetUsersAdminQueryVariables = Exact<{
-  search: InputMaybe<Scalars['String']['input']>;
-  userType: InputMaybe<UserType>;
-  accountStatus: InputMaybe<AccountStatus>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetUsersAdminQuery = { __typename: 'Query', usersOffsetPagination: { __typename: 'UserOffsetPage', content: Array<{ __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetOrganizationsAdminQueryVariables = Exact<{
-  search: InputMaybe<Scalars['String']['input']>;
-  status: InputMaybe<OrganizationStatus>;
-  verified: InputMaybe<Scalars['Boolean']['input']>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-}>;
-
-
-export type GetOrganizationsAdminQuery = { __typename: 'Query', organizationsOffsetPagination: { __typename: 'OrganizationOffsetPage', content: Array<{ __typename: 'Organization', id: string, name: string, slug: string, description: string | null, logoUrl: string | null, status: OrganizationStatus, verified: boolean, createdAt: string }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };
-
-export type GetUserStatsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetUserStatsQuery = { __typename: 'Query', userStats: { __typename: 'UserStats', totalUsers: number, organizers: number, attendees: number, adminUsers: number, verifiedUsers: number, activeUsers: number, suspendedUsers: number, lockedUsers: number, pendingVerificationUsers: number, newUsersThisMonth: number, newUsersThisWeek: number, growthRate: number | null, usersByType: Array<{ __typename: 'UserTypeStats', userType: UserType, count: number, percentage: number }>, usersByStatus: Array<{ __typename: 'UserStatusStats', status: AccountStatus, count: number, percentage: number }> } | null };
-
-export type UserFieldsFragment = { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean };
-
-export type MeQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type MeQuery = { __typename: 'Query', me: { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean } | null };
-
-export type GetUserQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetUserQuery = { __typename: 'Query', user: { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean } | null };
-
-export type GetOrganizationQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type GetOrganizationQuery = { __typename: 'Query', organization: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, logoUrl: string | null, bannerUrl: string | null, organizerProfileId: string, ownerId: string, memberCount: number, status: OrganizationStatus, verified: boolean, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, averageRating: number | null } | null };
-
-export type GetOrganizationBySlugQueryVariables = Exact<{
-  slug: Scalars['String']['input'];
-}>;
-
-
-export type GetOrganizationBySlugQuery = { __typename: 'Query', organizationBySlug: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, logoUrl: string | null, bannerUrl: string | null, organizerProfileId: string, ownerId: string, memberCount: number, status: OrganizationStatus, verified: boolean, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, averageRating: number | null } | null };
-
-export type GetMyOrganizationsQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetMyOrganizationsQuery = { __typename: 'Query', myOrganizations: Array<{ __typename: 'Organization', id: string, name: string, slug: string, description: string | null, logoUrl: string | null, bannerUrl: string | null, status: OrganizationStatus, verified: boolean }> };
-
-export type GetMyOwnedOrganizationQueryVariables = Exact<{ [key: string]: never; }>;
-
-
-export type GetMyOwnedOrganizationQuery = { __typename: 'Query', myOwnedOrganization: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, logoUrl: string | null, bannerUrl: string | null, organizerProfileId: string, ownerId: string, memberCount: number, status: OrganizationStatus, verified: boolean, totalEvents: number | null, totalTicketsSold: number | null, totalRevenue: string | null, averageRating: number | null } | null };
-
-export type CreateUserMutationVariables = Exact<{
-  input: CreateUserInput;
-}>;
-
-
-export type CreateUserMutation = { __typename: 'Mutation', createUser: { __typename: 'UserMutationResponse', success: boolean, message: string | null, user: { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean } | null } };
-
-export type UpdateUserMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  input: UpdateUserInput;
-}>;
-
-
-export type UpdateUserMutation = { __typename: 'Mutation', updateUser: { __typename: 'UserMutationResponse', success: boolean, message: string | null, user: { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean } | null } };
-
-export type UpdateMyProfileMutationVariables = Exact<{
-  input: UpdateUserInput;
-}>;
-
-
-export type UpdateMyProfileMutation = { __typename: 'Mutation', updateMyProfile: { __typename: 'UserMutationResponse', success: boolean, message: string | null, user: { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean } | null } };
-
-export type SuspendUserMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type SuspendUserMutation = { __typename: 'Mutation', suspendUser: { __typename: 'MutationResponse', success: boolean, message: string | null, code: string | null } };
-
-export type UnsuspendUserMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type UnsuspendUserMutation = { __typename: 'Mutation', unsuspendUser: { __typename: 'MutationResponse', success: boolean, message: string | null, code: string | null } };
-
-export type LockUserMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-}>;
-
-
-export type LockUserMutation = { __typename: 'Mutation', lockUser: { __typename: 'MutationResponse', success: boolean, message: string | null, code: string | null } };
-
-export type UnlockUserMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-}>;
-
-
-export type UnlockUserMutation = { __typename: 'Mutation', unlockUser: { __typename: 'MutationResponse', success: boolean, message: string | null, code: string | null } };
-
-export type UpdateNotificationPreferencesMutationVariables = Exact<{
-  input: UpdateNotificationPreferencesInput;
-}>;
-
-
-export type UpdateNotificationPreferencesMutation = { __typename: 'Mutation', updateNotificationPreferences: { __typename: 'NotificationPreferences', id: string, userId: string, emailEnabled: boolean, smsEnabled: boolean, whatsappEnabled: boolean, pushEnabled: boolean, inAppEnabled: boolean } | null };
-
-export type GetUsersCursorQueryVariables = Exact<{
-  search: InputMaybe<Scalars['String']['input']>;
-  userType: InputMaybe<UserType>;
-  accountStatus: InputMaybe<AccountStatus>;
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetUsersCursorQuery = { __typename: 'Query', usersCursorPagination: { __typename: 'UserConnection', totalCount: number | null, edges: Array<{ __typename: 'UserEdge', cursor: string, node: { __typename: 'User', id: string, username: string, email: string, phoneNumber: string | null, firstName: string, lastName: string, fullName: string, avatarUrl: string | null, bio: string | null, locale: string | null, timezone: string | null, userType: UserType, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, identityVerified: boolean, active: boolean, locked: boolean } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, hasPreviousPage: boolean | null, startCursor: string | null, endCursor: string | null } } };

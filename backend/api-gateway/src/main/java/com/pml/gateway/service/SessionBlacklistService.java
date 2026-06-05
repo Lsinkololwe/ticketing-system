@@ -21,28 +21,11 @@ import java.time.Duration;
  *   <li><b>User Blacklist (SUB)</b> - "Logout everywhere" for a user</li>
  * </ol>
  *
- * <h2>Why Token Blacklist (JTI)?</h2>
+ * <h2>Redis Key Structure (Unified)</h2>
  * <pre>
- * Problem: JWTs are stateless - once issued, valid until expiry
- * Solution: Blacklist by JWT ID (jti claim) in Redis
- *
- * Benefits:
- * - O(1) lookup (EXISTS command)
- * - Minimal memory (~50 bytes per entry)
- * - Automatic TTL cleanup (no manual deletion)
- * - Industry standard (used by Netflix, Uber, Auth0)
- *
- * At 20M concurrent users:
- * - Typical blacklist size: ~200K tokens (1% revoked at any time)
- * - Memory: 200K × 50B = 10MB
- * - Performance: 100K+ EXISTS ops/second
- * </pre>
- *
- * <h2>Redis Key Structure</h2>
- * <pre>
- * Token Blacklist:   pml-admin:blacklist:{jti}     → "1" (TTL: remaining token lifetime)
- * Session Blacklist: session:blacklist:{sid}       → "revoked" (TTL: token lifetime)
- * User Blacklist:    session:blacklist:user:{sub}  → "revoked" (TTL: token lifetime)
+ * Token Blacklist:   pml:blacklist:{jti}   → JSON metadata (TTL: 1 hour)
+ * Session Blacklist: pml:session:{sid}     → "revoked" (TTL: token lifetime)
+ * User Blacklist:    pml:revoked:{sub}     → timestamp (TTL: token lifetime)
  * </pre>
  *
  * <h2>Fail-Open Design</h2>
@@ -54,8 +37,6 @@ import java.time.Duration;
  *   <li>JWT will eventually expire anyway</li>
  *   <li>Critical apps can implement fail-closed instead</li>
  * </ul>
- *
- * @see docs/TOKEN_VALIDATION_ARCHITECTURE_RECOMMENDATION.md
  */
 @Slf4j
 @Service
@@ -64,10 +45,10 @@ public class SessionBlacklistService {
 
     private final ReactiveRedisTemplate<String, String> redisTemplate;
 
-    // Redis key prefixes
-    private static final String TOKEN_BLACKLIST_PREFIX = "pml-admin:blacklist:";  // JTI-based (industry standard)
-    private static final String SESSION_BLACKLIST_PREFIX = "session:blacklist:";   // SID-based (Keycloak session)
-    private static final String USER_BLACKLIST_PREFIX = "session:blacklist:user:"; // SUB-based (user-wide)
+    // Unified Redis key prefixes - shared across all services and frontends
+    private static final String TOKEN_BLACKLIST_PREFIX = "pml:blacklist:";
+    private static final String SESSION_BLACKLIST_PREFIX = "pml:session:";
+    private static final String USER_REVOCATION_PREFIX = "pml:revoked:";
 
     /**
      * Checks if a token is blacklisted by its JTI (JWT ID).
@@ -95,7 +76,6 @@ public class SessionBlacklistService {
                     }
                 })
                 .onErrorResume(error -> {
-                    // FAIL-OPEN: Allow request if Redis check fails
                     log.warn("[Blacklist] Redis unavailable for JTI check, allowing request: {}", error.getMessage());
                     return Mono.just(false);
                 });
@@ -120,7 +100,6 @@ public class SessionBlacklistService {
                     }
                 })
                 .onErrorResume(error -> {
-                    // FAIL-OPEN: Allow request if Redis check fails
                     log.warn("[Blacklist] Redis unavailable, allowing request: {}", error.getMessage());
                     return Mono.just(false);
                 });
@@ -137,7 +116,7 @@ public class SessionBlacklistService {
             return Mono.just(false);
         }
 
-        String key = USER_BLACKLIST_PREFIX + sub;
+        String key = USER_REVOCATION_PREFIX + sub;
         return redisTemplate.hasKey(key)
                 .doOnNext(blacklisted -> {
                     if (blacklisted) {
@@ -176,22 +155,12 @@ public class SessionBlacklistService {
      * blacklist types in parallel for maximum security with minimal latency.
      * </p>
      *
-     * <p>
-     * Order of precedence (any match = blacklisted):
-     * </p>
-     * <ol>
-     *   <li>Token blacklist (JTI) - immediate token revocation</li>
-     *   <li>Session blacklist (SID) - Keycloak session revocation</li>
-     *   <li>User blacklist (SUB) - logout everywhere</li>
-     * </ol>
-     *
      * @param jti JWT ID from token's 'jti' claim (may be null)
      * @param sid Session ID from token's 'sid' claim (may be null)
      * @param sub Subject/User ID from token's 'sub' claim (may be null)
      * @return Mono<Boolean> true if ANY blacklist matches
      */
     public Mono<Boolean> isBlacklistedComprehensive(String jti, String sid, String sub) {
-        // Check all three in parallel using Mono.zip for efficiency
         return Mono.zip(
                 isTokenBlacklisted(jti),
                 isSessionBlacklisted(sid),

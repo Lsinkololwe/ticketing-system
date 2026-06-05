@@ -3,7 +3,7 @@ package com.pml.identity.service;
 import com.pml.identity.domain.enums.AccountStatus;
 import com.pml.identity.web.graphql.dto.stats.UserStats;
 import com.pml.identity.web.graphql.dto.stats.UserStatusStats;
-import com.pml.identity.web.graphql.dto.stats.UserTypeStats;
+import com.pml.identity.web.graphql.dto.stats.UserRoleStats;
 import com.pml.shared.constants.UserType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,7 +49,7 @@ public class UserStatsService {
                 getNewUsersThisWeekCount(),
                 getLastMonthUsersCount()
         ).map(tuple -> {
-            List<UserTypeStats> typeStats = tuple.getT1();
+            List<UserRoleStats> typeStats = tuple.getT1();
             List<UserStatusStats> statusStats = tuple.getT2();
             int verifiedUsers = tuple.getT3();
             int activeUsers = tuple.getT4();
@@ -58,7 +58,7 @@ public class UserStatsService {
             int lastMonthUsers = tuple.getT7();
 
             // Calculate totals from type stats
-            int totalUsers = typeStats.stream().mapToInt(UserTypeStats::getCount).sum();
+            int totalUsers = typeStats.stream().mapToInt(UserRoleStats::getCount).sum();
             int organizers = getCountForType(typeStats, UserType.ORGANIZER);
             int attendees = getCountForType(typeStats, UserType.CUSTOMER);
             int adminUsers = getCountForType(typeStats, UserType.ADMIN) +
@@ -87,22 +87,27 @@ public class UserStatsService {
                     .newUsersThisMonth(newUsersThisMonth)
                     .newUsersThisWeek(newUsersThisWeek)
                     .growthRate(growthRate != null ? Math.round(growthRate * 100.0) / 100.0 : null)
-                    .usersByType(typeStats)
+                    .usersByRole(typeStats)
                     .usersByStatus(statusStats)
                     .build();
         });
     }
 
     /**
-     * Get user counts grouped by type using a single aggregation.
+     * Get user counts grouped by role using a single aggregation.
      *
      * MongoDB Aggregation Pipeline:
-     * 1. $group: Group all users by userType and count
-     * 2. $sort: Order by count descending
+     * 1. $unwind: Flatten the roles array so each role becomes a separate document
+     * 2. $group: Group all roles and count occurrences
+     * 3. $sort: Order by count descending
+     *
+     * Note: Since users can have multiple roles, the same user may be counted
+     * multiple times (once for each role they have). This is intentional.
      */
-    private Mono<List<UserTypeStats>> getUserTypeCountsAggregation() {
+    private Mono<List<UserRoleStats>> getUserTypeCountsAggregation() {
         Aggregation aggregation = newAggregation(
-                group("userType").count().as("count"),
+                unwind("roles"),
+                group("roles").count().as("count"),
                 sort(Sort.Direction.DESC, "count")
         );
 
@@ -112,7 +117,7 @@ public class UserStatsService {
                     int total = results.stream().mapToInt(TypeAggResult::getCount).sum();
 
                     // Create stats for all user types, including those with 0 count
-                    List<UserTypeStats> stats = new ArrayList<>();
+                    List<UserRoleStats> stats = new ArrayList<>();
                     for (UserType userType : UserType.values()) {
                         int count = results.stream()
                                 .filter(r -> userType.name().equals(r.getId()))
@@ -122,8 +127,8 @@ public class UserStatsService {
 
                         double percentage = total > 0 ? (count * 100.0) / total : 0.0;
 
-                        stats.add(UserTypeStats.builder()
-                                .userType(userType)
+                        stats.add(UserRoleStats.builder()
+                                .role(userType)
                                 .count(count)
                                 .percentage(Math.round(percentage * 100.0) / 100.0)
                                 .build());
@@ -261,11 +266,11 @@ public class UserStatsService {
                 .defaultIfEmpty(0);
     }
 
-    private int getCountForType(List<UserTypeStats> stats, UserType userType) {
+    private int getCountForType(List<UserRoleStats> stats, UserType userType) {
         return stats.stream()
-                .filter(s -> s.getUserType() == userType)
+                .filter(s -> s.getRole() == userType)
                 .findFirst()
-                .map(UserTypeStats::getCount)
+                .map(UserRoleStats::getCount)
                 .orElse(0);
     }
 
@@ -281,7 +286,7 @@ public class UserStatsService {
 
     @lombok.Data
     private static class TypeAggResult {
-        private String id; // The _id field from $group (userType name)
+        private String id; // The _id field from $group (role name)
         private int count;
     }
 

@@ -1,0 +1,113 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Commission Records Schema - OWASP Compliant",
+    "description": "Two-stage commission tracking (PENDING → EARNED)",
+    "required": [
+      "ticketId",
+      "eventId",
+      "organizerId",
+      "organizationId",
+      "amount",
+      "rate",
+      "ticketPrice",
+      "currency",
+      "status",
+      "pendingAt",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "ticketId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation for commission tracking"
+      },
+      "amount": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04 - Positive amount validation"
+      },
+      "rate": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "ticketPrice": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "EARNED", "CANCELLED", "CLAWED_BACK"],
+        "description": "OWASP A04 - Enum constraint for two-stage model"
+      },
+      "pendingAt": {
+        "bsonType": "date"
+      },
+      "earnedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "cancelledAt": {
+        "bsonType": ["date", "null"]
+      },
+      "clawedBackAt": {
+        "bsonType": ["date", "null"]
+      },
+      "refundRequestId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "refundReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "pendingJournalEntryId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "earnedJournalEntryId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "cancelJournalEntryId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "clawbackJournalEntryId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "version": {
+        "bsonType": ["long", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

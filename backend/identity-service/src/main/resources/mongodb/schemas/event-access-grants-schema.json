@@ -1,0 +1,59 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Event Access Grants Schema - OWASP Compliant",
+    "description": "Temporary event access grants for specific users",
+    "required": [
+      "eventId",
+      "userId",
+      "grantedBy",
+      "accessLevel",
+      "isActive",
+      "grantedAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "userId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "grantedBy": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "accessLevel": {
+        "bsonType": "string",
+        "enum": ["READ", "WRITE", "ADMIN"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "grantedAt": {
+        "bsonType": "date"
+      },
+      "expiresAt": {
+        "bsonType": ["date", "null"]
+      },
+      "revokedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "revokedBy": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "reason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      }
+    },
+    "additionalProperties": false
+  }
+}

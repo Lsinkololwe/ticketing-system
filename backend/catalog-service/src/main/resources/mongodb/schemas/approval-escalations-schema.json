@@ -1,0 +1,54 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Approval Escalations Schema - OWASP Compliant",
+    "description": "Tracks escalations for delayed event approvals",
+    "required": [
+      "eventId",
+      "reason",
+      "escalatedBy",
+      "escalatedTo",
+      "status",
+      "escalatedAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "reason": {
+        "bsonType": "string",
+        "enum": ["DELAYED_REVIEW", "COMPLEX_CASE", "POLICY_VIOLATION", "HIGH_PRIORITY", "OTHER"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "escalatedBy": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "escalatedTo": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "IN_REVIEW", "RESOLVED", "CLOSED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "escalatedAt": {
+        "bsonType": "date"
+      },
+      "resolvedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "notes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000
+      }
+    },
+    "additionalProperties": false
+  }
+}

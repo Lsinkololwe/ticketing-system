@@ -278,3 +278,41 @@ catalog:
     event-approval: true
     auto-publish: false
     search-indexing: true
+
+# ============================================================================
+# MONGODB SCHEMA VALIDATION CONFIGURATION
+# ============================================================================
+# Application-layer MongoDB JSON Schema validation enforces:
+# - OWASP A01:2021 - Broken Access Control: organizationId tenant isolation
+# - OWASP A03:2021 - Injection: URL pattern validation, string length limits
+# - OWASP A04:2021 - Insecure Design: Price non-negativity, capacity limits,
+#   date range validation
+# - Data integrity: Required fields, enum constraints, ObjectId patterns
+#
+# Validation is applied at application startup for all configured collections.
+# ============================================================================
+mongodb:
+  schema-validation:
+    # Enable schema validation (set to false to skip validation)
+    enabled: ${MONGODB_SCHEMA_VALIDATION_ENABLED:true}
+
+    # Validation action when documents fail validation
+    # - ERROR: Reject invalid documents (recommended for production)
+    # - WARN: Log validation failures but allow writes (migration mode)
+    validation-action: ${MONGODB_VALIDATION_ACTION:ERROR}
+
+    # Validation level
+    # - STRICT: Validate all inserts and updates
+    # - MODERATE: Skip validation for existing invalid documents
+    # - OFF: Disable validation
+    validation-level: ${MONGODB_VALIDATION_LEVEL:STRICT}
+
+    # Fail application startup if schema validation cannot be applied
+    # Set to true for production to ensure data integrity
+    fail-on-validation-error: ${MONGODB_VALIDATION_FAIL_ON_ERROR:true}
+
+    # Base path for JSON schema files in classpath resources
+    schema-base-path: ${MONGODB_SCHEMA_BASE_PATH:mongodb/schemas}
+
+    # Timeout for schema application operations (milliseconds)
+    operation-timeout-ms: ${MONGODB_SCHEMA_TIMEOUT_MS:30000}

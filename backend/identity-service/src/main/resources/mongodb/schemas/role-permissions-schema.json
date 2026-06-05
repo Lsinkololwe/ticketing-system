@@ -1,0 +1,39 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Role Permissions Schema - OWASP Compliant",
+    "description": "Mapping between roles and permissions",
+    "required": [
+      "roleId",
+      "permissionId",
+      "isActive",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "roleId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "permissionId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "createdBy": {
+        "bsonType": ["string", "null"],
+        "maxLength": 100
+      },
+      "isActive": {
+        "bsonType": "bool"
+      }
+    },
+    "additionalProperties": false
+  }
+}

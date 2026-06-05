@@ -1,0 +1,81 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Locations Schema - OWASP Compliant",
+    "description": "Venues and locations where events take place",
+    "required": [
+      "name",
+      "cityId",
+      "provinceId",
+      "isActive",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "cityId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "provinceId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "address": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "coordinates": {
+        "bsonType": ["object", "null"],
+        "properties": {
+          "latitude": {"bsonType": "double"},
+          "longitude": {"bsonType": "double"}
+        }
+      },
+      "capacity": {
+        "bsonType": ["int", "null"],
+        "minimum": 0
+      },
+      "type": {
+        "bsonType": ["string", "null"],
+        "enum": ["STADIUM", "ARENA", "THEATER", "CLUB", "OUTDOOR", "CONFERENCE_CENTER", "OTHER", null]
+      },
+      "facilities": {
+        "bsonType": ["array", "null"],
+        "items": {"bsonType": "string"}
+      },
+      "contactEmail": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+        "description": "OWASP A03 - Email validation"
+      },
+      "contactPhone": {
+        "bsonType": ["string", "null"],
+        "pattern": "^\\+[1-9]\\d{1,14}$",
+        "description": "OWASP A03 - E.164 phone format"
+      },
+      "imageUrl": {
+        "bsonType": ["string", "null"],
+        "pattern": "^https?://.*",
+        "maxLength": 500
+      },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

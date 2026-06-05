@@ -1,7 +1,10 @@
 package com.pml.booking;
 
+import com.pml.shared.config.MongoSchemaValidationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.ComponentScan;
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
@@ -41,6 +44,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @EnableReactiveMongoRepositories
 @EnableScheduling
+@EnableConfigurationProperties(MongoSchemaValidationProperties.class)
+@ComponentScan(basePackages = {"com.pml.booking", "com.pml.shared"})
 public class BookingServiceApplication {
 
     public static void main(String[] args) {

@@ -1,0 +1,63 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Ownership Transfers Schema - OWASP Compliant",
+    "description": "Transfer ownership of events or organizations between users",
+    "required": [
+      "entityType",
+      "entityId",
+      "fromUserId",
+      "toUserId",
+      "status",
+      "requestedAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "entityType": {
+        "bsonType": "string",
+        "enum": ["EVENT", "ORGANIZATION"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "entityId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "fromUserId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Current owner"
+      },
+      "toUserId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "New owner"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "ACCEPTED", "DECLINED", "CANCELLED", "COMPLETED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "requestedAt": {
+        "bsonType": "date"
+      },
+      "acceptedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "completedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "reason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "notes": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
+      }
+    },
+    "additionalProperties": false
+  }
+}

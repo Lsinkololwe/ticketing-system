@@ -127,7 +127,7 @@ public class PhoneOtpMutationResolver {
                             .email(placeholderEmail)
                             .firstName("Phone")
                             .lastName("User")
-                            .userType(UserType.CUSTOMER)
+                            .roles(java.util.EnumSet.of(UserType.CUSTOMER))
                             .phoneVerified(true)
                             .emailVerified(false)
                             .active(true)

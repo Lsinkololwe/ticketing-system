@@ -84,7 +84,7 @@
 #   └─────────────────────────────────────────────────────────────────────┘
 #
 # ============================================================================
-# ORGANIZATION CREATION FLOW
+# PROGRESSIVE ONBOARDING FLOW (Industry Standard - Eventbrite/Stripe Connect)
 # ============================================================================
 #
 #   1. USER REGISTRATION (Customer)
@@ -92,12 +92,27 @@
 #   User signs up via Phone OTP or Email → Creates User in:
 #     • Keycloak (with CUSTOMER role)
 #     • MongoDB (User document)
+#     NOTE: NO Organization created at registration
 #
-#   2. ORGANIZER APPLICATION
-#   ────────────────────────
-#   User requests to become organizer:
-#     a) Frontend calls: mutation { applyToBeOrganizer(input: {...}) }
-#     b) System creates OrganizerProfile with status: DRAFT
+#   2. LAZY ORGANIZATION CREATION
+#   ─────────────────────────────
+#   When user creates their FIRST EVENT:
+#     a) System auto-creates Organization (type: INDIVIDUAL, kyb: NOT_STARTED)
+#     b) User becomes OWNER of the organization
+#     c) User can create DRAFT events immediately
+#
+#   3. KYB VERIFICATION (Required for publishing)
+#   ─────────────────────────────────────────────
+#   Before publishing events or receiving payouts:
+#     a) User completes KYB form (business details, documents)
+#     b) Admin reviews and verifies (kyb: VERIFIED)
+#     c) User can now publish events and receive payouts
+#
+#   4. UPGRADE TO BUSINESS (Optional)
+#   ─────────────────────────────────
+#   INDIVIDUAL organizations can upgrade to BUSINESS:
+#     a) User provides formal business registration
+#     b) System updates organization type to BUSINESS
 #     c) User completes business profile and uploads documents
 #     d) User submits application → status: PENDING_REVIEW
 #
@@ -109,7 +124,7 @@
 #        - Updates OrganizerProfile.status → APPROVED
 #        - Creates Organization entity
 #        - Creates OrganizationMember (OWNER role) for the user
-#        - Updates User.userType → ORGANIZER
+#        - Adds ORGANIZER to User.roles (multi-role support)
 #        - Grants ORGANIZER role in Keycloak
 #        - Creates Keycloak group: /organizations/{org-slug}
 #        - Adds user to /organizations/{org-slug}/owners group
@@ -285,12 +300,74 @@ enum OrganizerStatus {
 # SECTION 4: ENUMS - ORGANIZATION & TEAM
 # ============================================================================
 
-# Organization status (tenant status)
+# Organization status in approval workflow
+# APPROVAL-BASED ONBOARDING:
+# 1. User applies → DRAFT
+# 2. User fills details and submits → PENDING_REVIEW
+# 3. Admin: APPROVED / CHANGES_REQUESTED / REJECTED
+# 4. User can create draft events during approval process
 enum OrganizationStatus {
-    ACTIVE              # Organization is active
+    # Approval workflow statuses
+    DRAFT               # Initial status - application in progress
+    PENDING_REVIEW      # Application submitted for admin review
+    CHANGES_REQUESTED   # Admin requested changes
+    APPROVED            # Application approved - can publish events
+    REJECTED            # Application rejected
+
+    # Operational statuses (post-approval)
+    ACTIVE              # Organization is active (same as APPROVED)
     SUSPENDED           # Suspended by admin
     INACTIVE            # Deactivated by owner
     PENDING_DELETION    # Deletion requested
+}
+
+# Organization type
+enum OrganizationType {
+    INDIVIDUAL          # Sole proprietor / personal account
+    BUSINESS            # Formal business entity
+}
+
+# Know Your Business (KYB) verification status
+# Determines what actions the organization can take
+enum KybStatus {
+    NOT_STARTED         # KYB not started - can create draft events
+    IN_PROGRESS         # KYB form partially filled
+    PENDING_REVIEW      # KYB submitted, awaiting admin review
+    CHANGES_REQUESTED   # Admin requested changes to KYB
+    VERIFIED            # KYB verified - can publish events and receive payouts
+    REJECTED            # KYB rejected by admin
+}
+
+# Legal business type for KYB verification
+enum BusinessType {
+    SOLE_PROPRIETORSHIP
+    PARTNERSHIP
+    LIMITED_COMPANY
+    NGO
+    GOVERNMENT
+    INDIVIDUAL
+}
+
+# Payout method
+enum PayoutMethod {
+    BANK_TRANSFER       # Bank transfer to verified account
+    MOBILE_MONEY        # Mobile money (MTN, Airtel, Zamtel)
+}
+
+# Payout schedule
+enum PayoutSchedule {
+    DAILY
+    WEEKLY
+    BIWEEKLY
+    MONTHLY
+    MANUAL              # Manual payouts only
+}
+
+# Mobile money providers in Zambia
+enum MobileMoneyProvider {
+    MTN
+    AIRTEL
+    ZAMTEL
 }
 
 # Organization-level roles (within a tenant)
@@ -552,10 +629,16 @@ type User @key(fields: "id") {
     timezone: String                # Preferred timezone
 
     # ─────────────────────────────────────────────────────────────────────
-    # Platform Role & Status
+    # Platform Roles & Status
     # ADMIN - User management requires these fields
     # ─────────────────────────────────────────────────────────────────────
-    userType: UserType! @tag(name: "admin")
+    """
+    All roles assigned to the user.
+    A user can have multiple roles. CUSTOMER is the base role that all users have.
+    Example: [CUSTOMER, ORGANIZER] for an event organizer
+    """
+    roles: [UserType!]! @tag(name: "admin")
+
     accountStatus: AccountStatus! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
@@ -640,7 +723,11 @@ type SocialConnection {
 # ============================================================================
 
 # Organization represents the business entity (the "tenant")
-# An Organization is created when an OrganizerProfile is approved
+# APPROVAL-BASED ONBOARDING:
+# 1. User applies → Organization created (status=DRAFT)
+# 2. User fills business details and submits → PENDING_REVIEW
+# 3. Admin approves/rejects → APPROVED/CHANGES_REQUESTED/REJECTED
+# 4. User can create DRAFT events during approval process
 # ORGANIZER/ADMIN - Organizers manage their organizations, admins oversee all
 type Organization @key(fields: "id") @tag(name: "organizer") @tag(name: "admin") {
     id: ID!
@@ -651,14 +738,18 @@ type Organization @key(fields: "id") @tag(name: "organizer") @tag(name: "admin")
     name: String!                   # Display name
     slug: String!                   # URL-friendly identifier (unique)
     description: String
+    tagline: String
     logoUrl: String
     bannerUrl: String
+    website: String
+    socialLinks: SocialLinks
 
     # ─────────────────────────────────────────────────────────────────────
-    # Linked Organizer Profile
+    # Organization Type & Status
     # ─────────────────────────────────────────────────────────────────────
-    organizerProfileId: ID!
-    organizerProfile: OrganizerProfile
+    type: OrganizationType!         # INDIVIDUAL or BUSINESS
+    status: OrganizationStatus!     # Operational status
+    kybStatus: KybStatus!           # KYB verification status
 
     # ─────────────────────────────────────────────────────────────────────
     # Keycloak Integration
@@ -670,6 +761,45 @@ type Organization @key(fields: "id") @tag(name: "organizer") @tag(name: "admin")
     # ─────────────────────────────────────────────────────────────────────
     ownerId: ID!                    # User ID of the owner
     owner: User                     # Only ONE owner per organization
+
+    # ─────────────────────────────────────────────────────────────────────
+    # KYB - Business Information
+    # ─────────────────────────────────────────────────────────────────────
+    businessType: BusinessType
+    taxId: String                   # TPIN in Zambia
+    businessRegistrationNumber: String  # PACRA number in Zambia
+    yearEstablished: Int
+
+    # ─────────────────────────────────────────────────────────────────────
+    # KYB - Contact Information
+    # ─────────────────────────────────────────────────────────────────────
+    businessPhone: String
+    businessEmail: String
+    businessAddress: BusinessAddress
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Payout Configuration
+    # ─────────────────────────────────────────────────────────────────────
+    payoutConfig: PayoutConfig
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Verification Flags
+    # ─────────────────────────────────────────────────────────────────────
+    verified: Boolean!              # Business verification status
+    documentsVerified: Boolean!     # KYB documents verified
+    payoutAccountVerified: Boolean! # Payout account verified
+    verifiedAt: DateTime
+    verifiedBy: User
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Application & Review Information
+    # ─────────────────────────────────────────────────────────────────────
+    submittedAt: DateTime           # When application was submitted for review
+    approvedAt: DateTime            # When application was approved
+    rejectionReason: String         # Reason for rejection or changes requested
+    reviewedBy: User
+    reviewedAt: DateTime
+    kybSubmittedAt: DateTime
 
     # ─────────────────────────────────────────────────────────────────────
     # Team Members
@@ -685,15 +815,25 @@ type Organization @key(fields: "id") @tag(name: "organizer") @tag(name: "admin")
     pendingInvitationCount: Int!
 
     # ─────────────────────────────────────────────────────────────────────
+    # Verification Documents
+    # ─────────────────────────────────────────────────────────────────────
+    verificationDocuments: [VerificationDocument!]
+
+    # ─────────────────────────────────────────────────────────────────────
     # Organization Settings
     # ─────────────────────────────────────────────────────────────────────
     settings: OrganizationSettings
 
     # ─────────────────────────────────────────────────────────────────────
-    # Status & Verification
+    # Capabilities (derived from status)
     # ─────────────────────────────────────────────────────────────────────
-    status: OrganizationStatus!
-    verified: Boolean!              # Business verification status
+    canCreateDraftEvents: Boolean!  # True for DRAFT, PENDING_REVIEW, CHANGES_REQUESTED, APPROVED
+    canPublishEvents: Boolean!      # True only for APPROVED/ACTIVE
+    canReceivePayouts: Boolean!     # True only for APPROVED with verified payout account
+    canBeEdited: Boolean!           # True for DRAFT, CHANGES_REQUESTED, APPROVED
+    canSubmitForReview: Boolean!    # True for DRAFT, CHANGES_REQUESTED
+    isApproved: Boolean!            # True for APPROVED/ACTIVE
+    isInApprovalWorkflow: Boolean!  # True for DRAFT, PENDING_REVIEW, CHANGES_REQUESTED
 
     # ─────────────────────────────────────────────────────────────────────
     # Statistics (computed from Catalog/Booking services)
@@ -979,12 +1119,9 @@ type OrganizerProfile @key(fields: "id") @tag(name: "organizer") @tag(name: "adm
     companyName: String
     companyDescription: String
     tagline: String
+    logoUrl: String
+    bannerUrl: String
     website: String
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Social Media
-    # ─────────────────────────────────────────────────────────────────────
-    socialLinks: SocialLinks
 
     # ─────────────────────────────────────────────────────────────────────
     # Business Registration (KYB)
@@ -992,7 +1129,6 @@ type OrganizerProfile @key(fields: "id") @tag(name: "organizer") @tag(name: "adm
     taxId: String                       # TPIN in Zambia
     businessRegistrationNumber: String  # PACRA number
     businessType: String                # LLC, Sole Proprietor, etc.
-    yearEstablished: Int
 
     # ─────────────────────────────────────────────────────────────────────
     # Contact Information
@@ -1067,6 +1203,53 @@ type SocialLinks {
     linkedin: String
     youtube: String
     tiktok: String
+}
+
+# Business address for an organization
+type BusinessAddress {
+    addressLine1: String
+    addressLine2: String
+    city: String
+    province: String                # Province/State
+    postalCode: String
+    country: String
+    countryCode: String             # ISO 3166-1 alpha-2 (e.g., ZM for Zambia)
+    formattedAddress: String        # Computed full address string
+}
+
+# Bank account for payouts
+type BankAccount {
+    bankName: String
+    bankCode: String                # SWIFT code
+    branchName: String
+    branchCode: String
+    accountNumber: String           # Masked for display
+    maskedAccountNumber: String     # Last 4 digits only
+    accountHolderName: String
+    accountType: String             # CHECKING, SAVINGS, BUSINESS
+    verified: Boolean!
+}
+
+# Mobile money account for payouts (Zambia: MTN, Airtel, Zamtel)
+type MobileMoneyAccount {
+    provider: MobileMoneyProvider
+    phoneNumber: String             # Masked for display
+    maskedPhoneNumber: String       # +260****1234
+    accountHolderName: String
+    verified: Boolean!
+}
+
+# Payout configuration for an organization
+type PayoutConfig {
+    preferredMethod: PayoutMethod
+    schedule: PayoutSchedule
+    commissionRate: Float           # Platform commission (e.g., 0.05 = 5%)
+    minimumPayoutAmount: Float      # Minimum payout in ZMW
+    bankAccount: BankAccount
+    mobileMoneyAccount: MobileMoneyAccount
+    verified: Boolean!              # Payout config verified
+    isConfigured: Boolean!          # Has a configured payout method
+    canProcessPayouts: Boolean!     # Ready to process payouts
 }
 
 type VerificationDocument {
@@ -1275,10 +1458,11 @@ type TokenValidation {
     valid: Boolean!
     userId: String
     email: String
-    userType: String
+    roles: [String!]
 }
 
 # User registration input
+# All new users are automatically assigned the CUSTOMER role by default
 input RegisterInput {
     email: String!
     password: String!
@@ -1286,7 +1470,6 @@ input RegisterInput {
     firstName: String
     lastName: String
     phoneNumber: String
-    userType: UserType
 }
 
 type OtpResponse {
@@ -1374,13 +1557,15 @@ type UserStats @tag(name: "admin") {
     growthRate: Float
 
     # Breakdowns
-    usersByType: [UserTypeStats!]!
+    usersByRole: [UserRoleStats!]!
     usersByStatus: [UserStatusStats!]!
 }
 
-# ADMIN - Statistics for users grouped by type
-type UserTypeStats @tag(name: "admin") {
-    userType: UserType!
+# ADMIN - Statistics for users grouped by role
+# Note: Since users can have multiple roles, the total count across all
+# roles may exceed the total number of users (one user counted per role)
+type UserRoleStats @tag(name: "admin") {
+    role: UserType!
     count: Int!
     percentage: Float!
 }
@@ -1448,8 +1633,15 @@ type OrganizationMemberOffsetPage {
     pageInfo: PageInfo!
 }
 
+# DEPRECATED: Use OrganizationApplicationOffsetPage instead
 type OrganizerApplicationOffsetPage {
     content: [OrganizerProfile!]!
+    pageInfo: PageInfo!
+}
+
+# Organization Application Pagination (Approval Queue)
+type OrganizationApplicationOffsetPage {
+    content: [Organization!]!
     pageInfo: PageInfo!
 }
 
@@ -1535,7 +1727,7 @@ type TeamInvitationEdge {
     node: TeamInvitation!
 }
 
-# OrganizerProfile/Application cursor pagination
+# DEPRECATED: Use OrganizationApplicationConnection instead
 type OrganizerApplicationConnection {
     edges: [OrganizerApplicationEdge!]!
     pageInfo: PageInfo!
@@ -1545,6 +1737,18 @@ type OrganizerApplicationConnection {
 type OrganizerApplicationEdge {
     cursor: String!
     node: OrganizerProfile!
+}
+
+# Organization Application Cursor Pagination (Approval Queue)
+type OrganizationApplicationConnection {
+    edges: [OrganizationApplicationEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int
+}
+
+type OrganizationApplicationEdge {
+    cursor: String!
+    node: Organization!
 }
 
 # EventAccessGrant cursor pagination
@@ -1569,7 +1773,7 @@ input CreateUserInput {
     firstName: String!
     lastName: String!
     password: String
-    userType: UserType = CUSTOMER
+    # All new users get CUSTOMER role by default. Use grantRoleToUser mutation to add additional roles.
 }
 
 input UpdateUserInput {
@@ -1655,14 +1859,10 @@ input UpdateOrganizerProfileInput {
     bannerUrl: String
     website: String
 
-    # Social media
-    socialLinks: SocialLinksInput
-
     # Business registration
     taxId: String
     businessRegistrationNumber: String
     businessType: String
-    yearEstablished: Int
 
     # Contact
     businessPhone: String
@@ -1744,6 +1944,37 @@ input UpdateOrganizationSettingsInput {
     notifyOwnerOnMemberJoin: Boolean
     notifyOwnerOnEventCreated: Boolean
     notifyOwnerOnPayoutRequest: Boolean
+}
+
+# Input for organization application (becoming an organizer)
+# Business details required - NO registration/tax details needed
+input OrganizationApplicationInput {
+    # Organization/business name (required)
+    name: String!
+    # Description of the organization
+    description: String
+    # Short tagline
+    tagline: String
+    # URL to organization logo
+    logoUrl: String
+    # URL to organization banner image
+    bannerUrl: String
+    # Company website URL
+    website: String
+    # Organization type: INDIVIDUAL or BUSINESS
+    type: OrganizationType
+    # Business contact phone number
+    businessPhone: String
+    # Business contact email
+    businessEmail: String
+    # City
+    city: String
+    # Province/State
+    province: String
+    # Country (defaults to Zambia)
+    country: String
+    # Social media links
+    socialLinks: SocialLinksInput
 }
 
 input InviteTeamMemberInput {
@@ -2051,7 +2282,7 @@ type Query {
     # ADMIN - Search users with offset pagination for admin tables
     usersOffsetPagination(
         search: String
-        userType: UserType
+        role: UserType
         accountStatus: AccountStatus
         pagination: OffsetPaginationInput
     ): UserOffsetPage! @tag(name: "admin")
@@ -2059,13 +2290,30 @@ type Query {
     # ADMIN - Search users with cursor pagination
     usersCursorPagination(
         search: String
-        userType: UserType
+        role: UserType
         accountStatus: AccountStatus
         pagination: CursorPaginationInput
     ): UserConnection! @tag(name: "admin")
 
     # ADMIN - User statistics for admin dashboard
     userStats: UserStats @tag(name: "admin")
+
+    # ADMIN - Find users by role (multi-role support)
+    """
+    Find all users who have a specific role.
+    Example: usersByRole(role: ORGANIZER) returns all users with ORGANIZER role.
+    """
+    usersByRole(
+        role: UserType!
+        activeOnly: Boolean = true
+        pagination: OffsetPaginationInput
+    ): UserOffsetPage! @tag(name: "admin")
+
+    # ADMIN - Count users by role
+    """
+    Count users who have a specific role.
+    """
+    usersCountByRole(role: UserType!): Long! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Organization Queries
@@ -2077,8 +2325,11 @@ type Query {
     # ORGANIZER/ADMIN - Get organization by slug
     organizationBySlug(slug: String!): Organization @tag(name: "organizer") @tag(name: "admin")
 
-    # ORGANIZER/ADMIN - Get organization by organizer profile ID
-    organizationByOrganizerProfileId(profileId: ID!): Organization @tag(name: "organizer") @tag(name: "admin")
+    # NOTE: organizationByOrganizerProfileId has been removed (progressive onboarding)
+    # Use organizationByOwnerId or organizationBySlug instead
+
+    # ORGANIZER - Get organization by owner ID
+    organizationByOwnerId(ownerId: ID!): Organization @tag(name: "organizer") @tag(name: "admin")
 
     # ORGANIZER - Get organizations I belong to (for dashboard switcher)
     myOrganizations: [Organization!]! @tag(name: "organizer")
@@ -2250,29 +2501,21 @@ type Query {
     allPermissions(scope: PermissionScope): [Permission!]! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
-    # Organizer Profile Queries
-    # ORGANIZER - Own profile, ADMIN - All profiles and approval queue
     # ─────────────────────────────────────────────────────────────────────
-    # ORGANIZER - Get my organizer profile
-    myOrganizerProfile: OrganizerProfile @tag(name: "organizer")
-
-    # ADMIN - Get organizer profile by ID
-    organizerProfile(id: ID!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Get organizer profile by user ID
-    organizerProfileByUserId(userId: ID!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Get organizer applications with offset pagination for admin queue
-    organizerApplicationsOffsetPagination(
-        status: OrganizerStatus
+    # Organization Queries (Approval Queue)
+    # ADMIN - Organization approval queue and management
+    # ─────────────────────────────────────────────────────────────────────
+    # ADMIN - Get organization applications with offset pagination for admin queue
+    organizationApplicationsOffsetPagination(
+        status: OrganizationStatus
         pagination: OffsetPaginationInput
-    ): OrganizerApplicationOffsetPage! @tag(name: "admin")
+    ): OrganizationApplicationOffsetPage! @tag(name: "admin")
 
-    # ADMIN - Get organizer applications with cursor pagination
-    organizerApplicationsCursorPagination(
-        status: OrganizerStatus
+    # ADMIN - Get organization applications with cursor pagination
+    organizationApplicationsCursorPagination(
+        status: OrganizationStatus
         pagination: CursorPaginationInput
-    ): OrganizerApplicationConnection! @tag(name: "admin")
+    ): OrganizationApplicationConnection! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Verification Document Queries
@@ -2405,50 +2648,91 @@ type Mutation {
     unlockUser(id: ID!): MutationResponse! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
-    # Organizer Application
-    # ORGANIZER - Self-service organizer application
+    # Role Management (Multi-Role Support)
+    # ADMIN - Only admins can modify user roles
     # ─────────────────────────────────────────────────────────────────────
-    # ORGANIZER - Apply to become an organizer
-    applyToBeOrganizer(input: ApplyToBeOrganizerInput!): OrganizerMutationResponse! @tag(name: "organizer")
+    """
+    Add a role to a user.
+    A user can have multiple roles (e.g., CUSTOMER + ORGANIZER).
+    The CUSTOMER role is the base role that all users have.
+    """
+    addUserRole(userId: ID!, role: UserType!): UserMutationResponse! @tag(name: "admin")
 
-    # ORGANIZER - Update organizer profile (during application)
-    updateOrganizerProfile(input: UpdateOrganizerProfileInput!): OrganizerMutationResponse! @tag(name: "organizer")
+    """
+    Remove a role from a user.
+    Note: The CUSTOMER role cannot be removed as it is the base role.
+    """
+    removeUserRole(userId: ID!, role: UserType!): UserMutationResponse! @tag(name: "admin")
 
-    # ORGANIZER - Upload verification document
-    uploadVerificationDocument(
-        documentType: String!
-        documentUrl: String!
-        fileName: String
-        fileSize: Int
-        mimeType: String
-    ): VerificationDocument @tag(name: "organizer")
-
-    # ORGANIZER - Delete verification document
-    deleteVerificationDocument(documentId: ID!): Boolean! @tag(name: "organizer")
-
-    # ORGANIZER - Submit application for review
-    submitOrganizerApplication(
-        input: SubmitOrganizerApplicationInput!
-    ): OrganizerMutationResponse! @tag(name: "organizer")
+    """
+    Set all roles for a user (replaces existing roles).
+    The roles set must include CUSTOMER.
+    """
+    setUserRoles(userId: ID!, roles: [UserType!]!): UserMutationResponse! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
-    # Organizer Review (Admin)
-    # ADMIN - Organizer approval workflow
+    # Progressive Onboarding (Industry Standard)
     # ─────────────────────────────────────────────────────────────────────
-    # ADMIN - Approve organizer application (creates Organization)
-    approveOrganizer(profileId: ID!): OrganizerProfile @tag(name: "admin")
+    # Organization Onboarding (Approval-Based)
+    # APPROVAL FLOW: DRAFT → PENDING_REVIEW → APPROVED/CHANGES_REQUESTED/REJECTED
+    # User can create DRAFT events during approval process
+    # ─────────────────────────────────────────────────────────────────────
 
-    # ADMIN - Reject organizer application
-    rejectOrganizer(profileId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
+    """
+    Apply to become an organizer.
+    Creates a new organization in DRAFT status.
+    User must fill in business details and submit for approval.
+    """
+    applyToBeOrganizer(input: OrganizationApplicationInput!): Organization! @tag(name: "organizer")
 
-    # ADMIN - Request changes to application
-    requestOrganizerChanges(profileId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
+    """
+    Update organization application details.
+    Only allowed when status is DRAFT or CHANGES_REQUESTED.
+    """
+    updateOrganizationApplication(id: ID!, input: OrganizationApplicationInput!): Organization @tag(name: "organizer")
 
-    # ADMIN - Suspend organizer
-    suspendOrganizer(profileId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
+    """
+    Submit organization application for admin review.
+    Changes status from DRAFT/CHANGES_REQUESTED to PENDING_REVIEW.
+    """
+    submitOrganizationForReview(id: ID!): Organization @tag(name: "organizer")
 
-    # ADMIN - Unsuspend organizer
-    unsuspendOrganizer(profileId: ID!): OrganizerProfile @tag(name: "admin")
+    """
+    Get or create organization for the current user.
+    If user has no organization, creates one in DRAFT status.
+    """
+    getOrCreateMyOrganization: Organization! @tag(name: "organizer")
+
+    """
+    Upgrade an individual organization to a business organization.
+    Requires the organization to be owned by the current user.
+    """
+    upgradeToBusinessOrganization(organizationId: ID!, businessName: String!): Organization @tag(name: "organizer")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Organization Approval (Admin)
+    # ADMIN - Organization approval workflow
+    # ─────────────────────────────────────────────────────────────────────
+
+    """
+    Approve an organization application.
+    Changes status from PENDING_REVIEW to APPROVED.
+    Organization can now publish events.
+    """
+    approveOrganization(id: ID!): Organization @tag(name: "admin")
+
+    """
+    Request changes to an organization application.
+    Changes status from PENDING_REVIEW to CHANGES_REQUESTED.
+    User can update details and resubmit.
+    """
+    requestOrganizationChanges(id: ID!, reason: String!): Organization @tag(name: "admin")
+
+    """
+    Reject an organization application.
+    Changes status to REJECTED.
+    """
+    rejectOrganization(id: ID!, reason: String!): Organization @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Organization Management
@@ -2596,40 +2880,15 @@ type Mutation {
     transferOrganizationOwnership(organizationId: ID!, newOwnerId: ID!): OrganizationMember @tag(name: "organizer")
 
     # ─────────────────────────────────────────────────────────────────────
-    # Organizer Profile Management
+    # NOTE: Organizer Profile mutations have been merged into Organization
+    # See Organization Onboarding mutations:
+    # - applyToBeOrganizer
+    # - updateOrganizationApplication
+    # - submitOrganizationForReview
+    # - approveOrganization
+    # - requestOrganizationChanges
+    # - rejectOrganization
     # ─────────────────────────────────────────────────────────────────────
-    # ORGANIZER - Create organizer profile
-    createOrganizerProfile(input: CreateOrganizerProfileInput!): OrganizerProfile @tag(name: "organizer")
-
-    # ORGANIZER - Submit profile for review
-    submitOrganizerProfileForReview: OrganizerProfile @tag(name: "organizer")
-
-    # ORGANIZER - Delete organizer profile
-    deleteOrganizerProfile: Boolean! @tag(name: "organizer")
-
-    # ADMIN - Approve organizer by user ID
-    approveOrganizerByUserId(userId: ID!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Reject organizer by user ID
-    rejectOrganizerByUserId(userId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Suspend organizer by user ID
-    suspendOrganizerByUserId(userId: ID!, reason: String!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Reactivate organizer
-    reactivateOrganizer(profileId: ID!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Reactivate organizer by user ID
-    reactivateOrganizerByUserId(userId: ID!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Verify organizer business
-    verifyOrganizerBusiness(profileId: ID!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Verify organizer documents
-    verifyOrganizerDocuments(profileId: ID!): OrganizerProfile @tag(name: "admin")
-
-    # ADMIN - Verify organizer bank account
-    verifyOrganizerBankAccount(profileId: ID!): OrganizerProfile @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Permission Management
@@ -2691,17 +2950,26 @@ type Mutation {
     # ADMIN - Activate user
     activateUser(id: ID!): Boolean! @tag(name: "admin")
 
-    # ADMIN - Update user roles
-    updateUserRoles(userId: ID!, roles: [String!]!): Boolean! @tag(name: "admin")
-
     # ─────────────────────────────────────────────────────────────────────
     # Verification Document Management
     # ─────────────────────────────────────────────────────────────────────
+    # ORGANIZER - Upload verification document
+    uploadVerificationDocument(
+        documentType: String!
+        documentUrl: String!
+        fileName: String
+        fileSize: Long
+        mimeType: String
+    ): VerificationDocument @tag(name: "organizer")
+
     # ADMIN - Approve verification document
     approveVerificationDocument(documentId: ID!): VerificationDocument @tag(name: "admin")
 
     # ADMIN - Reject verification document
     rejectVerificationDocument(documentId: ID!, reason: String!): VerificationDocument @tag(name: "admin")
+
+    # ORGANIZER - Delete verification document
+    deleteVerificationDocument(documentId: ID!): Boolean! @tag(name: "organizer")
 
     # ─────────────────────────────────────────────────────────────────────
     # Keycloak Sync (Internal)

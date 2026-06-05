@@ -1,0 +1,67 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Escrow Transactions Schema - OWASP Compliant",
+    "description": "Embedded transaction records within EventEscrowAccount",
+    "required": [
+      "type",
+      "category",
+      "amount",
+      "balanceAfter",
+      "description",
+      "timestamp"
+    ],
+    "properties": {
+      "id": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$|^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        "maxLength": 100,
+        "description": "OWASP A03 - Transaction ID pattern (ObjectId or UUID)"
+      },
+      "type": {
+        "bsonType": "string",
+        "enum": ["CREDIT", "DEBIT"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "category": {
+        "bsonType": "string",
+        "enum": ["TICKET_SALE", "REFUND", "PAYOUT"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "amount": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04 - Positive amount"
+      },
+      "balanceAfter": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "ticketId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "paymentIntentId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "refundRequestId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "payoutRequestId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "description": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "timestamp": {
+        "bsonType": "date"
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Payment Attempt Schema - OWASP Compliant",
+    "description": "MongoDB JSON Schema for payment_attempts collection - Financial data with strict validation",
+    "required": [
+      "paymentIntentId",
+      "eventId",
+      "organizerId",
+      "organizationId",
+      "buyerId",
+      "amount",
+      "currency",
+      "status",
+      "paymentMethod",
+      "createdAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "paymentReference": {
+        "bsonType": "string",
+        "pattern": "^PAY-[A-Z0-9]{12,20}$",
+        "description": "Unique payment reference number"
+      },
+      "paymentIntentId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Reference to PaymentIntent"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Event being purchased"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        "description": "Event organizer (Keycloak UUID format)"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation required"
+      },
+      "buyerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        "description": "Customer making payment (Keycloak UUID format)"
+      },
+      "amount": {
+        "bsonType": "decimal",
+        "minimum": 0,
+        "description": "OWASP A04 - Payment amount cannot be negative"
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": ["ZMW", "USD", "EUR", "GBP", "ZAR"],
+        "description": "ISO 4217 currency code"
+      },
+      "status": {
+        "enum": [
+          "PENDING",
+          "PROCESSING",
+          "AWAITING_PAYMENT",
+          "PAYMENT_RECEIVED",
+          "COMPLETED",
+          "FAILED",
+          "CANCELLED",
+          "EXPIRED",
+          "REFUNDED",
+          "PARTIALLY_REFUNDED"
+        ],
+        "description": "Payment status"
+      },
+      "paymentMethod": {
+        "enum": [
+          "MTN_MOBILE_MONEY",
+          "AIRTEL_MONEY",
+          "ZAMTEL_MONEY",
+          "CARD",
+          "BANK_TRANSFER",
+          "CASH"
+        ],
+        "description": "Payment provider/method"
+      },
+      "providerTransactionId": {
+        "bsonType": "string",
+        "description": "External provider transaction ID"
+      },
+      "providerReference": {
+        "bsonType": "string",
+        "description": "External provider reference"
+      },
+      "phoneNumber": {
+        "bsonType": "string",
+        "pattern": "^\\+[1-9]\\d{1,14}$",
+        "description": "OWASP A03 - E.164 phone format for mobile money"
+      },
+      "fees": {
+        "bsonType": "object",
+        "properties": {
+          "platformFee": {
+            "bsonType": "decimal",
+            "minimum": 0
+          },
+          "providerFee": {
+            "bsonType": "decimal",
+            "minimum": 0
+          },
+          "totalFees": {
+            "bsonType": "decimal",
+            "minimum": 0
+          }
+        },
+        "description": "Fee breakdown"
+      },
+      "failureReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000,
+        "description": "Reason for payment failure"
+      },
+      "failureCode": {
+        "bsonType": ["string", "null"],
+        "description": "Provider error code"
+      },
+      "attempts": {
+        "bsonType": "int",
+        "minimum": 1,
+        "maximum": 10,
+        "description": "Number of payment attempts"
+      },
+      "ipAddress": {
+        "bsonType": "string",
+        "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$",
+        "description": "Client IP address for audit"
+      },
+      "userAgent": {
+        "bsonType": "string",
+        "maxLength": 500,
+        "description": "Client user agent"
+      },
+      "completedAt": {
+        "bsonType": ["date", "null"],
+        "description": "Payment completion timestamp"
+      },
+      "expiresAt": {
+        "bsonType": "date",
+        "description": "Payment expiration timestamp"
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": "date"
+      }
+    },
+    "additionalProperties": false
+  }
+}

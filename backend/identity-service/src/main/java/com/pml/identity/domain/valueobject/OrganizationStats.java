@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import java.math.BigDecimal;
 
@@ -39,6 +41,7 @@ public class OrganizationStats {
      * Total revenue across all events
      */
     @Builder.Default
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal totalRevenue = BigDecimal.ZERO;
 
     /**

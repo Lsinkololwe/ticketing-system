@@ -10,6 +10,7 @@ import {
 } from '@apollo/client';
 import { HttpLink } from '@apollo/client/link/http';
 import { ErrorLink } from '@apollo/client/link/error';
+import { RetryLink } from '@apollo/client/link/retry';
 import { setContext } from '@apollo/client/link/context';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { getMainDefinition } from '@apollo/client/utilities';
@@ -35,6 +36,43 @@ export interface GraphQLClientConfig {
   /** Required: Function to get the access token (e.g., from Keycloak) */
   tokenGetter: TokenGetter;
 }
+
+/**
+ * Create retry link for network resilience
+ * - Retries network errors up to 3 times with exponential backoff
+ * - Does NOT retry mutations to prevent duplicate operations
+ * - Does NOT retry on authentication errors
+ */
+const createRetryLink = () =>
+  new RetryLink({
+    delay: {
+      initial: 300,      // Start with 300ms delay
+      max: 5000,         // Max 5 second delay
+      jitter: true,      // Add randomness to prevent thundering herd
+    },
+    attempts: {
+      max: 3,            // Max 3 retry attempts
+      retryIf: (error, operation) => {
+        // Don't retry if no error
+        if (!error) return false;
+
+        // Don't retry mutations (prevent duplicate side effects)
+        const definition = getMainDefinition(operation.query);
+        if (definition.kind === 'OperationDefinition' && definition.operation === 'mutation') {
+          return false;
+        }
+
+        // Don't retry auth errors (401, 403)
+        const statusCode = 'statusCode' in error ? (error as { statusCode?: number }).statusCode : undefined;
+        if (statusCode === 401 || statusCode === 403) {
+          return false;
+        }
+
+        // Retry on network errors (Failed to fetch, etc.)
+        return true;
+      },
+    },
+  });
 
 /**
  * Create error handling link - Apollo Client 4.x API
@@ -144,10 +182,12 @@ export const createGraphQLClient = (config: GraphQLClientConfig) => {
   const authLink = isClientSide ? createAuthLink(tokenGetter) : null;
   const wsLink = isClientSide ? createWsLink(wsUri, tokenGetter) : null;
 
-  // Build link chain
+  // Build link chain with retry support
+  // Order: Retry -> Error -> Auth -> HTTP
+  // Retry wraps everything so it can retry the full chain on failure
   const httpLinkChain = authLink
-    ? ApolloLink.from([createErrorLink(), authLink, httpLink])
-    : ApolloLink.from([createErrorLink(), httpLink]);
+    ? ApolloLink.from([createRetryLink(), createErrorLink(), authLink, httpLink])
+    : ApolloLink.from([createRetryLink(), createErrorLink(), httpLink]);
 
   // Split between WebSocket (subscriptions) and HTTP (queries/mutations)
   const link = wsLink
@@ -347,4 +387,62 @@ export function isGraphQLAuthError(error: ApolloErrorInterface): boolean {
         err.extensions?.code === 'UNAUTHENTICATED'
     ) ?? false
   );
+}
+
+/**
+ * Check if an error is a network error (backend unavailable)
+ * Use this to show appropriate offline/unavailable UI
+ */
+export function isNetworkError(error: Error | ApolloErrorInterface | null | undefined): boolean {
+  if (!error) return false;
+
+  const message = error.message?.toLowerCase() || '';
+
+  // Check for common network error patterns
+  if (
+    message.includes('failed to fetch') ||
+    message.includes('network error') ||
+    message.includes('network request failed') ||
+    message.includes('net::err') ||
+    message.includes('econnrefused') ||
+    message.includes('etimedout') ||
+    message.includes('enotfound')
+  ) {
+    return true;
+  }
+
+  // Check for networkError property (Apollo-specific)
+  if ('networkError' in error && error.networkError) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check if error indicates the server is unavailable
+ * Useful for showing "Server unavailable, please try again later" messages
+ */
+export function isServerUnavailable(error: Error | ApolloErrorInterface | null | undefined): boolean {
+  if (!error) return false;
+
+  // Check for network errors first
+  if (isNetworkError(error)) return true;
+
+  const message = error.message?.toLowerCase() || '';
+
+  // Check for 5xx server errors
+  if (
+    message.includes('500') ||
+    message.includes('502') ||
+    message.includes('503') ||
+    message.includes('504') ||
+    message.includes('internal server error') ||
+    message.includes('service unavailable') ||
+    message.includes('gateway timeout')
+  ) {
+    return true;
+  }
+
+  return false;
 }

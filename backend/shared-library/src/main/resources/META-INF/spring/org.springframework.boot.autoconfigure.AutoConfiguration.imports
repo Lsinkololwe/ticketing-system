@@ -1,4 +1,4 @@
 com.pml.shared.security.KeycloakSecurityAutoConfiguration
-com.pml.shared.security.SecurityDebugConfiguration
+com.pml.shared.security.TokenBlacklistAutoConfiguration
 com.pml.shared.graphql.GraphQLSecurityAutoConfiguration
 com.pml.shared.graphql.auth.AuthDirectiveAutoConfiguration

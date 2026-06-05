@@ -1,9 +1,10 @@
 package com.pml.identity.web.graphql.dto.auth;
 
-import com.pml.shared.constants.UserType;
-
 /**
  * GraphQL input for user registration.
+ *
+ * All new users are automatically assigned the CUSTOMER role by default.
+ * Additional roles can be granted after registration through the admin panel.
  */
 public record RegisterInput(
     String username,
@@ -11,6 +12,5 @@ public record RegisterInput(
     String password,
     String firstName,
     String lastName,
-    String phoneNumber,
-    UserType userType
+    String phoneNumber
 ) {}

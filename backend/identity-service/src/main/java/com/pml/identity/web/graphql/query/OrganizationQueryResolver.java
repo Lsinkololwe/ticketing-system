@@ -62,15 +62,15 @@ public class OrganizationQueryResolver {
     }
 
     /**
-     * Get organization by organizer profile ID.
-     * Schema: organizationByOrganizerProfileId(profileId: ID!): Organization
+     * Get organization by owner ID.
+     * Schema: organizationByOwnerId(ownerId: ID!): Organization
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<Organization> organizationByOrganizerProfileId(@InputArgument String profileId) {
-        log.debug("GraphQL query: organizationByOrganizerProfileId(profileId={})", profileId);
-        Objects.requireNonNull(profileId, "Profile ID is required");
-        return organizationService.findByOrganizerProfileId(profileId);
+    public Mono<Organization> organizationByOwnerId(@InputArgument String ownerId) {
+        log.debug("GraphQL query: organizationByOwnerId(ownerId={})", ownerId);
+        Objects.requireNonNull(ownerId, "Owner ID is required");
+        return organizationService.findByOwnerId(ownerId);
     }
 
     /**
@@ -102,6 +102,52 @@ public class OrganizationQueryResolver {
         String userId = jwt.getSubject();
         log.debug("GraphQL query: myOwnedOrganization (userId={})", userId);
         return organizationService.findByOwnerId(userId);
+    }
+
+    // ========================================================================
+    // ORGANIZATION APPLICATIONS QUERIES (Approval Queue)
+    // ========================================================================
+
+    /**
+     * Get organization applications with offset pagination (admin only).
+     * For the organization approval queue - filters organizations in approval workflow statuses.
+     * Schema: organizationApplicationsOffsetPagination(status: OrganizationStatus, pagination: OffsetPaginationInput): OrganizationApplicationOffsetPage!
+     */
+    @DgsQuery
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public Mono<OrganizationApplicationOffsetPage> organizationApplicationsOffsetPagination(
+            @InputArgument OrganizationStatus status,
+            @InputArgument OffsetPaginationInput pagination
+    ) {
+        log.debug("GraphQL query: organizationApplicationsOffsetPagination(status={})", status);
+
+        // Get organizations in approval workflow
+        Flux<Organization> orgFlux = status != null
+                ? organizationService.findByStatus(status)
+                : organizationService.findInApprovalWorkflow();
+
+        return buildApplicationOffsetPage(orgFlux, pagination);
+    }
+
+    /**
+     * Get organization applications with cursor pagination (admin only).
+     * For mobile/infinite scroll in the approval queue.
+     * Schema: organizationApplicationsCursorPagination(status: OrganizationStatus, pagination: CursorPaginationInput): OrganizationApplicationConnection!
+     */
+    @DgsQuery
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public Mono<OrganizationApplicationConnection> organizationApplicationsCursorPagination(
+            @InputArgument OrganizationStatus status,
+            @InputArgument CursorPaginationInput pagination
+    ) {
+        log.debug("GraphQL query: organizationApplicationsCursorPagination(status={})", status);
+
+        // Get organizations in approval workflow
+        Flux<Organization> orgFlux = status != null
+                ? organizationService.findByStatus(status)
+                : organizationService.findInApprovalWorkflow();
+
+        return buildApplicationCursorConnection(orgFlux, pagination);
     }
 
     // ========================================================================
@@ -296,6 +342,88 @@ public class OrganizationQueryResolver {
                     PageInfo pageInfo = PageInfo.forCursor(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
 
                     return new OrganizationConnection(edges, pageInfo, totalCount);
+                });
+    }
+
+    /**
+     * Build OrganizationApplicationOffsetPage from a Flux of organizations.
+     */
+    private Mono<OrganizationApplicationOffsetPage> buildApplicationOffsetPage(Flux<Organization> orgFlux, OffsetPaginationInput pagination) {
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
+        int limit = p.getLimit();
+        int offset = p.getOffset();
+
+        return orgFlux.collectList()
+                .map(allOrgs -> {
+                    int totalCount = allOrgs.size();
+                    int totalPages = (int) Math.ceil((double) totalCount / limit);
+                    boolean hasNextPage = (offset + limit) < totalCount;
+                    boolean hasPreviousPage = p.page() > 0;
+
+                    List<Organization> paginatedOrgs = allOrgs.stream()
+                            .skip(offset)
+                            .limit(limit)
+                            .toList();
+
+                    PageInfo pageInfo = PageInfo.forOffset(
+                            totalCount,
+                            limit,
+                            p.page(),
+                            totalPages,
+                            hasNextPage,
+                            hasPreviousPage
+                    );
+
+                    return new OrganizationApplicationOffsetPage(paginatedOrgs, pageInfo);
+                });
+    }
+
+    /**
+     * Build OrganizationApplicationConnection from a Flux of organizations.
+     */
+    private Mono<OrganizationApplicationConnection> buildApplicationCursorConnection(Flux<Organization> orgFlux, CursorPaginationInput pagination) {
+        CursorPaginationInput p = pagination != null ? pagination : CursorPaginationInput.defaults();
+        int limit = p.getLimit();
+
+        return orgFlux.collectList()
+                .map(allOrgs -> {
+                    int totalCount = allOrgs.size();
+
+                    // Find starting position based on cursor
+                    int startIndex = 0;
+                    if (p.after() != null) {
+                        for (int i = 0; i < allOrgs.size(); i++) {
+                            if (allOrgs.get(i).getId().equals(p.after())) {
+                                startIndex = i + 1;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Get the page of organizations
+                    List<Organization> pageOrgs = allOrgs.stream()
+                            .skip(startIndex)
+                            .limit(limit)
+                            .toList();
+
+                    if (pageOrgs.isEmpty()) {
+                        return OrganizationApplicationConnection.empty();
+                    }
+
+                    // Build edges
+                    List<OrganizationApplicationEdge> edges = pageOrgs.stream()
+                            .map(OrganizationApplicationEdge::of)
+                            .toList();
+
+                    // Build page info
+                    boolean hasNextPage = (startIndex + limit) < totalCount;
+                    boolean hasPreviousPage = startIndex > 0;
+                    String startCursor = edges.get(0).cursor();
+                    String endCursor = edges.get(edges.size() - 1).cursor();
+
+                    PageInfo pageInfo = PageInfo.forCursor(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
+
+                    return new OrganizationApplicationConnection(edges, pageInfo, totalCount);
                 });
     }
 }

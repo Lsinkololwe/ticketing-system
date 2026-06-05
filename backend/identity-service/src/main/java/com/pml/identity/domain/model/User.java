@@ -19,9 +19,13 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.Set;
 
 /**
  * User Model
@@ -99,14 +103,25 @@ public class User implements Identifiable<String>, Auditable {
     private String phoneNumber;
 
     // ─────────────────────────────────────────────────────────────────────
-    // Platform Role & Status
+    // Platform Roles & Status
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Platform-level user type (determines system-wide capabilities)
+     * Platform-level roles (determines system-wide capabilities).
+     *
+     * A user can have multiple roles. The CUSTOMER role is the base role
+     * that all users have and cannot be removed.
+     *
+     * Example combinations:
+     * - [CUSTOMER] - Regular user (default)
+     * - [CUSTOMER, ORGANIZER] - Event organizer
+     * - [CUSTOMER, ORGANIZER, SCANNER] - Organizer who also scans tickets
+     * - [CUSTOMER, ADMIN] - Platform administrator
+     * - [CUSTOMER, FINANCE] - Finance team member
      */
+    @NotEmpty(message = "User must have at least one role")
     @Builder.Default
-    private UserType userType = UserType.CUSTOMER;
+    private Set<UserType> roles = EnumSet.of(UserType.CUSTOMER);
 
     /**
      * Account status
@@ -273,25 +288,141 @@ public class User implements Identifiable<String>, Auditable {
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Role Management Methods
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Check if user has a specific role.
+     *
+     * @param role the role to check
+     * @return true if user has the role
+     */
+    public boolean hasRole(UserType role) {
+        return roles != null && roles.contains(role);
+    }
+
+    /**
+     * Check if user has any of the specified roles.
+     *
+     * @param rolesToCheck the roles to check
+     * @return true if user has any of the specified roles
+     */
+    public boolean hasAnyRole(UserType... rolesToCheck) {
+        if (roles == null || rolesToCheck == null) {
+            return false;
+        }
+        return Arrays.stream(rolesToCheck).anyMatch(roles::contains);
+    }
+
+    /**
+     * Check if user has all of the specified roles.
+     *
+     * @param rolesToCheck the roles to check
+     * @return true if user has all of the specified roles
+     */
+    public boolean hasAllRoles(UserType... rolesToCheck) {
+        if (roles == null || rolesToCheck == null) {
+            return false;
+        }
+        return Arrays.stream(rolesToCheck).allMatch(roles::contains);
+    }
+
+    /**
+     * Add a role to the user.
+     *
+     * @param role the role to add
+     * @return true if the role was added, false if already present or invalid
+     */
+    public boolean addRole(UserType role) {
+        if (role == null) {
+            return false;
+        }
+        if (roles == null) {
+            roles = EnumSet.of(UserType.CUSTOMER);
+        }
+        if (roles.contains(role)) {
+            return false;
+        }
+        if (!UserType.canAddRole(roles, role)) {
+            return false;
+        }
+        roles.add(role);
+        return true;
+    }
+
+    /**
+     * Remove a role from the user.
+     * Note: CUSTOMER role cannot be removed.
+     *
+     * @param role the role to remove
+     * @return true if the role was removed, false if not present or cannot be removed
+     */
+    public boolean removeRole(UserType role) {
+        if (role == null || roles == null) {
+            return false;
+        }
+        if (!UserType.canRemoveRole(roles, role)) {
+            return false;
+        }
+        return roles.remove(role);
+    }
+
+    /**
+     * Get the highest privilege role for this user.
+     *
+     * @return the highest privilege role
+     */
+    public UserType getHighestPrivilegeRole() {
+        return UserType.getHighestPrivilegeRole(roles);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Helper Methods
     // ─────────────────────────────────────────────────────────────────────
 
     /**
      * Check if user is an administrator.
      *
-     * @return true if userType is ADMIN or SUPER_ADMIN
+     * @return true if user has ADMIN or SUPER_ADMIN role
      */
     public boolean isAdministrator() {
-        return userType != null && userType.isAdmin();
+        return hasAnyRole(UserType.ADMIN, UserType.SUPER_ADMIN);
     }
 
     /**
      * Check if user is an event organizer.
      *
-     * @return true if userType is ORGANIZER
+     * @return true if user has ORGANIZER role
      */
     public boolean isEventOrganizer() {
-        return userType == UserType.ORGANIZER;
+        return hasRole(UserType.ORGANIZER);
+    }
+
+    /**
+     * Check if user can create events.
+     *
+     * @return true if user has ORGANIZER, ADMIN, or SUPER_ADMIN role
+     */
+    public boolean canCreateEvents() {
+        return hasAnyRole(UserType.ORGANIZER, UserType.ADMIN, UserType.SUPER_ADMIN);
+    }
+
+    /**
+     * Check if user can scan tickets.
+     *
+     * @return true if user has SCANNER, ORGANIZER, ADMIN, or SUPER_ADMIN role
+     */
+    public boolean canScanTickets() {
+        return hasAnyRole(UserType.SCANNER, UserType.ORGANIZER, UserType.ADMIN, UserType.SUPER_ADMIN);
+    }
+
+    /**
+     * Check if user can process payouts.
+     *
+     * @return true if user has FINANCE or SUPER_ADMIN role
+     */
+    public boolean canProcessPayouts() {
+        return hasAnyRole(UserType.FINANCE, UserType.SUPER_ADMIN);
     }
 
     /**
@@ -320,4 +451,5 @@ public class User implements Identifiable<String>, Auditable {
     public boolean isActive() {
         return active;
     }
+
 }

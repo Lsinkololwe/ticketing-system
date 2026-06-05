@@ -1,0 +1,68 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Team Invitations Schema - OWASP Compliant",
+    "description": "Invitations to join an organization team",
+    "required": [
+      "organizationId",
+      "invitedEmail",
+      "role",
+      "status",
+      "invitedBy",
+      "invitedAt",
+      "expiresAt"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation required"
+      },
+      "invitedEmail": {
+        "bsonType": "string",
+        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+        "description": "OWASP A03 - Email validation"
+      },
+      "role": {
+        "bsonType": "string",
+        "enum": ["ADMIN", "ORGANIZER", "MEMBER", "VIEWER"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["PENDING", "ACCEPTED", "DECLINED", "EXPIRED", "CANCELLED"],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "invitedBy": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "invitedAt": {
+        "bsonType": "date"
+      },
+      "expiresAt": {
+        "bsonType": "date",
+        "description": "Invitation expiry (typically 7 days from creation)"
+      },
+      "acceptedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "declinedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "userId": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Set when invitation is accepted"
+      },
+      "message": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      }
+    },
+    "additionalProperties": false
+  }
+}
