@@ -14,39 +14,39 @@ import reactor.core.publisher.Mono;
 public interface VerificationDocumentRepository extends ReactiveMongoRepository<VerificationDocument, String> {
 
     /**
-     * Find all documents for an organizer profile
+     * Find all documents for an organization
      */
-    Flux<VerificationDocument> findByOrganizerProfileId(String organizerProfileId);
+    Flux<VerificationDocument> findByOrganizationId(String organizationId);
 
     /**
-     * Find documents by organizer profile and status
+     * Find documents by organization and status
      */
-    Flux<VerificationDocument> findByOrganizerProfileIdAndStatus(String organizerProfileId, DocumentStatus status);
+    Flux<VerificationDocument> findByOrganizationIdAndStatus(String organizationId, DocumentStatus status);
 
     /**
-     * Find document by organizer profile and type
+     * Find document by organization and type
      */
-    Mono<VerificationDocument> findByOrganizerProfileIdAndDocumentType(String organizerProfileId, String documentType);
+    Mono<VerificationDocument> findByOrganizationIdAndDocumentType(String organizationId, String documentType);
 
     /**
-     * Check if document exists for organizer profile and type
+     * Check if document exists for organization and type
      */
-    Mono<Boolean> existsByOrganizerProfileIdAndDocumentType(String organizerProfileId, String documentType);
+    Mono<Boolean> existsByOrganizationIdAndDocumentType(String organizationId, String documentType);
 
     /**
-     * Count documents by organizer profile
+     * Count documents by organization
      */
-    Mono<Long> countByOrganizerProfileId(String organizerProfileId);
+    Mono<Long> countByOrganizationId(String organizationId);
 
     /**
-     * Count approved documents by organizer profile
+     * Count approved documents by organization
      */
-    Mono<Long> countByOrganizerProfileIdAndStatus(String organizerProfileId, DocumentStatus status);
+    Mono<Long> countByOrganizationIdAndStatus(String organizationId, DocumentStatus status);
 
     /**
-     * Delete all documents for an organizer profile
+     * Delete all documents for an organization
      */
-    Mono<Void> deleteByOrganizerProfileId(String organizerProfileId);
+    Mono<Void> deleteByOrganizationId(String organizationId);
 
     /**
      * Find all pending documents (for admin review queue)

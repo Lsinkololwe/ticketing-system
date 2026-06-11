@@ -185,6 +185,15 @@ public class AuthorizationServiceImpl implements AuthorizationService {
     }
 
     @Override
+    public Mono<Boolean> isOrganizationOwner(String userId, String organizationId) {
+        log.debug("Checking if user {} is owner of organization {}", userId, organizationId);
+
+        return organizationService.findById(organizationId)
+                .map(org -> userId.equals(org.getOwnerId()))
+                .defaultIfEmpty(false);
+    }
+
+    @Override
     public Mono<String> getDefaultOrganizationForUser(String userId) {
         log.debug("Getting default organization for user: {}", userId);
 

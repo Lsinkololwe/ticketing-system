@@ -52,9 +52,9 @@ import {
   isNavItemActive,
   type NavItem,
   type NavSection,
+  type OrganizationRole,
 } from '@/config/navigation';
 import { useSession } from '@/lib/auth/client';
-import { useOrganization, type OrganizationRole } from '@/lib/contexts/OrganizationContext';
 
 // =============================================================================
 // ICON MAP - Secure icon rendering (prevents XSS via icon injection)
@@ -369,10 +369,10 @@ function CollapsibleSection({
 export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose, isMobile }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const { role } = useOrganization();
 
-  // Get user role from OrganizationContext (default to OWNER for demo)
-  const userRole: OrganizationRole = role || 'OWNER';
+  // TODO: Get user role from organization membership when implemented
+  // For now, organization owners see all navigation
+  const userRole: OrganizationRole = 'OWNER';
 
   const filteredNavigation = useMemo(() => {
     return getNavigationForRole(userRole);

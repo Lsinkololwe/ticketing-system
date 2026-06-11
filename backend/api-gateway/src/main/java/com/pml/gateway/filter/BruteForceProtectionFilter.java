@@ -62,8 +62,8 @@ public class BruteForceProtectionFilter implements GlobalFilter, Ordered {
 
     // Protected authentication paths
     private static final Set<String> AUTH_PATHS = Set.of(
-            "/realms/event-ticketing/protocol/openid-connect/token",
-            "/realms/event-ticketing/login-actions",
+            "/realms/myticketzm/protocol/openid-connect/token",
+            "/realms/myticketzm/login-actions",
             "/oauth2/token",
             "/api/auth/login",
             "/api/auth/otp/verify"

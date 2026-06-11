@@ -7,7 +7,7 @@ Perfect! Now I have all the pieces. Let me create a comprehensive technical docu
 
 ## Overview
 
-This document traces the complete registration flow from when a user submits the Keycloak registration form through to the creation of their User document in MongoDB and automatic OrganizerProfile creation for organizer accounts.
+This document traces the complete registration flow from when a user submits the Keycloak registration form through to the creation of their User document in MongoDB and automatic Organization creation for organizer accounts.
 
 ---
 
@@ -144,22 +144,22 @@ This document traces the complete registration flow from when a user submits the
 │           │ Line 185: userRepository.save(newUser)                            │
 │           │ Line 188: publishUserRegisteredEvent(savedUser)                   │
 │           │                                                                     │
-│           │ Lines 191-195: Auto-create OrganizerProfile if ORGANIZER          │
+│           │ Lines 191-195: Auto-create Organization if ORGANIZER          │
 │           │   if (savedUser.hasRole(UserType.ORGANIZER)) {                    │
-│           │       return createOrganizerProfileForNewUser(savedUser)          │
+│           │       return createOrganizationForNewUser(savedUser)          │
 │           │           .thenReturn(savedUser);                                 │
 │           │   }                                                                │
 │           │                                                                     │
 │           ▼                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────────┐  │
-│  │ STEP 9: Create OrganizerProfile (if ORGANIZER role)                      │  │
-│  │ Method: createOrganizerProfileForNewUser() (Lines 209-232)               │  │
+│  │ STEP 9: Create Organization (if ORGANIZER role)                      │  │
+│  │ Method: createOrganizationForNewUser() (Lines 209-232)               │  │
 │  └───────────────────────────────────────────────────────────────────────────┘│
 │           │                                                                     │
-│           │ Line 212: organizerProfileRepository.existsByUserId(user.getId()) │
+│           │ Line 212: organizationRepository.existsByUserId(user.getId()) │
 │           │                                                                     │
-│           │ Lines 219-225: Create OrganizerProfile                            │
-│           │   OrganizerProfile.builder()                                      │
+│           │ Lines 219-225: Create Organization                            │
+│           │   Organization.builder()                                      │
 │           │       .userId(user.getId())          // Link to User              │
 │           │       .companyName(null)             // To be filled later        │
 │           │       .businessEmail(user.getEmail()) // Pre-fill                 │
@@ -167,7 +167,7 @@ This document traces the complete registration flow from when a user submits the
 │           │       .status(OrganizerStatus.DRAFT) // Initial status            │
 │           │       .build()                                                    │
 │           │                                                                     │
-│           │ Line 227: organizerProfileRepository.save(profile)                │
+│           │ Line 227: organizationRepository.save(profile)                │
 │           │                                                                     │
 │           ▼                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────────┐  │
@@ -649,9 +649,9 @@ private Mono<User> syncKeycloakUserToMongo(UserRepresentation keycloakUser) {
                             // Publish event
                             publishUserRegisteredEvent(savedUser);  // Line 188
 
-                            // Auto-create OrganizerProfile if user has ORGANIZER role
+                            // Auto-create Organization if user has ORGANIZER role
                             if (savedUser.hasRole(UserType.ORGANIZER)) {  // Line 191
-                                return createOrganizerProfileForNewUser(savedUser)  // Line 192
+                                return createOrganizationForNewUser(savedUser)  // Line 192
                                         .thenReturn(savedUser);  // Line 193
                             }
                             return Mono.just(savedUser);  // Line 195
@@ -773,23 +773,23 @@ private UserType parseUserType(String value) {
 
 ---
 
-### STEP 8-9: Auto-Create OrganizerProfile
+### STEP 8-9: Auto-Create Organization
 
-**Purpose**: Automatically create an OrganizerProfile document for users who selected ORGANIZER role during registration.
+**Purpose**: Automatically create an Organization document for users who selected ORGANIZER role during registration.
 
 #### Create Organizer Profile (Lines 209-232)
 ```java
-private Mono<OrganizerProfile> createOrganizerProfileForNewUser(User user) {
-    log.info("Auto-creating OrganizerProfile for new organizer: {} ({})", user.getId(), user.getEmail());  // Line 210
+private Mono<Organization> createOrganizationForNewUser(User user) {
+    log.info("Auto-creating Organization for new organizer: {} ({})", user.getId(), user.getEmail());  // Line 210
 
-    return organizerProfileRepository.existsByUserId(user.getId())  // Line 212
+    return organizationRepository.existsByUserId(user.getId())  // Line 212
             .flatMap(exists -> {
                 if (exists) {  // Line 214
-                    log.debug("OrganizerProfile already exists for user: {}", user.getId());
-                    return organizerProfileRepository.findByUserId(user.getId());  // Line 216
+                    log.debug("Organization already exists for user: {}", user.getId());
+                    return organizationRepository.findByUserId(user.getId());  // Line 216
                 }
 
-                OrganizerProfile profile = OrganizerProfile.builder()  // Line 219
+                Organization profile = Organization.builder()  // Line 219
                         .userId(user.getId())  // Line 220 - Link to User document
                         .companyName(null)  // To be filled by user  // Line 221
                         .businessEmail(user.getEmail())  // Pre-fill with user's email  // Line 222
@@ -797,15 +797,15 @@ private Mono<OrganizerProfile> createOrganizerProfileForNewUser(User user) {
                         .status(com.pml.identity.domain.enums.OrganizerStatus.DRAFT)  // Line 224
                         .build();
 
-                return organizerProfileRepository.save(profile)  // Line 227
+                return organizationRepository.save(profile)  // Line 227
                         .doOnSuccess(p -> log.info(
-                                "Created OrganizerProfile {} for user {} (status: DRAFT)",  // Lines 228-230
+                                "Created Organization {} for user {} (status: DRAFT)",  // Lines 228-230
                                 p.getId(), user.getId()));
             });
 }
 ```
 
-**OrganizerProfile Fields** (from model):
+**Organization Fields** (from model):
 - `userId`: Keycloak user ID (links to User document)
 - `companyName`: `null` (to be filled later by organizer)
 - `businessEmail`: Pre-filled from `user.getEmail()`
@@ -980,7 +980,7 @@ public record UserRegisteredEvent(
 | **Step 4** | IdentityServiceClient | `userId`, `eventType` | POST `/api/internal/keycloak/sync/user` |
 | **Step 5** | KeycloakSyncController | REST request | Calls `UserSyncService.syncUserFromKeycloak()` |
 | **Step 6-7** | UserSyncServiceImpl | Keycloak UserRepresentation | MongoDB User document with `EnumSet<UserType>` roles |
-| **Step 8-9** | Auto-create Profile | User with ORGANIZER role | OrganizerProfile document (status: DRAFT) |
+| **Step 8-9** | Auto-create Profile | User with ORGANIZER role | Organization document (status: DRAFT) |
 | **Step 10** | Event Publisher | User document | Azure Service Bus event with `roles: ["CUSTOMER", "ORGANIZER"]` |
 
 ---
@@ -993,7 +993,7 @@ public record UserRegisteredEvent(
    - **MongoDB User Document**: Denormalized cache (`EnumSet<UserType> roles`)
 
 2. **Idempotency**: 
-   - Line 212: `existsByUserId()` prevents duplicate OrganizerProfile creation
+   - Line 212: `existsByUserId()` prevents duplicate Organization creation
    - Line 174: `findById()` checks for existing User before creating new
 
 3. **Error Handling**:
@@ -1013,7 +1013,7 @@ public record UserRegisteredEvent(
 
 6. **Separation of Concerns**:
    - **User**: Personal identity and platform roles
-   - **OrganizerProfile**: Business-specific data (KYB)
+   - **Organization**: Business-specific data (KYB)
    - **Organization**: Public business entity (created after approval)
 
 ---
@@ -1038,7 +1038,7 @@ backend/identity-service/
 │   │   └── UserSyncServiceImpl.java ← STEPS 6-10
 │   ├── domain/model/
 │   │   ├── User.java
-│   │   └── OrganizerProfile.java
+│   │   └── Organization.java
 │   └── event/domain/
 │       └── UserRegisteredEvent.java
 ```

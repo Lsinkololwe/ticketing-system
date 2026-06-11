@@ -37,7 +37,7 @@ import java.util.Set;
  *   <li>The {@code id} field IS the Keycloak user ID (sub claim) - no separate keycloakUserId needed</li>
  *   <li>Keycloak is the SINGLE SOURCE OF TRUTH for authentication, account status, and roles</li>
  *   <li>This collection stores profile data CACHED from Keycloak for GraphQL performance</li>
- *   <li>Business data (companyName, taxId) belongs in OrganizerProfile, NOT here</li>
+ *   <li>Business data (companyName, taxId) belongs in Organization, NOT here</li>
  *   <li>All timestamps use {@link Instant} for timezone-agnostic storage</li>
  * </ul>
  *
@@ -58,7 +58,7 @@ import java.util.Set;
  *   <li>Application-specific metadata (lastLoginAt)</li>
  * </ul>
  *
- * @see OrganizerProfile For business-specific data (companyName, taxId, etc.)
+ * @see Organization For business-specific data (companyName, taxId, etc.)
  * @see OrganizationMember For organization membership and roles
  */
 @Document(collection = "users")

@@ -34,7 +34,7 @@ Foreign key references follow the pattern `{entityName}Id`:
 |------------|------------|---------------|
 | `userId` | User.id (= Keycloak ID) | "550e8400-e29b-41d4-a716-446655440000" |
 | `organizationId` | Organization.id | "507f1f77bcf86cd799439011" |
-| `organizerProfileId` | OrganizerProfile.id | "507f1f77bcf86cd799439012" |
+| `organizationId` | Organization.id | "507f1f77bcf86cd799439012" |
 | `eventId` | Event.id (Catalog service) | "507f1f77bcf86cd799439013" |
 
 ### User References
@@ -140,7 +140,7 @@ Main entity status uses the field name `status`:
 // User
 private AccountStatus accountStatus;
 
-// OrganizerProfile
+// Organization
 private OrganizerStatus status;
 
 // Organization
@@ -250,7 +250,7 @@ com.pml.identity/
 ## Class Naming
 
 ### Entity Classes
-- Singular noun: `User`, `Organization`, `OrganizerProfile`
+- Singular noun: `User`, `Organization`, `Organization`
 - No suffix needed for main entities
 
 ### Repository Interfaces

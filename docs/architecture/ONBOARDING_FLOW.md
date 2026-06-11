@@ -156,14 +156,14 @@ mutation ApplyToBeOrganizer {
 ```
 
 ### Steps
-1. **Create OrganizerProfile (DRAFT)**
-   - System creates OrganizerProfile with status: DRAFT
+1. **Create Organization (DRAFT)**
+   - System creates Organization with status: DRAFT
    - User sees onboarding wizard
 
 2. **Complete Business Profile**
    ```graphql
-   mutation UpdateOrganizerProfile($input: UpdateOrganizerProfileInput!) {
-     updateOrganizerProfile(input: $input) {
+   mutation UpdateOrganization($input: UpdateOrganizationInput!) {
+     updateOrganization(input: $input) {
        companyName
        taxId
        businessPhone
@@ -234,7 +234,7 @@ mutation ApproveOrganizer($profileId: ID!) {
 │                         ORGANIZER APPROVAL WORKFLOW                             │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
-│   1. Update OrganizerProfile                                                    │
+│   1. Update Organization                                                    │
 │      ├── status: PENDING_REVIEW → APPROVED                                      │
 │      ├── approvedAt: now()                                                      │
 │      └── reviewedBy: admin.id                                                   │
@@ -242,7 +242,7 @@ mutation ApproveOrganizer($profileId: ID!) {
 │   2. Create Organization                                                        │
 │      ├── name: profile.companyName                                              │
 │      ├── slug: slugify(companyName)                                             │
-│      ├── organizerProfileId: profile.id                                         │
+│      ├── organizationId: profile.id                                         │
 │      ├── ownerId: profile.userId                                                │
 │      └── status: ACTIVE                                                         │
 │                                                                                 │
@@ -403,7 +403,7 @@ mutation AcceptTeamInvitation($token: String!) {
 | Event Role | EventAccessGrant.eventRole | Per-event overrides |
 
 ### 2. Upgrade Path
-- CUSTOMER → ORGANIZER requires OrganizerProfile approval
+- CUSTOMER → ORGANIZER requires Organization approval
 - ORGANIZER can have multiple organizations (via OrganizationMember)
 - Team members can be CUSTOMERS who work for an organization
 

@@ -1,0 +1,21 @@
+# Local Development Configuration
+# This file contains development-only settings and should NOT be used in production
+
+# ============================================================================
+# SECURITY CONFIGURATION (DEVELOPMENT ONLY)
+# ============================================================================
+# WARNING: This encryption key is for DEVELOPMENT ONLY.
+# DO NOT use this key in production.
+#
+# For production:
+# 1. Generate a new key: FieldEncryptionService.generateKey()
+# 2. Store in AWS KMS, Azure Key Vault, or HashiCorp Vault
+# 3. Load via environment variable: APP_SECURITY_ENCRYPTION_KEY
+# ============================================================================
+app:
+  security:
+    encryption:
+      # DEVELOPMENT KEY ONLY - Generated via FieldEncryptionService.generateKey()
+      # Base64-encoded 256-bit AES key
+      # Replace with production key in production environments
+      key: "4BL5P9rsrnVX9NOYJ3V9CoZbrInkrA+3hwju49qFl98="

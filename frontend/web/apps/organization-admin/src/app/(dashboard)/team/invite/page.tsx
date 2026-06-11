@@ -31,7 +31,7 @@ import {
   Check,
 } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
-import { OrganizationRole } from '@/lib/contexts/OrganizationContext';
+import type { OrganizationRole } from '@/config/navigation';
 
 // =============================================================================
 // TYPES

@@ -49,29 +49,19 @@
 │  │           │ userId (FK to users._id)                                         │   │
 │  │           ▼                                                                  │   │
 │  │  ┌───────────────────────────────────────────────────────────────────┐       │   │
-│  │  │  organizer_profiles COLLECTION (KYB/Business Data)               │       │   │
-│  │  ├───────────────────────────────────────────────────────────────────┤       │   │
-│  │  │  _id: auto-generated                                              │       │   │
-│  │  │  userId: "keycloak-uuid" (FK) ─────▶ users._id                   │       │   │
-│  │  │  ├─ companyName, companyDescription, tagline                     │       │   │
-│  │  │  ├─ taxId, businessRegistrationNumber, businessType              │       │   │
-│  │  │  ├─ businessPhone, businessEmail, businessAddress                │       │   │
-│  │  │  ├─ city, province, country, postalCode                          │       │   │
-│  │  │  ├─ defaultBankAccountId, commissionRate, payoutSchedule         │       │   │
-│  │  │  ├─ status: DRAFT | PENDING_REVIEW | APPROVED | REJECTED         │       │   │
-│  │  │  └─ verified, documentsVerified, bankVerified                    │       │   │
-│  │  └───────────────────────────────────────────────────────────────────┘       │   │
-│  │           │                                                                  │   │
-│  │           │ organizerProfileId (FK)                                          │   │
-│  │           ▼                                                                  │   │
-│  │  ┌───────────────────────────────────────────────────────────────────┐       │   │
 │  │  │  organizations COLLECTION (Multi-tenant Business Entity)         │       │   │
 │  │  ├───────────────────────────────────────────────────────────────────┤       │   │
 │  │  │  _id: auto-generated                                              │       │   │
-│  │  │  organizerProfileId: FK ─────▶ organizer_profiles._id            │       │   │
+│  │  │  ownerId: "keycloak-uuid" (FK) ─────▶ users._id                  │       │   │
 │  │  │  ├─ name, slug (unique), description                             │       │   │
+│  │  │  ├─ companyName, businessDescription, tagline                    │       │   │
+│  │  │  ├─ taxId, businessRegistrationNumber, businessType              │       │   │
+│  │  │  ├─ businessPhone, businessEmail, businessAddress                │       │   │
+│  │  │  ├─ city, province, country, postalCode                          │       │   │
 │  │  │  ├─ logoUrl, bannerUrl, website                                  │       │   │
-│  │  │  └─ status, createdAt, updatedAt                                 │       │   │
+│  │  │  ├─ defaultBankAccountId, commissionRate, payoutSchedule         │       │   │
+│  │  │  ├─ status: DRAFT | PENDING_REVIEW | APPROVED | REJECTED         │       │   │
+│  │  │  └─ verified, documentsVerified, bankVerified                    │       │   │
 │  │  └───────────────────────────────────────────────────────────────────┘       │   │
 │  │                                                                              │   │
 │  └──────────────────────────────────────────────────────────────────────────────┘   │
@@ -84,8 +74,7 @@
 | Collection | Owner Service | Purpose |
 |------------|--------------|---------|
 | `users` | Identity Service | User profiles, roles, preferences |
-| `organizer_profiles` | Identity Service | Organizer KYB/business data |
-| `organizations` | Identity Service | Multi-tenant business entities |
+| `organizations` | Identity Service | Multi-tenant business entities with KYB data |
 | `organization_members` | Identity Service | Team membership |
 | `team_invitations` | Identity Service | Team invite workflow |
 | `events` | Catalog Service | Event listings |
@@ -117,7 +106,7 @@ type User @key(fields: "id") {
     firstName: String!
     lastName: String!
     roles: [UserType!]!        # CUSTOMER, ORGANIZER, ADMIN, etc.
-    organizerProfile: OrganizerProfile
+    primaryOrganization: Organization
     # ... 40+ fields
 }
 ```
@@ -272,8 +261,8 @@ public static boolean isValidRoleCombination(Set<UserType> roles) {
         roles: ["CUSTOMER", "ORGANIZER"],
         ...
       }
-   └─ organizer_profiles collection: {
-        userId: "keycloak-uuid",
+   └─ organizations collection: {
+        ownerId: "keycloak-uuid",
         status: "DRAFT",
         ...
       }
@@ -439,7 +428,7 @@ database: keycloakMongoAdapter(mongoDb, {
 | File | Status |
 |------|--------|
 | `identity-service/domain/model/User.java` | ✅ Collection: `users` |
-| `identity-service/domain/model/OrganizerProfile.java` | ✅ Collection: `organizer_profiles`, links via `userId` |
+| `identity-service/domain/model/Organization.java` | ✅ Collection: `organizations`, links via `ownerId` |
 | `catalog-service/domain/model/Event.java` | ✅ References `organizerId` (no user collection) |
 | `booking-service/domain/model/Ticket.java` | ✅ References `buyerId` (no user collection) |
 | `identity-service/resources/graphql/schema.graphqls` | ✅ User type with `@key(fields: "id")` |

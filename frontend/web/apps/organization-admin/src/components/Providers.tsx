@@ -24,7 +24,6 @@ import { ThemeProvider as NextThemeProvider } from 'next-themes';
 import { ApolloProvider } from '@apollo/client/react';
 import { createGraphQLClient } from '@pml.tickets/shared';
 import { useSession, getSession } from '@/lib/auth/client';
-import { OrganizationProvider } from '@/lib/contexts/OrganizationContext';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -123,8 +122,10 @@ function RadixThemeWrapper({ children }: { children: ReactNode }) {
  * Provider hierarchy:
  * 1. NextThemeProvider - Dark/light/system mode with persistence
  * 2. Radix Theme - UI components (inherits from next-themes)
- * 3. ApolloProviderWithAuth - GraphQL with auth
- * 4. OrganizationProvider - Organization context and permissions
+ * 3. ApolloProviderWithAuth - GraphQL with auth (Apollo Client handles caching)
+ *
+ * Note: Organization data is fetched via Apollo Client hooks directly.
+ * No separate context is needed since Apollo Client provides caching.
  *
  * Theme Options:
  * - 'light' - Light mode
@@ -143,9 +144,7 @@ export default function Providers({ children }: ProvidersProps) {
     >
       <RadixThemeWrapper>
         <ApolloProviderWithAuth>
-          <OrganizationProvider>
-            {children}
-          </OrganizationProvider>
+          {children}
         </ApolloProviderWithAuth>
       </RadixThemeWrapper>
     </NextThemeProvider>

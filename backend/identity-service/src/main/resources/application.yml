@@ -95,7 +95,7 @@ dgs:
 # Keycloak Configuration
 keycloak:
   server-url: ${KEYCLOAK_URL:http://localhost:8084}
-  realm: ${KEYCLOAK_REALM:event-ticketing}
+  realm: ${KEYCLOAK_REALM:myticketzm}
   admin-username: ${KEYCLOAK_ADMIN_USER:admin}
   admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
   admin-realm: master
@@ -121,8 +121,8 @@ spring.security:
   oauth2:
     resourceserver:
       jwt:
-        issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/event-ticketing}
-        jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/certs}
+        issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/myticketzm}
+        jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/certs}
     client:
       registration:
         identity-service:
@@ -132,7 +132,7 @@ spring.security:
           scope: internal-read,internal-write
       provider:
         identity-service:
-          token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/token}
+          token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/token}
 
 # Actuator for Health Checks and Metrics
 management:
@@ -262,7 +262,7 @@ messaging:
   # File Storage Configuration
   storage:
     type: s3  # s3, local, gcs
-    bucket: ${S3_BUCKET:event-ticketing-files}
+    bucket: ${S3_BUCKET:myticketzm-files}
     region: ${AWS_REGION:us-east-1}
 
 # Mongock Configuration (MongoDB Migrations)
@@ -312,3 +312,186 @@ mongodb:
 
     # Timeout for schema application operations (milliseconds)
     operation-timeout-ms: ${MONGODB_SCHEMA_TIMEOUT_MS:30000}
+
+# ============================================================================
+# RESILIENCE4J CONFIGURATION (Circuit Breaker & Retry)
+# ============================================================================
+# Implements OWASP resilience patterns for external service calls (Keycloak)
+# - Circuit breaker prevents cascading failures
+# - Retry with exponential backoff handles transient failures
+# ============================================================================
+resilience4j:
+  circuitbreaker:
+    instances:
+      keycloak:
+        # Open circuit after 5 consecutive failures
+        failure-rate-threshold: 50
+        # Minimum calls before evaluating failure rate
+        minimum-number-of-calls: 5
+        # Wait 30 seconds before attempting to close circuit
+        wait-duration-in-open-state: 30s
+        # Allow 3 test calls in half-open state
+        permitted-number-of-calls-in-half-open-state: 3
+        # Sliding window for tracking call outcomes
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        # Record these exceptions as failures
+        record-exceptions:
+          - jakarta.ws.rs.ProcessingException
+          - jakarta.ws.rs.WebApplicationException
+          - java.util.concurrent.TimeoutException
+  retry:
+    instances:
+      keycloak:
+        # Retry up to 3 times
+        max-attempts: 3
+        # Wait 1 second between retries
+        wait-duration: 1s
+        # Exponential backoff multiplier
+        exponential-backoff-multiplier: 2
+        # Only retry on these exceptions
+        retry-exceptions:
+          - jakarta.ws.rs.ProcessingException
+          - java.util.concurrent.TimeoutException
+
+# ============================================================================
+# FILE UPLOAD CONFIGURATION (OWASP Compliant)
+# ============================================================================
+# Secure file upload settings for verification documents
+#
+# SECURITY FEATURES:
+# - Whitelist-based file type validation
+# - File size limits to prevent DoS
+# - Magic number validation to prevent content-type spoofing
+# - Secure storage with encryption (S3/local)
+# - Presigned URLs for access control
+# - Malware scanning hooks (future)
+#
+# STORAGE OPTIONS:
+# - local: Development only (stores in ./uploads/)
+# - s3: Production (AWS S3 with encryption)
+# ============================================================================
+file-upload:
+  # Maximum file size in bytes (10MB)
+  max-file-size: 10485760
+
+  # Maximum filename length
+  max-filename-length: 255
+
+  # Allowed file extensions (whitelist)
+  allowed-extensions:
+    - pdf
+    - jpg
+    - jpeg
+    - png
+    - webp
+
+  # Allowed MIME types (whitelist)
+  allowed-mime-types:
+    - application/pdf
+    - image/jpeg
+    - image/png
+    - image/webp
+
+  # Presigned URL settings
+  presigned-url:
+    default-expiry-minutes: 60    # 1 hour
+    max-expiry-minutes: 1440      # 24 hours
+
+  # Enable malware scanning (requires ClamAV integration)
+  malware-scanning:
+    enabled: false
+    clamav-host: ${CLAMAV_HOST:localhost}
+    clamav-port: ${CLAMAV_PORT:3310}
+    timeout-seconds: 30
+
+# ============================================================================
+# FILE STORAGE CONFIGURATION
+# ============================================================================
+# Storage backend selection: local (dev) or s3 (production)
+# ============================================================================
+file-storage:
+  # Storage type: local or s3
+  type: ${FILE_STORAGE_TYPE:local}
+
+  # Local storage configuration (development only)
+  local:
+    base-path: ${FILE_STORAGE_LOCAL_PATH:./uploads}
+    serve-files: true               # Serve files via HTTP (dev only)
+    cleanup-on-shutdown: false       # Keep files after shutdown
+
+  # AWS S3 configuration (production)
+  s3:
+    enabled: ${AWS_S3_ENABLED:false}
+
+# ============================================================================
+# AWS CONFIGURATION (Production only)
+# ============================================================================
+# S3 bucket configuration for verification documents
+# Requires AWS SDK v2 dependencies in pom.xml
+# ============================================================================
+aws:
+  region: ${AWS_REGION:us-east-1}
+
+  s3:
+    # Verification documents bucket
+    bucket:
+      verification-documents: ${AWS_S3_BUCKET_VERIFICATION_DOCS:ticketing-verification-docs}
+
+    # Server-side encryption
+    encryption:
+      enabled: true
+      type: ${AWS_S3_ENCRYPTION_TYPE:AES256}  # AES256 or aws:kms
+      kms-key-id: ${AWS_S3_KMS_KEY_ID:}       # Required if type=aws:kms
+
+    # Object lifecycle policies (handled via S3 console/Terraform)
+    lifecycle:
+      transition-to-ia-days: 90     # Move to Infrequent Access after 90 days
+      expiration-days: 2555         # Delete after 7 years (compliance)
+
+  # IAM credentials (prefer IAM roles in production)
+  credentials:
+    access-key-id: ${AWS_ACCESS_KEY_ID:}
+    secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
+
+# ============================================================================
+# SECURITY - FIELD-LEVEL ENCRYPTION (PCI-DSS COMPLIANT)
+# ============================================================================
+# AES-256-GCM encryption for sensitive financial data (bank account numbers).
+#
+# PCI-DSS REQUIREMENT 3.4: Render PAN unreadable using encryption at rest.
+#
+# PRODUCTION DEPLOYMENT:
+# - DO NOT hardcode encryption key in application.yml
+# - Load from secure key management service:
+#   * AWS KMS: aws kms decrypt --ciphertext-blob <encrypted-key>
+#   * Azure Key Vault: az keyvault secret show
+#   * HashiCorp Vault: vault kv get secret/encryption-key
+#   * Google Cloud KMS: gcloud kms decrypt
+#
+# KEY ROTATION:
+# - Rotate encryption key annually (PCI-DSS best practice)
+# - Use dual-key encryption during rotation:
+#   1. Decrypt with old key
+#   2. Re-encrypt with new key
+#   3. Update all records
+#   4. Retire old key
+#
+# GENERATE NEW KEY:
+# Run: FieldEncryptionService.generateKey()
+# Output: Base64-encoded 256-bit AES key
+#
+# SECURITY NOTES:
+# - Key must be 256 bits (32 bytes) for AES-256
+# - Store in environment variable, not in version control
+# - Restrict access to key (IAM policies, RBAC)
+# - Monitor key access (CloudTrail, audit logs)
+# ============================================================================
+app:
+  security:
+    encryption:
+      # Base64-encoded 256-bit AES key
+      # CRITICAL: Replace with production key from secure vault
+      # Example generation: FieldEncryptionService.generateKey()
+      # Development default (REPLACE IN PRODUCTION)
+      key: ${APP_SECURITY_ENCRYPTION_KEY:LqjaTnuN4/v63gj/uxhU3HfBqITe2vx4Ep5dJZxX48Q=}

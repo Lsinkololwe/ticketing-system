@@ -37,8 +37,8 @@ import { invalidateUserSessionsWithBlacklist } from '@/lib/auth/token-blacklist'
 // =============================================================================
 
 const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8084';
-const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'event-ticketing';
-const KEYCLOAK_CLIENT_ID = process.env.AUTH_KEYCLOAK_ID || 'event-ticketing-admin';
+const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'myticketzm';
+const KEYCLOAK_CLIENT_ID = process.env.AUTH_KEYCLOAK_ID || 'myticketzm-admin';
 
 const KEYCLOAK_ISSUER = `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}`;
 const KEYCLOAK_JWKS_URI = `${KEYCLOAK_ISSUER}/protocol/openid-connect/certs`;

@@ -15,7 +15,6 @@ import { Box, Flex, Text, TextField, Button, Card, Avatar, Badge } from '@radix-
 import { User, FloppyDisk, Camera, Key, Shield, Mail, Phone } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
 import { useSession } from '@/lib/auth/client';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
 
 // =============================================================================
 // TYPES
@@ -68,7 +67,8 @@ function FormField({ label, required, helper, children }: FormFieldProps) {
 
 export default function ProfileSettingsPage() {
   const { data: session } = useSession();
-  const { role } = useOrganization();
+  // TODO: Get role from organization membership when implemented
+  const role = 'OWNER';
   const [isSaving, setIsSaving] = useState(false);
 
   const [formData, setFormData] = useState<ProfileFormData>({
@@ -99,7 +99,7 @@ export default function ProfileSettingsPage() {
   const handleChangePassword = useCallback(() => {
     // Redirect to Keycloak account management
     const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8084';
-    const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'event-ticketing';
+    const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'myticketzm';
     window.open(`${keycloakUrl}/realms/${realm}/account/#/security/signingin`, '_blank');
   }, []);
 

@@ -65,8 +65,8 @@ public class UserSyncEventListenerFactory implements EventListenerProviderFactor
         // Read optional realm filter
         this.realmName = System.getenv("USER_SYNC_REALM");
         if (this.realmName == null || this.realmName.isEmpty()) {
-            // Default to event-ticketing realm if not specified
-            this.realmName = "event-ticketing";
+            // Default to myticketzm realm if not specified
+            this.realmName = "myticketzm";
         }
 
         // Validate configuration

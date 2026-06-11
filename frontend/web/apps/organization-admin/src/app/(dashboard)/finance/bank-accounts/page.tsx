@@ -33,7 +33,11 @@ import {
   WarningTriangle,
 } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  canRequestPayouts,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
@@ -469,8 +473,10 @@ function DeleteConfirmDialog({ open, onOpenChange, account, onConfirm }: DeleteC
 // =============================================================================
 
 export default function BankAccountsPage() {
-  const { can } = useOrganization();
-  const canRequestPayouts = can('requestPayouts');
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
+  const { status } = useMyOrganization({ skip: !isAuthenticated });
+  const canPayout = canRequestPayouts(status);
 
   const [accounts, setAccounts] = useState<BankAccount[]>(mockBankAccounts);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -524,7 +530,7 @@ export default function BankAccountsPage() {
           { label: 'Finance', href: '/finance' },
           { label: 'Bank Accounts' },
         ]}
-        actions={canRequestPayouts ? [
+        actions={canPayout ? [
           {
             label: 'Add Account',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
@@ -585,7 +591,7 @@ export default function BankAccountsPage() {
           <Text size="2" style={{ color: 'var(--content-muted)', display: 'block', marginBottom: '24px' }}>
             Add a bank account to start receiving payouts from your ticket sales
           </Text>
-          {canRequestPayouts && (
+          {canPayout && (
             <Button
               size="3"
               onClick={() => setShowAddDialog(true)}
@@ -607,7 +613,7 @@ export default function BankAccountsPage() {
               onSetDefault={handleSetDefault}
               onEdit={setEditAccount}
               onDelete={setDeleteAccount}
-              canManage={canRequestPayouts}
+              canManage={canPayout}
             />
           ))}
         </Flex>

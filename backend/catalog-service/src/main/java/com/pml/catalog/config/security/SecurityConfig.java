@@ -36,7 +36,7 @@ public class SecurityConfig {
     @Value("${keycloak.client-id:catalog-service}")
     private String keycloakClientId;
 
-    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8084/realms/event-ticketing}")
+    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8084/realms/myticketzm}")
     private String issuerUri;
 
     @Bean

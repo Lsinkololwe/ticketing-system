@@ -28,7 +28,11 @@ import {
   ArrowUp,
 } from 'iconoir-react';
 import { PageHeader, StatCard } from '@/components/ui';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  canViewAnalytics,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
@@ -251,8 +255,10 @@ function EventPerformanceRow({ event }: { event: EventPerformance }) {
 // =============================================================================
 
 export default function AnalyticsPage() {
-  const { can } = useOrganization();
-  const canViewAnalytics = can('viewAnalytics');
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
+  const { status } = useMyOrganization({ skip: !isAuthenticated });
+  const canView = canViewAnalytics(status);
 
   const [dateRange, setDateRange] = useState('7days');
 
@@ -278,7 +284,7 @@ export default function AnalyticsPage() {
     };
   }, []);
 
-  if (!canViewAnalytics) {
+  if (!canView) {
     return (
       <Box>
         <PageHeader

@@ -8,7 +8,7 @@ import reactor.core.publisher.Mono;
 /**
  * Verification Document Service Interface
  *
- * Manages KYB verification documents for organizers.
+ * Manages KYB verification documents for organizations.
  */
 public interface VerificationDocumentService {
 
@@ -22,40 +22,40 @@ public interface VerificationDocumentService {
     Mono<VerificationDocument> findById(String id);
 
     /**
-     * Find all documents for an organizer profile
+     * Find all documents for an organization
      */
-    Flux<VerificationDocument> findByOrganizerProfile(String organizerProfileId);
+    Flux<VerificationDocument> findByOrganization(String organizationId);
 
     /**
      * Find documents by status
      */
-    Flux<VerificationDocument> findByOrganizerProfileAndStatus(
-            String organizerProfileId,
+    Flux<VerificationDocument> findByOrganizationAndStatus(
+            String organizationId,
             DocumentStatus status
     );
 
     /**
      * Find document by type
      */
-    Mono<VerificationDocument> findByOrganizerProfileAndType(
-            String organizerProfileId,
+    Mono<VerificationDocument> findByOrganizationAndType(
+            String organizationId,
             String documentType
     );
 
     /**
      * Check if document type exists
      */
-    Mono<Boolean> existsByOrganizerProfileAndType(String organizerProfileId, String documentType);
+    Mono<Boolean> existsByOrganizationAndType(String organizationId, String documentType);
 
     /**
-     * Count documents for organizer profile
+     * Count documents for organization
      */
-    Mono<Long> countByOrganizerProfile(String organizerProfileId);
+    Mono<Long> countByOrganization(String organizationId);
 
     /**
      * Count approved documents
      */
-    Mono<Long> countApprovedByOrganizerProfile(String organizerProfileId);
+    Mono<Long> countApprovedByOrganization(String organizationId);
 
     /**
      * Find pending documents (admin queue)
@@ -70,7 +70,7 @@ public interface VerificationDocumentService {
      * Upload document
      */
     Mono<VerificationDocument> upload(
-            String organizerProfileId,
+            String organizationId,
             String documentType,
             String documentUrl,
             String fileName,
@@ -94,7 +94,7 @@ public interface VerificationDocumentService {
     Mono<Void> delete(String documentId);
 
     /**
-     * Delete all documents for organizer profile
+     * Delete all documents for organization
      */
-    Mono<Void> deleteByOrganizerProfile(String organizerProfileId);
+    Mono<Void> deleteByOrganization(String organizationId);
 }

@@ -36,7 +36,11 @@ import {
   NavArrowRight,
 } from 'iconoir-react';
 import { PageHeader, StatCard } from '@/components/ui';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  canRequestPayouts,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
@@ -285,8 +289,10 @@ function PayoutRow({ payout }: { payout: PayoutRequest }) {
 // =============================================================================
 
 export default function FinancePage() {
-  const { can } = useOrganization();
-  const canRequestPayouts = can('requestPayouts');
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
+  const { status } = useMyOrganization({ skip: !isAuthenticated });
+  const canPayout = canRequestPayouts(status);
 
   const revenueGrowth = useMemo(() => {
     if (financialStats.lastMonthRevenue === 0) return 100;
@@ -298,7 +304,7 @@ export default function FinancePage() {
       <PageHeader
         title="Finance"
         description="Manage your earnings, payouts, and financial reports"
-        actions={canRequestPayouts ? [
+        actions={canPayout ? [
           {
             label: 'Request Payout',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
@@ -413,7 +419,7 @@ export default function FinancePage() {
               </Box>
             )}
 
-            {canRequestPayouts && (
+            {canPayout && (
               <Box mt="4">
                 <Link href="/finance/payouts?action=new" style={{ textDecoration: 'none', width: '100%' }}>
                   <Button

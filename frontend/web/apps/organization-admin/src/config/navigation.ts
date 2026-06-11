@@ -343,3 +343,46 @@ export const iconNames = [
 ] as const;
 
 export type IconName = typeof iconNames[number];
+
+// =============================================================================
+// APPLICATION FLOW ROUTES
+// =============================================================================
+
+/**
+ * Application flow routes for organizer onboarding
+ * Used by the application wizard and routing logic
+ */
+export interface ApplicationRoute {
+  path: string;
+  label: string;
+  step?: number;
+}
+
+export const applicationRoutes: ApplicationRoute[] = [
+  { path: '/welcome', label: 'Get Started' },
+  { path: '/apply/business-info', label: 'Organization Info', step: 1 },
+  { path: '/apply/review', label: 'Review & Submit', step: 2 },
+  { path: '/apply/status', label: 'Application Status' },
+];
+
+/**
+ * Get application route by path
+ */
+export function getApplicationRoute(path: string): ApplicationRoute | undefined {
+  return applicationRoutes.find((route) => route.path === path);
+}
+
+/**
+ * Get application step number by path
+ */
+export function getApplicationStep(path: string): number | undefined {
+  const route = getApplicationRoute(path);
+  return route?.step;
+}
+
+/**
+ * Check if path is an application flow route
+ */
+export function isApplicationRoute(path: string): boolean {
+  return applicationRoutes.some((route) => path.startsWith(route.path));
+}

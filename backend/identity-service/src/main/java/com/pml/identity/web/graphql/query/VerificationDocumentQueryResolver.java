@@ -5,7 +5,7 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.enums.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
-import com.pml.identity.service.OrganizerProfileService;
+import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.VerificationDocumentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +24,7 @@ import reactor.core.publisher.Mono;
 public class VerificationDocumentQueryResolver {
 
     private final VerificationDocumentService documentService;
-    private final OrganizerProfileService organizerProfileService;
+    private final OrganizationService organizationService;
 
     /**
      * Get document by ID.
@@ -51,29 +51,29 @@ public class VerificationDocumentQueryResolver {
         String userId = jwt.getSubject();
         log.debug("GraphQL query: myVerificationDocuments(userId={}, status={})", userId, status);
 
-        return organizerProfileService.findByUserId(userId)
-                .flatMapMany(profile -> {
+        return organizationService.findByOwnerId(userId)
+                .flatMapMany(organization -> {
                     if (status != null) {
-                        return documentService.findByOrganizerProfileAndStatus(profile.getId(), status);
+                        return documentService.findByOrganizationAndStatus(organization.getId(), status);
                     }
-                    return documentService.findByOrganizerProfile(profile.getId());
+                    return documentService.findByOrganization(organization.getId());
                 });
     }
 
     /**
-     * Get documents for organizer profile (admin only).
+     * Get documents for organization (admin only).
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Flux<VerificationDocument> verificationDocuments(
-            @InputArgument String organizerProfileId,
+            @InputArgument String organizationId,
             @InputArgument DocumentStatus status) {
-        log.debug("GraphQL query: verificationDocuments(profileId={}, status={})", organizerProfileId, status);
+        log.debug("GraphQL query: verificationDocuments(organizationId={}, status={})", organizationId, status);
 
         if (status != null) {
-            return documentService.findByOrganizerProfileAndStatus(organizerProfileId, status);
+            return documentService.findByOrganizationAndStatus(organizationId, status);
         }
-        return documentService.findByOrganizerProfile(organizerProfileId);
+        return documentService.findByOrganization(organizationId);
     }
 
     /**
@@ -101,8 +101,8 @@ public class VerificationDocumentQueryResolver {
         String userId = jwt.getSubject();
         log.debug("GraphQL query: myVerificationDocumentByType(userId={}, type={})", userId, documentType);
 
-        return organizerProfileService.findByUserId(userId)
-                .flatMap(profile -> documentService.findByOrganizerProfileAndType(profile.getId(), documentType));
+        return organizationService.findByOwnerId(userId)
+                .flatMap(organization -> documentService.findByOrganizationAndType(organization.getId(), documentType));
     }
 
     /**
@@ -118,8 +118,8 @@ public class VerificationDocumentQueryResolver {
         String userId = jwt.getSubject();
         log.debug("GraphQL query: myVerificationDocumentCount(userId={})", userId);
 
-        return organizerProfileService.findByUserId(userId)
-                .flatMap(profile -> documentService.countByOrganizerProfile(profile.getId()))
+        return organizationService.findByOwnerId(userId)
+                .flatMap(organization -> documentService.countByOrganization(organization.getId()))
                 .defaultIfEmpty(0L);
     }
 
@@ -136,8 +136,8 @@ public class VerificationDocumentQueryResolver {
         String userId = jwt.getSubject();
         log.debug("GraphQL query: myApprovedDocumentCount(userId={})", userId);
 
-        return organizerProfileService.findByUserId(userId)
-                .flatMap(profile -> documentService.countApprovedByOrganizerProfile(profile.getId()))
+        return organizationService.findByOwnerId(userId)
+                .flatMap(organization -> documentService.countApprovedByOrganization(organization.getId()))
                 .defaultIfEmpty(0L);
     }
 }

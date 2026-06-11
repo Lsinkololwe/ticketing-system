@@ -3,6 +3,7 @@ package com.pml.identity.service.impl;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.enums.OrganizationStatus;
 import com.pml.identity.domain.enums.OrganizationType;
+import com.pml.identity.domain.event.OrganizationApprovedEvent;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.model.User;
@@ -13,9 +14,11 @@ import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
 import com.pml.identity.repository.UserRepository;
 import com.pml.identity.service.OrganizationOnboardingService;
+import com.pml.identity.service.RoleSyncService;
 import com.pml.identity.web.graphql.dto.organization.OrganizationApplicationInput;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -45,6 +48,8 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     private final OrganizationRepository organizationRepository;
     private final OrganizationMemberRepository organizationMemberRepository;
     private final UserRepository userRepository;
+    private final RoleSyncService roleSyncService;
+    private final ApplicationEventPublisher eventPublisher;
 
     // =========================================================================
     // USER OPERATIONS
@@ -265,6 +270,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                                 "Only organizations in PENDING_REVIEW status can be approved. Current: " + org.getStatus()));
                     }
 
+                    // Update organization status
                     org.setStatus(OrganizationStatus.APPROVED);
                     org.setVerified(true);
                     org.setVerifiedAt(Instant.now());
@@ -275,9 +281,55 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                     org.setRejectionReason(null);
                     org.setUpdatedAt(Instant.now());
 
-                    return organizationRepository.save(org);
-                })
-                .doOnSuccess(org -> log.info("Organization {} approved by admin {}", org.getId(), adminId));
+                    String ownerId = org.getOwnerId();
+
+                    // Save organization and grant ORGANIZER role to owner
+                    return organizationRepository.save(org)
+                            .flatMap(savedOrg -> {
+                                // Grant ORGANIZER role (syncs to both MongoDB and Keycloak)
+                                // This operation is idempotent and includes audit logging
+                                log.info("Granting ORGANIZER role to organization owner: {}", ownerId);
+                                return roleSyncService.grantOrganizerRole(ownerId, adminId, organizationId)
+                                        .thenReturn(savedOrg)
+                                        .onErrorResume(roleError -> {
+                                            // Log error but don't fail the approval
+                                            // Role sync failures are logged in audit trail
+                                            log.error("Failed to grant ORGANIZER role to user {} for organization {}: {}",
+                                                    ownerId, organizationId, roleError.getMessage());
+                                            return Mono.just(savedOrg);
+                                        });
+                            })
+                            .doOnSuccess(savedOrg -> {
+                                log.info("Organization {} approved by admin {}, ORGANIZER role granted to owner {}",
+                                        savedOrg.getId(), adminId, ownerId);
+
+                                // Publish domain event for cross-service notification
+                                // This allows catalog-service and booking-service to react to approval
+                                publishOrganizationApprovedEvent(savedOrg, adminId);
+                            });
+                });
+    }
+
+    /**
+     * Publish OrganizationApprovedEvent for cross-service consumption
+     * This is a best-effort operation that won't fail the approval process
+     */
+    private void publishOrganizationApprovedEvent(Organization org, String adminId) {
+        try {
+            OrganizationApprovedEvent event = new OrganizationApprovedEvent(
+                    org.getId(),
+                    org.getOwnerId(),
+                    org.getName(),
+                    org.getSlug(),
+                    adminId,
+                    Instant.now()
+            );
+            eventPublisher.publishEvent(event);
+            log.debug("Published OrganizationApprovedEvent for organization: {}", org.getId());
+        } catch (Exception e) {
+            log.warn("Failed to publish OrganizationApprovedEvent for organization {}: {}",
+                    org.getId(), e.getMessage());
+        }
     }
 
     @Override

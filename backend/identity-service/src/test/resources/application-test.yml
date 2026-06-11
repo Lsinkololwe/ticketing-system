@@ -14,7 +14,7 @@ spring:
 # Keycloak Configuration (override with env vars for CI/CD)
 keycloak:
   server-url: ${KEYCLOAK_URL:http://localhost:8084}
-  realm: event-ticketing
+  realm: myticketzm
   admin-username: ${KEYCLOAK_ADMIN:admin}
   admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
   admin-realm: master
@@ -26,8 +26,8 @@ spring.security:
   oauth2:
     resourceserver:
       jwt:
-        issuer-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/event-ticketing
-        jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/event-ticketing/protocol/openid-connect/certs
+        issuer-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/myticketzm
+        jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/myticketzm/protocol/openid-connect/certs
     client:
       registration:
         identity-service:
@@ -37,7 +37,7 @@ spring.security:
           scope: internal-read,internal-write
       provider:
         identity-service:
-          token-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/event-ticketing/protocol/openid-connect/token
+          token-uri: ${KEYCLOAK_URL:http://localhost:8084}/realms/myticketzm/protocol/openid-connect/token
 
 # Redis (use embedded or Testcontainers)
 spring.data.redis:

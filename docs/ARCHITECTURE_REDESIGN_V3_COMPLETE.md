@@ -484,7 +484,7 @@ Your system needs these account types (based on USER_STORIES.md US-FIN-001, US-F
 │  └─────────────────┘    └─────────────────┘                                     │
 │                                                                                  │
 │  Service: Identity Service                                                       │
-│  Status: User.role = ORGANIZER, OrganizerProfile.status = APPROVED             │
+│  Status: User.role = ORGANIZER, Organization.status = APPROVED             │
 │                                                                                  │
 │  PHASE 2: EVENT CREATION                                                        │
 │  ═══════════════════════                                                        │
@@ -941,7 +941,7 @@ db.processed_webhooks.createIndex({ "processedAt": 1 }, { expireAfterSeconds: 25
 // Collection: users (ALREADY EXISTS - Your User.java model)
 // No changes needed
 
-// Collection: organizer_profiles (ALREADY EXISTS - Your OrganizerProfile.java model)
+// Collection: organizer_profiles (ALREADY EXISTS - Your Organization.java model)
 // No changes needed
 
 // Collection: bank_accounts (ALREADY EXISTS - Your BankAccount.java model is correct!)

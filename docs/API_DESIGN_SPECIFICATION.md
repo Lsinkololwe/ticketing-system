@@ -2987,7 +2987,7 @@ type User {
     gender: String
 
     # Organizer fields (if ORGANIZER type)
-    organizerProfile: OrganizerProfile
+    organization: Organization
 
     # Preferences
     notificationPreferences: NotificationPreferences
@@ -2998,7 +2998,7 @@ type User {
     updatedAt: DateTime!
 }
 
-type OrganizerProfile {
+type Organization {
     id: ID!
     userId: String!
 
@@ -3230,14 +3230,14 @@ type Query {
     """
     Get organizer profile
     """
-    organizerProfile(userId: String!): OrganizerProfile
+    organization(userId: String!): Organization
 
     """
     Get pending organizer applications
     """
     pendingOrganizerApplications(
         pageable: PageableInput
-    ): PagedOrganizerProfileResult!
+    ): PagedOrganizationResult!
 
     """
     Search organizers
@@ -3246,7 +3246,7 @@ type Query {
         query: String!
         status: OrganizerStatus
         pageable: PageableInput
-    ): PagedOrganizerProfileResult!
+    ): PagedOrganizationResult!
 
     # ========================================================================
     # BANK ACCOUNT QUERIES
@@ -3793,7 +3793,7 @@ type UpdatePreferencesResponse {
 type ApplyAsOrganizerResponse {
     success: Boolean!
     message: String
-    organizerProfile: OrganizerProfile
+    organization: Organization
     errors: [ApiError!]!
 }
 
@@ -3807,28 +3807,28 @@ type UploadDocumentResponse {
 type ApproveOrganizerResponse {
     success: Boolean!
     message: String
-    organizerProfile: OrganizerProfile
+    organization: Organization
     errors: [ApiError!]!
 }
 
 type RejectOrganizerResponse {
     success: Boolean!
     message: String
-    organizerProfile: OrganizerProfile
+    organization: Organization
     errors: [ApiError!]!
 }
 
 type SuspendOrganizerResponse {
     success: Boolean!
     message: String
-    organizerProfile: OrganizerProfile
+    organization: Organization
     errors: [ApiError!]!
 }
 
 type ReinstateOrganizerResponse {
     success: Boolean!
     message: String
-    organizerProfile: OrganizerProfile
+    organization: Organization
     errors: [ApiError!]!
 }
 
@@ -3979,8 +3979,8 @@ type PagedUserResult {
     hasPrevious: Boolean!
 }
 
-type PagedOrganizerProfileResult {
-    content: [OrganizerProfile!]!
+type PagedOrganizationResult {
+    content: [Organization!]!
     pageNumber: Int!
     pageSize: Int!
     totalElements: Int!

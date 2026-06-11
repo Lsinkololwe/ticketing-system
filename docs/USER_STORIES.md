@@ -205,7 +205,7 @@ The organizer onboarding flow follows a **staged approval process** with progres
 │  • User signs up (CUSTOMER role)                                            │
 │  • Clicks "Become an Organizer"                                             │
 │  • Fills basic business info                                                │
-│  • OrganizerProfile created with status: DRAFT                              │
+│  • Organization created with status: DRAFT                              │
 │                                                                             │
 │  STAGE 2: PROFILE COMPLETION (User-driven)                                  │
 │  ─────────────────────────────────────────                                  │
@@ -457,10 +457,10 @@ The organizer onboarding flow follows a **staged approval process** with progres
 │               ORGANIZATION CREATION FLOW (On Approval)                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  TRIGGER: Admin calls approveOrganizer(organizerProfileId)                  │
+│  TRIGGER: Admin calls approveOrganizer(organizationId)                  │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ STEP 1: Update OrganizerProfile                                      │   │
+│  │ STEP 1: Update Organization                                      │   │
 │  ├─────────────────────────────────────────────────────────────────────┤   │
 │  │ • status = APPROVED                                                  │   │
 │  │ • reviewedById = adminId                                             │   │
@@ -476,12 +476,12 @@ The organizer onboarding flow follows a **staged approval process** with progres
 │  ├─────────────────────────────────────────────────────────────────────┤   │
 │  │ organization = {                                                     │   │
 │  │   id: new ObjectId(),                                                │   │
-│  │   name: organizerProfile.companyName,                                │   │
+│  │   name: organization.companyName,                                │   │
 │  │   slug: generateSlug(companyName),  // e.g., "acme-events"           │   │
-│  │   description: organizerProfile.companyDescription,                  │   │
-│  │   logoUrl: organizerProfile.logoUrl,                                 │   │
-│  │   organizerProfileId: organizerProfile.id,                           │   │
-│  │   ownerId: organizerProfile.userId,                                  │   │
+│  │   description: organization.companyDescription,                  │   │
+│  │   logoUrl: organization.logoUrl,                                 │   │
+│  │   organizationId: organization.id,                           │   │
+│  │   ownerId: organization.userId,                                  │   │
 │  │   status: ACTIVE,                                                    │   │
 │  │   verified: true,                                                    │   │
 │  │   settings: { ... default settings ... },                            │   │
@@ -495,7 +495,7 @@ The organizer onboarding flow follows a **staged approval process** with progres
 │  ├─────────────────────────────────────────────────────────────────────┤   │
 │  │ member = {                                                           │   │
 │  │   id: new ObjectId(),                                                │   │
-│  │   userId: organizerProfile.userId,                                   │   │
+│  │   userId: organization.userId,                                   │   │
 │  │   organizationId: organization.id,                                   │   │
 │  │   role: OWNER,                                                       │   │
 │  │   status: ACTIVE,                                                    │   │
@@ -545,10 +545,10 @@ The organizer onboarding flow follows a **staged approval process** with progres
 │                                  │                                          │
 │                                  ▼                                          │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ STEP 6: Link OrganizerProfile to Organization                        │   │
+│  │ STEP 6: Link Organization to Organization                        │   │
 │  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │ organizerProfile.organizationId = organization.id                    │   │
-│  │ organizerProfile.updatedAt = now()                                   │   │
+│  │ organization.organizationId = organization.id                    │   │
+│  │ organization.updatedAt = now()                                   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                  │                                          │
 │                                  ▼                                          │
@@ -558,7 +558,7 @@ The organizer onboarding flow follows a **staged approval process** with progres
 │  │ Publish OrganizerApprovedEvent to Azure Service Bus:                 │   │
 │  │ {                                                                    │   │
 │  │   type: "OrganizerApprovedEvent",                                    │   │
-│  │   organizerProfileId: organizerProfile.id,                           │   │
+│  │   organizationId: organization.id,                           │   │
 │  │   organizationId: organization.id,                                   │   │
 │  │   userId: user.id,                                                   │   │
 │  │   timestamp: now()                                                   │   │
@@ -662,7 +662,7 @@ public Mono<User> createUser(CreateUserInput input) {
 
 ### Create Organization
 
-**Note:** Organizations are NOT created directly. They are automatically created when an OrganizerProfile is approved.
+**Note:** Organizations are NOT created directly. They are automatically created when an Organization is approved.
 
 **Internal Method:** `createOrganizationFromApproval`
 
@@ -917,7 +917,7 @@ mutation GrantEventAccess($input: GrantEventAccessInput!) {
 mutation ApplyToBeOrganizer($input: ApplyToBeOrganizerInput!) {
   applyToBeOrganizer(input: $input) {
     success
-    organizerProfile { id status companyName }
+    organization { id status companyName }
   }
 }
 ```
@@ -926,22 +926,22 @@ mutation ApplyToBeOrganizer($input: ApplyToBeOrganizerInput!) {
 ```
 1. Verify user is CUSTOMER (not already ORGANIZER)
 2. Verify no existing application
-3. Create OrganizerProfile with status = DRAFT
+3. Create Organization with status = DRAFT
 4. Return profile for completion
 ```
 
 ### Read Organizer Profile
 
 **GraphQL Queries:**
-- `myOrganizerProfile` - Get my application
-- `organizerProfile(id)` - Get by ID
-- `organizerProfileByUserId(userId)` - Get by user
+- `myOrganization` - Get my application
+- `organization(id)` - Get by ID
+- `organizationByUserId(userId)` - Get by user
 - `organizerApplications(status?, pageable)` - Admin: list applications
 
 ### Update Organizer Profile
 
 **GraphQL Mutations:**
-- `updateOrganizerProfile` - Update business info
+- `updateOrganization` - Update business info
 - `uploadVerificationDocument` - Add document
 - `submitOrganizerApplication` - Submit for review
 
@@ -1436,7 +1436,7 @@ function hasPermission(userId, action, resourceType, resourceId):
   bannerUrl: "https://...",
 
   // Links
-  organizerProfileId: ObjectId("..."),
+  organizationId: ObjectId("..."),
   keycloakGroupId: "group-uuid",
   ownerId: ObjectId("..."),  // User ID of owner
 
@@ -1592,7 +1592,7 @@ db.users.createIndex({ "userType": 1, "accountStatus": 1 })
 db.organizations.createIndex({ "slug": 1 }, { unique: true })
 db.organizations.createIndex({ "ownerId": 1 })
 db.organizations.createIndex({ "status": 1 })
-db.organizations.createIndex({ "organizerProfileId": 1 })
+db.organizations.createIndex({ "organizationId": 1 })
 
 // organization_members collection
 db.organization_members.createIndex(

@@ -1,76 +1,73 @@
 'use client';
 
 /**
- * Business Info Page - Step 1 of KYB Application
+ * Business Info Page - Organization Application
  *
- * Collects business information:
- * - Company name and type
- * - Registration details
- * - Contact information
- * - Business address
+ * Collects organization information for the organizer application:
+ * - Organization name and type
+ * - Contact information (email, phone, website)
+ * - Location (city, province, country)
+ * - Description
+ *
+ * MIGRATION NOTE: This page now uses the Organization model and GraphQL operations
+ * instead of OrganizerProfile.
+ *
+ * Fields collected match OrganizationApplicationInput:
+ * - name (required)
+ * - type (INDIVIDUAL/BUSINESS)
+ * - description
+ * - tagline
+ * - businessEmail
+ * - businessPhone
+ * - website
+ * - city
+ * - province
+ * - country
+ * - socialLinks
  *
  * OWASP Compliance:
  * - Uses authenticated GraphQL mutations
  * - Validates all input before submission
  * - No sensitive data stored in client state beyond what's needed
- * - Proper loading states to prevent race conditions
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Flex, Text, Heading, Button, TextField, Select, TextArea, Card, Spinner } from '@radix-ui/themes';
-import { Building, ArrowRight, ArrowLeft, InfoCircle, WarningTriangle, Wifi } from 'iconoir-react';
+import { Building, ArrowRight, ArrowLeft, InfoCircle, WarningTriangle, Wifi, Globe, Phone } from 'iconoir-react';
 import { StepIndicator, Step } from '@/components/application/StepIndicator';
 import {
-  useMyOrganizerProfile,
-  useUpdateOrganizerProfile,
-  useCreateOrganizerProfile,
+  useMyOrganization,
+  useApplyToBeOrganizer,
+  useUpdateOrganizationApplication,
+  type OrganizationApplicationInput,
   getRouteForStatus,
-  canEditProfile,
-} from '@pml.tickets/shared/api/graphql/organizer';
+  canEditApplication,
+  businessInfoFormSchema,
+  type BusinessInfoFormData as BusinessInfoFormSchema,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import { useZodForm } from '@pml.tickets/shared';
 import { isNetworkError, isServerUnavailable } from '@pml.tickets/shared';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-interface FormData {
-  companyName: string;
-  businessType: string;
-  registrationNumber: string;
-  taxId: string;
-  email: string;
-  phone: string;
-  website: string;
-  addressLine1: string;
-  addressLine2: string;
-  city: string;
-  province: string;
-  postalCode: string;
-  country: string;
-  description: string;
-}
-
-interface FormErrors {
-  [key: string]: string;
-}
+// Form data type is now inferred from Zod schema
+type FormData = BusinessInfoFormSchema;
 
 // =============================================================================
 // CONSTANTS
 // =============================================================================
 
 const steps: Step[] = [
-  { id: 'business-info', title: 'Business Info' },
-  { id: 'review', title: 'Review' },
+  { id: 'business-info', title: 'Organization Info' },
+  { id: 'review', title: 'Review & Submit' },
 ];
 
-const businessTypes = [
-  { value: 'SOLE_PROPRIETORSHIP', label: 'Sole Proprietorship' },
-  { value: 'PARTNERSHIP', label: 'Partnership' },
-  { value: 'LIMITED_COMPANY', label: 'Limited Company' },
-  { value: 'NGO', label: 'Non-Profit / NGO' },
-  { value: 'GOVERNMENT', label: 'Government Entity' },
-  { value: 'OTHER', label: 'Other' },
+const organizationTypes = [
+  { value: 'INDIVIDUAL', label: 'Individual / Personal' },
+  { value: 'BUSINESS', label: 'Business / Company' },
 ];
 
 const provinces = [
@@ -87,7 +84,7 @@ const provinces = [
 ];
 
 // =============================================================================
-// FORM FIELD COMPONENTS
+// FORM FIELD COMPONENT
 // =============================================================================
 
 interface FormFieldProps {
@@ -131,210 +128,150 @@ function FormField({ label, required, error, helper, children }: FormFieldProps)
 
 export default function BusinessInfoPage() {
   const router = useRouter();
-  const { profile, hasProfile, status, loading: profileLoading, error: profileError, refetch } = useMyOrganizerProfile();
-  const { updateProfile, loading: updating, error: updateError } = useUpdateOrganizerProfile();
-  const { createProfile, loading: creating, error: createError } = useCreateOrganizerProfile();
-  const [isInitializing, setIsInitializing] = useState(false);
+  const {
+    organization,
+    hasOrganization,
+    status,
+    loading: organizationLoading,
+    error: organizationError,
+    refetch,
+  } = useMyOrganization();
+  const { apply, error: applyError } = useApplyToBeOrganizer();
+  const { update, error: updateError } = useUpdateOrganizationApplication();
+  // Note: isInitializing is kept as a constant since initialization is handled by organizationLoading
+  const isInitializing = false;
 
   // Track initialization attempts to prevent infinite loops
   const initAttemptedRef = useRef(false);
-
-  const [formData, setFormData] = useState<FormData>({
-    companyName: '',
-    businessType: '',
-    registrationNumber: '',
-    taxId: '',
-    email: '',
-    phone: '',
-    website: '',
-    addressLine1: '',
-    addressLine2: '',
-    city: '',
-    province: '',
-    postalCode: '',
-    country: 'Zambia',
-    description: '',
-  });
-  const [errors, setErrors] = useState<FormErrors>({});
   const [formInitialized, setFormInitialized] = useState(false);
 
-  // Create profile if user doesn't have one, or redirect if can't edit
-  // Only attempt once to prevent infinite loops when backend is down
-  useEffect(() => {
-    // Skip if still loading, already initializing, or if there's a network error
-    if (profileLoading || isInitializing) return;
+  // Initial form data (will be updated from organization data)
+  const initialFormData: FormData = {
+    name: '',
+    type: 'INDIVIDUAL',
+    tagline: '',
+    description: '',
+    businessEmail: '',
+    businessPhone: '',
+    website: '',
+    city: '',
+    province: 'LUSAKA',
+    country: 'Zambia',
+    facebook: '',
+    instagram: '',
+    twitter: '',
+  };
 
-    // If there's a network error, don't try to create profile
-    if (profileError && isNetworkError(profileError)) {
+  // Build GraphQL input from validated Zod data
+  const buildInputFromValidatedData = useCallback(
+    (validatedData: FormData): OrganizationApplicationInput => {
+      const socialLinks =
+        validatedData.facebook || validatedData.instagram || validatedData.twitter
+          ? {
+              facebook: validatedData.facebook || null,
+              instagram: validatedData.instagram || null,
+              twitter: validatedData.twitter || null,
+              linkedin: null,
+              tiktok: null,
+              youtube: null,
+            }
+          : null;
+
+      return {
+        name: validatedData.name,
+        description: validatedData.description || null,
+        tagline: validatedData.tagline || null,
+        type: validatedData.type,
+        businessEmail: validatedData.businessEmail,
+        businessPhone: validatedData.businessPhone,
+        website: validatedData.website || null,
+        city: validatedData.city,
+        province: validatedData.province,
+        country: validatedData.country,
+        socialLinks,
+        logoUrl: null,
+        bannerUrl: null,
+      };
+    },
+    []
+  );
+
+  // Zod-based form management with type inference
+  const form = useZodForm(
+    businessInfoFormSchema,
+    initialFormData,
+    async (validatedData) => {
+      // This handler receives validated data with correct types
+      const input = buildInputFromValidatedData(validatedData);
+
+      if (hasOrganization && organization) {
+        const result = await update(organization.id, input);
+        if (result) {
+          router.push('/apply/review');
+        }
+      } else {
+        const result = await apply(input);
+        if (result) {
+          router.push('/apply/review');
+        }
+      }
+    }
+  );
+
+  // Redirect if user has profile and can't edit
+  useEffect(() => {
+    if (organizationLoading || isInitializing) return;
+
+    // If there's a network error, don't redirect
+    if (organizationError && isNetworkError(organizationError)) {
       return;
     }
 
-    // Only attempt initialization once per mount
-    if (initAttemptedRef.current) return;
+    if (hasOrganization && status && !canEditApplication(status)) {
+      const route = getRouteForStatus(status, organization?.id);
+      router.replace(route);
+    }
+  }, [organizationLoading, hasOrganization, status, isInitializing, organizationError, router]);
 
-    const initializeProfile = async () => {
-      if (!hasProfile && !profileError) {
-        // No profile exists and no error - create one
-        initAttemptedRef.current = true;
-        setIsInitializing(true);
-        try {
-          await createProfile({
-            companyName: null,
-            businessEmail: null,
-            businessPhone: null,
-            businessAddress: null,
-            city: null,
-            province: null,
-            website: null,
-            companyDescription: null,
-          });
-          // Refetch to get the new profile
-          await refetch();
-        } catch (err) {
-          console.error('Failed to create organizer profile:', err);
-          // Don't retry on error - let the error state show
-        } finally {
-          setIsInitializing(false);
-        }
-        return;
-      }
-
-      if (hasProfile && status && !canEditProfile(status)) {
-        // Has profile but can't edit (e.g., PENDING_REVIEW, REJECTED)
-        const route = getRouteForStatus(status, hasProfile);
-        router.replace(route);
-      }
-    };
-
-    initializeProfile();
-  }, [profileLoading, hasProfile, status, isInitializing, profileError, createProfile, refetch, router]);
-
-  // Pre-populate form with existing profile data
+  // Pre-populate form with existing organization data
   useEffect(() => {
-    if (profile && !formInitialized) {
-      setFormData({
-        companyName: profile.companyName || '',
-        businessType: profile.businessType || '',
-        registrationNumber: profile.businessRegistrationNumber || '',
-        taxId: profile.taxId || '',
-        email: profile.businessEmail || '',
-        phone: profile.businessPhone || '',
-        website: profile.website || '',
-        addressLine1: profile.businessAddress || '',
-        addressLine2: '',
-        city: profile.city || '',
-        province: profile.province || '',
-        postalCode: profile.postalCode || '',
-        country: profile.country || 'Zambia',
-        description: profile.companyDescription || '',
+    if (organization && !formInitialized) {
+      form.setData({
+        name: organization.name || '',
+        type: (organization.type as 'INDIVIDUAL' | 'BUSINESS') || 'INDIVIDUAL',
+        tagline: organization.tagline || '',
+        description: organization.description || '',
+        businessEmail: organization.businessEmail || '',
+        businessPhone: organization.businessPhone || '',
+        website: organization.website || '',
+        city: organization.businessAddress?.city || '',
+        province: (organization.businessAddress?.province as any) || 'LUSAKA',
+        country: organization.businessAddress?.country || 'Zambia',
+        facebook: organization.socialLinks?.facebook || '',
+        instagram: organization.socialLinks?.instagram || '',
+        twitter: organization.socialLinks?.twitter || '',
       });
       setFormInitialized(true);
     }
-  }, [profile, formInitialized]);
+  }, [organization, formInitialized, form]);
 
-  // Handle form field changes
-  const handleChange = useCallback((field: keyof FormData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    // Clear error when user types
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: '' }));
-    }
-  }, [errors]);
-
-  // Validate form
-  const validateForm = useCallback((): boolean => {
-    const newErrors: FormErrors = {};
-
-    if (!formData.companyName.trim()) {
-      newErrors.companyName = 'Company name is required';
-    }
-    if (!formData.businessType) {
-      newErrors.businessType = 'Business type is required';
-    }
-    if (!formData.registrationNumber.trim()) {
-      newErrors.registrationNumber = 'Registration number is required';
-    }
-    if (!formData.taxId.trim()) {
-      newErrors.taxId = 'Tax ID (TPIN) is required';
-    }
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
-    }
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Phone number is required';
-    }
-    if (!formData.addressLine1.trim()) {
-      newErrors.addressLine1 = 'Address is required';
-    }
-    if (!formData.city.trim()) {
-      newErrors.city = 'City is required';
-    }
-    if (!formData.province) {
-      newErrors.province = 'Province is required';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [formData]);
-
-  // Handle form submission
-  const handleContinue = useCallback(async () => {
-    if (!validateForm()) return;
-
-    try {
-      const result = await updateProfile({
-        companyName: formData.companyName.trim(),
-        businessType: formData.businessType,
-        businessRegistrationNumber: formData.registrationNumber.trim(),
-        taxId: formData.taxId.trim(),
-        businessEmail: formData.email.trim(),
-        businessPhone: formData.phone.trim(),
-        website: formData.website.trim() || null,
-        businessAddress: formData.addressLine1.trim() + (formData.addressLine2 ? ', ' + formData.addressLine2.trim() : ''),
-        city: formData.city.trim(),
-        province: formData.province,
-        postalCode: formData.postalCode.trim() || null,
-        country: formData.country,
-        companyDescription: formData.description.trim() || null,
-        // Optional branding fields - set to null for now (can be added in profile settings later)
-        bannerUrl: null,
-        logoUrl: null,
-        tagline: null,
-      });
-
-      if (result?.success) {
-        // Navigate to review page (skip documents step)
-        router.push('/apply/review');
-      }
-    } catch (error) {
-      console.error('Failed to save business info:', error);
-    }
-  }, [formData, validateForm, updateProfile, router]);
-
-  // Handle back navigation - go to landing page
-  const handleBack = useCallback(() => {
-    router.push('/');
-  }, [router]);
-
-  // Show loading state while fetching or creating profile
-  if (profileLoading || isInitializing || creating) {
+  // Show loading state while fetching profile
+  if (organizationLoading || isInitializing || form.isSubmitting) {
     return (
       <Box style={{ textAlign: 'center', padding: '60px 0' }}>
         <Spinner size="3" />
         <Text size="2" style={{ color: '#94A3B8', display: 'block', marginTop: 16 }}>
-          {isInitializing || creating ? 'Starting your application...' : 'Loading your application...'}
+          {form.isSubmitting ? 'Saving your information...' : 'Loading...'}
         </Text>
       </Box>
     );
   }
 
-  // Show error state - differentiate between network errors and other errors
-  const currentError = profileError || createError;
+  // Show error state
+  const currentError = organizationError || applyError;
   const isBackendUnavailable = currentError && isServerUnavailable(currentError);
 
-  if (currentError) {
+  if (currentError && !hasOrganization) {
     return (
       <Box style={{ textAlign: 'center', padding: '60px 0' }}>
         <Box
@@ -356,16 +293,16 @@ export default function BusinessInfoPage() {
           )}
         </Box>
         <Text size="3" weight="medium" style={{ color: '#F8FAFC', display: 'block', marginBottom: 8 }}>
-          {isBackendUnavailable ? 'Unable to connect to server' : 'Failed to load application'}
+          {isBackendUnavailable ? 'Unable to connect to server' : 'Something went wrong'}
         </Text>
         <Text size="2" style={{ color: '#94A3B8', display: 'block', marginBottom: 16, maxWidth: 400, margin: '0 auto 16px' }}>
           {isBackendUnavailable
             ? 'The server is currently unavailable. Please check your internet connection or try again later.'
-            : currentError?.message || 'An error occurred while loading your application.'}
+            : currentError?.message || 'An error occurred.'}
         </Text>
         <Flex gap="3" justify="center">
-          <Button variant="outline" onClick={() => router.push('/')}>
-            Go Home
+          <Button variant="outline" onClick={() => router.push('/welcome')}>
+            Go Back
           </Button>
           <Button
             onClick={() => {
@@ -391,16 +328,16 @@ export default function BusinessInfoPage() {
       {/* Page Header */}
       <Box mb="6">
         <Heading size="5" mb="2" style={{ color: '#F8FAFC' }}>
-          Business Information
+          Organization Information
         </Heading>
         <Text size="2" style={{ color: '#94A3B8' }}>
-          Tell us about your organization. This information will be used for verification.
+          Tell us about your organization. This information will be visible on your event pages.
         </Text>
       </Box>
 
       {/* Form */}
       <Box>
-        {/* Company Details Card */}
+        {/* Basic Information Card */}
         <Card
           mb="6"
           className="application-card"
@@ -414,7 +351,7 @@ export default function BusinessInfoPage() {
           <Flex align="center" gap="2" mb="4">
             <Building style={{ width: 20, height: 20, color: '#10B981' }} />
             <Text size="3" weight="medium" style={{ color: '#F8FAFC' }}>
-              Company Details
+              Basic Information
             </Text>
           </Flex>
 
@@ -425,35 +362,35 @@ export default function BusinessInfoPage() {
               gap: '16px',
             }}
           >
-            <FormField label="Company Name" required error={errors.companyName}>
+            <FormField label="Organization Name" required error={form.errors.name}>
               <TextField.Root
                 size="3"
-                placeholder="Enter your company name"
-                value={formData.companyName}
-                onChange={(e) => handleChange('companyName', e.target.value)}
+                placeholder="Enter your organization or company name"
+                value={form.data.name}
+                onChange={(e) => form.updateField('name', e.target.value)}
                 className="application-input"
                 style={{
                   background: 'rgba(15, 23, 42, 0.6)',
-                  border: errors.companyName ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
+                  border: form.errors.name ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
                 }}
               />
             </FormField>
 
-            <FormField label="Business Type" required error={errors.businessType}>
+            <FormField label="Organization Type" required>
               <Select.Root
-                value={formData.businessType}
-                onValueChange={(value) => handleChange('businessType', value)}
+                value={form.data.type}
+                onValueChange={(value) => form.updateField('type', value as 'INDIVIDUAL' | 'BUSINESS')}
               >
                 <Select.Trigger
-                  placeholder="Select business type"
+                  placeholder="Select type"
                   style={{
                     width: '100%',
                     background: 'rgba(15, 23, 42, 0.6)',
-                    border: errors.businessType ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
+                    border: '1px solid rgba(148, 163, 184, 0.2)',
                   }}
                 />
                 <Select.Content>
-                  {businessTypes.map((type) => (
+                  {organizationTypes.map((type) => (
                     <Select.Item key={type.value} value={type.value}>
                       {type.label}
                     </Select.Item>
@@ -462,41 +399,45 @@ export default function BusinessInfoPage() {
               </Select.Root>
             </FormField>
 
-            <FormField
-              label="Business Registration Number"
-              required
-              error={errors.registrationNumber}
-              helper="As shown on your registration certificate"
-            >
-              <TextField.Root
-                size="3"
-                placeholder="e.g., 123456789"
-                value={formData.registrationNumber}
-                onChange={(e) => handleChange('registrationNumber', e.target.value)}
-                style={{
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: errors.registrationNumber ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
-                }}
-              />
-            </FormField>
+            <Box style={{ gridColumn: '1 / -1' }}>
+              <FormField
+                label="Tagline"
+                helper="A short phrase that describes your organization (optional)"
+                error={form.errors.tagline}
+              >
+                <TextField.Root
+                  size="3"
+                  placeholder="e.g., Bringing Lusaka's best events to you"
+                  value={form.data.tagline || ''}
+                  onChange={(e) => form.updateField('tagline', e.target.value)}
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(148, 163, 184, 0.2)',
+                  }}
+                />
+              </FormField>
+            </Box>
 
-            <FormField
-              label="Tax ID (TPIN)"
-              required
-              error={errors.taxId}
-              helper="Your Taxpayer Identification Number"
-            >
-              <TextField.Root
-                size="3"
-                placeholder="e.g., 1234567890"
-                value={formData.taxId}
-                onChange={(e) => handleChange('taxId', e.target.value)}
-                style={{
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: errors.taxId ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
-                }}
-              />
-            </FormField>
+            <Box style={{ gridColumn: '1 / -1' }}>
+              <FormField
+                label="About Your Organization"
+                helper="Brief description of what your organization does and the types of events you plan to host"
+                error={form.errors.description}
+              >
+                <TextArea
+                  size="3"
+                  rows={4}
+                  placeholder="Tell us about your organization and the events you plan to organize..."
+                  value={form.data.description || ''}
+                  onChange={(e) => form.updateField('description', e.target.value)}
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(148, 163, 184, 0.2)',
+                    resize: 'vertical',
+                  }}
+                />
+              </FormField>
+            </Box>
           </Box>
         </Card>
 
@@ -511,7 +452,7 @@ export default function BusinessInfoPage() {
           }}
         >
           <Flex align="center" gap="2" mb="4">
-            <InfoCircle style={{ width: 20, height: 20, color: '#10B981' }} />
+            <Phone style={{ width: 20, height: 20, color: '#10B981' }} />
             <Text size="3" weight="medium" style={{ color: '#F8FAFC' }}>
               Contact Information
             </Text>
@@ -524,41 +465,41 @@ export default function BusinessInfoPage() {
               gap: '16px',
             }}
           >
-            <FormField label="Business Email" required error={errors.email}>
+            <FormField label="Business Email" required error={form.errors.businessEmail}>
               <TextField.Root
                 size="3"
                 type="email"
-                placeholder="contact@yourcompany.com"
-                value={formData.email}
-                onChange={(e) => handleChange('email', e.target.value)}
+                placeholder="contact@yourorganization.com"
+                value={form.data.businessEmail}
+                onChange={(e) => form.updateField('businessEmail', e.target.value)}
                 style={{
                   background: 'rgba(15, 23, 42, 0.6)',
-                  border: errors.email ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
+                  border: form.errors.businessEmail ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
                 }}
               />
             </FormField>
 
-            <FormField label="Phone Number" required error={errors.phone}>
+            <FormField label="Phone Number" required error={form.errors.businessPhone}>
               <TextField.Root
                 size="3"
                 type="tel"
                 placeholder="+260 97X XXX XXX"
-                value={formData.phone}
-                onChange={(e) => handleChange('phone', e.target.value)}
+                value={form.data.businessPhone}
+                onChange={(e) => form.updateField('businessPhone', e.target.value)}
                 style={{
                   background: 'rgba(15, 23, 42, 0.6)',
-                  border: errors.phone ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
+                  border: form.errors.businessPhone ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
                 }}
               />
             </FormField>
 
-            <FormField label="Website" helper="Optional">
+            <FormField label="Website" helper="Optional" error={form.errors.website}>
               <TextField.Root
                 size="3"
                 type="url"
-                placeholder="https://yourcompany.com"
-                value={formData.website}
-                onChange={(e) => handleChange('website', e.target.value)}
+                placeholder="https://yourorganization.com"
+                value={form.data.website || ''}
+                onChange={(e) => form.updateField('website', e.target.value)}
                 style={{
                   background: 'rgba(15, 23, 42, 0.6)',
                   border: '1px solid rgba(148, 163, 184, 0.2)',
@@ -568,7 +509,7 @@ export default function BusinessInfoPage() {
           </Box>
         </Card>
 
-        {/* Address Card */}
+        {/* Location Card */}
         <Card
           mb="6"
           style={{
@@ -578,9 +519,12 @@ export default function BusinessInfoPage() {
             padding: '32px',
           }}
         >
-          <Text size="3" weight="medium" mb="4" style={{ color: '#F8FAFC', display: 'block' }}>
-            Business Address
-          </Text>
+          <Flex align="center" gap="2" mb="4">
+            <Globe style={{ width: 20, height: 20, color: '#10B981' }} />
+            <Text size="3" weight="medium" style={{ color: '#F8FAFC' }}>
+              Location
+            </Text>
+          </Flex>
 
           <Box
             style={{
@@ -589,60 +533,30 @@ export default function BusinessInfoPage() {
               gap: '16px',
             }}
           >
-            <Box style={{ gridColumn: '1 / -1' }}>
-              <FormField label="Address Line 1" required error={errors.addressLine1}>
-                <TextField.Root
-                  size="3"
-                  placeholder="Street address"
-                  value={formData.addressLine1}
-                  onChange={(e) => handleChange('addressLine1', e.target.value)}
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: errors.addressLine1 ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
-                  }}
-                />
-              </FormField>
-            </Box>
-
-            <Box style={{ gridColumn: '1 / -1' }}>
-              <FormField label="Address Line 2" helper="Optional">
-                <TextField.Root
-                  size="3"
-                  placeholder="Suite, unit, building, floor, etc."
-                  value={formData.addressLine2}
-                  onChange={(e) => handleChange('addressLine2', e.target.value)}
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(148, 163, 184, 0.2)',
-                  }}
-                />
-              </FormField>
-            </Box>
-
-            <FormField label="City" required error={errors.city}>
+            <FormField label="City" required error={form.errors.city}>
               <TextField.Root
                 size="3"
                 placeholder="e.g., Lusaka"
-                value={formData.city}
-                onChange={(e) => handleChange('city', e.target.value)}
+                value={form.data.city}
+                onChange={(e) => form.updateField('city', e.target.value)}
                 style={{
                   background: 'rgba(15, 23, 42, 0.6)',
-                  border: errors.city ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
+                  border: form.errors.city ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
                 }}
               />
             </FormField>
 
-            <FormField label="Province" required error={errors.province}>
+            <FormField label="Province" required error={form.errors.province}>
               <Select.Root
-                value={formData.province}
-                onValueChange={(value) => handleChange('province', value)}
+                value={form.data.province}
+                onValueChange={(value) => form.updateField('province', value)}
               >
                 <Select.Trigger
                   placeholder="Select province"
                   style={{
                     width: '100%',
                     background: 'rgba(15, 23, 42, 0.6)',
-                    border: errors.province ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
+                    border: form.errors.province ? '1px solid #F87171' : '1px solid rgba(148, 163, 184, 0.2)',
                   }}
                 />
                 <Select.Content>
@@ -655,23 +569,10 @@ export default function BusinessInfoPage() {
               </Select.Root>
             </FormField>
 
-            <FormField label="Postal Code" helper="Optional">
-              <TextField.Root
-                size="3"
-                placeholder="e.g., 10101"
-                value={formData.postalCode}
-                onChange={(e) => handleChange('postalCode', e.target.value)}
-                style={{
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(148, 163, 184, 0.2)',
-                }}
-              />
-            </FormField>
-
             <FormField label="Country">
               <TextField.Root
                 size="3"
-                value={formData.country}
+                value={form.data.country}
                 disabled
                 style={{
                   background: 'rgba(15, 23, 42, 0.4)',
@@ -683,7 +584,7 @@ export default function BusinessInfoPage() {
           </Box>
         </Card>
 
-        {/* Description Card */}
+        {/* Social Links Card */}
         <Card
           mb="6"
           style={{
@@ -693,27 +594,63 @@ export default function BusinessInfoPage() {
             padding: '32px',
           }}
         >
-          <FormField
-            label="About Your Organization"
-            helper="Brief description of what your organization does and the types of events you plan to host"
+          <Flex align="center" gap="2" mb="4">
+            <InfoCircle style={{ width: 20, height: 20, color: '#10B981' }} />
+            <Text size="3" weight="medium" style={{ color: '#F8FAFC' }}>
+              Social Media (Optional)
+            </Text>
+          </Flex>
+
+          <Box
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '16px',
+            }}
           >
-            <TextArea
-              size="3"
-              rows={4}
-              placeholder="Tell us about your organization and the events you plan to organize..."
-              value={formData.description}
-              onChange={(e) => handleChange('description', e.target.value)}
-              style={{
-                background: 'rgba(15, 23, 42, 0.6)',
-                border: '1px solid rgba(148, 163, 184, 0.2)',
-                resize: 'vertical',
-              }}
-            />
-          </FormField>
+            <FormField label="Facebook" helper="Your Facebook page URL" error={form.errors.facebook}>
+              <TextField.Root
+                size="3"
+                placeholder="https://facebook.com/yourpage"
+                value={form.data.facebook || ''}
+                onChange={(e) => form.updateField('facebook', e.target.value)}
+                style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  border: '1px solid rgba(148, 163, 184, 0.2)',
+                }}
+              />
+            </FormField>
+
+            <FormField label="Instagram" helper="Your Instagram profile URL" error={form.errors.instagram}>
+              <TextField.Root
+                size="3"
+                placeholder="https://instagram.com/yourprofile"
+                value={form.data.instagram || ''}
+                onChange={(e) => form.updateField('instagram', e.target.value)}
+                style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  border: '1px solid rgba(148, 163, 184, 0.2)',
+                }}
+              />
+            </FormField>
+
+            <FormField label="Twitter / X" helper="Your Twitter/X profile URL" error={form.errors.twitter}>
+              <TextField.Root
+                size="3"
+                placeholder="https://twitter.com/yourprofile"
+                value={form.data.twitter || ''}
+                onChange={(e) => form.updateField('twitter', e.target.value)}
+                style={{
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  border: '1px solid rgba(148, 163, 184, 0.2)',
+                }}
+              />
+            </FormField>
+          </Box>
         </Card>
 
         {/* Update Error Display */}
-        {updateError && (
+        {(updateError || applyError) && (
           <Card
             mb="4"
             style={{
@@ -726,7 +663,7 @@ export default function BusinessInfoPage() {
             <Flex align="center" gap="3">
               <WarningTriangle style={{ width: 20, height: 20, color: '#EF4444' }} />
               <Text size="2" style={{ color: '#FCA5A5' }}>
-                {updateError.message || 'Failed to save your information. Please try again.'}
+                {updateError?.message || applyError?.message || 'Failed to save your information. Please try again.'}
               </Text>
             </Flex>
           </Card>
@@ -737,8 +674,8 @@ export default function BusinessInfoPage() {
           <Button
             variant="outline"
             size="3"
-            onClick={handleBack}
-            disabled={updating}
+            onClick={() => router.push('/welcome')}
+            disabled={form.isSubmitting}
             style={{
               borderColor: 'rgba(148, 163, 184, 0.3)',
               color: '#94A3B8',
@@ -749,15 +686,15 @@ export default function BusinessInfoPage() {
           </Button>
           <Button
             size="3"
-            onClick={handleContinue}
-            disabled={updating}
+            onClick={() => form.handleSubmit()}
+            disabled={form.isSubmitting}
             style={{
               background: 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
-              cursor: updating ? 'not-allowed' : 'pointer',
-              opacity: updating ? 0.7 : 1,
+              cursor: form.isSubmitting ? 'not-allowed' : 'pointer',
+              opacity: form.isSubmitting ? 0.7 : 1,
             }}
           >
-            {updating ? (
+            {form.isSubmitting ? (
               <>
                 <Spinner size="1" />
                 <span style={{ marginLeft: 8 }}>Saving...</span>

@@ -137,6 +137,7 @@ function AuthMessageContent() {
       }, 2000); // Show success message for 2 seconds
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [justRegistered, authError, isPending, session, handleAutoRedirect]);
 
   // Loading states

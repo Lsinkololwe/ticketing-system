@@ -62,31 +62,19 @@ This document describes the data architecture for the Identity Service, includin
 │  └────────────────────────────────────────────────────────────│────────────────┘│
 │                                                               │                 │
 │  ┌────────────────────────────────────────────────────────────│────────────────┐│
-│  │                        ORGANIZER_PROFILES COLLECTION       │                ││
-│  │  ┌─────────────────────────────────────────────────────────│────────────┐  ││
-│  │  │  OrganizerProfile                                       │            │  ││
-│  │  │  ├── id (MongoDB ObjectId)                              │            │  ││
-│  │  │  ├── userId (= Keycloak user ID)                        │            │  ││
-│  │  │  ├── companyName, companyDescription                    │            │  ││
-│  │  │  ├── taxId, businessRegistrationNumber (KYB data)       │            │  ││
-│  │  │  ├── businessPhone, businessEmail, businessAddress      │            │  ││
-│  │  │  ├── status: OrganizerStatus (DRAFT→APPROVED)           │            │  ││
-│  │  │  ├── verified, documentsVerified, bankVerified          │            │  ││
-│  │  │  └── timestamps: Instant                                │            │  ││
-│  │  └─────────────────────────────────────────────────────────│────────────┘  ││
-│  └────────────────────────────────────────────────────────────│────────────────┘│
-│                                                               │                 │
-│  ┌────────────────────────────────────────────────────────────│────────────────┐│
 │  │                        ORGANIZATIONS COLLECTION            │                ││
 │  │  ┌─────────────────────────────────────────────────────────│────────────┐  ││
 │  │  │  Organization                                           │            │  ││
 │  │  │  ├── id (MongoDB ObjectId) ◄────────────────────────────┘            │  ││
+│  │  │  ├── ownerId (= Keycloak user ID of owner)                           │  ││
 │  │  │  ├── name, slug (unique)                                             │  ││
 │  │  │  ├── description, logoUrl, bannerUrl (PUBLIC branding)               │  ││
-│  │  │  ├── organizerProfileId (FK to OrganizerProfile)                     │  ││
-│  │  │  ├── ownerId (= Keycloak user ID of owner)                           │  ││
+│  │  │  ├── companyName, companyDescription (KYB data)                      │  ││
+│  │  │  ├── taxId, businessRegistrationNumber (KYB data)                    │  ││
+│  │  │  ├── businessPhone, businessEmail, businessAddress                   │  ││
 │  │  │  ├── keycloakGroupId                                                 │  ││
-│  │  │  ├── status: OrganizationStatus                                      │  ││
+│  │  │  ├── status: OrganizationStatus (DRAFT→APPROVED)                     │  ││
+│  │  │  ├── verified, documentsVerified, bankVerified                       │  ││
 │  │  │  └── timestamps: Instant                                             │  ││
 │  │  └──────────────────────────────────────────────────────────────────────┘  ││
 │  └────────────────────────────────────────────────────────────────────────────┘│
@@ -110,16 +98,10 @@ This document describes the data architecture for the Identity Service, includin
 
 ## Entity Relationships
 
-### User → OrganizerProfile (1:0..1)
-- A User may have zero or one OrganizerProfile
-- OrganizerProfile is created when User applies to become an organizer
-- Link: `OrganizerProfile.userId` → `User.id`
-
-### OrganizerProfile → Organization (1:0..1)
-- An approved OrganizerProfile has exactly one Organization
-- Organization is created automatically when OrganizerProfile is approved
-- Link: `Organization.organizerProfileId` → `OrganizerProfile.id`
-- **Note**: This is a ONE-WAY reference. OrganizerProfile does NOT store organizationId.
+### User → Organization (1:0..1)
+- A User may have zero or one primary Organization
+- Organization is created when User applies to become an organizer
+- Link: `Organization.ownerId` → `User.id`
 
 ### Organization → OrganizationMember (1:N)
 - An Organization has many OrganizationMembers
@@ -154,7 +136,7 @@ This document describes the data architecture for the Identity Service, includin
 | Data | Collection | Notes |
 |------|------------|-------|
 | User Profile | users | avatarUrl, bio, preferences |
-| Business Data | organizer_profiles | companyName, taxId, KYB data |
+| Business Data | organizations | companyName, taxId, KYB data |
 | Organization | organizations | Public entity, branding |
 | Team Membership | organization_members | Roles, permissions |
 | Workflow | team_invitations | Invitation status |
@@ -220,13 +202,12 @@ private String grantedById;   // = Keycloak user ID (granter)
 ### Rule 3: Entity References Use `{entity}Id`
 ```java
 private String organizationId;      // → Organization.id
-private String organizerProfileId;  // → OrganizerProfile.id
 private String eventId;             // → Event.id (Catalog service)
 ```
 
 ### Rule 4: No Redundant ID Fields
 - **REMOVED**: `User.keycloakUserId` (User.id IS the Keycloak ID)
-- **REMOVED**: `OrganizerProfile.organizationId` (query via Organization.organizerProfileId)
+- **NO LONGER APPLICABLE**: Separate organizer_profiles collection was merged into organizations
 
 ---
 
@@ -267,19 +248,19 @@ private Instant joinedAt;
 | Field | Reason | New Location |
 |-------|--------|--------------|
 | `keycloakUserId` | Redundant with `id` | N/A |
-| `companyName` | Business data | OrganizerProfile |
-| `taxId` | Business data | OrganizerProfile |
-| `businessPhone` | Business data | OrganizerProfile |
-| `businessEmail` | Business data | OrganizerProfile |
-| `organizerApprovalStatus` | Business workflow | OrganizerProfile.status |
-| `organizerApprovalNote` | Business workflow | OrganizerProfile.rejectionReason |
+| `companyName` | Business data | Organization |
+| `taxId` | Business data | Organization |
+| `businessPhone` | Business data | Organization |
+| `businessEmail` | Business data | Organization |
+| `organizerApprovalStatus` | Business workflow | Organization.status |
+| `organizerApprovalNote` | Business workflow | Organization.rejectionReason |
 
-### Fields Removed from OrganizerProfile
+### Fields Removed from Organization
 | Field | Reason | New Location |
 |-------|--------|--------------|
 | `logoUrl` | Public branding | Organization.logoUrl |
 | `bannerUrl` | Public branding | Organization.bannerUrl |
-| `organizationId` | Bidirectional | Query via Organization.organizerProfileId |
+| `organizationId` | Bidirectional | Query via Organization.organizationId |
 
 ### Timestamp Type Changes
 | Entity | Before | After |

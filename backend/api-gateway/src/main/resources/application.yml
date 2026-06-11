@@ -159,16 +159,16 @@ spring:
             #   - X-Forwarded-Proto header is automatically added for downstream
             #
             # Matches:
-            #   - /realms/event-ticketing/protocol/openid-connect/**
-            #   - /realms/event-ticketing/.well-known/**
-            #   - /realms/event-ticketing/login-actions/**
-            #   - /realms/event-ticketing/account/**
-            #   - /realms/event-ticketing/broker/**
+            #   - /realms/myticketzm/protocol/openid-connect/**
+            #   - /realms/myticketzm/.well-known/**
+            #   - /realms/myticketzm/login-actions/**
+            #   - /realms/myticketzm/account/**
+            #   - /realms/myticketzm/broker/**
             # ─────────────────────────────────────────────────────────────────────
             - id: keycloak-realm
               uri: ${KEYCLOAK_URL:http://localhost:8084}
               predicates:
-                - Path=/realms/event-ticketing/**
+                - Path=/realms/myticketzm/**
               filters:
                 - name: CircuitBreaker
                   args:
@@ -197,7 +197,7 @@ spring:
               predicates:
                 - Path=/oauth2/**
               filters:
-                - RewritePath=/oauth2/(?<segment>.*), /realms/event-ticketing/protocol/openid-connect/$\{segment}
+                - RewritePath=/oauth2/(?<segment>.*), /realms/myticketzm/protocol/openid-connect/$\{segment}
                 - name: CircuitBreaker
                   args:
                     name: keycloakCircuitBreaker
@@ -208,7 +208,7 @@ spring:
               predicates:
                 - Path=/.well-known/openid-configuration
               filters:
-                - RewritePath=/.well-known/openid-configuration, /realms/event-ticketing/.well-known/openid-configuration
+                - RewritePath=/.well-known/openid-configuration, /realms/myticketzm/.well-known/openid-configuration
                 - name: CircuitBreaker
                   args:
                     name: keycloakCircuitBreaker
@@ -274,12 +274,12 @@ spring.security:
   oauth2:
     resourceserver:
       jwt:
-        issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/event-ticketing}
-        jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/certs}
+        issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/myticketzm}
+        jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/certs}
 
 keycloak:
   url: ${KEYCLOAK_URL:http://localhost:8084}
-  realm: event-ticketing
+  realm: myticketzm
   client-id: ${KEYCLOAK_CLIENT_ID:api-gateway}
 
 # ═══════════════════════════════════════════════════════════════════════════════════

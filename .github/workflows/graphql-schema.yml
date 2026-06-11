@@ -48,7 +48,7 @@ on:
 
 env:
   # Use @dev for develop branch, @current for main branch
-  APOLLO_GRAPH_REF: ${{ vars.APOLLO_GRAPH_REF || (github.ref == 'refs/heads/main' && 'event-ticketing-graph@current' || 'event-ticketing-graph@dev') }}
+  APOLLO_GRAPH_REF: ${{ vars.APOLLO_GRAPH_REF || (github.ref == 'refs/heads/main' && 'myticketzm-graph@current' || 'myticketzm-graph@dev') }}
   # Production routing URLs (used when publishing to GraphOS)
   IDENTITY_ROUTING_URL: ${{ vars.IDENTITY_ROUTING_URL || 'http://identity-service:8083/graphql' }}
   CATALOG_ROUTING_URL: ${{ vars.CATALOG_ROUTING_URL || 'http://catalog-service:8085/graphql' }}

@@ -4,31 +4,42 @@
  * Organization Settings Page
  *
  * Settings for the organization (OWNER/ADMIN only):
- * - Organization profile (synced with OrganizerProfile via GraphQL)
+ * - Organization profile (synced via GraphQL)
  * - Branding & logo
  * - Contact information
  * - Business address
  *
  * Uses GraphQL mutations to persist changes to the backend.
+ *
+ * ARCHITECTURE NOTE: Form data type is inferred from centralized schema.
+ * See: libs/shared/src/api/schemas/organization.schemas.ts
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Box, Flex, Text, TextField, TextArea, Button, Card, Avatar, Select, Callout } from '@radix-ui/themes';
 import { Building, Upload, FloppyDisk, Camera, Check, WarningTriangle, Wifi } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
 import {
-  useMyOrganizerProfile,
-  useUpdateOrganizerProfile,
-  canEditProfile,
-} from '@pml.tickets/shared';
+  useMyOrganization,
+  useUpdateOrganizationApplication,
+  type OrganizationApplicationInput,
+  canEditApplication,
+  canEditOrganization,
+  BUSINESS_TYPES,
+  ZAMBIAN_PROVINCES,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 import { isNetworkError } from '@pml.tickets/shared';
-import type { UpdateOrganizerProfileInput } from '@pml.tickets/shared/types/graphql';
 
 // =============================================================================
-// TYPES
+// TYPES (inferred from centralized schema)
 // =============================================================================
 
+/**
+ * Form data for organization settings.
+ * NOTE: This could be replaced with OrganizationSettingsFormSchema from
+ * '@pml.tickets/shared/api/schemas' when migrating to Zod validation.
+ */
 interface OrganizationFormData {
   companyName: string;
   tagline: string;
@@ -83,36 +94,29 @@ function FormField({ label, required, helper, children }: FormFieldProps) {
 // OPTIONS
 // =============================================================================
 
-const provinces = [
-  { value: 'Lusaka', label: 'Lusaka Province' },
-  { value: 'Copperbelt', label: 'Copperbelt Province' },
-  { value: 'Central', label: 'Central Province' },
-  { value: 'Southern', label: 'Southern Province' },
-  { value: 'Eastern', label: 'Eastern Province' },
-  { value: 'Northern', label: 'Northern Province' },
-  { value: 'Luapula', label: 'Luapula Province' },
-  { value: 'North-Western', label: 'North-Western Province' },
-  { value: 'Western', label: 'Western Province' },
-  { value: 'Muchinga', label: 'Muchinga Province' },
-];
+// Province options derived from centralized constants
+const provinces = ZAMBIAN_PROVINCES.map((province) => ({
+  value: province,
+  label: province.replace('_', '-').replace(/\b\w/g, (l) => l.toUpperCase()) + ' Province',
+}));
 
-const businessTypes = [
-  { value: 'SOLE_PROPRIETORSHIP', label: 'Sole Proprietorship' },
-  { value: 'PARTNERSHIP', label: 'Partnership' },
-  { value: 'LIMITED_COMPANY', label: 'Limited Company' },
-  { value: 'NGO', label: 'Non-Governmental Organization' },
-  { value: 'GOVERNMENT', label: 'Government Agency' },
-  { value: 'INDIVIDUAL', label: 'Individual' },
-];
+// Business type options derived from centralized constants
+const businessTypes = BUSINESS_TYPES.map((type) => ({
+  value: type,
+  label: type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()),
+}));
+
+// Legacy businessTypes for backward compatibility (remove after full migration)
 
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
 export default function OrganizationSettingsPage() {
-  const { can } = useOrganization();
-  const { profile, loading: profileLoading, error: profileError, refetch } = useMyOrganizerProfile();
-  const { updateProfile, loading: updating, error: updateError } = useUpdateOrganizerProfile();
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
+  const { organization, status, loading: profileLoading, error: profileError, refetch } = useMyOrganization({ skip: !isAuthenticated });
+  const { update, loading: updating, error: updateError } = useUpdateOrganizationApplication();
 
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const formInitialized = useRef(false);
@@ -134,28 +138,28 @@ export default function OrganizationSettingsPage() {
     taxId: '',
   });
 
-  // Initialize form with profile data
+  // Initialize form with organization data
   useEffect(() => {
-    if (profile && !formInitialized.current) {
+    if (organization && !formInitialized.current) {
       setFormData({
-        companyName: profile.companyName || '',
-        tagline: profile.tagline || '',
-        companyDescription: profile.companyDescription || '',
-        businessEmail: profile.businessEmail || '',
-        businessPhone: profile.businessPhone || '',
-        website: profile.website || '',
-        businessAddress: profile.businessAddress || '',
-        city: profile.city || '',
-        province: profile.province || '',
-        country: profile.country || 'Zambia',
-        postalCode: profile.postalCode || '',
-        businessType: profile.businessType || '',
-        businessRegistrationNumber: profile.businessRegistrationNumber || '',
-        taxId: profile.taxId || '',
+        companyName: organization.name || '',
+        tagline: organization.tagline || '',
+        companyDescription: organization.description || '',
+        businessEmail: organization.businessEmail || '',
+        businessPhone: organization.businessPhone || '',
+        website: organization.website || '',
+        businessAddress: organization.businessAddress?.addressLine1 || '',
+        city: organization.businessAddress?.city || '',
+        province: organization.businessAddress?.province || '',
+        country: organization.businessAddress?.country || 'Zambia',
+        postalCode: organization.businessAddress?.postalCode || '',
+        businessType: organization.type || '',
+        businessRegistrationNumber: organization.businessRegistrationNumber || '',
+        taxId: organization.taxId || '',
       });
       formInitialized.current = true;
     }
-  }, [profile]);
+  }, [organization]);
 
   const handleChange = useCallback((field: keyof OrganizationFormData, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -164,46 +168,44 @@ export default function OrganizationSettingsPage() {
   }, [saveMessage]);
 
   const handleSave = useCallback(async () => {
+    if (!organization?.id) return;
     setSaveMessage(null);
 
     try {
-      // Build the GraphQL input - only include changed fields
-      const input: UpdateOrganizerProfileInput = {
-        companyName: formData.companyName || null,
+      // Build the GraphQL input for Organization model
+      const input: OrganizationApplicationInput = {
+        name: formData.companyName,
         tagline: formData.tagline || null,
-        companyDescription: formData.companyDescription || null,
+        description: formData.companyDescription || null,
         businessEmail: formData.businessEmail || null,
         businessPhone: formData.businessPhone || null,
         website: formData.website || null,
-        businessAddress: formData.businessAddress || null,
         city: formData.city || null,
         province: formData.province || null,
         country: formData.country || null,
-        postalCode: formData.postalCode || null,
-        businessType: formData.businessType || null,
-        businessRegistrationNumber: formData.businessRegistrationNumber || null,
-        taxId: formData.taxId || null,
-        // Additional fields (not editable in this form yet)
-        logoUrl: null,
+        type: (formData.businessType as 'INDIVIDUAL' | 'BUSINESS') || undefined,
         bannerUrl: null,
+        logoUrl: null,
+        socialLinks: null,
       };
 
-      const result = await updateProfile(input);
+      const result = await update(organization.id, input);
 
-      if (result?.success) {
-        setSaveMessage({ type: 'success', text: result.message || 'Settings saved successfully!' });
+      if (result) {
+        setSaveMessage({ type: 'success', text: 'Settings saved successfully!' });
         // Refetch to ensure we have latest data
         refetch();
       } else {
-        setSaveMessage({ type: 'error', text: result?.message || 'Failed to save settings. Please try again.' });
+        setSaveMessage({ type: 'error', text: 'Failed to save settings. Please try again.' });
       }
     } catch (error) {
       console.error('Failed to save:', error);
       setSaveMessage({ type: 'error', text: 'An error occurred while saving. Please try again.' });
     }
-  }, [formData, updateProfile, refetch]);
+  }, [formData, organization?.id, update, refetch]);
 
-  const canEdit = can('manageSettings') && canEditProfile(profile?.status || null);
+  // For approved organizations, allow editing settings. For draft/pending, use canEditApplication
+  const canEdit = canEditOrganization(status);
 
   // Handle network error state
   if (profileError && isNetworkError(profileError)) {
@@ -260,7 +262,7 @@ export default function OrganizationSettingsPage() {
   }
 
   // Loading state
-  if (profileLoading && !profile) {
+  if (profileLoading && !organization) {
     return (
       <Box>
         <PageHeader

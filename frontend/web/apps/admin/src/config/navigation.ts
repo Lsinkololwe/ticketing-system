@@ -99,7 +99,7 @@ export const navigationConfig: NavSection[] = [
       {
         id: 'document-verification',
         label: 'Document Verification',
-        href: '/approvals/documents',
+        href: '/documents',
         icon: 'PageSearch',
         badge: 'dynamic',
         roles: ['SUPER_ADMIN', 'ADMIN'],

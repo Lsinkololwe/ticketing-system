@@ -13,5 +13,10 @@ public enum PayoutMethod {
     /**
      * Mobile money transfer (MTN, Airtel, Zamtel)
      */
-    MOBILE_MONEY
+    MOBILE_MONEY,
+
+    /**
+     * Cheque payment
+     */
+    CHEQUE
 }

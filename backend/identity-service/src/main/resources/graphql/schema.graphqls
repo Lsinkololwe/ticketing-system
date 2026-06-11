@@ -119,10 +119,9 @@
 #   3. ADMIN REVIEW & APPROVAL
 #   ──────────────────────────
 #   Platform admin reviews application:
-#     a) Admin calls: mutation { approveOrganizer(organizerId: "...") }
+#     a) Admin calls: mutation { approveOrganization(organizationId: "...") }
 #     b) System:
-#        - Updates OrganizerProfile.status → APPROVED
-#        - Creates Organization entity
+#        - Updates Organization.status → APPROVED
 #        - Creates OrganizationMember (OWNER role) for the user
 #        - Adds ORGANIZER to User.roles (multi-role support)
 #        - Grants ORGANIZER role in Keycloak
@@ -182,11 +181,10 @@
 # ============================================================================
 # OWNERSHIP:
 # - User (primary owner)
-# - Organization (primary owner - NEW)
-# - OrganizationMember (primary owner - NEW)
-# - TeamInvitation (primary owner - NEW)
-# - EventAccessGrant (primary owner - NEW)
-# - OrganizerProfile (primary owner)
+# - Organization (primary owner - includes application workflow)
+# - OrganizationMember (primary owner)
+# - TeamInvitation (primary owner)
+# - EventAccessGrant (primary owner)
 # - Permission, Notification, UserDevice, EventReminder (exclusive)
 #
 # NOTE: BankAccount and PayoutRequest are owned by Booking Service
@@ -199,7 +197,7 @@
 # 4. Enums - Notification & Device
 # 5. Primary Types - User
 # 6. Primary Types - Organization & Team
-# 7. Primary Types - OrganizerProfile
+# 7. Supporting Types - Social Links, Address, etc.
 # 8. Notification Types
 # 9. Device & Reminder Types
 # 10. Permission Types
@@ -208,7 +206,7 @@
 # 13. Pagination Types
 # 14. Input Types - User & Profile
 # 15. Input Types - Organization & Team
-# 16. Input Types - Notification & Device
+# 16. Input Types - Supporting
 # 17. Mutation Response Types
 # 18. Subscription Payload Types
 # 19. Query type (bottom)
@@ -285,17 +283,6 @@ enum AccountStatus {
     PENDING_DELETION      # GDPR deletion requested
 }
 
-# Organizer application status (staged approval)
-enum OrganizerStatus {
-    DRAFT               # Just applied, filling profile
-    PENDING_DOCUMENTS   # Profile complete, awaiting document upload
-    PENDING_REVIEW      # Documents submitted, awaiting admin review
-    CHANGES_REQUESTED   # Admin requested modifications
-    APPROVED            # Approved - can create Organization
-    REJECTED            # Application rejected
-    SUSPENDED           # Temporarily suspended
-}
-
 # ============================================================================
 # SECTION 4: ENUMS - ORGANIZATION & TEAM
 # ============================================================================
@@ -352,6 +339,7 @@ enum BusinessType {
 enum PayoutMethod {
     BANK_TRANSFER       # Bank transfer to verified account
     MOBILE_MONEY        # Mobile money (MTN, Airtel, Zamtel)
+    CHEQUE              # Cheque payment
 }
 
 # Payout schedule
@@ -678,12 +666,6 @@ type User @key(fields: "id") {
     # Primary organization (for quick access)
     primaryOrganizationId: ID @tag(name: "organizer")
     primaryOrganization: Organization @tag(name: "organizer")
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Organizer Profile (if ORGANIZER)
-    # ORGANIZER/ADMIN - Organizer profile access
-    # ─────────────────────────────────────────────────────────────────────
-    organizerProfile: OrganizerProfile @tag(name: "organizer") @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Notification Preferences
@@ -1097,104 +1079,8 @@ type OrganizationSettings {
 }
 
 # ============================================================================
-# SECTION 8: PRIMARY TYPES - ORGANIZER PROFILE
+# SECTION 8: SUPPORTING TYPES - SOCIAL LINKS & ADDRESS
 # ============================================================================
-
-# OrganizerProfile contains business information for organizer verification
-# Created when a user applies to become an organizer
-# Organization is created when OrganizerProfile is APPROVED
-#
-# NOTE: userId IS the Keycloak user ID (no separate keycloakUserId needed)
-# NOTE: logoUrl/bannerUrl are in Organization (public branding), not here
-# NOTE: To get Organization, query via Organization.organizerProfileId
-# ORGANIZER/ADMIN - Organizer profile management and approval workflow
-type OrganizerProfile @key(fields: "id") @tag(name: "organizer") @tag(name: "admin") {
-    id: ID!
-    userId: String!                     # Keycloak user ID
-    user: User
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Business Information
-    # ─────────────────────────────────────────────────────────────────────
-    companyName: String
-    companyDescription: String
-    tagline: String
-    logoUrl: String
-    bannerUrl: String
-    website: String
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Business Registration (KYB)
-    # ─────────────────────────────────────────────────────────────────────
-    taxId: String                       # TPIN in Zambia
-    businessRegistrationNumber: String  # PACRA number
-    businessType: String                # LLC, Sole Proprietor, etc.
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Contact Information
-    # ─────────────────────────────────────────────────────────────────────
-    businessPhone: String
-    businessEmail: String
-    businessAddress: String
-    city: String
-    province: String
-    country: String
-    postalCode: String
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Verification Documents
-    # ─────────────────────────────────────────────────────────────────────
-    verificationDocuments: [VerificationDocument!]
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Platform Settings (set by admin)
-    # ─────────────────────────────────────────────────────────────────────
-    commissionRate: Float               # Platform commission percentage
-    payoutSchedule: String              # DAILY, WEEKLY, MONTHLY
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Application Status
-    # ─────────────────────────────────────────────────────────────────────
-    status: OrganizerStatus!
-    statusReason: String                # Reason for rejection/changes
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Verification Flags
-    # ─────────────────────────────────────────────────────────────────────
-    verified: Boolean!                  # Business is verified
-    documentsVerified: Boolean!         # All documents verified
-    bankVerified: Boolean!              # Bank account verified
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Review Information
-    # ─────────────────────────────────────────────────────────────────────
-    reviewedById: String
-    reviewedBy: User
-    reviewedAt: DateTime
-    reviewNotes: String                 # Internal notes from reviewer
-
-    # ─────────────────────────────────────────────────────────────────────
-    # NOTE: To get the linked Organization, use:
-    # query { organizationByOrganizerProfileId(profileId: "...") }
-    # This avoids bidirectional references and keeps data consistency
-    # ─────────────────────────────────────────────────────────────────────
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Statistics
-    # ─────────────────────────────────────────────────────────────────────
-    totalEvents: Int
-    totalTicketsSold: Int
-    totalRevenue: BigDecimal
-    averageRating: Float
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Audit Fields
-    # ─────────────────────────────────────────────────────────────────────
-    submittedAt: DateTime               # When application was submitted
-    approvedAt: DateTime                # When application was approved
-    createdAt: DateTime!
-    updatedAt: DateTime
-}
 
 type SocialLinks {
     facebook: String
@@ -1217,8 +1103,9 @@ type BusinessAddress {
     formattedAddress: String        # Computed full address string
 }
 
-# Bank account for payouts
-type BankAccount {
+# Bank account details for payout configuration (embedded type)
+# NOTE: Full BankAccount entity is owned by Booking Service
+type PayoutBankDetails {
     bankName: String
     bankCode: String                # SWIFT code
     branchName: String
@@ -1245,7 +1132,7 @@ type PayoutConfig {
     schedule: PayoutSchedule
     commissionRate: Float           # Platform commission (e.g., 0.05 = 5%)
     minimumPayoutAmount: Float      # Minimum payout in ZMW
-    bankAccount: BankAccount
+    bankAccount: PayoutBankDetails
     mobileMoneyAccount: MobileMoneyAccount
     verified: Boolean!              # Payout config verified
     isConfigured: Boolean!          # Has a configured payout method
@@ -1633,12 +1520,6 @@ type OrganizationMemberOffsetPage {
     pageInfo: PageInfo!
 }
 
-# DEPRECATED: Use OrganizationApplicationOffsetPage instead
-type OrganizerApplicationOffsetPage {
-    content: [OrganizerProfile!]!
-    pageInfo: PageInfo!
-}
-
 # Organization Application Pagination (Approval Queue)
 type OrganizationApplicationOffsetPage {
     content: [Organization!]!
@@ -1725,18 +1606,6 @@ type TeamInvitationConnection {
 type TeamInvitationEdge {
     cursor: String!
     node: TeamInvitation!
-}
-
-# DEPRECATED: Use OrganizationApplicationConnection instead
-type OrganizerApplicationConnection {
-    edges: [OrganizerApplicationEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type OrganizerApplicationEdge {
-    cursor: String!
-    node: OrganizerProfile!
 }
 
 # Organization Application Cursor Pagination (Approval Queue)
@@ -1831,48 +1700,8 @@ input RequestAccountDeletionInput {
 }
 
 # ============================================================================
-# SECTION 16: INPUT TYPES - ORGANIZER APPLICATION
+# SECTION 16: INPUT TYPES - SUPPORTING
 # ============================================================================
-
-input ApplyToBeOrganizerInput {
-    # Basic business info
-    companyName: String!
-    companyDescription: String
-    tagline: String
-    website: String
-
-    # Contact
-    businessPhone: String!
-    businessEmail: String!
-    businessAddress: String
-    city: String
-    province: String
-    country: String = "ZM"
-    postalCode: String
-}
-
-input UpdateOrganizerProfileInput {
-    companyName: String
-    companyDescription: String
-    tagline: String
-    logoUrl: String
-    bannerUrl: String
-    website: String
-
-    # Business registration
-    taxId: String
-    businessRegistrationNumber: String
-    businessType: String
-
-    # Contact
-    businessPhone: String
-    businessEmail: String
-    businessAddress: String
-    city: String
-    province: String
-    country: String
-    postalCode: String
-}
 
 input SocialLinksInput {
     facebook: String
@@ -1883,41 +1712,85 @@ input SocialLinksInput {
     tiktok: String
 }
 
+# File upload input for verification documents
+# NOTE: For GraphQL file uploads, clients should use multipart/form-data
+# with the GraphQL multipart request specification
 input UploadVerificationDocumentInput {
-    organizerProfileId: ID!
+    documentType: String!           # ID_DOCUMENT, BUSINESS_LICENSE, TAX_CERTIFICATE, etc.
+    # For multipart uploads, file is sent separately in the multipart request
+    # For URL-based uploads (after client-side S3 upload), provide these:
+    documentUrl: String             # Pre-uploaded file URL (optional if using multipart)
+    fileName: String!               # Original filename (required for validation)
+    fileSize: Long!                 # File size in bytes (required for validation)
+    mimeType: String!               # MIME type (required for validation)
+}
+
+# Request presigned URL for client-side upload
+input RequestUploadUrlInput {
     documentType: String!
-    documentUrl: String!
-    fileName: String
-    fileSize: Int
-    mimeType: String
+    fileName: String!
+    fileSize: Long!
+    mimeType: String!
 }
 
-input SubmitOrganizerApplicationInput {
-    organizerProfileId: ID!
+# Response for upload URL request
+type DocumentUploadUrlResponse {
+    uploadUrl: String!              # Presigned URL for PUT request
+    fileKey: String!                # Storage key to reference after upload
+    expiresAt: DateTime!            # URL expiration timestamp
+    maxFileSize: Long!              # Maximum allowed file size
+    allowedMimeTypes: [String!]!    # Allowed MIME types
 }
 
-# Admin inputs for organizer review
-input ApproveOrganizerInput {
-    organizerProfileId: ID!
+# Response for document upload
+type VerificationDocumentUploadResponse {
+    success: Boolean!
+    message: String
+    document: VerificationDocument
+    errors: [FileUploadError!]
+}
+
+# File upload validation error
+type FileUploadError {
+    field: String!
+    message: String!
+    code: FileUploadErrorCode!
+}
+
+# Error codes for file upload validation
+enum FileUploadErrorCode {
+    FILE_TOO_LARGE
+    INVALID_FILE_TYPE
+    INVALID_MIME_TYPE
+    INVALID_FILENAME
+    CORRUPTED_FILE
+    MALWARE_DETECTED
+    UPLOAD_FAILED
+    VALIDATION_FAILED
+}
+
+# Admin inputs for organization review
+input ApproveOrganizationInput {
+    organizationId: ID!
     commissionRate: Float
     payoutSchedule: String
     reviewNotes: String
 }
 
-input RejectOrganizerInput {
-    organizerProfileId: ID!
+input RejectOrganizationInput {
+    organizationId: ID!
     reason: String!
     reviewNotes: String
 }
 
-input RequestOrganizerChangesInput {
-    organizerProfileId: ID!
+input RequestOrganizationChangesInput {
+    organizationId: ID!
     changesRequired: String!
     reviewNotes: String
 }
 
-input SuspendOrganizerInput {
-    organizerProfileId: ID!
+input SuspendOrganizationInput {
+    organizationId: ID!
     reason: String!
 }
 
@@ -2056,6 +1929,87 @@ input BulkGrantEventAccessInput {
 }
 
 # ============================================================================
+# SECTION 17B: INPUT TYPES - PAYOUT CONFIGURATION (PCI-DSS COMPLIANT)
+# ============================================================================
+
+"""
+Update payout configuration input.
+SECURITY: Fields are validated with OWASP-compliant sanitization.
+"""
+input UpdatePayoutConfigInput {
+    """Preferred payout method"""
+    preferredMethod: PayoutMethod
+
+    """Payout schedule"""
+    schedule: PayoutSchedule
+
+    """Minimum payout amount in ZMW (must be >= 100.0)"""
+    minimumPayoutAmount: Float
+}
+
+"""
+Set bank account for payouts.
+SECURITY:
+- Account numbers are encrypted at rest (AES-256-GCM)
+- Only last 4 digits shown in responses
+- All changes are audit logged
+- Only OWNER can modify
+"""
+input SetBankAccountInput {
+    """Bank name (e.g., Zanaco, FNB, Standard Chartered)"""
+    bankName: String!
+
+    """SWIFT/BIC code (8 or 11 characters, alphanumeric)"""
+    bankCode: String!
+
+    """Branch name"""
+    branchName: String
+
+    """Branch code"""
+    branchCode: String
+
+    """
+    Bank account number (10-16 digits for Zambian banks).
+    SECURITY: Validated, sanitized, and encrypted before storage.
+    """
+    accountNumber: String!
+
+    """
+    Account holder name (must match business/individual name).
+    SECURITY: Validated to prevent injection attacks (letters, spaces, hyphens, apostrophes only).
+    """
+    accountHolderName: String!
+
+    """Account type (CHECKING, SAVINGS, BUSINESS)"""
+    accountType: String
+}
+
+"""
+Set mobile money account for payouts.
+SECURITY:
+- Phone numbers validated in E.164 format
+- Masked for display (show prefix + last 4 digits)
+- All changes are audit logged
+- Only OWNER can modify
+"""
+input SetMobileMoneyAccountInput {
+    """Mobile money provider (MTN, AIRTEL, ZAMTEL)"""
+    provider: MobileMoneyProvider!
+
+    """
+    Phone number in E.164 format (e.g., +260971234567).
+    SECURITY: Validated against Zambian mobile prefixes, sanitized, and masked for display.
+    """
+    phoneNumber: String!
+
+    """
+    Account holder name (must match business/individual name).
+    SECURITY: Validated to prevent injection attacks.
+    """
+    accountHolderName: String!
+}
+
+# ============================================================================
 # SECTION 18: INPUT TYPES - NOTIFICATION & DEVICE
 # ============================================================================
 
@@ -2159,14 +2113,6 @@ type OwnershipTransferResponse {
     transfer: OwnershipTransferRequest
 }
 
-# Organizer responses
-type OrganizerMutationResponse {
-    success: Boolean!
-    message: String
-    organizerProfile: OrganizerProfile
-    organization: Organization      # Returned on approval
-}
-
 # Document responses
 type DocumentMutationResponse {
     success: Boolean!
@@ -2195,17 +2141,6 @@ type DeviceMutationResponse {
 input SetEventReminderInput {
     ticketId: ID!
     minutesBefore: Int!
-}
-
-input CreateOrganizerProfileInput {
-    companyName: String
-    companyDescription: String
-    website: String
-    businessPhone: String
-    businessEmail: String
-    businessAddress: String
-    city: String
-    province: String
 }
 
 input InviteMemberInput {
@@ -2324,9 +2259,6 @@ type Query {
 
     # ORGANIZER/ADMIN - Get organization by slug
     organizationBySlug(slug: String!): Organization @tag(name: "organizer") @tag(name: "admin")
-
-    # NOTE: organizationByOrganizerProfileId has been removed (progressive onboarding)
-    # Use organizationByOwnerId or organizationBySlug instead
 
     # ORGANIZER - Get organization by owner ID
     organizationByOwnerId(ownerId: ID!): Organization @tag(name: "organizer") @tag(name: "admin")
@@ -2527,8 +2459,8 @@ type Query {
     # ORGANIZER - Get my verification documents
     myVerificationDocuments(status: DocumentStatus): [VerificationDocument!]! @tag(name: "organizer")
 
-    # ADMIN - Get documents for organizer profile
-    verificationDocuments(organizerProfileId: ID!, status: DocumentStatus): [VerificationDocument!]! @tag(name: "admin")
+    # ADMIN - Get documents for organization
+    verificationDocuments(organizationId: ID!, status: DocumentStatus): [VerificationDocument!]! @tag(name: "admin")
 
     # ADMIN - Get pending documents queue
     pendingVerificationDocuments: [VerificationDocument!]! @tag(name: "admin")
@@ -2757,6 +2689,64 @@ type Mutation {
     unsuspendOrganization(id: ID!): Organization @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
+    # Payout Configuration (PCI-DSS Compliant)
+    # ORGANIZER - Configure payout accounts for receiving event revenue
+    # ─────────────────────────────────────────────────────────────────────
+
+    """
+    Update payout configuration (method, schedule, minimum amount).
+    AUTHORIZATION: Only organization OWNER can modify payout config.
+    SECURITY: All changes are audit logged with IP address and user agent.
+    """
+    updatePayoutConfig(
+        organizationId: ID!
+        input: UpdatePayoutConfigInput!
+    ): Organization @tag(name: "organizer")
+
+    """
+    Set bank account for payouts.
+    AUTHORIZATION: Only organization OWNER can set bank account.
+    SECURITY:
+    - Account numbers are encrypted at rest (AES-256-GCM)
+    - Input is validated (10-16 digits for Zambian banks)
+    - SWIFT codes validated (8 or 11 alphanumeric characters)
+    - Account holder name validated (letters, spaces, hyphens, apostrophes only)
+    - All changes audit logged (with masked account numbers)
+    COMPLIANCE: PCI-DSS compliant encryption and audit trail.
+    """
+    setBankAccount(
+        organizationId: ID!
+        input: SetBankAccountInput!
+    ): Organization @tag(name: "organizer")
+
+    """
+    Set mobile money account for payouts.
+    AUTHORIZATION: Only organization OWNER can set mobile money account.
+    SECURITY:
+    - Phone numbers validated in E.164 format (+260XXXXXXXXX)
+    - Validated against Zambian mobile prefixes (MTN, Airtel, Zamtel)
+    - Phone numbers masked for display (show prefix + last 4 digits)
+    - All changes audit logged
+    """
+    setMobileMoneyAccount(
+        organizationId: ID!
+        input: SetMobileMoneyAccountInput!
+    ): Organization @tag(name: "organizer")
+
+    """
+    Verify payout account (admin only).
+    AUTHORIZATION: Only ADMIN or FINANCE role can verify accounts.
+    SECURITY:
+    - Verification status change is audit logged
+    - Only verified accounts can receive payouts
+    - Verification can be revoked if fraud detected
+    """
+    verifyPayoutAccount(
+        organizationId: ID!
+        verified: Boolean!
+    ): Organization @tag(name: "admin")
+
+    # ─────────────────────────────────────────────────────────────────────
     # Team Management
     # ORGANIZER - Team invitation and management
     # ─────────────────────────────────────────────────────────────────────
@@ -2952,15 +2942,13 @@ type Mutation {
 
     # ─────────────────────────────────────────────────────────────────────
     # Verification Document Management
+    # Secure file upload workflow with OWASP compliance
     # ─────────────────────────────────────────────────────────────────────
-    # ORGANIZER - Upload verification document
-    uploadVerificationDocument(
-        documentType: String!
-        documentUrl: String!
-        fileName: String
-        fileSize: Long
-        mimeType: String
-    ): VerificationDocument @tag(name: "organizer")
+    # ORGANIZER - Upload verification document (with file validation)
+    uploadVerificationDocument(input: UploadVerificationDocumentInput!): VerificationDocumentUploadResponse! @tag(name: "organizer")
+
+    # ORGANIZER - Request presigned upload URL (alternative flow)
+    requestDocumentUploadUrl(input: RequestUploadUrlInput!): DocumentUploadUrlResponse! @tag(name: "organizer")
 
     # ADMIN - Approve verification document
     approveVerificationDocument(documentId: ID!): VerificationDocument @tag(name: "admin")

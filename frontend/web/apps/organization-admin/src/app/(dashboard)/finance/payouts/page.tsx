@@ -34,7 +34,11 @@ import {
   NavArrowRight,
 } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  canRequestPayouts,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
@@ -549,8 +553,10 @@ function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, o
 
 export default function PayoutsPage() {
   const searchParams = useSearchParams();
-  const { can } = useOrganization();
-  const canRequestPayouts = can('requestPayouts');
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
+  const { status } = useMyOrganization({ skip: !isAuthenticated });
+  const canPayout = canRequestPayouts(status);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -615,7 +621,7 @@ export default function PayoutsPage() {
           { label: 'Finance', href: '/finance' },
           { label: 'Payouts' },
         ]}
-        actions={canRequestPayouts ? [
+        actions={canPayout ? [
           {
             label: 'Request Payout',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
@@ -761,7 +767,7 @@ export default function PayoutsPage() {
               ? 'Try adjusting your filters'
               : 'Request a payout to transfer funds to your bank account'}
           </Text>
-          {canRequestPayouts && !searchQuery && statusFilter === 'all' && (
+          {canPayout && !searchQuery && statusFilter === 'all' && (
             <Button
               size="3"
               onClick={() => setShowNewPayoutDialog(true)}

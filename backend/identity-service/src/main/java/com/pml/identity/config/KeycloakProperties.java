@@ -20,7 +20,7 @@ public class KeycloakProperties {
     /**
      * Keycloak realm name
      */
-    private String realm = "event-ticketing";
+    private String realm = "myticketzm";
 
     /**
      * Admin username for Admin API access

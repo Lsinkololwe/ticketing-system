@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * Apply Start Page - Redirect to Business Info
+ * Apply Start Page - Redirect to Welcome or Business Info
  *
- * @deprecated This page now just redirects to /apply/business-info
- * which handles profile creation directly.
+ * @deprecated This page now redirects to /welcome for new users
+ * or /apply/business-info for users with an existing organization.
  *
  * Kept for backward compatibility with any existing links.
  */
@@ -12,14 +12,27 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Spinner, Text } from '@radix-ui/themes';
+import {
+  useMyOrganization,
+  getRouteForStatus,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 export default function ApplyStartPage() {
   const router = useRouter();
+  const { hasOrganization, status, loading } = useMyOrganization();
 
   useEffect(() => {
-    // Redirect to business-info which now handles profile creation
-    router.replace('/apply/business-info');
-  }, [router]);
+    if (loading) return;
+
+    if (hasOrganization) {
+      // Has organization - redirect based on status
+      const route = getRouteForStatus(status);
+      router.replace(route);
+    } else {
+      // No organization - redirect to welcome page
+      router.replace('/welcome');
+    }
+  }, [loading, hasOrganization, status, router]);
 
   return (
     <Box style={{ textAlign: 'center', padding: '60px 0' }}>

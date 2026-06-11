@@ -1,0 +1,284 @@
+name: Radix UI Compliance
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'frontend/web/**'
+
+jobs:
+  compliance-check:
+    name: Radix UI Compliance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend/web
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint with Radix compliance rules
+        id: eslint
+        run: |
+          pnpm lint:all > eslint-output.txt 2>&1 || true
+          cat eslint-output.txt
+        continue-on-error: true
+
+      - name: Run React Testing Library compliance tests
+        id: rtl-tests
+        run: |
+          pnpm test libs/shared/src/__tests__/compliance --run --reporter=verbose > rtl-output.txt 2>&1 || true
+          cat rtl-output.txt
+        continue-on-error: true
+
+      - name: Parse compliance violations
+        id: parse-violations
+        run: |
+          # Count violations from ESLint output
+          ESLINT_VIOLATIONS=$(grep -c "radix-compliance" eslint-output.txt || echo "0")
+          echo "eslint_violations=$ESLINT_VIOLATIONS" >> $GITHUB_OUTPUT
+
+          # Count test failures
+          RTL_FAILURES=$(grep -c "FAIL" rtl-output.txt || echo "0")
+          echo "rtl_failures=$RTL_FAILURES" >> $GITHUB_OUTPUT
+
+          # Create summary
+          echo "## Radix UI Compliance Report" > compliance-summary.md
+          echo "" >> compliance-summary.md
+          echo "### ESLint Violations: $ESLINT_VIOLATIONS" >> compliance-summary.md
+          echo "### React Testing Library Failures: $RTL_FAILURES" >> compliance-summary.md
+          echo "" >> compliance-summary.md
+
+          if [ "$ESLINT_VIOLATIONS" -gt 0 ]; then
+            echo "#### ESLint Violations" >> compliance-summary.md
+            echo '```' >> compliance-summary.md
+            grep "radix-compliance" eslint-output.txt | head -20 >> compliance-summary.md
+            echo '```' >> compliance-summary.md
+          fi
+
+          if [ "$RTL_FAILURES" -gt 0 ]; then
+            echo "#### Test Failures" >> compliance-summary.md
+            echo '```' >> compliance-summary.md
+            grep -A 5 "FAIL" rtl-output.txt | head -30 >> compliance-summary.md
+            echo '```' >> compliance-summary.md
+          fi
+
+      - name: Comment PR with violations
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('frontend/web/compliance-summary.md', 'utf8');
+
+            const eslintViolations = ${{ steps.parse-violations.outputs.eslint_violations }};
+            const rtlFailures = ${{ steps.parse-violations.outputs.rtl_failures }};
+
+            let status = '✅ All compliance checks passed!';
+            if (eslintViolations > 0 || rtlFailures > 0) {
+              status = '❌ Compliance violations detected';
+            }
+
+            const comment = `
+            # ${status}
+
+            ${summary}
+
+            ---
+
+            **What to do next:**
+
+            ${eslintViolations > 0 ? `
+            1. Fix ESLint violations by replacing raw HTML elements with Radix UI components
+            2. Remove inline styles and use Radix UI props instead
+            3. Replace hardcoded colors with Radix UI color tokens
+            ` : ''}
+
+            ${rtlFailures > 0 ? `
+            4. Review failed tests and ensure components use Radix UI primitives
+            5. Verify theme token usage in your components
+            ` : ''}
+
+            **Resources:**
+            - [Radix UI Themes Documentation](https://www.radix-ui.com/themes/docs)
+            - [Project Compliance Standards](../docs/COMPLIANCE_STANDARDS.md)
+            - [ESLint Plugin README](../tools/eslint-plugin-radix-compliance/README.md)
+            `;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Radix UI Compliance')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment,
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment,
+              });
+            }
+
+      - name: Fail if violations found (strict mode)
+        if: steps.parse-violations.outputs.eslint_violations > 0 || steps.parse-violations.outputs.rtl_failures > 0
+        run: |
+          echo "❌ Compliance violations detected. Please fix before merging."
+          exit 1
+
+  e2e-compliance:
+    name: E2E Compliance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: frontend/web
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps
+
+      - name: Run E2E compliance tests
+        id: e2e-tests
+        run: |
+          pnpm e2e:org-admin apps/organization-admin/e2e/compliance --reporter=html > e2e-output.txt 2>&1 || true
+          cat e2e-output.txt
+        continue-on-error: true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-compliance-report
+          path: frontend/web/playwright-report/
+          retention-days: 7
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-screenshots
+          path: frontend/web/apps/organization-admin/e2e/.playwright/screenshots/
+          retention-days: 7
+
+      - name: Comment PR with E2E results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const e2eOutput = fs.readFileSync('frontend/web/e2e-output.txt', 'utf8');
+
+            const passed = e2eOutput.includes('passed');
+            const failed = e2eOutput.includes('failed');
+
+            const status = failed ? '❌ E2E compliance tests failed' : '✅ E2E compliance tests passed';
+
+            const comment = `
+            ## ${status}
+
+            <details>
+            <summary>View E2E Test Results</summary>
+
+            \`\`\`
+            ${e2eOutput.substring(0, 2000)}
+            \`\`\`
+
+            </details>
+
+            [View full Playwright report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('E2E compliance tests')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment,
+              });
+            }

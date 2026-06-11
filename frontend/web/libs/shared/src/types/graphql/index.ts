@@ -119,27 +119,6 @@ export type AdminTicketUpdateInput = {
   ticketCategoryCode: InputMaybe<Scalars['String']['input']>;
 };
 
-/**
- * ============================================================================
- * SECTION 16: INPUT TYPES - ORGANIZER APPLICATION
- * ============================================================================
- */
-export type ApplyToBeOrganizerInput = {
-  businessAddress: InputMaybe<Scalars['String']['input']>;
-  businessEmail: Scalars['String']['input'];
-  /**  Contact */
-  businessPhone: Scalars['String']['input'];
-  city: InputMaybe<Scalars['String']['input']>;
-  companyDescription: InputMaybe<Scalars['String']['input']>;
-  /**  Basic business info */
-  companyName: Scalars['String']['input'];
-  country: InputMaybe<Scalars['String']['input']>;
-  postalCode: InputMaybe<Scalars['String']['input']>;
-  province: InputMaybe<Scalars['String']['input']>;
-  tagline: InputMaybe<Scalars['String']['input']>;
-  website: InputMaybe<Scalars['String']['input']>;
-};
-
 /**  Approval action types for timeline tracking */
 export type ApprovalAction =
   /**  Reviewer viewed event details */
@@ -427,10 +406,10 @@ export type ApprovalTimelineOffsetPage = {
   totalPages: Scalars['Int']['output'];
 };
 
-/**  Admin inputs for organizer review */
-export type ApproveOrganizerInput = {
+/**  Admin inputs for organization review */
+export type ApproveOrganizationInput = {
   commissionRate: InputMaybe<Scalars['Float']['input']>;
-  organizerProfileId: Scalars['ID']['input'];
+  organizationId: Scalars['ID']['input'];
   payoutSchedule: InputMaybe<Scalars['String']['input']>;
   reviewNotes: InputMaybe<Scalars['String']['input']>;
 };
@@ -604,6 +583,30 @@ export type BulkReminderResponse = {
   sentCount: Scalars['Int']['output'];
   success: Scalars['Boolean']['output'];
 };
+
+/**  Business address for an organization */
+export type BusinessAddress = {
+  __typename: 'BusinessAddress';
+  addressLine1: Maybe<Scalars['String']['output']>;
+  addressLine2: Maybe<Scalars['String']['output']>;
+  city: Maybe<Scalars['String']['output']>;
+  country: Maybe<Scalars['String']['output']>;
+  countryCode: Maybe<Scalars['String']['output']>;
+  /**  ISO 3166-1 alpha-2 (e.g., ZM for Zambia) */
+  formattedAddress: Maybe<Scalars['String']['output']>;
+  /**  Province/State */
+  postalCode: Maybe<Scalars['String']['output']>;
+  province: Maybe<Scalars['String']['output']>;
+};
+
+/**  Legal business type for KYB verification */
+export type BusinessType =
+  | 'GOVERNMENT'
+  | 'INDIVIDUAL'
+  | 'LIMITED_COMPANY'
+  | 'NGO'
+  | 'PARTNERSHIP'
+  | 'SOLE_PROPRIETORSHIP';
 
 export type CancelTicketMutationResponse = {
   __typename: 'CancelTicketMutationResponse';
@@ -977,17 +980,6 @@ export type CreateJournalEntryInput = {
   lines: Array<JournalLineInput>;
   metadata: InputMaybe<Scalars['JSON']['input']>;
   type: JournalEntryType;
-};
-
-export type CreateOrganizerProfileInput = {
-  businessAddress: InputMaybe<Scalars['String']['input']>;
-  businessEmail: InputMaybe<Scalars['String']['input']>;
-  businessPhone: InputMaybe<Scalars['String']['input']>;
-  city: InputMaybe<Scalars['String']['input']>;
-  companyDescription: InputMaybe<Scalars['String']['input']>;
-  companyName: InputMaybe<Scalars['String']['input']>;
-  province: InputMaybe<Scalars['String']['input']>;
-  website: InputMaybe<Scalars['String']['input']>;
 };
 
 export type CreatePayoutRequestInput = {
@@ -2398,6 +2390,23 @@ export type JournalLineInput = {
   referenceType: InputMaybe<Scalars['String']['input']>;
 };
 
+/**
+ * Know Your Business (KYB) verification status
+ * Determines what actions the organization can take
+ */
+export type KybStatus =
+  /**  KYB submitted, awaiting admin review */
+  | 'CHANGES_REQUESTED'
+  /**  KYB not started - can create draft events */
+  | 'IN_PROGRESS'
+  | 'NOT_STARTED'
+  /**  KYB form partially filled */
+  | 'PENDING_REVIEW'
+  /**  KYB verified - can publish events and receive payouts */
+  | 'REJECTED'
+  /**  Admin requested changes to KYB */
+  | 'VERIFIED';
+
 /**  ORGANIZER - Real-time event day dashboard for entry management */
 export type LiveDashboard = {
   __typename: 'LiveDashboard';
@@ -2471,6 +2480,24 @@ export type MemberStatus =
   /**  Deactivated (by admin) */
   | 'SUSPENDED';
 
+/**  Mobile money account for payouts (Zambia: MTN, Airtel, Zamtel) */
+export type MobileMoneyAccount = {
+  __typename: 'MobileMoneyAccount';
+  /**  +260****1234 */
+  accountHolderName: Maybe<Scalars['String']['output']>;
+  /**  Masked for display */
+  maskedPhoneNumber: Maybe<Scalars['String']['output']>;
+  phoneNumber: Maybe<Scalars['String']['output']>;
+  provider: Maybe<MobileMoneyProvider>;
+  verified: Scalars['Boolean']['output'];
+};
+
+/**  Mobile money providers in Zambia */
+export type MobileMoneyProvider =
+  | 'AIRTEL'
+  | 'MTN'
+  | 'ZAMTEL';
+
 /**
  * ============================================================================
  * SECTION 16: ROOT MUTATION TYPE
@@ -2516,28 +2543,22 @@ export type Mutation = {
   /**  ADMIN - Administrative ticket operations */
   adminUpdateTicket: TicketMutationResponse;
   /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Organizer Application
-   * ORGANIZER - Self-service organizer application
-   * ─────────────────────────────────────────────────────────────────────
-   * ORGANIZER - Apply to become an organizer
+   * Apply to become an organizer.
+   * Creates a new organization in DRAFT status.
+   * User must fill in business details and submit for approval.
    */
-  applyToBeOrganizer: OrganizerMutationResponse;
+  applyToBeOrganizer: Organization;
   /**
    * ADMIN - Approval decisions are admin-only platform operations
    * NOTE: reviewerId/adminId extracted from JWT authentication (OWASP A01:2021 compliance)
    */
   approveEvent: EventMutationResponse;
   /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Organizer Review (Admin)
-   * ADMIN - Organizer approval workflow
-   * ─────────────────────────────────────────────────────────────────────
-   * ADMIN - Approve organizer application (creates Organization)
+   * Approve an organization application.
+   * Changes status from PENDING_REVIEW to APPROVED.
+   * Organization can now publish events.
    */
-  approveOrganizer: Maybe<OrganizerProfile>;
-  /**  ADMIN - Approve organizer by user ID */
-  approveOrganizerByUserId: Maybe<OrganizerProfile>;
+  approveOrganization: Maybe<Organization>;
   /**  ADMIN - Payout approval workflow */
   approvePayoutRequest: ApprovePayoutRequestMutationResponse;
   /**
@@ -2545,12 +2566,7 @@ export type Mutation = {
    * NOTE: Actor IDs (reviewerId, processedBy, etc.) extracted from JWT - OWASP A01:2021
    */
   approveRefundRequest: ApproveRefundRequestMutationResponse;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Verification Document Management
-   * ─────────────────────────────────────────────────────────────────────
-   * ADMIN - Approve verification document
-   */
+  /**  ADMIN - Approve verification document */
   approveVerificationDocument: Maybe<VerificationDocument>;
   /**  ADMIN - Reviewer assignment for approval workflow */
   assignEventReviewer: ApprovalTimelineMutationResponse;
@@ -2659,13 +2675,6 @@ export type Mutation = {
    */
   createJournalEntry: JournalEntryMutationResponse;
   /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Organizer Profile Management
-   * ─────────────────────────────────────────────────────────────────────
-   * ORGANIZER - Create organizer profile
-   */
-  createOrganizerProfile: Maybe<OrganizerProfile>;
-  /**
    * ========================================================================
    * PAYOUT REQUEST MUTATIONS
    * ORGANIZER - Request payouts, ADMIN - Approve/process
@@ -2675,6 +2684,16 @@ export type Mutation = {
    */
   createPayoutRequest: CreatePayoutRequestMutationResponse;
   /**
+   * ─────────────────────────────────────────────────────────────────────
+   * NOTE: Organizer Profile mutations have been merged into Organization
+   * See Organization Onboarding mutations:
+   * - applyToBeOrganizer
+   * - updateOrganizationApplication
+   * - submitOrganizationForReview
+   * - approveOrganization
+   * - requestOrganizationChanges
+   * - rejectOrganization
+   * ─────────────────────────────────────────────────────────────────────
    * ─────────────────────────────────────────────────────────────────────
    * Permission Management
    * ─────────────────────────────────────────────────────────────────────
@@ -2736,8 +2755,6 @@ export type Mutation = {
   deleteEventCategory: DeleteMutationResponse;
   /**  MOBILE - Delete notification */
   deleteNotification: Scalars['Boolean']['output'];
-  /**  ORGANIZER - Delete organizer profile */
-  deleteOrganizerProfile: Scalars['Boolean']['output'];
   /**  ADMIN - Delete permission */
   deletePermission: Scalars['Boolean']['output'];
   deletePromoCode: DeleteMutationResponse;
@@ -2757,6 +2774,11 @@ export type Mutation = {
   featureEvent: EventMutationResponse;
   /**  ADMIN - Force expire stuck reservations */
   forceExpireReservation: Scalars['Boolean']['output'];
+  /**
+   * Get or create organization for the current user.
+   * If user has no organization, creates one in DRAFT status.
+   */
+  getOrCreateMyOrganization: Organization;
   /**  ORGANIZER - Grant event access */
   grantEventAccess: Maybe<EventAccessGrant>;
   /**
@@ -2837,10 +2859,6 @@ export type Mutation = {
   purchaseTicket: PurchaseTicketMutationResponse;
   /**  ORGANIZER - Reactivate member */
   reactivateMember: Maybe<OrganizationMember>;
-  /**  ADMIN - Reactivate organizer */
-  reactivateOrganizer: Maybe<OrganizerProfile>;
-  /**  ADMIN - Reactivate organizer by user ID */
-  reactivateOrganizerByUserId: Maybe<OrganizerProfile>;
   /**
    * ========================================================================
    * CHARGEBACK MUTATIONS
@@ -2880,10 +2898,11 @@ export type Mutation = {
    */
   registerDevice: Maybe<UserDevice>;
   rejectEvent: EventMutationResponse;
-  /**  ADMIN - Reject organizer application */
-  rejectOrganizer: Maybe<OrganizerProfile>;
-  /**  ADMIN - Reject organizer by user ID */
-  rejectOrganizerByUserId: Maybe<OrganizerProfile>;
+  /**
+   * Reject an organization application.
+   * Changes status to REJECTED.
+   */
+  rejectOrganization: Maybe<Organization>;
   rejectPayoutRequest: RejectPayoutRequestMutationResponse;
   rejectRefundRequest: RejectRefundRequestMutationResponse;
   /**  ADMIN - Reject verification document */
@@ -2901,8 +2920,12 @@ export type Mutation = {
   /**  MOBILE - Account deletion (GDPR) */
   requestAccountDeletion: MutationResponse;
   requestEventChanges: EventMutationResponse;
-  /**  ADMIN - Request changes to application */
-  requestOrganizerChanges: Maybe<OrganizerProfile>;
+  /**
+   * Request changes to an organization application.
+   * Changes status from PENDING_REVIEW to CHANGES_REQUESTED.
+   * User can update details and resubmit.
+   */
+  requestOrganizationChanges: Maybe<Organization>;
   /**
    * ─────────────────────────────────────────────────────────────────────
    * Phone OTP Authentication
@@ -3000,18 +3023,15 @@ export type Mutation = {
    * NOTE: organizerId is extracted from JWT authentication
    */
   submitEventForApproval: EventMutationResponse;
-  /**  ORGANIZER - Submit application for review */
-  submitOrganizerApplication: OrganizerMutationResponse;
-  /**  ORGANIZER - Submit profile for review */
-  submitOrganizerProfileForReview: Maybe<OrganizerProfile>;
+  /**
+   * Submit organization application for admin review.
+   * Changes status from DRAFT/CHANGES_REQUESTED to PENDING_REVIEW.
+   */
+  submitOrganizationForReview: Maybe<Organization>;
   /**  ORGANIZER - Suspend member */
   suspendMember: Maybe<OrganizationMember>;
   /**  ADMIN - Suspend organization */
   suspendOrganization: Maybe<Organization>;
-  /**  ADMIN - Suspend organizer */
-  suspendOrganizer: Maybe<OrganizerProfile>;
-  /**  ADMIN - Suspend organizer by user ID */
-  suspendOrganizerByUserId: Maybe<OrganizerProfile>;
   suspendUser: MutationResponse;
   /**  ADMIN - Full sync all users */
   syncAllUsersFromKeycloak: Scalars['Boolean']['output'];
@@ -3037,8 +3057,6 @@ export type Mutation = {
   unregisterDevice: Scalars['Boolean']['output'];
   /**  ADMIN - Unsuspend organization */
   unsuspendOrganization: Maybe<Organization>;
-  /**  ADMIN - Unsuspend organizer */
-  unsuspendOrganizer: Maybe<OrganizerProfile>;
   unsuspendUser: MutationResponse;
   updateBankAccount: UpdateBankAccountMutationResponse;
   updateChartOfAccountsEntry: ChartOfAccountsMutationResponse;
@@ -3072,6 +3090,11 @@ export type Mutation = {
    * ORGANIZER - Update organization (owner/admin only)
    */
   updateOrganization: Maybe<Organization>;
+  /**
+   * Update organization application details.
+   * Only allowed when status is DRAFT or CHANGES_REQUESTED.
+   */
+  updateOrganizationApplication: Maybe<Organization>;
   /**  ORGANIZER - Update organization settings */
   updateOrganizationSettings: Maybe<Organization>;
   /**
@@ -3081,8 +3104,6 @@ export type Mutation = {
    * ADMIN - Update organization status
    */
   updateOrganizationStatus: Maybe<Organization>;
-  /**  ORGANIZER - Update organizer profile (during application) */
-  updateOrganizerProfile: OrganizerMutationResponse;
   /**  ADMIN - Update permission */
   updatePermission: Maybe<Permission>;
   /**
@@ -3098,7 +3119,17 @@ export type Mutation = {
   updateProvince: ProvinceMutationResponse;
   updateTicketTier: TierMutationResponse;
   updateUser: UserMutationResponse;
-  /**  ORGANIZER - Upload verification document */
+  /**
+   * Upgrade an individual organization to a business organization.
+   * Requires the organization to be owned by the current user.
+   */
+  upgradeToBusinessOrganization: Maybe<Organization>;
+  /**
+   * ─────────────────────────────────────────────────────────────────────
+   * Verification Document Management
+   * ─────────────────────────────────────────────────────────────────────
+   * ORGANIZER - Upload verification document
+   */
   uploadVerificationDocument: Maybe<VerificationDocument>;
   useTicket: UseTicketMutationResponse;
   /**  ORGANIZER - Ticket validation at venue (scanner app) */
@@ -3114,12 +3145,6 @@ export type Mutation = {
    * Verifies that EventEscrowAccount balances match journal entry calculated balances
    */
   verifyEscrowJournalConsistency: EscrowJournalVerificationResponse;
-  /**  ADMIN - Verify organizer bank account */
-  verifyOrganizerBankAccount: Maybe<OrganizerProfile>;
-  /**  ADMIN - Verify organizer business */
-  verifyOrganizerBusiness: Maybe<OrganizerProfile>;
-  /**  ADMIN - Verify organizer documents */
-  verifyOrganizerDocuments: Maybe<OrganizerProfile>;
   /**  ADMIN - Manual status verification with gateway */
   verifyPaymentWithGateway: PaymentAttemptMutationResponse;
   /**  MOBILE - Verify phone */
@@ -3277,7 +3302,7 @@ export type MutationAdminUpdateTicketArgs = {
  * ============================================================================
  */
 export type MutationApplyToBeOrganizerArgs = {
-  input: ApplyToBeOrganizerInput;
+  input: OrganizationApplicationInput;
 };
 
 
@@ -3299,19 +3324,8 @@ export type MutationApproveEventArgs = {
  * Tags indicate which clients should include these mutations in their operations
  * ============================================================================
  */
-export type MutationApproveOrganizerArgs = {
-  profileId: Scalars['ID']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationApproveOrganizerByUserIdArgs = {
-  userId: Scalars['ID']['input'];
+export type MutationApproveOrganizationArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -3707,17 +3721,6 @@ export type MutationCreateEventOwnerArgs = {
  */
 export type MutationCreateJournalEntryArgs = {
   input: CreateJournalEntryInput;
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationCreateOrganizerProfileArgs = {
-  input: CreateOrganizerProfileInput;
 };
 
 
@@ -4362,28 +4365,6 @@ export type MutationReactivateMemberArgs = {
  * Tags indicate which clients should include these mutations in their operations
  * ============================================================================
  */
-export type MutationReactivateOrganizerArgs = {
-  profileId: Scalars['ID']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationReactivateOrganizerByUserIdArgs = {
-  userId: Scalars['ID']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
 export type MutationReceiveChargebackArgs = {
   input: ReceiveChargebackInput;
 };
@@ -4499,21 +4480,9 @@ export type MutationRejectEventArgs = {
  * Tags indicate which clients should include these mutations in their operations
  * ============================================================================
  */
-export type MutationRejectOrganizerArgs = {
-  profileId: Scalars['ID']['input'];
+export type MutationRejectOrganizationArgs = {
+  id: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationRejectOrganizerByUserIdArgs = {
-  reason: Scalars['String']['input'];
-  userId: Scalars['ID']['input'];
 };
 
 
@@ -4630,8 +4599,8 @@ export type MutationRequestEventChangesArgs = {
  * Tags indicate which clients should include these mutations in their operations
  * ============================================================================
  */
-export type MutationRequestOrganizerChangesArgs = {
-  profileId: Scalars['ID']['input'];
+export type MutationRequestOrganizationChangesArgs = {
+  id: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
 };
 
@@ -4942,8 +4911,8 @@ export type MutationSubmitEventForApprovalArgs = {
  * Tags indicate which clients should include these mutations in their operations
  * ============================================================================
  */
-export type MutationSubmitOrganizerApplicationArgs = {
-  input: SubmitOrganizerApplicationInput;
+export type MutationSubmitOrganizationForReviewArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -4968,30 +4937,6 @@ export type MutationSuspendMemberArgs = {
 export type MutationSuspendOrganizationArgs = {
   id: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationSuspendOrganizerArgs = {
-  profileId: Scalars['ID']['input'];
-  reason: Scalars['String']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationSuspendOrganizerByUserIdArgs = {
-  reason: Scalars['String']['input'];
-  userId: Scalars['ID']['input'];
 };
 
 
@@ -5119,17 +5064,6 @@ export type MutationUnregisterDeviceArgs = {
  */
 export type MutationUnsuspendOrganizationArgs = {
   id: Scalars['ID']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationUnsuspendOrganizerArgs = {
-  profileId: Scalars['ID']['input'];
 };
 
 
@@ -5307,6 +5241,18 @@ export type MutationUpdateOrganizationArgs = {
  * Tags indicate which clients should include these mutations in their operations
  * ============================================================================
  */
+export type MutationUpdateOrganizationApplicationArgs = {
+  id: Scalars['ID']['input'];
+  input: OrganizationApplicationInput;
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 16: ROOT MUTATION TYPE
+ * Tags indicate which clients should include these mutations in their operations
+ * ============================================================================
+ */
 export type MutationUpdateOrganizationSettingsArgs = {
   id: Scalars['ID']['input'];
   input: UpdateOrganizationSettingsInput;
@@ -5322,17 +5268,6 @@ export type MutationUpdateOrganizationSettingsArgs = {
 export type MutationUpdateOrganizationStatusArgs = {
   id: Scalars['ID']['input'];
   status: OrganizationStatus;
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationUpdateOrganizerProfileArgs = {
-  input: UpdateOrganizerProfileInput;
 };
 
 
@@ -5426,11 +5361,23 @@ export type MutationUpdateUserArgs = {
  * Tags indicate which clients should include these mutations in their operations
  * ============================================================================
  */
+export type MutationUpgradeToBusinessOrganizationArgs = {
+  businessName: Scalars['String']['input'];
+  organizationId: Scalars['ID']['input'];
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 16: ROOT MUTATION TYPE
+ * Tags indicate which clients should include these mutations in their operations
+ * ============================================================================
+ */
 export type MutationUploadVerificationDocumentArgs = {
   documentType: Scalars['String']['input'];
   documentUrl: Scalars['String']['input'];
   fileName: InputMaybe<Scalars['String']['input']>;
-  fileSize: InputMaybe<Scalars['Int']['input']>;
+  fileSize: InputMaybe<Scalars['Long']['input']>;
   mimeType: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -5498,39 +5445,6 @@ export type MutationVerifyEmailArgs = {
  */
 export type MutationVerifyEscrowJournalConsistencyArgs = {
   eventId: Scalars['ID']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationVerifyOrganizerBankAccountArgs = {
-  profileId: Scalars['ID']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationVerifyOrganizerBusinessArgs = {
-  profileId: Scalars['ID']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 16: ROOT MUTATION TYPE
- * Tags indicate which clients should include these mutations in their operations
- * ============================================================================
- */
-export type MutationVerifyOrganizerDocumentsArgs = {
-  profileId: Scalars['ID']['input'];
 };
 
 
@@ -5788,8 +5702,41 @@ export type OffsetPaginationInput = {
 export type Organization = {
   __typename: 'Organization';
   activeMembers: Maybe<Array<OrganizationMember>>;
+  /**  When application was submitted for review */
+  approvedAt: Maybe<Scalars['DateTime']['output']>;
   averageRating: Maybe<Scalars['Float']['output']>;
   bannerUrl: Maybe<Scalars['String']['output']>;
+  businessAddress: Maybe<BusinessAddress>;
+  businessEmail: Maybe<Scalars['String']['output']>;
+  /**
+   * ─────────────────────────────────────────────────────────────────────
+   * KYB - Contact Information
+   * ─────────────────────────────────────────────────────────────────────
+   */
+  businessPhone: Maybe<Scalars['String']['output']>;
+  /**  TPIN in Zambia */
+  businessRegistrationNumber: Maybe<Scalars['String']['output']>;
+  /**
+   * Only ONE owner per organization
+   * ─────────────────────────────────────────────────────────────────────
+   * KYB - Business Information
+   * ─────────────────────────────────────────────────────────────────────
+   */
+  businessType: Maybe<BusinessType>;
+  /**  True only for APPROVED with verified payout account */
+  canBeEdited: Scalars['Boolean']['output'];
+  /**
+   * ─────────────────────────────────────────────────────────────────────
+   * Capabilities (derived from status)
+   * ─────────────────────────────────────────────────────────────────────
+   */
+  canCreateDraftEvents: Scalars['Boolean']['output'];
+  /**  True for DRAFT, PENDING_REVIEW, CHANGES_REQUESTED, APPROVED */
+  canPublishEvents: Scalars['Boolean']['output'];
+  /**  True only for APPROVED/ACTIVE */
+  canReceivePayouts: Scalars['Boolean']['output'];
+  /**  True for DRAFT, CHANGES_REQUESTED, APPROVED */
+  canSubmitForReview: Scalars['Boolean']['output'];
   /**
    * ─────────────────────────────────────────────────────────────────────
    * Audit Fields
@@ -5798,17 +5745,26 @@ export type Organization = {
   createdAt: Scalars['DateTime']['output'];
   /**  URL-friendly identifier (unique) */
   description: Maybe<Scalars['String']['output']>;
+  /**  Business verification status */
+  documentsVerified: Scalars['Boolean']['output'];
   id: Scalars['ID']['output'];
+  /**  True for DRAFT, CHANGES_REQUESTED */
+  isApproved: Scalars['Boolean']['output'];
+  /**  True for APPROVED/ACTIVE */
+  isInApprovalWorkflow: Scalars['Boolean']['output'];
   /**
+   * KYB verification status
    * ─────────────────────────────────────────────────────────────────────
    * Keycloak Integration
    * ─────────────────────────────────────────────────────────────────────
    */
   keycloakGroupId: Maybe<Scalars['String']['output']>;
+  /**  Operational status */
+  kybStatus: KybStatus;
+  kybSubmittedAt: Maybe<Scalars['DateTime']['output']>;
   logoUrl: Maybe<Scalars['String']['output']>;
   memberCount: Scalars['Int']['output'];
   /**
-   * Only ONE owner per organization
    * ─────────────────────────────────────────────────────────────────────
    * Team Members
    * ─────────────────────────────────────────────────────────────────────
@@ -5820,13 +5776,6 @@ export type Organization = {
    * ─────────────────────────────────────────────────────────────────────
    */
   name: Scalars['String']['output'];
-  organizerProfile: Maybe<OrganizerProfile>;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Linked Organizer Profile
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  organizerProfileId: Scalars['ID']['output'];
   /**  User ID of the owner */
   owner: Maybe<User>;
   /**
@@ -5836,6 +5785,14 @@ export type Organization = {
    * ─────────────────────────────────────────────────────────────────────
    */
   ownerId: Scalars['ID']['output'];
+  /**  KYB documents verified */
+  payoutAccountVerified: Scalars['Boolean']['output'];
+  /**
+   * ─────────────────────────────────────────────────────────────────────
+   * Payout Configuration
+   * ─────────────────────────────────────────────────────────────────────
+   */
+  payoutConfig: Maybe<PayoutConfig>;
   pendingInvitationCount: Scalars['Int']['output'];
   /**
    * ─────────────────────────────────────────────────────────────────────
@@ -5843,6 +5800,11 @@ export type Organization = {
    * ─────────────────────────────────────────────────────────────────────
    */
   pendingInvitations: Maybe<Array<TeamInvitation>>;
+  /**  When application was approved */
+  rejectionReason: Maybe<Scalars['String']['output']>;
+  reviewedAt: Maybe<Scalars['DateTime']['output']>;
+  /**  Reason for rejection or changes requested */
+  reviewedBy: Maybe<User>;
   /**
    * ─────────────────────────────────────────────────────────────────────
    * Organization Settings
@@ -5851,14 +5813,19 @@ export type Organization = {
   settings: Maybe<OrganizationSettings>;
   /**  Display name */
   slug: Scalars['String']['output'];
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Status & Verification
-   * ─────────────────────────────────────────────────────────────────────
-   */
+  socialLinks: Maybe<SocialLinks>;
+  /**  INDIVIDUAL or BUSINESS */
   status: OrganizationStatus;
   /**
-   * Business verification status
+   * ─────────────────────────────────────────────────────────────────────
+   * Application & Review Information
+   * ─────────────────────────────────────────────────────────────────────
+   */
+  submittedAt: Maybe<Scalars['DateTime']['output']>;
+  tagline: Maybe<Scalars['String']['output']>;
+  taxId: Maybe<Scalars['String']['output']>;
+  /**
+   * True for DRAFT, PENDING_REVIEW, CHANGES_REQUESTED
    * ─────────────────────────────────────────────────────────────────────
    * Statistics (computed from Catalog/Booking services)
    * ─────────────────────────────────────────────────────────────────────
@@ -5866,8 +5833,85 @@ export type Organization = {
   totalEvents: Maybe<Scalars['Int']['output']>;
   totalRevenue: Maybe<Scalars['BigDecimal']['output']>;
   totalTicketsSold: Maybe<Scalars['Int']['output']>;
+  /**
+   * ─────────────────────────────────────────────────────────────────────
+   * Organization Type & Status
+   * ─────────────────────────────────────────────────────────────────────
+   */
+  type: OrganizationType;
   updatedAt: Maybe<Scalars['DateTime']['output']>;
+  /**
+   * ─────────────────────────────────────────────────────────────────────
+   * Verification Documents
+   * ─────────────────────────────────────────────────────────────────────
+   */
+  verificationDocuments: Maybe<Array<VerificationDocument>>;
+  /**
+   * ─────────────────────────────────────────────────────────────────────
+   * Verification Flags
+   * ─────────────────────────────────────────────────────────────────────
+   */
   verified: Scalars['Boolean']['output'];
+  /**  Payout account verified */
+  verifiedAt: Maybe<Scalars['DateTime']['output']>;
+  verifiedBy: Maybe<User>;
+  website: Maybe<Scalars['String']['output']>;
+  /**  PACRA number in Zambia */
+  yearEstablished: Maybe<Scalars['Int']['output']>;
+};
+
+/**  Organization Application Cursor Pagination (Approval Queue) */
+export type OrganizationApplicationConnection = {
+  __typename: 'OrganizationApplicationConnection';
+  edges: Array<OrganizationApplicationEdge>;
+  pageInfo: PageInfo;
+  totalCount: Maybe<Scalars['Int']['output']>;
+};
+
+export type OrganizationApplicationEdge = {
+  __typename: 'OrganizationApplicationEdge';
+  cursor: Scalars['String']['output'];
+  node: Organization;
+};
+
+/**
+ * Input for organization application (becoming an organizer)
+ * Business details required - NO registration/tax details needed
+ */
+export type OrganizationApplicationInput = {
+  /**  URL to organization banner image */
+  bannerUrl: InputMaybe<Scalars['String']['input']>;
+  /**  Business contact email */
+  businessEmail: InputMaybe<Scalars['String']['input']>;
+  /**  Business contact phone number */
+  businessPhone: InputMaybe<Scalars['String']['input']>;
+  /**  City */
+  city: InputMaybe<Scalars['String']['input']>;
+  /**  Country (defaults to Zambia) */
+  country: InputMaybe<Scalars['String']['input']>;
+  /**  Description of the organization */
+  description: InputMaybe<Scalars['String']['input']>;
+  /**  URL to organization logo */
+  logoUrl: InputMaybe<Scalars['String']['input']>;
+  /**  Organization/business name (required) */
+  name: Scalars['String']['input'];
+  /**  Province/State */
+  province: InputMaybe<Scalars['String']['input']>;
+  /**  Social media links */
+  socialLinks: InputMaybe<SocialLinksInput>;
+  /**  Short tagline */
+  tagline: InputMaybe<Scalars['String']['input']>;
+  /**  Organization type: INDIVIDUAL or BUSINESS */
+  type: InputMaybe<OrganizationType>;
+  /**  Company website URL */
+  website: InputMaybe<Scalars['String']['input']>;
+};
+
+/**  Organization Application Pagination (Approval Queue) */
+export type OrganizationApplicationOffsetPage = {
+  __typename: 'OrganizationApplicationOffsetPage';
+  content: Array<Organization>;
+  pageInfo: PageInfo;
 };
 
 /**  Organization cursor pagination */
@@ -6077,162 +6121,41 @@ export type OrganizationSettings = {
  * ============================================================================
  * SECTION 4: ENUMS - ORGANIZATION & TEAM
  * ============================================================================
- * Organization status (tenant status)
+ * Organization status in approval workflow
+ * APPROVAL-BASED ONBOARDING:
+ * 1. User applies → DRAFT
+ * 2. User fills details and submits → PENDING_REVIEW
+ * 3. Admin: APPROVED / CHANGES_REQUESTED / REJECTED
+ * 4. User can create draft events during approval process
  */
 export type OrganizationStatus =
+  /**
+   * Application rejected
+   * Operational statuses (post-approval)
+   */
   | 'ACTIVE'
+  /**  Admin requested changes */
+  | 'APPROVED'
+  /**  Application submitted for admin review */
+  | 'CHANGES_REQUESTED'
+  /**  Approval workflow statuses */
+  | 'DRAFT'
   /**  Suspended by admin */
   | 'INACTIVE'
   /**  Deactivated by owner */
   | 'PENDING_DELETION'
-  /**  Organization is active */
+  /**  Initial status - application in progress */
+  | 'PENDING_REVIEW'
+  /**  Application approved - can publish events */
+  | 'REJECTED'
+  /**  Organization is active (same as APPROVED) */
   | 'SUSPENDED';
 
-/**  OrganizerProfile/Application cursor pagination */
-export type OrganizerApplicationConnection = {
-  __typename: 'OrganizerApplicationConnection';
-  edges: Array<OrganizerApplicationEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type OrganizerApplicationEdge = {
-  __typename: 'OrganizerApplicationEdge';
-  cursor: Scalars['String']['output'];
-  node: OrganizerProfile;
-};
-
-export type OrganizerApplicationOffsetPage = {
-  __typename: 'OrganizerApplicationOffsetPage';
-  content: Array<OrganizerProfile>;
-  pageInfo: PageInfo;
-};
-
-/**  Organizer responses */
-export type OrganizerMutationResponse = {
-  __typename: 'OrganizerMutationResponse';
-  message: Maybe<Scalars['String']['output']>;
-  organization: Maybe<Organization>;
-  organizerProfile: Maybe<OrganizerProfile>;
-  success: Scalars['Boolean']['output'];
-};
-
-/**
- * NOTE: userId IS the Keycloak user ID (no separate keycloakUserId needed)
- * NOTE: logoUrl/bannerUrl are in Organization (public branding), not here
- * NOTE: To get Organization, query via Organization.organizerProfileId
- * ORGANIZER/ADMIN - Organizer profile management and approval workflow
- */
-export type OrganizerProfile = {
-  __typename: 'OrganizerProfile';
-  /**  When application was submitted */
-  approvedAt: Maybe<Scalars['DateTime']['output']>;
-  averageRating: Maybe<Scalars['Float']['output']>;
-  /**  All documents verified */
-  bankVerified: Scalars['Boolean']['output'];
-  bannerUrl: Maybe<Scalars['String']['output']>;
-  businessAddress: Maybe<Scalars['String']['output']>;
-  businessEmail: Maybe<Scalars['String']['output']>;
-  /**
-   * LLC, Sole Proprietor, etc.
-   * ─────────────────────────────────────────────────────────────────────
-   * Contact Information
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  businessPhone: Maybe<Scalars['String']['output']>;
-  /**  TPIN in Zambia */
-  businessRegistrationNumber: Maybe<Scalars['String']['output']>;
-  /**  PACRA number */
-  businessType: Maybe<Scalars['String']['output']>;
-  city: Maybe<Scalars['String']['output']>;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Platform Settings (set by admin)
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  commissionRate: Maybe<Scalars['Float']['output']>;
-  companyDescription: Maybe<Scalars['String']['output']>;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Business Information
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  companyName: Maybe<Scalars['String']['output']>;
-  country: Maybe<Scalars['String']['output']>;
-  /**  When application was approved */
-  createdAt: Scalars['DateTime']['output'];
-  /**  Business is verified */
-  documentsVerified: Scalars['Boolean']['output'];
-  id: Scalars['ID']['output'];
-  logoUrl: Maybe<Scalars['String']['output']>;
-  /**  Platform commission percentage */
-  payoutSchedule: Maybe<Scalars['String']['output']>;
-  postalCode: Maybe<Scalars['String']['output']>;
-  province: Maybe<Scalars['String']['output']>;
-  reviewNotes: Maybe<Scalars['String']['output']>;
-  reviewedAt: Maybe<Scalars['DateTime']['output']>;
-  reviewedBy: Maybe<User>;
-  /**
-   * Bank account verified
-   * ─────────────────────────────────────────────────────────────────────
-   * Review Information
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  reviewedById: Maybe<Scalars['String']['output']>;
-  /**
-   * DAILY, WEEKLY, MONTHLY
-   * ─────────────────────────────────────────────────────────────────────
-   * Application Status
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  status: OrganizerStatus;
-  statusReason: Maybe<Scalars['String']['output']>;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Audit Fields
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  submittedAt: Maybe<Scalars['DateTime']['output']>;
-  tagline: Maybe<Scalars['String']['output']>;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Business Registration (KYB)
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  taxId: Maybe<Scalars['String']['output']>;
-  /**
-   * Internal notes from reviewer
-   * ─────────────────────────────────────────────────────────────────────
-   * NOTE: To get the linked Organization, use:
-   * query { organizationByOrganizerProfileId(profileId: "...") }
-   * This avoids bidirectional references and keeps data consistency
-   * ─────────────────────────────────────────────────────────────────────
-   * ─────────────────────────────────────────────────────────────────────
-   * Statistics
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  totalEvents: Maybe<Scalars['Int']['output']>;
-  totalRevenue: Maybe<Scalars['BigDecimal']['output']>;
-  totalTicketsSold: Maybe<Scalars['Int']['output']>;
-  updatedAt: Maybe<Scalars['DateTime']['output']>;
-  /**  Keycloak user ID */
-  user: Maybe<User>;
-  userId: Scalars['String']['output'];
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Verification Documents
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  verificationDocuments: Maybe<Array<VerificationDocument>>;
-  /**
-   * Reason for rejection/changes
-   * ─────────────────────────────────────────────────────────────────────
-   * Verification Flags
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  verified: Scalars['Boolean']['output'];
-  website: Maybe<Scalars['String']['output']>;
-};
+/**  Organization type */
+export type OrganizationType =
+  /**  Sole proprietor / personal account */
+  | 'BUSINESS'
+  | 'INDIVIDUAL';
 
 /**
  * ============================================================================
@@ -6255,22 +6178,6 @@ export type OrganizerStatistics = {
   totalReviews: Scalars['Int']['output'];
   totalTicketsSold: Scalars['Int']['output'];
 };
-
-/**  Organizer application status (staged approval) */
-export type OrganizerStatus =
-  /**  Admin requested modifications */
-  | 'APPROVED'
-  /**  Documents submitted, awaiting admin review */
-  | 'CHANGES_REQUESTED'
-  | 'DRAFT'
-  /**  Just applied, filling profile */
-  | 'PENDING_DOCUMENTS'
-  /**  Profile complete, awaiting document upload */
-  | 'PENDING_REVIEW'
-  /**  Approved - can create Organization */
-  | 'REJECTED'
-  /**  Application rejected */
-  | 'SUSPENDED';
 
 /**
  * ============================================================================
@@ -6542,6 +6449,45 @@ export type PaymentMethod =
   | 'CARD'
   | 'MOBILE_MONEY';
 
+/**
+ * Bank account details for payout configuration (embedded type)
+ * NOTE: Full BankAccount entity is owned by Booking Service
+ */
+export type PayoutBankDetails = {
+  __typename: 'PayoutBankDetails';
+  /**  Last 4 digits only */
+  accountHolderName: Maybe<Scalars['String']['output']>;
+  accountNumber: Maybe<Scalars['String']['output']>;
+  accountType: Maybe<Scalars['String']['output']>;
+  bankCode: Maybe<Scalars['String']['output']>;
+  bankName: Maybe<Scalars['String']['output']>;
+  branchCode: Maybe<Scalars['String']['output']>;
+  /**  SWIFT code */
+  branchName: Maybe<Scalars['String']['output']>;
+  /**  Masked for display */
+  maskedAccountNumber: Maybe<Scalars['String']['output']>;
+  /**  CHECKING, SAVINGS, BUSINESS */
+  verified: Scalars['Boolean']['output'];
+};
+
+/**  Payout configuration for an organization */
+export type PayoutConfig = {
+  __typename: 'PayoutConfig';
+  /**  Minimum payout in ZMW */
+  bankAccount: Maybe<PayoutBankDetails>;
+  /**  Has a configured payout method */
+  canProcessPayouts: Scalars['Boolean']['output'];
+  commissionRate: Maybe<Scalars['Float']['output']>;
+  /**  Payout config verified */
+  isConfigured: Scalars['Boolean']['output'];
+  /**  Platform commission (e.g., 0.05 = 5%) */
+  minimumPayoutAmount: Maybe<Scalars['Float']['output']>;
+  mobileMoneyAccount: Maybe<MobileMoneyAccount>;
+  preferredMethod: Maybe<PayoutMethod>;
+  schedule: Maybe<PayoutSchedule>;
+  verified: Scalars['Boolean']['output'];
+};
+
 /**  Payout issue types for recovery operations */
 export type PayoutIssueType =
   | 'BANK_REJECTED'
@@ -6577,7 +6523,9 @@ export type PayoutIssueTypeStats = {
 /**  Payout method types */
 export type PayoutMethod =
   | 'BANK_TRANSFER'
+  /**  Mobile money (MTN, Airtel, Zamtel) */
   | 'CHEQUE'
+  /**  Bank transfer to verified account */
   | 'MOBILE_MONEY';
 
 /**  ADMIN - Payout recovery summary for admin dashboard */
@@ -6755,6 +6703,14 @@ export type PayoutReviewStatus =
   | 'REVIEWED'
   /**  Waiting for review */
   | 'UNDER_REVIEW';
+
+/**  Payout schedule */
+export type PayoutSchedule =
+  | 'BIWEEKLY'
+  | 'DAILY'
+  | 'MANUAL'
+  | 'MONTHLY'
+  | 'WEEKLY';
 
 /**
  * ============================================================================
@@ -7465,14 +7421,6 @@ export type Query = {
   myOrganizationRole: Maybe<OrganizationRole>;
   /**  ORGANIZER - Get organizations I belong to (for dashboard switcher) */
   myOrganizations: Array<Organization>;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Organizer Profile Queries
-   * ORGANIZER - Own profile, ADMIN - All profiles and approval queue
-   * ─────────────────────────────────────────────────────────────────────
-   * ORGANIZER - Get my organizer profile
-   */
-  myOrganizerProfile: Maybe<OrganizerProfile>;
   /**  ORGANIZER - Get organization I own */
   myOwnedOrganization: Maybe<Organization>;
   /**  ORGANIZER - Get my pending invitations (invites sent to me) */
@@ -7493,8 +7441,19 @@ export type Query = {
    * ORGANIZER/ADMIN - Get organization by ID
    */
   organization: Maybe<Organization>;
-  /**  ORGANIZER/ADMIN - Get organization by organizer profile ID */
-  organizationByOrganizerProfileId: Maybe<Organization>;
+  /**  ADMIN - Get organization applications with cursor pagination */
+  organizationApplicationsCursorPagination: OrganizationApplicationConnection;
+  /**
+   * ─────────────────────────────────────────────────────────────────────
+   * ─────────────────────────────────────────────────────────────────────
+   * Organization Queries (Approval Queue)
+   * ADMIN - Organization approval queue and management
+   * ─────────────────────────────────────────────────────────────────────
+   * ADMIN - Get organization applications with offset pagination for admin queue
+   */
+  organizationApplicationsOffsetPagination: OrganizationApplicationOffsetPage;
+  /**  ORGANIZER - Get organization by owner ID */
+  organizationByOwnerId: Maybe<Organization>;
   /**  ORGANIZER/ADMIN - Get organization by slug */
   organizationBySlug: Maybe<Organization>;
   /**  ADMIN - Count organizations by status */
@@ -7515,14 +7474,6 @@ export type Query = {
   organizationsCursorPagination: OrganizationConnection;
   /**  ADMIN - Search organizations with offset pagination for admin tables */
   organizationsOffsetPagination: OrganizationOffsetPage;
-  /**  ADMIN - Get organizer applications with cursor pagination */
-  organizerApplicationsCursorPagination: OrganizerApplicationConnection;
-  /**  ADMIN - Get organizer applications with offset pagination for admin queue */
-  organizerApplicationsOffsetPagination: OrganizerApplicationOffsetPage;
-  /**  ADMIN - Get organizer profile by ID */
-  organizerProfile: Maybe<OrganizerProfile>;
-  /**  ADMIN - Get organizer profile by user ID */
-  organizerProfileByUserId: Maybe<OrganizerProfile>;
   organizerPromoCodes: Array<PromoCode>;
   /**
    * ─────────────────────────────────────────────────────────────────────
@@ -7850,7 +7801,7 @@ export type Query = {
    * Get verification document by ID
    */
   verificationDocument: Maybe<VerificationDocument>;
-  /**  ADMIN - Get documents for organizer profile */
+  /**  ADMIN - Get documents for organization */
   verificationDocuments: Array<VerificationDocument>;
 };
 
@@ -9411,8 +9362,32 @@ export type QueryOrganizationArgs = {
  * Tags indicate which clients should include these queries in their operations
  * ============================================================================
  */
-export type QueryOrganizationByOrganizerProfileIdArgs = {
-  profileId: Scalars['ID']['input'];
+export type QueryOrganizationApplicationsCursorPaginationArgs = {
+  pagination: InputMaybe<CursorPaginationInput>;
+  status: InputMaybe<OrganizationStatus>;
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 15: ROOT QUERY TYPE
+ * Tags indicate which clients should include these queries in their operations
+ * ============================================================================
+ */
+export type QueryOrganizationApplicationsOffsetPaginationArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
+  status: InputMaybe<OrganizationStatus>;
+};
+
+
+/**
+ * ============================================================================
+ * SECTION 15: ROOT QUERY TYPE
+ * Tags indicate which clients should include these queries in their operations
+ * ============================================================================
+ */
+export type QueryOrganizationByOwnerIdArgs = {
+  ownerId: Scalars['ID']['input'];
 };
 
 
@@ -9503,52 +9478,6 @@ export type QueryOrganizationsOffsetPaginationArgs = {
   search: InputMaybe<Scalars['String']['input']>;
   status: InputMaybe<OrganizationStatus>;
   verified: InputMaybe<Scalars['Boolean']['input']>;
-};
-
-
-/**
- * ============================================================================
- * SECTION 15: ROOT QUERY TYPE
- * Tags indicate which clients should include these queries in their operations
- * ============================================================================
- */
-export type QueryOrganizerApplicationsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  status: InputMaybe<OrganizerStatus>;
-};
-
-
-/**
- * ============================================================================
- * SECTION 15: ROOT QUERY TYPE
- * Tags indicate which clients should include these queries in their operations
- * ============================================================================
- */
-export type QueryOrganizerApplicationsOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-  status: InputMaybe<OrganizerStatus>;
-};
-
-
-/**
- * ============================================================================
- * SECTION 15: ROOT QUERY TYPE
- * Tags indicate which clients should include these queries in their operations
- * ============================================================================
- */
-export type QueryOrganizerProfileArgs = {
-  id: Scalars['ID']['input'];
-};
-
-
-/**
- * ============================================================================
- * SECTION 15: ROOT QUERY TYPE
- * Tags indicate which clients should include these queries in their operations
- * ============================================================================
- */
-export type QueryOrganizerProfileByUserIdArgs = {
-  userId: Scalars['ID']['input'];
 };
 
 
@@ -10905,7 +10834,7 @@ export type QueryVerificationDocumentArgs = {
  * ============================================================================
  */
 export type QueryVerificationDocumentsArgs = {
-  organizerProfileId: Scalars['ID']['input'];
+  organizationId: Scalars['ID']['input'];
   status: InputMaybe<DocumentStatus>;
 };
 
@@ -11256,8 +11185,8 @@ export type RegisterInput = {
   username: InputMaybe<Scalars['String']['input']>;
 };
 
-export type RejectOrganizerInput = {
-  organizerProfileId: Scalars['ID']['input'];
+export type RejectOrganizationInput = {
+  organizationId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
   reviewNotes: InputMaybe<Scalars['String']['input']>;
 };
@@ -11321,9 +11250,9 @@ export type RequestAccountDeletionInput = {
   reason: InputMaybe<Scalars['String']['input']>;
 };
 
-export type RequestOrganizerChangesInput = {
+export type RequestOrganizationChangesInput = {
   changesRequired: Scalars['String']['input'];
-  organizerProfileId: Scalars['ID']['input'];
+  organizationId: Scalars['ID']['input'];
   reviewNotes: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -11480,6 +11409,11 @@ export type SocialConnection = {
   providerId: Scalars['String']['output'];
 };
 
+/**
+ * ============================================================================
+ * SECTION 8: SUPPORTING TYPES - SOCIAL LINKS & ADDRESS
+ * ============================================================================
+ */
 export type SocialLinks = {
   __typename: 'SocialLinks';
   facebook: Maybe<Scalars['String']['output']>;
@@ -11490,6 +11424,11 @@ export type SocialLinks = {
   youtube: Maybe<Scalars['String']['output']>;
 };
 
+/**
+ * ============================================================================
+ * SECTION 16: INPUT TYPES - SUPPORTING
+ * ============================================================================
+ */
 export type SocialLinksInput = {
   facebook: InputMaybe<Scalars['String']['input']>;
   instagram: InputMaybe<Scalars['String']['input']>;
@@ -11556,12 +11495,8 @@ export type StatusTransition = {
   transitionedBy: Maybe<Scalars['String']['output']>;
 };
 
-export type SubmitOrganizerApplicationInput = {
-  organizerProfileId: Scalars['ID']['input'];
-};
-
-export type SuspendOrganizerInput = {
-  organizerProfileId: Scalars['ID']['input'];
+export type SuspendOrganizationInput = {
+  organizationId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
 };
 
@@ -12302,27 +12237,6 @@ export type UpdateOrganizationSettingsInput = {
   requireEventApproval: InputMaybe<Scalars['Boolean']['input']>;
 };
 
-export type UpdateOrganizerProfileInput = {
-  bannerUrl: InputMaybe<Scalars['String']['input']>;
-  businessAddress: InputMaybe<Scalars['String']['input']>;
-  businessEmail: InputMaybe<Scalars['String']['input']>;
-  /**  Contact */
-  businessPhone: InputMaybe<Scalars['String']['input']>;
-  businessRegistrationNumber: InputMaybe<Scalars['String']['input']>;
-  businessType: InputMaybe<Scalars['String']['input']>;
-  city: InputMaybe<Scalars['String']['input']>;
-  companyDescription: InputMaybe<Scalars['String']['input']>;
-  companyName: InputMaybe<Scalars['String']['input']>;
-  country: InputMaybe<Scalars['String']['input']>;
-  logoUrl: InputMaybe<Scalars['String']['input']>;
-  postalCode: InputMaybe<Scalars['String']['input']>;
-  province: InputMaybe<Scalars['String']['input']>;
-  tagline: InputMaybe<Scalars['String']['input']>;
-  /**  Business registration */
-  taxId: InputMaybe<Scalars['String']['input']>;
-  website: InputMaybe<Scalars['String']['input']>;
-};
-
 export type UpdatePlatformConfigurationInput = {
   adminNotificationChannel: InputMaybe<ApprovalNotificationChannel>;
   allowSelfApproval: InputMaybe<Scalars['Boolean']['input']>;
@@ -12395,7 +12309,7 @@ export type UploadVerificationDocumentInput = {
   fileName: InputMaybe<Scalars['String']['input']>;
   fileSize: InputMaybe<Scalars['Int']['input']>;
   mimeType: InputMaybe<Scalars['String']['input']>;
-  organizerProfileId: Scalars['ID']['input'];
+  organizationId: Scalars['ID']['input'];
 };
 
 export type UseTicketMutationResponse = {
@@ -12485,13 +12399,6 @@ export type User = {
    * ─────────────────────────────────────────────────────────────────────
    */
   organizationMemberships: Maybe<Array<OrganizationMember>>;
-  /**
-   * ─────────────────────────────────────────────────────────────────────
-   * Organizer Profile (if ORGANIZER)
-   * ORGANIZER/ADMIN - Organizer profile access
-   * ─────────────────────────────────────────────────────────────────────
-   */
-  organizerProfile: Maybe<OrganizerProfile>;
   /**
    * Computed: firstName + lastName
    * ADMIN - Phone number is PII

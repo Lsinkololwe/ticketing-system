@@ -71,7 +71,7 @@ This guide provides comprehensive documentation for the Apollo Federation setup 
 
 | Subgraph | Port | Owned Entities |
 |----------|------|----------------|
-| **Identity** | 8083 | User, OrganizerProfile, Organization, OrganizationMember, Role, Permission |
+| **Identity** | 8083 | User, Organization, Organization, OrganizationMember, Role, Permission |
 | **Catalog** | 8085 | Event, Location, EventCategory, Province, City, TicketTier, VirtualQueue |
 | **Booking** | 8082 | Ticket, FinancialTransaction, EventEscrowAccount, RefundRequest, PromoCode |
 

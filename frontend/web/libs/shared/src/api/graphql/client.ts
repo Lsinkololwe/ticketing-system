@@ -172,7 +172,7 @@ export const createGraphQLClient = (config: GraphQLClientConfig) => {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      'apollographql-client-name': 'event-ticketing-admin',
+      'apollographql-client-name': 'myticketzm-admin',
       'apollographql-client-version': '1.0.0',
       ...(config?.headers || {}),
     },

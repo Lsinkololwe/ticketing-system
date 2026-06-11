@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8084}"
-REALM="${KEYCLOAK_REALM:-event-ticketing}"
+REALM="${KEYCLOAK_REALM:-myticketzm}"
 ADMIN_USER="${KEYCLOAK_ADMIN:-admin}"
 ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 

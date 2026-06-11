@@ -164,8 +164,8 @@ The Admin Dashboard is a Next.js 14+ application serving as the platform adminis
 
 | Operation | Frontend Implementation | Backend GraphQL | Service | Status |
 |-----------|------------------------|-----------------|---------|--------|
-| **READ (Profile)** | `useOrganizerProfileAdmin()` | `organizerProfile(id)` | Identity | ✅ |
-| **READ (By User)** | `useOrganizerProfileByUserIdAdmin()` | `organizerProfileByUserId(userId)` | Identity | ✅ |
+| **READ (Profile)** | `useOrganizationAdmin()` | `organizerProfile(id)` | Identity | ✅ |
+| **READ (By User)** | `useOrganizationByUserIdAdmin()` | `organizerProfileByUserId(userId)` | Identity | ✅ |
 | **READ (Applications)** | `useOrganizerApplicationsAdmin()` | `organizerApplicationsOffsetPagination(...)` | Identity | ✅ |
 | **READ (Organizations)** | `useOrganizationsAdmin()` | `organizationsOffsetPagination(...)` | Identity | ✅ |
 | **APPROVE** | `useApproveOrganizerAdmin()` | `approveOrganizer(profileId)` | Identity | ✅ |

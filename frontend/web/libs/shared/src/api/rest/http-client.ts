@@ -9,11 +9,20 @@
  */
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
-import { ApiError } from './types/admin-api';
 import { redirectToLogout } from '../../auth/server/token-service';
 
 // Backend API base URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+
+/**
+ * API Error type
+ */
+export interface ApiError {
+  code: string;
+  message: string;
+  details?: unknown;
+  timestamp: string;
+}
 
 /**
  * Type for synchronous token getter function

@@ -1154,6 +1154,15 @@ input EventFilterInput {
     searchQuery: String
 }
 
+# Filter input for organizer's own events (simpler than EventFilterInput)
+input OrganizerEventFilterInput {
+    status: EventStatus
+    statuses: [EventStatus!]
+    searchQuery: String
+    eventDateAfter: DateTime
+    eventDateBefore: DateTime
+}
+
 input CreateEventInput {
     title: String!
     description: String!
@@ -1472,6 +1481,23 @@ type Query {
     featuredEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
     freeEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
     eventsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+
+    # ========================================================================
+    # ORGANIZER SELF-SERVICE EVENT QUERIES
+    # These queries extract organizerId from JWT (OWASP A01:2021 compliance)
+    # ========================================================================
+
+    # Get current organizer's events with offset pagination
+    myEventsOffsetPagination(filter: OrganizerEventFilterInput, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+    # Get current organizer's draft events
+    myDraftEventsOffsetPagination(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+    # Get current organizer's event count
+    myEventCount: Int! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+    # Get current organizer's event count by status
+    myEventCountByStatus(status: EventStatus!): Int! @auth(requires: ORGANIZER) @tag(name: "organizer")
 
     # ========================================================================
     # EVENT COUNT QUERIES (ADMIN - Dashboard statistics)

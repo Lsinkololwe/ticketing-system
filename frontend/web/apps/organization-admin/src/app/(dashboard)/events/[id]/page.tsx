@@ -36,7 +36,11 @@ import {
   Download,
 } from 'iconoir-react';
 import { PageHeader, StatCard, StatGrid } from '@/components/ui';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  canEditEvents,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
@@ -128,14 +132,17 @@ const statusConfig: Record<EventStatus, { color: string; bg: string; label: stri
 // =============================================================================
 
 export default function EventDetailPage() {
-  const { can } = useOrganization();
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
+  const { status: orgStatus } = useMyOrganization({ skip: !isAuthenticated });
+
   const [activeTab, setActiveTab] = useState('overview');
 
   // In real app, fetch event by ID
   const event = mockEvent;
   const status = statusConfig[event.status];
 
-  const canEdit = can('createEvents');
+  const canEdit = canEditEvents(orgStatus);
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {

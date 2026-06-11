@@ -644,7 +644,7 @@ These are not missing features but naming inconsistencies that should be address
 | `EventTicketStatisticsDto` | `EventTicketStatistics` | Remove alias, use canonical name |
 | `TicketValidationMutationResponse` | `TicketMutationResponse` | Remove alias OR add dedicated type if validation returns extra fields |
 | `BulkMutationResponse` | `BulkOperationResponse` | Remove alias, use canonical name |
-| `OrganizerProfileOffsetPage` | `OrganizerApplicationOffsetPage` | Rename backend type to `OrganizerProfileOffsetPage` for clarity |
+| `OrganizationOffsetPage` | `OrganizerApplicationOffsetPage` | Rename backend type to `OrganizationOffsetPage` for clarity |
 | `PaginationInput` | `OffsetPaginationInput` | Remove alias, use canonical name |
 | `EscrowAccount` | `EventEscrowAccount` | Consider if a general `EscrowAccount` type is needed |
 | `LocationDto` | `Location` | Remove alias, use canonical name |

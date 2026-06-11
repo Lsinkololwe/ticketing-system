@@ -2,9 +2,9 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Verification Documents Schema - OWASP Compliant",
-    "description": "KYB documents uploaded by organizers for verification",
+    "description": "KYB documents uploaded by organizations for verification",
     "required": [
-      "organizerProfileId",
+      "organizationId",
       "documentType",
       "documentUrl",
       "status",
@@ -14,7 +14,7 @@
       "_id": {
         "bsonType": "objectId"
       },
-      "organizerProfileId": {
+      "organizationId": {
         "bsonType": "string",
         "pattern": "^[a-fA-F0-9]{24}$",
         "description": "OWASP A03 - ObjectId pattern validation"

@@ -45,7 +45,7 @@ public class PayoutConfig {
     /**
      * Bank account for payouts (if preferredMethod = BANK_TRANSFER)
      */
-    private BankAccount bankAccount;
+    private PayoutBankDetails bankAccount;
 
     /**
      * Mobile money account for payouts (if preferredMethod = MOBILE_MONEY)

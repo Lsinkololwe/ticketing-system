@@ -21,11 +21,28 @@ import { useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Flex, Text, Button, Heading, Card } from '@radix-ui/themes';
 import { WarningTriangle, Clock, Xmark, ArrowRight } from 'iconoir-react';
-import { useOrganization, OrganizerProfileStatus } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  isApproved as checkIsApproved,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
 // =============================================================================
+
+// Organization status values (using string to handle stale codegen)
+// TODO: Remove when codegen is regenerated with running backend services
+type OrganizationStatusString =
+  | 'DRAFT'
+  | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'ACTIVE'
+  | 'REJECTED'
+  | 'CHANGES_REQUESTED'
+  | 'SUSPENDED'
+  | 'INACTIVE'
+  | 'PENDING_DELETION';
 
 interface RequireApprovalProps {
   children: ReactNode;
@@ -40,72 +57,96 @@ interface RequireApprovalProps {
 // =============================================================================
 
 interface StatusCardProps {
-  status: OrganizerProfileStatus;
+  status: OrganizationStatusString;
 }
+
+const statusConfig: Record<
+  string,
+  {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    actionLabel: string;
+    actionHref: string;
+    color: string;
+  }
+> = {
+  DRAFT: {
+    icon: <Clock style={{ width: 32, height: 32 }} />,
+    title: 'Application Not Started',
+    description: 'You need to complete your organizer application to access the dashboard.',
+    actionLabel: 'Start Application',
+    actionHref: '/apply/business-info',
+    color: '#94A3B8',
+  },
+  PENDING_REVIEW: {
+    icon: <Clock style={{ width: 32, height: 32 }} />,
+    title: 'Application Under Review',
+    description: 'Your application is being reviewed. This typically takes 1-2 business days.',
+    actionLabel: 'View Status',
+    actionHref: '/apply/status',
+    color: '#3B82F6',
+  },
+  APPROVED: {
+    icon: <Clock style={{ width: 32, height: 32 }} />,
+    title: 'Approved',
+    description: 'Your application has been approved.',
+    actionLabel: 'Go to Dashboard',
+    actionHref: '/dashboard',
+    color: '#10B981',
+  },
+  ACTIVE: {
+    icon: <Clock style={{ width: 32, height: 32 }} />,
+    title: 'Active',
+    description: 'Your organization is active.',
+    actionLabel: 'Go to Dashboard',
+    actionHref: '/dashboard',
+    color: '#10B981',
+  },
+  REJECTED: {
+    icon: <Xmark style={{ width: 32, height: 32 }} />,
+    title: 'Application Rejected',
+    description: 'Unfortunately, your application was not approved. Please contact support for more information.',
+    actionLabel: 'View Details',
+    actionHref: '/apply/status',
+    color: '#EF4444',
+  },
+  CHANGES_REQUESTED: {
+    icon: <WarningTriangle style={{ width: 32, height: 32 }} />,
+    title: 'Changes Requested',
+    description: 'We need additional information or corrections to your application.',
+    actionLabel: 'Update Application',
+    actionHref: '/apply/business-info',
+    color: '#F59E0B',
+  },
+  SUSPENDED: {
+    icon: <Xmark style={{ width: 32, height: 32 }} />,
+    title: 'Account Suspended',
+    description: 'Your organization has been suspended. Please contact support for more information.',
+    actionLabel: 'Contact Support',
+    actionHref: '/apply/status',
+    color: '#EF4444',
+  },
+  INACTIVE: {
+    icon: <Clock style={{ width: 32, height: 32 }} />,
+    title: 'Account Inactive',
+    description: 'Your organization is currently inactive.',
+    actionLabel: 'View Status',
+    actionHref: '/apply/status',
+    color: '#94A3B8',
+  },
+  PENDING_DELETION: {
+    icon: <WarningTriangle style={{ width: 32, height: 32 }} />,
+    title: 'Pending Deletion',
+    description: 'Your organization is scheduled for deletion.',
+    actionLabel: 'Contact Support',
+    actionHref: '/apply/status',
+    color: '#F59E0B',
+  },
+};
 
 function StatusCard({ status }: StatusCardProps) {
   const router = useRouter();
-
-  const statusConfig: Record<
-    OrganizerProfileStatus,
-    {
-      icon: React.ReactNode;
-      title: string;
-      description: string;
-      actionLabel: string;
-      actionHref: string;
-      color: string;
-    }
-  > = {
-    DRAFT: {
-      icon: <Clock style={{ width: 32, height: 32 }} />,
-      title: 'Application Not Started',
-      description: 'You need to complete your organizer application to access the dashboard.',
-      actionLabel: 'Start Application',
-      actionHref: '/apply',
-      color: '#94A3B8',
-    },
-    PENDING_DOCUMENTS: {
-      icon: <Clock style={{ width: 32, height: 32 }} />,
-      title: 'Documents Required',
-      description: 'Please upload the required documents to continue with your application.',
-      actionLabel: 'Upload Documents',
-      actionHref: '/apply/documents',
-      color: '#F59E0B',
-    },
-    PENDING_REVIEW: {
-      icon: <Clock style={{ width: 32, height: 32 }} />,
-      title: 'Application Under Review',
-      description: 'Your application is being reviewed. This typically takes 1-2 business days.',
-      actionLabel: 'View Status',
-      actionHref: '/status',
-      color: '#3B82F6',
-    },
-    APPROVED: {
-      icon: <Clock style={{ width: 32, height: 32 }} />,
-      title: 'Approved',
-      description: 'Your application has been approved.',
-      actionLabel: 'Go to Dashboard',
-      actionHref: '/dashboard',
-      color: '#10B981',
-    },
-    REJECTED: {
-      icon: <Xmark style={{ width: 32, height: 32 }} />,
-      title: 'Application Rejected',
-      description: 'Unfortunately, your application was not approved. Please contact support for more information.',
-      actionLabel: 'View Details',
-      actionHref: '/status',
-      color: '#EF4444',
-    },
-    CHANGES_REQUESTED: {
-      icon: <WarningTriangle style={{ width: 32, height: 32 }} />,
-      title: 'Changes Requested',
-      description: 'We need additional information or corrections to your application.',
-      actionLabel: 'Update Application',
-      actionHref: '/apply/business-info',
-      color: '#F59E0B',
-    },
-  };
 
   const config = statusConfig[status];
 
@@ -249,15 +290,23 @@ export function RequireApproval({
   allowPending = false,
 }: RequireApprovalProps) {
   const router = useRouter();
-  const { organizerProfile, isApproved, isLoading, error } = useOrganization();
+  const { data: session, isPending: isSessionPending } = useSession();
+  const isAuthenticated = !!session?.user;
+
+  const { organization, status, loading, error } = useMyOrganization({
+    skip: !isAuthenticated,
+  });
+
+  const isLoading = isSessionPending || loading;
+  const isApproved = checkIsApproved(status);
 
   // Handle redirects based on status
   useEffect(() => {
     if (isLoading) return;
 
-    // No profile - redirect to apply
-    if (!organizerProfile) {
-      router.replace('/apply');
+    // No organization - redirect to welcome
+    if (!organization) {
+      router.replace('/welcome');
       return;
     }
 
@@ -265,25 +314,24 @@ export function RequireApproval({
     if (allowPending) return;
 
     // Check status and redirect accordingly
-    const { status } = organizerProfile;
-
-    switch (status) {
+    // Cast to string to handle stale codegen types
+    const statusStr = status as string;
+    switch (statusStr) {
       case 'DRAFT':
-        router.replace('/apply');
-        break;
-      case 'PENDING_DOCUMENTS':
-        router.replace('/apply/documents');
+      case 'CHANGES_REQUESTED':
+        router.replace('/apply/business-info');
         break;
       case 'PENDING_REVIEW':
       case 'REJECTED':
-      case 'CHANGES_REQUESTED':
-        router.replace('/status');
+      case 'SUSPENDED':
+        router.replace('/apply/status');
         break;
       case 'APPROVED':
+      case 'ACTIVE':
         // Allow access
         break;
     }
-  }, [organizerProfile, isLoading, allowPending, router]);
+  }, [organization, status, isLoading, allowPending, router]);
 
   // Show loading state
   if (isLoading) {
@@ -320,7 +368,7 @@ export function RequireApproval({
             Something went wrong
           </Heading>
           <Text size="2" style={{ color: '#94A3B8', display: 'block', marginBottom: '24px' }}>
-            {error}
+            {error?.message || 'An unexpected error occurred'}
           </Text>
           <Button
             variant="outline"
@@ -334,8 +382,8 @@ export function RequireApproval({
     );
   }
 
-  // No profile - show redirect message
-  if (!organizerProfile) {
+  // No organization - show redirect message
+  if (!organization) {
     return <StatusCard status="DRAFT" />;
   }
 
@@ -345,8 +393,8 @@ export function RequireApproval({
   }
 
   // Not approved - show status card
-  if (!isApproved) {
-    return <StatusCard status={organizerProfile.status} />;
+  if (!isApproved && status) {
+    return <StatusCard status={status as OrganizationStatusString} />;
   }
 
   // Approved - render children

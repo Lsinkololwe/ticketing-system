@@ -1,0 +1,21 @@
+{
+  "name": "eslint-plugin-radix-compliance",
+  "version": "1.0.0",
+  "description": "ESLint plugin to enforce Radix UI and theming standards",
+  "main": "lib/index.js",
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "radix-ui",
+    "theming",
+    "compliance"
+  ],
+  "author": "PML Tickets",
+  "license": "MIT",
+  "peerDependencies": {
+    "eslint": ">=8.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.8.0"
+  }
+}

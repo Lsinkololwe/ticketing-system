@@ -58,7 +58,3 @@ export const adminServiceBaseUrl = `${API_BASE_URL}/api/v1/admin`;
  */
 export const filesServiceBaseUrl = `${API_BASE_URL}/api/files`;
 
-/**
- * Health check endpoint
- */
-export const healthCheckUrl = `${API_BASE_URL}/actuator/health`;

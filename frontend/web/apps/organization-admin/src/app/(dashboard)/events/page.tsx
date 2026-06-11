@@ -28,7 +28,12 @@ import {
 } from 'iconoir-react';
 import { useRouter } from 'next/navigation';
 import { PageHeader, NoEventsEmptyState } from '@/components/ui';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  canCreateEvents,
+  canEditEvents,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
@@ -391,13 +396,16 @@ function EventCard({ event, viewMode, canEdit }: EventCardProps) {
 // =============================================================================
 
 export default function EventsPage() {
-  const { can } = useOrganization();
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
+  const { status } = useMyOrganization({ skip: !isAuthenticated });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
 
-  const canCreateEvents = can('createEvents');
-  const canEditEvents = can('createEvents');
+  const canCreate = canCreateEvents(status);
+  const canEdit = canEditEvents(status);
 
   // Filter events based on tab and search
   const filteredEvents = useMemo(() => {
@@ -439,7 +447,7 @@ export default function EventsPage() {
       <PageHeader
         title="Events"
         description="Manage your events and track ticket sales"
-        actions={canCreateEvents ? [
+        actions={canCreate ? [
           {
             label: 'Create Event',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
@@ -557,7 +565,7 @@ export default function EventsPage() {
               key={event.id}
               event={event}
               viewMode={viewMode}
-              canEdit={canEditEvents}
+              canEdit={canEdit}
             />
           ))}
         </Box>
@@ -568,7 +576,7 @@ export default function EventsPage() {
               key={event.id}
               event={event}
               viewMode={viewMode}
-              canEdit={canEditEvents}
+              canEdit={canEdit}
             />
           ))}
         </Flex>

@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * Organizers Management Page
+ * Organizations Management Page
  *
- * Admin page for managing organizer applications and profiles.
+ * Admin page for managing organization applications and profiles.
  * Uses shared API hooks from @pml.tickets/shared.
  */
 
@@ -39,51 +39,58 @@ import {
 } from 'iconoir-react';
 import {
   // Query hooks
-  useOrganizerApplications,
+  useOrganizationApplications,
   usePendingApplications,
-  useApprovedOrganizers,
-  useSuspendedOrganizers,
-  useSearchOrganizers,
+  useApprovedOrganizations,
+  useSuspendedOrganizations,
+  useSearchOrganizations,
   // Mutation hooks
-  useApproveOrganizer,
-  useRejectOrganizer,
-  useSuspendOrganizer,
-  useReactivateOrganizer,
-} from '@pml.tickets/shared/api/graphql/admin/organizers';
-import type { OrganizerProfile, OrganizerStatus } from '@pml.tickets/shared/types/graphql';
+  useApproveOrganization,
+  useRejectOrganization,
+  useSuspendOrganization,
+  useUnsuspendOrganization,
+  // Types and helpers
+  type Organization as OrgType,
+  getStatusColor,
+  getStatusLabel,
+} from '@pml.tickets/shared/api/admin/modules/organization';
 
+type Organization = OrgType;
 type TabValue = 'all' | 'pending' | 'approved' | 'suspended' | 'rejected' | 'changes_requested';
 
-const STATUS_COLORS: Record<OrganizerStatus, 'gray' | 'amber' | 'green' | 'red' | 'blue' | 'orange'> = {
-  DRAFT: 'gray',
-  PENDING_DOCUMENTS: 'blue',
-  PENDING_REVIEW: 'amber',
+// Legacy status mappings - now using helpers from API
+const STATUS_COLORS: Record<string, 'gray' | 'amber' | 'green' | 'red' | 'blue' | 'orange'> = {
+  DRAFT: 'amber',
+  PENDING_REVIEW: 'blue',
   APPROVED: 'green',
+  ACTIVE: 'green',
   REJECTED: 'red',
-  SUSPENDED: 'red',
+  SUSPENDED: 'gray',
   CHANGES_REQUESTED: 'orange',
 };
 
-const STATUS_LABELS: Record<OrganizerStatus, string> = {
+const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
-  PENDING_DOCUMENTS: 'Pending Documents',
   PENDING_REVIEW: 'Pending Review',
   APPROVED: 'Approved',
+  ACTIVE: 'Active',
   REJECTED: 'Rejected',
   SUSPENDED: 'Suspended',
   CHANGES_REQUESTED: 'Changes Requested',
+  INACTIVE: 'Inactive',
+  PENDING_DELETION: 'Pending Deletion',
 };
 
-function OrganizerStatusBadge({ status }: { status: OrganizerStatus }) {
+function OrganizationStatusBadge({ status }: { status: string }) {
   return (
-    <Badge color={STATUS_COLORS[status]} variant="soft" size="1">
-      {STATUS_LABELS[status]}
+    <Badge color={STATUS_COLORS[status] || 'gray'} variant="soft" size="1">
+      {STATUS_LABELS[status] || status}
     </Badge>
   );
 }
 
-function OrganizersTable({
-  organizers,
+function OrganizationsTable({
+  organizations,
   loading,
   onView,
   onApprove,
@@ -91,7 +98,7 @@ function OrganizersTable({
   onSuspend,
   onReactivate,
 }: {
-  organizers: OrganizerProfile[];
+  organizations: Organization[];
   loading: boolean;
   onView: (id: string) => void;
   onApprove: (id: string) => void;
@@ -107,15 +114,15 @@ function OrganizersTable({
     );
   }
 
-  if (organizers.length === 0) {
-    return <EmptyCard message="No organizers found" />;
+  if (organizations.length === 0) {
+    return <EmptyCard message="No organizations found" />;
   }
 
   return (
     <Table.Root variant="surface">
       <Table.Header>
         <Table.Row>
-          <Table.ColumnHeaderCell>Company</Table.ColumnHeaderCell>
+          <Table.ColumnHeaderCell>Organization</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell>Contact</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell>Status</Table.ColumnHeaderCell>
           <Table.ColumnHeaderCell>Verification</Table.ColumnHeaderCell>
@@ -124,38 +131,40 @@ function OrganizersTable({
         </Table.Row>
       </Table.Header>
       <Table.Body>
-        {organizers.map((organizer) => (
+        {organizations.map((organization) => (
           <Table.Row
-            key={organizer.id}
+            key={organization.id}
             style={{ cursor: 'pointer' }}
-            onClick={() => onView(organizer.id)}
+            onClick={() => onView(organization.id)}
           >
             <Table.Cell>
               <Flex align="center" gap="3">
                 <Avatar
                   size="2"
-                  fallback={organizer.companyName?.charAt(0) || 'O'}
+                  fallback={organization.name?.charAt(0) || 'O'}
                 />
                 <Box>
-                  <Text weight="medium" size="2">{organizer.companyName}</Text>
-                  <Text color="gray" size="1">{organizer.province}, {organizer.city}</Text>
+                  <Text weight="medium" size="2">{organization.name || 'Unnamed'}</Text>
+                  <Text color="gray" size="1">
+                    {organization.businessAddress?.city}{organization.businessAddress?.province ? `, ${organization.businessAddress.province}` : ''}
+                  </Text>
                 </Box>
               </Flex>
             </Table.Cell>
             <Table.Cell>
               <Box>
-                <Text size="2">{organizer.businessEmail}</Text>
-                <Text color="gray" size="1">{organizer.businessPhone}</Text>
+                <Text size="2">{organization.businessEmail || '-'}</Text>
+                <Text color="gray" size="1">{organization.businessPhone || '-'}</Text>
               </Box>
             </Table.Cell>
             <Table.Cell>
-              <OrganizerStatusBadge status={organizer.status} />
+              <OrganizationStatusBadge status={organization.status} />
             </Table.Cell>
             <Table.Cell>
               <Flex gap="1">
                 <Tooltip content="Verified">
                   <Badge
-                    color={organizer.verified ? 'green' : 'gray'}
+                    color={organization.verified ? 'green' : 'gray'}
                     variant="soft"
                     size="1"
                   >
@@ -164,7 +173,7 @@ function OrganizersTable({
                 </Tooltip>
                 <Tooltip content="Documents Verified">
                   <Badge
-                    color={organizer.documentsVerified ? 'green' : 'gray'}
+                    color={organization.documentsVerified ? 'green' : 'gray'}
                     variant="soft"
                     size="1"
                   >
@@ -175,8 +184,8 @@ function OrganizersTable({
             </Table.Cell>
             <Table.Cell>
               <Text size="2" color="gray">
-                {organizer.submittedAt
-                  ? new Date(organizer.submittedAt).toLocaleDateString()
+                {organization.submittedAt
+                  ? new Date(organization.submittedAt).toLocaleDateString()
                   : '-'}
               </Text>
             </Table.Cell>
@@ -186,7 +195,7 @@ function OrganizersTable({
                   <IconButton
                     size="1"
                     variant="ghost"
-                    onClick={() => onView(organizer.id)}
+                    onClick={() => onView(organization.id)}
                   >
                     <Eye width={16} height={16} />
                   </IconButton>
@@ -198,51 +207,51 @@ function OrganizersTable({
                     </IconButton>
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Content align="end">
-                    <DropdownMenu.Item onClick={() => onView(organizer.id)}>
+                    <DropdownMenu.Item onClick={() => onView(organization.id)}>
                       <Eye width={14} height={14} />
                       View Details
                     </DropdownMenu.Item>
-                    {organizer.status === 'PENDING_REVIEW' && (
+                    {organization.status === 'PENDING_REVIEW' && (
                       <>
                         <DropdownMenu.Separator />
                         <DropdownMenu.Item
                           color="green"
-                          onClick={() => onApprove(organizer.id)}
+                          onClick={() => onApprove(organization.id)}
                         >
                           <Check width={14} height={14} />
                           Approve
                         </DropdownMenu.Item>
-                        <DropdownMenu.Item onClick={() => onView(organizer.id)}>
+                        <DropdownMenu.Item onClick={() => onView(organization.id)}>
                           <EditPencil width={14} height={14} />
                           Request Changes
                         </DropdownMenu.Item>
                         <DropdownMenu.Item
                           color="red"
-                          onClick={() => onReject(organizer.id)}
+                          onClick={() => onReject(organization.id)}
                         >
                           <Xmark width={14} height={14} />
                           Reject
                         </DropdownMenu.Item>
                       </>
                     )}
-                    {organizer.status === 'APPROVED' && (
+                    {(organization.status === 'APPROVED' || organization.status === 'ACTIVE') && (
                       <>
                         <DropdownMenu.Separator />
                         <DropdownMenu.Item
                           color="red"
-                          onClick={() => onSuspend(organizer.id)}
+                          onClick={() => onSuspend(organization.id)}
                         >
                           <Pause width={14} height={14} />
                           Suspend
                         </DropdownMenu.Item>
                       </>
                     )}
-                    {organizer.status === 'SUSPENDED' && (
+                    {organization.status === 'SUSPENDED' && (
                       <>
                         <DropdownMenu.Separator />
                         <DropdownMenu.Item
                           color="green"
-                          onClick={() => onReactivate(organizer.id)}
+                          onClick={() => onReactivate(organization.id)}
                         >
                           <PlaySolid width={14} height={14} />
                           Reactivate
@@ -306,26 +315,26 @@ export default function OrganizersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Hooks for different organizer lists based on status
-  const allOrganizers = useOrganizerApplications(undefined, { page: currentPage });
-  const pendingOrganizers = usePendingApplications({ page: currentPage });
-  const approvedOrganizers = useApprovedOrganizers({ page: currentPage });
-  const suspendedOrganizers = useSuspendedOrganizers({ page: currentPage });
+  // Hooks for different organization lists based on status
+  const allOrganizations = useOrganizationApplications(undefined, { page: currentPage });
+  const pendingOrganizations = usePendingApplications({ page: currentPage });
+  const approvedOrganizations = useApprovedOrganizations({ page: currentPage });
+  const suspendedOrganizations = useSuspendedOrganizations({ page: currentPage });
 
   // Search hook
-  const { search, results: searchResults, loading: searchLoading } = useSearchOrganizers();
+  const { search, results: searchResults, loading: searchLoading } = useSearchOrganizations();
 
   // Mutation hooks
-  const { approveOrganizer, loading: approving } = useApproveOrganizer();
-  const { rejectOrganizer, loading: rejecting } = useRejectOrganizer();
-  const { suspendOrganizer, loading: suspending } = useSuspendOrganizer();
-  const { reactivateOrganizer, loading: reactivating } = useReactivateOrganizer();
+  const { approve, loading: approving } = useApproveOrganization();
+  const { reject, loading: rejecting } = useRejectOrganization();
+  const { suspend, loading: suspending } = useSuspendOrganization();
+  const { unsuspend, loading: reactivating } = useUnsuspendOrganization();
 
   // Get data based on active tab
   const getActiveData = useCallback(() => {
-    if (searchQuery) {
+    if (searchQuery && searchResults.length > 0) {
       return {
-        organizers: searchResults,
+        organizations: searchResults,
         loading: searchLoading,
         totalPages: 1,
         totalElements: searchResults.length,
@@ -335,32 +344,32 @@ export default function OrganizersPage() {
     switch (activeTab) {
       case 'pending':
         return {
-          organizers: pendingOrganizers.applications,
-          loading: pendingOrganizers.loading,
-          totalPages: pendingOrganizers.totalPages,
-          totalElements: pendingOrganizers.totalElements,
+          organizations: pendingOrganizations.applications,
+          loading: pendingOrganizations.loading,
+          totalPages: pendingOrganizations.totalPages,
+          totalElements: pendingOrganizations.totalElements,
         };
       case 'approved':
         return {
-          organizers: approvedOrganizers.organizers,
-          loading: approvedOrganizers.loading,
-          totalPages: approvedOrganizers.totalPages,
-          totalElements: approvedOrganizers.totalElements,
+          organizations: approvedOrganizations.organizations,
+          loading: approvedOrganizations.loading,
+          totalPages: approvedOrganizations.totalPages,
+          totalElements: approvedOrganizations.totalElements,
         };
       case 'suspended':
         return {
-          organizers: suspendedOrganizers.organizers,
-          loading: suspendedOrganizers.loading,
-          totalPages: suspendedOrganizers.totalPages,
-          totalElements: suspendedOrganizers.totalElements,
+          organizations: suspendedOrganizations.organizations,
+          loading: suspendedOrganizations.loading,
+          totalPages: suspendedOrganizations.totalPages,
+          totalElements: suspendedOrganizations.totalElements,
         };
       case 'all':
       default:
         return {
-          organizers: allOrganizers.applications,
-          loading: allOrganizers.loading,
-          totalPages: allOrganizers.totalPages,
-          totalElements: allOrganizers.totalElements,
+          organizations: allOrganizations.applications,
+          loading: allOrganizations.loading,
+          totalPages: allOrganizations.totalPages,
+          totalElements: allOrganizations.totalElements,
         };
     }
   }, [
@@ -368,10 +377,10 @@ export default function OrganizersPage() {
     searchQuery,
     searchResults,
     searchLoading,
-    allOrganizers,
-    pendingOrganizers,
-    approvedOrganizers,
-    suspendedOrganizers,
+    allOrganizations,
+    pendingOrganizations,
+    approvedOrganizations,
+    suspendedOrganizations,
   ]);
 
   const activeData = getActiveData();
@@ -398,64 +407,64 @@ export default function OrganizersPage() {
   const handleApprove = useCallback(
     async (id: string) => {
       try {
-        await approveOrganizer(id);
+        await approve(id);
       } catch (error) {
-        console.error('Failed to approve organizer:', error);
+        console.error('Failed to approve organization:', error);
       }
     },
-    [approveOrganizer]
+    [approve]
   );
 
   const handleReject = useCallback(
     async (id: string) => {
       // TODO: Show rejection reason dialog
       try {
-        await rejectOrganizer(id, 'Application does not meet requirements');
+        await reject(id, 'Application does not meet requirements');
       } catch (error) {
-        console.error('Failed to reject organizer:', error);
+        console.error('Failed to reject organization:', error);
       }
     },
-    [rejectOrganizer]
+    [reject]
   );
 
   const handleSuspend = useCallback(
     async (id: string) => {
       // TODO: Show suspension reason dialog
       try {
-        await suspendOrganizer(id, 'Account suspended for review');
+        await suspend(id, 'Account suspended for review');
       } catch (error) {
-        console.error('Failed to suspend organizer:', error);
+        console.error('Failed to suspend organization:', error);
       }
     },
-    [suspendOrganizer]
+    [suspend]
   );
 
   const handleReactivate = useCallback(
     async (id: string) => {
       try {
-        await reactivateOrganizer(id);
+        await unsuspend(id);
       } catch (error) {
-        console.error('Failed to reactivate organizer:', error);
+        console.error('Failed to reactivate organization:', error);
       }
     },
-    [reactivateOrganizer]
+    [unsuspend]
   );
 
   const handleRefresh = useCallback(() => {
     switch (activeTab) {
       case 'pending':
-        pendingOrganizers.refetch();
+        pendingOrganizations.refetch();
         break;
       case 'approved':
-        approvedOrganizers.refetch();
+        approvedOrganizations.refetch();
         break;
       case 'suspended':
-        suspendedOrganizers.refetch();
+        suspendedOrganizations.refetch();
         break;
       default:
-        allOrganizers.refetch();
+        allOrganizations.refetch();
     }
-  }, [activeTab, allOrganizers, pendingOrganizers, approvedOrganizers, suspendedOrganizers]);
+  }, [activeTab, allOrganizations, pendingOrganizations, approvedOrganizations, suspendedOrganizations]);
 
   const handleTabChange = useCallback((value: string) => {
     setActiveTab(value as TabValue);
@@ -471,10 +480,10 @@ export default function OrganizersPage() {
       <Flex justify="between" align="center" mb="5">
         <Box>
           <Heading size="6" weight="bold">
-            Organizer Management
+            Organization Management
           </Heading>
           <Text color="gray" size="2">
-            Review and manage organizer applications
+            Review and manage organization applications
           </Text>
         </Box>
         <Flex gap="2">
@@ -492,7 +501,7 @@ export default function OrganizersPage() {
           <Flex gap="2" align="center">
             <TextField.Root
               size="2"
-              placeholder="Search by company name..."
+              placeholder="Search by organization name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{ flex: 1 }}
@@ -518,9 +527,9 @@ export default function OrganizersPage() {
         <Tabs.List>
           <Tabs.Trigger value="pending">
             Pending Review
-            {pendingOrganizers.totalElements > 0 && (
+            {pendingOrganizations.totalElements > 0 && (
               <Badge color="amber" size="1" ml="2">
-                {pendingOrganizers.totalElements}
+                {pendingOrganizations.totalElements}
               </Badge>
             )}
           </Tabs.Trigger>
@@ -530,8 +539,8 @@ export default function OrganizersPage() {
         </Tabs.List>
 
         <Box mt="4">
-          <OrganizersTable
-            organizers={activeData.organizers as OrganizerProfile[]}
+          <OrganizationsTable
+            organizations={activeData.organizations as Organization[]}
             loading={activeData.loading || isActionLoading}
             onView={handleView}
             onApprove={handleApprove}

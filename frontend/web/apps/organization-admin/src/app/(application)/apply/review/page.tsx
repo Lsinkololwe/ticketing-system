@@ -1,20 +1,17 @@
 'use client';
 
 /**
- * Review Page - Step 2 of KYB Application
+ * Review Page - Organization Application
  *
  * Final review before submission:
- * - Display all entered information
+ * - Display all entered organization information
  * - Terms acceptance
  * - Submit application for review
  *
- * OWASP Compliance:
- * - Uses authenticated GraphQL mutations
- * - No sensitive data stored in client state
- * - Proper loading states to prevent race conditions
+ * MIGRATION NOTE: This page now uses the Organization model and GraphQL operations.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Flex, Text, Heading, Button, Card, Checkbox, Spinner } from '@radix-ui/themes';
 import {
@@ -26,31 +23,33 @@ import {
   SendDiagonal,
   Shield,
   WarningTriangle,
+  Phone,
+  Globe,
+  Link as LinkIcon,
 } from 'iconoir-react';
 import { StepIndicator, Step } from '@/components/application/StepIndicator';
 import {
-  useMyOrganizerProfile,
-  useSubmitOrganizerApplication,
+  useMyOrganization,
+  useSubmitOrganizationForReview,
   getRouteForStatus,
   canSubmitForReview,
-} from '@pml.tickets/shared/api/graphql/organizer';
+  applicationReviewSchema,
+  type ApplicationReviewFormData as ApplicationReviewSchema,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import { useZodForm } from '@pml.tickets/shared';
 
 // =============================================================================
 // CONSTANTS
 // =============================================================================
 
 const steps: Step[] = [
-  { id: 'business-info', title: 'Business Info' },
-  { id: 'review', title: 'Review' },
+  { id: 'business-info', title: 'Organization Info' },
+  { id: 'review', title: 'Review & Submit' },
 ];
 
-const businessTypeLabels: Record<string, string> = {
-  SOLE_PROPRIETORSHIP: 'Sole Proprietorship',
-  PARTNERSHIP: 'Partnership',
-  LIMITED_COMPANY: 'Limited Company',
-  NGO: 'Non-Profit / NGO',
-  GOVERNMENT: 'Government Entity',
-  OTHER: 'Other',
+const organizationTypeLabels: Record<string, string> = {
+  INDIVIDUAL: 'Individual / Personal',
+  BUSINESS: 'Business / Company',
 };
 
 const provinceLabels: Record<string, string> = {
@@ -164,71 +163,85 @@ function ValidationItem({ label, isValid }: ValidationItemProps) {
 
 export default function ReviewPage() {
   const router = useRouter();
-  const { profile, hasProfile, status, loading: profileLoading, error: profileError, refetch } = useMyOrganizerProfile();
-  const { submitApplication, loading: submitting, error: submitError } = useSubmitOrganizerApplication();
+  const {
+    organization,
+    hasOrganization,
+    status,
+    loading: organizationLoading,
+    error: organizationError,
+    refetch,
+  } = useMyOrganization();
+  const { submit, error: submitError } = useSubmitOrganizationForReview();
 
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+  // Initial form data for terms agreement
+  const initialFormData: ApplicationReviewSchema = {
+    agreedToTerms: false,
+    agreedToPrivacy: false,
+  };
 
-  // Redirect if user doesn't have a profile or can't submit
+  // Zod-based form management
+  const form = useZodForm(
+    applicationReviewSchema,
+    initialFormData,
+    async (validatedData) => {
+      // This handler receives validated data with correct types
+      if (!organization) return;
+
+      try {
+        const result = await submit(organization.id);
+        if (result) {
+          router.push('/apply/status');
+        }
+      } catch (error) {
+        console.error('Failed to submit application:', error);
+      }
+    }
+  );
+
+  // Redirect if user doesn't have an organization or can't submit
   useEffect(() => {
-    if (!profileLoading && !hasProfile) {
-      router.replace('/apply');
+    if (!organizationLoading && !hasOrganization) {
+      router.replace('/welcome');
       return;
     }
 
-    if (!profileLoading && hasProfile && status && !canSubmitForReview(status)) {
-      const route = getRouteForStatus(status, hasProfile);
+    if (!organizationLoading && hasOrganization && status && !canSubmitForReview(status)) {
+      const route = getRouteForStatus(status, organization?.id);
       router.replace(route);
     }
-  }, [profileLoading, hasProfile, status, router]);
+  }, [organizationLoading, hasOrganization, status, router]);
 
-  // Validate required fields
+  // Validate required organization fields
   const validation = {
-    companyName: !!profile?.companyName?.trim(),
-    businessType: !!profile?.businessType,
-    registrationNumber: !!profile?.businessRegistrationNumber?.trim(),
-    taxId: !!profile?.taxId?.trim(),
-    email: !!profile?.businessEmail?.trim(),
-    phone: !!profile?.businessPhone?.trim(),
-    address: !!profile?.businessAddress?.trim(),
-    city: !!profile?.city?.trim(),
-    province: !!profile?.province,
+    name: !!organization?.name?.trim(),
+    businessEmail: !!organization?.businessEmail?.trim(),
+    businessPhone: !!organization?.businessPhone?.trim(),
+    city: !!organization?.businessAddress?.city?.trim(),
+    province: !!organization?.businessAddress?.province,
   };
 
   const allFieldsValid = Object.values(validation).every(Boolean);
-  const canSubmit = agreedToTerms && agreedToPrivacy && allFieldsValid && !submitting;
+
+  // Can submit if all organization fields are valid and form is valid (terms agreed)
+  const canSubmit = allFieldsValid && form.data.agreedToTerms && form.data.agreedToPrivacy && !form.isSubmitting;
 
   // Handle step navigation
-  const handleStepClick = useCallback((step: number) => {
-    if (step === 0) {
-      router.push('/apply/business-info');
-    }
-  }, [router]);
+  const handleStepClick = useCallback(
+    (step: number) => {
+      if (step === 0) {
+        router.push('/apply/business-info');
+      }
+    },
+    [router]
+  );
 
   // Handle back
   const handleBack = useCallback(() => {
     router.push('/apply/business-info');
   }, [router]);
 
-  // Handle submit
-  const handleSubmit = useCallback(async () => {
-    if (!canSubmit) return;
-
-    try {
-      const result = await submitApplication();
-
-      if (result) {
-        // Redirect to status page
-        router.push('/status');
-      }
-    } catch (error) {
-      console.error('Failed to submit application:', error);
-    }
-  }, [canSubmit, submitApplication, router]);
-
   // Show loading state
-  if (profileLoading) {
+  if (organizationLoading) {
     return (
       <Box style={{ textAlign: 'center', padding: '60px 0' }}>
         <Spinner size="3" />
@@ -240,7 +253,7 @@ export default function ReviewPage() {
   }
 
   // Show error state
-  if (profileError) {
+  if (organizationError) {
     return (
       <Box style={{ textAlign: 'center', padding: '60px 0' }}>
         <Box
@@ -261,7 +274,7 @@ export default function ReviewPage() {
           Failed to load application
         </Text>
         <Text size="2" style={{ color: '#94A3B8', display: 'block', marginBottom: 16 }}>
-          {profileError.message || 'An error occurred while loading your application.'}
+          {organizationError.message || 'An error occurred while loading your application.'}
         </Text>
         <Button variant="outline" onClick={() => refetch()}>
           Try Again
@@ -270,7 +283,7 @@ export default function ReviewPage() {
     );
   }
 
-  if (!profile) {
+  if (!organization) {
     return null;
   }
 
@@ -307,22 +320,18 @@ export default function ReviewPage() {
             </Text>
           </Flex>
           <Box pl="7">
-            <ValidationItem label="Company Name" isValid={validation.companyName} />
-            <ValidationItem label="Business Type" isValid={validation.businessType} />
-            <ValidationItem label="Registration Number" isValid={validation.registrationNumber} />
-            <ValidationItem label="Tax ID (TPIN)" isValid={validation.taxId} />
-            <ValidationItem label="Business Email" isValid={validation.email} />
-            <ValidationItem label="Phone Number" isValid={validation.phone} />
-            <ValidationItem label="Business Address" isValid={validation.address} />
+            <ValidationItem label="Organization Name" isValid={validation.name} />
+            <ValidationItem label="Business Email" isValid={validation.businessEmail} />
+            <ValidationItem label="Phone Number" isValid={validation.businessPhone} />
             <ValidationItem label="City" isValid={validation.city} />
             <ValidationItem label="Province" isValid={validation.province} />
           </Box>
         </Card>
       )}
 
-      {/* Business Information Section */}
+      {/* Basic Information Section */}
       <ReviewSection
-        title="Business Information"
+        title="Basic Information"
         icon={<Building style={{ width: 20, height: 20, color: '#10B981' }} />}
         editLink="/apply/business-info"
       >
@@ -333,45 +342,85 @@ export default function ReviewPage() {
             gap: '16px',
           }}
         >
-          <ReviewField label="Company Name" value={profile.companyName} />
+          <ReviewField label="Organization Name" value={organization.name} />
           <ReviewField
-            label="Business Type"
-            value={profile.businessType ? businessTypeLabels[profile.businessType] || profile.businessType : undefined}
+            label="Organization Type"
+            value={organization.type ? organizationTypeLabels[organization.type] || organization.type : undefined}
           />
-          <ReviewField label="Registration Number" value={profile.businessRegistrationNumber} />
-          <ReviewField label="Tax ID (TPIN)" value={profile.taxId} />
-          <ReviewField label="Email" value={profile.businessEmail} />
-          <ReviewField label="Phone" value={profile.businessPhone} />
-          <ReviewField label="Website" value={profile.website} />
-        </Box>
-
-        {/* Address */}
-        <Box mt="4" pt="4" style={{ borderTop: '1px solid rgba(148, 163, 184, 0.1)' }}>
-          <Text size="2" weight="medium" mb="3" style={{ color: '#CBD5E1', display: 'block' }}>
-            Business Address
-          </Text>
-          <Text size="2" style={{ color: '#F8FAFC', display: 'block', lineHeight: 1.6 }}>
-            {profile.businessAddress || '-'}
-            <br />
-            {profile.city || '-'}, {profile.province ? provinceLabels[profile.province] || profile.province : '-'}
-            {profile.postalCode && `, ${profile.postalCode}`}
-            <br />
-            {profile.country || 'Zambia'}
-          </Text>
+          <ReviewField label="Tagline" value={organization.tagline} />
         </Box>
 
         {/* Description */}
-        {profile.companyDescription && (
+        {organization.description && (
           <Box mt="4" pt="4" style={{ borderTop: '1px solid rgba(148, 163, 184, 0.1)' }}>
             <Text size="2" weight="medium" mb="2" style={{ color: '#CBD5E1', display: 'block' }}>
               About Your Organization
             </Text>
-            <Text size="2" style={{ color: '#94A3B8' }}>
-              {profile.companyDescription}
+            <Text size="2" style={{ color: '#94A3B8', lineHeight: 1.6 }}>
+              {organization.description}
             </Text>
           </Box>
         )}
       </ReviewSection>
+
+      {/* Contact Information Section */}
+      <ReviewSection
+        title="Contact Information"
+        icon={<Phone style={{ width: 20, height: 20, color: '#10B981' }} />}
+        editLink="/apply/business-info"
+      >
+        <Box
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '16px',
+          }}
+        >
+          <ReviewField label="Email" value={organization.businessEmail} />
+          <ReviewField label="Phone" value={organization.businessPhone} />
+          <ReviewField label="Website" value={organization.website} />
+        </Box>
+      </ReviewSection>
+
+      {/* Location Section */}
+      <ReviewSection
+        title="Location"
+        icon={<Globe style={{ width: 20, height: 20, color: '#10B981' }} />}
+        editLink="/apply/business-info"
+      >
+        <Text size="2" style={{ color: '#F8FAFC', lineHeight: 1.6 }}>
+          {organization.businessAddress?.city || '-'}, {organization.businessAddress?.province ? provinceLabels[organization.businessAddress.province] || organization.businessAddress.province : '-'}
+          <br />
+          {organization.businessAddress?.country || 'Zambia'}
+        </Text>
+      </ReviewSection>
+
+      {/* Social Links Section */}
+      {(organization.socialLinks?.facebook || organization.socialLinks?.instagram || organization.socialLinks?.twitter) && (
+        <ReviewSection
+          title="Social Media"
+          icon={<LinkIcon style={{ width: 20, height: 20, color: '#10B981' }} />}
+          editLink="/apply/business-info"
+        >
+          <Box
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+            }}
+          >
+            {organization.socialLinks?.facebook && (
+              <ReviewField label="Facebook" value={organization.socialLinks.facebook} />
+            )}
+            {organization.socialLinks?.instagram && (
+              <ReviewField label="Instagram" value={organization.socialLinks.instagram} />
+            )}
+            {organization.socialLinks?.twitter && (
+              <ReviewField label="Twitter / X" value={organization.socialLinks.twitter} />
+            )}
+          </Box>
+        </ReviewSection>
+      )}
 
       {/* Terms and Conditions */}
       <Card
@@ -391,33 +440,47 @@ export default function ReviewPage() {
         </Flex>
 
         <Flex direction="column" gap="4">
-          <Flex align="start" gap="3">
-            <Checkbox
-              checked={agreedToTerms}
-              onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
-            />
-            <Text size="2" style={{ color: '#CBD5E1' }}>
-              I agree to the{' '}
-              <a href="/terms" style={{ color: '#10B981', textDecoration: 'none' }}>
-                Terms of Service
-              </a>{' '}
-              and confirm that all information provided is accurate and complete.
-            </Text>
-          </Flex>
+          <Box>
+            <Flex align="start" gap="3">
+              <Checkbox
+                checked={form.data.agreedToTerms}
+                onCheckedChange={(checked) => form.updateField('agreedToTerms', checked === true)}
+              />
+              <Text size="2" style={{ color: '#CBD5E1' }}>
+                I agree to the{' '}
+                <a href="/terms" style={{ color: '#10B981', textDecoration: 'none' }}>
+                  Terms of Service
+                </a>{' '}
+                and confirm that all information provided is accurate and complete.
+              </Text>
+            </Flex>
+            {form.errors.agreedToTerms && (
+              <Text size="1" style={{ color: '#F87171', display: 'block', marginTop: '4px', marginLeft: '28px' }}>
+                {form.errors.agreedToTerms}
+              </Text>
+            )}
+          </Box>
 
-          <Flex align="start" gap="3">
-            <Checkbox
-              checked={agreedToPrivacy}
-              onCheckedChange={(checked) => setAgreedToPrivacy(checked === true)}
-            />
-            <Text size="2" style={{ color: '#CBD5E1' }}>
-              I acknowledge and agree to the{' '}
-              <a href="/privacy" style={{ color: '#10B981', textDecoration: 'none' }}>
-                Privacy Policy
-              </a>{' '}
-              and consent to the processing of my business data for verification purposes.
-            </Text>
-          </Flex>
+          <Box>
+            <Flex align="start" gap="3">
+              <Checkbox
+                checked={form.data.agreedToPrivacy}
+                onCheckedChange={(checked) => form.updateField('agreedToPrivacy', checked === true)}
+              />
+              <Text size="2" style={{ color: '#CBD5E1' }}>
+                I acknowledge and agree to the{' '}
+                <a href="/privacy" style={{ color: '#10B981', textDecoration: 'none' }}>
+                  Privacy Policy
+                </a>{' '}
+                and consent to the processing of my data for verification purposes.
+              </Text>
+            </Flex>
+            {form.errors.agreedToPrivacy && (
+              <Text size="1" style={{ color: '#F87171', display: 'block', marginTop: '4px', marginLeft: '28px' }}>
+                {form.errors.agreedToPrivacy}
+              </Text>
+            )}
+          </Box>
         </Flex>
       </Card>
 
@@ -451,8 +514,9 @@ export default function ReviewPage() {
               What happens next?
             </Text>
             <Text size="1" style={{ color: '#94A3B8' }}>
-              After submission, our team will review your application within 1-2 business days.
+              After submission, our team will review your application within 2-3 business days.
               You&apos;ll receive an email notification when your application is approved.
+              You can create draft events while waiting for approval.
             </Text>
           </Box>
         </Flex>
@@ -484,7 +548,7 @@ export default function ReviewPage() {
           variant="outline"
           size="3"
           onClick={handleBack}
-          disabled={submitting}
+          disabled={form.isSubmitting}
           style={{
             borderColor: 'rgba(148, 163, 184, 0.3)',
             color: '#94A3B8',
@@ -495,7 +559,7 @@ export default function ReviewPage() {
         </Button>
         <Button
           size="3"
-          onClick={handleSubmit}
+          onClick={() => form.handleSubmit()}
           disabled={!canSubmit}
           style={{
             background: canSubmit
@@ -503,10 +567,10 @@ export default function ReviewPage() {
               : 'rgba(148, 163, 184, 0.2)',
             cursor: canSubmit ? 'pointer' : 'not-allowed',
             minWidth: '160px',
-            opacity: submitting ? 0.7 : 1,
+            opacity: form.isSubmitting ? 0.7 : 1,
           }}
         >
-          {submitting ? (
+          {form.isSubmitting ? (
             <>
               <Spinner size="1" />
               <span style={{ marginLeft: 8 }}>Submitting...</span>

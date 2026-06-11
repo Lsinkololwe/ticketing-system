@@ -72,7 +72,7 @@ This document describes the production-ready registration architecture for the M
 │     │       - "accountType" attribute (from form, backup)          │            │
 │     │    3. Create/Update User document in MongoDB                 │            │
 │     │    4. IF roles contains ORGANIZER:                           │            │
-│     │       └─ Auto-create OrganizerProfile (status: DRAFT)        │            │
+│     │       └─ Auto-create Organization (status: DRAFT)        │            │
 │     │    5. Publish UserRegisteredEvent to Azure Service Bus       │            │
 │     └─────────────────────────────────────────────────────────────┘            │
 │                              │                                                  │
@@ -143,11 +143,11 @@ Location: `backend/identity-service/src/main/java/com/pml/identity/service/impl/
 **Organizer profile auto-creation:**
 ```java
 if (savedUser.hasRole(UserType.ORGANIZER)) {
-    createOrganizerProfileForNewUser(savedUser)
+    createOrganizationForNewUser(savedUser)
 }
 ```
 
-Creates `OrganizerProfile` with:
+Creates `Organization` with:
 - `status: DRAFT`
 - `businessEmail`: Pre-filled from user email
 - `businessPhone`: Pre-filled from user phone
@@ -172,7 +172,7 @@ Creates `OrganizerProfile` with:
 }
 ```
 
-### MongoDB OrganizerProfile Document (auto-created)
+### MongoDB Organization Document (auto-created)
 
 ```json
 {
@@ -269,7 +269,7 @@ cd backend/keycloak-extensions/scripts
 2. Verify:
    - Keycloak user has `CUSTOMER` realm role
    - MongoDB user has `roles: ["CUSTOMER"]`
-   - No OrganizerProfile created
+   - No Organization created
 
 ### Test Case 2: Organizer Registration
 
@@ -277,7 +277,7 @@ cd backend/keycloak-extensions/scripts
 2. Verify:
    - Keycloak user has `CUSTOMER` and `ORGANIZER` realm roles
    - MongoDB user has `roles: ["CUSTOMER", "ORGANIZER"]`
-   - OrganizerProfile created with `status: DRAFT`
+   - Organization created with `status: DRAFT`
 
 ### Test Case 3: Both Customer and Organizer
 
@@ -300,10 +300,10 @@ cd backend/keycloak-extensions/scripts
 3. Check Identity Service logs for sync errors
 4. Verify OAuth2 credentials (`OTP_CLIENT_ID`, `OTP_CLIENT_SECRET`)
 
-### OrganizerProfile not created
+### Organization not created
 
 1. Check Identity Service logs for errors
-2. Verify `OrganizerProfileRepository` is properly injected
+2. Verify `OrganizationRepository` is properly injected
 3. Ensure MongoDB connection is working
 
 ### Validation fails with "accountTypeRequired"
@@ -317,7 +317,7 @@ cd backend/keycloak-extensions/scripts
 1. **Realm roles are authoritative** - JWT claims come from Keycloak, not MongoDB
 2. **MongoDB caches profile data** - For GraphQL performance, not authorization
 3. **Internal API secured** - Sync endpoints require `internal-read`/`internal-write` scopes
-4. **OrganizerProfile requires approval** - Users with ORGANIZER role still need admin approval to create events
+4. **Organization requires approval** - Users with ORGANIZER role still need admin approval to create events
 
 ## Related Files
 
@@ -328,5 +328,5 @@ cd backend/keycloak-extensions/scripts
 | `AccountTypeRoleMapperFactory.java` | Keycloak SPI factory |
 | `UserSyncEventListener.java` | Keycloak event listener |
 | `UserSyncServiceImpl.java` | MongoDB sync logic |
-| `OrganizerProfileServiceImpl.java` | Organizer profile management |
+| `OrganizationServiceImpl.java` | Organizer profile management |
 | `messages_en.properties` | Error messages |

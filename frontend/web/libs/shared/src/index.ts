@@ -1,6 +1,42 @@
-// Use this file to export React client components or other non-server utilities
-
-// Types are not globally re-exported to avoid name collisions; import from '@pml.tickets/shared/types/*' instead.
+/**
+ * Shared Library Index
+ *
+ * Centralized exports for all shared utilities following module-based architecture.
+ *
+ * ## Architecture
+ *
+ * - **api/admin/modules/** - Admin app modules (organization, document, admin)
+ * - **api/organization-admin/modules/** - Organization-admin app modules
+ * - **api/rest/** - Shared HTTP utilities (http-client, files, health)
+ * - **api/graphql/** - Shared GraphQL client utilities
+ * - **api/schemas/** - Validation utilities (validateSchema, extractFieldErrors)
+ * - **api/types/** - Shared UI types (FormErrors, PaginationState, ApiError)
+ * - **auth/** - Authentication (Keycloak)
+ * - **components/** - Shared UI components
+ *
+ * ## Import Patterns
+ *
+ * ```typescript
+ * // Admin module
+ * import {
+ *   useCreateAdmin,
+ *   useTransactionHealthSummary,
+ *   type UserRegistrationDto,
+ * } from '@pml.tickets/shared/api/admin/modules/admin';
+ *
+ * // Organization-admin module
+ * import {
+ *   useMyOrganization,
+ *   useDocumentUpload,
+ *   businessInfoFormSchema,
+ * } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+ *
+ * // Shared utilities
+ * import { useFileUpload } from '@pml.tickets/shared/api/rest/files';
+ * import { createApiClient } from '@pml.tickets/shared/api/rest/http-client';
+ * import type { FormErrors, PaginationState } from '@pml.tickets/shared/api/types';
+ * ```
+ */
 
 // ============== Auth (Keycloak) ==============
 export * from './auth';
@@ -34,18 +70,14 @@ export {
   isServerUnavailable,
 } from './api/graphql/client';
 
-// ============== GraphQL Feature APIs ==============
-// New App-First structure:
-// - Admin APIs: '@pml.tickets/shared/api/graphql/admin'
-// - Organizer APIs: '@pml.tickets/shared/api/graphql/organizer'
-// - Buyer APIs: '@pml.tickets/shared/api/graphql/buyer'
-export * from './api/graphql/admin';
-export * from './api/graphql/organizer';
-export * from './api/graphql/buyer';
+// ============== API Modules ==============
+// Module-based architecture: All app-specific operations in dedicated modules
+export * from './api/admin/modules';
+export * from './api/organization-admin/modules';
 
-// ============== REST API (Admin-only endpoints) ==============
-// Used only for specific admin REST endpoints (/api/admin/*, /api/files/*)
-// NOT for general data fetching - use GraphQL for that
+
+// ============== REST API (Shared HTTP utilities) ==============
+// Base HTTP client and utilities for REST operations
 export {
   type AsyncTokenGetter,
   createApiClient,
@@ -53,35 +85,29 @@ export {
   toApiError,
   handleApiResponse,
   handleApiError,
+  API_BASE_URL,
 } from './api/rest/http-client';
-export * from './api/rest/admin-api';
 
 // ============== API Configuration ==============
 export {
-  API_BASE_URL,
   GRAPHQL_ENDPOINT,
   GRAPHQL_WS_ENDPOINT,
   adminServiceBaseUrl,
   filesServiceBaseUrl,
 } from './api/service-base-urls';
 
-// ============== REST Utility Hooks ==============
-// File upload, health check, bootstrap utilities
-export * from './api/rest/use-rest-apis';
-
-// Services
-// Server-side auth services are in auth/server/ - import from '@pml.tickets/shared/auth/server'.
-
-// REST Query Client (TanStack Query for REST APIs)
+// ============== REST Query Client ==============
+// TanStack Query client configuration for REST APIs
 export * from './api/rest/query-client';
 
-// Theme Configuration
+// ============== Theme Configuration ==============
 export * from './lib/theme';
 
-// GraphQL type exports (namespaced to avoid collisions)
+// ============== GraphQL Types ==============
+// Namespaced exports to avoid collisions
 export * as GraphQLTypes from './types/graphql';
 
-// Common type exports for convenience
+// Common GraphQL types for convenience
 export type {
   Event,
   EventCategory,
@@ -96,3 +122,16 @@ export type {
   PaymentMethod,
   Query,
 } from './types/graphql';
+
+// ============== Validation Schemas ==============
+// Schemas are now in app-specific modules
+// Import from: '@pml.tickets/shared/api/admin/modules/...'
+// Import from: '@pml.tickets/shared/api/organization-admin/modules/...'
+
+// ============== API Types ==============
+// API types are now in app-specific modules
+// Import from: '@pml.tickets/shared/api/admin/modules/...'
+// Import from: '@pml.tickets/shared/api/organization-admin/modules/...'
+
+// ============== Form Utilities ==============
+export * from './lib/forms';

@@ -15,8 +15,8 @@ import { useMemo, type ReactNode } from 'react';
 
 const keycloakConfig = {
   url: process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8084',
-  realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'event-ticketing',
-  clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'event-ticketing-web',
+  realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'myticketzm',
+  clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'myticketzm-web',
 };
 
 const queryClient = new QueryClient({

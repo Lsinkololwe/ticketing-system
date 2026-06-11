@@ -10,6 +10,11 @@ import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 /**
  * OAuth2 Resource Server Configuration for Identity Service.
@@ -40,6 +45,7 @@ public class SecurityConfig {
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeExchange(exchanges -> exchanges
                         // Health endpoints - always public
                         .pathMatchers("/actuator/**").permitAll()
@@ -53,6 +59,8 @@ public class SecurityConfig {
                         .pathMatchers("/api/internal/**").hasAnyAuthority("SCOPE_internal-read", "SCOPE_internal-write", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM")
                         // GraphQL - authentication handled at resolver level with @PreAuthorize
                         .pathMatchers("/graphql/**").permitAll()
+                        // REST API - authentication handled at controller level with @PreAuthorize
+                        .pathMatchers("/api/v1/**").permitAll()
                         // All other endpoints require authentication
                         .anyExchange().authenticated()
                 )
@@ -66,6 +74,49 @@ public class SecurityConfig {
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .build();
+    }
+
+    /**
+     * CORS configuration for file upload endpoints.
+     *
+     * <p>Allows cross-origin requests from frontend applications for:
+     * <ul>
+     *   <li>REST API endpoints (document uploads)</li>
+     *   <li>GraphQL endpoint</li>
+     * </ul>
+     *
+     * <p><b>Security Note</b>: In production, replace allowedOrigins with specific
+     * frontend URLs (e.g., https://organizer.example.com).
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        // Allow all origins in development (TODO: restrict in production)
+        configuration.setAllowedOriginPatterns(List.of("*"));
+
+        // Allow common HTTP methods for REST APIs
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+
+        // Allow common headers including Authorization
+        configuration.setAllowedHeaders(List.of(
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "Origin",
+                "X-Requested-With"
+        ));
+
+        // Allow credentials (cookies, authorization headers)
+        configuration.setAllowCredentials(true);
+
+        // Cache preflight response for 1 hour
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+
+        return source;
     }
 
     @Bean

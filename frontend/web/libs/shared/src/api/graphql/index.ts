@@ -32,14 +32,15 @@
 
 // ==================== App APIs ====================
 
-// Admin App APIs
-export * from './admin';
+// Organization Admin App
+export * from './organization-admin';
 
-// Organizer App APIs (self-service)
-export * from './organizer';
-
-// Buyer/Consumer App APIs
-export * from './buyer';
+// ALL OTHER APP APIs HAVE BEEN MIGRATED TO DOMAIN MODULES
+//
+// Admin operations: '@pml.tickets/shared/api/modules/organization'
+// Buyer operations: '@pml.tickets/shared/api/modules/event'
+//
+// Import directly from domain modules or app-specific GraphQL directories.
 
 // ==================== Shared Utilities ====================
 

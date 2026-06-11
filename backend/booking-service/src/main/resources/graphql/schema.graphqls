@@ -1069,6 +1069,125 @@ type RefundTypeSummary @tag(name: "organizer") @tag(name: "admin") {
     percentage: Float!
 }
 
+# ============================================================================
+# SECTION 10a: ORGANIZER DASHBOARD STATISTICS
+# Statistics for organizer self-service dashboard
+# ============================================================================
+
+# ORGANIZER - Main dashboard statistics
+type OrganizerDashboardStats @tag(name: "organizer") {
+    # Revenue metrics
+    totalRevenue: BigDecimal!
+    revenueChange: Float             # % change vs previous period
+    revenueCurrency: String!
+
+    # Ticket sales metrics
+    totalTicketsSold: Int!
+    ticketsSoldChange: Float         # % change vs previous period
+
+    # Event metrics
+    activeEvents: Int!
+    eventsChange: Float              # change from previous period
+    eventsEndingThisWeek: Int!
+
+    # Attendee metrics
+    totalAttendees: Int!             # Total checked-in attendees
+    attendeesChange: Float           # % change vs previous period
+
+    # Payout metrics
+    pendingPayouts: BigDecimal!
+    availableBalance: BigDecimal!
+
+    # Period for stats
+    periodStart: DateTime
+    periodEnd: DateTime
+}
+
+# ORGANIZER - Finance overview for organizer finance page
+type OrganizerFinanceOverview @tag(name: "organizer") {
+    # Balance information
+    availableBalance: BigDecimal!
+    pendingBalance: BigDecimal!      # Funds in processing
+    totalEarned: BigDecimal!         # All time earnings
+    currency: String!
+
+    # Payout information
+    pendingPayoutRequests: Int!
+    lastPayoutDate: DateTime
+    lastPayoutAmount: BigDecimal
+
+    # Revenue breakdown
+    totalTicketRevenue: BigDecimal!
+    totalRefunds: BigDecimal!
+    platformFees: BigDecimal!
+    netEarnings: BigDecimal!
+
+    # Time-based metrics
+    earningsThisMonth: BigDecimal!
+    earningsLastMonth: BigDecimal!
+    monthlyGrowth: Float             # % growth month over month
+}
+
+# ORGANIZER - Recent activity item for dashboard feed
+type OrganizerActivityItem @tag(name: "organizer") {
+    id: ID!
+    type: OrganizerActivityType!
+    message: String!
+    timestamp: DateTime!
+    eventId: String
+    eventTitle: String
+    amount: BigDecimal
+    currency: String
+}
+
+# ORGANIZER - Activity type enum
+enum OrganizerActivityType {
+    TICKET_SALE
+    CHECK_IN
+    EVENT_PUBLISHED
+    PAYOUT_COMPLETED
+    PAYOUT_REQUESTED
+    REFUND_PROCESSED
+    EVENT_CREATED
+}
+
+# ORGANIZER - Upcoming event summary for dashboard
+type OrganizerUpcomingEvent @tag(name: "organizer") {
+    id: ID!
+    title: String!
+    eventDateTime: DateTime!
+    ticketsSold: Int!
+    totalCapacity: Int!
+    status: String!                  # published, draft, ended
+    revenue: BigDecimal!
+    currency: String!
+}
+
+# ORGANIZER - Transaction history item for finance page
+type OrganizerTransaction @tag(name: "organizer") {
+    id: ID!
+    type: OrganizerTransactionType!
+    description: String!
+    amount: BigDecimal!
+    currency: String!
+    status: String!
+    timestamp: DateTime!
+    eventId: String
+    eventTitle: String
+    ticketId: String
+    payoutRequestId: String
+    reference: String
+}
+
+# ORGANIZER - Transaction type enum
+enum OrganizerTransactionType {
+    TICKET_SALE
+    REFUND
+    PAYOUT
+    PLATFORM_FEE
+    ADJUSTMENT
+}
+
 # ADMIN - Individual escrow account summary for admin dashboard
 type AccountSummary @tag(name: "admin") {
     accountId: ID!
@@ -1751,6 +1870,27 @@ input FinancialReportFilterInput {
     eventId: ID
     organizerId: ID
     groupBy: TimeUnit
+}
+
+# ORGANIZER - Transaction filter for finance page
+input OrganizerTransactionFilterInput @tag(name: "organizer") {
+    type: OrganizerTransactionType
+    eventId: ID
+    startDate: DateTime
+    endDate: DateTime
+    minAmount: BigDecimal
+    maxAmount: BigDecimal
+}
+
+# ORGANIZER - Transaction offset page for finance page
+type OrganizerTransactionOffsetPage @tag(name: "organizer") {
+    content: [OrganizerTransaction!]!
+    totalElements: Int!
+    totalPages: Int!
+    page: Int!
+    size: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
 }
 
 # ============================================================================
@@ -2486,6 +2626,31 @@ type Query {
 
     # ORGANIZER - Live check-in dashboard for event day
     eventLiveDashboard(eventId: ID!): LiveDashboard! @tag(name: "organizer")
+
+    # ========================================================================
+    # ORGANIZER DASHBOARD QUERIES
+    # ORGANIZER - Self-service dashboard statistics and data
+    # ========================================================================
+
+    # ORGANIZER - Main dashboard statistics (current user's organization)
+    # organizerId extracted from JWT - OWASP A01:2021 compliance
+    myDashboardStats: OrganizerDashboardStats! @tag(name: "organizer")
+
+    # ORGANIZER - Finance overview for finance page
+    # organizerId extracted from JWT - OWASP A01:2021 compliance
+    myFinanceOverview: OrganizerFinanceOverview! @tag(name: "organizer")
+
+    # ORGANIZER - Recent activity feed for dashboard
+    # organizerId extracted from JWT - OWASP A01:2021 compliance
+    myRecentActivity(limit: Int): [OrganizerActivityItem!]! @tag(name: "organizer")
+
+    # ORGANIZER - Upcoming events for dashboard
+    # organizerId extracted from JWT - OWASP A01:2021 compliance
+    myUpcomingEvents(limit: Int): [OrganizerUpcomingEvent!]! @tag(name: "organizer")
+
+    # ORGANIZER - Transaction history with pagination
+    # organizerId extracted from JWT - OWASP A01:2021 compliance
+    myTransactionsOffsetPagination(filter: OrganizerTransactionFilterInput, pagination: OffsetPaginationInput): OrganizerTransactionOffsetPage! @tag(name: "organizer")
 
     # ========================================================================
     # FINANCIAL ENGINE QUERIES - Double-Entry Bookkeeping

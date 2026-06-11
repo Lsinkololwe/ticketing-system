@@ -2,7 +2,7 @@ package com.pml.identity.service.impl;
 
 import com.pml.identity.domain.enums.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
-import com.pml.identity.repository.OrganizerProfileRepository;
+import com.pml.identity.repository.OrganizationRepository;
 import com.pml.identity.repository.VerificationDocumentRepository;
 import com.pml.identity.service.VerificationDocumentService;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,7 @@ import java.time.Instant;
 /**
  * Verification Document Service Implementation
  *
- * Manages KYB verification documents for organizers including:
+ * Manages KYB verification documents for organizations including:
  * - Document upload
  * - Admin approval/rejection
  * - Status tracking
@@ -28,7 +28,7 @@ import java.time.Instant;
 public class VerificationDocumentServiceImpl implements VerificationDocumentService {
 
     private final VerificationDocumentRepository documentRepository;
-    private final OrganizerProfileRepository organizerProfileRepository;
+    private final OrganizationRepository organizationRepository;
     private final StreamBridge streamBridge;
 
     // ========================================================================
@@ -41,37 +41,37 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
     }
 
     @Override
-    public Flux<VerificationDocument> findByOrganizerProfile(String organizerProfileId) {
-        return documentRepository.findByOrganizerProfileId(organizerProfileId);
+    public Flux<VerificationDocument> findByOrganization(String organizationId) {
+        return documentRepository.findByOrganizationId(organizationId);
     }
 
     @Override
-    public Flux<VerificationDocument> findByOrganizerProfileAndStatus(
-            String organizerProfileId,
+    public Flux<VerificationDocument> findByOrganizationAndStatus(
+            String organizationId,
             DocumentStatus status) {
-        return documentRepository.findByOrganizerProfileIdAndStatus(organizerProfileId, status);
+        return documentRepository.findByOrganizationIdAndStatus(organizationId, status);
     }
 
     @Override
-    public Mono<VerificationDocument> findByOrganizerProfileAndType(
-            String organizerProfileId,
+    public Mono<VerificationDocument> findByOrganizationAndType(
+            String organizationId,
             String documentType) {
-        return documentRepository.findByOrganizerProfileIdAndDocumentType(organizerProfileId, documentType);
+        return documentRepository.findByOrganizationIdAndDocumentType(organizationId, documentType);
     }
 
     @Override
-    public Mono<Boolean> existsByOrganizerProfileAndType(String organizerProfileId, String documentType) {
-        return documentRepository.existsByOrganizerProfileIdAndDocumentType(organizerProfileId, documentType);
+    public Mono<Boolean> existsByOrganizationAndType(String organizationId, String documentType) {
+        return documentRepository.existsByOrganizationIdAndDocumentType(organizationId, documentType);
     }
 
     @Override
-    public Mono<Long> countByOrganizerProfile(String organizerProfileId) {
-        return documentRepository.countByOrganizerProfileId(organizerProfileId);
+    public Mono<Long> countByOrganization(String organizationId) {
+        return documentRepository.countByOrganizationId(organizationId);
     }
 
     @Override
-    public Mono<Long> countApprovedByOrganizerProfile(String organizerProfileId) {
-        return documentRepository.countByOrganizerProfileIdAndStatus(organizerProfileId, DocumentStatus.APPROVED);
+    public Mono<Long> countApprovedByOrganization(String organizationId) {
+        return documentRepository.countByOrganizationIdAndStatus(organizationId, DocumentStatus.APPROVED);
     }
 
     @Override
@@ -85,25 +85,25 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
 
     @Override
     public Mono<VerificationDocument> upload(
-            String organizerProfileId,
+            String organizationId,
             String documentType,
             String documentUrl,
             String fileName,
             Long fileSize,
             String mimeType) {
-        log.info("Uploading document type: {} for organizer profile: {}", documentType, organizerProfileId);
+        log.info("Uploading document type: {} for organization: {}", documentType, organizationId);
 
-        // Validate organizer profile exists
-        return organizerProfileRepository.findById(organizerProfileId)
+        // Validate organization exists
+        return organizationRepository.findById(organizationId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException(
-                        "Organizer profile not found: " + organizerProfileId)))
-                .flatMap(profile -> {
+                        "Organization not found: " + organizationId)))
+                .flatMap(organization -> {
                     // Check if document type already exists
-                    return existsByOrganizerProfileAndType(organizerProfileId, documentType)
+                    return existsByOrganizationAndType(organizationId, documentType)
                             .flatMap(exists -> {
                                 if (exists) {
                                     // Update existing document
-                                    return findByOrganizerProfileAndType(organizerProfileId, documentType)
+                                    return findByOrganizationAndType(organizationId, documentType)
                                             .flatMap(existing -> {
                                                 existing.setDocumentUrl(documentUrl);
                                                 existing.setFileName(fileName);
@@ -119,7 +119,7 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
 
                                 // Create new document
                                 VerificationDocument document = VerificationDocument.builder()
-                                        .organizerProfileId(organizerProfileId)
+                                        .organizationId(organizationId)
                                         .documentType(documentType)
                                         .documentUrl(documentUrl)
                                         .fileName(fileName)
@@ -132,8 +132,8 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
                                 return documentRepository.save(document);
                             })
                             .doOnSuccess(saved -> {
-                                log.info("Document uploaded: {} for organizer: {}", saved.getId(), organizerProfileId);
-                                checkAndUpdateOrganizerStatus(organizerProfileId);
+                                log.info("Document uploaded: {} for organization: {}", saved.getId(), organizationId);
+                                checkAndUpdateOrganizationStatus(organizationId);
                             });
                 });
     }
@@ -157,7 +157,7 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
                     return documentRepository.save(document)
                             .doOnSuccess(approved -> {
                                 log.info("Document approved: {}", approved.getId());
-                                checkAndUpdateOrganizerStatus(document.getOrganizerProfileId());
+                                checkAndUpdateOrganizationStatus(document.getOrganizationId());
                                 sendDocumentApprovedNotification(approved);
                             });
                 });
@@ -194,9 +194,9 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
     }
 
     @Override
-    public Mono<Void> deleteByOrganizerProfile(String organizerProfileId) {
-        log.info("Deleting all documents for organizer profile: {}", organizerProfileId);
-        return documentRepository.deleteByOrganizerProfileId(organizerProfileId);
+    public Mono<Void> deleteByOrganization(String organizationId) {
+        log.info("Deleting all documents for organization: {}", organizationId);
+        return documentRepository.deleteByOrganizationId(organizationId);
     }
 
     // ========================================================================
@@ -204,24 +204,24 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
     // ========================================================================
 
     /**
-     * Check if all required documents are approved and update organizer profile status
+     * Check if all required documents are approved and update organization status
      */
-    private void checkAndUpdateOrganizerStatus(String organizerProfileId) {
-        countApprovedByOrganizerProfile(organizerProfileId)
+    private void checkAndUpdateOrganizationStatus(String organizationId) {
+        countApprovedByOrganization(organizationId)
                 .flatMap(approvedCount -> {
                     // Check if all required documents are approved (minimum 3 typically)
                     if (approvedCount >= 3) {
-                        return organizerProfileRepository.findById(organizerProfileId)
-                                .flatMap(profile -> {
-                                    profile.setDocumentsVerified(true);
-                                    return organizerProfileRepository.save(profile);
+                        return organizationRepository.findById(organizationId)
+                                .flatMap(organization -> {
+                                    organization.setDocumentsVerified(true);
+                                    return organizationRepository.save(organization);
                                 });
                     }
                     return Mono.empty();
                 })
                 .subscribe(
-                        result -> log.info("Updated organizer profile documents verification status"),
-                        error -> log.warn("Failed to update organizer profile status: {}", error.getMessage())
+                        result -> log.info("Updated organization documents verification status"),
+                        error -> log.warn("Failed to update organization status: {}", error.getMessage())
                 );
     }
 
@@ -229,13 +229,13 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
         try {
             record DocumentApprovedEvent(
                     String documentId,
-                    String organizerProfileId,
+                    String organizationId,
                     String documentType
             ) {}
 
             DocumentApprovedEvent event = new DocumentApprovedEvent(
                     document.getId(),
-                    document.getOrganizerProfileId(),
+                    document.getOrganizationId(),
                     document.getDocumentType()
             );
 
@@ -250,14 +250,14 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
         try {
             record DocumentRejectedEvent(
                     String documentId,
-                    String organizerProfileId,
+                    String organizationId,
                     String documentType,
                     String reason
             ) {}
 
             DocumentRejectedEvent event = new DocumentRejectedEvent(
                     document.getId(),
-                    document.getOrganizerProfileId(),
+                    document.getOrganizationId(),
                     document.getDocumentType(),
                     document.getRejectionReason()
             );

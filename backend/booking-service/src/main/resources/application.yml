@@ -324,8 +324,8 @@ dgs:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/event-ticketing}
-          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/myticketzm}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/certs}
       # OAuth2 Client Configuration for service-to-service auth
       client:
         registration:
@@ -336,7 +336,7 @@ dgs:
             scope: internal-read,internal-write,users-read,events-read
         provider:
           booking-service:
-            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/event-ticketing/protocol/openid-connect/token}
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/token}
 
   # Cache Configuration
   cache:
@@ -617,7 +617,7 @@ platform:
     # Store QR codes in S3
     storage:
       type: s3
-      bucket: ${S3_BUCKET_NAME:event-ticketing-qrcodes}
+      bucket: ${S3_BUCKET_NAME:myticketzm-qrcodes}
       region: ${AWS_REGION:us-east-1}
 
   # Refund Processing

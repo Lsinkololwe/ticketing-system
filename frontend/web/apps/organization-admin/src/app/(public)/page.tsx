@@ -12,7 +12,6 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import Link from 'next/link';
 import { registerWithKeycloak, signInWithKeycloak } from '@/lib/auth/client';
 import {
   Box,

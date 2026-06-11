@@ -8,6 +8,9 @@
  * 2. Date & Location
  * 3. Tickets (pricing tiers)
  * 4. Review & Publish
+ *
+ * ARCHITECTURE NOTE: Types are imported from centralized schemas.
+ * See: libs/shared/src/api/schemas/event.schemas.ts
  */
 
 import { useState, useCallback } from 'react';
@@ -34,39 +37,49 @@ import {
   MediaImage as ImageIcon,
 } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
+// TODO: Implement event schemas in shared library
+// import {
+//   EVENT_CATEGORIES,
+//   TIMEZONES,
+//   LOCATION_TYPES,
+//   type TicketTierSchema,
+//   type CreateEventFormSchema,
+// } from '@pml.tickets/shared/api/schemas';
 
 // =============================================================================
-// TYPES
+// TYPES & CONSTANTS
 // =============================================================================
 
-interface TicketTier {
+// TODO: These should come from shared schemas
+type TicketTier = {
   id: string;
   name: string;
+  description?: string;
   price: number;
   quantity: number;
-  description: string;
-}
+};
 
-interface EventFormData {
-  // Basic Info
+type EventFormData = {
   title: string;
   description: string;
   category: string;
   coverImage: string;
-  // Date & Location
   startDate: string;
   startTime: string;
   endDate: string;
   endTime: string;
   timezone: string;
-  locationType: 'venue' | 'online';
+  locationType: string;
   venueName: string;
   venueAddress: string;
   venueCity: string;
   onlineUrl: string;
-  // Tickets
   ticketTiers: TicketTier[];
-}
+};
+
+// TODO: Move to shared schemas
+const EVENT_CATEGORIES = ['CONFERENCE', 'CONCERT', 'SPORTS', 'OTHER'] as const;
+const TIMEZONES = ['Africa/Lusaka'] as const;
 
 // =============================================================================
 // STEP INDICATOR
@@ -171,26 +184,38 @@ function FormField({ label, required, helper, error, children }: FormFieldProps)
 }
 
 // =============================================================================
-// CATEGORIES
+// OPTIONS (derived from centralized constants)
 // =============================================================================
 
-const categories = [
-  { value: 'CONFERENCE', label: 'Conference & Seminar' },
-  { value: 'CONCERT', label: 'Concert & Music' },
-  { value: 'FESTIVAL', label: 'Festival' },
-  { value: 'WORKSHOP', label: 'Workshop & Training' },
-  { value: 'NETWORKING', label: 'Networking & Business' },
-  { value: 'SPORTS', label: 'Sports & Fitness' },
-  { value: 'ARTS', label: 'Arts & Culture' },
-  { value: 'CHARITY', label: 'Charity & Fundraiser' },
-  { value: 'OTHER', label: 'Other' },
-];
+// Category labels for display
+const CATEGORY_LABELS: Record<string, string> = {
+  CONFERENCE: 'Conference & Seminar',
+  CONCERT: 'Concert & Music',
+  FESTIVAL: 'Festival',
+  WORKSHOP: 'Workshop & Training',
+  NETWORKING: 'Networking & Business',
+  SPORTS: 'Sports & Fitness',
+  ARTS: 'Arts & Culture',
+  CHARITY: 'Charity & Fundraiser',
+  OTHER: 'Other',
+};
 
-const timezones = [
-  { value: 'Africa/Lusaka', label: 'Africa/Lusaka (CAT)' },
-  { value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (SAST)' },
-  { value: 'UTC', label: 'UTC' },
-];
+const categories = EVENT_CATEGORIES.map((cat) => ({
+  value: cat,
+  label: CATEGORY_LABELS[cat] || cat,
+}));
+
+// Timezone labels for display
+const TIMEZONE_LABELS: Record<string, string> = {
+  'Africa/Lusaka': 'Africa/Lusaka (CAT)',
+  'Africa/Johannesburg': 'Africa/Johannesburg (SAST)',
+  'UTC': 'UTC',
+};
+
+const timezones = TIMEZONES.map((tz) => ({
+  value: tz,
+  label: TIMEZONE_LABELS[tz] || tz,
+}));
 
 // =============================================================================
 // MAIN COMPONENT

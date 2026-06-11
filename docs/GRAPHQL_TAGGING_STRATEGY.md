@@ -108,7 +108,7 @@ type Query {
 ```graphql
 # If a mutation is admin-only, its input type should be too
 input ApproveOrganizerInput @tag(name: "admin") {
-    organizerProfileId: ID!
+    organizationId: ID!
     approvedBy: ID!
     notes: String
 }

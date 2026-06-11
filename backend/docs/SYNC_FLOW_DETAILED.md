@@ -255,7 +255,7 @@
 │    │                      .flatMap(savedUser -> {                                                │ │
 │    │                          publishUserRegisteredEvent(savedUser);                             │ │
 │    │                          if (savedUser.hasRole(UserType.ORGANIZER)) {                       │ │
-│    │                              return createOrganizerProfileForNewUser(savedUser)             │ │
+│    │                              return createOrganizationForNewUser(savedUser)             │ │
 │    │                                      .thenReturn(savedUser);                                │ │
 │    │                          }                                                                  │ │
 │    │                          return Mono.just(savedUser);                                       │ │
@@ -388,14 +388,14 @@
 │    ┌─────────────────────────────────────────────────────────────────────────────────────────────┐ │
 │    │  File: UserSyncServiceImpl.java:209-232                                                     │ │
 │    │                                                                                             │ │
-│    │  createOrganizerProfileForNewUser(user):                                                    │ │
+│    │  createOrganizationForNewUser(user):                                                    │ │
 │    │                                                                                             │ │
 │    │  1. Check if profile already exists:                                                        │ │
-│    │     organizerProfileRepository.existsByUserId(user.getId())                                 │ │
+│    │     organizationRepository.existsByUserId(user.getId())                                 │ │
 │    │     → false (new user)                                                                      │ │
 │    │                                                                                             │ │
-│    │  2. Create OrganizerProfile:                                                                │ │
-│    │     OrganizerProfile.builder()                                                              │ │
+│    │  2. Create Organization:                                                                │ │
+│    │     Organization.builder()                                                              │ │
 │    │         .userId("550e8400-e29b-41d4-a716-446655440000")                                     │ │
 │    │         .companyName(null)              // To be filled by user later                       │ │
 │    │         .businessEmail("john@example.com")  // Pre-filled from user                         │ │
@@ -404,7 +404,7 @@
 │    │         .build()                                                                            │ │
 │    │                                                                                             │ │
 │    │  3. Save to MongoDB:                                                                        │ │
-│    │     organizerProfileRepository.save(profile)                                                │ │
+│    │     organizationRepository.save(profile)                                                │ │
 │    └─────────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                                     │
 │    MongoDB Operation:                                                                               │
@@ -423,7 +423,7 @@
 │    │    "payoutSchedule": "WEEKLY",                                                              │ │
 │    │    "createdAt": ISODate("2024-06-04T08:54:45.456Z"),                                         │ │
 │    │    "updatedAt": ISODate("2024-06-04T08:54:45.456Z"),                                         │ │
-│    │    "_class": "com.pml.identity.domain.model.OrganizerProfile"                               │ │
+│    │    "_class": "com.pml.identity.domain.model.Organization"                               │ │
 │    │  })                                                                                         │ │
 │    └─────────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                           │                                                         │
@@ -490,9 +490,9 @@
 | `attributes.phoneNumber[0]` | `phoneNumber` | String | E.164 format |
 | `attributes.phoneVerified[0]` | `phoneVerified` | Boolean | Parsed from string |
 
-### OrganizerProfile Creation (if ORGANIZER role)
+### Organization Creation (if ORGANIZER role)
 
-| Source | OrganizerProfile Field | Notes |
+| Source | Organization Field | Notes |
 |--------|------------------------|-------|
 | `user.id` | `userId` | Links to User |
 | `null` | `companyName` | User fills later |
@@ -588,4 +588,4 @@
 | `UserSyncServiceImpl.java` | `identity-service/.../service/impl/` | Sync logic |
 | `KeycloakService.java` | `identity-service/.../infrastructure/keycloak/` | Keycloak Admin API |
 | `UserRepository.java` | `identity-service/.../repository/` | MongoDB CRUD |
-| `OrganizerProfileRepository.java` | `identity-service/.../repository/` | MongoDB CRUD |
+| `OrganizationRepository.java` | `identity-service/.../repository/` | MongoDB CRUD |

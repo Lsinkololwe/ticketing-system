@@ -982,6 +982,124 @@ Events are published to Azure Service Bus on user actions:
 | `UserRegisteredEvent` | `identity-events` | New user created |
 | `OrganizerApprovedEvent` | `identity-events` | Organizer approved by admin |
 
+### 8. File Upload Architecture (REST over GraphQL)
+
+**Critical Decision**: Use REST APIs for file uploads, not GraphQL.
+
+**Why REST for File Uploads?**
+
+Industry consensus (Apollo, WunderGraph, AWS) strongly recommends REST over GraphQL for file uploads due to:
+
+| Issue | GraphQL Multipart | REST with Presigned URLs |
+|-------|------------------|-------------------------|
+| **Security** | CSRF vulnerabilities | No CSRF risk |
+| **Performance** | Buffers entire file in memory | Streams directly to S3 |
+| **Scalability** | Limited by server RAM | Unlimited concurrent uploads |
+| **Progress Tracking** | Requires workarounds | Native browser support |
+| **Server Load** | High (proxies file bytes) | Minimal (metadata only) |
+
+**Architecture Flow**:
+
+```
+Frontend                     Backend (REST)              S3
+   │                              │                      │
+   │  1. POST /api/v1/organizations/{orgId}/documents/upload-url
+   │     (fileName, mimeType, fileSize)                  │
+   │──────────────────────────▶│                         │
+   │                           │  Generate presigned     │
+   │                           │  URL (15min expiry)     │
+   │                           │─────────────────────────▶
+   │                           │                         │
+   │  2. { uploadUrl, fileKey }│                         │
+   │◀──────────────────────────│                         │
+   │                           │                         │
+   │  3. PUT {uploadUrl} (file bytes with progress)      │
+   │─────────────────────────────────────────────────────▶
+   │                           │                         │
+   │  4. POST /api/v1/organizations/{orgId}/documents   │
+   │     (documentUrl, metadata)                         │
+   │──────────────────────────▶│                         │
+   │                           │  Save metadata to       │
+   │                           │  MongoDB                │
+   │                           │                         │
+   │  5. { document }          │                         │
+   │◀──────────────────────────│                         │
+```
+
+**Backend REST Controller**:
+
+```java
+@RestController
+@RequestMapping("/api/v1")
+public class VerificationDocumentRestController {
+
+    @PostMapping("/organizations/{orgId}/documents/upload-url")
+    @PreAuthorize("hasRole('ORGANIZER')")
+    public Mono<ResponseEntity<PresignedUploadUrlResponse>> requestUploadUrl(
+            @PathVariable String orgId,
+            @Valid @RequestBody UploadUrlRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        // Generate presigned URL (valid for 15 minutes)
+        return fileStorageService.generatePresignedUrl(fileKey, 15);
+    }
+
+    @PostMapping("/organizations/{orgId}/documents")
+    @PreAuthorize("hasRole('ORGANIZER')")
+    public Mono<ResponseEntity<DocumentResponse>> registerDocument(
+            @PathVariable String orgId,
+            @Valid @RequestBody RegisterDocumentRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        // Save document metadata to MongoDB
+        return documentService.upload(orgId, request);
+    }
+}
+```
+
+**Frontend React Hook**:
+
+```typescript
+import { useDocumentUpload } from '@/api/rest';
+
+function DocumentUploadForm({ organizationId }) {
+  const { upload, progress, isUploading, error } = useDocumentUpload(organizationId);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const document = await upload('BUSINESS_LICENSE', file);
+      console.log('Uploaded:', document);
+    } catch (err) {
+      console.error('Upload failed:', err);
+    }
+  };
+
+  return (
+    <div>
+      <input type="file" onChange={handleFileSelect} disabled={isUploading} />
+      {isUploading && (
+        <div className="progress-bar">
+          <div style={{ width: `${progress.percentage}%` }} />
+        </div>
+      )}
+      {error && <div className="error">{error}</div>}
+    </div>
+  );
+}
+```
+
+**File Locations**:
+- Backend: `backend/identity-service/src/main/java/com/pml/identity/web/rest/VerificationDocumentRestController.java`
+- Frontend Client: `frontend/web/libs/shared/src/api/rest/documents.ts`
+- Frontend Hook: `frontend/web/libs/shared/src/api/rest/useDocumentUpload.ts`
+- Documentation: `docs/FILE_UPLOAD_ARCHITECTURE.md`
+
+**References**:
+- [Apollo File Upload Best Practices](https://www.apollographql.com/blog/file-upload-best-practices)
+- [GraphQL File Uploads - WunderGraph](https://wundergraph.com/blog/graphql_file_uploads_evaluating_the_5_most_common_approaches)
+- [AWS S3 Presigned URLs](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/examples-s3-presign.md)
+
 ## Implementation Rules
 
 ### Backend Development

@@ -45,39 +45,111 @@ import {
   ShieldCheck,
 } from 'iconoir-react';
 import {
-  useOrganizerProfile,
-  useApproveOrganizer,
-  useRejectOrganizer,
-  useRequestOrganizerChanges,
-  useSuspendOrganizer,
-  useReactivateOrganizer,
-  useVerifyOrganizerBusiness,
-  useVerifyOrganizerDocuments,
-  useVerifyOrganizerBankAccount,
-  useUpdateOrganizerAdminNotes,
-} from '@pml.tickets/shared/api/graphql/admin/organizers';
-import type { OrganizerStatus, DocumentStatus } from '@pml.tickets/shared/types/graphql';
+  useOrganization,
+  useApproveOrganization,
+  useRejectOrganization,
+  useRequestOrganizationChanges,
+  useSuspendOrganization,
+  useUnsuspendOrganization,
+  type Organization,
+  getStatusColor,
+  getStatusLabel,
+} from '@pml.tickets/shared/api/admin/modules/organization';
+import type { DocumentStatus } from '@pml.tickets/shared/types/graphql';
+
+// Extended organization type that includes fields from the admin query
+// that may not be in the base generated types
+interface OrganizationAdmin {
+  id: string;
+  ownerId: string;
+  name: string | null;
+  slug: string | null;
+  tagline?: string | null;
+  description?: string | null;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  website?: string | null;
+  type?: string | null;
+  status: string;
+  kybStatus?: string | null;
+  businessType?: string | null;
+  businessRegistrationNumber?: string | null;
+  taxId?: string | null;
+  businessPhone?: string | null;
+  businessEmail?: string | null;
+  businessAddress?: {
+    street?: string | null;
+    city?: string | null;
+    province?: string | null;
+    country?: string | null;
+    postalCode?: string | null;
+  } | null;
+  socialLinks?: {
+    facebook?: string | null;
+    twitter?: string | null;
+    instagram?: string | null;
+    linkedin?: string | null;
+    youtube?: string | null;
+    tiktok?: string | null;
+  } | null;
+  verified: boolean;
+  documentsVerified?: boolean | null;
+  payoutAccountVerified?: boolean | null;
+  verifiedAt?: string | null;
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    fullName?: string | null;
+  } | null;
+  verificationDocuments?: Array<{
+    id: string;
+    documentType: string;
+    documentUrl?: string | null;
+    fileName?: string | null;
+    fileSize?: number | null;
+    mimeType?: string | null;
+    status: string;
+    uploadedAt?: string | null;
+  }> | null;
+  totalEvents?: number | null;
+  totalRevenue?: string | null;
+  totalTicketsSold?: number | null;
+  averageRating?: number | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
 
 // ==================== Status Helpers ====================
 
-const STATUS_COLORS: Record<OrganizerStatus, 'gray' | 'amber' | 'green' | 'red' | 'blue' | 'orange'> = {
+// Status color mapping - uses string keys to handle approval workflow statuses
+// that may not be in the generated types yet
+const STATUS_COLORS: Record<string, 'gray' | 'amber' | 'green' | 'red' | 'blue' | 'orange'> = {
   DRAFT: 'gray',
-  PENDING_DOCUMENTS: 'blue',
   PENDING_REVIEW: 'amber',
   APPROVED: 'green',
+  ACTIVE: 'green',
   REJECTED: 'red',
   SUSPENDED: 'red',
   CHANGES_REQUESTED: 'orange',
+  INACTIVE: 'gray',
+  PENDING_DELETION: 'red',
 };
 
-const STATUS_LABELS: Record<OrganizerStatus, string> = {
+const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
-  PENDING_DOCUMENTS: 'Pending Documents',
   PENDING_REVIEW: 'Pending Review',
   APPROVED: 'Approved',
+  ACTIVE: 'Active',
   REJECTED: 'Rejected',
   SUSPENDED: 'Suspended',
   CHANGES_REQUESTED: 'Changes Requested',
+  INACTIVE: 'Inactive',
+  PENDING_DELETION: 'Pending Deletion',
 };
 
 // ==================== Info Card Component ====================
@@ -179,19 +251,16 @@ export default function OrganizerDetailPage() {
   const router = useRouter();
   const organizerId = params.id as string;
 
-  // Fetch organizer profile
-  const { profile, loading, error, refetch } = useOrganizerProfile(organizerId);
+  // Fetch organization (cast to extended type that includes admin fields)
+  const { organization: rawOrganization, loading, error, refetch } = useOrganization(organizerId);
+  const organization = rawOrganization as OrganizationAdmin | null;
 
   // Mutation hooks
-  const { approveOrganizer, loading: approving } = useApproveOrganizer();
-  const { rejectOrganizer, loading: rejecting } = useRejectOrganizer();
-  const { requestChanges, loading: requesting } = useRequestOrganizerChanges();
-  const { suspendOrganizer, loading: suspending } = useSuspendOrganizer();
-  const { reactivateOrganizer, loading: reactivating } = useReactivateOrganizer();
-  const { verifyBusiness, loading: verifyingBusiness } = useVerifyOrganizerBusiness();
-  const { verifyDocuments, loading: verifyingDocs } = useVerifyOrganizerDocuments();
-  const { verifyBankAccount, loading: verifyingBank } = useVerifyOrganizerBankAccount();
-  const { updateAdminNotes: _updateAdminNotes, loading: _updatingNotes } = useUpdateOrganizerAdminNotes();
+  const { approve, loading: approving } = useApproveOrganization();
+  const { reject, loading: rejecting } = useRejectOrganization();
+  const { requestChanges, loading: requesting } = useRequestOrganizationChanges();
+  const { suspend, loading: suspending } = useSuspendOrganization();
+  const { unsuspend, loading: reactivating } = useUnsuspendOrganization();
 
   // Dialog states
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
@@ -201,18 +270,18 @@ export default function OrganizerDetailPage() {
 
   // Handlers
   const handleApprove = useCallback(async () => {
-    await approveOrganizer(organizerId);
+    await approve(organizerId);
     setApproveDialogOpen(false);
     refetch();
-  }, [approveOrganizer, organizerId, refetch]);
+  }, [approve, organizerId, refetch]);
 
   const handleReject = useCallback(async (reason?: string) => {
     if (reason) {
-      await rejectOrganizer(organizerId, reason);
+      await reject(organizerId, reason);
       setRejectDialogOpen(false);
       refetch();
     }
-  }, [rejectOrganizer, organizerId, refetch]);
+  }, [reject, organizerId, refetch]);
 
   const handleRequestChanges = useCallback(async (reason?: string) => {
     if (reason) {
@@ -224,31 +293,16 @@ export default function OrganizerDetailPage() {
 
   const handleSuspend = useCallback(async (reason?: string) => {
     if (reason) {
-      await suspendOrganizer(organizerId, reason);
+      await suspend(organizerId, reason);
       setSuspendDialogOpen(false);
       refetch();
     }
-  }, [suspendOrganizer, organizerId, refetch]);
+  }, [suspend, organizerId, refetch]);
 
   const handleReactivate = useCallback(async () => {
-    await reactivateOrganizer(organizerId);
+    await unsuspend(organizerId);
     refetch();
-  }, [reactivateOrganizer, organizerId, refetch]);
-
-  const handleVerifyBusiness = useCallback(async () => {
-    await verifyBusiness(organizerId);
-    refetch();
-  }, [verifyBusiness, organizerId, refetch]);
-
-  const handleVerifyDocuments = useCallback(async () => {
-    await verifyDocuments(organizerId);
-    refetch();
-  }, [verifyDocuments, organizerId, refetch]);
-
-  const handleVerifyBankAccount = useCallback(async () => {
-    await verifyBankAccount(organizerId);
-    refetch();
-  }, [verifyBankAccount, organizerId, refetch]);
+  }, [unsuspend, organizerId, refetch]);
 
   // Loading state
   if (loading) {
@@ -260,23 +314,23 @@ export default function OrganizerDetailPage() {
   }
 
   // Error state
-  if (error || !profile) {
+  if (error || !organization) {
     return (
       <Callout.Root color="red">
         <Callout.Icon>
           <WarningTriangle />
         </Callout.Icon>
         <Callout.Text>
-          {error?.message || 'Organizer not found'}
+          {error?.message || 'Organization not found'}
         </Callout.Text>
       </Callout.Root>
     );
   }
 
   const isActionLoading = approving || rejecting || requesting || suspending || reactivating;
-  const isPendingReview = profile.status === 'PENDING_REVIEW';
-  const isApproved = profile.status === 'APPROVED';
-  const isSuspended = profile.status === 'SUSPENDED';
+  const isPendingReview = organization.status === 'PENDING_REVIEW';
+  const isApproved = organization.status === 'APPROVED' || organization.status === 'ACTIVE';
+  const isSuspended = organization.status === 'SUSPENDED';
 
   return (
     <Box>
@@ -289,15 +343,15 @@ export default function OrganizerDetailPage() {
           <Flex align="center" gap="3">
             <Avatar
               size="4"
-              fallback={profile.companyName?.charAt(0) || 'O'}
+              fallback={organization.name?.charAt(0) || 'O'}
             />
             <Box>
-              <Heading size="5">{profile.companyName || 'Unnamed Organizer'}</Heading>
+              <Heading size="5">{organization.name || 'Unnamed Organization'}</Heading>
               <Flex align="center" gap="2" mt="1">
-                <Badge color={STATUS_COLORS[profile.status]} variant="soft">
-                  {STATUS_LABELS[profile.status]}
+                <Badge color={STATUS_COLORS[organization.status]} variant="soft">
+                  {STATUS_LABELS[organization.status]}
                 </Badge>
-                {profile.verified && (
+                {organization.verified && (
                   <Badge color="green" variant="soft">
                     <ShieldCheck width={12} height={12} /> Verified
                   </Badge>
@@ -359,13 +413,13 @@ export default function OrganizerDetailPage() {
       </Flex>
 
       {/* Status Reason Callout */}
-      {profile.statusReason && (
+      {organization.rejectionReason && (
         <Callout.Root color="amber" mb="4">
           <Callout.Icon>
             <WarningTriangle />
           </Callout.Icon>
           <Callout.Text>
-            <strong>Status Reason:</strong> {profile.statusReason}
+            <strong>Status Reason:</strong> {organization.rejectionReason}
           </Callout.Text>
         </Callout.Root>
       )}
@@ -384,58 +438,42 @@ export default function OrganizerDetailPage() {
           <Grid columns={{ initial: '1', md: '2' }} gap="4" mt="4">
             {/* Business Information */}
             <InfoCard title="Business Information">
-              <InfoRow icon={Building} label="Company Name" value={profile.companyName} />
-              <InfoRow label="Tagline" value={profile.tagline} />
-              <InfoRow label="Business Type" value={profile.businessType} />
-              <InfoRow label="Year Established" value={profile.yearEstablished} />
+              <InfoRow icon={Building} label="Organization Name" value={organization.name} />
+              <InfoRow label="Tagline" value={organization.tagline} />
+              <InfoRow label="Organization Type" value={organization.type} />
+              <InfoRow label="Business Type" value={organization.businessType} />
               <Separator my="2" />
-              <InfoRow label="Registration Number" value={profile.businessRegistrationNumber} />
-              <InfoRow label="Tax ID (TPIN)" value={profile.taxId} />
+              <InfoRow label="Registration Number" value={organization.businessRegistrationNumber} />
+              <InfoRow label="Tax ID (TPIN)" value={organization.taxId} />
             </InfoCard>
 
             {/* Contact Information */}
             <InfoCard title="Contact Information">
-              <InfoRow icon={Mail} label="Email" value={profile.businessEmail} />
-              <InfoRow icon={Phone} label="Phone" value={profile.businessPhone} />
-              <InfoRow icon={Globe} label="Website" value={profile.website} />
+              <InfoRow icon={Mail} label="Email" value={organization.businessEmail} />
+              <InfoRow icon={Phone} label="Phone" value={organization.businessPhone} />
+              <InfoRow icon={Globe} label="Website" value={organization.website} />
               <Separator my="2" />
-              <InfoRow icon={MapPin} label="Address" value={profile.businessAddress} />
-              <InfoRow label="City" value={profile.city} />
-              <InfoRow label="Province" value={profile.province} />
-              <InfoRow label="Country" value={profile.country || 'Zambia'} />
-              <InfoRow label="Postal Code" value={profile.postalCode} />
-            </InfoCard>
-
-            {/* Platform Settings */}
-            <InfoCard title="Platform Settings">
-              <InfoRow label="Commission Rate" value={profile.commissionRate ? `${profile.commissionRate}%` : null} />
-              <InfoRow label="Payout Schedule" value={profile.payoutSchedule} />
+              <InfoRow icon={MapPin} label="Address" value={organization.businessAddress?.street} />
+              <InfoRow label="City" value={organization.businessAddress?.city} />
+              <InfoRow label="Province" value={organization.businessAddress?.province} />
+              <InfoRow label="Country" value={organization.businessAddress?.country || 'Zambia'} />
+              <InfoRow label="Postal Code" value={organization.businessAddress?.postalCode} />
             </InfoCard>
 
             {/* Statistics */}
             <InfoCard title="Statistics">
-              <InfoRow label="Total Events" value={profile.totalEvents} />
-              <InfoRow label="Tickets Sold" value={profile.totalTicketsSold} />
-              <InfoRow label="Total Revenue" value={profile.totalRevenue ? `K${profile.totalRevenue}` : null} />
-              <InfoRow label="Average Rating" value={profile.averageRating ? `${profile.averageRating}/5` : null} />
+              <InfoRow label="Total Events" value={organization.totalEvents} />
+              <InfoRow label="Tickets Sold" value={organization.totalTicketsSold} />
+              <InfoRow label="Total Revenue" value={organization.totalRevenue ? `K${organization.totalRevenue}` : null} />
+              <InfoRow label="Average Rating" value={organization.averageRating ? `${organization.averageRating}/5` : null} />
             </InfoCard>
 
             {/* Description */}
-            {profile.companyDescription && (
+            {organization.description && (
               <StyledCard style={{ gridColumn: '1 / -1' }}>
                 <Heading size="3" mb="3">Description</Heading>
                 <Text size="2" color="gray">
-                  {profile.companyDescription}
-                </Text>
-              </StyledCard>
-            )}
-
-            {/* Review Notes */}
-            {profile.reviewNotes && (
-              <StyledCard style={{ gridColumn: '1 / -1' }}>
-                <Heading size="3" mb="3">Admin Review Notes</Heading>
-                <Text size="2" color="gray">
-                  {profile.reviewNotes}
+                  {organization.description}
                 </Text>
               </StyledCard>
             )}
@@ -449,7 +487,7 @@ export default function OrganizerDetailPage() {
               <Flex direction="column" align="center" gap="3" py="4">
                 <Badge
                   size="2"
-                  color={profile.verified ? 'green' : 'gray'}
+                  color={organization.verified ? 'green' : 'gray'}
                   variant="soft"
                   style={{ padding: '12px 24px', borderRadius: '50%' }}
                 >
@@ -457,17 +495,12 @@ export default function OrganizerDetailPage() {
                 </Badge>
                 <Text weight="medium">Business Verified</Text>
                 <Text size="1" color="gray">
-                  {profile.verified ? 'Verified' : 'Not Verified'}
+                  {organization.verified ? 'Verified' : 'Not Verified'}
                 </Text>
-                {!profile.verified && (
-                  <Button
-                    size="1"
-                    variant="soft"
-                    onClick={handleVerifyBusiness}
-                    disabled={verifyingBusiness}
-                  >
-                    {verifyingBusiness ? <Spinner size="1" /> : 'Verify'}
-                  </Button>
+                {organization.verifiedAt && (
+                  <Text size="1" color="gray">
+                    {new Date(organization.verifiedAt).toLocaleDateString()}
+                  </Text>
                 )}
               </Flex>
             </StyledCard>
@@ -476,7 +509,7 @@ export default function OrganizerDetailPage() {
               <Flex direction="column" align="center" gap="3" py="4">
                 <Badge
                   size="2"
-                  color={profile.documentsVerified ? 'green' : 'gray'}
+                  color={organization.documentsVerified ? 'green' : 'gray'}
                   variant="soft"
                   style={{ padding: '12px 24px', borderRadius: '50%' }}
                 >
@@ -484,18 +517,8 @@ export default function OrganizerDetailPage() {
                 </Badge>
                 <Text weight="medium">Documents Verified</Text>
                 <Text size="1" color="gray">
-                  {profile.documentsVerified ? 'Verified' : 'Not Verified'}
+                  {organization.documentsVerified ? 'Verified' : 'Not Verified'}
                 </Text>
-                {!profile.documentsVerified && (
-                  <Button
-                    size="1"
-                    variant="soft"
-                    onClick={handleVerifyDocuments}
-                    disabled={verifyingDocs}
-                  >
-                    {verifyingDocs ? <Spinner size="1" /> : 'Verify'}
-                  </Button>
-                )}
               </Flex>
             </StyledCard>
 
@@ -503,26 +526,16 @@ export default function OrganizerDetailPage() {
               <Flex direction="column" align="center" gap="3" py="4">
                 <Badge
                   size="2"
-                  color={profile.bankVerified ? 'green' : 'gray'}
+                  color={organization.payoutAccountVerified ? 'green' : 'gray'}
                   variant="soft"
                   style={{ padding: '12px 24px', borderRadius: '50%' }}
                 >
                   <Building width={24} height={24} />
                 </Badge>
-                <Text weight="medium">Bank Account Verified</Text>
+                <Text weight="medium">Payout Account Verified</Text>
                 <Text size="1" color="gray">
-                  {profile.bankVerified ? 'Verified' : 'Not Verified'}
+                  {organization.payoutAccountVerified ? 'Verified' : 'Not Verified'}
                 </Text>
-                {!profile.bankVerified && (
-                  <Button
-                    size="1"
-                    variant="soft"
-                    onClick={handleVerifyBankAccount}
-                    disabled={verifyingBank}
-                  >
-                    {verifyingBank ? <Spinner size="1" /> : 'Verify'}
-                  </Button>
-                )}
               </Flex>
             </StyledCard>
           </Grid>
@@ -531,9 +544,9 @@ export default function OrganizerDetailPage() {
         {/* Documents Tab */}
         <Tabs.Content value="documents">
           <Box mt="4">
-            {profile.verificationDocuments && profile.verificationDocuments.length > 0 ? (
+            {organization.verificationDocuments && organization.verificationDocuments.length > 0 ? (
               <Grid columns={{ initial: '1', md: '2' }} gap="4">
-                {profile.verificationDocuments.map((doc) => (
+                {organization.verificationDocuments.map((doc) => (
                   <StyledCard key={doc.id}>
                     <Flex justify="between" align="center">
                       <Box>
@@ -564,19 +577,19 @@ export default function OrganizerDetailPage() {
         <Tabs.Content value="activity">
           <Grid columns={{ initial: '1', md: '2' }} gap="4" mt="4">
             <InfoCard title="Timeline">
-              <InfoRow icon={Calendar} label="Created" value={profile.createdAt ? new Date(profile.createdAt).toLocaleDateString() : null} />
-              <InfoRow label="Submitted" value={profile.submittedAt ? new Date(profile.submittedAt).toLocaleDateString() : null} />
-              <InfoRow label="Reviewed" value={profile.reviewedAt ? new Date(profile.reviewedAt).toLocaleDateString() : null} />
-              <InfoRow label="Approved" value={profile.approvedAt ? new Date(profile.approvedAt).toLocaleDateString() : null} />
-              <InfoRow label="Last Updated" value={profile.updatedAt ? new Date(profile.updatedAt).toLocaleDateString() : null} />
+              <InfoRow icon={Calendar} label="Created" value={organization.createdAt ? new Date(organization.createdAt).toLocaleDateString() : null} />
+              <InfoRow label="Submitted" value={organization.submittedAt ? new Date(organization.submittedAt).toLocaleDateString() : null} />
+              <InfoRow label="Reviewed" value={organization.reviewedAt ? new Date(organization.reviewedAt).toLocaleDateString() : null} />
+              <InfoRow label="Approved" value={organization.approvedAt ? new Date(organization.approvedAt).toLocaleDateString() : null} />
+              <InfoRow label="Last Updated" value={organization.updatedAt ? new Date(organization.updatedAt).toLocaleDateString() : null} />
             </InfoCard>
 
             <InfoCard title="Review Information">
-              <InfoRow icon={UserIcon} label="Reviewed By" value={profile.reviewedBy?.fullName} />
-              {profile.reviewNotes && (
+              <InfoRow icon={UserIcon} label="Reviewed By" value={organization.reviewedBy?.fullName} />
+              {organization.rejectionReason && (
                 <Box mt="2">
-                  <Text size="2" color="gray">Notes:</Text>
-                  <Text size="2">{profile.reviewNotes}</Text>
+                  <Text size="2" color="gray">Reason:</Text>
+                  <Text size="2">{organization.rejectionReason}</Text>
                 </Box>
               )}
             </InfoCard>

@@ -88,6 +88,17 @@ public interface AuthorizationService {
     Mono<AuthorizationResult> checkOwnership(String userId, String organizationId);
 
     /**
+     * Check if user owns the organization (is the OWNER).
+     *
+     * <p>Convenience method that returns a boolean instead of AuthorizationResult.</p>
+     *
+     * @param userId User ID (from JWT)
+     * @param organizationId Organization ID
+     * @return Mono emitting true if user is the owner, false otherwise
+     */
+    Mono<Boolean> isOrganizationOwner(String userId, String organizationId);
+
+    /**
      * Get the organization ID that a user can create events for.
      *
      * <p>Used when organizationId is not provided in the request.

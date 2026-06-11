@@ -18,13 +18,13 @@ export interface KeycloakConfig {
  */
 export const KEYCLOAK_CLIENTS = {
   /** Public ticketing web app */
-  TICKETING_WEB: 'event-ticketing-web',
+  TICKETING_WEB: 'myticketzm-web',
   /** Admin portal */
-  ADMIN: 'event-ticketing-admin',
+  ADMIN: 'myticketzm-admin',
   /** Mobile app (public client with PKCE) */
-  MOBILE: 'event-ticketing-mobile',
+  MOBILE: 'myticketzm-mobile',
   /** Organizer portal */
-  ORGANIZER: 'event-ticketing-organizer',
+  ORGANIZER: 'myticketzm-organizer',
 } as const;
 
 /**
@@ -46,7 +46,7 @@ export type KeycloakRole = (typeof KEYCLOAK_ROLES)[keyof typeof KEYCLOAK_ROLES];
  */
 export function getKeycloakConfig(): KeycloakConfig {
   const url = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
-  const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'event-ticketing';
+  const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'myticketzm';
   const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
 
   if (!url || !clientId) {

@@ -293,7 +293,7 @@ function ApplicationLayoutContent({ children }: ApplicationLayoutProps) {
 
 export default function ApplicationLayout({ children }: ApplicationLayoutProps) {
   return (
-    <ProtectedRoute loginUrl="/login">
+    <ProtectedRoute>
       <ApplicationLayoutContent>{children}</ApplicationLayoutContent>
     </ProtectedRoute>
   );

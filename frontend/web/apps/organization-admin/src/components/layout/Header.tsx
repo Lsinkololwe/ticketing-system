@@ -36,7 +36,10 @@ import {
 } from 'iconoir-react';
 import Link from 'next/link';
 import { useSession, signOutComplete } from '@/lib/auth/client';
-import { useOrganization } from '@/lib/contexts/OrganizationContext';
+import {
+  useMyOrganization,
+  canEditOrganization,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -45,12 +48,13 @@ interface HeaderProps {
 
 export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
   const { data: session } = useSession();
-  const { can, organization } = useOrganization();
+  const isAuthenticated = !!session?.user;
+  const { organization, status } = useMyOrganization({ skip: !isAuthenticated });
   const { theme, setTheme } = useTheme();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // Check if user can manage organization settings (OWNER/ADMIN only)
-  const canManageSettings = can('manageSettings');
+  // Check if user can manage organization settings
+  const canManageSettings = canEditOrganization(status);
 
   const handleLogout = useCallback(async () => {
     try {

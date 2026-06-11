@@ -68,7 +68,6 @@ public class MongoSchemaValidationConfig extends com.pml.shared.config.MongoSche
         schemas.put("users", "users-schema.json");
         schemas.put("organizations", "organizations-schema.json");
         schemas.put("organization_members", "organization-members-schema.json");
-        schemas.put("organizer_profiles", "organizer-profiles-schema.json");
 
         // =========================================================================
         // PERMISSIONS & RBAC COLLECTIONS

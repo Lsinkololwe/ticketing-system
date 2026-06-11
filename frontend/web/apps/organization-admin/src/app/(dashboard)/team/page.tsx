@@ -35,7 +35,12 @@ import {
   User,
 } from 'iconoir-react';
 import { PageHeader, NoTeamMembersEmptyState } from '@/components/ui';
-import { useOrganization, OrganizationRole } from '@/lib/contexts/OrganizationContext';
+import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  canManageTeam,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import type { OrganizationRole } from '@/config/navigation';
 
 // =============================================================================
 // TYPES
@@ -253,13 +258,16 @@ function MemberCard({ member, canManage, isCurrentUser, onRoleChange, onRemove }
 // =============================================================================
 
 export default function TeamPage() {
-  const { can } = useOrganization();
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
+  const { status } = useMyOrganization({ skip: !isAuthenticated });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [members, setMembers] = useState<TeamMember[]>(mockMembers);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
 
-  const canManageTeam = can('manageTeam');
+  const canManage = canManageTeam(status);
 
   // Filter members
   const filteredMembers = useMemo(() => {
@@ -321,7 +329,7 @@ export default function TeamPage() {
       <PageHeader
         title="Team Members"
         description={`${members.length} members in your organization`}
-        actions={canManageTeam ? [
+        actions={canManage ? [
           {
             label: 'Invite Member',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
@@ -402,7 +410,7 @@ export default function TeamPage() {
                     <MemberCard
                       key={member.id}
                       member={member}
-                      canManage={canManageTeam}
+                      canManage={canManage}
                       isCurrentUser={member.id === '1'} // In real app, check against current user ID
                       onRoleChange={handleRoleChange}
                       onRemove={handleRemoveClick}

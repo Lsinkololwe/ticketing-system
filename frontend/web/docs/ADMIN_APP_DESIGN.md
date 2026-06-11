@@ -298,7 +298,7 @@ const navigationItems = [
 #### Data Model (from Identity Service)
 
 ```graphql
-type OrganizerProfile {
+type Organization {
   id: ID!
   userId: String!
   user: User
@@ -832,7 +832,7 @@ import {
   REJECT_ORGANIZER,
 } from './organizers.admin.queryDefinitions';
 import type {
-  OrganizerProfile,
+  Organization,
   OrganizerStatus,
   OffsetPaginationInput,
 } from '../../../types/graphql/schema-types';
@@ -1115,7 +1115,7 @@ const searchSchema = z.object({
 | Components | PascalCase | `OrganizerList.tsx` |
 | Hooks | camelCase with `use` prefix | `useOrganizerList.ts` |
 | GraphQL Operations | SCREAMING_SNAKE_CASE | `GET_ORGANIZER_PROFILE` |
-| Types | PascalCase | `OrganizerProfile` |
+| Types | PascalCase | `Organization` |
 | Variables | camelCase | `organizerList` |
 
 ### 8.3 GraphQL Operation Naming
@@ -1137,7 +1137,7 @@ UPDATE_ORGANIZER_PROFILE
 ```tsx
 // Standard error handling pattern
 function OrganizerDetail({ id }: Props) {
-  const { data, loading, error } = useOrganizerProfile(id);
+  const { data, loading, error } = useOrganization(id);
 
   if (loading) return <DetailSkeleton />;
   if (error) return <ErrorState error={error} onRetry={() => refetch()} />;

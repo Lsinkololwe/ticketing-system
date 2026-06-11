@@ -427,10 +427,10 @@ const request = new AuthSession.AuthRequest({
 
 ### 3.2 New Entities
 
-**OrganizerProfile (MongoDB)**
+**Organization (MongoDB)**
 ```java
 @Document(collection = "organizer_profiles")
-public class OrganizerProfile {
+public class Organization {
     @Id
     private String id;
 

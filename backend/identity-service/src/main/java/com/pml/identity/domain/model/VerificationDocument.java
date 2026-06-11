@@ -40,11 +40,11 @@ public class VerificationDocument {
     private String id;
 
     /**
-     * OrganizerProfile ID this document belongs to
+     * Organization ID this document belongs to
      */
-    @NotBlank(message = "Organizer profile ID is required")
+    @NotBlank(message = "Organization ID is required")
     @Indexed
-    private String organizerProfileId;
+    private String organizationId;
 
     /**
      * Type of document
