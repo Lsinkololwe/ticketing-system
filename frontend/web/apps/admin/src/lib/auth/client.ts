@@ -165,6 +165,33 @@ export const getSession = authClient.getSession;
 export const signIn = authClient.signIn;
 
 /**
+ * Sign in with Keycloak OAuth (convenience function)
+ *
+ * Initiates OAuth flow with Keycloak as the provider.
+ *
+ * @param callbackURL - Where to redirect after successful auth (default: '/dashboard')
+ * @returns Promise that resolves with the OAuth response containing redirect URL
+ *
+ * @example
+ * ```tsx
+ * // Basic usage
+ * await signInWithKeycloak();
+ *
+ * // With custom callback
+ * <Button onClick={() => signInWithKeycloak('/events')}>Sign In</Button>
+ * ```
+ *
+ * @used-by
+ * - Login page sign-in button
+ */
+export function signInWithKeycloak(callbackURL = '/dashboard') {
+  return authClient.signIn.oauth2({
+    providerId: 'keycloak',
+    callbackURL,
+  });
+}
+
+/**
  * Basic sign out (Better Auth only)
  *
  * Clears the Better Auth session but does NOT terminate Keycloak SSO.

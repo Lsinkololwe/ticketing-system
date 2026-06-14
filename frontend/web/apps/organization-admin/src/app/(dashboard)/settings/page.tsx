@@ -24,7 +24,6 @@ import {
   useMyOrganization,
   useUpdateOrganizationApplication,
   type OrganizationApplicationInput,
-  canEditApplication,
   canEditOrganization,
   BUSINESS_TYPES,
   ZAMBIAN_PROVINCES,

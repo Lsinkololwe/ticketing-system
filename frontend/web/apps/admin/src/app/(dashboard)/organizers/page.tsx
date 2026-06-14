@@ -51,8 +51,6 @@ import {
   useUnsuspendOrganization,
   // Types and helpers
   type Organization as OrgType,
-  getStatusColor,
-  getStatusLabel,
 } from '@pml.tickets/shared/api/admin/modules/organization';
 
 type Organization = OrgType;
@@ -540,7 +538,7 @@ export default function OrganizersPage() {
 
         <Box mt="4">
           <OrganizationsTable
-            organizations={activeData.organizations as Organization[]}
+            organizations={activeData.organizations as unknown as Organization[]}
             loading={activeData.loading || isActionLoading}
             onView={handleView}
             onApprove={handleApprove}

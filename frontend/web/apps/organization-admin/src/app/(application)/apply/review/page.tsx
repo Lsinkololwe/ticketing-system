@@ -11,7 +11,7 @@
  * MIGRATION NOTE: This page now uses the Organization model and GraphQL operations.
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Flex, Text, Heading, Button, Card, Checkbox, Spinner } from '@radix-ui/themes';
 import {
@@ -36,7 +36,6 @@ import {
   applicationReviewSchema,
   type ApplicationReviewFormData as ApplicationReviewSchema,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
-import { useZodForm } from '@pml.tickets/shared';
 
 // =============================================================================
 // CONSTANTS
@@ -173,30 +172,72 @@ export default function ReviewPage() {
   } = useMyOrganization();
   const { submit, error: submitError } = useSubmitOrganizationForReview();
 
-  // Initial form data for terms agreement
-  const initialFormData: ApplicationReviewSchema = {
+  // Native React state + Zod validation for terms agreement
+  const [formData, setFormData] = useState<ApplicationReviewSchema>({
     agreedToTerms: false,
     agreedToPrivacy: false,
-  };
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Zod-based form management
-  const form = useZodForm(
-    applicationReviewSchema,
-    initialFormData,
-    async (validatedData) => {
-      // This handler receives validated data with correct types
-      if (!organization) return;
-
-      try {
-        const result = await submit(organization.id);
-        if (result) {
-          router.push('/apply/status');
-        }
-      } catch (error) {
-        console.error('Failed to submit application:', error);
-      }
+  // Update a single field
+  const updateField = useCallback(<K extends keyof ApplicationReviewSchema>(
+    field: K,
+    value: ApplicationReviewSchema[K]
+  ) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    // Clear error for this field
+    if (errors[field as string]) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next[field as string];
+        return next;
+      });
     }
-  );
+  }, [errors]);
+
+  // Handle form submission with Zod validation
+  const handleSubmit = useCallback(async () => {
+    // Validate with Zod
+    const result = applicationReviewSchema.safeParse(formData);
+
+    if (!result.success) {
+      const fieldErrors: Record<string, string> = {};
+      for (const issue of result.error.issues) {
+        const path = issue.path.join('.');
+        if (!fieldErrors[path]) {
+          fieldErrors[path] = issue.message;
+        }
+      }
+      setErrors(fieldErrors);
+      return;
+    }
+
+    if (!organization) return;
+
+    setErrors({});
+    setIsSubmitting(true);
+
+    try {
+      const submitResult = await submit(organization.id);
+      if (submitResult) {
+        router.push('/apply/status');
+      }
+    } catch (error) {
+      console.error('Failed to submit application:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [formData, organization, submit, router]);
+
+  // Create form object for consistent API usage in template
+  const form = {
+    data: formData,
+    errors,
+    isSubmitting,
+    updateField,
+    handleSubmit,
+  };
 
   // Redirect if user doesn't have an organization or can't submit
   useEffect(() => {

@@ -32,7 +32,7 @@ import {
   getBetterAuth,
   type BetterAuthResult,
   type BetterAuthInstance,
-} from '@pml.tickets/shared/auth/better-auth';
+} from '@pml.tickets/shared/auth/better-auth/server';
 
 // =============================================================================
 // AUTH CONFIGURATION
@@ -149,6 +149,53 @@ export async function getJtiBlacklist() {
 }
 
 // =============================================================================
+// DATABASE ACCESS
+// =============================================================================
+
+/**
+ * Get the Redis client from the auth result
+ *
+ * Returns the Redis client used for session caching.
+ * Throws if Redis is not enabled.
+ *
+ * @used-by `/api/auth/logout/complete` route handler
+ */
+export function getRedisClient() {
+  // Return a proxy that waits for initialization on each call
+  return new Proxy({} as NonNullable<Awaited<typeof authResultPromise>['redis']>, {
+    get(_, prop) {
+      return async (...args: unknown[]) => {
+        const result = await authResultPromise;
+        if (!result.redis) {
+          throw new Error('Redis is not enabled');
+        }
+        const value = (result.redis as unknown as Record<string, unknown>)[prop as string];
+        if (typeof value === 'function') {
+          return (value as (...args: unknown[]) => unknown).apply(result.redis, args);
+        }
+        return value;
+      };
+    },
+  });
+}
+
+/**
+ * Get the MongoDB database instance
+ *
+ * Returns the MongoDB Db instance used by Better Auth.
+ * Note: This returns a Db instance, not a MongoClient.
+ *
+ * @used-by `/api/auth/logout/complete` route handler
+ */
+export async function getMongoDb() {
+  const result = await authResultPromise;
+  return result.mongoDb;
+}
+
+// Alias for backward compatibility
+export const getMongoClientPromise = getMongoDb;
+
+// =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
 
@@ -184,5 +231,5 @@ export async function getAuthError(): Promise<Error | null> {
 // TYPE EXPORTS
 // =============================================================================
 
-export type { BetterAuthInstance as Auth } from '@pml.tickets/shared/auth/better-auth';
-export type { SessionResponse as Session, AuthUser, BetterAuthResult } from '@pml.tickets/shared/auth/better-auth';
+export type { BetterAuthInstance as Auth, BetterAuthResult } from '@pml.tickets/shared/auth/better-auth/server';
+export type { SessionResponse as Session, AuthUser } from '@pml.tickets/shared/auth/better-auth';

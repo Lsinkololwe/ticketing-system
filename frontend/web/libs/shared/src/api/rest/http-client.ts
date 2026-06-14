@@ -5,14 +5,23 @@
  * and error handling utilities for all API operations.
  *
  * The token getter function allows integration with different token storage mechanisms.
- * For apps using Keycloak, pass the getToken function from useKeycloak() hook.
+ * For apps using Better Auth, use the authClient from better-auth/react.
  */
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
-import { redirectToLogout } from '../../auth/server/token-service';
 
 // Backend API base URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+
+/**
+ * Redirect to login page on auth failure
+ * Client-side only - safe to use in browser context
+ */
+function redirectToLogout(): void {
+  if (typeof window !== 'undefined') {
+    window.location.href = '/login';
+  }
+}
 
 /**
  * API Error type

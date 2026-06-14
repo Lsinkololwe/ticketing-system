@@ -1,44 +1,43 @@
-# Identity and Platform Service Configuration
-# Microservice 3 of 3: User Management & Platform Operations
-
-# ============================================================================
-# SECURITY DEBUG MODE (DEVELOPMENT ONLY)
-# ============================================================================
-# Logs JWT tokens and authorization headers for debugging
-# WARNING: Disable in production!
-# ============================================================================
-security:
-  debug:
-    enabled: ${SECURITY_DEBUG_ENABLED:true}
-
 server:
   port: 8083
-  # Kubernetes-native graceful shutdown
   shutdown: graceful
 
 spring:
-  # Graceful shutdown timeout - allow in-flight requests to complete
-  lifecycle:
-    timeout-per-shutdown-phase: 60s
-
   application:
     name: identity-service
   main:
     allow-bean-definition-overriding: true
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
 
-  # ============================================================================
-  # AZURE SERVICE BUS CONFIGURATION (Spring Cloud Stream)
-  # ============================================================================
-  # Identity Service publishes user-related domain events.
-  #
-  # EVENTS PUBLISHED:
-  # - UserCreated: New user registration
-  # - UserVerified: User email/phone verified
-  # - UserRoleChanged: User role updated
-  # - OrganizerApproved: Organizer account approved
-  # - OrganizerSuspended: Organizer account suspended
-  #
-  # ============================================================================
+  modulith:
+    events:
+      jdbc:
+        enabled: true
+        schema: dev_ticketing_modulith
+        schema-initialization:
+          enabled: true
+      externalization:
+        enabled: false
+      republish-outstanding-events-on-restart: true
+      completion-mode: delete
+    async-termination:
+      enabled: true
+      timeout: 30s
+
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/shared_db?currentSchema=dev_ticketing_modulith}
+    username: ${POSTGRES_USER:app_user}
+    password: ${POSTGRES_PASSWORD:app_password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: ModulithEventsPool
+      minimum-idle: 2
+      maximum-pool-size: 5
+      idle-timeout: 30000
+      connection-timeout: 20000
+      max-lifetime: 1800000
+
   cloud:
     azure:
       servicebus:
@@ -51,7 +50,6 @@ spring:
       function:
         definition: ""
       bindings:
-        # Output binding for user domain events
         userOutput-out-0:
           destination: identity-events
           producer:
@@ -62,18 +60,17 @@ spring:
             producer:
               entity-type: topic
 
-  # MongoDB Connection (Centralized Docker)
-  # Database: dev_ticketing (shared by all ticketing services)
-  # Requires MongoDB replica set for transaction support
-  # Using directConnection=true for single-node replica set in dev
-  # NOTE: directConnection and replicaSet are mutually exclusive
   data:
     mongodb:
       uri: ${MONGODB_URI:mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin&directConnection=true}
       database: ${MONGODB_DATABASE:dev_ticketing}
       auto-index-creation: true
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
 
-  # GraphQL Configuration
   graphql:
     graphiql:
       enabled: true
@@ -82,17 +79,35 @@ spring:
       path: /graphql
       connection-init-timeout: 60s
 
-# DGS Framework Configuration
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/myticketzm}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/certs}
+      client:
+        registration:
+          identity-service:
+            client-id: identity-service
+            client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+            authorization-grant-type: client_credentials
+            scope: internal-read,internal-write
+        provider:
+          identity-service:
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/token}
+
+security:
+  debug:
+    enabled: ${SECURITY_DEBUG_ENABLED:false}
+
 dgs:
   graphql:
     schema-locations: classpath*:graphql/**/*.graphql*
-    # Disable schema inspection to avoid ClassCastException with mixed DGS/Spring GraphQL
     schema-json:
       enabled: false
     introspection:
       enabled: true
 
-# Keycloak Configuration
 keycloak:
   server-url: ${KEYCLOAK_URL:http://localhost:8084}
   realm: ${KEYCLOAK_REALM:myticketzm}
@@ -102,39 +117,12 @@ keycloak:
   client-id: identity-service
   client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
 
-# Service URLs for inter-service communication
 services:
   catalog:
-    url: ${CATALOG_SERVICE_URL:http://localhost:8081}
+    url: ${CATALOG_SERVICE_URL:http://localhost:8085}
   booking:
     url: ${BOOKING_SERVICE_URL:http://localhost:8082}
 
-# Redis Configuration (for OTP storage and caching)
-spring.data.redis:
-  host: ${REDIS_HOST:localhost}
-  port: ${REDIS_PORT:6379}
-  password: ${REDIS_PASSWORD:}
-  timeout: 2000ms
-
-# OAuth2 Client Configuration for token delegation (Keycloak)
-spring.security:
-  oauth2:
-    resourceserver:
-      jwt:
-        issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/myticketzm}
-        jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/certs}
-    client:
-      registration:
-        identity-service:
-          client-id: identity-service
-          client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
-          authorization-grant-type: client_credentials
-          scope: internal-read,internal-write
-      provider:
-        identity-service:
-          token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/token}
-
-# Actuator for Health Checks and Metrics
 management:
   endpoints:
     web:
@@ -143,10 +131,8 @@ management:
   endpoint:
     health:
       show-details: always
-      # Kubernetes-native health probes
       probes:
         enabled: true
-  # Kubernetes health probe groups
   health:
     livenessState:
       enabled: true
@@ -165,38 +151,15 @@ management:
       application: ${spring.application.name}
       service: identity
 
-# Logging - Enhanced Security Debugging
 logging:
   level:
     root: INFO
     com.pml.identity: DEBUG
-    org.springframework.data.mongodb: DEBUG
-    org.springframework.web: DEBUG
-    # ============================================================================
-    # SPRING SECURITY DEBUG LOGGING
-    # ============================================================================
-    org.springframework.security: DEBUG
-    org.springframework.security.oauth2: DEBUG
-    org.springframework.security.oauth2.server.resource: DEBUG
-    org.springframework.security.oauth2.jwt: DEBUG
-    org.springframework.security.web: DEBUG
-    org.springframework.security.authentication: DEBUG
-    org.springframework.security.access: DEBUG
-    # Keycloak JWT processing
-    com.pml.shared.security: DEBUG
+    org.springframework.modulith: DEBUG
+    org.springframework.modulith.events: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
-# ============================================================================
-# GRAPHQL SECURITY CONFIGURATION (OWASP Compliance)
-# ============================================================================
-# Defense-in-depth security limits for GraphQL queries.
-# These limits work alongside Apollo Router limits at the gateway level.
-#
-# INDUSTRY STANDARDS FOR EVENT TICKETING PLATFORMS:
-# - Max Depth: 10 (allows deep queries while preventing abuse)
-# - Max Complexity: 200 (prevents excessively wide queries)
-# ============================================================================
 graphql:
   security:
     enabled: true
@@ -206,39 +169,29 @@ graphql:
     depth-exceeded-message: "Query depth limit exceeded"
     complexity-exceeded-message: "Query complexity limit exceeded"
 
-# Application-Specific Configuration
 identity:
   service:
     version: 1.0.0
     description: User Management and Platform Operations Microservice
-
-  # CDC Configuration
   cdc:
     webhook:
       enabled: true
       path: /api/cdc/events
-      # Debezium Server URL (for reference)
       debezium-server-url: http://debezium-server-identity:8100
-
-  # Feature Flags
   features:
     email-verification: true
     sms-verification: false
     two-factor-auth: false
     file-upload: true
-
-  # OTP Configuration
   otp:
     expiration-minutes: ${OTP_EXPIRATION_MINUTES:5}
     length: ${OTP_LENGTH:6}
     max-attempts: ${OTP_MAX_ATTEMPTS:3}
     cooldown-minutes: ${OTP_COOLDOWN_MINUTES:1}
-
-  # Notification Configuration
   notifications:
     email:
       enabled: true
-      provider: sendgrid  # sendgrid, ses, smtp
+      provider: sendgrid
     sms:
       enabled: false
       provider: twilio
@@ -246,7 +199,6 @@ identity:
       enabled: false
       provider: fcm
 
-# Messaging Configuration (WhatsApp/SMS)
 messaging:
   provider: ${MESSAGING_PROVIDER:whatsapp}
   whatsapp:
@@ -258,15 +210,11 @@ messaging:
     account-sid: ${TWILIO_ACCOUNT_SID:}
     auth-token: ${TWILIO_AUTH_TOKEN:}
     from-number: ${TWILIO_FROM_NUMBER:}
-
-  # File Storage Configuration
   storage:
-    type: s3  # s3, local, gcs
+    type: s3
     bucket: ${S3_BUCKET:myticketzm-files}
     region: ${AWS_REGION:us-east-1}
 
-# Mongock Configuration (MongoDB Migrations)
-# Transactions enabled - requires MongoDB replica set
 mongock:
   migration-scan-package:
     - com.pml.identity.migration
@@ -276,66 +224,25 @@ mongock:
   lock-quit-trying-after-millis: 180000
   lock-try-frequency-millis: 1000
 
-# ============================================================================
-# MONGODB SCHEMA VALIDATION CONFIGURATION
-# ============================================================================
-# Application-layer MongoDB JSON Schema validation enforces:
-# - OWASP A03:2021 - Injection: Email/phone pattern validation
-# - OWASP A07:2021 - Identification and Authentication Failures:
-#   Phone verification, email verification status
-# - Data integrity: Required fields, string length limits, enum constraints
-#
-# Validation is applied at application startup for all configured collections.
-# ============================================================================
 mongodb:
   schema-validation:
-    # Enable schema validation (set to false to skip validation)
     enabled: ${MONGODB_SCHEMA_VALIDATION_ENABLED:true}
-
-    # Validation action when documents fail validation
-    # - ERROR: Reject invalid documents (recommended for production)
-    # - WARN: Log validation failures but allow writes (migration mode)
     validation-action: ${MONGODB_VALIDATION_ACTION:ERROR}
-
-    # Validation level
-    # - STRICT: Validate all inserts and updates
-    # - MODERATE: Skip validation for existing invalid documents
-    # - OFF: Disable validation
     validation-level: ${MONGODB_VALIDATION_LEVEL:STRICT}
-
-    # Fail application startup if schema validation cannot be applied
-    # Set to true for production to ensure data integrity
     fail-on-validation-error: ${MONGODB_VALIDATION_FAIL_ON_ERROR:true}
-
-    # Base path for JSON schema files in classpath resources
     schema-base-path: ${MONGODB_SCHEMA_BASE_PATH:mongodb/schemas}
-
-    # Timeout for schema application operations (milliseconds)
     operation-timeout-ms: ${MONGODB_SCHEMA_TIMEOUT_MS:30000}
 
-# ============================================================================
-# RESILIENCE4J CONFIGURATION (Circuit Breaker & Retry)
-# ============================================================================
-# Implements OWASP resilience patterns for external service calls (Keycloak)
-# - Circuit breaker prevents cascading failures
-# - Retry with exponential backoff handles transient failures
-# ============================================================================
 resilience4j:
   circuitbreaker:
     instances:
       keycloak:
-        # Open circuit after 5 consecutive failures
         failure-rate-threshold: 50
-        # Minimum calls before evaluating failure rate
         minimum-number-of-calls: 5
-        # Wait 30 seconds before attempting to close circuit
         wait-duration-in-open-state: 30s
-        # Allow 3 test calls in half-open state
         permitted-number-of-calls-in-half-open-state: 3
-        # Sliding window for tracking call outcomes
         sliding-window-type: COUNT_BASED
         sliding-window-size: 10
-        # Record these exceptions as failures
         record-exceptions:
           - jakarta.ws.rs.ProcessingException
           - jakarta.ws.rs.WebApplicationException
@@ -343,155 +250,53 @@ resilience4j:
   retry:
     instances:
       keycloak:
-        # Retry up to 3 times
         max-attempts: 3
-        # Wait 1 second between retries
         wait-duration: 1s
-        # Exponential backoff multiplier
         exponential-backoff-multiplier: 2
-        # Only retry on these exceptions
         retry-exceptions:
           - jakarta.ws.rs.ProcessingException
           - java.util.concurrent.TimeoutException
 
-# ============================================================================
-# FILE UPLOAD CONFIGURATION (OWASP Compliant)
-# ============================================================================
-# Secure file upload settings for verification documents
-#
-# SECURITY FEATURES:
-# - Whitelist-based file type validation
-# - File size limits to prevent DoS
-# - Magic number validation to prevent content-type spoofing
-# - Secure storage with encryption (S3/local)
-# - Presigned URLs for access control
-# - Malware scanning hooks (future)
-#
-# STORAGE OPTIONS:
-# - local: Development only (stores in ./uploads/)
-# - s3: Production (AWS S3 with encryption)
-# ============================================================================
 file-upload:
-  # Maximum file size in bytes (10MB)
   max-file-size: 10485760
-
-  # Maximum filename length
   max-filename-length: 255
-
-  # Allowed file extensions (whitelist)
-  allowed-extensions:
-    - pdf
-    - jpg
-    - jpeg
-    - png
-    - webp
-
-  # Allowed MIME types (whitelist)
-  allowed-mime-types:
-    - application/pdf
-    - image/jpeg
-    - image/png
-    - image/webp
-
-  # Presigned URL settings
+  allowed-extensions: [pdf, jpg, jpeg, png, webp]
+  allowed-mime-types: [application/pdf, image/jpeg, image/png, image/webp]
   presigned-url:
-    default-expiry-minutes: 60    # 1 hour
-    max-expiry-minutes: 1440      # 24 hours
-
-  # Enable malware scanning (requires ClamAV integration)
+    default-expiry-minutes: 60
+    max-expiry-minutes: 1440
   malware-scanning:
     enabled: false
     clamav-host: ${CLAMAV_HOST:localhost}
     clamav-port: ${CLAMAV_PORT:3310}
     timeout-seconds: 30
 
-# ============================================================================
-# FILE STORAGE CONFIGURATION
-# ============================================================================
-# Storage backend selection: local (dev) or s3 (production)
-# ============================================================================
 file-storage:
-  # Storage type: local or s3
   type: ${FILE_STORAGE_TYPE:local}
-
-  # Local storage configuration (development only)
   local:
     base-path: ${FILE_STORAGE_LOCAL_PATH:./uploads}
-    serve-files: true               # Serve files via HTTP (dev only)
-    cleanup-on-shutdown: false       # Keep files after shutdown
-
-  # AWS S3 configuration (production)
+    serve-files: true
+    cleanup-on-shutdown: false
   s3:
     enabled: ${AWS_S3_ENABLED:false}
 
-# ============================================================================
-# AWS CONFIGURATION (Production only)
-# ============================================================================
-# S3 bucket configuration for verification documents
-# Requires AWS SDK v2 dependencies in pom.xml
-# ============================================================================
 aws:
   region: ${AWS_REGION:us-east-1}
-
   s3:
-    # Verification documents bucket
     bucket:
       verification-documents: ${AWS_S3_BUCKET_VERIFICATION_DOCS:ticketing-verification-docs}
-
-    # Server-side encryption
     encryption:
       enabled: true
-      type: ${AWS_S3_ENCRYPTION_TYPE:AES256}  # AES256 or aws:kms
-      kms-key-id: ${AWS_S3_KMS_KEY_ID:}       # Required if type=aws:kms
-
-    # Object lifecycle policies (handled via S3 console/Terraform)
+      type: ${AWS_S3_ENCRYPTION_TYPE:AES256}
+      kms-key-id: ${AWS_S3_KMS_KEY_ID:}
     lifecycle:
-      transition-to-ia-days: 90     # Move to Infrequent Access after 90 days
-      expiration-days: 2555         # Delete after 7 years (compliance)
-
-  # IAM credentials (prefer IAM roles in production)
+      transition-to-ia-days: 90
+      expiration-days: 2555
   credentials:
     access-key-id: ${AWS_ACCESS_KEY_ID:}
     secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
 
-# ============================================================================
-# SECURITY - FIELD-LEVEL ENCRYPTION (PCI-DSS COMPLIANT)
-# ============================================================================
-# AES-256-GCM encryption for sensitive financial data (bank account numbers).
-#
-# PCI-DSS REQUIREMENT 3.4: Render PAN unreadable using encryption at rest.
-#
-# PRODUCTION DEPLOYMENT:
-# - DO NOT hardcode encryption key in application.yml
-# - Load from secure key management service:
-#   * AWS KMS: aws kms decrypt --ciphertext-blob <encrypted-key>
-#   * Azure Key Vault: az keyvault secret show
-#   * HashiCorp Vault: vault kv get secret/encryption-key
-#   * Google Cloud KMS: gcloud kms decrypt
-#
-# KEY ROTATION:
-# - Rotate encryption key annually (PCI-DSS best practice)
-# - Use dual-key encryption during rotation:
-#   1. Decrypt with old key
-#   2. Re-encrypt with new key
-#   3. Update all records
-#   4. Retire old key
-#
-# GENERATE NEW KEY:
-# Run: FieldEncryptionService.generateKey()
-# Output: Base64-encoded 256-bit AES key
-#
-# SECURITY NOTES:
-# - Key must be 256 bits (32 bytes) for AES-256
-# - Store in environment variable, not in version control
-# - Restrict access to key (IAM policies, RBAC)
-# - Monitor key access (CloudTrail, audit logs)
-# ============================================================================
 app:
   security:
     encryption:
-      # Base64-encoded 256-bit AES key
-      # CRITICAL: Replace with production key from secure vault
-      # Example generation: FieldEncryptionService.generateKey()
-      # Development default (REPLACE IN PRODUCTION)
       key: ${APP_SECURITY_ENCRYPTION_KEY:LqjaTnuN4/v63gj/uxhU3HfBqITe2vx4Ep5dJZxX48Q=}

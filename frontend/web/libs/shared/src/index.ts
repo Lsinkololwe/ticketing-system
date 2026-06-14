@@ -11,7 +11,8 @@
  * - **api/graphql/** - Shared GraphQL client utilities
  * - **api/schemas/** - Validation utilities (validateSchema, extractFieldErrors)
  * - **api/types/** - Shared UI types (FormErrors, PaginationState, ApiError)
- * - **auth/** - Authentication (Keycloak)
+ * - **auth/** - Authentication (client-safe types only)
+ * - **auth/better-auth/server** - Server-only auth configuration
  * - **components/** - Shared UI components
  *
  * ## Import Patterns
@@ -35,10 +36,15 @@
  * import { useFileUpload } from '@pml.tickets/shared/api/rest/files';
  * import { createApiClient } from '@pml.tickets/shared/api/rest/http-client';
  * import type { FormErrors, PaginationState } from '@pml.tickets/shared/api/types';
+ *
+ * // Server-only auth (import from subpath, not from main export)
+ * import { getBetterAuth } from '@pml.tickets/shared/auth/better-auth/server';
  * ```
  */
 
-// ============== Auth (Keycloak) ==============
+// ============== Auth (Client-Safe Only) ==============
+// NOTE: Server-only auth (getBetterAuth, createBetterAuth) must be imported from:
+// import { getBetterAuth } from '@pml.tickets/shared/auth/better-auth/server';
 export * from './auth';
 
 // ============== Shared Components ==============
@@ -73,7 +79,6 @@ export {
 // ============== API Modules ==============
 // Module-based architecture: All app-specific operations in dedicated modules
 export * from './api/admin/modules';
-export * from './api/organization-admin/modules';
 
 
 // ============== REST API (Shared HTTP utilities) ==============
@@ -122,16 +127,3 @@ export type {
   PaymentMethod,
   Query,
 } from './types/graphql';
-
-// ============== Validation Schemas ==============
-// Schemas are now in app-specific modules
-// Import from: '@pml.tickets/shared/api/admin/modules/...'
-// Import from: '@pml.tickets/shared/api/organization-admin/modules/...'
-
-// ============== API Types ==============
-// API types are now in app-specific modules
-// Import from: '@pml.tickets/shared/api/admin/modules/...'
-// Import from: '@pml.tickets/shared/api/organization-admin/modules/...'
-
-// ============== Form Utilities ==============
-export * from './lib/forms';

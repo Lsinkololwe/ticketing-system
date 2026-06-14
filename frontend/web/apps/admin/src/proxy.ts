@@ -1,43 +1,14 @@
 /**
- * Organization Admin App - Next.js Middleware
+ * Admin App - Next.js 16 Proxy (formerly Middleware)
+ *
+ * NOTE: In Next.js 16, middleware.ts is renamed to proxy.ts
+ * The 'middleware' function is renamed to 'proxy'
  *
  * Provides route protection using Better Auth's getSessionCookie utility.
  *
- * ## Architecture Overview
- *
- * This middleware runs on EVERY request (matching the config pattern).
- * It uses cookie-based session checking which is:
- * - **CPU-only**: No database or Redis hits
- * - **Fast**: Sub-millisecond execution
- * - **Scalable**: No backend calls per request
- *
- * ## Flow
- *
- * ```
- * Request → Middleware
- *     ↓
- * Is public route? → YES → Allow request
- *     ↓ NO
- * Has session cookie? → NO → Redirect to /login
- *     ↓ YES
- * Is auth route (login)? → YES → Redirect to /dashboard
- *     ↓ NO
- * Add security headers → Allow request
- * ```
- *
- * ## Important Notes
- *
- * 1. **Cookie-based checking is NOT secure by itself**
- *    - Cookie presence only means "might be authenticated"
- *    - Actual auth validation happens in Server Components via auth.api.getSession()
- *    - This is an optimization, not a security boundary
- *
- * 2. **Cookie name must match server config**
- *    - Server uses `cookiePrefix: 'pml_org'`
- *    - Cookie name is `pml_org.session_token`
- *
  * @see https://better-auth.com/docs/integrations/next
- * @module apps/organization-admin/src/middleware
+ * @see https://nextjs.org/docs/messages/middleware-to-proxy
+ * @module apps/admin/src/proxy
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -52,11 +23,10 @@ import { getSessionCookie } from 'better-auth/cookies';
  *
  * These routes are accessible without a session cookie.
  *
- * @used-by middleware - Checked first to skip auth
+ * @used-by proxy - Checked first to skip auth
  */
 const PUBLIC_ROUTES = [
   '/login',       // Login page
-  '/',            // Public landing page
   '/api/auth',    // Better Auth API endpoints
   '/api/health',  // Health check endpoint
 ];
@@ -66,40 +36,40 @@ const PUBLIC_ROUTES = [
  *
  * If a user with a session cookie visits these, redirect to dashboard.
  *
- * @used-by middleware - Redirects logged-in users
+ * @used-by proxy - Redirects logged-in users
  */
 const AUTH_ROUTES = ['/login'];
 
 /**
  * Where to redirect unauthenticated users
  *
- * @used-by middleware - Redirect target for protected routes
+ * @used-by proxy - Redirect target for protected routes
  */
 const LOGIN_URL = '/login';
 
 /**
  * Where to redirect authenticated users from auth pages
  *
- * @used-by middleware - Redirect target for /login when logged in
+ * @used-by proxy - Redirect target for /login when logged in
  */
 const DASHBOARD_URL = '/dashboard';
 
 /**
  * Session cookie name (must match server config)
  *
- * Server config: `cookiePrefix: 'pml_org'`
+ * Server config: `cookiePrefix: 'pml_admin'`
  * Better Auth adds `.session_token` suffix
  *
  * @used-by getSessionCookie() - Cookie lookup
  */
-const COOKIE_NAME = 'pml_org.session_token';
+const COOKIE_NAME = 'pml_admin.session_token';
 
 // =============================================================================
-// MIDDLEWARE (Official Better Auth Pattern)
+// PROXY (Official Better Auth Pattern)
 // =============================================================================
 
 /**
- * Next.js middleware function
+ * Next.js proxy function (formerly middleware)
  *
  * Runs on every request matching the config pattern.
  * Uses cookie-based checking for performance.
@@ -109,7 +79,7 @@ const COOKIE_NAME = 'pml_org.session_token';
  *
  * @used-by Next.js - Called automatically for matching routes
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ==========================================================================
@@ -186,16 +156,16 @@ export async function middleware(request: NextRequest) {
 }
 
 // =============================================================================
-// MIDDLEWARE CONFIG
+// PROXY CONFIG
 // =============================================================================
 
 /**
- * Next.js middleware configuration
+ * Next.js proxy configuration (formerly middleware config)
  *
- * The matcher determines which routes the middleware runs on.
+ * The matcher determines which routes the proxy runs on.
  * We exclude static files for performance.
  *
- * @used-by Next.js - Determines middleware scope
+ * @used-by Next.js - Determines proxy scope
  */
 export const config = {
   matcher: [

@@ -123,6 +123,8 @@ export function getStatusColor(status: import('../../../../types/graphql').Organ
     ACTIVE: 'green',
     REJECTED: 'red',
     SUSPENDED: 'gray',
+    INACTIVE: 'gray',
+    PENDING_DELETION: 'red',
   };
   return colorMap[status] || 'gray';
 }
@@ -139,6 +141,8 @@ export function getStatusLabel(status: import('../../../../types/graphql').Organ
     ACTIVE: 'Active',
     REJECTED: 'Rejected',
     SUSPENDED: 'Suspended',
+    INACTIVE: 'Inactive',
+    PENDING_DELETION: 'Pending Deletion',
   };
   return labelMap[status] || status;
 }

@@ -64,7 +64,6 @@
 
 import { toNextJsHandler } from 'better-auth/next-js';
 import { authPromise } from '@/lib/auth';
-import { isUserRevoked, clearUserRevocation } from '@/lib/auth/token-blacklist';
 
 // =============================================================================
 // ROUTE HANDLERS

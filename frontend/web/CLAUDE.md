@@ -22,3 +22,55 @@
 
 
 <!-- nx configuration end-->
+
+# Next.js Documentation Protocol
+
+**IMPORTANT**: When working on Next.js or testing-related tasks, you MUST follow this protocol:
+
+## Source of Truth: Local Next.js Docs
+
+The local Next.js documentation is the authoritative source for this project:
+
+```
+node_modules/next/dist/docs/
+├── 01-app/           # App Router (primary - use this)
+├── 02-pages/         # Pages Router
+├── 03-architecture/  # Next.js internals
+└── 04-community/     # Contribution guides
+```
+
+### Key Documentation Paths
+
+| Topic | Path |
+|-------|------|
+| **App Router Basics** | `node_modules/next/dist/docs/01-app/01-getting-started/` |
+| **Routing** | `node_modules/next/dist/docs/01-app/01-getting-started/03-layouts-and-pages.md` |
+| **Data Fetching** | `node_modules/next/dist/docs/01-app/02-data-fetching/` |
+| **Rendering** | `node_modules/next/dist/docs/01-app/03-rendering/` |
+| **Caching** | `node_modules/next/dist/docs/01-app/04-caching/` |
+| **Styling** | `node_modules/next/dist/docs/01-app/05-styling/` |
+| **Optimizing** | `node_modules/next/dist/docs/01-app/06-optimizing/` |
+| **Configuring** | `node_modules/next/dist/docs/01-app/07-configuring/` |
+| **Testing** | `node_modules/next/dist/docs/01-app/08-testing/` |
+| **Deploying** | `node_modules/next/dist/docs/01-app/09-deploying/` |
+
+## Workflow for Next.js Tasks
+
+1. **Read Local Docs First**: Use the Read tool to consult relevant doc files
+2. **Supplement with Context7**: Use Context7 MCP for additional context:
+   ```
+   1. mcp__context7__resolve-library-id (libraryName: "Next.js", query: "<your question>")
+   2. mcp__context7__query-docs (libraryId: <resolved-id>, query: "<your question>")
+   ```
+3. **Implement**: Only proceed after consulting documentation
+4. **Cite**: Mention which documentation you referenced
+
+## When This Protocol Applies
+
+- Creating/modifying pages, layouts, or components
+- Implementing routing (parallel routes, intercepting routes, etc.)
+- Data fetching patterns (Server Components, Server Actions)
+- Testing setup and patterns
+- Configuration changes (next.config.js, middleware)
+- Image, font, or script optimization
+- Metadata and SEO implementation

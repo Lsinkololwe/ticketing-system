@@ -1,90 +1,35 @@
-# Booking & Ticketing Service Configuration
-# Microservice 2 of 3: Ticket Inventory & Orders
-
-# ============================================================================
-# SECURITY DEBUG MODE (DEVELOPMENT ONLY)
-# ============================================================================
-# Logs JWT tokens and authorization headers for debugging
-# WARNING: Disable in production!
-# ============================================================================
-security:
-  debug:
-    enabled: ${SECURITY_DEBUG_ENABLED:true}
-
 server:
   port: 8082
-  # Kubernetes-native graceful shutdown
   shutdown: graceful
 
 spring:
-  # Graceful shutdown timeout - allow in-flight requests to complete
-  lifecycle:
-    timeout-per-shutdown-phase: 60s
-
   application:
     name: booking-service
   main:
     allow-bean-definition-overriding: true
+  lifecycle:
+    timeout-per-shutdown-phase: 60s
 
-  # ============================================================================
-  # SPRING MODULITH CONFIGURATION
-  # ============================================================================
-  # Spring Modulith provides module structure and internal event handling.
-  #
-  # ARCHITECTURE DECISION - HYBRID APPROACH:
-  # ----------------------------------------
-  # Spring Modulith's event publication registry requires a BLOCKING database
-  # driver, but this application uses WebFlux with REACTIVE MongoDB.
-  #
-  # SOLUTION: Use PostgreSQL (JDBC) for event publication tracking only,
-  # while keeping reactive MongoDB for all business data.
-  #
-  # EVENT HANDLING STRATEGY:
-  # ------------------------
-  # 1. INTRA-SERVICE EVENTS: Spring ApplicationEventPublisher
-  #    - @ApplicationModuleListener provides GUARANTEED DELIVERY
-  #    - Events persisted to PostgreSQL before processing
-  #    - Automatic retry for failed events
-  #    - Incomplete events republished on restart
-  #
-  # 2. CROSS-SERVICE EVENTS: Azure Service Bus (Spring Cloud Stream)
-  #    - Guaranteed delivery with DLQ and retry
-  #    - See spring.cloud.stream configuration below
-  #
-  # ============================================================================
   modulith:
     events:
-      # JDBC event publication - ENABLED with PostgreSQL
       jdbc:
         enabled: true
-        # Auto-create the event_publication table on startup
+        schema: dev_ticketing_modulith
         schema-initialization:
           enabled: true
-      # Event externalization to message brokers (using Spring Cloud Stream directly)
       externalization:
         enabled: false
-      # Republish incomplete events on startup for guaranteed delivery
       republish-outstanding-events-on-restart: true
-      # How to handle completed events: DELETE removes them, ARCHIVE keeps history
       completion-mode: delete
-    # Async event listener termination settings
     async-termination:
       enabled: true
       timeout: 30s
 
-  # ============================================================================
-  # POSTGRESQL DATASOURCE (Event Publication Registry ONLY)
-  # ============================================================================
-  # This database is used exclusively for Spring Modulith event tracking.
-  # Business data stays in reactive MongoDB.
-  # ============================================================================
   datasource:
-    # Uses centralized PostgreSQL from docker-resources with dev_ticketing_modulith schema
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/shared_db?currentSchema=dev_ticketing_modulith}
     username: ${POSTGRES_USER:app_user}
     password: ${POSTGRES_PASSWORD:app_password}
     driver-class-name: org.postgresql.Driver
-    # HikariCP connection pool settings (minimal since only for events)
     hikari:
       pool-name: ModulithEventsPool
       minimum-idle: 2
@@ -93,206 +38,75 @@ spring:
       connection-timeout: 20000
       max-lifetime: 1800000
 
-  # ============================================================================
-  # AZURE SERVICE BUS CONFIGURATION (Spring Cloud Stream)
-  # ============================================================================
-  # Production-ready configuration for event-driven messaging.
-  #
-  # BOOKING SERVICE ROLE:
-  # - CONSUMER: Consumes events from Catalog Service (event published, etc.)
-  # - PUBLISHER: Publishes ticket/payment events for other services
-  #
-  # PRODUCTION FEATURES:
-  # - Dead Letter Queue (DLQ) for failed message handling
-  # - Retry with exponential backoff
-  # - Auto-lock renewal to prevent message loss
-  # - Prefetch for better throughput
-  # - Proper error handling and logging
-  #
-  # ============================================================================
   cloud:
     azure:
-      # ======================================================================
-      # AZURE KEY VAULT CONFIGURATION (OWASP A02:2021 - Cryptographic Failures)
-      # ======================================================================
-      # Secrets are loaded from Azure Key Vault at application startup.
-      # Enable this in production to securely manage sensitive credentials.
-      #
-      # Required secrets in Key Vault:
-      # - pawapay-api-token: PawaPay API bearer token
-      # - pawapay-webhook-public-key: ECDSA public key for signature verification
-      # - azure-servicebus-connection-string: Azure Service Bus connection
-      # ======================================================================
       keyvault:
         secret:
-          # Enable Key Vault secret loading (set to true in production)
           enabled: ${AZURE_KEYVAULT_ENABLED:false}
-          # Key Vault endpoint URL
           endpoint: ${AZURE_KEYVAULT_ENDPOINT:}
-          # Property sources for secret-to-property mapping
           property-source-enabled: true
-          # Refresh interval for secrets (0 = no refresh)
           refresh-interval: ${AZURE_KEYVAULT_REFRESH_INTERVAL:3600000}
-      # Azure credential configuration (uses DefaultAzureCredential chain)
-      # In production: Managed Identity is preferred
-      # In development: Azure CLI or environment variables
       credential:
         managed-identity-enabled: ${AZURE_MANAGED_IDENTITY_ENABLED:false}
         client-id: ${AZURE_CLIENT_ID:}
         client-secret: ${AZURE_CLIENT_SECRET:}
         tenant-id: ${AZURE_TENANT_ID:}
-
       servicebus:
-        # Connection string with Shared Access Signature (SAS)
-        # When Key Vault is enabled, this is loaded from Key Vault secret 'azure-servicebus-connection-string'
         connection-string: ${azure-servicebus-connection-string:${AZURE_SERVICEBUS_CONNECTION_STRING:}}
         namespace: ${AZURE_SERVICEBUS_NAMESPACE:}
-
-        # ======================================================================
-        # RETRY CONFIGURATION (Global)
-        # ======================================================================
-        # Applied to all Service Bus operations (send/receive)
         retry:
-          # Exponential retry mode for transient failures
           mode: exponential
-          # Maximum number of retry attempts
           max-retries: 3
-          # Initial delay between retries
           delay: 1s
-          # Maximum delay between retries
           max-delay: 30s
-          # Use the same delay for each retry (false = exponential backoff)
           try-timeout: 60s
-
-        # ======================================================================
-        # PRODUCER CONFIGURATION (Global)
-        # ======================================================================
         producer:
           send-timeout: 30s
-
-        # ======================================================================
-        # CONSUMER CONFIGURATION (Global)
-        # ======================================================================
         consumer:
-          # Prefetch count for better throughput
-          # Higher values = better throughput but more memory
           prefetch-count: 10
-          # Maximum concurrent calls for parallel processing
           max-concurrent-calls: 5
-          # Auto-complete messages after successful processing
           auto-complete: false
-          # Enable auto-lock renewal to prevent message loss during long processing
           max-auto-lock-renew-duration: 5m
-
     stream:
-      # Default binder for all bindings
       default-binder: servicebus
-
-      # ======================================================================
-      # FUNCTION DEFINITIONS
-      # ======================================================================
-      # Each function corresponds to a message consumer
       function:
         definition: catalogEventConsumer;ticketOutput
-
-      # ======================================================================
-      # BINDING CONFIGURATION
-      # ======================================================================
       bindings:
-        # ------------------------------------------------------------------
-        # INPUT: Catalog Events (Event Published, Cancelled, Completed, etc.)
-        # ------------------------------------------------------------------
         catalogEventConsumer-in-0:
           destination: catalog-events
-          # Consumer group for competing consumers pattern
-          # All booking-service instances share this subscription
           group: booking-service
           consumer:
-            # Retry configuration for failed message processing
             max-attempts: 3
-            # Exponential backoff
             back-off-initial-interval: 1000
             back-off-max-interval: 10000
             back-off-multiplier: 2.0
-            # Default poll timeout
             default-retryable: true
-
-        # ------------------------------------------------------------------
-        # OUTPUT: Ticket Events (for other services to consume)
-        # ------------------------------------------------------------------
         ticketOutput-out-0:
           destination: booking-events
           producer:
             partition-key-expression: headers['partitionKey']
-
-      # ======================================================================
-      # SERVICE BUS SPECIFIC BINDINGS
-      # ======================================================================
       servicebus:
         bindings:
-          # ------------------------------------------------------------------
-          # CATALOG EVENT CONSUMER - Production Settings
-          # ------------------------------------------------------------------
           catalogEventConsumer-in-0:
             consumer:
-              # ENTITY TYPE: topic (pub/sub) - multiple subscribers possible
               entity-type: topic
-
-              # CHECKPOINT MODE: How message acknowledgment is tracked
-              # - RECORD: Checkpoint after each record (safest)
-              # - BATCH: Checkpoint after batch (better performance)
-              # - MANUAL: Application controls checkpointing
               checkpoint-mode: RECORD
-
-              # AUTO-COMPLETE: false = manual acknowledgment
-              # Required for proper error handling and DLQ
               auto-complete: false
-
-              # PREFETCH: Number of messages to prefetch
-              # Improves throughput but uses more memory
               prefetch-count: 10
-
-              # MAX CONCURRENT CALLS: Parallel message processing
-              # Set based on your processing capacity
               max-concurrent-calls: 5
-
-              # AUTO LOCK RENEWAL: Prevents message loss during long processing
-              # Service Bus message lock is typically 30 seconds
-              # This extends it automatically
               max-auto-lock-renew-duration: 5m
-
-              # SUB-QUEUE: Which queue to receive from
-              # - none: Main queue
-              # - dead-letter: DLQ (for reprocessing)
-              # - transfer-dead-letter: Transfer DLQ
               sub-queue: none
-
-              # RECEIVE MODE: How messages are received
-              # - peek-lock: Message locked until acknowledged (safer)
-              # - receive-and-delete: Immediate deletion (faster)
               receive-mode: peek-lock
-
-              # SESSION ENABLED: For ordered processing per session
-              # Enable if events must be processed in order per entity
               session-enabled: false
-
-          # ------------------------------------------------------------------
-          # TICKET OUTPUT PRODUCER - Production Settings
-          # ------------------------------------------------------------------
           ticketOutput-out-0:
             producer:
               entity-type: topic
-              # sync: true  # Synchronous sending for guaranteed delivery
 
-  # MongoDB Connection (Centralized Docker)
-  # Database: dev_ticketing (shared by all ticketing services)
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin}
+      uri: ${MONGODB_URI:mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin&directConnection=true}
       database: ${MONGODB_DATABASE:dev_ticketing}
       auto-index-creation: true
-
-    # Redis Connection (for caching and inventory locking)
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
@@ -304,7 +118,6 @@ spring:
           max-idle: 5
           min-idle: 2
 
-  # GraphQL Configuration
   graphql:
     path: /graphql
     graphiql:
@@ -314,19 +127,12 @@ spring:
       path: /graphql
       connection-init-timeout: 60s
 
-# DGS Framework Configuration
-dgs:
-  graphql:
-    schema-locations: classpath*:graphql/**/*.graphql*
-
-  # OAuth2 Resource Server Configuration (Keycloak)
   security:
     oauth2:
       resourceserver:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8084/realms/myticketzm}
           jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/certs}
-      # OAuth2 Client Configuration for service-to-service auth
       client:
         registration:
           booking-service:
@@ -338,14 +144,29 @@ dgs:
           booking-service:
             token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/token}
 
-  # Cache Configuration
   cache:
     type: redis
     redis:
-      time-to-live: 600000  # 10 minutes
+      time-to-live: 600000
       cache-null-values: false
 
-# Actuator for Health Checks and Metrics
+security:
+  debug:
+    enabled: ${SECURITY_DEBUG_ENABLED:false}
+
+dgs:
+  graphql:
+    schema-locations: classpath*:graphql/**/*.graphql*
+
+keycloak:
+  client-id: ${KEYCLOAK_CLIENT_ID:booking-service}
+
+services:
+  catalog:
+    url: ${CATALOG_SERVICE_URL:http://localhost:8085}
+  identity:
+    url: ${IDENTITY_SERVICE_URL:http://localhost:8083}
+
 management:
   endpoints:
     web:
@@ -354,16 +175,13 @@ management:
   endpoint:
     health:
       show-details: always
-      # Kubernetes-native health probes
       probes:
         enabled: true
-  # Kubernetes health probe groups
   health:
     livenessState:
       enabled: true
     readinessState:
       enabled: true
-    # Custom health indicator groups for K8s probes
     group:
       liveness:
         include: livenessState,ping
@@ -377,42 +195,15 @@ management:
       application: ${spring.application.name}
       service: booking
 
-# Logging - Enhanced Security Debugging
 logging:
   level:
     root: INFO
     com.pml.booking: DEBUG
-    org.springframework.data.mongodb: DEBUG
-    org.springframework.web: DEBUG
-    org.springframework.data.redis: DEBUG
-    # Spring Modulith event publication logging
     org.springframework.modulith: DEBUG
     org.springframework.modulith.events: DEBUG
-    # ============================================================================
-    # SPRING SECURITY DEBUG LOGGING
-    # ============================================================================
-    org.springframework.security: DEBUG
-    org.springframework.security.oauth2: DEBUG
-    org.springframework.security.oauth2.server.resource: DEBUG
-    org.springframework.security.oauth2.jwt: DEBUG
-    org.springframework.security.web: DEBUG
-    org.springframework.security.authentication: DEBUG
-    org.springframework.security.access: DEBUG
-    # Keycloak JWT processing
-    com.pml.shared.security: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
-# ============================================================================
-# GRAPHQL SECURITY CONFIGURATION (OWASP Compliance)
-# ============================================================================
-# Defense-in-depth security limits for GraphQL queries.
-# These limits work alongside Apollo Router limits at the gateway level.
-#
-# INDUSTRY STANDARDS FOR EVENT TICKETING PLATFORMS:
-# - Max Depth: 10 (allows deep queries while preventing abuse)
-# - Max Complexity: 200 (prevents excessively wide queries)
-# ============================================================================
 graphql:
   security:
     enabled: true
@@ -422,209 +213,102 @@ graphql:
     depth-exceeded-message: "Query depth limit exceeded"
     complexity-exceeded-message: "Query complexity limit exceeded"
 
-# Application-Specific Configuration
 booking:
   service:
     version: 1.0.0
     description: Ticket Inventory and Orders Microservice
-
-  # Event Integration
-  # Uses Spring Modulith with PostgreSQL (JDBC) Event Publication Registry
-  # for guaranteed intra-service event delivery.
-  # Cross-service events are delivered via Azure Service Bus.
-
-  # Inventory Management
   inventory:
-    # How long to hold reserved tickets before releasing
     reservation-timeout-minutes: 15
-    # Enable optimistic locking for inventory updates
     optimistic-locking: true
-    # Cache inventory in Redis for performance
     cache-enabled: true
     cache-ttl-seconds: 60
-
-  # Payment Processing
   payment:
-    # Payment timeout in minutes
     timeout-minutes: 15
 
-# pawaPay Mobile Money Configuration
-# Production-grade configuration for Zambian mobile money integration
-#
-# SECRETS MANAGEMENT (OWASP A02:2021):
-# ------------------------------------
-# When Azure Key Vault is enabled, secrets are loaded from Key Vault.
-# The property syntax ${keyvault-secret-name:${ENV_VAR:default}} allows:
-# 1. Key Vault secret (if Key Vault enabled and secret exists)
-# 2. Environment variable fallback
-# 3. Default value
 pawapay:
   api:
-    # pawaPay API endpoints (sandbox vs production)
     url: ${PAWAPAY_API_URL:https://api.sandbox.pawapay.io}
-    # Bearer token for API authentication
-    # Production: Loaded from Azure Key Vault secret 'pawapay-api-token'
-    # Development: Set via PAWAPAY_API_TOKEN environment variable
     token: ${pawapay-api-token:${PAWAPAY_API_TOKEN:}}
-    # API version
     version: v2
-    # Connection timeout
     connect-timeout: 10s
-    # Read timeout for API responses
     read-timeout: 30s
   webhook:
-    # Signature verification using RFC-9421 HTTP Message Signatures
-    # MUST be enabled in production for security
     verify-signature: ${PAWAPAY_VERIFY_SIGNATURE:false}
-    # Public key ID from pawaPay Dashboard
     public-key-id: ${pawapay-webhook-key-id:${PAWAPAY_WEBHOOK_KEY_ID:}}
-    # ECDSA public key for signature verification (PEM format)
-    # Production: Loaded from Azure Key Vault secret 'pawapay-webhook-public-key'
     public-key: ${pawapay-webhook-public-key:${PAWAPAY_WEBHOOK_PUBLIC_KEY:}}
-    # Maximum age of signature to prevent replay attacks
     signature-max-age: 5m
-    # Supported digest algorithms
-    supported-digest-algorithms:
-      - sha-256
-      - sha-512
-    # Supported signature algorithms
-    supported-signature-algorithms:
-      - ecdsa-p256-sha256
-      - rsa-pss-sha512
-    # IP Allowlist Configuration (OWASP Defense-in-Depth)
-    # Set to true to enforce IP allowlist validation
+    supported-digest-algorithms: [sha-256, sha-512]
+    supported-signature-algorithms: [ecdsa-p256-sha256, rsa-pss-sha512]
     ip-allowlist-enabled: ${PAWAPAY_IP_ALLOWLIST_ENABLED:false}
-    # Allowed IP addresses/CIDR ranges for PawaPay webhook sources
-    # Get these from PawaPay documentation or support
     allowed-ips:
-      - ${PAWAPAY_WEBHOOK_IP_1:}
-      - ${PAWAPAY_WEBHOOK_IP_2:}
-      - ${PAWAPAY_WEBHOOK_IP_3:}
-    # Allowed CIDR ranges (e.g., "10.0.0.0/8")
+      - "${PAWAPAY_WEBHOOK_IP_1:}"
+      - "${PAWAPAY_WEBHOOK_IP_2:}"
+      - "${PAWAPAY_WEBHOOK_IP_3:}"
     allowed-cidrs:
-      - ${PAWAPAY_WEBHOOK_CIDR_1:}
-      - ${PAWAPAY_WEBHOOK_CIDR_2:}
+      - "${PAWAPAY_WEBHOOK_CIDR_1:}"
+      - "${PAWAPAY_WEBHOOK_CIDR_2:}"
   retry:
-    # Maximum retry attempts for failed API calls
     max-attempts: 3
-    # Initial delay between retries
     initial-delay: 1s
-    # Maximum delay between retries
     max-delay: 30s
-    # Exponential backoff multiplier
     multiplier: 2.0
-    # HTTP status codes that trigger retry
-    retryable-status-codes:
-      - 408
-      - 429
-      - 500
-      - 502
-      - 503
-      - 504
+    retryable-status-codes: [408, 429, 500, 502, 503, 504]
   providers:
     mtn:
       code: MTN_MOMO_ZMB
       display-name: MTN Mobile Money
-      prefixes:
-        - "26097"
-        - "26096"
+      prefixes: ["26097", "26096"]
       enabled: true
     airtel:
       code: AIRTEL_ZMB
       display-name: Airtel Money
-      prefixes:
-        - "26077"
-        - "26076"
+      prefixes: ["26077", "26076"]
       enabled: true
     zamtel:
       code: ZAMTEL_ZMB
       display-name: Zamtel Kwacha
-      prefixes:
-        - "26095"
+      prefixes: ["26095"]
       enabled: true
 
-# Payment Processing Configuration
 payment:
-  # Payment intent expiration timeout
   timeout: 15m
   commission:
-    # Platform commission rate (5%)
     rate: ${PLATFORM_COMMISSION_RATE:0.05}
-    # Minimum commission per transaction
     minimum: 0
-    # Maximum commission per transaction (0 = no limit)
     maximum: 0
   escrow:
-    # Hold period after event completion before payout eligible
     hold-period: 7d
-    # Allow partial payouts from escrow
     allow-partial-payout: true
-    # Minimum payout amount
     minimum-payout-amount: 10.00
   refund:
-    # Cutoff hours before event when refunds are no longer allowed
     cutoff-hours-before-event: 24
-    # Allow refunds after event has started
     allow-post-event-refund: false
-    # Require manual approval for refunds
     require-approval: true
-    # Auto-approve refunds below this amount
     auto-approve-threshold: 100.00
-    # Processing fee percentage for refunds
     processing-fee-rate: 0
-
-  # ============================================================================
-  # PAYMENT GATEWAY ABSTRACTION LAYER
-  # ============================================================================
-  # Provider-agnostic payment gateway configuration.
-  # Enables swapping payment providers without changing business logic.
-  #
-  # ARCHITECTURE:
-  # - MobileMoneyGateway interface defines the contract
-  # - PawaPayGatewayAdapter implements the interface
-  # - MobileMoneyGatewayFactory selects the appropriate provider
-  # ============================================================================
   gateway:
-    # Primary provider for each mobile network
-    # Values: pawapay, flutterwave, dpo (future)
     primary-providers:
       MTN: pawapay
       AIRTEL: pawapay
       ZAMTEL: pawapay
-    # Fallback configuration when primary provider is unavailable
     fallback:
-      # Enable automatic failover to other providers
       enabled: true
-      # Maximum number of fallback providers to try
       max-retries: 2
-      # Timeout for provider health checks (milliseconds)
       health-check-timeout-ms: 5000
 
-# Platform Configuration
 platform:
   commission:
-    # 5% platform commission
     rate: ${PLATFORM_COMMISSION_RATE:0.05}
-
-  # QR Code Generation
   qrcode:
-    # Generate QR codes asynchronously
     async-generation: true
-    # QR code size in pixels
     size: 300
-    # Error correction level (L, M, Q, H)
     error-correction: M
-    # Store QR codes in S3
     storage:
       type: s3
       bucket: ${S3_BUCKET_NAME:myticketzm-qrcodes}
       region: ${AWS_REGION:us-east-1}
-
-  # Refund Processing
   refund:
-    # Allow refunds up to X hours before event
     cutoff-hours-before-event: 24
-    # Refund percentage based on time before event
     refund-policies:
       - days-before: 30
         percentage: 100
@@ -634,80 +318,44 @@ platform:
         percentage: 50
       - days-before: 1
         percentage: 0
-
-  # Feature Flags
   features:
     inventory-caching: true
     async-qr-generation: true
     payment-retry: true
     fraud-detection: true
 
-# Keycloak Configuration
-keycloak:
-  client-id: ${KEYCLOAK_CLIENT_ID:booking-service}
-
-# Service Discovery / Inter-Service Communication
-services:
-  catalog:
-    url: ${CATALOG_SERVICE_URL:http://localhost:8081}
-  identity:
-    url: ${IDENTITY_SERVICE_URL:http://localhost:8083}
-
-# ============================================================================
-# RESILIENCE4J CONFIGURATION
-# ============================================================================
-# Circuit breaker, retry, and rate limiter configuration for external service
-# calls. Prevents cascading failures when downstream services are unavailable.
-#
-# OWASP A04:2021 Compliance - Insecure Design
-# Circuit breakers prevent resource exhaustion during service outages.
-# ============================================================================
 resilience4j:
-  # Circuit Breaker Configuration
   circuitbreaker:
     configs:
       default:
-        # Enable circular buffer for recording call outcomes
         slidingWindowType: COUNT_BASED
         slidingWindowSize: 10
-        # Minimum calls before circuit breaker can open
         minimumNumberOfCalls: 5
-        # Failure rate threshold to open circuit (50%)
         failureRateThreshold: 50
-        # Wait duration before transitioning from OPEN to HALF_OPEN
         waitDurationInOpenState: 30s
-        # Number of calls allowed in HALF_OPEN state
         permittedNumberOfCallsInHalfOpenState: 3
-        # Automatically transition from OPEN to HALF_OPEN
         automaticTransitionFromOpenToHalfOpenEnabled: true
-        # Exceptions that count as failures
         recordExceptions:
           - java.io.IOException
           - java.util.concurrent.TimeoutException
           - org.springframework.web.reactive.function.client.WebClientRequestException
           - org.springframework.web.reactive.function.client.WebClientResponseException
-        # Exceptions that are ignored (not counted as failures)
         ignoreExceptions:
           - com.pml.booking.exception.BusinessValidationException
     instances:
       catalogService:
         baseConfig: default
-        # Slightly more lenient for catalog service
         failureRateThreshold: 60
         waitDurationInOpenState: 20s
       pawaPayService:
         baseConfig: default
-        # Stricter for payment gateway - critical service
         slidingWindowSize: 20
         minimumNumberOfCalls: 10
         failureRateThreshold: 50
         waitDurationInOpenState: 60s
         permittedNumberOfCallsInHalfOpenState: 5
-        # Slow call threshold for payment latency monitoring
         slowCallRateThreshold: 80
         slowCallDurationThreshold: 5s
-
-  # Retry Configuration
   retry:
     configs:
       default:
@@ -731,8 +379,6 @@ resilience4j:
         maxAttempts: 3
         waitDuration: 2s
         exponentialBackoffMultiplier: 2.5
-
-  # Time Limiter Configuration (for reactive calls)
   timelimiter:
     configs:
       default:
@@ -744,91 +390,37 @@ resilience4j:
         timeoutDuration: 15s
       pawaPayService:
         baseConfig: default
-        # Payment gateway may be slower - give more time
         timeoutDuration: 30s
 
-# Third-Party Integrations
 integrations:
   catalog-service:
-    base-url: ${CATALOG_SERVICE_URL:http://catalog-service:8081}
+    base-url: ${CATALOG_SERVICE_URL:http://catalog-service:8085}
     timeout-seconds: 5
-
   identity-service:
     base-url: ${IDENTITY_SERVICE_URL:http://identity-service:8083}
     timeout-seconds: 5
 
-# ============================================================================
-# NOTIFICATION SERVICE CONFIGURATION
-# ============================================================================
-# Multi-channel notification support for financial alerts.
-# Supports Email, Slack, and SMS (for critical alerts).
-# ============================================================================
 notification:
   enabled: true
-
-  # Email Configuration
   email:
     enabled: ${NOTIFICATION_EMAIL_ENABLED:true}
     from: ${NOTIFICATION_EMAIL_FROM:noreply@pml-events.com}
     admin-recipients: ${NOTIFICATION_ADMIN_EMAILS:finance@pml-events.com}
-
-  # Slack Webhook Configuration
   slack:
     enabled: ${NOTIFICATION_SLACK_ENABLED:false}
     webhook-url: ${SLACK_WEBHOOK_URL:}
     channel: ${SLACK_CHANNEL:#finance-alerts}
-
-  # SMS Configuration (Africa's Talking or similar)
   sms:
     enabled: ${NOTIFICATION_SMS_ENABLED:false}
     provider-url: ${SMS_PROVIDER_URL:}
     api-key: ${SMS_API_KEY:}
     on-call-numbers: ${SMS_ON_CALL_NUMBERS:}
 
-# ============================================================================
-# MAIL SERVER CONFIGURATION (Spring Mail)
-# ============================================================================
-# For production, configure with actual SMTP server credentials.
-# For development, set spring.mail.host to use mailhog or similar.
-# NOTE: Mail config is under main spring: section at top of file
-# ============================================================================
-# spring.mail.host: ${MAIL_HOST:localhost}
-# spring.mail.port: ${MAIL_PORT:1025}
-# TODO: Move mail config to main spring section if needed
-
-# ============================================================================
-# MONGODB SCHEMA VALIDATION CONFIGURATION
-# ============================================================================
-# Application-layer MongoDB JSON Schema validation enforces:
-# - OWASP A01:2021 - Broken Access Control: organizationId tenant isolation
-# - OWASP A03:2021 - Injection: Email/phone/URL pattern validation
-# - OWASP A04:2021 - Insecure Design: Price non-negativity, enum constraints
-# - Data integrity: Required fields, string length limits, type safety
-#
-# Validation is applied at application startup for all configured collections.
-# ============================================================================
 mongodb:
   schema-validation:
-    # Enable schema validation (set to false to skip validation)
     enabled: ${MONGODB_SCHEMA_VALIDATION_ENABLED:true}
-
-    # Validation action when documents fail validation
-    # - ERROR: Reject invalid documents (recommended for production)
-    # - WARN: Log validation failures but allow writes (migration mode)
     validation-action: ${MONGODB_VALIDATION_ACTION:ERROR}
-
-    # Validation level
-    # - STRICT: Validate all inserts and updates
-    # - MODERATE: Skip validation for existing invalid documents
-    # - OFF: Disable validation
     validation-level: ${MONGODB_VALIDATION_LEVEL:STRICT}
-
-    # Fail application startup if schema validation cannot be applied
-    # Set to true for production to ensure data integrity
     fail-on-validation-error: ${MONGODB_VALIDATION_FAIL_ON_ERROR:true}
-
-    # Base path for JSON schema files in classpath resources
     schema-base-path: ${MONGODB_SCHEMA_BASE_PATH:mongodb/schemas}
-
-    # Timeout for schema application operations (milliseconds)
     operation-timeout-ms: ${MONGODB_SCHEMA_TIMEOUT_MS:30000}

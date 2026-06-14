@@ -1,6 +1,8 @@
 /**
  * JTI (JWT ID) Blacklist Service
  *
+ * SERVER-ONLY: This module uses Redis which requires Node.js runtime.
+ *
  * Manages a blacklist of revoked JWT IDs to prevent session creation
  * with tokens that have been invalidated via backchannel logout.
  *
@@ -42,6 +44,8 @@
  * @see https://openid.net/specs/openid-connect-backchannel-1_0.html
  * @module libs/shared/src/auth/better-auth/jti-blacklist
  */
+
+import 'server-only';
 
 import { Redis } from 'ioredis';
 

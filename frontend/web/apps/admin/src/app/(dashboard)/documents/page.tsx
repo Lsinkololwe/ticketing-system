@@ -28,14 +28,12 @@ import {
   Button,
   TextField,
   IconButton,
-  Tabs,
   Dialog,
   TextArea,
   Spinner,
   Select,
   Tooltip,
   Callout,
-  Card,
   Grid,
   Separator,
 } from '@radix-ui/themes';
@@ -51,14 +49,12 @@ import {
   WarningTriangle,
   Calendar,
   Building,
-  User as UserIcon,
 } from 'iconoir-react';
 import {
   usePendingDocuments,
   useApproveDocument,
   useRejectDocument,
 } from '@pml.tickets/shared/api/admin/modules/document';
-import { useOrganization } from '@pml.tickets/shared/api/admin/modules/organization';
 
 // Extended type to include organization details
 interface DocumentWithOrg {

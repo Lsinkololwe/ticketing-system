@@ -46,7 +46,6 @@ import {
   businessInfoFormSchema,
   type BusinessInfoFormData as BusinessInfoFormSchema,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
-import { useZodForm } from '@pml.tickets/shared';
 import { isNetworkError, isServerUnavailable } from '@pml.tickets/shared';
 
 // =============================================================================
@@ -196,27 +195,79 @@ export default function BusinessInfoPage() {
     []
   );
 
-  // Zod-based form management with type inference
-  const form = useZodForm(
-    businessInfoFormSchema,
-    initialFormData,
-    async (validatedData) => {
-      // This handler receives validated data with correct types
+  // Native React state + Zod validation
+  const [formData, setFormData] = useState<FormData>(initialFormData);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Update a single field
+  const updateField = useCallback(<K extends keyof FormData>(field: K, value: FormData[K]) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    // Clear error for this field when user types
+    if (errors[field as string]) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next[field as string];
+        return next;
+      });
+    }
+  }, [errors]);
+
+  // Set all form data
+  const setData = useCallback((data: FormData) => {
+    setFormData(data);
+  }, []);
+
+  // Handle form submission with Zod validation
+  const handleSubmit = useCallback(async () => {
+    // Validate with Zod
+    const result = businessInfoFormSchema.safeParse(formData);
+
+    if (!result.success) {
+      // Convert Zod errors to simple object
+      const fieldErrors: Record<string, string> = {};
+      for (const issue of result.error.issues) {
+        const path = issue.path.join('.');
+        if (!fieldErrors[path]) {
+          fieldErrors[path] = issue.message;
+        }
+      }
+      setErrors(fieldErrors);
+      return;
+    }
+
+    setErrors({});
+    setIsSubmitting(true);
+
+    try {
+      const validatedData = result.data;
       const input = buildInputFromValidatedData(validatedData);
 
       if (hasOrganization && organization) {
-        const result = await update(organization.id, input);
-        if (result) {
+        const updateResult = await update(organization.id, input);
+        if (updateResult) {
           router.push('/apply/review');
         }
       } else {
-        const result = await apply(input);
-        if (result) {
+        const applyResult = await apply(input);
+        if (applyResult) {
           router.push('/apply/review');
         }
       }
+    } finally {
+      setIsSubmitting(false);
     }
-  );
+  }, [formData, buildInputFromValidatedData, hasOrganization, organization, update, apply, router]);
+
+  // Create form object for consistent API usage in template
+  const form = {
+    data: formData,
+    errors,
+    isSubmitting,
+    updateField,
+    setData,
+    handleSubmit,
+  };
 
   // Redirect if user has profile and can't edit
   useEffect(() => {
@@ -236,7 +287,7 @@ export default function BusinessInfoPage() {
   // Pre-populate form with existing organization data
   useEffect(() => {
     if (organization && !formInitialized) {
-      form.setData({
+      setData({
         name: organization.name || '',
         type: (organization.type as 'INDIVIDUAL' | 'BUSINESS') || 'INDIVIDUAL',
         tagline: organization.tagline || '',
@@ -245,7 +296,7 @@ export default function BusinessInfoPage() {
         businessPhone: organization.businessPhone || '',
         website: organization.website || '',
         city: organization.businessAddress?.city || '',
-        province: (organization.businessAddress?.province as any) || 'LUSAKA',
+        province: (organization.businessAddress?.province as FormData['province']) || 'LUSAKA',
         country: organization.businessAddress?.country || 'Zambia',
         facebook: organization.socialLinks?.facebook || '',
         instagram: organization.socialLinks?.instagram || '',
@@ -253,7 +304,7 @@ export default function BusinessInfoPage() {
       });
       setFormInitialized(true);
     }
-  }, [organization, formInitialized, form]);
+  }, [organization, formInitialized, setData]);
 
   // Show loading state while fetching profile
   if (organizationLoading || isInitializing || form.isSubmitting) {
@@ -549,7 +600,7 @@ export default function BusinessInfoPage() {
             <FormField label="Province" required error={form.errors.province}>
               <Select.Root
                 value={form.data.province}
-                onValueChange={(value) => form.updateField('province', value)}
+                onValueChange={(value) => form.updateField('province', value as FormData['province'])}
               >
                 <Select.Trigger
                   placeholder="Select province"

@@ -48,25 +48,25 @@ import { genericOAuthClient } from 'better-auth/client/plugins';
  * Application base URL for auth callbacks
  * @used-by authClient - Sets base URL for all auth API requests
  */
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3031';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3031';
 
 /**
  * Keycloak server URL
  * @used-by signOutComplete() - Builds Keycloak logout redirect URL
  */
-const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8084';
+const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL ?? 'http://localhost:8084';
 
 /**
  * Keycloak realm name
  * @used-by signOutComplete() - Part of Keycloak logout URL
  */
-const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'myticketzm';
+const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM ?? 'myticketzm';
 
 /**
  * Keycloak client ID for this application
  * @used-by signOutComplete() - Required for Keycloak logout
  */
-const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'myticketzm-organizer';
+const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'myticketzm-organizer';
 
 // =============================================================================
 // AUTH CLIENT
@@ -167,6 +167,64 @@ export const getSession = authClient.getSession;
  * - Register page (with requestSignUp: true)
  */
 export const signIn = authClient.signIn;
+
+/**
+ * Sign in with Keycloak OAuth
+ *
+ * Convenience wrapper for Keycloak-specific OAuth sign-in.
+ *
+ * @param callbackURL - Where to redirect after successful authentication (default: '/dashboard')
+ * @returns Promise that resolves with the OAuth response containing redirect URL
+ *
+ * @example
+ * ```tsx
+ * // Basic usage
+ * await signInWithKeycloak();
+ *
+ * // With custom callback
+ * await signInWithKeycloak('/events');
+ * ```
+ *
+ * @used-by
+ * - Login page auto-redirect
+ * - Login button click handler
+ */
+export function signInWithKeycloak(callbackURL = '/dashboard') {
+  return authClient.signIn.oauth2({
+    providerId: 'keycloak',
+    callbackURL,
+  });
+}
+
+/**
+ * Register with Keycloak (redirects to Keycloak registration page)
+ *
+ * Uses the `requestSignUp: true` hint to tell Keycloak to show
+ * the registration form instead of the login form.
+ *
+ * @param callbackURL - Where to redirect after successful registration (default: '/login?registered=true')
+ * @returns Promise that resolves with the OAuth response containing redirect URL
+ *
+ * @example
+ * ```tsx
+ * // Basic usage
+ * await registerWithKeycloak();
+ *
+ * // With custom callback
+ * await registerWithKeycloak('/onboarding');
+ * ```
+ *
+ * @used-by
+ * - Login page "Create Account" button
+ * - Landing page registration CTA
+ */
+export function registerWithKeycloak(callbackURL = '/login?registered=true') {
+  return authClient.signIn.oauth2({
+    providerId: 'keycloak',
+    callbackURL,
+    requestSignUp: true,
+  });
+}
 
 /**
  * Basic sign out (Better Auth only)

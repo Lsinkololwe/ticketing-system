@@ -1,6 +1,9 @@
 /**
  * Shared Better Auth Server Configuration
  *
+ * SERVER-ONLY: This module uses MongoDB and Redis which require Node.js runtime.
+ * Import from 'auth/better-auth/server' for server components only.
+ *
  * This module provides a factory function to create Better Auth instances
  * with consistent configuration across all applications.
  *
@@ -52,6 +55,8 @@
  * @see https://openid.net/specs/openid-connect-backchannel-1_0.html
  * @module libs/shared/src/auth/better-auth/config
  */
+
+import 'server-only';
 
 import { betterAuth } from 'better-auth';
 import { genericOAuth } from 'better-auth/plugins';
@@ -527,13 +532,9 @@ export async function createBetterAuth(config: AppAuthConfig): Promise<BetterAut
            * @used-by Better Auth session creation
            */
           before: async (session) => {
-            // Add creation timestamp for audit purposes
+            // Pass through session data (Better Auth handles createdAt)
             return {
-              data: {
-                ...session,
-                // Store creation time in ISO format for debugging
-                createdAt: new Date().toISOString(),
-              },
+              data: session,
             };
           },
           after: async (session) => {
@@ -626,8 +627,10 @@ export async function createBetterAuth(config: AppAuthConfig): Promise<BetterAut
   }
 
   // Step 6: Return complete result
+  // Cast auth to match the interface type - the specific config type is compatible
+  // at runtime but TypeScript sees them as different due to optional vs required properties
   return {
-    auth,
+    auth: auth as unknown as ReturnType<typeof betterAuth>,
     jtiBlacklist,
     handleBackchannelLogout,
     mongoDb,

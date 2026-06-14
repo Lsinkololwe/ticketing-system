@@ -31,7 +31,6 @@ import {
 // =============================================================================
 
 const REDIS_KEY_PREFIX = 'pml-organizer:';
-const MONGODB_DATABASE = process.env.MONGODB_DATABASE || 'dev_ticketing';
 
 // =============================================================================
 // TYPES
@@ -146,8 +145,7 @@ export async function POST(request: NextRequest) {
 
     // 4. DOUBLE INVALIDATION - MongoDB
     try {
-      const mongoClient = await getMongoClientPromise();
-      const db = mongoClient.db(MONGODB_DATABASE);
+      const db = await getMongoClientPromise();
 
       const deleteResult = await db.collection('session').deleteOne({
         token: sessionToken,

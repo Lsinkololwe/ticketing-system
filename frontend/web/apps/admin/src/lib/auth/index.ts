@@ -28,11 +28,12 @@
  * @see https://openid.net/specs/openid-connect-backchannel-1_0.html
  */
 
+// Server-only imports - uses MongoDB and Redis
 import {
   getBetterAuth,
   type BetterAuthResult,
   type BetterAuthInstance,
-} from '@pml.tickets/shared/auth/better-auth';
+} from '@pml.tickets/shared/auth/better-auth/server';
 
 // =============================================================================
 // AUTH CONFIGURATION
@@ -184,5 +185,7 @@ export async function getAuthError(): Promise<Error | null> {
 // TYPE EXPORTS
 // =============================================================================
 
-export type { BetterAuthInstance as Auth } from '@pml.tickets/shared/auth/better-auth';
-export type { SessionResponse as Session, AuthUser, BetterAuthResult } from '@pml.tickets/shared/auth/better-auth';
+// Client-safe types (can be used anywhere)
+export type { BetterAuthInstance as Auth } from '@pml.tickets/shared/auth/better-auth/server';
+export type { SessionResponse as Session, AuthUser } from '@pml.tickets/shared/auth/better-auth';
+export type { BetterAuthResult } from '@pml.tickets/shared/auth/better-auth/server';

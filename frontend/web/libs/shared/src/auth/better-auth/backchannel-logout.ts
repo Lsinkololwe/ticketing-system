@@ -1,6 +1,8 @@
 /**
  * Keycloak Backchannel Logout Handler
  *
+ * SERVER-ONLY: This module handles server-side backchannel logout requests.
+ *
  * Handles OIDC Backchannel Logout requests from Keycloak.
  * When a user logs out of Keycloak (or admin revokes session),
  * Keycloak sends a POST request to this handler to notify Better Auth.
@@ -55,6 +57,8 @@
  * @see https://www.keycloak.org/docs/latest/server_admin/#_oidc-logout
  * @module libs/shared/src/auth/better-auth/backchannel-logout
  */
+
+import 'server-only';
 
 import * as jose from 'jose';
 import type { JtiBlacklistService } from './jti-blacklist';
@@ -296,26 +300,6 @@ export function createBackchannelLogoutHandler(config: BackchannelLogoutConfig) 
   };
 }
 
-// =============================================================================
-// HELPER: Create logout token decoder (for debugging)
-// =============================================================================
-
-/**
- * Decode a logout token without verification (for debugging only)
- *
- * ⚠️ DO NOT use this for actual validation - always use the handler
- *
- * @param logoutToken - JWT to decode
- * @returns Decoded claims or null if invalid
- */
-export function decodeLogoutToken(logoutToken: string): LogoutTokenClaims | null {
-  try {
-    const decoded = jose.decodeJwt(logoutToken);
-    return decoded as unknown as LogoutTokenClaims;
-  } catch {
-    return null;
-  }
-}
 
 // =============================================================================
 // HELPER: Extract JTI from ID token (for session creation)

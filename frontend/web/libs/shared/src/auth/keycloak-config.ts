@@ -4,7 +4,7 @@
  * Centralized configuration for Keycloak integration across all applications.
  * Uses environment variables for different deployment environments.
  *
- * Based on realm configuration from docker-resources/keycloak/event-ticketing-realm.json
+ * Based on realm configuration from docker-resources/keycloak/myticketzm-realm.json
  */
 
 export interface KeycloakConfig {

@@ -51,9 +51,6 @@ import {
   useRequestOrganizationChanges,
   useSuspendOrganization,
   useUnsuspendOrganization,
-  type Organization,
-  getStatusColor,
-  getStatusLabel,
 } from '@pml.tickets/shared/api/admin/modules/organization';
 import type { DocumentStatus } from '@pml.tickets/shared/types/graphql';
 
