@@ -88,6 +88,13 @@ const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'mytick
  * const { data: session } = authClient.useSession();
  * ```
  *
+ * ## Session Expiration Handling
+ *
+ * Session expiration is handled at multiple layers:
+ * 1. **Server-side (primary)**: `verifySession()` in layouts redirects to /logout
+ * 2. **Client-side (Apollo)**: ErrorLink redirects to /logout on 401/UNAUTHENTICATED
+ * 3. **Tab focus**: `refetchOnWindowFocus` re-validates when user returns
+ *
  * @used-by
  * - Login page for OAuth sign-in
  * - Header component for user display
@@ -96,6 +103,13 @@ const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'mytick
 export const authClient = createAuthClient({
   baseURL: APP_URL,
   plugins: [genericOAuthClient()],
+  sessionOptions: {
+    /**
+     * Re-fetch session when user returns to this browser tab
+     * Catches cases where session expired while user was away
+     */
+    refetchOnWindowFocus: true,
+  },
 });
 
 // =============================================================================
@@ -132,41 +146,55 @@ export const authClient = createAuthClient({
 export const useSession = authClient.useSession;
 
 /**
- * Get session (non-reactive, for one-time checks)
+ * Get OAuth access token for API calls
  *
- * Unlike useSession hook, this doesn't subscribe to changes.
- * Use for initialization or one-time auth checks.
+ * Fetches the Keycloak access token from the server API.
+ * The token is stored securely on the server and retrieved via authenticated request.
+ *
+ * @returns Access token string or null if not authenticated
  *
  * @example
  * ```tsx
- * // In an effect or action
- * const session = await getSession();
- * if (!session) redirect('/login');
+ * const token = await getAccessToken();
+ * if (token) {
+ *   fetch('/api/protected', {
+ *     headers: { Authorization: `Bearer ${token}` }
+ *   });
+ * }
  * ```
  *
  * @used-by
- * - Form submissions that need current user ID
- * - API calls that need auth token
+ * - Apollo Client token getter
+ * - REST API calls
  */
-export const getSession = authClient.getSession;
+export async function getAccessToken(): Promise<string | null> {
+  try {
+    // Fetch access token from server API
+    // Server validates session and returns token from accounts collection
+    const response = await fetch('/api/auth/access-token', {
+      credentials: 'include', // Include session cookies
+    });
 
-/**
- * Sign in methods from Better Auth client
- *
- * @example
- * ```tsx
- * // OAuth sign in (Keycloak)
- * await signIn.oauth2({ providerId: 'keycloak', callbackURL: '/dashboard' });
- *
- * // With registration hint
- * await signIn.oauth2({ providerId: 'keycloak', callbackURL: '/apply/start', requestSignUp: true });
- * ```
- *
- * @used-by
- * - Login page sign-in button
- * - Register page (with requestSignUp: true)
- */
-export const signIn = authClient.signIn;
+    if (!response.ok) {
+      if (response.status === 401) {
+        return null; // Not authenticated
+      }
+      throw new Error(`Failed to get access token: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.expired) {
+      console.warn('[Auth] Access token expired, need to re-authenticate');
+      return null;
+    }
+
+    return data.accessToken || null;
+  } catch (error) {
+    console.error('[Auth] Failed to get access token:', error);
+    return null;
+  }
+}
 
 /**
  * Sign in with Keycloak OAuth
@@ -292,40 +320,3 @@ export async function signOutComplete() {
   }
 }
 
-/**
- * Get the Keycloak logout URL for manual navigation
- *
- * Use this when you need the URL without performing the logout.
- * For example, to show in a confirmation dialog.
- *
- * @param postLogoutRedirectUri - Where to redirect after Keycloak logout
- * @returns Full Keycloak logout URL
- *
- * @example
- * ```tsx
- * const logoutUrl = getKeycloakLogoutUrl('/goodbye');
- * // Use in a link or redirect
- * ```
- *
- * @used-by
- * - Logout confirmation dialogs
- * - External logout links
- */
-export function getKeycloakLogoutUrl(postLogoutRedirectUri?: string): string {
-  const logoutUrl = new URL(
-    `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/logout`
-  );
-  logoutUrl.searchParams.set('client_id', KEYCLOAK_CLIENT_ID);
-  logoutUrl.searchParams.set('post_logout_redirect_uri', postLogoutRedirectUri || `${APP_URL}/login`);
-  return logoutUrl.toString();
-}
-
-// =============================================================================
-// TYPE EXPORTS
-// =============================================================================
-
-/**
- * Type of the auth client instance
- * Use for typing props that accept the client
- */
-export type AuthClient = typeof authClient;

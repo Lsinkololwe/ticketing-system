@@ -1,24 +1,21 @@
 package com.pml.identity.web.graphql.mutation;
 
+import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsMutation;
+import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.VerificationDocumentService;
 import com.pml.identity.service.storage.FileStorageService;
 import com.pml.identity.service.validation.FileUploadValidator;
-import com.netflix.graphql.dgs.DgsComponent;
-import com.netflix.graphql.dgs.DgsMutation;
-import com.netflix.graphql.dgs.InputArgument;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -62,57 +59,50 @@ public class VerificationDocumentMutationResolver {
     @DgsMutation
     @PreAuthorize("hasRole('ORGANIZER')")
     public Mono<VerificationDocumentUploadResponse> uploadVerificationDocument(
-            @InputArgument("input") Map<String, Object> input,
-            @AuthenticationPrincipal Jwt jwt) {
+            @InputArgument("input") Map<String, Object> input) {
 
-        if (jwt == null) {
-            return Mono.just(VerificationDocumentUploadResponse.error("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
         String documentType = (String) input.get("documentType");
         String fileName = (String) input.get("fileName");
         Long fileSize = getLong(input, "fileSize");
         String mimeType = (String) input.get("mimeType");
         String documentUrl = (String) input.get("documentUrl");
 
-        log.info("User {} uploading verification document type: {}, size: {} bytes",
-                userId, documentType, fileSize);
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} uploading verification document type: {}, size: {} bytes",
+                        userId, documentType, fileSize))
+                .flatMap(userId -> organizationService.findByOwnerId(userId)
+                        .switchIfEmpty(Mono.error(new IllegalStateException("Organization not found")))
+                        .flatMap(organization -> {
+                            // Validate file metadata
+                            return validateFileMetadata(fileName, mimeType, fileSize)
+                                    .flatMap(validationResult -> {
+                                        if (!validationResult.isValid()) {
+                                            return Mono.just(VerificationDocumentUploadResponse.error(
+                                                    validationResult.getErrorMessage(),
+                                                    FileUploadErrorCode.VALIDATION_FAILED
+                                            ));
+                                        }
 
-        // Get user's organization
-        return organizationService.findByOwnerId(userId)
-                .switchIfEmpty(Mono.error(new IllegalStateException("Organization not found")))
-                .flatMap(organization -> {
-                    // Validate file metadata
-                    return validateFileMetadata(fileName, mimeType, fileSize)
-                            .flatMap(validationResult -> {
-                                if (!validationResult.isValid()) {
-                                    return Mono.just(VerificationDocumentUploadResponse.error(
-                                            validationResult.getErrorMessage(),
-                                            FileUploadErrorCode.VALIDATION_FAILED
-                                    ));
-                                }
+                                        // If documentUrl provided, file was pre-uploaded (client-side S3)
+                                        if (documentUrl != null && !documentUrl.isBlank()) {
+                                            return handlePreUploadedDocument(
+                                                    organization.getId(),
+                                                    documentType,
+                                                    documentUrl,
+                                                    fileName,
+                                                    fileSize,
+                                                    mimeType
+                                            );
+                                        }
 
-                                // If documentUrl provided, file was pre-uploaded (client-side S3)
-                                if (documentUrl != null && !documentUrl.isBlank()) {
-                                    return handlePreUploadedDocument(
-                                            organization.getId(),
-                                            documentType,
-                                            documentUrl,
-                                            fileName,
-                                            fileSize,
-                                            mimeType
-                                    );
-                                }
-
-                                // Otherwise, expect multipart file (future implementation)
-                                return Mono.just(VerificationDocumentUploadResponse.error(
-                                        "Direct file upload not yet implemented. " +
-                                                "Use requestDocumentUploadUrl for client-side upload.",
-                                        FileUploadErrorCode.UPLOAD_FAILED
-                                ));
-                            });
-                })
+                                        // Otherwise, expect multipart file (future implementation)
+                                        return Mono.just(VerificationDocumentUploadResponse.error(
+                                                "Direct file upload not yet implemented. " +
+                                                        "Use requestDocumentUploadUrl for client-side upload.",
+                                                FileUploadErrorCode.UPLOAD_FAILED
+                                        ));
+                                    });
+                        }))
                 .onErrorResume(error -> {
                     log.error("Failed to upload document: {}", error.getMessage(), error);
                     return Mono.just(VerificationDocumentUploadResponse.error(
@@ -138,51 +128,44 @@ public class VerificationDocumentMutationResolver {
     @DgsMutation
     @PreAuthorize("hasRole('ORGANIZER')")
     public Mono<DocumentUploadUrlResponse> requestDocumentUploadUrl(
-            @InputArgument("input") Map<String, Object> input,
-            @AuthenticationPrincipal Jwt jwt) {
+            @InputArgument("input") Map<String, Object> input) {
 
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
         String documentType = (String) input.get("documentType");
         String fileName = (String) input.get("fileName");
         Long fileSize = getLong(input, "fileSize");
         String mimeType = (String) input.get("mimeType");
 
-        log.info("User {} requesting upload URL for document type: {}", userId, documentType);
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} requesting upload URL for document type: {}", userId, documentType))
+                .flatMap(userId -> validateFileMetadata(fileName, mimeType, fileSize)
+                        .flatMap(validationResult -> {
+                            if (!validationResult.isValid()) {
+                                return Mono.error(new IllegalArgumentException(validationResult.getErrorMessage()));
+                            }
 
-        // Validate file metadata
-        return validateFileMetadata(fileName, mimeType, fileSize)
-                .flatMap(validationResult -> {
-                    if (!validationResult.isValid()) {
-                        return Mono.error(new IllegalArgumentException(validationResult.getErrorMessage()));
-                    }
+                            // Get user's organization
+                            return organizationService.findByOwnerId(userId)
+                                    .switchIfEmpty(Mono.error(new IllegalStateException("Organization not found")))
+                                    .flatMap(organization -> {
+                                        // Generate unique file key
+                                        String fileKey = String.format("organizations/%s/verification-documents/%s/%s-%s",
+                                                organization.getId(),
+                                                documentType.toLowerCase(),
+                                                java.util.UUID.randomUUID(),
+                                                sanitizeFilename(fileName)
+                                        );
 
-                    // Get user's organization
-                    return organizationService.findByOwnerId(userId)
-                            .switchIfEmpty(Mono.error(new IllegalStateException("Organization not found")))
-                            .flatMap(organization -> {
-                                // Generate unique file key
-                                String fileKey = String.format("organizations/%s/verification-documents/%s/%s-%s",
-                                        organization.getId(),
-                                        documentType.toLowerCase(),
-                                        java.util.UUID.randomUUID(),
-                                        sanitizeFilename(fileName)
-                                );
-
-                                // Generate presigned URL (valid for 15 minutes)
-                                return fileStorageService.generatePresignedUrl(fileKey, 15)
-                                        .map(presignedUrl -> new DocumentUploadUrlResponse(
-                                                presignedUrl,
-                                                fileKey,
-                                                Instant.now().plus(Duration.ofMinutes(15)),
-                                                10 * 1024 * 1024L, // 10MB max
-                                                List.of("application/pdf", "image/jpeg", "image/png", "image/webp")
-                                        ));
-                            });
-                })
+                                        // Generate presigned URL (valid for 15 minutes)
+                                        return fileStorageService.generatePresignedUrl(fileKey, 15)
+                                                .map(presignedUrl -> new DocumentUploadUrlResponse(
+                                                        presignedUrl,
+                                                        fileKey,
+                                                        Instant.now().plus(Duration.ofMinutes(15)),
+                                                        10 * 1024 * 1024L, // 10MB max
+                                                        List.of("application/pdf", "image/jpeg", "image/png", "image/webp")
+                                                ));
+                                    });
+                        }))
                 .doOnError(error -> log.error("Failed to generate upload URL: {}", error.getMessage()));
     }
 
@@ -196,12 +179,11 @@ public class VerificationDocumentMutationResolver {
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<VerificationDocument> approveVerificationDocument(
-            @InputArgument String documentId,
-            @AuthenticationPrincipal Jwt jwt) {
-        String adminId = jwt != null ? jwt.getSubject() : "system";
-        log.info("Admin {} approving document: {}", adminId, documentId);
-
-        return documentService.approve(documentId, adminId);
+            @InputArgument String documentId) {
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("Admin {} approving document: {}", adminId, documentId))
+                .flatMap(adminId -> documentService.approve(documentId, adminId));
     }
 
     /**
@@ -211,16 +193,15 @@ public class VerificationDocumentMutationResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<VerificationDocument> rejectVerificationDocument(
             @InputArgument String documentId,
-            @InputArgument String reason,
-            @AuthenticationPrincipal Jwt jwt) {
-        String adminId = jwt != null ? jwt.getSubject() : "system";
-        log.info("Admin {} rejecting document: {} - Reason: {}", adminId, documentId, reason);
-
+            @InputArgument String reason) {
         if (reason == null || reason.isBlank()) {
             return Mono.error(new IllegalArgumentException("Rejection reason is required"));
         }
 
-        return documentService.reject(documentId, reason, adminId);
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("Admin {} rejecting document: {} - Reason: {}", adminId, documentId, reason))
+                .flatMap(adminId -> documentService.reject(documentId, reason, adminId));
     }
 
     /**
@@ -229,32 +210,25 @@ public class VerificationDocumentMutationResolver {
     @DgsMutation
     @PreAuthorize("hasRole('ORGANIZER')")
     public Mono<Boolean> deleteVerificationDocument(
-            @InputArgument String documentId,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument String documentId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} deleting document: {}", userId, documentId))
+                .flatMap(userId -> documentService.findById(documentId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Document not found")))
+                        .flatMap(doc -> organizationService.findByOwnerId(userId)
+                                .flatMap(organization -> {
+                                    if (!doc.getOrganizationId().equals(organization.getId())) {
+                                        return Mono.error(new IllegalStateException(
+                                                "Document does not belong to your organization"
+                                        ));
+                                    }
 
-        String userId = jwt.getSubject();
-        log.info("User {} deleting document: {}", userId, documentId);
-
-        // Verify document belongs to user's organization
-        return documentService.findById(documentId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Document not found")))
-                .flatMap(doc -> organizationService.findByOwnerId(userId)
-                        .flatMap(organization -> {
-                            if (!doc.getOrganizationId().equals(organization.getId())) {
-                                return Mono.error(new IllegalStateException(
-                                        "Document does not belong to your organization"
-                                ));
-                            }
-
-                            // Delete from storage first, then database
-                            String fileKey = extractFileKeyFromUrl(doc.getDocumentUrl());
-                            return fileStorageService.delete(fileKey)
-                                    .then(documentService.delete(documentId))
-                                    .thenReturn(true);
-                        }));
+                                    // Delete from storage first, then database
+                                    String fileKey = extractFileKeyFromUrl(doc.getDocumentUrl());
+                                    return fileStorageService.delete(fileKey)
+                                            .then(documentService.delete(documentId))
+                                            .thenReturn(true);
+                                })));
     }
 
     // ========================================================================

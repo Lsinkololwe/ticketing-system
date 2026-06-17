@@ -48,17 +48,50 @@ public final class SecurityContextUtils {
     // PRIMARY IDENTITY EXTRACTION
     // ========================================================================
 
+    // Common claim names for user ID across different OAuth providers
+    private static final String[] USER_ID_CLAIMS = {"sub", "user_id", "userId", "id", "oid", "uid"};
+
     /**
-     * Get the current authenticated user's ID (Keycloak subject claim).
+     * Get the current authenticated user's ID.
      *
      * <p>This is the primary method for getting the user's identity.
-     * The ID is extracted from the JWT 'sub' claim which is set by Keycloak.</p>
+     * Supports multiple OAuth providers by checking common claim names:
+     * sub (standard), user_id, userId, id, oid, uid.</p>
      *
      * @return Mono containing the user ID, or empty if not authenticated
      */
     public static Mono<String> getCurrentUserId() {
         return getJwt()
-                .map(Jwt::getSubject);
+                .mapNotNull(SecurityContextUtils::extractUserId);
+    }
+
+    /**
+     * Extract user ID from JWT, trying multiple common claim names.
+     * Different OAuth providers (Keycloak, Better Auth, Auth0, etc.) use different claims.
+     */
+    private static String extractUserId(Jwt jwt) {
+        if (jwt == null) {
+            return null;
+        }
+
+        // Try standard 'sub' claim first (most common)
+        String subject = jwt.getSubject();
+        if (subject != null && !subject.isBlank()) {
+            return subject;
+        }
+
+        // Try alternative claims used by various OAuth providers
+        for (String claim : USER_ID_CLAIMS) {
+            Object value = jwt.getClaim(claim);
+            if (value != null) {
+                String stringValue = value.toString();
+                if (!stringValue.isBlank()) {
+                    return stringValue;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -110,11 +110,14 @@ function AuthMessageContent() {
   }, []);
 
   // Redirect if already authenticated
+  // Always go to /welcome first - it handles organization status routing
   useEffect(() => {
     if (session?.user) {
-      router.replace(callbackUrl);
+      // Use /welcome instead of callbackUrl - welcome page handles proper routing
+      // based on organization status (server-side validated)
+      router.replace('/welcome');
     }
-  }, [session, router, callbackUrl]);
+  }, [session, router]);
 
   // Auto-redirect to Keycloak if no errors and no success message
   useEffect(() => {
@@ -146,7 +149,7 @@ function AuthMessageContent() {
   }
 
   if (session?.user) {
-    return <LoadingScreen message="Redirecting to dashboard..." />;
+    return <LoadingScreen message="Redirecting..." />;
   }
 
   if (isRedirecting) {

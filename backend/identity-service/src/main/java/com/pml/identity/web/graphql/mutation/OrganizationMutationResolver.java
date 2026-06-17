@@ -9,14 +9,13 @@ import com.pml.identity.domain.enums.OrganizationStatus;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationOnboardingService;
 import com.pml.identity.service.OrganizationService;
+import com.pml.shared.security.SecurityContextUtils;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 
 /**
@@ -52,16 +51,10 @@ public class OrganizationMutationResolver {
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
     public Mono<Organization> applyToBeOrganizer(
-            @InputArgument OrganizationApplicationInput input,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
-        log.info("User {} applying to become organizer", userId);
-
-        return onboardingService.applyToBeOrganizer(userId, input);
+            @InputArgument OrganizationApplicationInput input) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} applying to become organizer", userId))
+                .flatMap(userId -> onboardingService.applyToBeOrganizer(userId, input));
     }
 
     /**
@@ -72,23 +65,16 @@ public class OrganizationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<Organization> updateOrganizationApplication(
             @InputArgument String id,
-            @InputArgument OrganizationApplicationInput input,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
-        log.info("User {} updating organization application: {}", userId, id);
-
-        // Verify ownership
-        return organizationService.findById(id)
-                .flatMap(org -> {
-                    if (!org.getOwnerId().equals(userId)) {
-                        return Mono.error(new IllegalStateException("Only the owner can update the application"));
-                    }
-                    return onboardingService.updateApplication(id, input);
-                });
+            @InputArgument OrganizationApplicationInput input) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} updating organization application: {}", userId, id))
+                .flatMap(userId -> organizationService.findById(id)
+                        .flatMap(org -> {
+                            if (!org.getOwnerId().equals(userId)) {
+                                return Mono.error(new IllegalStateException("Only the owner can update the application"));
+                            }
+                            return onboardingService.updateApplication(id, input);
+                        }));
     }
 
     /**
@@ -98,23 +84,16 @@ public class OrganizationMutationResolver {
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
     public Mono<Organization> submitOrganizationForReview(
-            @InputArgument String id,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
-        log.info("User {} submitting organization {} for review", userId, id);
-
-        // Verify ownership
-        return organizationService.findById(id)
-                .flatMap(org -> {
-                    if (!org.getOwnerId().equals(userId)) {
-                        return Mono.error(new IllegalStateException("Only the owner can submit for review"));
-                    }
-                    return onboardingService.submitForReview(id);
-                });
+            @InputArgument String id) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} submitting organization {} for review", userId, id))
+                .flatMap(userId -> organizationService.findById(id)
+                        .flatMap(org -> {
+                            if (!org.getOwnerId().equals(userId)) {
+                                return Mono.error(new IllegalStateException("Only the owner can submit for review"));
+                            }
+                            return onboardingService.submitForReview(id);
+                        }));
     }
 
     /**
@@ -123,15 +102,10 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<Organization> getOrCreateMyOrganization(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
-        log.info("User {} requesting organization (create if needed)", userId);
-
-        return onboardingService.getOrCreateOrganization(userId);
+    public Mono<Organization> getOrCreateMyOrganization() {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} requesting organization (create if needed)", userId))
+                .flatMap(onboardingService::getOrCreateOrganization);
     }
 
     /**
@@ -141,22 +115,16 @@ public class OrganizationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<Organization> upgradeToBusinessOrganization(
             @InputArgument String organizationId,
-            @InputArgument String businessName,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
-        log.info("User {} upgrading organization {} to business: {}", userId, organizationId, businessName);
-
-        return organizationService.findById(organizationId)
-                .flatMap(org -> {
-                    if (!org.getOwnerId().equals(userId)) {
-                        return Mono.error(new IllegalStateException("Only the owner can upgrade the organization"));
-                    }
-                    return onboardingService.upgradeToBusinessOrganization(organizationId, businessName);
-                });
+            @InputArgument String businessName) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} upgrading organization {} to business: {}", userId, organizationId, businessName))
+                .flatMap(userId -> organizationService.findById(organizationId)
+                        .flatMap(org -> {
+                            if (!org.getOwnerId().equals(userId)) {
+                                return Mono.error(new IllegalStateException("Only the owner can upgrade the organization"));
+                            }
+                            return onboardingService.upgradeToBusinessOrganization(organizationId, businessName);
+                        }));
     }
 
     // =========================================================================
@@ -169,12 +137,11 @@ public class OrganizationMutationResolver {
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Organization> approveOrganization(
-            @InputArgument String id,
-            @AuthenticationPrincipal Jwt jwt) {
-        String adminId = jwt != null ? jwt.getSubject() : "system";
-        log.info("Admin {} approving organization: {}", adminId, id);
-
-        return onboardingService.approve(id, adminId);
+            @InputArgument String id) {
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("Admin {} approving organization: {}", adminId, id))
+                .flatMap(adminId -> onboardingService.approve(id, adminId));
     }
 
     /**
@@ -184,12 +151,11 @@ public class OrganizationMutationResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Organization> requestOrganizationChanges(
             @InputArgument String id,
-            @InputArgument String reason,
-            @AuthenticationPrincipal Jwt jwt) {
-        String adminId = jwt != null ? jwt.getSubject() : "system";
-        log.info("Admin {} requesting changes for organization {}: {}", adminId, id, reason);
-
-        return onboardingService.requestChanges(id, reason, adminId);
+            @InputArgument String reason) {
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("Admin {} requesting changes for organization {}: {}", adminId, id, reason))
+                .flatMap(adminId -> onboardingService.requestChanges(id, reason, adminId));
     }
 
     /**
@@ -199,12 +165,11 @@ public class OrganizationMutationResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Organization> rejectOrganization(
             @InputArgument String id,
-            @InputArgument String reason,
-            @AuthenticationPrincipal Jwt jwt) {
-        String adminId = jwt != null ? jwt.getSubject() : "system";
-        log.info("Admin {} rejecting organization {}: {}", adminId, id, reason);
-
-        return onboardingService.reject(id, reason, adminId);
+            @InputArgument String reason) {
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("Admin {} rejecting organization {}: {}", adminId, id, reason))
+                .flatMap(adminId -> onboardingService.reject(id, reason, adminId));
     }
 
     // =========================================================================
@@ -219,29 +184,23 @@ public class OrganizationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<Organization> updateOrganization(
             @InputArgument String id,
-            @InputArgument UpdateOrganizationInput input,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument UpdateOrganizationInput input) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} updating organization: {}", userId, id))
+                .flatMap(userId -> memberService.hasPermission(userId, id, ORG_EDIT_PERMISSION)
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                return Mono.error(new IllegalStateException("Permission denied: " + ORG_EDIT_PERMISSION));
+                            }
 
-        String userId = jwt.getSubject();
-        log.info("User {} updating organization: {}", userId, id);
-
-        return memberService.hasPermission(userId, id, ORG_EDIT_PERMISSION)
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        return Mono.error(new IllegalStateException("Permission denied: " + ORG_EDIT_PERMISSION));
-                    }
-
-                    return organizationService.update(
-                            id,
-                            input.name(),
-                            input.description(),
-                            input.logoUrl(),
-                            input.bannerUrl()
-                    );
-                });
+                            return organizationService.update(
+                                    id,
+                                    input.name(),
+                                    input.description(),
+                                    input.logoUrl(),
+                                    input.bannerUrl()
+                            );
+                        }));
     }
 
     /**
@@ -252,44 +211,38 @@ public class OrganizationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<Organization> updateOrganizationSettings(
             @InputArgument String id,
-            @InputArgument UpdateOrganizationSettingsInput input,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument UpdateOrganizationSettingsInput input) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} updating organization settings: {}", userId, id))
+                .flatMap(userId -> memberService.hasPermission(userId, id, ORG_MANAGE_SETTINGS_PERMISSION)
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                return Mono.error(new IllegalStateException("Permission denied: " + ORG_MANAGE_SETTINGS_PERMISSION));
+                            }
 
-        String userId = jwt.getSubject();
-        log.info("User {} updating organization settings: {}", userId, id);
+                            return organizationService.findById(id)
+                                    .flatMap(org -> {
+                                        OrganizationSettings settings = org.getSettings();
+                                        if (settings == null) {
+                                            settings = new OrganizationSettings();
+                                        }
 
-        return memberService.hasPermission(userId, id, ORG_MANAGE_SETTINGS_PERMISSION)
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        return Mono.error(new IllegalStateException("Permission denied: " + ORG_MANAGE_SETTINGS_PERMISSION));
-                    }
+                                        if (input.allowMemberInvites() != null) {
+                                            settings.setAllowMembersToInvite(input.allowMemberInvites());
+                                        }
+                                        if (input.requireApprovalForEvents() != null) {
+                                            settings.setRequireEventApproval(input.requireApprovalForEvents());
+                                        }
+                                        if (input.notifyOnNewMember() != null) {
+                                            settings.setNotifyOwnerOnMemberJoin(input.notifyOnNewMember());
+                                        }
+                                        if (input.defaultEventVisibility() != null) {
+                                            settings.setDefaultEventVisibility(input.defaultEventVisibility());
+                                        }
 
-                    return organizationService.findById(id)
-                            .flatMap(org -> {
-                                OrganizationSettings settings = org.getSettings();
-                                if (settings == null) {
-                                    settings = new OrganizationSettings();
-                                }
-
-                                if (input.allowMemberInvites() != null) {
-                                    settings.setAllowMembersToInvite(input.allowMemberInvites());
-                                }
-                                if (input.requireApprovalForEvents() != null) {
-                                    settings.setRequireEventApproval(input.requireApprovalForEvents());
-                                }
-                                if (input.notifyOnNewMember() != null) {
-                                    settings.setNotifyOwnerOnMemberJoin(input.notifyOnNewMember());
-                                }
-                                if (input.defaultEventVisibility() != null) {
-                                    settings.setDefaultEventVisibility(input.defaultEventVisibility());
-                                }
-
-                                return organizationService.updateSettings(id, settings);
-                            });
-                });
+                                        return organizationService.updateSettings(id, settings);
+                                    });
+                        }));
     }
 
     /**
@@ -299,16 +252,15 @@ public class OrganizationMutationResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Organization> suspendOrganization(
             @InputArgument String id,
-            @InputArgument String reason,
-            @AuthenticationPrincipal Jwt jwt) {
-        String adminId = jwt != null ? jwt.getSubject() : "system";
-        log.info("Admin {} suspending organization: {} - Reason: {}", adminId, id, reason);
-
+            @InputArgument String reason) {
         if (reason == null || reason.isBlank()) {
             return Mono.error(new IllegalArgumentException("Suspension reason is required"));
         }
 
-        return organizationService.suspend(id, reason);
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("Admin {} suspending organization: {} - Reason: {}", adminId, id, reason))
+                .flatMap(adminId -> organizationService.suspend(id, reason));
     }
 
     /**
@@ -317,12 +269,11 @@ public class OrganizationMutationResolver {
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Organization> unsuspendOrganization(
-            @InputArgument String id,
-            @AuthenticationPrincipal Jwt jwt) {
-        String adminId = jwt != null ? jwt.getSubject() : "system";
-        log.info("Admin {} unsuspending organization: {}", adminId, id);
-
-        return organizationService.unsuspend(id);
+            @InputArgument String id) {
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("Admin {} unsuspending organization: {}", adminId, id))
+                .flatMap(adminId -> organizationService.unsuspend(id));
     }
 
     /**
@@ -332,11 +283,10 @@ public class OrganizationMutationResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Organization> updateOrganizationStatus(
             @InputArgument String id,
-            @InputArgument OrganizationStatus status,
-            @AuthenticationPrincipal Jwt jwt) {
-        String adminId = jwt != null ? jwt.getSubject() : "system";
-        log.info("Admin {} updating organization {} status to: {}", adminId, id, status);
-
-        return organizationService.updateStatus(id, status);
+            @InputArgument OrganizationStatus status) {
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("Admin {} updating organization {} status to: {}", adminId, id, status))
+                .flatMap(adminId -> organizationService.updateStatus(id, status));
     }
 }

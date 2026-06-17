@@ -3,18 +3,22 @@
 /**
  * Logout Page
  *
- * Handles logout redirects from:
- * - Keycloak post_logout_redirect_uri
- * - Direct navigation to /logout
- * - Better Auth signOut redirect
+ * Handles complete logout from:
+ * - Better Auth (local session in MongoDB/Redis)
+ * - Keycloak SSO session
  *
- * CRITICAL: Ensures all session cookies (including cookie cache) are cleared
- * before redirecting to login page.
+ * This page is used for:
+ * - User-initiated logout (clicking "Sign Out")
+ * - Session expiration (server-side redirect when session expires)
+ * - Keycloak post_logout_redirect_uri callback
+ *
+ * CRITICAL: Always logs out from BOTH Better Auth AND Keycloak to prevent
+ * the scenario where user is logged out of the app but still has Keycloak SSO.
  */
 
 import { useEffect, useState } from 'react';
 import { Box, Text } from '@radix-ui/themes';
-import { signOut } from '@/lib/auth/client';
+import { signOutComplete } from '@/lib/auth/client';
 
 /**
  * Clear all session cookies directly
@@ -44,33 +48,24 @@ export default function LogoutPage() {
   useEffect(() => {
     async function handleLogout() {
       try {
-        setStatus('Clearing session...');
+        setStatus('Clearing local session...');
 
         // 1. Clear cookies FIRST to prevent any race conditions
         clearAllSessionCookies();
 
-        // 2. Call Better Auth signOut to invalidate server-side session
-        try {
-          await signOut();
-          console.log('[Logout] Server session cleared');
-        } catch (error) {
-          // Session might already be cleared, that's fine
-          console.log('[Logout] signOut error (may be already cleared):', error);
-        }
+        setStatus('Logging out from Keycloak...');
 
-        // 3. Clear cookies AGAIN after signOut for defense-in-depth
-        clearAllSessionCookies();
+        // 2. Call signOutComplete which:
+        //    - Calls Better Auth signOut (may fail if session already expired - that's OK)
+        //    - Redirects to Keycloak end_session_endpoint
+        //    - Keycloak redirects back to /login
+        await signOutComplete();
 
-        setStatus('Redirecting to login...');
-
-        // 4. Small delay to ensure cookies are cleared, then redirect
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // 5. Use window.location for hard redirect (clears any cached state)
-        window.location.href = '/login';
+        // Note: signOutComplete does a window.location redirect to Keycloak,
+        // so the code below only runs if there's an error
       } catch (error) {
         console.error('[Logout] Error during logout:', error);
-        // Still try to redirect even on error
+        // Still clear cookies and redirect to login even on error
         clearAllSessionCookies();
         window.location.href = '/login';
       }

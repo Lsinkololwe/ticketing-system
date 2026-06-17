@@ -5,11 +5,10 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.EventReminder;
 import com.pml.identity.service.EventReminderService;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 
 /**
@@ -30,19 +29,15 @@ public class EventReminderQueryResolver {
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
     public Flux<EventReminder> myEventReminders(
-            @InputArgument String eventId,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument String eventId
     ) {
-        if (jwt == null) {
-            return Flux.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myEventReminders(userId={}, eventId={})", userId, eventId);
-
-        if (eventId != null) {
-            return reminderService.findByUserIdAndEventId(userId, eventId);
-        }
-        return reminderService.findByUserId(userId);
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myEventReminders(userId={}, eventId={})", userId, eventId))
+                .flatMapMany(userId -> {
+                    if (eventId != null) {
+                        return reminderService.findByUserIdAndEventId(userId, eventId);
+                    }
+                    return reminderService.findByUserId(userId);
+                });
     }
 }

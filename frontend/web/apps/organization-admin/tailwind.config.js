@@ -94,7 +94,32 @@ module.exports = {
         'default': 'var(--transition-default)',
         'slow': 'var(--transition-slow)',
       },
+      // Toast animation keyframes
+      keyframes: {
+        'slide-in-from-top-full': {
+          '0%': { transform: 'translateY(-100%)' },
+          '100%': { transform: 'translateY(0)' },
+        },
+        'slide-in-from-bottom-full': {
+          '0%': { transform: 'translateY(100%)' },
+          '100%': { transform: 'translateY(0)' },
+        },
+        'slide-out-to-right-full': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+        'fade-out-80': {
+          '0%': { opacity: '1' },
+          '100%': { opacity: '0.8' },
+        },
+      },
+      animation: {
+        'in': 'slide-in-from-bottom-full 0.3s ease-out',
+        'out': 'slide-out-to-right-full 0.3s ease-in',
+      },
     },
   },
-  plugins: [],
+  plugins: [
+    require('tailwindcss-animate'),
+  ],
 };

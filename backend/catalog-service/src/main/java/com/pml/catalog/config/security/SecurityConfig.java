@@ -59,8 +59,9 @@ public class SecurityConfig {
                         .pathMatchers("/api/events/public/**").permitAll()
                         .pathMatchers("/api/categories/**").permitAll()
                         .pathMatchers("/api/locations/public/**").permitAll()
-                        // GraphQL - authentication handled at resolver level with @PreAuthorize
-                        .pathMatchers("/graphql/**").permitAll()
+                        // GraphQL - require authentication so JWT is parsed and available to resolvers
+                        // Fine-grained access control handled at resolver level with @PreAuthorize
+                        .pathMatchers("/graphql/**").authenticated()
                         // All other endpoints require authentication
                         .anyExchange().authenticated()
                 )

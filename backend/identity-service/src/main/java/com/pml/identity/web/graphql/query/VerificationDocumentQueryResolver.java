@@ -7,11 +7,10 @@ import com.pml.identity.domain.enums.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.VerificationDocumentService;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -42,22 +41,16 @@ public class VerificationDocumentQueryResolver {
     @DgsQuery
     @PreAuthorize("hasRole('ORGANIZER')")
     public Flux<VerificationDocument> myVerificationDocuments(
-            @InputArgument DocumentStatus status,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Flux.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myVerificationDocuments(userId={}, status={})", userId, status);
-
-        return organizationService.findByOwnerId(userId)
-                .flatMapMany(organization -> {
-                    if (status != null) {
-                        return documentService.findByOrganizationAndStatus(organization.getId(), status);
-                    }
-                    return documentService.findByOrganization(organization.getId());
-                });
+            @InputArgument DocumentStatus status) {
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myVerificationDocuments(userId={}, status={})", userId, status))
+                .flatMapMany(userId -> organizationService.findByOwnerId(userId)
+                        .flatMapMany(organization -> {
+                            if (status != null) {
+                                return documentService.findByOrganizationAndStatus(organization.getId(), status);
+                            }
+                            return documentService.findByOrganization(organization.getId());
+                        }));
     }
 
     /**
@@ -92,17 +85,11 @@ public class VerificationDocumentQueryResolver {
     @DgsQuery
     @PreAuthorize("hasRole('ORGANIZER')")
     public Mono<VerificationDocument> myVerificationDocumentByType(
-            @InputArgument String documentType,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myVerificationDocumentByType(userId={}, type={})", userId, documentType);
-
-        return organizationService.findByOwnerId(userId)
-                .flatMap(organization -> documentService.findByOrganizationAndType(organization.getId(), documentType));
+            @InputArgument String documentType) {
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myVerificationDocumentByType(userId={}, type={})", userId, documentType))
+                .flatMap(userId -> organizationService.findByOwnerId(userId)
+                        .flatMap(organization -> documentService.findByOrganizationAndType(organization.getId(), documentType)));
     }
 
     /**
@@ -110,16 +97,11 @@ public class VerificationDocumentQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ORGANIZER')")
-    public Mono<Long> myVerificationDocumentCount(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.just(0L);
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myVerificationDocumentCount(userId={})", userId);
-
-        return organizationService.findByOwnerId(userId)
-                .flatMap(organization -> documentService.countByOrganization(organization.getId()))
+    public Mono<Long> myVerificationDocumentCount() {
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myVerificationDocumentCount(userId={})", userId))
+                .flatMap(userId -> organizationService.findByOwnerId(userId)
+                        .flatMap(organization -> documentService.countByOrganization(organization.getId())))
                 .defaultIfEmpty(0L);
     }
 
@@ -128,16 +110,11 @@ public class VerificationDocumentQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ORGANIZER')")
-    public Mono<Long> myApprovedDocumentCount(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.just(0L);
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myApprovedDocumentCount(userId={})", userId);
-
-        return organizationService.findByOwnerId(userId)
-                .flatMap(organization -> documentService.countApprovedByOrganization(organization.getId()))
+    public Mono<Long> myApprovedDocumentCount() {
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myApprovedDocumentCount(userId={})", userId))
+                .flatMap(userId -> organizationService.findByOwnerId(userId)
+                        .flatMap(organization -> documentService.countApprovedByOrganization(organization.getId())))
                 .defaultIfEmpty(0L);
     }
 }

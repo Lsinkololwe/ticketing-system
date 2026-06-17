@@ -8,11 +8,10 @@ import com.pml.identity.service.OrganizationMemberService;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -46,33 +45,27 @@ public class EventAccessMutationResolver {
             @InputArgument EventRole role,
             @InputArgument Set<String> customPermissions,
             @InputArgument String reason,
-            @InputArgument Instant expiresAt,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument Instant expiresAt) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(granterId -> log.info("User {} granting event {} access to user {} with role {}",
+                        granterId, eventId, userId, role))
+                .flatMap(granterId -> memberService.hasPermission(granterId, organizationId, EVENT_MANAGE_ACCESS_PERMISSION)
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                return Mono.error(new IllegalStateException("Permission denied: " + EVENT_MANAGE_ACCESS_PERMISSION));
+                            }
 
-        String granterId = jwt.getSubject();
-        log.info("User {} granting event {} access to user {} with role {}",
-                granterId, eventId, userId, role);
-
-        return memberService.hasPermission(granterId, organizationId, EVENT_MANAGE_ACCESS_PERMISSION)
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        return Mono.error(new IllegalStateException("Permission denied: " + EVENT_MANAGE_ACCESS_PERMISSION));
-                    }
-
-                    return eventAccessService.grant(
-                            eventId,
-                            organizationId,
-                            userId,
-                            role,
-                            customPermissions,
-                            reason,
-                            expiresAt,
-                            granterId
-                    );
-                });
+                            return eventAccessService.grant(
+                                    eventId,
+                                    organizationId,
+                                    userId,
+                                    role,
+                                    customPermissions,
+                                    reason,
+                                    expiresAt,
+                                    granterId
+                            );
+                        }));
     }
 
     /**
@@ -83,33 +76,27 @@ public class EventAccessMutationResolver {
     public Flux<EventAccessGrant> bulkGrantEventAccess(
             @InputArgument String eventId,
             @InputArgument String organizationId,
-            @InputArgument List<EventAccessGrantInput> grants,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Flux.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument List<EventAccessGrantInput> grants) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(granterId -> log.info("User {} bulk granting event {} access to {} users", granterId, eventId, grants.size()))
+                .flatMapMany(granterId -> memberService.hasPermission(granterId, organizationId, EVENT_MANAGE_ACCESS_PERMISSION)
+                        .flatMapMany(hasPermission -> {
+                            if (!hasPermission) {
+                                return Flux.error(new IllegalStateException("Permission denied"));
+                            }
 
-        String granterId = jwt.getSubject();
-        log.info("User {} bulk granting event {} access to {} users", granterId, eventId, grants.size());
+                            List<EventAccessService.GrantRequest> requests = grants.stream()
+                                    .map(g -> new EventAccessService.GrantRequest(
+                                            g.eventId(), // This should be userId in the input
+                                            g.role(),
+                                            g.customPermissions(),
+                                            g.reason(),
+                                            g.expiresAt()
+                                    ))
+                                    .collect(Collectors.toList());
 
-        return memberService.hasPermission(granterId, organizationId, EVENT_MANAGE_ACCESS_PERMISSION)
-                .flatMapMany(hasPermission -> {
-                    if (!hasPermission) {
-                        return Flux.error(new IllegalStateException("Permission denied"));
-                    }
-
-                    List<EventAccessService.GrantRequest> requests = grants.stream()
-                            .map(g -> new EventAccessService.GrantRequest(
-                                    g.eventId(), // This should be userId in the input
-                                    g.role(),
-                                    g.customPermissions(),
-                                    g.reason(),
-                                    g.expiresAt()
-                            ))
-                            .collect(Collectors.toList());
-
-                    return eventAccessService.bulkGrant(eventId, organizationId, requests, granterId);
-                });
+                            return eventAccessService.bulkGrant(eventId, organizationId, requests, granterId);
+                        }));
     }
 
     /**
@@ -121,25 +108,19 @@ public class EventAccessMutationResolver {
             @InputArgument String accessId,
             @InputArgument EventRole newRole,
             @InputArgument Set<String> customPermissions,
-            @InputArgument Instant expiresAt,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument Instant expiresAt) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} updating event access: {}", userId, accessId))
+                .flatMap(userId -> eventAccessService.findById(accessId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Access grant not found")))
+                        .flatMap(grant -> memberService.hasPermission(userId, grant.getOrganizationId(), EVENT_MANAGE_ACCESS_PERMISSION)
+                                .flatMap(hasPermission -> {
+                                    if (!hasPermission) {
+                                        return Mono.error(new IllegalStateException("Permission denied"));
+                                    }
 
-        String userId = jwt.getSubject();
-        log.info("User {} updating event access: {}", userId, accessId);
-
-        return eventAccessService.findById(accessId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Access grant not found")))
-                .flatMap(grant -> memberService.hasPermission(userId, grant.getOrganizationId(), EVENT_MANAGE_ACCESS_PERMISSION)
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied"));
-                            }
-
-                            return eventAccessService.update(accessId, newRole, customPermissions, expiresAt);
-                        }));
+                                    return eventAccessService.update(accessId, newRole, customPermissions, expiresAt);
+                                })));
     }
 
     /**
@@ -149,25 +130,19 @@ public class EventAccessMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<EventAccessGrant> revokeEventAccess(
             @InputArgument String accessId,
-            @InputArgument String reason,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument String reason) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} revoking event access: {} - Reason: {}", userId, accessId, reason))
+                .flatMap(userId -> eventAccessService.findById(accessId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Access grant not found")))
+                        .flatMap(grant -> memberService.hasPermission(userId, grant.getOrganizationId(), EVENT_MANAGE_ACCESS_PERMISSION)
+                                .flatMap(hasPermission -> {
+                                    if (!hasPermission) {
+                                        return Mono.error(new IllegalStateException("Permission denied"));
+                                    }
 
-        String userId = jwt.getSubject();
-        log.info("User {} revoking event access: {} - Reason: {}", userId, accessId, reason);
-
-        return eventAccessService.findById(accessId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Access grant not found")))
-                .flatMap(grant -> memberService.hasPermission(userId, grant.getOrganizationId(), EVENT_MANAGE_ACCESS_PERMISSION)
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied"));
-                            }
-
-                            return eventAccessService.revoke(accessId, reason, userId);
-                        }));
+                                    return eventAccessService.revoke(accessId, reason, userId);
+                                })));
     }
 
     /**
@@ -177,23 +152,16 @@ public class EventAccessMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<EventAccessGrant> createEventOwner(
             @InputArgument String eventId,
-            @InputArgument String organizationId,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument String organizationId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("Creating event owner for event {} - User: {}", eventId, userId))
+                .flatMap(userId -> memberService.isActiveMember(userId, organizationId)
+                        .flatMap(isMember -> {
+                            if (!isMember) {
+                                return Mono.error(new IllegalStateException("User is not a member of the organization"));
+                            }
 
-        String userId = jwt.getSubject();
-        log.info("Creating event owner for event {} - User: {}", eventId, userId);
-
-        // Only members of the organization can create events
-        return memberService.isActiveMember(userId, organizationId)
-                .flatMap(isMember -> {
-                    if (!isMember) {
-                        return Mono.error(new IllegalStateException("User is not a member of the organization"));
-                    }
-
-                    return eventAccessService.createEventOwner(eventId, organizationId, userId);
-                });
+                            return eventAccessService.createEventOwner(eventId, organizationId, userId);
+                        }));
     }
 }

@@ -8,13 +8,12 @@ import com.pml.identity.infrastructure.keycloak.KeycloakAuthService;
 import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.service.UserService;
 import com.pml.shared.constants.UserType;
+import com.pml.shared.security.SecurityContextUtils;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
@@ -184,34 +183,31 @@ public class AuthenticationMutationResolver {
      * Logout user and invalidate their session in Keycloak.
      * Requires the user to be authenticated to get their refresh token from context.
      *
-     * @param jwt The authenticated user's JWT
      * @return true if logout was successful
      */
     @DgsMutation
-    public Mono<Boolean> logout(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            log.warn("Logout called without authentication");
-            return Mono.just(true); // No session to invalidate
-        }
+    public Mono<Boolean> logout() {
+        return SecurityContextUtils.getAuthenticationContext()
+                .flatMap(ctx -> {
+                    log.info("Logging out user: {}", ctx.getEmail());
 
-        String email = jwt.getClaimAsString("email");
-        String sessionState = jwt.getClaimAsString("session_state");
-        log.info("Logging out user: {}", email);
-
-        // Get the refresh token from the session if available
-        // Note: The actual refresh token should be passed by the client
-        // This implementation logs out at the Keycloak level using session state
-        if (sessionState != null) {
-            return keycloakService.endUserSession(sessionState)
-                    .thenReturn(true)
-                    .onErrorResume(e -> {
-                        log.warn("Session invalidation failed: {}", e.getMessage());
-                        return Mono.just(true); // Logout should not fail from user perspective
-                    })
-                    .doOnSuccess(v -> log.info("User logged out successfully: {}", email));
-        }
-
-        return Mono.just(true);
+                    // Get the refresh token from the session if available
+                    // Note: The actual refresh token should be passed by the client
+                    // This implementation logs out at the Keycloak level using session state
+                    return SecurityContextUtils.getClaim("session_state")
+                            .flatMap(sessionState -> keycloakService.endUserSession(sessionState)
+                                    .thenReturn(true)
+                                    .onErrorResume(e -> {
+                                        log.warn("Session invalidation failed: {}", e.getMessage());
+                                        return Mono.just(true); // Logout should not fail from user perspective
+                                    })
+                                    .doOnSuccess(v -> log.info("User logged out successfully: {}", ctx.getEmail())))
+                            .switchIfEmpty(Mono.just(true));
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Logout called without authentication");
+                    return Mono.just(true); // No session to invalidate
+                }));
     }
 
     /**

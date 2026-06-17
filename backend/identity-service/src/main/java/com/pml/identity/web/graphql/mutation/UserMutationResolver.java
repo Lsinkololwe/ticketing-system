@@ -7,14 +7,13 @@ import com.pml.identity.infrastructure.cache.OtpService;
 import com.pml.identity.service.UserService;
 import com.pml.identity.service.UserSyncService;
 import com.pml.shared.constants.UserType;
+import com.pml.shared.security.SecurityContextUtils;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 
 import java.util.EnumSet;
@@ -50,24 +49,20 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<Boolean> sendEmailVerification(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            log.warn("sendEmailVerification called without authentication");
-            return Mono.just(false);
-        }
-
-        String keycloakUserId = jwt.getSubject();
-        String email = jwt.getClaimAsString("email");
-
-        log.info("Sending email verification for user: {} (keycloakId={})", email, keycloakUserId);
-
-        return keycloakService.sendVerificationEmail(keycloakUserId)
-                .thenReturn(true)
-                .doOnSuccess(v -> log.info("Email verification sent successfully for user: {}", email))
-                .onErrorResume(e -> {
-                    log.error("Failed to send email verification for user {}: {}", email, e.getMessage());
+    public Mono<Boolean> sendEmailVerification() {
+        return SecurityContextUtils.getAuthenticationContext()
+                .doOnNext(ctx -> log.info("Sending email verification for user: {} (keycloakId={})", ctx.getEmail(), ctx.getUserId()))
+                .flatMap(ctx -> keycloakService.sendVerificationEmail(ctx.getUserId())
+                        .thenReturn(true)
+                        .doOnSuccess(v -> log.info("Email verification sent successfully for user: {}", ctx.getEmail()))
+                        .onErrorResume(e -> {
+                            log.error("Failed to send email verification for user {}: {}", ctx.getEmail(), e.getMessage());
+                            return Mono.just(false);
+                        }))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("sendEmailVerification called without authentication");
                     return Mono.just(false);
-                });
+                }));
     }
 
     /**
@@ -75,43 +70,39 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<User> verifyEmail(@AuthenticationPrincipal Jwt jwt, @InputArgument String token) {
-        if (jwt == null) {
-            log.warn("verifyEmail called without authentication");
-            return Mono.empty();
-        }
+    public Mono<User> verifyEmail(@InputArgument String token) {
+        return SecurityContextUtils.getAuthenticationContext()
+                .doOnNext(ctx -> log.info("Verifying email for user: {} with token", ctx.getEmail()))
+                .flatMap(ctx -> keycloakService.findUserById(ctx.getUserId())
+                        .flatMap(keycloakUserOpt -> {
+                            if (keycloakUserOpt.isEmpty()) {
+                                log.warn("Keycloak user not found: {}", ctx.getUserId());
+                                return Mono.empty();
+                            }
 
-        String email = jwt.getClaimAsString("email");
-        String keycloakUserId = jwt.getSubject();
+                            boolean isEmailVerified = keycloakUserOpt.get().isEmailVerified();
+                            if (!isEmailVerified) {
+                                log.info("Email not yet verified in Keycloak for user: {}", ctx.getEmail());
+                                return userService.findByEmail(ctx.getEmail());
+                            }
 
-        log.info("Verifying email for user: {} with token", email);
-
-        return keycloakService.findUserById(keycloakUserId)
-                .flatMap(keycloakUserOpt -> {
-                    if (keycloakUserOpt.isEmpty()) {
-                        log.warn("Keycloak user not found: {}", keycloakUserId);
-                        return Mono.empty();
-                    }
-
-                    boolean isEmailVerified = keycloakUserOpt.get().isEmailVerified();
-                    if (!isEmailVerified) {
-                        log.info("Email not yet verified in Keycloak for user: {}", email);
-                        return userService.findByEmail(email);
-                    }
-
-                    return userService.findByEmail(email)
-                            .flatMap(user -> {
-                                if (!user.isEmailVerified()) {
-                                    return userService.verifyEmail(user.getId());
-                                }
-                                return Mono.just(user);
-                            });
-                })
-                .doOnSuccess(u -> {
-                    if (u != null) {
-                        log.info("Email verification completed for user: {}", email);
-                    }
-                });
+                            return userService.findByEmail(ctx.getEmail())
+                                    .flatMap(user -> {
+                                        if (!user.isEmailVerified()) {
+                                            return userService.verifyEmail(user.getId());
+                                        }
+                                        return Mono.just(user);
+                                    });
+                        })
+                        .doOnSuccess(u -> {
+                            if (u != null) {
+                                log.info("Email verification completed for user: {}", ctx.getEmail());
+                            }
+                        }))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("verifyEmail called without authentication");
+                    return Mono.empty();
+                }));
     }
 
     /**
@@ -119,34 +110,28 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<User> syncEmailVerificationStatus(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
+    public Mono<User> syncEmailVerificationStatus() {
+        return SecurityContextUtils.getAuthenticationContext()
+                .doOnNext(ctx -> log.info("Syncing email verification status for user: {}", ctx.getEmail()))
+                .flatMap(ctx -> keycloakService.findUserById(ctx.getUserId())
+                        .flatMap(keycloakUserOpt -> {
+                            if (keycloakUserOpt.isEmpty()) {
+                                log.warn("Keycloak user not found: {}", ctx.getUserId());
+                                return userService.findByEmail(ctx.getEmail());
+                            }
 
-        String email = jwt.getClaimAsString("email");
-        String keycloakUserId = jwt.getSubject();
+                            boolean isEmailVerified = keycloakUserOpt.get().isEmailVerified();
 
-        log.info("Syncing email verification status for user: {}", email);
-
-        return keycloakService.findUserById(keycloakUserId)
-                .flatMap(keycloakUserOpt -> {
-                    if (keycloakUserOpt.isEmpty()) {
-                        log.warn("Keycloak user not found: {}", keycloakUserId);
-                        return userService.findByEmail(email);
-                    }
-
-                    boolean isEmailVerified = keycloakUserOpt.get().isEmailVerified();
-
-                    return userService.findByEmail(email)
-                            .flatMap(user -> {
-                                if (isEmailVerified && !user.isEmailVerified()) {
-                                    log.info("Updating email verification status for user: {}", email);
-                                    return userService.verifyEmail(user.getId());
-                                }
-                                return Mono.just(user);
-                            });
-                });
+                            return userService.findByEmail(ctx.getEmail())
+                                    .flatMap(user -> {
+                                        if (isEmailVerified && !user.isEmailVerified()) {
+                                            log.info("Updating email verification status for user: {}", ctx.getEmail());
+                                            return userService.verifyEmail(user.getId());
+                                        }
+                                        return Mono.just(user);
+                                    });
+                        }))
+                .switchIfEmpty(Mono.empty());
     }
 
     // ==========================================
@@ -158,27 +143,23 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<User> updateProfile(@AuthenticationPrincipal Jwt jwt, @InputArgument Map<String, Object> input) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
-
-        String email = jwt.getClaimAsString("email");
-        log.info("Updating profile for user: {}", email);
-
-        return userService.findByEmail(email)
-                .flatMap(user -> {
-                    User profileUpdate = User.builder()
-                            .firstName(input.get("firstName") != null ? (String) input.get("firstName") : null)
-                            .lastName(input.get("lastName") != null ? (String) input.get("lastName") : null)
-                            .phoneNumber(input.get("phoneNumber") != null ? (String) input.get("phoneNumber") : null)
-                            .bio(input.get("bio") != null ? (String) input.get("bio") : null)
-                            .locale(input.get("locale") != null ? (String) input.get("locale") : null)
-                            .timezone(input.get("timezone") != null ? (String) input.get("timezone") : null)
-                            .build();
-                    return userService.updateProfile(user.getId(), profileUpdate);
-                })
-                .doOnSuccess(u -> log.info("Profile updated for user: {}", email));
+    public Mono<User> updateProfile(@InputArgument Map<String, Object> input) {
+        return SecurityContextUtils.getCurrentUserEmail()
+                .doOnNext(email -> log.info("Updating profile for user: {}", email))
+                .flatMap(email -> userService.findByEmail(email)
+                        .flatMap(user -> {
+                            User profileUpdate = User.builder()
+                                    .firstName(input.get("firstName") != null ? (String) input.get("firstName") : null)
+                                    .lastName(input.get("lastName") != null ? (String) input.get("lastName") : null)
+                                    .phoneNumber(input.get("phoneNumber") != null ? (String) input.get("phoneNumber") : null)
+                                    .bio(input.get("bio") != null ? (String) input.get("bio") : null)
+                                    .locale(input.get("locale") != null ? (String) input.get("locale") : null)
+                                    .timezone(input.get("timezone") != null ? (String) input.get("timezone") : null)
+                                    .build();
+                            return userService.updateProfile(user.getId(), profileUpdate);
+                        })
+                        .doOnSuccess(u -> log.info("Profile updated for user: {}", email)))
+                .switchIfEmpty(Mono.empty());
     }
 
     // ==========================================
@@ -194,26 +175,18 @@ public class UserMutationResolver {
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
     public Mono<Boolean> changePassword(
-            @AuthenticationPrincipal Jwt jwt,
             @InputArgument String oldPassword,
             @InputArgument String newPassword) {
-        if (jwt == null) {
-            return Mono.just(false);
-        }
-
-        String email = jwt.getClaimAsString("email");
-        log.info("Changing password for user: {}", email);
-
-        // Password is managed solely by Keycloak
-        // Note: Keycloak's updatePassword doesn't validate old password by default
-        // For enhanced security, implement password validation via Keycloak's authentication flow
-        return keycloakService.updatePassword(email, newPassword)
-                .thenReturn(true)
-                .doOnSuccess(success -> log.info("Password changed successfully for user: {}", email))
-                .onErrorResume(e -> {
-                    log.error("Password change failed for user {}: {}", email, e.getMessage());
-                    return Mono.just(false);
-                });
+        return SecurityContextUtils.getCurrentUserEmail()
+                .doOnNext(email -> log.info("Changing password for user: {}", email))
+                .flatMap(email -> keycloakService.updatePassword(email, newPassword)
+                        .thenReturn(true)
+                        .doOnSuccess(success -> log.info("Password changed successfully for user: {}", email))
+                        .onErrorResume(e -> {
+                            log.error("Password change failed for user {}: {}", email, e.getMessage());
+                            return Mono.just(false);
+                        }))
+                .switchIfEmpty(Mono.just(false));
     }
 
     /**
@@ -420,17 +393,8 @@ public class UserMutationResolver {
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<UserMutationResponse> addUserRole(
-            @AuthenticationPrincipal Jwt jwt,
             @InputArgument String userId,
             @InputArgument UserType role) {
-
-        if (jwt == null) {
-            log.warn("addUserRole called without authentication");
-            return Mono.just(UserMutationResponse.failure("Authentication required"));
-        }
-
-        String adminId = jwt.getSubject();
-        log.info("SECURITY_AUDIT: Admin {} adding role {} to user {}", adminId, role, userId);
 
         // Validate input
         if (userId == null || userId.isBlank()) {
@@ -440,27 +404,32 @@ public class UserMutationResolver {
             return Mono.just(UserMutationResponse.failure("Role is required"));
         }
 
-        // CUSTOMER role is already present for all users
-        if (role == UserType.CUSTOMER) {
-            return userService.findById(userId)
-                    .map(user -> UserMutationResponse.success(user, "CUSTOMER role is already present for all users"))
-                    .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
-        }
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("SECURITY_AUDIT: Admin {} adding role {} to user {}", adminId, role, userId))
+                .flatMap(adminId -> {
+                    // CUSTOMER role is already present for all users
+                    if (role == UserType.CUSTOMER) {
+                        return userService.findById(userId)
+                                .map(user -> UserMutationResponse.success(user, "CUSTOMER role is already present for all users"))
+                                .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+                    }
 
-        return userService.addRole(userId, role, adminId)
-                .map(user -> {
-                    log.info("SECURITY_AUDIT: Role {} added to user {} by admin {}", role, userId, adminId);
-                    return UserMutationResponse.success(user, "Role " + role + " added successfully");
-                })
-                .onErrorResume(IllegalArgumentException.class, e -> {
-                    log.warn("SECURITY_AUDIT: Failed to add role {} to user {}: {}", role, userId, e.getMessage());
-                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
-                })
-                .onErrorResume(IllegalStateException.class, e -> {
-                    log.warn("SECURITY_AUDIT: Invalid state when adding role {} to user {}: {}", role, userId, e.getMessage());
-                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
-                })
-                .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+                    return userService.addRole(userId, role, adminId)
+                            .map(user -> {
+                                log.info("SECURITY_AUDIT: Role {} added to user {} by admin {}", role, userId, adminId);
+                                return UserMutationResponse.success(user, "Role " + role + " added successfully");
+                            })
+                            .onErrorResume(IllegalArgumentException.class, e -> {
+                                log.warn("SECURITY_AUDIT: Failed to add role {} to user {}: {}", role, userId, e.getMessage());
+                                return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                            })
+                            .onErrorResume(IllegalStateException.class, e -> {
+                                log.warn("SECURITY_AUDIT: Invalid state when adding role {} to user {}: {}", role, userId, e.getMessage());
+                                return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                            })
+                            .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+                });
     }
 
     /**
@@ -478,17 +447,8 @@ public class UserMutationResolver {
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<UserMutationResponse> removeUserRole(
-            @AuthenticationPrincipal Jwt jwt,
             @InputArgument String userId,
             @InputArgument UserType role) {
-
-        if (jwt == null) {
-            log.warn("removeUserRole called without authentication");
-            return Mono.just(UserMutationResponse.failure("Authentication required"));
-        }
-
-        String adminId = jwt.getSubject();
-        log.info("SECURITY_AUDIT: Admin {} removing role {} from user {}", adminId, role, userId);
 
         // Validate input
         if (userId == null || userId.isBlank()) {
@@ -498,26 +458,31 @@ public class UserMutationResolver {
             return Mono.just(UserMutationResponse.failure("Role is required"));
         }
 
-        // CUSTOMER role cannot be removed (it's the base role)
-        if (role == UserType.CUSTOMER) {
-            log.warn("SECURITY_AUDIT: Attempted to remove CUSTOMER role from user {} by admin {}", userId, adminId);
-            return Mono.just(UserMutationResponse.failure("CUSTOMER role cannot be removed - it is the base role for all users"));
-        }
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("SECURITY_AUDIT: Admin {} removing role {} from user {}", adminId, role, userId))
+                .flatMap(adminId -> {
+                    // CUSTOMER role cannot be removed (it's the base role)
+                    if (role == UserType.CUSTOMER) {
+                        log.warn("SECURITY_AUDIT: Attempted to remove CUSTOMER role from user {} by admin {}", userId, adminId);
+                        return Mono.just(UserMutationResponse.failure("CUSTOMER role cannot be removed - it is the base role for all users"));
+                    }
 
-        return userService.removeRole(userId, role, adminId)
-                .map(user -> {
-                    log.info("SECURITY_AUDIT: Role {} removed from user {} by admin {}", role, userId, adminId);
-                    return UserMutationResponse.success(user, "Role " + role + " removed successfully");
-                })
-                .onErrorResume(IllegalArgumentException.class, e -> {
-                    log.warn("SECURITY_AUDIT: Failed to remove role {} from user {}: {}", role, userId, e.getMessage());
-                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
-                })
-                .onErrorResume(IllegalStateException.class, e -> {
-                    log.warn("SECURITY_AUDIT: Invalid state when removing role {} from user {}: {}", role, userId, e.getMessage());
-                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
-                })
-                .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+                    return userService.removeRole(userId, role, adminId)
+                            .map(user -> {
+                                log.info("SECURITY_AUDIT: Role {} removed from user {} by admin {}", role, userId, adminId);
+                                return UserMutationResponse.success(user, "Role " + role + " removed successfully");
+                            })
+                            .onErrorResume(IllegalArgumentException.class, e -> {
+                                log.warn("SECURITY_AUDIT: Failed to remove role {} from user {}: {}", role, userId, e.getMessage());
+                                return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                            })
+                            .onErrorResume(IllegalStateException.class, e -> {
+                                log.warn("SECURITY_AUDIT: Invalid state when removing role {} from user {}: {}", role, userId, e.getMessage());
+                                return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                            })
+                            .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+                });
     }
 
     /**
@@ -535,17 +500,8 @@ public class UserMutationResolver {
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<UserMutationResponse> setUserRoles(
-            @AuthenticationPrincipal Jwt jwt,
             @InputArgument String userId,
             @InputArgument List<UserType> roles) {
-
-        if (jwt == null) {
-            log.warn("setUserRoles called without authentication");
-            return Mono.just(UserMutationResponse.failure("Authentication required"));
-        }
-
-        String adminId = jwt.getSubject();
-        log.info("SECURITY_AUDIT: Admin {} setting roles for user {} to: {}", adminId, userId, roles);
 
         // Validate input
         if (userId == null || userId.isBlank()) {
@@ -557,8 +513,10 @@ public class UserMutationResolver {
 
         // CUSTOMER role must be included
         if (!roles.contains(UserType.CUSTOMER)) {
-            log.warn("SECURITY_AUDIT: Attempted to set roles without CUSTOMER for user {} by admin {}", userId, adminId);
-            return Mono.just(UserMutationResponse.failure("CUSTOMER role must be included - it is the base role for all users"));
+            return SecurityContextUtils.getCurrentUserId()
+                    .defaultIfEmpty("system")
+                    .doOnNext(adminId -> log.warn("SECURITY_AUDIT: Attempted to set roles without CUSTOMER for user {} by admin {}", userId, adminId))
+                    .map(adminId -> UserMutationResponse.failure("CUSTOMER role must be included - it is the base role for all users"));
         }
 
         // Convert to Set for the service
@@ -569,20 +527,23 @@ public class UserMutationResolver {
             return Mono.just(UserMutationResponse.failure("Invalid role combination"));
         }
 
-        return userService.setRoles(userId, roleSet, adminId)
-                .map(user -> {
-                    log.info("SECURITY_AUDIT: Roles set to {} for user {} by admin {}", roleSet, userId, adminId);
-                    return UserMutationResponse.success(user, "Roles updated successfully");
-                })
-                .onErrorResume(IllegalArgumentException.class, e -> {
-                    log.warn("SECURITY_AUDIT: Failed to set roles for user {}: {}", userId, e.getMessage());
-                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
-                })
-                .onErrorResume(IllegalStateException.class, e -> {
-                    log.warn("SECURITY_AUDIT: Invalid state when setting roles for user {}: {}", userId, e.getMessage());
-                    return Mono.just(UserMutationResponse.failure(e.getMessage()));
-                })
-                .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found")));
+        return SecurityContextUtils.getCurrentUserId()
+                .defaultIfEmpty("system")
+                .doOnNext(adminId -> log.info("SECURITY_AUDIT: Admin {} setting roles for user {} to: {}", adminId, userId, roles))
+                .flatMap(adminId -> userService.setRoles(userId, roleSet, adminId)
+                        .map(user -> {
+                            log.info("SECURITY_AUDIT: Roles set to {} for user {} by admin {}", roleSet, userId, adminId);
+                            return UserMutationResponse.success(user, "Roles updated successfully");
+                        })
+                        .onErrorResume(IllegalArgumentException.class, e -> {
+                            log.warn("SECURITY_AUDIT: Failed to set roles for user {}: {}", userId, e.getMessage());
+                            return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                        })
+                        .onErrorResume(IllegalStateException.class, e -> {
+                            log.warn("SECURITY_AUDIT: Invalid state when setting roles for user {}: {}", userId, e.getMessage());
+                            return Mono.just(UserMutationResponse.failure(e.getMessage()));
+                        })
+                        .switchIfEmpty(Mono.just(UserMutationResponse.failure("User not found"))));
     }
 
     // ==========================================
@@ -595,56 +556,54 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<Boolean> sendPhoneVerification(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            log.warn("sendPhoneVerification called without authentication");
-            return Mono.just(false);
-        }
+    public Mono<Boolean> sendPhoneVerification() {
+        return SecurityContextUtils.getCurrentUserEmail()
+                .doOnNext(email -> log.info("Sending phone verification for user: {}", email))
+                .flatMap(email -> userService.findByEmail(email)
+                        .flatMap(user -> {
+                            if (user.getPhoneNumber() == null || user.getPhoneNumber().isBlank()) {
+                                log.warn("User {} has no phone number set", email);
+                                return Mono.just(false);
+                            }
 
-        String email = jwt.getClaimAsString("email");
-        log.info("Sending phone verification for user: {}", email);
+                            if (user.isPhoneVerified()) {
+                                log.info("Phone already verified for user: {}", email);
+                                return Mono.just(true);
+                            }
 
-        return userService.findByEmail(email)
-                .flatMap(user -> {
-                    if (user.getPhoneNumber() == null || user.getPhoneNumber().isBlank()) {
-                        log.warn("User {} has no phone number set", email);
-                        return Mono.just(false);
-                    }
-
-                    if (user.isPhoneVerified()) {
-                        log.info("Phone already verified for user: {}", email);
-                        return Mono.just(true);
-                    }
-
-                    // Check cooldown
-                    return otpService.canSendOtp(user.getPhoneNumber())
-                            .flatMap(canSend -> {
-                                if (!canSend) {
-                                    log.warn("OTP cooldown active for user: {}", email);
-                                    return Mono.just(false);
-                                }
-
-                                // Generate and send OTP
-                                return otpService.generateOtp(user.getPhoneNumber())
-                                        .flatMap(otp -> messagingService.sendOtp(user.getPhoneNumber(), otp, "whatsapp"))
-                                        .flatMap(sent -> {
-                                            if (sent) {
-                                                return otpService.setCooldown(user.getPhoneNumber())
-                                                        .thenReturn(true);
-                                            }
+                            // Check cooldown
+                            return otpService.canSendOtp(user.getPhoneNumber())
+                                    .flatMap(canSend -> {
+                                        if (!canSend) {
+                                            log.warn("OTP cooldown active for user: {}", email);
                                             return Mono.just(false);
-                                        });
-                            });
-                })
-                .doOnSuccess(result -> {
-                    if (result) {
-                        log.info("Phone verification OTP sent for user: {}", email);
-                    }
-                })
+                                        }
+
+                                        // Generate and send OTP
+                                        return otpService.generateOtp(user.getPhoneNumber())
+                                                .flatMap(otp -> messagingService.sendOtp(user.getPhoneNumber(), otp, "whatsapp"))
+                                                .flatMap(sent -> {
+                                                    if (sent) {
+                                                        return otpService.setCooldown(user.getPhoneNumber())
+                                                                .thenReturn(true);
+                                                    }
+                                                    return Mono.just(false);
+                                                });
+                                    });
+                        })
+                        .doOnSuccess(result -> {
+                            if (result) {
+                                log.info("Phone verification OTP sent for user: {}", email);
+                            }
+                        }))
                 .onErrorResume(e -> {
                     log.error("Failed to send phone verification: {}", e.getMessage());
                     return Mono.just(false);
-                });
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("sendPhoneVerification called without authentication");
+                    return Mono.just(false);
+                }));
     }
 
     /**
@@ -653,50 +612,47 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<User> verifyPhone(@AuthenticationPrincipal Jwt jwt, @InputArgument String code) {
-        if (jwt == null) {
-            log.warn("verifyPhone called without authentication");
-            return Mono.empty();
-        }
+    public Mono<User> verifyPhone(@InputArgument String code) {
+        return SecurityContextUtils.getAuthenticationContext()
+                .doOnNext(ctx -> log.info("Verifying phone for user: {} with code", ctx.getEmail()))
+                .flatMap(ctx -> userService.findByEmail(ctx.getEmail())
+                        .flatMap(user -> {
+                            if (user.getPhoneNumber() == null || user.getPhoneNumber().isBlank()) {
+                                log.warn("User {} has no phone number set", ctx.getEmail());
+                                return Mono.empty();
+                            }
 
-        String email = jwt.getClaimAsString("email");
-        String keycloakUserId = jwt.getSubject();
-        log.info("Verifying phone for user: {} with code", email);
+                            if (user.isPhoneVerified()) {
+                                log.info("Phone already verified for user: {}", ctx.getEmail());
+                                return Mono.just(user);
+                            }
 
-        return userService.findByEmail(email)
-                .flatMap(user -> {
-                    if (user.getPhoneNumber() == null || user.getPhoneNumber().isBlank()) {
-                        log.warn("User {} has no phone number set", email);
-                        return Mono.empty();
-                    }
+                            // Verify OTP
+                            return otpService.verifyOtp(user.getPhoneNumber(), code)
+                                    .flatMap(valid -> {
+                                        if (!valid) {
+                                            log.warn("Invalid OTP for user: {}", ctx.getEmail());
+                                            return Mono.empty();
+                                        }
 
-                    if (user.isPhoneVerified()) {
-                        log.info("Phone already verified for user: {}", email);
-                        return Mono.just(user);
-                    }
-
-                    // Verify OTP
-                    return otpService.verifyOtp(user.getPhoneNumber(), code)
-                            .flatMap(valid -> {
-                                if (!valid) {
-                                    log.warn("Invalid OTP for user: {}", email);
-                                    return Mono.empty();
-                                }
-
-                                // Update phone verification status
-                                return userService.verifyPhone(user.getId())
-                                        .flatMap(updatedUser -> {
-                                            // Also update in Keycloak
-                                            return keycloakService.updatePhoneVerified(keycloakUserId, true)
-                                                    .thenReturn(updatedUser);
-                                        });
-                            });
-                })
-                .doOnSuccess(u -> {
-                    if (u != null) {
-                        log.info("Phone verified for user: {}", email);
-                    }
-                });
+                                        // Update phone verification status
+                                        return userService.verifyPhone(user.getId())
+                                                .flatMap(updatedUser -> {
+                                                    // Also update in Keycloak
+                                                    return keycloakService.updatePhoneVerified(ctx.getUserId(), true)
+                                                            .thenReturn(updatedUser);
+                                                });
+                                    });
+                        })
+                        .doOnSuccess(u -> {
+                            if (u != null) {
+                                log.info("Phone verified for user: {}", ctx.getEmail());
+                            }
+                        }))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("verifyPhone called without authentication");
+                    return Mono.empty();
+                }));
     }
 
     // ==========================================

@@ -7,11 +7,10 @@ import com.pml.identity.domain.model.TeamInvitation;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.TeamInvitationService;
 import com.pml.identity.web.graphql.dto.pagination.*;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -51,18 +50,12 @@ public class TeamInvitationQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Flux<TeamInvitation> myPendingInvitations(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Flux.empty();
-        }
-
-        String email = jwt.getClaimAsString("email");
-        if (email == null || email.isBlank()) {
-            return Flux.empty();
-        }
-
-        log.debug("GraphQL query: myPendingInvitations(email={})", email);
-        return invitationService.findPendingByEmail(email);
+    public Flux<TeamInvitation> myPendingInvitations() {
+        return SecurityContextUtils.getCurrentUserEmail()
+                .filter(email -> !email.isBlank())
+                .doOnNext(email -> log.debug("GraphQL query: myPendingInvitations(email={})", email))
+                .flatMapMany(email -> invitationService.findPendingByEmail(email))
+                .switchIfEmpty(Flux.empty());
     }
 
     // ========================================================================
@@ -77,24 +70,19 @@ public class TeamInvitationQueryResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<TeamInvitationOffsetPage> pendingInvitationsOffsetPagination(
             @InputArgument String organizationId,
-            @InputArgument OffsetPaginationInput pagination,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument OffsetPaginationInput pagination
     ) {
-        if (jwt == null) {
-            return Mono.just(TeamInvitationOffsetPage.empty());
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: pendingInvitationsOffsetPagination(orgId={})", organizationId);
         Objects.requireNonNull(organizationId, "Organization ID is required");
 
-        return memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        return Mono.error(new IllegalStateException("Permission denied"));
-                    }
-                    return buildOffsetPage(invitationService.findPendingByOrganization(organizationId), pagination);
-                });
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: pendingInvitationsOffsetPagination(orgId={})", organizationId))
+                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                return Mono.error(new IllegalStateException("Permission denied"));
+                            }
+                            return buildOffsetPage(invitationService.findPendingByOrganization(organizationId), pagination);
+                        }));
     }
 
     // ========================================================================
@@ -109,24 +97,19 @@ public class TeamInvitationQueryResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<TeamInvitationConnection> pendingInvitationsCursorPagination(
             @InputArgument String organizationId,
-            @InputArgument CursorPaginationInput pagination,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument CursorPaginationInput pagination
     ) {
-        if (jwt == null) {
-            return Mono.just(TeamInvitationConnection.empty());
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: pendingInvitationsCursorPagination(orgId={})", organizationId);
         Objects.requireNonNull(organizationId, "Organization ID is required");
 
-        return memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        return Mono.error(new IllegalStateException("Permission denied"));
-                    }
-                    return buildCursorConnection(invitationService.findPendingByOrganization(organizationId), pagination);
-                });
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: pendingInvitationsCursorPagination(orgId={})", organizationId))
+                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                return Mono.error(new IllegalStateException("Permission denied"));
+                            }
+                            return buildCursorConnection(invitationService.findPendingByOrganization(organizationId), pagination);
+                        }));
     }
 
     // ========================================================================

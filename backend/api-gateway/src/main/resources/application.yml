@@ -106,12 +106,10 @@ spring:
                 - name: CircuitBreaker
                   args:
                     name: keycloakCircuitBreaker
-          default-filters:
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 100
-                redis-rate-limiter.burstCapacity: 200
-                key-resolver: "#{@ipKeyResolver}"
+          # NOTE: RequestRateLimiter removed from default-filters because it causes
+          # UnsupportedOperationException when adding headers to already-committed
+          # streaming responses (like GraphQL). Apply rate limiting per-route instead.
+          default-filters: []
 
   data:
     redis:
@@ -191,6 +189,34 @@ logging:
     org.springframework.cloud.gateway: INFO
     com.pml.gateway: DEBUG
     io.github.resilience4j: INFO
+    # Spring Security debugging - set to INFO to disable
+    # Core security
+    org.springframework.security: TRACE
+    # WebFlux reactive security (WebFilterChainProxy, filters)
+    org.springframework.security.web.server: TRACE
+    org.springframework.security.web.server.WebFilterChainProxy: TRACE
+    org.springframework.security.web.server.MatcherSecurityWebFilterChain: TRACE
+    org.springframework.security.web.server.authorization: TRACE
+    org.springframework.security.web.server.authentication: TRACE
+    org.springframework.security.web.server.context: TRACE
+    # OAuth2 Resource Server / JWT
+    org.springframework.security.oauth2: TRACE
+    org.springframework.security.oauth2.server.resource: TRACE
+    org.springframework.security.oauth2.jwt: TRACE
+    # Authentication
+    org.springframework.security.authentication: TRACE
+    org.springframework.security.authorization: TRACE
+    # Security config
+    org.springframework.security.config: TRACE
+    org.springframework.security.config.web.server: TRACE
+    # Reactor context propagation
+    reactor.netty.http.server: DEBUG
+    # Custom security debug filter
+    com.pml.shared.security: TRACE
+
+security:
+  debug:
+    enabled: ${SECURITY_DEBUG_ENABLED:true}
 
 gateway:
   security:

@@ -8,11 +8,10 @@ import com.pml.identity.domain.model.EventAccessGrant;
 import com.pml.identity.service.EventAccessService;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.web.graphql.dto.pagination.*;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -77,17 +76,12 @@ public class EventAccessQueryResolver {
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
     public Mono<EventAccessGrant> myEventAccess(
-            @InputArgument String eventId,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument String eventId
     ) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myEventAccess(eventId={}, userId={})", eventId, userId);
         Objects.requireNonNull(eventId, "Event ID is required");
-        return eventAccessService.findByUserAndEvent(userId, eventId);
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myEventAccess(eventId={}, userId={})", eventId, userId))
+                .flatMap(userId -> eventAccessService.findByUserAndEvent(userId, eventId));
     }
 
     /**
@@ -96,14 +90,10 @@ public class EventAccessQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Flux<EventAccessGrant> myEventAccessGrants(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Flux.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myEventAccessGrants(userId={})", userId);
-        return eventAccessService.findByUser(userId);
+    public Flux<EventAccessGrant> myEventAccessGrants() {
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myEventAccessGrants(userId={})", userId))
+                .flatMapMany(eventAccessService::findByUser);
     }
 
     // ========================================================================
@@ -119,25 +109,23 @@ public class EventAccessQueryResolver {
     public Mono<EventAccessGrantOffsetPage> eventAccessGrantsOffsetPagination(
             @InputArgument String eventId,
             @InputArgument AccessGrantStatus status,
-            @InputArgument OffsetPaginationInput pagination,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument OffsetPaginationInput pagination
     ) {
-        if (jwt == null) {
-            return Mono.just(EventAccessGrantOffsetPage.empty());
-        }
-
-        log.debug("GraphQL query: eventAccessGrantsOffsetPagination(eventId={}, status={})", eventId, status);
         Objects.requireNonNull(eventId, "Event ID is required");
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: eventAccessGrantsOffsetPagination(eventId={}, status={})", eventId, status))
+                .flatMap(userId -> {
+                    Flux<EventAccessGrant> grantFlux = eventAccessService.findByEvent(eventId)
+                            .filter(grant -> {
+                                if (status != null && grant.getStatus() != status) {
+                                    return false;
+                                }
+                                return true;
+                            });
 
-        Flux<EventAccessGrant> grantFlux = eventAccessService.findByEvent(eventId)
-                .filter(grant -> {
-                    if (status != null && grant.getStatus() != status) {
-                        return false;
-                    }
-                    return true;
-                });
-
-        return buildOffsetPage(grantFlux, pagination);
+                    return buildOffsetPage(grantFlux, pagination);
+                })
+                .defaultIfEmpty(EventAccessGrantOffsetPage.empty());
     }
 
     // ========================================================================
@@ -153,25 +141,23 @@ public class EventAccessQueryResolver {
     public Mono<EventAccessGrantConnection> eventAccessGrantsCursorPagination(
             @InputArgument String eventId,
             @InputArgument AccessGrantStatus status,
-            @InputArgument CursorPaginationInput pagination,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument CursorPaginationInput pagination
     ) {
-        if (jwt == null) {
-            return Mono.just(EventAccessGrantConnection.empty());
-        }
-
-        log.debug("GraphQL query: eventAccessGrantsCursorPagination(eventId={}, status={})", eventId, status);
         Objects.requireNonNull(eventId, "Event ID is required");
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: eventAccessGrantsCursorPagination(eventId={}, status={})", eventId, status))
+                .flatMap(userId -> {
+                    Flux<EventAccessGrant> grantFlux = eventAccessService.findByEvent(eventId)
+                            .filter(grant -> {
+                                if (status != null && grant.getStatus() != status) {
+                                    return false;
+                                }
+                                return true;
+                            });
 
-        Flux<EventAccessGrant> grantFlux = eventAccessService.findByEvent(eventId)
-                .filter(grant -> {
-                    if (status != null && grant.getStatus() != status) {
-                        return false;
-                    }
-                    return true;
-                });
-
-        return buildCursorConnection(grantFlux, pagination);
+                    return buildCursorConnection(grantFlux, pagination);
+                })
+                .defaultIfEmpty(EventAccessGrantConnection.empty());
     }
 
     // ========================================================================

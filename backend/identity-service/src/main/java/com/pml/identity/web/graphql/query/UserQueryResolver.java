@@ -10,11 +10,10 @@ import com.pml.identity.service.UserStatsService;
 import com.pml.identity.web.graphql.dto.pagination.*;
 import com.pml.identity.web.graphql.dto.stats.UserStats;
 import com.pml.shared.constants.UserType;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -44,13 +43,10 @@ public class UserQueryResolver {
      * Schema: me: User
      */
     @DgsQuery
-    public Mono<User> me(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
-        String email = jwt.getClaimAsString("email");
-        log.debug("GraphQL query: me (email={})", email);
-        return userService.findByEmail(email);
+    public Mono<User> me() {
+        return SecurityContextUtils.getCurrentUserEmail()
+                .doOnNext(email -> log.debug("GraphQL query: me (email={})", email))
+                .flatMap(userService::findByEmail);
     }
 
     /**

@@ -3,156 +3,94 @@
 /**
  * Review Page - Organization Application
  *
- * Final review before submission:
- * - Display all entered organization information
- * - Terms acceptance
- * - Submit application for review
- *
- * MIGRATION NOTE: This page now uses the Organization model and GraphQL operations.
+ * Compact review before submission. Shows all info in a scannable format.
+ * Design: Data-dense layout, clear hierarchy, single CTA focus.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Flex, Text, Heading, Button, Card, Checkbox, Spinner } from '@radix-ui/themes';
+import { ArrowLeft, SendDiagonal, Building, Phone, Globe, Link as LinkIcon, Shield, WarningTriangle, EditPencil } from 'iconoir-react';
 import {
-  Building,
-  Check,
-  ArrowRight,
-  ArrowLeft,
-  Edit,
-  SendDiagonal,
-  Shield,
-  WarningTriangle,
-  Phone,
-  Globe,
-  Link as LinkIcon,
-} from 'iconoir-react';
-import { StepIndicator, Step } from '@/components/application/StepIndicator';
+  StepIndicator,
+  ReviewSkeleton,
+  APPLICATION_STEPS,
+  ORGANIZATION_TYPE_LABELS,
+  PROVINCE_LABELS,
+} from '@/components/application';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useToast } from '@/components/ui';
 import {
   useMyOrganization,
   useSubmitOrganizationForReview,
-  getRouteForStatus,
-  canSubmitForReview,
   applicationReviewSchema,
-  type ApplicationReviewFormData as ApplicationReviewSchema,
+  type ApplicationReviewFormData,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // CONSTANTS
 // =============================================================================
 
-const steps: Step[] = [
-  { id: 'business-info', title: 'Organization Info' },
-  { id: 'review', title: 'Review & Submit' },
-];
-
-const organizationTypeLabels: Record<string, string> = {
-  INDIVIDUAL: 'Individual / Personal',
-  BUSINESS: 'Business / Company',
-};
-
-const provinceLabels: Record<string, string> = {
-  CENTRAL: 'Central Province',
-  COPPERBELT: 'Copperbelt Province',
-  EASTERN: 'Eastern Province',
-  LUAPULA: 'Luapula Province',
-  LUSAKA: 'Lusaka Province',
-  MUCHINGA: 'Muchinga Province',
-  NORTHERN: 'Northern Province',
-  NORTH_WESTERN: 'North-Western Province',
-  SOUTHERN: 'Southern Province',
-  WESTERN: 'Western Province',
+const INITIAL_FORM_DATA: ApplicationReviewFormData = {
+  agreedToTerms: false,
+  agreedToPrivacy: false,
 };
 
 // =============================================================================
-// REVIEW SECTION COMPONENT
+// INLINE COMPONENTS (Compact Design)
 // =============================================================================
 
-interface ReviewSectionProps {
-  title: string;
-  icon: React.ReactNode;
-  editLink: string;
-  children: React.ReactNode;
+/** Compact field display: label and value on same line when possible */
+function Field({ label, value }: { label: string; value?: string | null }) {
+  const hasValue = value && value.trim();
+  return (
+    <Flex gap="2" py="1" className="field-row">
+      <Text size="2" color="gray" style={{ minWidth: 100, flexShrink: 0 }}>
+        {label}
+      </Text>
+      <Text size="2" color={hasValue ? undefined : 'gray'} style={{ fontStyle: hasValue ? 'normal' : 'italic' }}>
+        {hasValue ? value : '-'}
+      </Text>
+    </Flex>
+  );
 }
 
-function ReviewSection({ title, icon, editLink, children }: ReviewSectionProps) {
-  const router = useRouter();
-
+/** Compact section with inline edit button */
+function Section({
+  title,
+  icon: Icon,
+  children,
+  onEdit
+}: {
+  title: string;
+  icon: React.ElementType;
+  children: React.ReactNode;
+  onEdit?: () => void;
+}) {
   return (
-    <Card
-      mb="4"
-      style={{
-        padding: '24px',
-        background: 'rgba(30, 41, 59, 0.5)',
-        border: '1px solid rgba(148, 163, 184, 0.1)',
-        borderRadius: '12px',
-      }}
-    >
-      <Flex justify="between" align="center" mb="4">
+    <Box mb="4">
+      <Flex justify="between" align="center" mb="2">
         <Flex align="center" gap="2">
-          {icon}
-          <Text size="3" weight="medium" style={{ color: '#F8FAFC' }}>
+          <Icon width={16} height={16} className="icon-accent" aria-hidden="true" />
+          <Text size="2" weight="medium" highContrast>
             {title}
           </Text>
         </Flex>
-        <Button
-          variant="ghost"
-          size="1"
-          onClick={() => router.push(editLink)}
-          style={{ color: '#10B981' }}
-        >
-          <Edit style={{ width: 14, height: 14, marginRight: 4 }} />
-          Edit
-        </Button>
+        {onEdit && (
+          <Button
+            variant="ghost"
+            size="1"
+            color="teal"
+            onClick={onEdit}
+            aria-label={`Edit ${title}`}
+          >
+            <EditPencil width={12} height={12} aria-hidden="true" />
+          </Button>
+        )}
       </Flex>
-      {children}
-    </Card>
-  );
-}
-
-// =============================================================================
-// REVIEW FIELD COMPONENT
-// =============================================================================
-
-interface ReviewFieldProps {
-  label: string;
-  value: string | undefined | null;
-}
-
-function ReviewField({ label, value }: ReviewFieldProps) {
-  return (
-    <Box mb="3">
-      <Text size="1" style={{ color: '#94A3B8', display: 'block', marginBottom: '4px' }}>
-        {label}
-      </Text>
-      <Text size="2" style={{ color: '#F8FAFC' }}>
-        {value || '-'}
-      </Text>
+      <Box pl="5">{children}</Box>
     </Box>
-  );
-}
-
-// =============================================================================
-// VALIDATION CHECK COMPONENT
-// =============================================================================
-
-interface ValidationItemProps {
-  label: string;
-  isValid: boolean;
-}
-
-function ValidationItem({ label, isValid }: ValidationItemProps) {
-  return (
-    <Flex align="center" gap="2" py="1">
-      {isValid ? (
-        <Check style={{ width: 16, height: 16, color: '#10B981' }} />
-      ) : (
-        <WarningTriangle style={{ width: 16, height: 16, color: '#F59E0B' }} />
-      )}
-      <Text size="2" style={{ color: isValid ? '#94A3B8' : '#F59E0B' }}>
-        {label}
-      </Text>
-    </Flex>
   );
 }
 
@@ -162,97 +100,41 @@ function ValidationItem({ label, isValid }: ValidationItemProps) {
 
 export default function ReviewPage() {
   const router = useRouter();
-  const {
-    organization,
-    hasOrganization,
-    status,
-    loading: organizationLoading,
-    error: organizationError,
-    refetch,
-  } = useMyOrganization();
-  const { submit, error: submitError } = useSubmitOrganizationForReview();
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Native React state + Zod validation for terms agreement
-  const [formData, setFormData] = useState<ApplicationReviewSchema>({
-    agreedToTerms: false,
-    agreedToPrivacy: false,
+  const { organization, loading: orgLoading } = useMyOrganization({ fetchPolicy: 'cache-first' });
+  const { submit } = useSubmitOrganizationForReview();
+
+  const { watch, setValue, handleSubmit, formState: { errors, isSubmitting } } = useForm<ApplicationReviewFormData>({
+    resolver: zodResolver(applicationReviewSchema),
+    defaultValues: INITIAL_FORM_DATA,
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Update a single field
-  const updateField = useCallback(<K extends keyof ApplicationReviewSchema>(
-    field: K,
-    value: ApplicationReviewSchema[K]
-  ) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error for this field
-    if (errors[field as string]) {
-      setErrors(prev => {
-        const next = { ...prev };
-        delete next[field as string];
-        return next;
-      });
-    }
-  }, [errors]);
+  // Watch form values
+  const agreedToTerms = watch('agreedToTerms');
+  const agreedToPrivacy = watch('agreedToPrivacy');
 
-  // Handle form submission with Zod validation
-  const handleSubmit = useCallback(async () => {
-    // Validate with Zod
-    const result = applicationReviewSchema.safeParse(formData);
-
-    if (!result.success) {
-      const fieldErrors: Record<string, string> = {};
-      for (const issue of result.error.issues) {
-        const path = issue.path.join('.');
-        if (!fieldErrors[path]) {
-          fieldErrors[path] = issue.message;
-        }
-      }
-      setErrors(fieldErrors);
-      return;
-    }
-
+  // Form submission handler
+  const onSubmit = useCallback(async () => {
     if (!organization) return;
-
-    setErrors({});
-    setIsSubmitting(true);
+    setSubmitError(null);
 
     try {
-      const submitResult = await submit(organization.id);
-      if (submitResult) {
-        router.push('/apply/status');
+      const result = await submit(organization.id);
+      if (result) {
+        toast.success('Application submitted', 'Your application is now under review. We\'ll notify you of the outcome.');
+        startTransition(() => router.push('/apply/status'));
       }
     } catch (error) {
-      console.error('Failed to submit application:', error);
-    } finally {
-      setIsSubmitting(false);
+      const errorMessage = error instanceof Error ? error.message : 'Submission failed. Please try again.';
+      setSubmitError(errorMessage);
+      toast.error('Submission failed', errorMessage);
     }
-  }, [formData, organization, submit, router]);
+  }, [organization, submit, toast, router]);
 
-  // Create form object for consistent API usage in template
-  const form = {
-    data: formData,
-    errors,
-    isSubmitting,
-    updateField,
-    handleSubmit,
-  };
-
-  // Redirect if user doesn't have an organization or can't submit
-  useEffect(() => {
-    if (!organizationLoading && !hasOrganization) {
-      router.replace('/welcome');
-      return;
-    }
-
-    if (!organizationLoading && hasOrganization && status && !canSubmitForReview(status)) {
-      const route = getRouteForStatus(status, organization?.id);
-      router.replace(route);
-    }
-  }, [organizationLoading, hasOrganization, status, router]);
-
-  // Validate required organization fields
+  // Validation
   const validation = {
     name: !!organization?.name?.trim(),
     businessEmail: !!organization?.businessEmail?.trim(),
@@ -260,370 +142,224 @@ export default function ReviewPage() {
     city: !!organization?.businessAddress?.city?.trim(),
     province: !!organization?.businessAddress?.province,
   };
+  const invalidFields = Object.entries(validation).filter(([, v]) => !v).map(([k]) => k);
+  const allFieldsValid = invalidFields.length === 0;
 
-  const allFieldsValid = Object.values(validation).every(Boolean);
+  const isFormSubmitting = isSubmitting || isPending;
+  const canSubmit = allFieldsValid && agreedToTerms && agreedToPrivacy && !isFormSubmitting;
 
-  // Can submit if all organization fields are valid and form is valid (terms agreed)
-  const canSubmit = allFieldsValid && form.data.agreedToTerms && form.data.agreedToPrivacy && !form.isSubmitting;
+  const goToEdit = useCallback(() => router.push('/apply/business-info'), [router]);
+  const handleStepClick = useCallback((step: number) => {
+    if (step === 0) goToEdit();
+  }, [goToEdit]);
 
-  // Handle step navigation
-  const handleStepClick = useCallback(
-    (step: number) => {
-      if (step === 0) {
-        router.push('/apply/business-info');
-      }
-    },
-    [router]
-  );
-
-  // Handle back
-  const handleBack = useCallback(() => {
-    router.push('/apply/business-info');
-  }, [router]);
-
-  // Show loading state
-  if (organizationLoading) {
-    return (
-      <Box style={{ textAlign: 'center', padding: '60px 0' }}>
-        <Spinner size="3" />
-        <Text size="2" style={{ color: '#94A3B8', display: 'block', marginTop: 16 }}>
-          Loading your application...
-        </Text>
-      </Box>
-    );
+  // Loading state
+  if (orgLoading) {
+    return <ReviewSkeleton />;
   }
 
-  // Show error state
-  if (organizationError) {
-    return (
-      <Box style={{ textAlign: 'center', padding: '60px 0' }}>
-        <Box
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: '16px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 16px',
-          }}
-        >
-          <WarningTriangle style={{ width: 32, height: 32, color: '#EF4444' }} />
-        </Box>
-        <Text size="3" weight="medium" style={{ color: '#F8FAFC', display: 'block', marginBottom: 8 }}>
-          Failed to load application
-        </Text>
-        <Text size="2" style={{ color: '#94A3B8', display: 'block', marginBottom: 16 }}>
-          {organizationError.message || 'An error occurred while loading your application.'}
-        </Text>
-        <Button variant="outline" onClick={() => refetch()}>
-          Try Again
-        </Button>
-      </Box>
-    );
-  }
-
+  // No organization
   if (!organization) {
-    return null;
+    return (
+      <Flex justify="center" py="9">
+        <Text size="2" color="gray">
+          No application found. Redirecting...
+        </Text>
+      </Flex>
+    );
   }
 
   return (
     <Box>
-      {/* Step Indicator */}
-      <StepIndicator steps={steps} currentStep={1} onStepClick={handleStepClick} />
+      <StepIndicator steps={APPLICATION_STEPS} currentStep={1} onStepClick={handleStepClick} />
 
-      {/* Page Header */}
-      <Box mb="6">
-        <Heading size="5" mb="2" style={{ color: '#F8FAFC' }}>
-          Review Your Application
-        </Heading>
-        <Text size="2" style={{ color: '#94A3B8' }}>
-          Please review all the information below before submitting your application.
-        </Text>
-      </Box>
+      {/* Header */}
+      <Flex justify="between" align="start" mb="5">
+        <Box>
+          <Heading size="5" mb="1" highContrast>
+            Review Application
+          </Heading>
+          <Text size="2" color="gray">
+            Verify your information before submitting.
+          </Text>
+        </Box>
+        <Button variant="soft" size="2" onClick={goToEdit}>
+          <EditPencil width={14} height={14} aria-hidden="true" />
+          Edit
+        </Button>
+      </Flex>
 
-      {/* Validation Summary */}
+      {/* Validation Warning */}
       {!allFieldsValid && (
-        <Card
-          mb="4"
-          style={{
-            padding: '20px',
-            background: 'rgba(245, 158, 11, 0.1)',
-            border: '1px solid rgba(245, 158, 11, 0.3)',
-            borderRadius: '12px',
-          }}
-        >
-          <Flex align="center" gap="3" mb="3">
-            <WarningTriangle style={{ width: 20, height: 20, color: '#F59E0B' }} />
-            <Text size="2" weight="medium" style={{ color: '#FCD34D' }}>
-              Please complete all required fields
+        <Card role="alert" aria-live="polite" mb="4" className="warning-card" variant="surface">
+          <Flex align="center" gap="2" p="3">
+            <WarningTriangle width={16} height={16} aria-hidden="true" style={{ flexShrink: 0, color: 'var(--amber-9)' }} />
+            <Text size="2" color="amber">
+              Missing: {invalidFields.map(f => f === 'businessEmail' ? 'Email' : f === 'businessPhone' ? 'Phone' : f.charAt(0).toUpperCase() + f.slice(1)).join(', ')}
             </Text>
           </Flex>
-          <Box pl="7">
-            <ValidationItem label="Organization Name" isValid={validation.name} />
-            <ValidationItem label="Business Email" isValid={validation.businessEmail} />
-            <ValidationItem label="Phone Number" isValid={validation.businessPhone} />
-            <ValidationItem label="City" isValid={validation.city} />
-            <ValidationItem label="Province" isValid={validation.province} />
-          </Box>
         </Card>
       )}
 
-      {/* Basic Information Section */}
-      <ReviewSection
-        title="Basic Information"
-        icon={<Building style={{ width: 20, height: 20, color: '#10B981' }} />}
-        editLink="/apply/business-info"
-      >
-        <Box
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '16px',
-          }}
-        >
-          <ReviewField label="Organization Name" value={organization.name} />
-          <ReviewField
-            label="Organization Type"
-            value={organization.type ? organizationTypeLabels[organization.type] || organization.type : undefined}
-          />
-          <ReviewField label="Tagline" value={organization.tagline} />
+      {/* Review Card */}
+      <Card variant="surface" mb="4">
+        <Box p="5">
+          <Section title="Organization" icon={Building} onEdit={goToEdit}>
+            <Field label="Name" value={organization.name} />
+            <Field label="Type" value={organization.type ? ORGANIZATION_TYPE_LABELS[organization.type] || organization.type : undefined} />
+            <Field label="Tagline" value={organization.tagline} />
+            {organization.description && (
+              <Box py="2">
+                <Text as="label" size="1" color="gray" mb="1" style={{ display: 'block' }}>
+                  Description
+                </Text>
+                <Text as="p" size="2" color="gray">
+                  {organization.description}
+                </Text>
+              </Box>
+            )}
+          </Section>
+
+          <Section title="Contact" icon={Phone} onEdit={goToEdit}>
+            <Field label="Email" value={organization.businessEmail} />
+            <Field label="Phone" value={organization.businessPhone} />
+            <Field label="Website" value={organization.website} />
+          </Section>
+
+          <Section title="Location" icon={Globe} onEdit={goToEdit}>
+            <Field label="City" value={organization.businessAddress?.city} />
+            <Field label="Province" value={organization.businessAddress?.province ? PROVINCE_LABELS[organization.businessAddress.province] || organization.businessAddress.province : undefined} />
+            <Field label="Country" value={organization.businessAddress?.country || 'Zambia'} />
+          </Section>
+
+          {(organization.socialLinks?.facebook || organization.socialLinks?.instagram || organization.socialLinks?.twitter) && (
+            <Section title="Social" icon={LinkIcon} onEdit={goToEdit}>
+              {organization.socialLinks?.facebook && <Field label="Facebook" value={organization.socialLinks.facebook} />}
+              {organization.socialLinks?.instagram && <Field label="Instagram" value={organization.socialLinks.instagram} />}
+              {organization.socialLinks?.twitter && <Field label="Twitter" value={organization.socialLinks.twitter} />}
+            </Section>
+          )}
         </Box>
-
-        {/* Description */}
-        {organization.description && (
-          <Box mt="4" pt="4" style={{ borderTop: '1px solid rgba(148, 163, 184, 0.1)' }}>
-            <Text size="2" weight="medium" mb="2" style={{ color: '#CBD5E1', display: 'block' }}>
-              About Your Organization
-            </Text>
-            <Text size="2" style={{ color: '#94A3B8', lineHeight: 1.6 }}>
-              {organization.description}
-            </Text>
-          </Box>
-        )}
-      </ReviewSection>
-
-      {/* Contact Information Section */}
-      <ReviewSection
-        title="Contact Information"
-        icon={<Phone style={{ width: 20, height: 20, color: '#10B981' }} />}
-        editLink="/apply/business-info"
-      >
-        <Box
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '16px',
-          }}
-        >
-          <ReviewField label="Email" value={organization.businessEmail} />
-          <ReviewField label="Phone" value={organization.businessPhone} />
-          <ReviewField label="Website" value={organization.website} />
-        </Box>
-      </ReviewSection>
-
-      {/* Location Section */}
-      <ReviewSection
-        title="Location"
-        icon={<Globe style={{ width: 20, height: 20, color: '#10B981' }} />}
-        editLink="/apply/business-info"
-      >
-        <Text size="2" style={{ color: '#F8FAFC', lineHeight: 1.6 }}>
-          {organization.businessAddress?.city || '-'}, {organization.businessAddress?.province ? provinceLabels[organization.businessAddress.province] || organization.businessAddress.province : '-'}
-          <br />
-          {organization.businessAddress?.country || 'Zambia'}
-        </Text>
-      </ReviewSection>
-
-      {/* Social Links Section */}
-      {(organization.socialLinks?.facebook || organization.socialLinks?.instagram || organization.socialLinks?.twitter) && (
-        <ReviewSection
-          title="Social Media"
-          icon={<LinkIcon style={{ width: 20, height: 20, color: '#10B981' }} />}
-          editLink="/apply/business-info"
-        >
-          <Box
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '16px',
-            }}
-          >
-            {organization.socialLinks?.facebook && (
-              <ReviewField label="Facebook" value={organization.socialLinks.facebook} />
-            )}
-            {organization.socialLinks?.instagram && (
-              <ReviewField label="Instagram" value={organization.socialLinks.instagram} />
-            )}
-            {organization.socialLinks?.twitter && (
-              <ReviewField label="Twitter / X" value={organization.socialLinks.twitter} />
-            )}
-          </Box>
-        </ReviewSection>
-      )}
-
-      {/* Terms and Conditions */}
-      <Card
-        mb="6"
-        style={{
-          padding: '24px',
-          background: 'rgba(30, 41, 59, 0.5)',
-          border: '1px solid rgba(148, 163, 184, 0.1)',
-          borderRadius: '12px',
-        }}
-      >
-        <Flex align="center" gap="2" mb="4">
-          <Shield style={{ width: 20, height: 20, color: '#10B981' }} />
-          <Text size="3" weight="medium" style={{ color: '#F8FAFC' }}>
-            Terms and Conditions
-          </Text>
-        </Flex>
-
-        <Flex direction="column" gap="4">
-          <Box>
-            <Flex align="start" gap="3">
-              <Checkbox
-                checked={form.data.agreedToTerms}
-                onCheckedChange={(checked) => form.updateField('agreedToTerms', checked === true)}
-              />
-              <Text size="2" style={{ color: '#CBD5E1' }}>
-                I agree to the{' '}
-                <a href="/terms" style={{ color: '#10B981', textDecoration: 'none' }}>
-                  Terms of Service
-                </a>{' '}
-                and confirm that all information provided is accurate and complete.
-              </Text>
-            </Flex>
-            {form.errors.agreedToTerms && (
-              <Text size="1" style={{ color: '#F87171', display: 'block', marginTop: '4px', marginLeft: '28px' }}>
-                {form.errors.agreedToTerms}
-              </Text>
-            )}
-          </Box>
-
-          <Box>
-            <Flex align="start" gap="3">
-              <Checkbox
-                checked={form.data.agreedToPrivacy}
-                onCheckedChange={(checked) => form.updateField('agreedToPrivacy', checked === true)}
-              />
-              <Text size="2" style={{ color: '#CBD5E1' }}>
-                I acknowledge and agree to the{' '}
-                <a href="/privacy" style={{ color: '#10B981', textDecoration: 'none' }}>
-                  Privacy Policy
-                </a>{' '}
-                and consent to the processing of my data for verification purposes.
-              </Text>
-            </Flex>
-            {form.errors.agreedToPrivacy && (
-              <Text size="1" style={{ color: '#F87171', display: 'block', marginTop: '4px', marginLeft: '28px' }}>
-                {form.errors.agreedToPrivacy}
-              </Text>
-            )}
-          </Box>
-        </Flex>
       </Card>
 
-      {/* Submit Info */}
-      <Card
-        mb="6"
-        style={{
-          padding: '20px',
-          background: 'rgba(59, 130, 246, 0.1)',
-          border: '1px solid rgba(59, 130, 246, 0.2)',
-          borderRadius: '12px',
-        }}
-      >
-        <Flex align="center" gap="3">
-          <Box
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: '8px',
-              background: 'rgba(59, 130, 246, 0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <SendDiagonal style={{ width: 20, height: 20, color: '#60A5FA' }} />
-          </Box>
+      {/* Terms Card */}
+      <Card variant="surface" mb="4">
+        <Box p="5">
+          <Flex align="center" gap="2" mb="3">
+            <Shield width={16} height={16} className="icon-accent" aria-hidden="true" />
+            <Text size="2" weight="medium" highContrast>
+              Agreements
+            </Text>
+          </Flex>
+
+          <Flex direction="column" gap="3">
+            <Text as="label" size="2" color="gray">
+              <Flex align="start" gap="3" style={{ cursor: 'pointer' }}>
+                <Checkbox
+                  checked={agreedToTerms}
+                  onCheckedChange={(checked) => setValue('agreedToTerms', checked === true)}
+                  mt="1"
+                />
+                <span>
+                  I agree to the{' '}
+                  <Text color="teal" style={{ textDecoration: 'underline' }} asChild>
+                    <a href="/terms">Terms of Service</a>
+                  </Text>
+                  {' '}and confirm all information is accurate.
+                </span>
+              </Flex>
+            </Text>
+            {errors.agreedToTerms && (
+              <Text size="1" color="red" ml="6">
+                {errors.agreedToTerms.message}
+              </Text>
+            )}
+
+            <Text as="label" size="2" color="gray">
+              <Flex align="start" gap="3" style={{ cursor: 'pointer' }}>
+                <Checkbox
+                  checked={agreedToPrivacy}
+                  onCheckedChange={(checked) => setValue('agreedToPrivacy', checked === true)}
+                  mt="1"
+                />
+                <span>
+                  I acknowledge the{' '}
+                  <Text color="teal" style={{ textDecoration: 'underline' }} asChild>
+                    <a href="/privacy">Privacy Policy</a>
+                  </Text>
+                  {' '}and consent to data processing.
+                </span>
+              </Flex>
+            </Text>
+            {errors.agreedToPrivacy && (
+              <Text size="1" color="red" ml="6">
+                {errors.agreedToPrivacy.message}
+              </Text>
+            )}
+          </Flex>
+        </Box>
+      </Card>
+
+      {/* Info Banner */}
+      <Card variant="surface" mb="4" className="info-card">
+        <Flex align="center" gap="3" p="3">
+          <SendDiagonal width={18} height={18} aria-hidden="true" style={{ flexShrink: 0, color: 'var(--blue-9)' }} />
           <Box>
-            <Text size="2" weight="medium" style={{ color: '#F8FAFC', display: 'block' }}>
+            <Text size="2" weight="medium" highContrast style={{ display: 'block' }}>
               What happens next?
             </Text>
-            <Text size="1" style={{ color: '#94A3B8' }}>
-              After submission, our team will review your application within 2-3 business days.
-              You&apos;ll receive an email notification when your application is approved.
-              You can create draft events while waiting for approval.
+            <Text size="1" color="gray">
+              Review takes 2-3 business days. You can create draft events while waiting.
             </Text>
           </Box>
         </Flex>
       </Card>
 
-      {/* Submit Error */}
+      {/* Error */}
       {submitError && (
-        <Card
-          mb="4"
-          style={{
-            padding: '16px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: '12px',
-          }}
-        >
-          <Flex align="center" gap="3">
-            <WarningTriangle style={{ width: 20, height: 20, color: '#EF4444' }} />
-            <Text size="2" style={{ color: '#FCA5A5' }}>
-              {submitError.message || 'Failed to submit your application. Please try again.'}
-            </Text>
+        <Card role="alert" aria-live="assertive" mb="4" variant="surface" className="error-card">
+          <Flex align="center" gap="2" p="3">
+            <WarningTriangle width={16} height={16} aria-hidden="true" style={{ color: 'var(--red-9)' }} />
+            <Text size="2" color="red">{submitError}</Text>
           </Flex>
         </Card>
       )}
 
-      {/* Navigation Buttons */}
-      <Flex justify="between">
-        <Button
-          variant="outline"
-          size="3"
-          onClick={handleBack}
-          disabled={form.isSubmitting}
-          style={{
-            borderColor: 'rgba(148, 163, 184, 0.3)',
-            color: '#94A3B8',
-          }}
-        >
-          <ArrowLeft style={{ width: 18, height: 18, marginRight: 8 }} />
+      {/* Actions */}
+      <Flex justify="between" gap="3">
+        <Button variant="soft" size="3" onClick={goToEdit} disabled={isFormSubmitting}>
+          <ArrowLeft width={16} height={16} aria-hidden="true" />
           Back
         </Button>
         <Button
           size="3"
-          onClick={() => form.handleSubmit()}
+          color="teal"
+          onClick={handleSubmit(onSubmit)}
           disabled={!canSubmit}
-          style={{
-            background: canSubmit
-              ? 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)'
-              : 'rgba(148, 163, 184, 0.2)',
-            cursor: canSubmit ? 'pointer' : 'not-allowed',
-            minWidth: '160px',
-            opacity: form.isSubmitting ? 0.7 : 1,
-          }}
         >
-          {form.isSubmitting ? (
+          {isFormSubmitting ? (
             <>
               <Spinner size="1" />
-              <span style={{ marginLeft: 8 }}>Submitting...</span>
+              Submitting...
             </>
           ) : (
             <>
-              Submit Application
-              <ArrowRight style={{ width: 18, height: 18, marginLeft: 8 }} />
+              Submit
+              <SendDiagonal width={16} height={16} aria-hidden="true" />
             </>
           )}
         </Button>
       </Flex>
+
+      {/* Styles for field rows */}
+      <style jsx global>{`
+        .field-row {
+          border-bottom: 1px solid var(--gray-a5);
+        }
+        .field-row:last-child {
+          border-bottom: none;
+        }
+      `}</style>
     </Box>
   );
 }

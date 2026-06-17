@@ -5,10 +5,10 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.Permission;
 import com.pml.identity.service.PermissionService;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -87,29 +87,30 @@ public class PermissionQueryResolver {
      * resource_access) and looks up the associated
      * permissions from the role_permissions collection.</p>
      *
-     * @param jwt The authenticated user's JWT token
      * @return List of permission names the user has
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<List<String>> currentUserPermissions(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            log.warn("GraphQL query: currentUserPermissions - no JWT present");
-            return Mono.just(List.of());
-        }
+    public Mono<List<String>> currentUserPermissions() {
+        return SecurityContextUtils.getJwt()
+                .flatMap(jwt -> {
+                    List<String> userRoles = extractRolesFromJwt(jwt);
+                    log.info("GraphQL query: currentUserPermissions - extracted roles from JWT: {}", userRoles);
 
-        List<String> userRoles = extractRolesFromJwt(jwt);
-        log.info("GraphQL query: currentUserPermissions - extracted roles from JWT: {}", userRoles);
+                    if (userRoles.isEmpty()) {
+                        log.warn("GraphQL query: currentUserPermissions - no valid roles found in JWT. " +
+                                "JWT claims: realm_access={}, resource_access={}",
+                                jwt.getClaim("realm_access"),
+                                jwt.getClaim("resource_access"));
+                        return Mono.just(List.<String>of());
+                    }
 
-        if (userRoles.isEmpty()) {
-            log.warn("GraphQL query: currentUserPermissions - no valid roles found in JWT. " +
-                    "JWT claims: realm_access={}, resource_access={}",
-                    jwt.getClaim("realm_access"),
-                    jwt.getClaim("resource_access"));
-            return Mono.just(List.of());
-        }
-
-        return permissionService.getPermissionsForRoles(userRoles);
+                    return permissionService.getPermissionsForRoles(userRoles);
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("GraphQL query: currentUserPermissions - no JWT present");
+                    return Mono.just(List.of());
+                }));
     }
 
     /**

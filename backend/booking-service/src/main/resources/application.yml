@@ -139,7 +139,7 @@ spring:
             client-id: booking-service
             client-secret: ${BOOKING_SERVICE_SECRET:booking-service-secret}
             authorization-grant-type: client_credentials
-            scope: internal-read,internal-write,users-read,events-read
+            scope: internal-read,internal-write
         provider:
           booking-service:
             token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/token}
@@ -152,7 +152,7 @@ spring:
 
 security:
   debug:
-    enabled: ${SECURITY_DEBUG_ENABLED:false}
+    enabled: ${SECURITY_DEBUG_ENABLED:true}
 
 dgs:
   graphql:
@@ -201,6 +201,30 @@ logging:
     com.pml.booking: DEBUG
     org.springframework.modulith: DEBUG
     org.springframework.modulith.events: DEBUG
+    # Spring Security debugging - set to INFO to disable
+    # Core security
+    org.springframework.security: TRACE
+    # WebFlux reactive security (WebFilterChainProxy, filters)
+    org.springframework.security.web.server: TRACE
+    org.springframework.security.web.server.WebFilterChainProxy: TRACE
+    org.springframework.security.web.server.MatcherSecurityWebFilterChain: TRACE
+    org.springframework.security.web.server.authorization: TRACE
+    org.springframework.security.web.server.authentication: TRACE
+    org.springframework.security.web.server.context: TRACE
+    # OAuth2 Resource Server / JWT
+    org.springframework.security.oauth2: TRACE
+    org.springframework.security.oauth2.server.resource: TRACE
+    org.springframework.security.oauth2.jwt: TRACE
+    # Authentication
+    org.springframework.security.authentication: TRACE
+    org.springframework.security.authorization: TRACE
+    # Security config
+    org.springframework.security.config: TRACE
+    org.springframework.security.config.web.server: TRACE
+    # Reactor context propagation
+    reactor.netty.http.server: DEBUG
+    # Custom security debug filter
+    com.pml.shared.security: TRACE
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 

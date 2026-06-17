@@ -6,14 +6,17 @@
  *
  * @example
  * ```typescript
- * // In app's lib/auth/index.ts (server-side)
- * import { getBetterAuth, createBetterAuth } from '@pml.tickets/shared/auth/better-auth/server';
+ * import { createAuth, type AuthServices } from '@pml.tickets/shared/auth/better-auth/server';
  *
- * export const authResultPromise = getBetterAuth({
- *   appId: 'admin',
- *   cookiePrefix: 'pml_admin',
- *   redisKeyPrefix: 'pml-admin:',
+ * // Create auth instance (synchronous, uses lazy connections)
+ * const { auth, db, redis, jtiBlacklist, handleBackchannelLogout, env } = createAuth({
+ *   appId: 'organization-admin',
+ *   cookiePrefix: 'pml_org',
  * });
+ *
+ * // Use Better Auth's type inference for session types
+ * type Session = typeof auth.$Infer.Session;
+ * type User = typeof auth.$Infer.Session.user;
  * ```
  *
  * @module libs/shared/src/auth/better-auth/server
@@ -22,17 +25,20 @@
 import 'server-only';
 
 // =============================================================================
-// SERVER CONFIGURATION
+// MAIN AUTH FACTORY
 // =============================================================================
 
 export {
-  createBetterAuth,
-  getBetterAuth,
-  getBetterAuthInstance,
-  validateEnv,
-  type BetterAuthInstance,
-  type BetterAuthResult,
+  createAuth,
+  type AuthServices,
+  type Auth,
 } from './config';
+
+// =============================================================================
+// CONFIGURATION TYPES
+// =============================================================================
+
+export type { AppAuthConfig, AppId } from './types';
 
 // =============================================================================
 // JTI BLACKLIST (Backchannel Logout Support)
@@ -51,8 +57,6 @@ export {
 
 export {
   createBackchannelLogoutHandler,
-  extractJtiFromIdToken,
   type BackchannelLogoutConfig,
   type BackchannelLogoutResult,
-  type LogoutTokenClaims,
 } from './backchannel-logout';

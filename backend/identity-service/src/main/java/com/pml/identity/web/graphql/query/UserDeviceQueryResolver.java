@@ -4,11 +4,10 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.pml.identity.domain.model.UserDevice;
 import com.pml.identity.service.UserDeviceService;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 
 /**
@@ -25,14 +24,13 @@ public class UserDeviceQueryResolver {
     /**
      * Query to fetch the authenticated user's registered devices.
      *
-     * @param jwt the authenticated user's JWT token
      * @return Flux of user devices
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Flux<UserDevice> myDevices(@AuthenticationPrincipal Jwt jwt) {
-        String userId = jwt.getSubject();
-        log.debug("Fetching devices for user {}", userId);
-        return deviceService.findByUserId(userId);
+    public Flux<UserDevice> myDevices() {
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("Fetching devices for user {}", userId))
+                .flatMapMany(deviceService::findByUserId);
     }
 }

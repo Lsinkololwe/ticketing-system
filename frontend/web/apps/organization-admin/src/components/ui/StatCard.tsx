@@ -117,46 +117,29 @@ export function StatCard({
       <Box
         style={{
           padding: config.padding,
-          background: 'var(--surface-elevated)',
-          border: '1px solid var(--surface-border)',
+          background: 'var(--color-panel-solid)',
+          border: '1px solid var(--gray-a5)',
           borderRadius: '16px',
         }}
       >
         <Flex direction="column" gap="3">
           <Box
+            className="skeleton"
             style={{
               width: config.iconSize,
               height: config.iconSize,
               borderRadius: '12px',
-              background: 'var(--surface-subtle)',
-              animation: 'pulse 2s infinite',
             }}
           />
           <Box
-            style={{
-              width: '60%',
-              height: '16px',
-              borderRadius: '4px',
-              background: 'var(--surface-subtle)',
-              animation: 'pulse 2s infinite',
-            }}
+            className="skeleton skeleton-text"
+            style={{ width: '60%' }}
           />
           <Box
-            style={{
-              width: '80%',
-              height: '32px',
-              borderRadius: '6px',
-              background: 'var(--surface-subtle)',
-              animation: 'pulse 2s infinite',
-            }}
+            className="skeleton skeleton-heading"
+            style={{ width: '80%' }}
           />
         </Flex>
-        <style jsx global>{`
-          @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-          }
-        `}</style>
       </Box>
     );
   }

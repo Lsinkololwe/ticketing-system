@@ -1,16 +1,15 @@
 package com.pml.identity.web.graphql.mutation;
 
-import com.pml.identity.web.graphql.dto.SetEventReminderInput;
-import com.pml.identity.domain.model.EventReminder;
-import com.pml.identity.service.EventReminderService;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
+import com.pml.identity.domain.model.EventReminder;
+import com.pml.identity.service.EventReminderService;
+import com.pml.identity.web.graphql.dto.SetEventReminderInput;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 
 /**
@@ -28,18 +27,16 @@ public class EventReminderMutationResolver {
      * Mutation to set an event reminder for the authenticated user.
      *
      * @param input reminder details
-     * @param jwt the authenticated user's JWT token
      * @return Mono containing the created/updated reminder
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
     public Mono<EventReminder> setEventReminder(
-        @InputArgument SetEventReminderInput input,
-        @AuthenticationPrincipal Jwt jwt
+        @InputArgument SetEventReminderInput input
     ) {
-        String userId = jwt.getSubject();
-        log.debug("Setting event reminder for user {} for ticket {}", userId, input.ticketId());
-        return reminderService.setReminder(userId, input);
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("Setting event reminder for user {} for ticket {}", userId, input.ticketId()))
+                .flatMap(userId -> reminderService.setReminder(userId, input));
     }
 
     /**

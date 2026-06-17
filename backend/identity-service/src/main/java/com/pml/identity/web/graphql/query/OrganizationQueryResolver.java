@@ -9,11 +9,10 @@ import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.PermissionResolutionService;
 import com.pml.identity.web.graphql.dto.pagination.*;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -79,14 +78,11 @@ public class OrganizationQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Flux<Organization> myOrganizations(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Flux.empty();
-        }
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myOrganizations (userId={})", userId);
-        return memberService.findByUser(userId)
-                .flatMap(member -> organizationService.findById(member.getOrganizationId()));
+    public Flux<Organization> myOrganizations() {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myOrganizations (userId={})", userId))
+                .flatMapMany(userId -> memberService.findByUser(userId)
+                        .flatMap(member -> organizationService.findById(member.getOrganizationId())));
     }
 
     /**
@@ -95,13 +91,10 @@ public class OrganizationQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ORGANIZER')")
-    public Mono<Organization> myOwnedOrganization(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myOwnedOrganization (userId={})", userId);
-        return organizationService.findByOwnerId(userId);
+    public Mono<Organization> myOwnedOrganization() {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myOwnedOrganization (userId={})", userId))
+                .flatMap(organizationService::findByOwnerId);
     }
 
     // ========================================================================

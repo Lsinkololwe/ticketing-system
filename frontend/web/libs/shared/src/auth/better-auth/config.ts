@@ -2,102 +2,65 @@
  * Shared Better Auth Server Configuration
  *
  * SERVER-ONLY: This module uses MongoDB and Redis which require Node.js runtime.
- * Import from 'auth/better-auth/server' for server components only.
  *
- * This module provides a factory function to create Better Auth instances
- * with consistent configuration across all applications.
+ * ## Industry-Standard Pattern
  *
- * ## Architecture Overview
+ * Following Better Auth and Next.js recommended patterns:
+ * - Synchronous auth export (no Promise wrapper)
+ * - Global singleton for database connections (survives hot reload)
+ * - Lazy connection (connects when first query is made)
  *
+ * ## Usage
+ *
+ * ```typescript
+ * import { createAuth } from '@pml.tickets/shared/auth/better-auth/server';
+ *
+ * export const { auth, db, redis, jtiBlacklist, handleBackchannelLogout, env } = createAuth({
+ *   appId: 'organization-admin',
+ *   cookiePrefix: 'pml_org',
+ * });
+ *
+ * // Use Better Auth's type inference
+ * type Session = typeof auth.$Infer.Session;
+ * type User = typeof auth.$Infer.Session.user;
  * ```
- * Application (admin, organization-admin, ticketing)
- *     ↓
- * getBetterAuth({ appId, cookiePrefix, ... })
- *     ↓
- * createBetterAuth() ← validateEnv(), getMongoClientPromise(), getRedisClient()
- *     ↓
- * betterAuth({ database, plugins, session, databaseHooks, ... })
- *     ↓
- * BetterAuthInstance + JtiBlacklistService
- * ```
  *
- * ## Storage Architecture
- *
- * - **Primary Storage**: MongoDB (via official @better-auth/mongo-adapter)
- *   - Stores: users, sessions, accounts
- *   - Source of truth for all auth data
- *
- * - **Secondary Storage**: Redis (via official @better-auth/redis-storage)
- *   - Caches: active sessions
- *   - Enables: fast session lookups, rate limiting, JTI blacklist
- *   - Optional but recommended for production
- *
- * ## Session Management
- *
- * Sessions are managed with OWASP-compliant settings:
- * - 8-hour absolute timeout
- * - 5-minute update interval (extends on activity)
- * - Cookie cache with HMAC signatures (5-minute cache)
- *
- * ## JTI Blacklist (Backchannel Logout Support)
- *
- * When Redis is enabled, JTI blacklisting prevents session creation
- * with tokens that have been revoked via Keycloak backchannel logout:
- * - Blacklisted JTIs are stored in Redis with TTL matching token expiry
- * - Session creation is blocked if the token's JTI is blacklisted
- *
- * ## Used By
- *
- * - `apps/admin/src/lib/auth/index.ts` - Admin app auth
- * - `apps/organization-admin/src/lib/auth/index.ts` - Organizer app auth
- *
- * @see https://better-auth.com/docs/reference/options
- * @see https://openid.net/specs/openid-connect-backchannel-1_0.html
- * @module libs/shared/src/auth/better-auth/config
+ * @see https://better-auth.com/docs/integrations/next
  */
 
 import 'server-only';
 
 import { betterAuth } from 'better-auth';
 import { genericOAuth } from 'better-auth/plugins';
+import { nextCookies } from 'better-auth/next-js';
 import { mongodbAdapter } from '@better-auth/mongo-adapter';
 import { redisStorage } from '@better-auth/redis-storage';
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient, type Db } from 'mongodb';
 import { Redis } from 'ioredis';
 
-import type {
-  AppAuthConfig,
-  EnvValidationResult,
-} from './types';
+import type { AppAuthConfig } from './types';
 import { createJtiBlacklist, type JtiBlacklistService } from './jti-blacklist';
 import { createBackchannelLogoutHandler } from './backchannel-logout';
 
 // =============================================================================
-// ENVIRONMENT VALIDATION
+// GLOBAL SINGLETONS (Survive Hot Reload)
 // =============================================================================
 
-/**
- * Validate required environment variables for Better Auth
- *
- * Checks that all required variables are set before creating auth instance.
- * Returns either validated env object or list of missing variables.
- *
- * @returns Validation result with env values or errors
- *
- * @used-by createBetterAuth() - Called during initialization
- *
- * @example
- * ```typescript
- * const result = validateEnv();
- * if (!result.valid) {
- *   console.error('Missing:', result.errors);
- * }
- * ```
- */
-export function validateEnv(): EnvValidationResult {
-  const errors: string[] = [];
+/** Global references for singleton pattern */
+declare global {
+  // eslint-disable-next-line no-var
+  var _mongoClient: MongoClient | undefined;
+  // eslint-disable-next-line no-var
+  var _redisClient: Redis | undefined;
+  // eslint-disable-next-line no-var
+  var _authInstances: Map<string, AuthServices> | undefined;
+}
 
-  // Required variables
+// =============================================================================
+// ENVIRONMENT
+// =============================================================================
+
+function getEnv() {
   const MONGODB_URI = process.env.MONGODB_URI;
   const MONGODB_DATABASE = process.env.MONGODB_DATABASE;
   const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
@@ -106,118 +69,58 @@ export function validateEnv(): EnvValidationResult {
   const KEYCLOAK_CLIENT_SECRET = process.env.AUTH_KEYCLOAK_SECRET;
   const KEYCLOAK_ISSUER = process.env.AUTH_KEYCLOAK_ISSUER;
 
-  // Validate required variables
-  if (!MONGODB_URI) errors.push('MONGODB_URI is required');
-  if (!MONGODB_DATABASE) errors.push('MONGODB_DATABASE is required');
-  if (!APP_URL) errors.push('NEXT_PUBLIC_APP_URL is required');
-  if (!AUTH_SECRET) errors.push('AUTH_SECRET is required');
-  if (!KEYCLOAK_CLIENT_ID) errors.push('AUTH_KEYCLOAK_ID is required');
-  if (!KEYCLOAK_CLIENT_SECRET) errors.push('AUTH_KEYCLOAK_SECRET is required');
-  if (!KEYCLOAK_ISSUER) errors.push('AUTH_KEYCLOAK_ISSUER is required');
+  const missing: string[] = [];
+  if (!MONGODB_URI) missing.push('MONGODB_URI');
+  if (!MONGODB_DATABASE) missing.push('MONGODB_DATABASE');
+  if (!APP_URL) missing.push('NEXT_PUBLIC_APP_URL');
+  if (!AUTH_SECRET) missing.push('AUTH_SECRET');
+  if (!KEYCLOAK_CLIENT_ID) missing.push('AUTH_KEYCLOAK_ID');
+  if (!KEYCLOAK_CLIENT_SECRET) missing.push('AUTH_KEYCLOAK_SECRET');
+  if (!KEYCLOAK_ISSUER) missing.push('AUTH_KEYCLOAK_ISSUER');
 
-  if (errors.length > 0) {
-    return { valid: false, errors };
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 
   return {
-    valid: true,
-    env: {
-      MONGODB_URI: MONGODB_URI!,
-      MONGODB_DATABASE: MONGODB_DATABASE!,
-      APP_URL: APP_URL!,
-      AUTH_SECRET: AUTH_SECRET!,
-      KEYCLOAK_CLIENT_ID: KEYCLOAK_CLIENT_ID!,
-      KEYCLOAK_CLIENT_SECRET: KEYCLOAK_CLIENT_SECRET!,
-      KEYCLOAK_ISSUER: KEYCLOAK_ISSUER!,
-      REDIS_HOST: process.env.REDIS_HOST,
-      REDIS_PORT: process.env.REDIS_PORT,
-      REDIS_PASSWORD: process.env.REDIS_PASSWORD,
-    },
+    MONGODB_URI: MONGODB_URI!,
+    MONGODB_DATABASE: MONGODB_DATABASE!,
+    APP_URL: APP_URL!,
+    AUTH_SECRET: AUTH_SECRET!,
+    KEYCLOAK_CLIENT_ID: KEYCLOAK_CLIENT_ID!,
+    KEYCLOAK_CLIENT_SECRET: KEYCLOAK_CLIENT_SECRET!,
+    KEYCLOAK_ISSUER: KEYCLOAK_ISSUER!,
+    REDIS_HOST: process.env.REDIS_HOST,
+    REDIS_PORT: process.env.REDIS_PORT,
+    REDIS_PASSWORD: process.env.REDIS_PASSWORD,
   };
 }
 
 // =============================================================================
-// MONGODB CLIENT (Singleton with Hot Reload Support)
+// DATABASE CONNECTIONS (Lazy Singletons)
 // =============================================================================
 
-/**
- * Global MongoDB client reference (survives hot reload in development)
- */
-declare global {
-  // eslint-disable-next-line no-var
-  var _betterAuthMongoClient: MongoClient | undefined;
-  // eslint-disable-next-line no-var
-  var _betterAuthMongoClientPromise: Promise<MongoClient> | undefined;
-}
-
-/**
- * Get MongoDB client promise with connection pooling
- *
- * In development, the client is stored globally to survive hot reloads.
- * In production, a new client is created (managed by container lifecycle).
- *
- * @param uri - MongoDB connection URI
- * @returns Promise resolving to connected MongoClient
- *
- * @used-by createBetterAuth() - For database adapter
- */
-function getMongoClientPromise(uri: string): Promise<MongoClient> {
+function getMongoClient(uri: string): MongoClient {
   if (process.env.NODE_ENV === 'development') {
-    // Development: Reuse client across hot reloads
-    if (!global._betterAuthMongoClientPromise) {
-      global._betterAuthMongoClient = new MongoClient(uri, {
+    if (!global._mongoClient) {
+      global._mongoClient = new MongoClient(uri, {
         maxPoolSize: 10,
         minPoolSize: 2,
         maxIdleTimeMS: 60000,
-        connectTimeoutMS: 10000,
-        serverSelectionTimeoutMS: 30000,
-        retryWrites: true,
-        retryReads: true,
       });
-      global._betterAuthMongoClientPromise = global._betterAuthMongoClient.connect();
     }
-    return global._betterAuthMongoClientPromise;
+    return global._mongoClient;
   }
 
-  // Production: Create new client (managed by container lifecycle)
-  const client = new MongoClient(uri, {
+  return new MongoClient(uri, {
     maxPoolSize: 50,
     minPoolSize: 10,
-    connectTimeoutMS: 10000,
-    retryWrites: true,
-    retryReads: true,
   });
-  return client.connect();
 }
 
-// =============================================================================
-// REDIS CLIENT (Singleton)
-// =============================================================================
-
-/**
- * Global Redis client reference (survives hot reload in development)
- */
-declare global {
-  // eslint-disable-next-line no-var
-  var _betterAuthRedisClient: Redis | undefined;
-}
-
-/**
- * Get Redis client for secondary storage
- *
- * Provides fast session caching and rate limiting.
- * In development, client is stored globally to survive hot reloads.
- *
- * @param host - Redis server host
- * @param port - Redis server port
- * @param password - Optional Redis password
- * @returns Connected Redis client
- *
- * @used-by createBetterAuth() - For secondary storage
- */
 function getRedisClient(host: string, port: number, password?: string): Redis {
-  if (process.env.NODE_ENV === 'development' && global._betterAuthRedisClient) {
-    return global._betterAuthRedisClient;
+  if (process.env.NODE_ENV === 'development' && global._redisClient) {
+    return global._redisClient;
   }
 
   const client = new Redis({
@@ -225,504 +128,245 @@ function getRedisClient(host: string, port: number, password?: string): Redis {
     port,
     password,
     maxRetriesPerRequest: 3,
-    retryStrategy: (times) => {
-      if (times > 5) return null;
-      return Math.min(times * 200, 5000);
-    },
+    retryStrategy: (times) => (times > 5 ? null : Math.min(times * 200, 5000)),
     connectTimeout: 10000,
-    commandTimeout: 5000,
-    lazyConnect: false,
+    lazyConnect: true,
     enableOfflineQueue: true,
-    enableReadyCheck: true,
-  });
-
-  client.on('error', (err) => {
-    console.error('[Redis] Connection error:', err.message);
   });
 
   client.on('connect', () => {
     console.log('[Redis] Connected for Better Auth session storage');
   });
 
+  client.on('error', (err) => {
+    console.error('[Redis] Connection error:', err.message);
+  });
+
   if (process.env.NODE_ENV === 'development') {
-    global._betterAuthRedisClient = client;
+    global._redisClient = client;
   }
 
   return client;
 }
 
 // =============================================================================
-// SESSION CONFIGURATION (OWASP Compliant)
+// SESSION CONFIGURATION
 // =============================================================================
 
-/**
- * Production-grade session configuration following OWASP guidelines
- *
- * @see https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
- */
 const SESSION_CONFIG = {
-  /**
-   * Absolute session timeout: 8 hours
-   * OWASP recommended maximum for high-risk applications
-   */
-  expiresIn: 8 * 60 * 60, // 8 hours in seconds
-
-  /**
-   * Update session timestamp every 5 minutes
-   * Extends session on activity, provides sliding window behavior
-   */
+  expiresIn: 8 * 60 * 60, // 8 hours
   updateAge: 5 * 60, // 5 minutes
-
-  /**
-   * Store sessions in database
-   * MongoDB is source of truth for all session data
-   */
   storeSessionInDatabase: true,
-
-  /**
-   * Cookie cache configuration
-   * Uses HMAC signature for integrity - secure by design
-   * Reduces database lookups for session validation
-   */
-  cookieCache: {
-    enabled: true,
-    maxAge: 5 * 60, // 5 minutes
-  },
-};
+  cookieCache: { enabled: false },
+} as const;
 
 // =============================================================================
-// BETTER AUTH FACTORY
+// AUTH SERVICES TYPE
 // =============================================================================
 
-/**
- * Result of creating a Better Auth instance
- *
- * Includes both the auth instance and supporting services like JTI blacklist.
- */
-export interface BetterAuthResult {
-  /** The Better Auth instance */
-  auth: ReturnType<typeof betterAuth>;
-  /** JTI blacklist service (only available if Redis is enabled) */
-  jtiBlacklist: JtiBlacklistService | null;
-  /** Backchannel logout handler (only available if Redis is enabled) */
-  handleBackchannelLogout: ((logoutToken: string) => Promise<{ success: boolean; error?: string }>) | null;
-  /** MongoDB database instance */
-  mongoDb: Db;
-  /** Redis client (only available if Redis is enabled) */
-  redis: Redis | null;
-  /** Environment configuration */
-  env: {
-    KEYCLOAK_ISSUER: string;
-    KEYCLOAK_CLIENT_ID: string;
-    APP_URL: string;
-  };
+/** Backchannel logout handler type */
+type BackchannelLogoutHandler = (token: string) => Promise<{ success: boolean; error?: string }>;
+
+/** Environment config exposed to consumers */
+interface EnvConfig {
+  KEYCLOAK_ISSUER: string;
+  KEYCLOAK_CLIENT_ID: string;
+  APP_URL: string;
 }
 
 /**
- * Create a Better Auth instance with the given configuration
- *
- * This is the main factory function that:
- * 1. Validates environment variables
- * 2. Connects to MongoDB
- * 3. Optionally connects to Redis
- * 4. Configures Keycloak OAuth
- * 5. Sets up session management
- * 6. Creates JTI blacklist service (if Redis enabled)
- * 7. Creates backchannel logout handler (if Redis enabled)
- *
- * @param config - Application-specific configuration
- * @returns Promise resolving to the Better Auth result with auth instance and services
- *
- * @used-by getBetterAuth() - Singleton wrapper
- *
- * @example
- * ```typescript
- * const { auth, jtiBlacklist, handleBackchannelLogout } = await createBetterAuth({
- *   appId: 'admin',
- *   cookiePrefix: 'pml_admin',
- *   redisKeyPrefix: 'pml-admin:',
- *   enableRedis: true,
- * });
- * ```
+ * Auth services returned by createAuth
+ * Type is inferred from function return
  */
-export async function createBetterAuth(config: AppAuthConfig): Promise<BetterAuthResult> {
-  const { appId, cookiePrefix, redisKeyPrefix, enableRedis = true, debug = false } = config;
+export interface AuthServices {
+  auth: ReturnType<typeof createBetterAuthInstance>;
+  db: Db;
+  redis: Redis | null;
+  jtiBlacklist: JtiBlacklistService | null;
+  handleBackchannelLogout: BackchannelLogoutHandler | null;
+  env: EnvConfig;
+}
 
-  // Step 1: Validate environment
-  const envResult = validateEnv();
-  if (!envResult.valid) {
-    const errorMessage = `[Auth:${appId}] Missing required environment variables:\n  - ${envResult.errors.join('\n  - ')}`;
-    console.error(errorMessage);
-    throw new Error(errorMessage);
-  }
+// =============================================================================
+// BETTER AUTH INSTANCE FACTORY
+// =============================================================================
 
-  const env = envResult.env;
-  const isProduction = process.env.NODE_ENV === 'production';
-
-  // Step 2: Connect to MongoDB
-  const mongoClient = await getMongoClientPromise(env.MONGODB_URI);
-  const mongoDb = mongoClient.db(env.MONGODB_DATABASE);
-
-  if (debug) {
-    console.log(`[Auth:${appId}] MongoDB connected`);
-  }
-
-  // Step 3: Setup Redis secondary storage and JTI blacklist (optional but recommended)
-  let secondaryStorage: ReturnType<typeof redisStorage> | undefined;
-  let jtiBlacklist: JtiBlacklistService | null = null;
-  let redis: Redis | null = null;
-
-  if (enableRedis && env.REDIS_HOST) {
-    try {
-      redis = getRedisClient(
-        env.REDIS_HOST,
-        parseInt(env.REDIS_PORT || '6379', 10),
-        env.REDIS_PASSWORD
-      );
-
-      secondaryStorage = redisStorage({
-        client: redis,
-        keyPrefix: redisKeyPrefix,
-      });
-
-      // Create JTI blacklist service
-      jtiBlacklist = createJtiBlacklist({
-        redis,
-        keyPrefix: redisKeyPrefix,
-        defaultTtlSeconds: 86400, // 24 hours
-      });
-
-      if (debug) {
-        console.log(`[Auth:${appId}] Redis secondary storage and JTI blacklist enabled`);
-      }
-    } catch (error) {
-      console.warn(
-        `[Auth:${appId}] Redis connection failed, continuing without secondary storage:`,
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-  }
-
-  // Step 4: Create Better Auth instance
-  const auth = betterAuth({
-    // Application base URL (used for callbacks)
+/**
+ * Create the Better Auth instance with our configuration
+ * Separated to allow type inference
+ */
+function createBetterAuthInstance(
+  env: ReturnType<typeof getEnv>,
+  db: Db,
+  secondaryStorage: ReturnType<typeof redisStorage> | undefined,
+  cookiePrefix: string,
+  isProduction: boolean
+) {
+  return betterAuth({
     baseURL: env.APP_URL,
-
-    // Secret for signing tokens (min 32 chars)
     secret: env.AUTH_SECRET,
-
-    // ==========================================================================
-    // OFFICIAL MONGODB ADAPTER
-    // ==========================================================================
-    database: mongodbAdapter(mongoDb),
-
-    // ==========================================================================
-    // KEYCLOAK OIDC PROVIDER
-    // ==========================================================================
+    database: mongodbAdapter(db),
     plugins: [
       genericOAuth({
-        config: [
-          {
-            providerId: 'keycloak',
-            clientId: env.KEYCLOAK_CLIENT_ID,
-            clientSecret: env.KEYCLOAK_CLIENT_SECRET,
-            discoveryUrl: `${env.KEYCLOAK_ISSUER}/.well-known/openid-configuration`,
-            pkce: true,
-            scopes: ['openid', 'profile', 'email'],
-            mapProfileToUser: (profile) => ({
-              id: profile.sub as string,
-              email: (profile.email as string) || '',
-              name: (profile.name as string) || (profile.preferred_username as string) || '',
-              emailVerified: (profile.email_verified as boolean) || false,
-              image: (profile.picture as string) || null,
-            }),
-          },
-        ],
+        config: [{
+          providerId: 'keycloak',
+          clientId: env.KEYCLOAK_CLIENT_ID,
+          clientSecret: env.KEYCLOAK_CLIENT_SECRET,
+          discoveryUrl: `${env.KEYCLOAK_ISSUER}/.well-known/openid-configuration`,
+          pkce: true,
+          scopes: ['openid', 'profile', 'email', 'phone'],
+          mapProfileToUser: (profile) => ({
+            id: profile.sub as string,
+            email: (profile.email as string) || '',
+            name: (profile.name as string) || (profile.preferred_username as string) || '',
+            emailVerified: (profile.email_verified as boolean) || false,
+            image: (profile.picture as string) || null,
+            // Phone number from Keycloak (if available)
+            phone: (profile.phone_number as string) || null,
+            phoneVerified: (profile.phone_number_verified as boolean) || false,
+          }),
+        }],
       }),
+      nextCookies(),
     ],
-
-    // ==========================================================================
-    // OFFICIAL REDIS SECONDARY STORAGE (Optional)
-    // ==========================================================================
     ...(secondaryStorage && { secondaryStorage }),
-
-    // ==========================================================================
-    // SESSION CONFIGURATION (OWASP Compliant)
-    // ==========================================================================
     session: SESSION_CONFIG,
-
-    // ==========================================================================
-    // SECURITY CONFIGURATION
-    // ==========================================================================
     advanced: {
-      // Track IP addresses for session binding
-      ipAddress: {
-        ipAddressHeaders: ['x-forwarded-for', 'x-real-ip', 'cf-connecting-ip'],
-        disableIpTracking: false,
-      },
-
-      // Use secure cookies in production
       useSecureCookies: isProduction,
-
-      // CSRF and origin protection enabled
-      disableCSRFCheck: false,
-      disableOriginCheck: false,
-
-      // Cookie attributes
+      cookiePrefix,
       defaultCookieAttributes: {
         httpOnly: true,
         secure: isProduction,
         sameSite: 'lax' as const,
         path: '/',
       },
-
-      // Application-specific cookie prefix
-      cookiePrefix,
     },
-
-    // ==========================================================================
-    // ACCOUNT SETTINGS
-    // ==========================================================================
     account: {
       accountLinking: {
         enabled: true,
         trustedProviders: ['keycloak'],
       },
     },
-
-    // ==========================================================================
-    // USER CONFIGURATION
-    // ==========================================================================
     user: {
       additionalFields: {
-        roles: {
-          type: 'string[]',
-          required: false,
-        },
-        keycloakId: {
-          type: 'string',
-          required: false,
-        },
+        roles: { type: 'string[]', required: false },
+        keycloakId: { type: 'string', required: false },
+        phone: { type: 'string', required: false },
+        phoneVerified: { type: 'boolean', required: false },
       },
     },
-
-    // ==========================================================================
-    // TRUSTED ORIGINS
-    // ==========================================================================
     trustedOrigins: [
       env.APP_URL,
       ...(isProduction ? [] : ['http://localhost:3030', 'http://localhost:3031', 'http://localhost:3000']),
     ],
-
-    // ==========================================================================
-    // DATABASE HOOKS (JTI Blacklist Integration)
-    // ==========================================================================
-    databaseHooks: {
-      session: {
-        create: {
-          /**
-           * Before session creation hook
-           *
-           * Stores Keycloak session metadata in the Better Auth session
-           * for later reference during backchannel logout.
-           *
-           * Note: JTI blacklist checking is done at the OAuth callback level,
-           * not here, because we need access to the original tokens.
-           *
-           * @used-by Better Auth session creation
-           */
-          before: async (session) => {
-            // Pass through session data (Better Auth handles createdAt)
-            return {
-              data: session,
-            };
-          },
-          after: async (session) => {
-            if (debug) {
-              console.log(`[Auth:${appId}] Session created for user: ${session.userId}`);
-            }
-          },
-        },
-        delete: {
-          after: async (session) => {
-            if (debug) {
-              console.log(`[Auth:${appId}] Session deleted: ${session.token?.substring(0, 8)}...`);
-            }
-          },
-        },
-      },
-    },
   });
+}
 
-  // Step 5: Create backchannel logout handler (if Redis/JTI blacklist enabled)
-  let handleBackchannelLogout: BetterAuthResult['handleBackchannelLogout'] = null;
+// =============================================================================
+// MAIN FACTORY (Synchronous)
+// =============================================================================
 
-  if (jtiBlacklist) {
+/**
+ * Create Better Auth instance with all services
+ *
+ * Returns synchronously - connections are established lazily.
+ * Uses singleton pattern to prevent duplicate instances.
+ */
+export function createAuth(config: AppAuthConfig): AuthServices {
+  const { appId, cookiePrefix, redisKeyPrefix = `${appId}:`, enableRedis = true } = config;
+
+  // Check singleton cache
+  if (!global._authInstances) {
+    global._authInstances = new Map();
+  }
+
+  if (global._authInstances.has(appId)) {
+    return global._authInstances.get(appId)!;
+  }
+
+  // Get environment
+  const env = getEnv();
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // Get database connections
+  const mongoClient = getMongoClient(env.MONGODB_URI);
+  const db = mongoClient.db(env.MONGODB_DATABASE);
+
+  // Setup Redis (optional)
+  let redis: Redis | null = null;
+  let secondaryStorage: ReturnType<typeof redisStorage> | undefined;
+  let jtiBlacklist: JtiBlacklistService | null = null;
+
+  if (enableRedis && env.REDIS_HOST) {
+    redis = getRedisClient(
+      env.REDIS_HOST,
+      parseInt(env.REDIS_PORT || '6379', 10),
+      env.REDIS_PASSWORD
+    );
+
+    secondaryStorage = redisStorage({
+      client: redis,
+      keyPrefix: redisKeyPrefix,
+    });
+
+    jtiBlacklist = createJtiBlacklist({
+      redis,
+      keyPrefix: redisKeyPrefix,
+      defaultTtlSeconds: 86400,
+    });
+  }
+
+  // Create Better Auth instance
+  const auth = createBetterAuthInstance(env, db, secondaryStorage, cookiePrefix, isProduction);
+
+  // Create backchannel logout handler
+  let handleBackchannelLogout: BackchannelLogoutHandler | null = null;
+
+  if (jtiBlacklist && redis) {
     handleBackchannelLogout = createBackchannelLogoutHandler({
       keycloakJwksUrl: `${env.KEYCLOAK_ISSUER}/protocol/openid-connect/certs`,
       keycloakIssuer: env.KEYCLOAK_ISSUER,
       clientId: env.KEYCLOAK_CLIENT_ID,
       jtiBlacklist,
-      /**
-       * Revoke all Better Auth sessions for a user
-       *
-       * Called during backchannel logout to invalidate all sessions
-       * for the user being logged out.
-       *
-       * @param keycloakUserId - The Keycloak user ID (sub claim)
-       */
       revokeUserSessions: async (keycloakUserId: string) => {
-        try {
-          // Find user by Keycloak ID and revoke their sessions
-          const sessionsCollection = mongoDb.collection('sessions');
-          const usersCollection = mongoDb.collection('users');
+        const sessionsCollection = db.collection('sessions');
+        const usersCollection = db.collection('users');
 
-          // First, find the Better Auth user by Keycloak ID
-          // The user might be stored with keycloakId field or the id might match
-          const user = await usersCollection.findOne({
-            $or: [
-              { keycloakId: keycloakUserId },
-              { id: keycloakUserId },
-            ],
-          });
+        const user = await usersCollection.findOne({
+          $or: [{ keycloakId: keycloakUserId }, { id: keycloakUserId }],
+        });
 
-          if (user) {
-            // Delete all sessions for this user
-            const result = await sessionsCollection.deleteMany({
-              userId: user.id,
-            });
-
-            console.log(`[Auth:${appId}] Backchannel logout: Revoked ${result.deletedCount} sessions for user ${keycloakUserId}`);
-
-            // Also clear from Redis if available
-            if (redis) {
-              const keys = await redis.keys(`${redisKeyPrefix}session:*`);
-              for (const key of keys) {
-                const sessionData = await redis.get(key);
-                if (sessionData) {
-                  try {
-                    const parsed = JSON.parse(sessionData);
-                    if (parsed.userId === user.id) {
-                      await redis.del(key);
-                    }
-                  } catch {
-                    // Skip invalid session data
-                  }
-                }
-              }
-            }
-          } else {
-            console.warn(`[Auth:${appId}] Backchannel logout: User not found for Keycloak ID ${keycloakUserId}`);
-          }
-        } catch (error) {
-          console.error(`[Auth:${appId}] Backchannel logout: Failed to revoke sessions:`, error);
-          throw error;
+        if (user) {
+          const result = await sessionsCollection.deleteMany({ userId: user.id });
+          console.log(`[Auth:${appId}] Backchannel logout: Revoked ${result.deletedCount} sessions`);
         }
       },
     });
-
-    if (debug) {
-      console.log(`[Auth:${appId}] Backchannel logout handler configured`);
-    }
   }
 
-  // Step 6: Return complete result
-  // Cast auth to match the interface type - the specific config type is compatible
-  // at runtime but TypeScript sees them as different due to optional vs required properties
-  return {
-    auth: auth as unknown as ReturnType<typeof betterAuth>,
+  // Build services object
+  const services: AuthServices = {
+    auth,
+    db,
+    redis,
     jtiBlacklist,
     handleBackchannelLogout,
-    mongoDb,
-    redis,
     env: {
       KEYCLOAK_ISSUER: env.KEYCLOAK_ISSUER,
       KEYCLOAK_CLIENT_ID: env.KEYCLOAK_CLIENT_ID,
       APP_URL: env.APP_URL,
     },
   };
+
+  // Cache in singleton
+  global._authInstances.set(appId, services);
+
+  return services;
 }
 
 // =============================================================================
-// AUTH INSTANCE TYPE
+// TYPE EXPORTS
 // =============================================================================
 
-/**
- * Type of the Better Auth instance (the auth object only)
- *
- * Use this for typing variables that hold just the auth instance.
- *
- * @used-by
- * - Route handlers that only need the auth object
- * - Server utilities
- */
-export type BetterAuthInstance = BetterAuthResult['auth'];
-
-// =============================================================================
-// SINGLETON FACTORY
-// =============================================================================
-
-/**
- * Cache for auth results per app
- * Ensures only one instance is created per application
- */
-const authResults = new Map<string, Promise<BetterAuthResult>>();
-
-/**
- * Get or create a Better Auth result for the given app
- *
- * This ensures only one instance is created per application,
- * even if called multiple times. The instance is cached by appId.
- *
- * Returns the complete result including auth instance, JTI blacklist,
- * and backchannel logout handler.
- *
- * @param config - Application-specific configuration
- * @returns Promise resolving to the Better Auth result
- *
- * @used-by
- * - `apps/admin/src/lib/auth/index.ts`
- * - `apps/organization-admin/src/lib/auth/index.ts`
- *
- * @example
- * ```typescript
- * // In app's auth/index.ts
- * export const authResultPromise = getBetterAuth({
- *   appId: 'admin',
- *   cookiePrefix: 'pml_admin',
- *   redisKeyPrefix: 'pml-admin:',
- * });
- *
- * // Get just the auth instance
- * export const authPromise = authResultPromise.then(r => r.auth);
- *
- * // Get backchannel logout handler (for route handlers)
- * export const getBackchannelHandler = async () => {
- *   const result = await authResultPromise;
- *   return result.handleBackchannelLogout;
- * };
- * ```
- */
-export function getBetterAuth(config: AppAuthConfig): Promise<BetterAuthResult> {
-  const key = config.appId;
-
-  if (!authResults.has(key)) {
-    authResults.set(key, createBetterAuth(config));
-  }
-
-  return authResults.get(key)!;
-}
-
-/**
- * Get just the auth instance (convenience wrapper)
- *
- * @param config - Application-specific configuration
- * @returns Promise resolving to the Better Auth instance
- *
- * @used-by
- * - Route handlers that only need the auth object
- */
-export async function getBetterAuthInstance(config: AppAuthConfig): Promise<BetterAuthInstance> {
-  const result = await getBetterAuth(config);
-  return result.auth;
-}
+/** Better Auth instance type */
+export type Auth = AuthServices['auth'];

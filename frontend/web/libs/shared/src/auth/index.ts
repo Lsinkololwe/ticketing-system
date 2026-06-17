@@ -7,6 +7,21 @@
  *
  * Better Auth handles session management with Keycloak as OAuth provider.
  *
+ * ### Server Components
+ *
+ * ```typescript
+ * import { createAuth } from '@pml.tickets/shared/auth/better-auth/server';
+ *
+ * export const { auth, db, redis, jtiBlacklist, handleBackchannelLogout, env } = createAuth({
+ *   appId: 'organization-admin',
+ *   cookiePrefix: 'pml_org',
+ * });
+ *
+ * // Type inference
+ * type Session = typeof auth.$Infer.Session;
+ * type User = typeof auth.$Infer.Session.user;
+ * ```
+ *
  * ### Client Components
  *
  * Use official Better Auth React client directly:
@@ -18,54 +33,18 @@
  *   baseURL: process.env.NEXT_PUBLIC_APP_URL,
  * });
  *
- * // Hooks
  * const { data: session } = authClient.useSession();
  * await authClient.signOut();
  * await authClient.signIn.oauth2({ providerId: 'keycloak' });
- * ```
- *
- * ### Server Components
- *
- * Import server-only code from the server module:
- *
- * ```typescript
- * // In app's lib/auth/index.ts
- * import { getBetterAuth } from '@pml.tickets/shared/auth/better-auth/server';
- *
- * export const authResultPromise = getBetterAuth({
- *   appId: 'admin',
- *   cookiePrefix: 'pml_admin',
- *   redisKeyPrefix: 'pml-admin:',
- * });
- *
- * export const authPromise = authResultPromise.then(r => r.auth);
- * ```
- *
- * ### Middleware/Proxy
- *
- * Use official Better Auth cookie utilities:
- *
- * ```typescript
- * import { getSessionCookie, getCookieCache } from 'better-auth/cookies';
- *
- * export async function proxy(request: NextRequest) {
- *   const session = await getCookieCache(request);
- *   if (!session) {
- *     return NextResponse.redirect(new URL('/login', request.url));
- *   }
- *   return NextResponse.next();
- * }
  * ```
  *
  * ### Route Handler
  *
  * ```typescript
  * import { toNextJsHandler } from 'better-auth/next-js';
- * import { authPromise } from '@/lib/auth';
+ * import { auth } from '@/lib/auth';
  *
- * const handler = authPromise.then(auth => toNextJsHandler(auth));
- * export const GET = async (req: Request) => (await handler).GET(req);
- * export const POST = async (req: Request) => (await handler).POST(req);
+ * export const { GET, POST } = toNextJsHandler(auth);
  * ```
  *
  * ## Keycloak Direct (Legacy/Mobile Apps)
@@ -83,13 +62,7 @@
 export type {
   AppId,
   AppAuthConfig,
-  BetterAuthEnv,
-  EnvValidationResult,
-  AuthUser,
-  AuthSession,
-  SessionResponse,
   KeycloakEndpoints,
-  BetterAuthOptions,
 } from './better-auth';
 
 export { getKeycloakEndpoints } from './better-auth';

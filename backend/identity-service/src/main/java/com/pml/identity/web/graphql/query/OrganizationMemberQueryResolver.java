@@ -8,11 +8,10 @@ import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.web.graphql.dto.pagination.*;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -56,17 +55,11 @@ public class OrganizationMemberQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<OrganizationMember> myOrganizationMembership(
-            @InputArgument String organizationId,
-            @AuthenticationPrincipal Jwt jwt
-    ) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myOrganizationMembership(orgId={}, userId={})", organizationId, userId);
+    public Mono<OrganizationMember> myOrganizationMembership(@InputArgument String organizationId) {
         Objects.requireNonNull(organizationId, "Organization ID is required");
-        return memberService.findByUserAndOrganization(userId, organizationId);
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myOrganizationMembership(orgId={}, userId={})", organizationId, userId))
+                .flatMap(userId -> memberService.findByUserAndOrganization(userId, organizationId));
     }
 
     // ========================================================================
@@ -83,37 +76,32 @@ public class OrganizationMemberQueryResolver {
             @InputArgument String organizationId,
             @InputArgument OrganizationRole role,
             @InputArgument MemberStatus status,
-            @InputArgument OffsetPaginationInput pagination,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument OffsetPaginationInput pagination
     ) {
-        if (jwt == null) {
-            return Mono.just(OrganizationMemberOffsetPage.empty());
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: organizationMembersOffsetPagination(orgId={}, role={}, status={})",
-                organizationId, role, status);
         Objects.requireNonNull(organizationId, "Organization ID is required");
 
-        return memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        return Mono.error(new IllegalStateException("Permission denied"));
-                    }
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: organizationMembersOffsetPagination(orgId={}, role={}, status={})",
+                        organizationId, role, status))
+                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                return Mono.error(new IllegalStateException("Permission denied"));
+                            }
 
-                    Flux<OrganizationMember> memberFlux = memberService.findByOrganization(organizationId)
-                            .filter(member -> {
-                                if (role != null && member.getRole() != role) {
-                                    return false;
-                                }
-                                if (status != null && member.getStatus() != status) {
-                                    return false;
-                                }
-                                return true;
-                            });
+                            Flux<OrganizationMember> memberFlux = memberService.findByOrganization(organizationId)
+                                    .filter(member -> {
+                                        if (role != null && member.getRole() != role) {
+                                            return false;
+                                        }
+                                        if (status != null && member.getStatus() != status) {
+                                            return false;
+                                        }
+                                        return true;
+                                    });
 
-                    return buildOffsetPage(memberFlux, pagination);
-                });
+                            return buildOffsetPage(memberFlux, pagination);
+                        }));
     }
 
     // ========================================================================
@@ -130,37 +118,32 @@ public class OrganizationMemberQueryResolver {
             @InputArgument String organizationId,
             @InputArgument OrganizationRole role,
             @InputArgument MemberStatus status,
-            @InputArgument CursorPaginationInput pagination,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument CursorPaginationInput pagination
     ) {
-        if (jwt == null) {
-            return Mono.just(OrganizationMemberConnection.empty());
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: organizationMembersCursorPagination(orgId={}, role={}, status={})",
-                organizationId, role, status);
         Objects.requireNonNull(organizationId, "Organization ID is required");
 
-        return memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        return Mono.error(new IllegalStateException("Permission denied"));
-                    }
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: organizationMembersCursorPagination(orgId={}, role={}, status={})",
+                        organizationId, role, status))
+                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                return Mono.error(new IllegalStateException("Permission denied"));
+                            }
 
-                    Flux<OrganizationMember> memberFlux = memberService.findByOrganization(organizationId)
-                            .filter(member -> {
-                                if (role != null && member.getRole() != role) {
-                                    return false;
-                                }
-                                if (status != null && member.getStatus() != status) {
-                                    return false;
-                                }
-                                return true;
-                            });
+                            Flux<OrganizationMember> memberFlux = memberService.findByOrganization(organizationId)
+                                    .filter(member -> {
+                                        if (role != null && member.getRole() != role) {
+                                            return false;
+                                        }
+                                        if (status != null && member.getStatus() != status) {
+                                            return false;
+                                        }
+                                        return true;
+                                    });
 
-                    return buildCursorConnection(memberFlux, pagination);
-                });
+                            return buildCursorConnection(memberFlux, pagination);
+                        }));
     }
 
     // ========================================================================

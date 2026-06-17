@@ -10,11 +10,10 @@ import com.pml.identity.domain.model.NotificationPreferences;
 import com.pml.identity.service.NotificationPreferencesService;
 import com.pml.identity.service.NotificationService;
 import com.pml.identity.web.graphql.dto.pagination.*;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -45,28 +44,25 @@ public class NotificationQueryResolver {
     public Mono<NotificationOffsetPage> myNotificationsOffsetPagination(
             @InputArgument NotificationType type,
             @InputArgument NotificationStatus status,
-            @InputArgument OffsetPaginationInput pagination,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument OffsetPaginationInput pagination
     ) {
-        if (jwt == null) {
-            return Mono.just(NotificationOffsetPage.empty());
-        }
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myNotificationsOffsetPagination(type={}, status={})", type, status))
+                .flatMap(userId -> {
+                    Flux<Notification> notificationFlux = notificationService.findByUserId(userId)
+                            .filter(notification -> {
+                                if (type != null && notification.getType() != type) {
+                                    return false;
+                                }
+                                if (status != null && notification.getStatus() != status) {
+                                    return false;
+                                }
+                                return true;
+                            });
 
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myNotificationsOffsetPagination(type={}, status={})", type, status);
-
-        Flux<Notification> notificationFlux = notificationService.findByUserId(userId)
-                .filter(notification -> {
-                    if (type != null && notification.getType() != type) {
-                        return false;
-                    }
-                    if (status != null && notification.getStatus() != status) {
-                        return false;
-                    }
-                    return true;
-                });
-
-        return buildOffsetPage(notificationFlux, pagination);
+                    return buildOffsetPage(notificationFlux, pagination);
+                })
+                .defaultIfEmpty(NotificationOffsetPage.empty());
     }
 
     // ========================================================================
@@ -82,28 +78,25 @@ public class NotificationQueryResolver {
     public Mono<NotificationConnection> myNotificationsCursorPagination(
             @InputArgument NotificationType type,
             @InputArgument NotificationStatus status,
-            @InputArgument CursorPaginationInput pagination,
-            @AuthenticationPrincipal Jwt jwt
+            @InputArgument CursorPaginationInput pagination
     ) {
-        if (jwt == null) {
-            return Mono.just(NotificationConnection.empty());
-        }
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myNotificationsCursorPagination(type={}, status={})", type, status))
+                .flatMap(userId -> {
+                    Flux<Notification> notificationFlux = notificationService.findByUserId(userId)
+                            .filter(notification -> {
+                                if (type != null && notification.getType() != type) {
+                                    return false;
+                                }
+                                if (status != null && notification.getStatus() != status) {
+                                    return false;
+                                }
+                                return true;
+                            });
 
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myNotificationsCursorPagination(type={}, status={})", type, status);
-
-        Flux<Notification> notificationFlux = notificationService.findByUserId(userId)
-                .filter(notification -> {
-                    if (type != null && notification.getType() != type) {
-                        return false;
-                    }
-                    if (status != null && notification.getStatus() != status) {
-                        return false;
-                    }
-                    return true;
-                });
-
-        return buildCursorConnection(notificationFlux, pagination);
+                    return buildCursorConnection(notificationFlux, pagination);
+                })
+                .defaultIfEmpty(NotificationConnection.empty());
     }
 
     // ========================================================================
@@ -116,14 +109,11 @@ public class NotificationQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<Integer> unreadNotificationCount(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.just(0);
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: unreadNotificationCount (userId={})", userId);
-        return notificationService.countUnread(userId).map(Long::intValue);
+    public Mono<Integer> unreadNotificationCount() {
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: unreadNotificationCount (userId={})", userId))
+                .flatMap(userId -> notificationService.countUnread(userId).map(Long::intValue))
+                .defaultIfEmpty(0);
     }
 
     // ========================================================================
@@ -136,14 +126,10 @@ public class NotificationQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<NotificationPreferences> myNotificationPreferences(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myNotificationPreferences (userId={})", userId);
-        return preferencesService.getOrCreateDefault(userId);
+    public Mono<NotificationPreferences> myNotificationPreferences() {
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myNotificationPreferences (userId={})", userId))
+                .flatMap(preferencesService::getOrCreateDefault);
     }
 
     // ========================================================================

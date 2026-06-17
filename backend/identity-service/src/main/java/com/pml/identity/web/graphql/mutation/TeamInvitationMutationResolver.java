@@ -1,18 +1,17 @@
 package com.pml.identity.web.graphql.mutation;
 
-import com.pml.identity.web.graphql.dto.organization.InviteMemberInput;
+import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsMutation;
+import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.model.TeamInvitation;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.TeamInvitationService;
-import com.netflix.graphql.dgs.DgsComponent;
-import com.netflix.graphql.dgs.DgsMutation;
-import com.netflix.graphql.dgs.InputArgument;
+import com.pml.identity.web.graphql.dto.organization.InviteMemberInput;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -39,43 +38,37 @@ public class TeamInvitationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<TeamInvitation> inviteTeamMember(
             @InputArgument String organizationId,
-            @InputArgument InviteMemberInput input,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument InviteMemberInput input) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(inviterId -> log.info("User {} inviting {} to organization {}", inviterId, input.email(), organizationId))
+                .flatMap(inviterId -> memberService.hasPermission(inviterId, organizationId, MEMBER_INVITE_PERMISSION)
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                return Mono.error(new IllegalStateException("Permission denied: " + MEMBER_INVITE_PERMISSION));
+                            }
 
-        String inviterId = jwt.getSubject();
-        log.info("User {} inviting {} to organization {}", inviterId, input.email(), organizationId);
+                            List<TeamInvitation.EventAccessInput> eventGrants = null;
+                            if (input.eventAccessGrants() != null) {
+                                eventGrants = input.eventAccessGrants().stream()
+                                        .map(g -> TeamInvitation.EventAccessInput.builder()
+                                                .eventId(g.eventId())
+                                                .role(g.role())
+                                                .expiresAt(g.expiresAt())
+                                                .build())
+                                        .collect(Collectors.toList());
+                            }
 
-        return memberService.hasPermission(inviterId, organizationId, MEMBER_INVITE_PERMISSION)
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        return Mono.error(new IllegalStateException("Permission denied: " + MEMBER_INVITE_PERMISSION));
-                    }
-
-                    List<TeamInvitation.EventAccessInput> eventGrants = null;
-                    if (input.eventAccessGrants() != null) {
-                        eventGrants = input.eventAccessGrants().stream()
-                                .map(g -> TeamInvitation.EventAccessInput.builder()
-                                        .eventId(g.eventId())
-                                        .role(g.role())
-                                        .expiresAt(g.expiresAt())
-                                        .build())
-                                .collect(Collectors.toList());
-                    }
-
-                    return invitationService.invite(
-                            organizationId,
-                            input.email(),
-                            input.phoneNumber(),
-                            input.inviteeName(),
-                            input.role(),
-                            input.message(),
-                            eventGrants,
-                            inviterId
-                    );
-                });
+                            return invitationService.invite(
+                                    organizationId,
+                                    input.email(),
+                                    input.phoneNumber(),
+                                    input.inviteeName(),
+                                    input.role(),
+                                    input.message(),
+                                    eventGrants,
+                                    inviterId
+                            );
+                        }));
     }
 
     /**
@@ -85,46 +78,40 @@ public class TeamInvitationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Flux<TeamInvitation> bulkInviteTeamMembers(
             @InputArgument String organizationId,
-            @InputArgument List<InviteMemberInput> invitations,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Flux.error(new IllegalStateException("Authentication required"));
-        }
+            @InputArgument List<InviteMemberInput> invitations) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(inviterId -> log.info("User {} bulk inviting {} members to organization {}", inviterId, invitations.size(), organizationId))
+                .flatMapMany(inviterId -> memberService.hasPermission(inviterId, organizationId, MEMBER_INVITE_PERMISSION)
+                        .flatMapMany(hasPermission -> {
+                            if (!hasPermission) {
+                                return Flux.error(new IllegalStateException("Permission denied: " + MEMBER_INVITE_PERMISSION));
+                            }
 
-        String inviterId = jwt.getSubject();
-        log.info("User {} bulk inviting {} members to organization {}", inviterId, invitations.size(), organizationId);
+                            List<TeamInvitationService.InviteRequest> requests = invitations.stream()
+                                    .map(input -> {
+                                        List<TeamInvitation.EventAccessInput> eventGrants = null;
+                                        if (input.eventAccessGrants() != null) {
+                                            eventGrants = input.eventAccessGrants().stream()
+                                                    .map(g -> TeamInvitation.EventAccessInput.builder()
+                                                            .eventId(g.eventId())
+                                                            .role(g.role())
+                                                            .expiresAt(g.expiresAt())
+                                                            .build())
+                                                    .collect(Collectors.toList());
+                                        }
+                                        return new TeamInvitationService.InviteRequest(
+                                                input.email(),
+                                                input.phoneNumber(),
+                                                input.inviteeName(),
+                                                input.role(),
+                                                input.message(),
+                                                eventGrants
+                                        );
+                                    })
+                                    .collect(Collectors.toList());
 
-        return memberService.hasPermission(inviterId, organizationId, MEMBER_INVITE_PERMISSION)
-                .flatMapMany(hasPermission -> {
-                    if (!hasPermission) {
-                        return Flux.error(new IllegalStateException("Permission denied: " + MEMBER_INVITE_PERMISSION));
-                    }
-
-                    List<TeamInvitationService.InviteRequest> requests = invitations.stream()
-                            .map(input -> {
-                                List<TeamInvitation.EventAccessInput> eventGrants = null;
-                                if (input.eventAccessGrants() != null) {
-                                    eventGrants = input.eventAccessGrants().stream()
-                                            .map(g -> TeamInvitation.EventAccessInput.builder()
-                                                    .eventId(g.eventId())
-                                                    .role(g.role())
-                                                    .expiresAt(g.expiresAt())
-                                                    .build())
-                                            .collect(Collectors.toList());
-                                }
-                                return new TeamInvitationService.InviteRequest(
-                                        input.email(),
-                                        input.phoneNumber(),
-                                        input.inviteeName(),
-                                        input.role(),
-                                        input.message(),
-                                        eventGrants
-                                );
-                            })
-                            .collect(Collectors.toList());
-
-                    return invitationService.bulkInvite(organizationId, requests, inviterId);
-                });
+                            return invitationService.bulkInvite(organizationId, requests, inviterId);
+                        }));
     }
 
     /**
@@ -132,25 +119,18 @@ public class TeamInvitationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<TeamInvitation> resendInvitation(
-            @InputArgument String invitationId,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
-        log.info("User {} resending invitation: {}", userId, invitationId);
-
-        return invitationService.findById(invitationId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Invitation not found")))
-                .flatMap(invitation -> memberService.hasPermission(userId, invitation.getOrganizationId(), MEMBER_INVITE_PERMISSION)
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied"));
-                            }
-                            return invitationService.resend(invitationId);
-                        }));
+    public Mono<TeamInvitation> resendInvitation(@InputArgument String invitationId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} resending invitation: {}", userId, invitationId))
+                .flatMap(userId -> invitationService.findById(invitationId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Invitation not found")))
+                        .flatMap(invitation -> memberService.hasPermission(userId, invitation.getOrganizationId(), MEMBER_INVITE_PERMISSION)
+                                .flatMap(hasPermission -> {
+                                    if (!hasPermission) {
+                                        return Mono.error(new IllegalStateException("Permission denied"));
+                                    }
+                                    return invitationService.resend(invitationId);
+                                })));
     }
 
     /**
@@ -158,25 +138,18 @@ public class TeamInvitationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<TeamInvitation> revokeInvitation(
-            @InputArgument String invitationId,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
-        log.info("User {} revoking invitation: {}", userId, invitationId);
-
-        return invitationService.findById(invitationId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Invitation not found")))
-                .flatMap(invitation -> memberService.hasPermission(userId, invitation.getOrganizationId(), MEMBER_INVITE_PERMISSION)
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied"));
-                            }
-                            return invitationService.revoke(invitationId);
-                        }));
+    public Mono<TeamInvitation> revokeInvitation(@InputArgument String invitationId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} revoking invitation: {}", userId, invitationId))
+                .flatMap(userId -> invitationService.findById(invitationId)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Invitation not found")))
+                        .flatMap(invitation -> memberService.hasPermission(userId, invitation.getOrganizationId(), MEMBER_INVITE_PERMISSION)
+                                .flatMap(hasPermission -> {
+                                    if (!hasPermission) {
+                                        return Mono.error(new IllegalStateException("Permission denied"));
+                                    }
+                                    return invitationService.revoke(invitationId);
+                                })));
     }
 
     /**
@@ -184,17 +157,10 @@ public class TeamInvitationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<OrganizationMember> acceptInvitation(
-            @InputArgument String token,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.error(new IllegalStateException("Authentication required"));
-        }
-
-        String userId = jwt.getSubject();
-        log.info("User {} accepting invitation", userId);
-
-        return invitationService.accept(token, userId);
+    public Mono<OrganizationMember> acceptInvitation(@InputArgument String token) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("User {} accepting invitation", userId))
+                .flatMap(userId -> invitationService.accept(token, userId));
     }
 
     /**

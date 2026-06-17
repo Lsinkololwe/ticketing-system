@@ -1,19 +1,18 @@
 package com.pml.identity.web.graphql.mutation;
 
-import com.pml.identity.web.graphql.dto.SendNotificationInput;
-import com.pml.identity.web.graphql.dto.UpdateNotificationPreferencesInput;
+import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsMutation;
+import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.Notification;
 import com.pml.identity.domain.model.NotificationPreferences;
 import com.pml.identity.service.NotificationPreferencesService;
 import com.pml.identity.service.NotificationService;
-import com.netflix.graphql.dgs.DgsComponent;
-import com.netflix.graphql.dgs.DgsMutation;
-import com.netflix.graphql.dgs.InputArgument;
+import com.pml.identity.web.graphql.dto.SendNotificationInput;
+import com.pml.identity.web.graphql.dto.UpdateNotificationPreferencesInput;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -46,15 +45,14 @@ public class NotificationMutationResolver {
     /**
      * Mutation to mark all notifications as read for the authenticated user.
      *
-     * @param jwt the authenticated user's JWT token
      * @return Mono containing the count of notifications marked as read
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<Integer> markAllNotificationsRead(@AuthenticationPrincipal Jwt jwt) {
-        String userId = jwt.getSubject();
-        log.debug("Marking all notifications as read for user {}", userId);
-        return notificationService.markAllAsRead(userId);
+    public Mono<Integer> markAllNotificationsRead() {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("Marking all notifications as read for user {}", userId))
+                .flatMap(notificationService::markAllAsRead);
     }
 
     /**
@@ -74,18 +72,16 @@ public class NotificationMutationResolver {
      * Mutation to update notification preferences for the authenticated user.
      *
      * @param input the preferences to update
-     * @param jwt the authenticated user's JWT token
      * @return Mono containing the updated preferences
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
     public Mono<NotificationPreferences> updateNotificationPreferences(
-        @InputArgument UpdateNotificationPreferencesInput input,
-        @AuthenticationPrincipal Jwt jwt
+        @InputArgument UpdateNotificationPreferencesInput input
     ) {
-        String userId = jwt.getSubject();
-        log.debug("Updating notification preferences for user {}", userId);
-        return preferencesService.updatePreferences(userId, input);
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("Updating notification preferences for user {}", userId))
+                .flatMap(userId -> preferencesService.updatePreferences(userId, input));
     }
 
     /**

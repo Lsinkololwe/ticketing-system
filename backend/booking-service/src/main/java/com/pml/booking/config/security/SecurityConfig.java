@@ -57,8 +57,9 @@ public class SecurityConfig {
                         .pathMatchers("/api/webhooks/payment/**").permitAll()
                         // Internal service-to-service calls require internal scope
                         .pathMatchers("/api/internal/**").hasAnyAuthority("SCOPE_internal-read", "SCOPE_internal-write", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM")
-                        // GraphQL - authentication handled at resolver level with @PreAuthorize
-                        .pathMatchers("/graphql/**").permitAll()
+                        // GraphQL - require authentication so JWT is parsed and available to resolvers
+                        // Fine-grained access control handled at resolver level with @PreAuthorize
+                        .pathMatchers("/graphql/**").authenticated()
                         // All other endpoints require authentication
                         .anyExchange().authenticated()
                 )

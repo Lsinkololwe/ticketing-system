@@ -8,11 +8,10 @@ import com.pml.booking.web.graphql.dto.ReserveTicketsInput;
 import com.pml.booking.domain.model.Ticket;
 import com.pml.booking.domain.model.TicketReservation;
 import com.pml.booking.service.ReservationService;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -31,13 +30,10 @@ public class ReservationMutationResolver {
 
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<TicketReservation> reserveTickets(
-        @InputArgument ReserveTicketsInput input,
-        @AuthenticationPrincipal Jwt jwt
-    ) {
-        String userId = jwt.getSubject();
-        log.info("GraphQL mutation: reserveTickets for user: {}", userId);
-        return reservationService.createReservation(userId, input);
+    public Mono<TicketReservation> reserveTickets(@InputArgument ReserveTicketsInput input) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.info("GraphQL mutation: reserveTickets for user: {}", userId))
+                .flatMap(userId -> reservationService.createReservation(userId, input));
     }
 
     @DgsMutation

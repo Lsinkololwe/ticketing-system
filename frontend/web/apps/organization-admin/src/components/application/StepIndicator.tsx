@@ -3,12 +3,19 @@
 /**
  * Step Indicator Component
  *
- * Visual progress indicator for multi-step application wizard.
+ * Minimal, clean progress indicator for multi-step wizard.
+ *
+ * RADIX UI THEMES COMPLIANT:
+ * - Uses Radix Theme tokens (--accent-*, --gray-*)
+ * - Uses Radix component props where possible
+ * - Clean, modern design with inline labels
+ *
  * Features:
- * - Shows current step with visual highlight
- * - Completed steps marked with checkmark
+ * - Horizontal inline design with step numbers and titles
+ * - Current step highlighted with accent color
+ * - Completed steps shown with checkmark
  * - Click to navigate between completed steps
- * - Mobile-responsive (shows only current step on small screens)
+ * - Mobile-responsive progress bar view
  */
 
 import { Box, Flex, Text } from '@radix-ui/themes';
@@ -42,172 +49,233 @@ export function StepIndicator({
   allowNavigation = true,
 }: StepIndicatorProps) {
   const handleStepClick = (index: number) => {
-    // Only allow clicking on completed steps
     if (allowNavigation && index < currentStep && onStepClick) {
       onStepClick(index);
     }
   };
 
   return (
-    <Box mb="8">
-      {/* Desktop View */}
+    <Box mb="6">
+      {/* Desktop View - Inline horizontal design */}
       <Flex
         className="step-indicator-desktop"
         align="center"
         justify="center"
         gap="0"
-        style={{
-          position: 'relative',
-        }}
       >
         {steps.map((step, index) => {
           const isCompleted = index < currentStep;
           const isCurrent = index === currentStep;
           const isClickable = allowNavigation && isCompleted;
+          const isLast = index === steps.length - 1;
 
           return (
-            <Flex key={step.id} align="center" style={{ position: 'relative' }}>
-              {/* Connector Line (before step, except first) */}
-              {index > 0 && (
-                <Box
-                  style={{
-                    width: 60,
-                    height: 2,
-                    background: isCompleted
-                      ? 'linear-gradient(90deg, #10B981 0%, #14B8A6 100%)'
-                      : 'rgba(148, 163, 184, 0.2)',
-                    transition: 'background 300ms ease',
-                  }}
-                />
-              )}
-
-              {/* Step Circle */}
+            <Flex key={step.id} align="center">
+              {/* Step Item */}
               <Flex
                 align="center"
-                justify="center"
+                gap="2"
                 onClick={() => handleStepClick(index)}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: '50%',
-                  background: isCurrent
-                    ? 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)'
-                    : isCompleted
-                      ? 'rgba(16, 185, 129, 0.2)'
-                      : 'rgba(30, 41, 59, 0.8)',
-                  border: isCurrent
-                    ? 'none'
-                    : isCompleted
-                      ? '2px solid #10B981'
-                      : '2px solid rgba(148, 163, 184, 0.3)',
-                  cursor: isClickable ? 'pointer' : 'default',
-                  transition: 'all 300ms ease',
-                  boxShadow: isCurrent ? '0 0 20px rgba(16, 185, 129, 0.4)' : 'none',
-                  position: 'relative',
-                  zIndex: 1,
+                className={`step-item ${isClickable ? 'clickable' : ''}`}
+                role={isClickable ? 'button' : undefined}
+                tabIndex={isClickable ? 0 : undefined}
+                aria-label={isClickable ? `Go to step ${index + 1}: ${step.title}` : undefined}
+                aria-current={isCurrent ? 'step' : undefined}
+                onKeyDown={(e) => {
+                  if (isClickable && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    handleStepClick(index);
+                  }
                 }}
               >
-                {isCompleted ? (
-                  <Check style={{ width: 18, height: 18, color: '#10B981' }} />
-                ) : (
-                  <Text
-                    size="2"
-                    weight="bold"
-                    style={{
-                      color: isCurrent ? 'white' : '#94A3B8',
-                    }}
-                  >
-                    {index + 1}
-                  </Text>
-                )}
-              </Flex>
+                {/* Step Circle */}
+                <Flex
+                  align="center"
+                  justify="center"
+                  className={`step-circle ${isCurrent ? 'current' : ''} ${isCompleted ? 'completed' : ''}`}
+                >
+                  {isCompleted ? (
+                    <Check width={14} height={14} strokeWidth={2.5} />
+                  ) : (
+                    <Text size="1" weight="medium">
+                      {index + 1}
+                    </Text>
+                  )}
+                </Flex>
 
-              {/* Step Label (positioned below) */}
-              <Box
-                style={{
-                  position: 'absolute',
-                  top: '52px',
-                  left: index > 0 ? '60px' : '0',
-                  transform: 'translateX(-50%)',
-                  textAlign: 'center',
-                  width: '100px',
-                }}
-              >
+                {/* Step Title */}
                 <Text
-                  size="1"
-                  weight={isCurrent ? 'bold' : 'regular'}
-                  style={{
-                    color: isCurrent ? '#F8FAFC' : isCompleted ? '#10B981' : '#94A3B8',
-                    display: 'block',
-                    whiteSpace: 'nowrap',
-                  }}
+                  size="2"
+                  weight={isCurrent ? 'medium' : 'regular'}
+                  className={`step-title ${isCurrent ? 'current' : ''} ${isCompleted ? 'completed' : ''}`}
                 >
                   {step.title}
                 </Text>
-              </Box>
+              </Flex>
+
+              {/* Connector Line */}
+              {!isLast && (
+                <Box
+                  className={`step-connector ${isCompleted ? 'completed' : ''}`}
+                  mx="4"
+                />
+              )}
             </Flex>
           );
         })}
       </Flex>
 
-      {/* Mobile View - Current Step Only */}
-      <Box className="step-indicator-mobile" style={{ display: 'none' }}>
-        <Flex align="center" justify="center" gap="3" mb="2">
-          <Box
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 15px rgba(16, 185, 129, 0.3)',
-            }}
-          >
-            <Text size="2" weight="bold" style={{ color: 'white' }}>
-              {currentStep + 1}
-            </Text>
-          </Box>
-          <Box>
-            <Text size="1" style={{ color: '#94A3B8', display: 'block' }}>
-              Step {currentStep + 1} of {steps.length}
-            </Text>
-            <Text size="2" weight="medium" style={{ color: '#F8FAFC' }}>
+      {/* Mobile View - Progress bar with current step */}
+      <Box className="step-indicator-mobile">
+        <Flex align="center" justify="between" mb="2">
+          <Flex align="center" gap="2">
+            <Flex
+              align="center"
+              justify="center"
+              className="step-circle current mobile"
+            >
+              <Text size="1" weight="medium">
+                {currentStep + 1}
+              </Text>
+            </Flex>
+            <Text size="2" weight="medium" highContrast>
               {steps[currentStep]?.title}
             </Text>
-          </Box>
+          </Flex>
+          <Text size="1" color="gray">
+            {currentStep + 1} of {steps.length}
+          </Text>
         </Flex>
 
         {/* Progress Bar */}
-        <Box
-          style={{
-            height: 4,
-            borderRadius: 2,
-            background: 'rgba(148, 163, 184, 0.2)',
-            overflow: 'hidden',
-          }}
-        >
+        <Box className="progress-track">
           <Box
+            className="progress-bar"
             style={{
               width: `${((currentStep + 1) / steps.length) * 100}%`,
-              height: '100%',
-              borderRadius: 2,
-              background: 'linear-gradient(90deg, #10B981 0%, #14B8A6 100%)',
-              transition: 'width 300ms ease',
             }}
           />
         </Box>
       </Box>
 
-      {/* Responsive Styles */}
+      {/* Styles */}
       <style jsx global>{`
-        @media (max-width: 768px) {
+        /* Desktop view */
+        .step-indicator-desktop {
+          display: flex;
+        }
+
+        /* Mobile view - hidden by default */
+        .step-indicator-mobile {
+          display: none;
+        }
+
+        /* Step item container */
+        .step-item {
+          padding: 6px 8px;
+          border-radius: var(--radius-2);
+          transition: background 150ms ease;
+        }
+
+        .step-item.clickable {
+          cursor: pointer;
+        }
+
+        .step-item.clickable:hover {
+          background: var(--gray-a3);
+        }
+
+        .step-item.clickable:focus-visible {
+          outline: none;
+          box-shadow: 0 0 0 2px var(--accent-8);
+        }
+
+        /* Step circle - smaller, cleaner */
+        .step-circle {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          background: var(--gray-a3);
+          color: var(--gray-10);
+          flex-shrink: 0;
+          transition: all 150ms ease;
+        }
+
+        .step-circle.current {
+          background: var(--accent-9);
+          color: var(--accent-contrast);
+        }
+
+        .step-circle.completed {
+          background: var(--accent-a4);
+          color: var(--accent-11);
+        }
+
+        .step-circle.mobile {
+          width: 28px;
+          height: 28px;
+        }
+
+        /* Step title */
+        .step-title {
+          color: var(--gray-10);
+          white-space: nowrap;
+        }
+
+        .step-title.current {
+          color: var(--gray-12);
+        }
+
+        .step-title.completed {
+          color: var(--gray-11);
+        }
+
+        /* Connector line */
+        .step-connector {
+          width: 40px;
+          height: 2px;
+          background: var(--gray-6);
+          border-radius: 1px;
+          transition: background 150ms ease;
+        }
+
+        .step-connector.completed {
+          background: var(--accent-9);
+        }
+
+        /* Progress track (mobile) */
+        .progress-track {
+          height: 3px;
+          border-radius: 2px;
+          background: var(--gray-a4);
+          overflow: hidden;
+        }
+
+        /* Progress bar (mobile) */
+        .progress-bar {
+          height: 100%;
+          border-radius: 2px;
+          background: var(--accent-9);
+          transition: width 300ms ease;
+        }
+
+        /* Responsive - show mobile view on small screens */
+        @media (max-width: 540px) {
           .step-indicator-desktop {
             display: none !important;
           }
           .step-indicator-mobile {
             display: block !important;
+          }
+        }
+
+        /* Reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+          .step-connector,
+          .step-circle,
+          .step-item,
+          .progress-bar {
+            transition: none !important;
           }
         }
       `}</style>

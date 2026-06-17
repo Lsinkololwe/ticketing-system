@@ -23,7 +23,8 @@ import { Theme } from '@radix-ui/themes';
 import { ThemeProvider as NextThemeProvider } from 'next-themes';
 import { ApolloProvider } from '@apollo/client/react';
 import { createGraphQLClient } from '@pml.tickets/shared';
-import { useSession, getSession } from '@/lib/auth/client';
+import { getAccessToken } from '@/lib/auth/client';
+import { ToastContextProvider } from '@/components/ui';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -32,60 +33,38 @@ interface ProvidersProps {
 /**
  * Apollo Provider with Better Auth Integration
  *
- * Gets access token from Better Auth session for GraphQL requests.
- * Token is automatically refreshed by Better Auth.
+ * Gets OAuth access token from Better Auth for GraphQL requests.
+ * Token is used in Authorization header for backend authentication.
+ *
+ * IMPORTANT: We don't block rendering during session check.
+ * Server-side auth (DAL) handles protection - client is for UX only.
  */
 function ApolloProviderWithAuth({ children }: { children: ReactNode }) {
-  // Get session state from Better Auth
-  const { isPending } = useSession();
-
-  // Token getter for Apollo Client
-  // Uses Better Auth session which is backed by Redis
+  // Token getter for Apollo Client (called on each request)
+  // Uses Better Auth's getAccessToken to get the Keycloak JWT
   const tokenGetter = useCallback(async (): Promise<string | null> => {
     try {
-      // Get fresh session (validates against Redis)
-      // Returns { data: { user, session }, error }
-      const result = await getSession();
+      const token = await getAccessToken();
 
-      if (!result?.data?.session) {
-        return null;
+      if (process.env.NODE_ENV === 'development' && token) {
+        console.log('[Apollo] Got access token:', token.substring(0, 20) + '...');
       }
 
-      // Get the access token from the session
-      // Better Auth stores OAuth tokens in the session
-      const token = (result.data.session as { token?: string }).token;
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[Apollo] Token getter called:', {
-          hasToken: !!token,
-          tokenLength: token?.length,
-        });
-      }
-
-      return token || null;
+      return token;
     } catch (error) {
       console.error('[Apollo] Failed to get token:', error);
       return null;
     }
   }, []);
 
-  // Create Apollo client with token getter
-  // Client is recreated only when tokenGetter changes (which is stable)
+  // Create Apollo client with token getter (stable reference)
   const apolloClient = useMemo(
     () => createGraphQLClient({ tokenGetter }),
     [tokenGetter]
   );
 
-  // Show loading state while checking authentication
-  // This prevents flash of unauthenticated content
-  if (isPending) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500" />
-      </div>
-    );
-  }
-
+  // Don't block rendering - server layout handles auth protection
+  // Apollo queries will wait for session naturally via tokenGetter
   return (
     <ApolloProvider client={apolloClient}>
       {children}
@@ -122,7 +101,15 @@ function RadixThemeWrapper({ children }: { children: ReactNode }) {
  * Provider hierarchy:
  * 1. NextThemeProvider - Dark/light/system mode with persistence
  * 2. Radix Theme - UI components (inherits from next-themes)
- * 3. ApolloProviderWithAuth - GraphQL with auth (Apollo Client handles caching)
+ * 3. ToastContextProvider - Toast notifications (Radix UI Toast)
+ * 4. ApolloProviderWithAuth - GraphQL with auth (Apollo Client handles caching)
+ *
+ * ## Session Expiration Handling
+ *
+ * Session expiration is handled at multiple layers (no client-side monitor needed):
+ * - **Server-side**: `verifySession()` in layouts redirects to /logout
+ * - **Apollo Client**: ErrorLink redirects to /logout on 401/UNAUTHENTICATED
+ * - **Tab focus**: Better Auth's `refetchOnWindowFocus` re-validates session
  *
  * Note: Organization data is fetched via Apollo Client hooks directly.
  * No separate context is needed since Apollo Client provides caching.
@@ -143,9 +130,11 @@ export default function Providers({ children }: ProvidersProps) {
       disableTransitionOnChange={false}
     >
       <RadixThemeWrapper>
-        <ApolloProviderWithAuth>
-          {children}
-        </ApolloProviderWithAuth>
+        <ToastContextProvider>
+          <ApolloProviderWithAuth>
+            {children}
+          </ApolloProviderWithAuth>
+        </ToastContextProvider>
       </RadixThemeWrapper>
     </NextThemeProvider>
   );

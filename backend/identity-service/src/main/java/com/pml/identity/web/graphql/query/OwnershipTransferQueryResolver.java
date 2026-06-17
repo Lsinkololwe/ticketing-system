@@ -6,11 +6,10 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.OwnershipTransferRequest;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OwnershipTransferService;
+import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -50,26 +49,18 @@ public class OwnershipTransferQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<OwnershipTransferRequest> pendingOwnershipTransfer(
-            @InputArgument String organizationId,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Mono.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: pendingOwnershipTransfer(orgId={}, userId={})", organizationId, userId);
-
-        // Only owner or admin can view pending transfers
-        return memberService.hasPermission(userId, organizationId, "TRANSFER_OWNERSHIP")
-                .flatMap(hasPermission -> {
-                    if (!hasPermission) {
-                        // Check if user is the new owner
-                        return transferService.findPendingByOrganization(organizationId)
-                                .filter(t -> t.getNewOwnerId().equals(userId));
-                    }
-                    return transferService.findPendingByOrganization(organizationId);
-                });
+    public Mono<OwnershipTransferRequest> pendingOwnershipTransfer(@InputArgument String organizationId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: pendingOwnershipTransfer(orgId={}, userId={})", organizationId, userId))
+                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "TRANSFER_OWNERSHIP")
+                        .flatMap(hasPermission -> {
+                            if (!hasPermission) {
+                                // Check if user is the new owner
+                                return transferService.findPendingByOrganization(organizationId)
+                                        .filter(t -> t.getNewOwnerId().equals(userId));
+                            }
+                            return transferService.findPendingByOrganization(organizationId);
+                        }));
     }
 
     /**
@@ -77,23 +68,16 @@ public class OwnershipTransferQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Flux<OwnershipTransferRequest> ownershipTransfers(
-            @InputArgument String organizationId,
-            @AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Flux.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: ownershipTransfers(orgId={})", organizationId);
-
-        return memberService.hasPermission(userId, organizationId, "TRANSFER_OWNERSHIP")
-                .flatMapMany(hasPermission -> {
-                    if (!hasPermission) {
-                        return Flux.error(new IllegalStateException("Permission denied"));
-                    }
-                    return transferService.findByOrganization(organizationId);
-                });
+    public Flux<OwnershipTransferRequest> ownershipTransfers(@InputArgument String organizationId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: ownershipTransfers(orgId={})", organizationId))
+                .flatMapMany(userId -> memberService.hasPermission(userId, organizationId, "TRANSFER_OWNERSHIP")
+                        .flatMapMany(hasPermission -> {
+                            if (!hasPermission) {
+                                return Flux.error(new IllegalStateException("Permission denied"));
+                            }
+                            return transferService.findByOrganization(organizationId);
+                        }));
     }
 
     /**
@@ -101,15 +85,10 @@ public class OwnershipTransferQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Flux<OwnershipTransferRequest> myPendingOwnershipTransfers(@AuthenticationPrincipal Jwt jwt) {
-        if (jwt == null) {
-            return Flux.empty();
-        }
-
-        String userId = jwt.getSubject();
-        log.debug("GraphQL query: myPendingOwnershipTransfers(userId={})", userId);
-
-        return transferService.findPendingByNewOwner(userId);
+    public Flux<OwnershipTransferRequest> myPendingOwnershipTransfers() {
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(userId -> log.debug("GraphQL query: myPendingOwnershipTransfers(userId={})", userId))
+                .flatMapMany(userId -> transferService.findPendingByNewOwner(userId));
     }
 
     /**
