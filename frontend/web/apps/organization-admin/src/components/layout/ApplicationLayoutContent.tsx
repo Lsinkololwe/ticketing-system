@@ -21,7 +21,7 @@ import { ReactNode } from 'react';
 import { Box, Flex, Text, Avatar, Link as RadixLink, DropdownMenu } from '@radix-ui/themes';
 import { Calendar, LogOut, HelpCircle, User, NavArrowDown } from 'iconoir-react';
 import Link from 'next/link';
-import { useSession, signOutComplete } from '@/lib/auth/client';
+import { useSession, signOut } from '@/lib/auth/client';
 
 // =============================================================================
 // TYPES
@@ -40,7 +40,7 @@ function ApplicationHeader() {
 
   const handleLogout = async () => {
     try {
-      await signOutComplete();
+      await signOut();
     } catch (error) {
       console.error('Logout failed:', error);
     }

@@ -54,17 +54,6 @@ export type { OrganizationStatus } from './interfaces';
  */
 export const verifySession = () => getSessionService().verifySession();
 
-/**
- * Get session without redirecting
- *
- * Delegates to SessionService for implementation.
- * Returns null if not authenticated. Use this when you need to check
- * auth status without forcing a redirect.
- *
- * @returns Better Auth session or null
- */
-export const getSession = () => getSessionService().getSession();
-
 // =============================================================================
 // ORGANIZATION OPERATIONS (Delegated to OrganizationService)
 // =============================================================================

@@ -147,7 +147,7 @@ export function getOrganizationService(): IOrganizationService {
  * Get TokenService singleton instance
  *
  * Creates the service on first call and caches it globally.
- * Depends on SessionService for authentication.
+ * Uses Better Auth's native auth.api.getAccessToken() for token retrieval.
  *
  * @returns Singleton TokenService instance
  *
@@ -160,12 +160,12 @@ export function getOrganizationService(): IOrganizationService {
 export function getTokenService(): ITokenService {
   if (process.env.NODE_ENV === 'development') {
     if (!global._tokenService) {
-      global._tokenService = new TokenService(getSessionService(), getConfig());
+      global._tokenService = new TokenService(getConfig());
     }
     return global._tokenService;
   }
 
-  return new TokenService(getSessionService(), getConfig());
+  return new TokenService(getConfig());
 }
 
 // =============================================================================

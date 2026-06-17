@@ -17,7 +17,7 @@
 
 import { Box, Flex, Text, Button, DropdownMenu, Avatar, IconButton } from '@radix-ui/themes';
 import { Bell, LogOut, Settings, UserCircle, Menu } from 'iconoir-react';
-import { useSession, signOutComplete } from '@/lib/auth/client';
+import { useSession, signOut } from '@/lib/auth/client';
 import { ThemeToggleDropdown } from '@/components/ui/ThemeToggle';
 
 // =============================================================================
@@ -38,7 +38,7 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
 
   const handleLogout = async () => {
     try {
-      await signOutComplete();
+      await signOut();
     } catch (error) {
       console.error('Logout failed:', error);
     }

@@ -12,7 +12,7 @@
  *
  * - **Login Page** (`/login/page.tsx`): Uses `authClient.signIn.oauth2()` for Keycloak login
  * - **Header Component** (`/components/layout/Header.tsx`): Uses `useSession` hook for user display
- * - **Sidebar** (`/components/layout/Sidebar.tsx`): Uses `signOutComplete()` for logout
+ * - **Sidebar** (`/components/layout/Sidebar.tsx`): Uses `signOut()` for logout
  * - **Protected Components**: Use `useSession` hook for auth state
  *
  * ## Official Better Auth Patterns
@@ -52,19 +52,19 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3031';
 
 /**
  * Keycloak server URL
- * @used-by signOutComplete() - Builds Keycloak logout redirect URL
+ * @used-by signOut() - Builds Keycloak logout redirect URL
  */
 const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL ?? 'http://localhost:8084';
 
 /**
  * Keycloak realm name
- * @used-by signOutComplete() - Part of Keycloak logout URL
+ * @used-by signOut() - Part of Keycloak logout URL
  */
 const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM ?? 'myticketzm';
 
 /**
  * Keycloak client ID for this application
- * @used-by signOutComplete() - Required for Keycloak logout
+ * @used-by signOut() - Required for Keycloak logout
  */
 const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'myticketzm-organizer';
 
@@ -148,8 +148,11 @@ export const useSession = authClient.useSession;
 /**
  * Get OAuth access token for API calls
  *
- * Fetches the Keycloak access token from the server API.
- * The token is stored securely on the server and retrieved via authenticated request.
+ * Uses Better Auth's native client API to get the Keycloak access token.
+ * Better Auth handles:
+ * - Token retrieval from accounts
+ * - Automatic token refresh when expired
+ * - Session validation
  *
  * @returns Access token string or null if not authenticated
  *
@@ -169,27 +172,22 @@ export const useSession = authClient.useSession;
  */
 export async function getAccessToken(): Promise<string | null> {
   try {
-    // Fetch access token from server API
-    // Server validates session and returns token from accounts collection
-    const response = await fetch('/api/auth/access-token', {
-      credentials: 'include', // Include session cookies
+    // Use Better Auth's native client API
+    // This internally calls /api/auth/get-access-token (handled by [...all]/route.ts)
+    const { data, error } = await authClient.getAccessToken({
+      providerId: 'keycloak',
     });
 
-    if (!response.ok) {
-      if (response.status === 401) {
-        return null; // Not authenticated
+    if (error) {
+      // Handle "no linked account" gracefully
+      if (error.message?.includes('No linked account')) {
+        return null;
       }
-      throw new Error(`Failed to get access token: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.expired) {
-      console.warn('[Auth] Access token expired, need to re-authenticate');
+      console.error('[Auth] Failed to get access token:', error.message);
       return null;
     }
 
-    return data.accessToken || null;
+    return data?.accessToken ?? null;
   } catch (error) {
     console.error('[Auth] Failed to get access token:', error);
     return null;
@@ -254,41 +252,31 @@ export function registerWithKeycloak(callbackURL = '/login?registered=true') {
   });
 }
 
-/**
- * Basic sign out (Better Auth only)
- *
- * Clears the Better Auth session but does NOT terminate Keycloak SSO.
- * For complete logout, use signOutComplete() instead.
- *
- * @used-by Internal use only - prefer signOutComplete() for user-facing logout
- */
-export const signOut = authClient.signOut;
-
 // =============================================================================
-// KEYCLOAK SSO LOGOUT (Complete)
+// SIGN OUT WITH JTI BLACKLISTING
 // =============================================================================
 
 /**
- * Complete sign out with Keycloak SSO termination
+ * Sign out with JTI blacklisting and Keycloak SSO termination
  *
  * This is the RECOMMENDED logout method for production.
  *
  * ## What it does:
- * 1. Calls Better Auth signOut to clear session in MongoDB/Redis
- * 2. Redirects to Keycloak end_session_endpoint
- * 3. Keycloak terminates the SSO session
- * 4. Keycloak redirects back to /login
+ * 1. Calls /api/auth/logout to blacklist JTI in Redis (defense-in-depth)
+ * 2. Server clears Better Auth session in MongoDB/Redis
+ * 3. Redirects to Keycloak end_session_endpoint
+ * 4. Keycloak terminates the SSO session
+ * 5. Keycloak redirects back to /login
  *
- * ## Why use this instead of signOut():
- * - signOut() only clears Better Auth session
- * - User stays logged into Keycloak SSO
- * - Next login attempt auto-authenticates (bad UX for logout)
- * - signOutComplete() ensures full SSO termination
+ * ## Why JTI Blacklisting?
+ * - JWTs are stateless - Keycloak can't invalidate issued tokens
+ * - Without blacklisting, token remains valid until expiry
+ * - Blacklisting ensures immediate token invalidation
  *
  * @example
  * ```tsx
  * // In a logout button
- * <Button onClick={signOutComplete}>Sign Out</Button>
+ * <Button onClick={signOut}>Sign Out</Button>
  * ```
  *
  * @used-by
@@ -296,26 +284,32 @@ export const signOut = authClient.signOut;
  * - Sidebar logout menu item
  * - Session expired handler
  */
-export async function signOutComplete() {
+export async function signOut() {
   try {
-    // Step 1: Sign out from Better Auth
-    // Clears session from MongoDB and Redis, removes cookies
-    await authClient.signOut();
+    // Step 1: Call logout endpoint (blacklists JTI + clears session)
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+    });
 
-    // Step 2: Build Keycloak end_session URL
-    // https://www.keycloak.org/docs/latest/securing_apps/#logout
-    const logoutUrl = new URL(
-      `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/logout`
-    );
-    logoutUrl.searchParams.set('client_id', KEYCLOAK_CLIENT_ID);
-    logoutUrl.searchParams.set('post_logout_redirect_uri', `${APP_URL}/login`);
+    const data = await response.json();
 
-    // Step 3: Redirect to Keycloak logout
-    // This terminates the SSO session and redirects back to /login
-    window.location.href = logoutUrl.toString();
+    // Step 2: Redirect to Keycloak logout URL
+    // Server returns the URL with proper client_id and redirect_uri
+    if (data.logoutUrl) {
+      window.location.href = data.logoutUrl;
+    } else {
+      // Fallback: build URL client-side
+      const logoutUrl = new URL(
+        `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/logout`
+      );
+      logoutUrl.searchParams.set('client_id', KEYCLOAK_CLIENT_ID);
+      logoutUrl.searchParams.set('post_logout_redirect_uri', `${APP_URL}/login`);
+      window.location.href = logoutUrl.toString();
+    }
   } catch (error) {
-    console.error('[Auth] Complete logout failed:', error);
-    // Fallback: redirect to login even if signOut failed
+    console.error('[Auth] Logout failed:', error);
+    // Fallback: redirect to login even if logout failed
     window.location.href = '/login';
   }
 }

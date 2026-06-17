@@ -51,7 +51,7 @@ interface BetterAuthSession {
 // =============================================================================
 
 /**
- * POST /api/auth/logout/complete
+ * POST /api/auth/logout
  *
  * Performs complete logout with token blacklisting.
  *
@@ -193,13 +193,13 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET /api/auth/logout/complete
+ * GET /api/auth/logout
  *
  * Health check / info endpoint
  */
 export async function GET() {
   return NextResponse.json({
-    endpoint: 'complete-logout',
+    endpoint: 'logout',
     description: 'Enhanced logout with token blacklisting and session revocation',
     method: 'POST',
     securityFeatures: [

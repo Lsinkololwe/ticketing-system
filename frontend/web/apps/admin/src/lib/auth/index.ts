@@ -2,18 +2,18 @@
  * Admin App - Better Auth Configuration
  *
  * Uses shared Better Auth configuration from @pml.tickets/shared.
- * This file provides the auth instance and supporting services for this app.
+ * Follows Better Auth's recommended synchronous export pattern.
  *
- * ## Architecture Overview
+ * ## Usage
  *
- * ```
- * getBetterAuth(config)
- *     │
- *     ├── auth: BetterAuthInstance (main auth object)
- *     ├── jtiBlacklist: JtiBlacklistService (token blacklist)
- *     ├── handleBackchannelLogout: Function (Keycloak logout handler)
- *     ├── mongoDb: Db (MongoDB database)
- *     └── redis: Redis | null (Redis client)
+ * ```typescript
+ * // In Server Components
+ * import { auth } from '@/lib/auth';
+ * const session = await auth.api.getSession({ headers: await headers() });
+ *
+ * // For type inference
+ * type Session = typeof auth.$Infer.Session;
+ * type User = typeof auth.$Infer.Session.user;
  * ```
  *
  * ## Backchannel Logout Support
@@ -24,168 +24,75 @@
  * - Configure Keycloak: Clients → admin → Backchannel Logout URL:
  *   `https://your-domain.com/api/auth/backchannel-logout`
  *
- * @see https://better-auth.com/docs/reference/options
+ * @see https://better-auth.com/docs/integrations/next
  * @see https://openid.net/specs/openid-connect-backchannel-1_0.html
  */
 
-// Server-only imports - uses MongoDB and Redis
 import {
-  getBetterAuth,
-  type BetterAuthResult,
-  type BetterAuthInstance,
+  createAuth,
+  type AuthServices,
 } from '@pml.tickets/shared/auth/better-auth/server';
 
 // =============================================================================
-// AUTH CONFIGURATION
+// AUTH INSTANCE (Synchronous - Industry Standard Pattern)
 // =============================================================================
 
 /**
- * Admin app auth configuration
+ * Create auth services with lazy database connections
  *
- * @used-by getBetterAuth() - Creates auth instance with these settings
+ * This follows the Better Auth recommended pattern:
+ * - Synchronous export (no Promise wrapper)
+ * - Global singleton (survives hot reload)
+ * - Lazy connections (established on first query)
  */
-const AUTH_CONFIG = {
-  appId: 'admin' as const,
+const services: AuthServices = createAuth({
+  appId: 'admin',
   cookiePrefix: 'pml_admin',
   redisKeyPrefix: 'pml-admin:',
   enableRedis: process.env.ENABLE_REDIS_SECONDARY_STORAGE === 'true',
-  debug: process.env.NODE_ENV === 'development',
-};
-
-// =============================================================================
-// AUTH RESULT (Complete)
-// =============================================================================
-
-/**
- * Complete Better Auth result promise
- *
- * Includes auth instance, JTI blacklist, and backchannel logout handler.
- *
- * @used-by
- * - `/api/auth/backchannel-logout` route handler
- * - Services that need direct access to blacklist
- */
-export const authResultPromise: Promise<BetterAuthResult> = getBetterAuth(AUTH_CONFIG);
-
-// =============================================================================
-// AUTH INSTANCE (Convenience)
-// =============================================================================
-
-/**
- * Better Auth instance promise (just the auth object)
- *
- * Use this for standard auth operations like session management.
- *
- * @used-by
- * - `/api/auth/[...all]/route.ts` - Route handler
- * - Server Components that need session data
- */
-export const authPromise: Promise<BetterAuthInstance> = authResultPromise.then(r => r.auth);
-
-/**
- * Better Auth instance (async-aware proxy)
- *
- * This proxy automatically awaits the auth instance for each method call.
- * For performance-critical code, use `authPromise` directly.
- *
- * @example
- * ```typescript
- * // In a Server Component
- * const session = await auth.api.getSession({ headers: await headers() });
- * ```
- *
- * @used-by
- * - Server Components for session access
- * - API routes for auth operations
- */
-export const auth = new Proxy({} as BetterAuthInstance, {
-  get(_, prop) {
-    return async (...args: unknown[]) => {
-      const authInstance = await authPromise;
-      const value = (authInstance as Record<string, unknown>)[prop as string];
-      if (typeof value === 'function') {
-        return (value as (...args: unknown[]) => unknown).apply(authInstance, args);
-      }
-      return value;
-    };
-  },
 });
 
 // =============================================================================
-// BACKCHANNEL LOGOUT HANDLER
+// EXPORTS
 // =============================================================================
 
 /**
- * Get the backchannel logout handler
- *
- * Returns null if Redis/JTI blacklist is not enabled.
- *
- * @used-by `/api/auth/backchannel-logout/route.ts`
+ * Better Auth instance
  *
  * @example
  * ```typescript
- * const handler = await getBackchannelLogoutHandler();
- * if (handler) {
- *   const result = await handler(logoutToken);
- * }
+ * // Get session in Server Component
+ * const session = await auth.api.getSession({ headers: await headers() });
+ *
+ * // Sign out
+ * await auth.api.signOut({ headers: request.headers });
  * ```
  */
-export async function getBackchannelLogoutHandler() {
-  const result = await authResultPromise;
-  return result.handleBackchannelLogout;
-}
+export const auth = services.auth;
 
-/**
- * Get the JTI blacklist service
- *
- * Returns null if Redis is not enabled.
- *
- * @used-by
- * - Admin tools for viewing/managing blacklist
- * - Debugging token revocation issues
- */
-export async function getJtiBlacklist() {
-  const result = await authResultPromise;
-  return result.jtiBlacklist;
-}
+/** MongoDB database instance */
+export const db = services.db;
 
-// =============================================================================
-// UTILITY FUNCTIONS
-// =============================================================================
+/** Redis client (null if not enabled) */
+export const redis = services.redis;
 
-/**
- * Check if auth is ready (initialized without errors)
- *
- * @used-by Health check endpoints
- */
-export async function isAuthReady(): Promise<boolean> {
-  try {
-    await authPromise;
-    return true;
-  } catch {
-    return false;
-  }
-}
+/** JTI blacklist service for token revocation (null if Redis not enabled) */
+export const jtiBlacklist = services.jtiBlacklist;
 
-/**
- * Get the auth initialization error, if any
- *
- * @used-by Debugging and error reporting
- */
-export async function getAuthError(): Promise<Error | null> {
-  try {
-    await authPromise;
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error : new Error(String(error));
-  }
-}
+/** Backchannel logout handler for Keycloak (null if Redis not enabled) */
+export const handleBackchannelLogout = services.handleBackchannelLogout;
+
+/** Environment configuration (Keycloak URLs, etc.) */
+export const env = services.env;
 
 // =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
-// Client-safe types (can be used anywhere)
-export type { BetterAuthInstance as Auth } from '@pml.tickets/shared/auth/better-auth/server';
-export type { SessionResponse as Session, AuthUser } from '@pml.tickets/shared/auth/better-auth';
-export type { BetterAuthResult } from '@pml.tickets/shared/auth/better-auth/server';
+export type { AuthServices };
+
+/** Session type - inferred from auth instance */
+export type Session = typeof auth.$Infer.Session;
+
+/** User type - inferred from auth instance */
+export type User = typeof auth.$Infer.Session.user;

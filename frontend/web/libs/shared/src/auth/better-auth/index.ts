@@ -25,6 +25,24 @@
  * type User = typeof auth.$Infer.Session.user;
  * ```
  *
+ * ## Testing
+ *
+ * ```typescript
+ * import { AuthContainer } from '@pml.tickets/shared/auth/better-auth/server';
+ * import {
+ *   TestEnvProvider,
+ *   InMemoryDatabaseProvider,
+ *   InMemoryRedisProvider,
+ * } from '@pml.tickets/shared/auth/better-auth/testing';
+ *
+ * const container = new AuthContainer(
+ *   { appId: 'test', cookiePrefix: 'test_' },
+ *   new TestEnvProvider(),
+ *   new InMemoryDatabaseProvider(),
+ *   new InMemoryRedisProvider(),
+ * );
+ * ```
+ *
  * ## Client Components (Official Better Auth Pattern)
  *
  * ```typescript
@@ -39,6 +57,7 @@
  * ```
  *
  * @see https://better-auth.com/docs/integrations/next
+ * @module libs/shared/src/auth/better-auth
  */
 
 // =============================================================================
@@ -52,3 +71,13 @@ export type {
 } from './types';
 
 export { getKeycloakEndpoints } from './types';
+
+// =============================================================================
+// INTERFACE TYPES (Client-Safe)
+// =============================================================================
+
+export type {
+  // These are type-only exports, safe for client
+  BlacklistReason,
+  BackchannelLogoutErrorCode,
+} from './interfaces';

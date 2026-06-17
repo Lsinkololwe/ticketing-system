@@ -1,17 +1,19 @@
 /**
  * Token Service - Keycloak Token Management
  *
- * Handles Keycloak access token retrieval, token exchange, validation, and logout URL construction.
+ * Handles Keycloak access token retrieval using Better Auth's native API.
+ * Uses auth.api.getAccessToken() which automatically handles token refresh.
  *
  * @module TokenService
  */
 
 import 'server-only';
 
+import { headers } from 'next/headers';
+import { auth } from '../index';
 import type {
   ITokenService,
   IAuthConfig,
-  ISessionService,
   KeycloakTokenResponse,
 } from '../interfaces';
 
@@ -22,12 +24,15 @@ import type {
 /**
  * Token management service
  *
- * Provides comprehensive Keycloak token operations including exchange,
- * validation, decoding, and revocation.
+ * Provides Keycloak token operations using Better Auth's native API.
+ * The native auth.api.getAccessToken() handles:
+ * - Token retrieval from accounts collection
+ * - Automatic token refresh when expired
+ * - Provider-specific token management
  *
  * @example
  * ```typescript
- * const tokenService = new TokenService(sessionService, config);
+ * const tokenService = new TokenService(config);
  * const token = await tokenService.getKeycloakAccessToken();
  * ```
  */
@@ -35,19 +40,17 @@ export class TokenService implements ITokenService {
   /**
    * Creates a new TokenService instance
    *
-   * @param sessionService - Session service for authentication
    * @param config - Auth configuration for Keycloak integration
    */
-  constructor(
-    private readonly sessionService: ISessionService,
-    private readonly config: IAuthConfig
-  ) {}
+  constructor(private readonly config: IAuthConfig) {}
 
   /**
-   * Get Keycloak access token from session
+   * Get Keycloak access token using Better Auth native API
    *
-   * Retrieves the access token from Better Auth session for making
-   * authenticated requests to backend services.
+   * Uses auth.api.getAccessToken() which:
+   * - Retrieves token from the accounts collection (not session)
+   * - Automatically refreshes expired tokens
+   * - Returns null if no linked Keycloak account
    *
    * @returns Access token or null if not available
    *
@@ -55,32 +58,44 @@ export class TokenService implements ITokenService {
    * ```typescript
    * const token = await tokenService.getKeycloakAccessToken();
    * if (token) {
-   *   // Use token for GraphQL request
    *   const response = await fetch(GRAPHQL_ENDPOINT, {
-   *     headers: {
-   *       Authorization: `Bearer ${token}`,
-   *     },
+   *     headers: { Authorization: `Bearer ${token}` },
    *   });
    * }
    * ```
    */
   async getKeycloakAccessToken(): Promise<string | null> {
     try {
-      const session = await this.sessionService.getSession();
-      if (!session) {
+      const requestHeaders = await headers();
+
+      // First verify we have a valid session
+      const session = await auth.api.getSession({
+        headers: requestHeaders,
+      });
+
+      if (!session?.user) {
         return null;
       }
 
-      // Extract access token from Better Auth session
-      // The actual structure depends on how Better Auth stores Keycloak tokens
-      const accessToken = (session as any).user?.accessToken;
+      // Use Better Auth's native API to get the access token
+      // This retrieves from accounts collection and handles refresh automatically
+      const tokenResponse = await auth.api.getAccessToken({
+        body: { providerId: 'keycloak' },
+        headers: requestHeaders,
+      });
 
-      return accessToken ?? null;
+      return tokenResponse?.accessToken ?? null;
     } catch (error) {
       console.error(
         '[TokenService] Failed to get Keycloak access token:',
         error
       );
+
+      // Handle "no linked account" gracefully
+      if (error instanceof Error && error.message.includes('No linked account')) {
+        return null;
+      }
+
       return null;
     }
   }

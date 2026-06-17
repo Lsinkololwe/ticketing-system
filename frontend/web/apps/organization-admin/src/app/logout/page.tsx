@@ -18,7 +18,7 @@
 
 import { useEffect, useState } from 'react';
 import { Box, Text } from '@radix-ui/themes';
-import { signOutComplete } from '@/lib/auth/client';
+import { signOut } from '@/lib/auth/client';
 
 /**
  * Clear all session cookies directly
@@ -55,13 +55,14 @@ export default function LogoutPage() {
 
         setStatus('Logging out from Keycloak...');
 
-        // 2. Call signOutComplete which:
-        //    - Calls Better Auth signOut (may fail if session already expired - that's OK)
+        // 2. Call signOut which:
+        //    - Blacklists the JTI in Redis (defense-in-depth)
+        //    - Clears Better Auth session (may fail if session already expired - that's OK)
         //    - Redirects to Keycloak end_session_endpoint
         //    - Keycloak redirects back to /login
-        await signOutComplete();
+        await signOut();
 
-        // Note: signOutComplete does a window.location redirect to Keycloak,
+        // Note: signOut does a window.location redirect to Keycloak,
         // so the code below only runs if there's an error
       } catch (error) {
         console.error('[Logout] Error during logout:', error);

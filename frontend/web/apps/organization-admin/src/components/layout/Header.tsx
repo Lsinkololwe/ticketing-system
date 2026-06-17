@@ -35,7 +35,7 @@ import {
   Bell,
 } from 'iconoir-react';
 import Link from 'next/link';
-import { useSession, signOutComplete } from '@/lib/auth/client';
+import { useSession, signOut } from '@/lib/auth/client';
 import {
   useMyOrganization,
   canEditOrganization,
@@ -59,7 +59,7 @@ export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
   const handleLogout = useCallback(async () => {
     try {
       setIsLoggingOut(true);
-      await signOutComplete();
+      await signOut();
     } catch (error) {
       console.error('Logout failed:', error);
       setIsLoggingOut(false);

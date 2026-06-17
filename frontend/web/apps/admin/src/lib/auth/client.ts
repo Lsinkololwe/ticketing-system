@@ -12,7 +12,7 @@
  *
  * - **Login Page** (`/login/page.tsx`): Uses `authClient.signIn.oauth2()` for Keycloak login
  * - **Header Component** (`/components/layout/Header.tsx`): Uses `useSession` hook for user display
- * - **Sidebar** (`/components/layout/Sidebar.tsx`): Uses `signOutComplete()` for logout
+ * - **Sidebar** (`/components/layout/Sidebar.tsx`): Uses `signOut()` for logout
  * - **Protected Components**: Use `useSession` hook for auth state
  *
  * ## Official Better Auth Patterns
@@ -52,19 +52,19 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3030';
 
 /**
  * Keycloak server URL
- * @used-by signOutComplete() - Builds Keycloak logout redirect URL
+ * @used-by signOut() - Builds Keycloak logout redirect URL
  */
 const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8084';
 
 /**
  * Keycloak realm name
- * @used-by signOutComplete() - Part of Keycloak logout URL
+ * @used-by signOut() - Part of Keycloak logout URL
  */
 const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'myticketzm';
 
 /**
  * Keycloak client ID for this application
- * @used-by signOutComplete() - Required for Keycloak logout
+ * @used-by signOut() - Required for Keycloak logout
  */
 const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'myticketzm-admin';
 
@@ -191,41 +191,31 @@ export function signInWithKeycloak(callbackURL = '/dashboard') {
   });
 }
 
-/**
- * Basic sign out (Better Auth only)
- *
- * Clears the Better Auth session but does NOT terminate Keycloak SSO.
- * For complete logout, use signOutComplete() instead.
- *
- * @used-by Internal use only - prefer signOutComplete() for user-facing logout
- */
-export const signOut = authClient.signOut;
-
 // =============================================================================
-// KEYCLOAK SSO LOGOUT (Complete)
+// SIGN OUT WITH JTI BLACKLISTING
 // =============================================================================
 
 /**
- * Complete sign out with Keycloak SSO termination
+ * Sign out with JTI blacklisting and Keycloak SSO termination
  *
  * This is the RECOMMENDED logout method for production.
  *
  * ## What it does:
- * 1. Calls Better Auth signOut to clear session in MongoDB/Redis
- * 2. Redirects to Keycloak end_session_endpoint
- * 3. Keycloak terminates the SSO session
- * 4. Keycloak redirects back to /login
+ * 1. Calls /api/auth/logout/complete to blacklist JTI in Redis (defense-in-depth)
+ * 2. Server clears Better Auth session in MongoDB/Redis
+ * 3. Redirects to Keycloak end_session_endpoint
+ * 4. Keycloak terminates the SSO session
+ * 5. Keycloak redirects back to /login
  *
- * ## Why use this instead of signOut():
- * - signOut() only clears Better Auth session
- * - User stays logged into Keycloak SSO
- * - Next login attempt auto-authenticates (bad UX for logout)
- * - signOutComplete() ensures full SSO termination
+ * ## Why JTI Blacklisting?
+ * - JWTs are stateless - Keycloak can't invalidate issued tokens
+ * - Without blacklisting, token remains valid until expiry
+ * - Blacklisting ensures immediate token invalidation
  *
  * @example
  * ```tsx
  * // In a logout button
- * <Button onClick={signOutComplete}>Sign Out</Button>
+ * <Button onClick={signOut}>Sign Out</Button>
  * ```
  *
  * @used-by
@@ -233,11 +223,13 @@ export const signOut = authClient.signOut;
  * - Sidebar logout menu item
  * - Session expired handler
  */
-export async function signOutComplete() {
+export async function signOut() {
   try {
-    // Step 1: Sign out from Better Auth
-    // Clears session from MongoDB and Redis, removes cookies
-    await authClient.signOut();
+    // Step 1: Call logout endpoint (blacklists JTI + clears session)
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+    });
 
     // Step 2: Build Keycloak end_session URL
     // https://www.keycloak.org/docs/latest/securing_apps/#logout
@@ -251,8 +243,8 @@ export async function signOutComplete() {
     // This terminates the SSO session and redirects back to /login
     window.location.href = logoutUrl.toString();
   } catch (error) {
-    console.error('[Auth] Complete logout failed:', error);
-    // Fallback: redirect to login even if signOut failed
+    console.error('[Auth] Logout failed:', error);
+    // Fallback: redirect to login even if logout failed
     window.location.href = '/login';
   }
 }
