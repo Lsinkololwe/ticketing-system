@@ -1,5 +1,6 @@
 package com.pml.identity.infrastructure.messaging;
 
+import com.pml.shared.util.PhoneNumbers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -234,15 +235,11 @@ public class MessagingService {
      * Normalize phone number to E.164 format.
      */
     private String normalizePhoneNumber(String phoneNumber) {
-        String cleaned = phoneNumber.replaceAll("[^0-9+]", "");
-        if (!cleaned.startsWith("+")) {
-            if (cleaned.length() <= 10) {
-                cleaned = "+260" + cleaned;
-            } else {
-                cleaned = "+" + cleaned;
-            }
-        }
-        return cleaned;
+        // Canonical E.164 normalization (Google libphonenumber) so OTP/notification
+        // delivery always targets a real MSISDN. Falls back to a digits-only form if
+        // the number cannot be validated.
+        String e164 = PhoneNumbers.toE164(phoneNumber);
+        return e164 != null ? e164 : phoneNumber.replaceAll("[^0-9+]", "");
     }
 
     /**

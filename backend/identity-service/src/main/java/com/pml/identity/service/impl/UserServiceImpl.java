@@ -7,6 +7,7 @@ import com.pml.identity.repository.UserRepository;
 import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.service.UserService;
 import com.pml.shared.constants.UserType;
+import com.pml.shared.util.PhoneNumbers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.stream.function.StreamBridge;
@@ -151,7 +152,9 @@ public class UserServiceImpl implements UserService {
                 .flatMap(existingUser -> {
                     existingUser.setFirstName(user.getFirstName());
                     existingUser.setLastName(user.getLastName());
-                    existingUser.setPhoneNumber(user.getPhoneNumber());
+                    String e164 = PhoneNumbers.toE164(user.getPhoneNumber());
+                    existingUser.setPhoneNumber(e164);
+                    existingUser.setPhoneCountry(e164 != null ? PhoneNumbers.regionFor(e164) : null);
                     // Update roles if provided (multi-role support)
                     if (user.getRoles() != null && !user.getRoles().isEmpty()) {
                         existingUser.setRoles(user.getRoles());
@@ -181,7 +184,9 @@ public class UserServiceImpl implements UserService {
                         existingUser.setLastName(profileData.getLastName());
                     }
                     if (profileData.getPhoneNumber() != null) {
-                        existingUser.setPhoneNumber(profileData.getPhoneNumber());
+                        String e164 = PhoneNumbers.toE164(profileData.getPhoneNumber());
+                        existingUser.setPhoneNumber(e164);
+                        existingUser.setPhoneCountry(e164 != null ? PhoneNumbers.regionFor(e164) : null);
                     }
                     existingUser.setUpdatedAt(Instant.now());
                     return userRepository.save(existingUser)

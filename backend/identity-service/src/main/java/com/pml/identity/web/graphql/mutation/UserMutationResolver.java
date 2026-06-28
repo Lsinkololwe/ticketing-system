@@ -152,9 +152,6 @@ public class UserMutationResolver {
                                     .firstName(input.get("firstName") != null ? (String) input.get("firstName") : null)
                                     .lastName(input.get("lastName") != null ? (String) input.get("lastName") : null)
                                     .phoneNumber(input.get("phoneNumber") != null ? (String) input.get("phoneNumber") : null)
-                                    .bio(input.get("bio") != null ? (String) input.get("bio") : null)
-                                    .locale(input.get("locale") != null ? (String) input.get("locale") : null)
-                                    .timezone(input.get("timezone") != null ? (String) input.get("timezone") : null)
                                     .build();
                             return userService.updateProfile(user.getId(), profileUpdate);
                         })
@@ -276,15 +273,6 @@ public class UserMutationResolver {
                     }
                     if (input.get("phoneNumber") != null) {
                         existingUser.setPhoneNumber((String) input.get("phoneNumber"));
-                    }
-                    if (input.get("bio") != null) {
-                        existingUser.setBio((String) input.get("bio"));
-                    }
-                    if (input.get("locale") != null) {
-                        existingUser.setLocale((String) input.get("locale"));
-                    }
-                    if (input.get("timezone") != null) {
-                        existingUser.setTimezone((String) input.get("timezone"));
                     }
                     return userService.updateUser(id, existingUser);
                 })

@@ -80,6 +80,9 @@ extend schema @link(
 scalar DateTime
 scalar BigDecimal
 scalar JSON
+# Phone number as canonical E.164 (e.g. +260971234567). Normalized + validated
+# (Google libphonenumber) on input; serialized as E.164 on output.
+scalar PhoneNumber
 
 # ============================================================================
 # SECTION 3: ENUMS
@@ -444,7 +447,7 @@ type User @key(fields: "id", resolvable: false) {
     # Types must match identity-service: fullName!, email!, phoneNumber (nullable)
     fullName: String! @external
     email: String! @external
-    phoneNumber: String @external
+    phoneNumber: PhoneNumber @external
 }
 
 # Event stub - owned by Catalog Service
@@ -2049,7 +2052,7 @@ input InitiatePaymentAttemptInput @tag(name: "internal") {
     "Mobile money provider (e.g., MTN_MOMO_ZMB, AIRTEL_OAPI_ZMB)"
     provider: String!
     "Payer phone number in E.164 format (e.g., +260763456789)"
-    payerPhone: String!
+    payerPhone: PhoneNumber!
     "Optional correlation ID for tracing"
     correlationId: String
     "Client IP address for security"

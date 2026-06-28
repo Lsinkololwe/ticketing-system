@@ -1,0 +1,1156 @@
+{
+  "graph": {
+    "nodes": {
+      "eslint-plugin-radix-compliance": {
+        "name": "eslint-plugin-radix-compliance",
+        "type": "lib",
+        "data": {
+          "root": "tools/eslint-plugin-radix-compliance",
+          "targets": {
+            "lint": {
+              "cache": true,
+              "options": {
+                "cwd": "tools/eslint-plugin-radix-compliance",
+                "command": "eslint ."
+              },
+              "inputs": [
+                "default",
+                "^default",
+                "{workspaceRoot}/eslint.config.mjs",
+                "{workspaceRoot}/tools/eslint-rules/**/*",
+                {
+                  "externalDependencies": [
+                    "eslint"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{options.outputFile}"
+              ],
+              "metadata": {
+                "technologies": [
+                  "eslint"
+                ],
+                "description": "Runs ESLint on project",
+                "help": {
+                  "command": "pnpm exec eslint --help",
+                  "example": {
+                    "options": {
+                      "max-warnings": 0
+                    }
+                  }
+                }
+              },
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            }
+          },
+          "name": "eslint-plugin-radix-compliance",
+          "implicitDependencies": [],
+          "tags": []
+        }
+      },
+      "@pml.tickets/organization-admin": {
+        "name": "@pml.tickets/organization-admin",
+        "type": "app",
+        "data": {
+          "root": "apps/organization-admin",
+          "targets": {
+            "build": {
+              "executor": "@nx/next:build",
+              "outputs": [
+                "{options.outputPath}"
+              ],
+              "defaultConfiguration": "production",
+              "options": {
+                "outputPath": "dist/apps/organization-admin"
+              },
+              "configurations": {
+                "development": {
+                  "outputPath": "apps/organization-admin"
+                },
+                "production": {}
+              },
+              "parallelism": true
+            },
+            "dev": {
+              "executor": "@nx/next:server",
+              "defaultConfiguration": "development",
+              "options": {
+                "buildTarget": "@pml.tickets/organization-admin:build",
+                "dev": true,
+                "port": 3003
+              },
+              "configurations": {
+                "development": {
+                  "buildTarget": "@pml.tickets/organization-admin:build:development",
+                  "dev": true,
+                  "port": 3003
+                },
+                "production": {
+                  "buildTarget": "@pml.tickets/organization-admin:build:production",
+                  "dev": false
+                }
+              },
+              "parallelism": true,
+              "continuous": true
+            },
+            "start": {
+              "executor": "@nx/next:server",
+              "defaultConfiguration": "production",
+              "options": {
+                "buildTarget": "@pml.tickets/organization-admin:build",
+                "port": 3003
+              },
+              "configurations": {
+                "development": {
+                  "buildTarget": "@pml.tickets/organization-admin:build:development"
+                },
+                "production": {
+                  "buildTarget": "@pml.tickets/organization-admin:build:production"
+                }
+              },
+              "parallelism": true,
+              "continuous": true
+            },
+            "serve-static": {
+              "continuous": true,
+              "options": {
+                "cwd": "apps/organization-admin",
+                "command": "next start"
+              },
+              "dependsOn": [
+                "build"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "build-deps": {
+              "dependsOn": [
+                "^build"
+              ],
+              "configurations": {},
+              "options": {},
+              "parallelism": true,
+              "executor": "nx:noop"
+            },
+            "watch-deps": {
+              "continuous": true,
+              "dependsOn": [
+                "build-deps"
+              ],
+              "executor": "nx:run-commands",
+              "options": {
+                "command": "pnpm exec nx watch --projects @pml.tickets/organization-admin --includeDependentProjects -- pnpm exec nx build-deps @pml.tickets/organization-admin"
+              },
+              "configurations": {},
+              "parallelism": true
+            },
+            "lint": {
+              "cache": true,
+              "options": {
+                "cwd": "apps/organization-admin",
+                "command": "eslint ."
+              },
+              "inputs": [
+                "default",
+                "^default",
+                "{workspaceRoot}/eslint.config.mjs",
+                "{workspaceRoot}/tools/eslint-rules/**/*",
+                {
+                  "externalDependencies": [
+                    "eslint"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{options.outputFile}"
+              ],
+              "metadata": {
+                "technologies": [
+                  "eslint"
+                ],
+                "description": "Runs ESLint on project",
+                "help": {
+                  "command": "pnpm exec eslint --help",
+                  "example": {
+                    "options": {
+                      "max-warnings": 0
+                    }
+                  }
+                }
+              },
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "e2e": {
+              "options": {
+                "cwd": "apps/organization-admin",
+                "command": "playwright test"
+              },
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Runs Playwright Tests",
+                "help": {
+                  "command": "pnpm exec playwright test --help",
+                  "example": {
+                    "options": {
+                      "workers": 1
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                {
+                  "projects": [
+                    "organization-admin"
+                  ],
+                  "target": "dev"
+                }
+              ],
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/test-results",
+                "{projectRoot}/playwright-report",
+                "{projectRoot}/test-results/results.json",
+                "{projectRoot}/test-results/junit.xml"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "e2e-ci--e2e/compliance/radix-components.spec.ts": {
+              "options": {
+                "cwd": "apps/organization-admin",
+                "env": {
+                  "PLAYWRIGHT_HTML_OUTPUT_DIR": "playwright-report/e2e-compliance-radix-components-spec-ts",
+                  "PLAYWRIGHT_HTML_REPORT": "playwright-report/e2e-compliance-radix-components-spec-ts",
+                  "PLAYWRIGHT_JSON_OUTPUT_FILE": "test-results/e2e-compliance-radix-components-spec-ts/results.json",
+                  "PLAYWRIGHT_JUNIT_OUTPUT_FILE": "test-results/e2e-compliance-radix-components-spec-ts/junit.xml"
+                },
+                "command": "playwright test e2e/compliance/radix-components.spec.ts --output=test-results/e2e-compliance-radix-components-spec-ts"
+              },
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Runs Playwright Tests in e2e/compliance/radix-components.spec.ts in CI",
+                "help": {
+                  "command": "pnpm exec playwright test --help",
+                  "example": {
+                    "options": {
+                      "workers": 1
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                {
+                  "projects": [
+                    "organization-admin"
+                  ],
+                  "target": "dev"
+                }
+              ],
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/test-results/e2e-compliance-radix-components-spec-ts",
+                "{projectRoot}/playwright-report/e2e-compliance-radix-components-spec-ts",
+                "{projectRoot}/test-results/e2e-compliance-radix-components-spec-ts/results.json",
+                "{projectRoot}/test-results/e2e-compliance-radix-components-spec-ts/junit.xml"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "e2e-ci--e2e/compliance/responsive-design.spec.ts": {
+              "options": {
+                "cwd": "apps/organization-admin",
+                "env": {
+                  "PLAYWRIGHT_HTML_OUTPUT_DIR": "playwright-report/e2e-compliance-responsive-design-spec-ts",
+                  "PLAYWRIGHT_HTML_REPORT": "playwright-report/e2e-compliance-responsive-design-spec-ts",
+                  "PLAYWRIGHT_JSON_OUTPUT_FILE": "test-results/e2e-compliance-responsive-design-spec-ts/results.json",
+                  "PLAYWRIGHT_JUNIT_OUTPUT_FILE": "test-results/e2e-compliance-responsive-design-spec-ts/junit.xml"
+                },
+                "command": "playwright test e2e/compliance/responsive-design.spec.ts --output=test-results/e2e-compliance-responsive-design-spec-ts"
+              },
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Runs Playwright Tests in e2e/compliance/responsive-design.spec.ts in CI",
+                "help": {
+                  "command": "pnpm exec playwright test --help",
+                  "example": {
+                    "options": {
+                      "workers": 1
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                {
+                  "projects": [
+                    "organization-admin"
+                  ],
+                  "target": "dev"
+                }
+              ],
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/test-results/e2e-compliance-responsive-design-spec-ts",
+                "{projectRoot}/playwright-report/e2e-compliance-responsive-design-spec-ts",
+                "{projectRoot}/test-results/e2e-compliance-responsive-design-spec-ts/results.json",
+                "{projectRoot}/test-results/e2e-compliance-responsive-design-spec-ts/junit.xml"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "e2e-ci--e2e/compliance/theme-consistency.spec.ts": {
+              "options": {
+                "cwd": "apps/organization-admin",
+                "env": {
+                  "PLAYWRIGHT_HTML_OUTPUT_DIR": "playwright-report/e2e-compliance-theme-consistency-spec-ts",
+                  "PLAYWRIGHT_HTML_REPORT": "playwright-report/e2e-compliance-theme-consistency-spec-ts",
+                  "PLAYWRIGHT_JSON_OUTPUT_FILE": "test-results/e2e-compliance-theme-consistency-spec-ts/results.json",
+                  "PLAYWRIGHT_JUNIT_OUTPUT_FILE": "test-results/e2e-compliance-theme-consistency-spec-ts/junit.xml"
+                },
+                "command": "playwright test e2e/compliance/theme-consistency.spec.ts --output=test-results/e2e-compliance-theme-consistency-spec-ts"
+              },
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Runs Playwright Tests in e2e/compliance/theme-consistency.spec.ts in CI",
+                "help": {
+                  "command": "pnpm exec playwright test --help",
+                  "example": {
+                    "options": {
+                      "workers": 1
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                {
+                  "projects": [
+                    "organization-admin"
+                  ],
+                  "target": "dev"
+                }
+              ],
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/test-results/e2e-compliance-theme-consistency-spec-ts",
+                "{projectRoot}/playwright-report/e2e-compliance-theme-consistency-spec-ts",
+                "{projectRoot}/test-results/e2e-compliance-theme-consistency-spec-ts/results.json",
+                "{projectRoot}/test-results/e2e-compliance-theme-consistency-spec-ts/junit.xml"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "e2e-ci--e2e/onboarding-flow.spec.ts": {
+              "options": {
+                "cwd": "apps/organization-admin",
+                "env": {
+                  "PLAYWRIGHT_HTML_OUTPUT_DIR": "playwright-report/e2e-onboarding-flow-spec-ts",
+                  "PLAYWRIGHT_HTML_REPORT": "playwright-report/e2e-onboarding-flow-spec-ts",
+                  "PLAYWRIGHT_JSON_OUTPUT_FILE": "test-results/e2e-onboarding-flow-spec-ts/results.json",
+                  "PLAYWRIGHT_JUNIT_OUTPUT_FILE": "test-results/e2e-onboarding-flow-spec-ts/junit.xml"
+                },
+                "command": "playwright test e2e/onboarding-flow.spec.ts --output=test-results/e2e-onboarding-flow-spec-ts"
+              },
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Runs Playwright Tests in e2e/onboarding-flow.spec.ts in CI",
+                "help": {
+                  "command": "pnpm exec playwright test --help",
+                  "example": {
+                    "options": {
+                      "workers": 1
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                {
+                  "projects": [
+                    "organization-admin"
+                  ],
+                  "target": "dev"
+                }
+              ],
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/test-results/e2e-onboarding-flow-spec-ts",
+                "{projectRoot}/playwright-report/e2e-onboarding-flow-spec-ts",
+                "{projectRoot}/test-results/e2e-onboarding-flow-spec-ts/results.json",
+                "{projectRoot}/test-results/e2e-onboarding-flow-spec-ts/junit.xml"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "e2e-ci--e2e/security-edge-cases.spec.ts": {
+              "options": {
+                "cwd": "apps/organization-admin",
+                "env": {
+                  "PLAYWRIGHT_HTML_OUTPUT_DIR": "playwright-report/e2e-security-edge-cases-spec-ts",
+                  "PLAYWRIGHT_HTML_REPORT": "playwright-report/e2e-security-edge-cases-spec-ts",
+                  "PLAYWRIGHT_JSON_OUTPUT_FILE": "test-results/e2e-security-edge-cases-spec-ts/results.json",
+                  "PLAYWRIGHT_JUNIT_OUTPUT_FILE": "test-results/e2e-security-edge-cases-spec-ts/junit.xml"
+                },
+                "command": "playwright test e2e/security-edge-cases.spec.ts --output=test-results/e2e-security-edge-cases-spec-ts"
+              },
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Runs Playwright Tests in e2e/security-edge-cases.spec.ts in CI",
+                "help": {
+                  "command": "pnpm exec playwright test --help",
+                  "example": {
+                    "options": {
+                      "workers": 1
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                {
+                  "projects": [
+                    "organization-admin"
+                  ],
+                  "target": "dev"
+                }
+              ],
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/test-results/e2e-security-edge-cases-spec-ts",
+                "{projectRoot}/playwright-report/e2e-security-edge-cases-spec-ts",
+                "{projectRoot}/test-results/e2e-security-edge-cases-spec-ts/results.json",
+                "{projectRoot}/test-results/e2e-security-edge-cases-spec-ts/junit.xml"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "e2e-ci--e2e/welcome-page.spec.ts": {
+              "options": {
+                "cwd": "apps/organization-admin",
+                "env": {
+                  "PLAYWRIGHT_HTML_OUTPUT_DIR": "playwright-report/e2e-welcome-page-spec-ts",
+                  "PLAYWRIGHT_HTML_REPORT": "playwright-report/e2e-welcome-page-spec-ts",
+                  "PLAYWRIGHT_JSON_OUTPUT_FILE": "test-results/e2e-welcome-page-spec-ts/results.json",
+                  "PLAYWRIGHT_JUNIT_OUTPUT_FILE": "test-results/e2e-welcome-page-spec-ts/junit.xml"
+                },
+                "command": "playwright test e2e/welcome-page.spec.ts --output=test-results/e2e-welcome-page-spec-ts"
+              },
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Runs Playwright Tests in e2e/welcome-page.spec.ts in CI",
+                "help": {
+                  "command": "pnpm exec playwright test --help",
+                  "example": {
+                    "options": {
+                      "workers": 1
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                {
+                  "projects": [
+                    "organization-admin"
+                  ],
+                  "target": "dev"
+                }
+              ],
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/test-results/e2e-welcome-page-spec-ts",
+                "{projectRoot}/playwright-report/e2e-welcome-page-spec-ts",
+                "{projectRoot}/test-results/e2e-welcome-page-spec-ts/results.json",
+                "{projectRoot}/test-results/e2e-welcome-page-spec-ts/junit.xml"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "e2e-ci": {
+              "executor": "nx:noop",
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/test-results",
+                "{projectRoot}/playwright-report",
+                "{projectRoot}/test-results/results.json",
+                "{projectRoot}/test-results/junit.xml"
+              ],
+              "dependsOn": [
+                {
+                  "target": "e2e-ci--e2e/compliance/radix-components.spec.ts",
+                  "projects": "self",
+                  "params": "forward",
+                  "options": "forward"
+                },
+                {
+                  "target": "e2e-ci--e2e/compliance/responsive-design.spec.ts",
+                  "projects": "self",
+                  "params": "forward",
+                  "options": "forward"
+                },
+                {
+                  "target": "e2e-ci--e2e/compliance/theme-consistency.spec.ts",
+                  "projects": "self",
+                  "params": "forward",
+                  "options": "forward"
+                },
+                {
+                  "target": "e2e-ci--e2e/onboarding-flow.spec.ts",
+                  "projects": "self",
+                  "params": "forward",
+                  "options": "forward"
+                },
+                {
+                  "target": "e2e-ci--e2e/security-edge-cases.spec.ts",
+                  "projects": "self",
+                  "params": "forward",
+                  "options": "forward"
+                },
+                {
+                  "target": "e2e-ci--e2e/welcome-page.spec.ts",
+                  "projects": "self",
+                  "params": "forward",
+                  "options": "forward"
+                }
+              ],
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Runs Playwright Tests in CI",
+                "nonAtomizedTarget": "e2e",
+                "help": {
+                  "command": "pnpm exec playwright test --help",
+                  "example": {
+                    "options": {
+                      "workers": 1
+                    }
+                  }
+                }
+              },
+              "configurations": {},
+              "options": {},
+              "parallelism": true
+            },
+            "e2e-ci--merge-reports": {
+              "executor": "@nx/playwright:merge-reports",
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "@playwright/test"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{projectRoot}/playwright-report",
+                "{projectRoot}/test-results/results.json",
+                "{projectRoot}/test-results/junit.xml"
+              ],
+              "options": {
+                "config": "playwright.config.ts",
+                "expectedSuites": 6
+              },
+              "metadata": {
+                "technologies": [
+                  "playwright"
+                ],
+                "description": "Merges Playwright blob reports from atomized tasks to produce unified reports for the configured reporters."
+              },
+              "configurations": {},
+              "parallelism": true
+            }
+          },
+          "metadata": {
+            "targetGroups": {
+              "E2E (CI)": [
+                "e2e-ci--e2e/compliance/radix-components.spec.ts",
+                "e2e-ci--e2e/compliance/responsive-design.spec.ts",
+                "e2e-ci--e2e/compliance/theme-consistency.spec.ts",
+                "e2e-ci--e2e/onboarding-flow.spec.ts",
+                "e2e-ci--e2e/security-edge-cases.spec.ts",
+                "e2e-ci--e2e/welcome-page.spec.ts",
+                "e2e-ci",
+                "e2e-ci--merge-reports"
+              ]
+            },
+            "js": {
+              "packageName": "@pml.tickets/organization-admin",
+              "packageVersion": "0.0.1",
+              "isInPackageManagerWorkspaces": true
+            }
+          },
+          "name": "@pml.tickets/organization-admin",
+          "tags": [
+            "npm:private"
+          ],
+          "$schema": "../../node_modules/nx/schemas/project-schema.json",
+          "sourceRoot": "apps/organization-admin/src",
+          "projectType": "application",
+          "implicitDependencies": []
+        }
+      },
+      "@pml.tickets/ticketing": {
+        "name": "@pml.tickets/ticketing",
+        "type": "app",
+        "data": {
+          "root": "apps/ticketing",
+          "targets": {
+            "build": {
+              "options": {
+                "cwd": "apps/ticketing",
+                "tty": false,
+                "command": "next build"
+              },
+              "dependsOn": [
+                "^build"
+              ],
+              "cache": true,
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "next"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{workspaceRoot}/apps/ticketing/.next/!(cache)/**/*",
+                "{workspaceRoot}/apps/ticketing/.next/!(cache)"
+              ],
+              "syncGenerators": [
+                "@nx/js:typescript-sync"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "dev": {
+              "continuous": true,
+              "options": {
+                "cwd": "apps/ticketing",
+                "command": "next dev"
+              },
+              "syncGenerators": [
+                "@nx/js:typescript-sync"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "start": {
+              "continuous": true,
+              "options": {
+                "cwd": "apps/ticketing",
+                "command": "next start"
+              },
+              "dependsOn": [
+                "build"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "serve-static": {
+              "continuous": true,
+              "options": {
+                "cwd": "apps/ticketing",
+                "command": "next start"
+              },
+              "dependsOn": [
+                "build"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "build-deps": {
+              "dependsOn": [
+                "^build"
+              ],
+              "configurations": {},
+              "options": {},
+              "parallelism": true,
+              "executor": "nx:noop"
+            },
+            "watch-deps": {
+              "continuous": true,
+              "dependsOn": [
+                "build-deps"
+              ],
+              "executor": "nx:run-commands",
+              "options": {
+                "command": "pnpm exec nx watch --projects @pml.tickets/ticketing --includeDependentProjects -- pnpm exec nx build-deps @pml.tickets/ticketing"
+              },
+              "configurations": {},
+              "parallelism": true
+            },
+            "lint": {
+              "cache": true,
+              "options": {
+                "cwd": "apps/ticketing",
+                "command": "eslint ."
+              },
+              "inputs": [
+                "default",
+                "^default",
+                "{workspaceRoot}/eslint.config.mjs",
+                "{workspaceRoot}/tools/eslint-rules/**/*",
+                {
+                  "externalDependencies": [
+                    "eslint"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{options.outputFile}"
+              ],
+              "metadata": {
+                "technologies": [
+                  "eslint"
+                ],
+                "description": "Runs ESLint on project",
+                "help": {
+                  "command": "pnpm exec eslint --help",
+                  "example": {
+                    "options": {
+                      "max-warnings": 0
+                    }
+                  }
+                }
+              },
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            }
+          },
+          "name": "@pml.tickets/ticketing",
+          "tags": [
+            "npm:private"
+          ],
+          "metadata": {
+            "targetGroups": {},
+            "js": {
+              "packageName": "@pml.tickets/ticketing",
+              "packageVersion": "0.0.1",
+              "isInPackageManagerWorkspaces": true
+            }
+          },
+          "implicitDependencies": []
+        }
+      },
+      "@pml.tickets/shared": {
+        "name": "@pml.tickets/shared",
+        "type": "lib",
+        "data": {
+          "root": "libs/shared",
+          "targets": {
+            "typecheck": {
+              "dependsOn": [
+                "^typecheck"
+              ],
+              "options": {
+                "cwd": "libs/shared",
+                "command": "tsc --build --emitDeclarationOnly"
+              },
+              "cache": true,
+              "inputs": [
+                "{projectRoot}/package.json",
+                "{workspaceRoot}/tsconfig.base.json",
+                "{projectRoot}/tsconfig.json",
+                "{projectRoot}/tsconfig.lib.json",
+                "{projectRoot}/src/**/*.js",
+                "{projectRoot}/src/**/*.jsx",
+                "{projectRoot}/src/**/*.ts",
+                "{projectRoot}/src/**/*.tsx",
+                "!{projectRoot}/out-tsc",
+                "!{projectRoot}/dist",
+                "!{projectRoot}/jest.config.ts",
+                "!{projectRoot}/src/**/*.spec.ts",
+                "!{projectRoot}/src/**/*.test.ts",
+                "!{projectRoot}/src/**/*.spec.tsx",
+                "!{projectRoot}/src/**/*.test.tsx",
+                "!{projectRoot}/src/**/*.spec.js",
+                "!{projectRoot}/src/**/*.test.js",
+                "!{projectRoot}/src/**/*.spec.jsx",
+                "!{projectRoot}/src/**/*.test.jsx",
+                "!{projectRoot}/testing/**/*",
+                "^production"
+              ],
+              "outputs": [
+                "{projectRoot}/dist/**/*.d.ts",
+                "{projectRoot}/dist/**/*.d.ts.map",
+                "{projectRoot}/dist/tsconfig.lib.tsbuildinfo"
+              ],
+              "syncGenerators": [
+                "@nx/js:typescript-sync"
+              ],
+              "metadata": {
+                "technologies": [
+                  "typescript"
+                ],
+                "description": "Runs type-checking for the project.",
+                "help": {
+                  "command": "pnpm exec tsc --build --help",
+                  "example": {
+                    "args": [
+                      "--force"
+                    ]
+                  }
+                }
+              },
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "lint": {
+              "cache": true,
+              "options": {
+                "cwd": "libs/shared",
+                "command": "eslint ."
+              },
+              "inputs": [
+                "default",
+                "^default",
+                "{workspaceRoot}/eslint.config.mjs",
+                "{workspaceRoot}/tools/eslint-rules/**/*",
+                {
+                  "externalDependencies": [
+                    "eslint"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{options.outputFile}"
+              ],
+              "metadata": {
+                "technologies": [
+                  "eslint"
+                ],
+                "description": "Runs ESLint on project",
+                "help": {
+                  "command": "pnpm exec eslint --help",
+                  "example": {
+                    "options": {
+                      "max-warnings": 0
+                    }
+                  }
+                }
+              },
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "nx-release-publish": {
+              "executor": "@nx/js:release-publish",
+              "dependsOn": [
+                "^nx-release-publish"
+              ],
+              "options": {},
+              "configurations": {},
+              "parallelism": true
+            }
+          },
+          "name": "@pml.tickets/shared",
+          "tags": [
+            "npm:public"
+          ],
+          "metadata": {
+            "targetGroups": {},
+            "js": {
+              "packageName": "@pml.tickets/shared",
+              "packageVersion": "0.0.1",
+              "packageExports": {
+                ".": {
+                  "types": "./src/index.ts",
+                  "import": "./src/index.ts",
+                  "default": "./src/index.ts"
+                },
+                "./package.json": "./package.json"
+              },
+              "packageMain": "./src/index.ts",
+              "isInPackageManagerWorkspaces": true
+            }
+          },
+          "implicitDependencies": []
+        }
+      },
+      "@pml.tickets/admin": {
+        "name": "@pml.tickets/admin",
+        "type": "app",
+        "data": {
+          "root": "apps/admin",
+          "targets": {
+            "build": {
+              "executor": "@nx/next:build",
+              "outputs": [
+                "{options.outputPath}"
+              ],
+              "defaultConfiguration": "production",
+              "options": {
+                "outputPath": "dist/apps/admin"
+              },
+              "configurations": {
+                "development": {
+                  "outputPath": "apps/admin"
+                },
+                "production": {}
+              },
+              "parallelism": true
+            },
+            "dev": {
+              "executor": "@nx/next:server",
+              "defaultConfiguration": "development",
+              "options": {
+                "buildTarget": "@pml.tickets/admin:build",
+                "dev": true,
+                "port": 3030
+              },
+              "configurations": {
+                "development": {
+                  "buildTarget": "@pml.tickets/admin:build:development",
+                  "dev": true,
+                  "port": 3030
+                },
+                "production": {
+                  "buildTarget": "@pml.tickets/admin:build:production",
+                  "dev": false
+                }
+              },
+              "parallelism": true,
+              "continuous": true
+            },
+            "start": {
+              "executor": "@nx/next:server",
+              "defaultConfiguration": "production",
+              "options": {
+                "buildTarget": "@pml.tickets/admin:build",
+                "port": 3030
+              },
+              "configurations": {
+                "development": {
+                  "buildTarget": "@pml.tickets/admin:build:development"
+                },
+                "production": {
+                  "buildTarget": "@pml.tickets/admin:build:production"
+                }
+              },
+              "parallelism": true,
+              "continuous": true
+            },
+            "serve-static": {
+              "continuous": true,
+              "options": {
+                "cwd": "apps/admin",
+                "command": "next start"
+              },
+              "dependsOn": [
+                "build"
+              ],
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            },
+            "build-deps": {
+              "dependsOn": [
+                "^build"
+              ],
+              "configurations": {},
+              "options": {},
+              "parallelism": true,
+              "executor": "nx:noop"
+            },
+            "watch-deps": {
+              "continuous": true,
+              "dependsOn": [
+                "build-deps"
+              ],
+              "executor": "nx:run-commands",
+              "options": {
+                "command": "pnpm exec nx watch --projects @pml.tickets/admin --includeDependentProjects -- pnpm exec nx build-deps @pml.tickets/admin"
+              },
+              "configurations": {},
+              "parallelism": true
+            },
+            "lint": {
+              "cache": true,
+              "options": {
+                "cwd": "apps/admin",
+                "command": "eslint ."
+              },
+              "inputs": [
+                "default",
+                "^default",
+                "{workspaceRoot}/eslint.config.mjs",
+                "{workspaceRoot}/tools/eslint-rules/**/*",
+                {
+                  "externalDependencies": [
+                    "eslint"
+                  ]
+                }
+              ],
+              "outputs": [
+                "{options.outputFile}"
+              ],
+              "metadata": {
+                "technologies": [
+                  "eslint"
+                ],
+                "description": "Runs ESLint on project",
+                "help": {
+                  "command": "pnpm exec eslint --help",
+                  "example": {
+                    "options": {
+                      "max-warnings": 0
+                    }
+                  }
+                }
+              },
+              "executor": "nx:run-commands",
+              "configurations": {},
+              "parallelism": true
+            }
+          },
+          "name": "@pml.tickets/admin",
+          "tags": [
+            "npm:private"
+          ],
+          "metadata": {
+            "targetGroups": {},
+            "js": {
+              "packageName": "@pml.tickets/admin",
+              "packageVersion": "0.0.1",
+              "isInPackageManagerWorkspaces": true
+            }
+          },
+          "$schema": "../../node_modules/nx/schemas/project-schema.json",
+          "sourceRoot": "apps/admin/src",
+          "projectType": "application",
+          "implicitDependencies": []
+        }
+      }
+    },
+    "dependencies": {
+      "eslint-plugin-radix-compliance": [],
+      "@pml.tickets/organization-admin": [
+        {
+          "source": "@pml.tickets/organization-admin",
+          "target": "@pml.tickets/shared",
+          "type": "static"
+        }
+      ],
+      "@pml.tickets/ticketing": [
+        {
+          "source": "@pml.tickets/ticketing",
+          "target": "@pml.tickets/shared",
+          "type": "static"
+        }
+      ],
+      "@pml.tickets/shared": [],
+      "@pml.tickets/admin": [
+        {
+          "source": "@pml.tickets/admin",
+          "target": "@pml.tickets/shared",
+          "type": "static"
+        }
+      ]
+    }
+  }
+}

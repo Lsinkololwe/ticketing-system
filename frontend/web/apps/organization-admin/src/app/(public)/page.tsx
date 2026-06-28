@@ -76,6 +76,19 @@ function useInView(threshold = 0.2) {
 function HeroSection() {
   const [isStarting, setIsStarting] = useState(false);
 
+  // Generate particle positions client-side only to avoid hydration mismatch
+  const [particles, setParticles] = useState<{ left: number; delay: number; duration: number }[]>([]);
+
+  useEffect(() => {
+    setParticles(
+      Array.from({ length: 20 }, () => ({
+        left: Math.random() * 100,
+        delay: Math.random() * 5,
+        duration: 15 + Math.random() * 10,
+      }))
+    );
+  }, []);
+
   const handleGetStarted = useCallback(async () => {
     try {
       setIsStarting(true);
@@ -104,16 +117,16 @@ function HeroSection() {
       {/* Animated Mesh Gradient */}
       <Box className="mesh-gradient" />
 
-      {/* Floating Particles */}
+      {/* Floating Particles - rendered client-side only to avoid hydration mismatch */}
       <Box className="particles">
-        {[...Array(20)].map((_, i) => (
+        {particles.map((particle, i) => (
           <Box
             key={i}
             className="particle"
             style={{
-              left: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 5}s`,
-              animationDuration: `${15 + Math.random() * 10}s`,
+              left: `${particle.left}%`,
+              animationDelay: `${particle.delay}s`,
+              animationDuration: `${particle.duration}s`,
             }}
           />
         ))}

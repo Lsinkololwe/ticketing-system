@@ -4,7 +4,6 @@ import {
   ApolloClient,
   InMemoryCache,
   ApolloLink,
-  split,
   CombinedGraphQLErrors,
   NetworkStatus,
 } from '@apollo/client';
@@ -12,9 +11,7 @@ import { HttpLink } from '@apollo/client/link/http';
 import { ErrorLink } from '@apollo/client/link/error';
 import { RetryLink } from '@apollo/client/link/retry';
 import { setContext } from '@apollo/client/link/context';
-import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { getMainDefinition } from '@apollo/client/utilities';
-import { createClient } from 'graphql-ws';
 import type { GraphQLError } from 'graphql';
 
 // ============================================
@@ -23,7 +20,6 @@ import type { GraphQLError } from 'graphql';
 // Single unified endpoint: Apollo Router (via API Gateway)
 // This endpoint provides access to all services through federation
 const GRAPHQL_URI = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:8080/graphql';
-const GRAPHQL_WS_URI = process.env.NEXT_PUBLIC_GRAPHQL_WS_ENDPOINT || 'ws://localhost:8080/ws';
 
 // Token getter function type - must be provided by the app
 export type TokenGetter = () => Promise<string | null>;
@@ -31,7 +27,6 @@ export type TokenGetter = () => Promise<string | null>;
 // Client configuration interface
 export interface GraphQLClientConfig {
   uri?: string;
-  wsUri?: string;
   headers?: Record<string, string>;
   /** Required: Function to get the access token (e.g., from Keycloak) */
   tokenGetter: TokenGetter;
@@ -133,25 +128,6 @@ const createAuthLink = (tokenGetter: TokenGetter) =>
   });
 
 /**
- * Create WebSocket link for subscriptions
- */
-const createWsLink = (wsUri: string, tokenGetter: TokenGetter): GraphQLWsLink | null => {
-  if (typeof window === 'undefined') return null;
-
-  return new GraphQLWsLink(
-    createClient({
-      url: wsUri,
-      connectionParams: async () => {
-        const token = await tokenGetter();
-        return token ? { authorization: `Bearer ${token}` } : {};
-      },
-      retryAttempts: 5,
-      shouldRetry: () => true,
-    })
-  );
-};
-
-/**
  * Create Apollo Client for Apollo Federation
  * Single client connects to Apollo Router which handles all federation
  *
@@ -164,12 +140,11 @@ export const createGraphQLClient = (config: GraphQLClientConfig) => {
   }
 
   const httpUri = config.uri || GRAPHQL_URI;
-  const wsUri = config.wsUri || GRAPHQL_WS_URI;
   const tokenGetter = config.tokenGetter;
 
   const httpLink = new HttpLink({
     uri: httpUri,
-    credentials: 'include',
+    credentials: 'omit', // backend auth is Bearer-token only — never send cookies to the API
     headers: {
       'Content-Type': 'application/json',
       'apollographql-client-name': 'myticketzm-admin',
@@ -180,29 +155,13 @@ export const createGraphQLClient = (config: GraphQLClientConfig) => {
 
   const isClientSide = typeof window !== 'undefined';
   const authLink = isClientSide ? createAuthLink(tokenGetter) : null;
-  const wsLink = isClientSide ? createWsLink(wsUri, tokenGetter) : null;
 
   // Build link chain with retry support
   // Order: Retry -> Error -> Auth -> HTTP
   // Retry wraps everything so it can retry the full chain on failure
-  const httpLinkChain = authLink
+  const link = authLink
     ? ApolloLink.from([createRetryLink(), createErrorLink(), authLink, httpLink])
     : ApolloLink.from([createRetryLink(), createErrorLink(), httpLink]);
-
-  // Split between WebSocket (subscriptions) and HTTP (queries/mutations)
-  const link = wsLink
-    ? split(
-        ({ query }) => {
-          const definition = getMainDefinition(query);
-          return (
-            definition.kind === 'OperationDefinition' &&
-            definition.operation === 'subscription'
-          );
-        },
-        wsLink,
-        httpLinkChain
-      )
-    : httpLinkChain;
 
   return new ApolloClient({
     link,

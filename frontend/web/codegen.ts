@@ -37,6 +37,9 @@ const sharedScalars = {
   Boolean: 'boolean',
   String: 'string',
   JSON: 'Record<string, unknown>',
+  // Canonical E.164 phone string (validated/normalized server-side by the
+  // PhoneNumber scalar; UI composes E.164 via libphonenumber-js).
+  PhoneNumber: 'string',
 };
 
 const config: CodegenConfig = {

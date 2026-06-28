@@ -18,12 +18,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
 
+import static com.pml.identity.testsupport.SecurityContextTestUtils.withUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -32,14 +32,21 @@ import static org.mockito.Mockito.*;
 /**
  * Comprehensive unit tests for OrganizationMutationResolver.
  *
+ * <p>The resolver extracts the authenticated user from the reactive
+ * {@link org.springframework.security.core.context.ReactiveSecurityContextHolder}
+ * via {@code SecurityContextUtils}, so tests inject identity by writing a
+ * security context into the Reactor pipeline with
+ * {@link com.pml.identity.testsupport.SecurityContextTestUtils#withUser}.</p>
+ *
  * Tests cover:
  * - All mutation operations (apply, update, submit, approve, reject, suspend)
- * - Security validations (authentication, authorization, ownership)
- * - Edge cases (missing JWT, wrong owner, invalid status transitions)
- * - Error scenarios (service failures, validation failures)
- * - Business logic (status transitions, permission checks)
+ * - Security validations (authentication, ownership)
+ * - Edge cases (missing authentication, wrong owner, blank reasons)
+ * - Error scenarios (service failures, permission failures)
  *
  * Uses Mockito for mocking and reactor-test StepVerifier for reactive assertions.
+ * Note: {@code @PreAuthorize} role checks are not enforced in these plain Mockito
+ * unit tests (no Spring proxy), so only the JWT subject is relevant here.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrganizationMutationResolver Unit Tests")
@@ -53,9 +60,6 @@ class OrganizationMutationResolverTest {
 
     @Mock
     private OrganizationMemberService memberService;
-
-    @Mock
-    private Jwt jwt;
 
     @InjectMocks
     private OrganizationMutationResolver resolver;
@@ -108,12 +112,12 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should create organization when valid input provided")
         void shouldCreateOrganization_WhenValidInput() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(onboardingService.applyToBeOrganizer(USER_ID, testInput))
                     .thenReturn(Mono.just(testOrganization));
 
             // When
-            Mono<Organization> result = resolver.applyToBeOrganizer(testInput, jwt);
+            Mono<Organization> result = resolver.applyToBeOrganizer(testInput)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -129,15 +133,15 @@ class OrganizationMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should fail when JWT is null")
-        void shouldFail_WhenJwtIsNull() {
-            // When
-            Mono<Organization> result = resolver.applyToBeOrganizer(testInput, null);
+        @DisplayName("Should fail when not authenticated")
+        void shouldFail_WhenNotAuthenticated() {
+            // When (no security context written)
+            Mono<Organization> result = resolver.applyToBeOrganizer(testInput);
 
             // Then
             StepVerifier.create(result)
                     .expectErrorMatches(error ->
-                            error instanceof IllegalStateException &&
+                            error instanceof SecurityException &&
                                     error.getMessage().contains("Authentication required")
                     )
                     .verify();
@@ -149,12 +153,12 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should propagate service error when onboarding fails")
         void shouldPropagateError_WhenServiceFails() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(onboardingService.applyToBeOrganizer(USER_ID, testInput))
                     .thenReturn(Mono.error(new IllegalArgumentException("Invalid organization name")));
 
             // When
-            Mono<Organization> result = resolver.applyToBeOrganizer(testInput, jwt);
+            Mono<Organization> result = resolver.applyToBeOrganizer(testInput)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -174,16 +178,14 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should update application when owner makes request")
         void shouldUpdateApplication_WhenOwner() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findById(ORG_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(onboardingService.updateApplication(ORG_ID, testInput))
                     .thenReturn(Mono.just(testOrganization));
 
             // When
-            Mono<Organization> result = resolver.updateOrganizationApplication(
-                    ORG_ID, testInput, jwt
-            );
+            Mono<Organization> result = resolver.updateOrganizationApplication(ORG_ID, testInput)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -201,14 +203,12 @@ class OrganizationMutationResolverTest {
         void shouldFail_WhenNotOwner() {
             // Given
             String otherUserId = "other-user-999";
-            when(jwt.getSubject()).thenReturn(otherUserId);
             when(organizationService.findById(ORG_ID))
                     .thenReturn(Mono.just(testOrganization));
 
             // When
-            Mono<Organization> result = resolver.updateOrganizationApplication(
-                    ORG_ID, testInput, jwt
-            );
+            Mono<Organization> result = resolver.updateOrganizationApplication(ORG_ID, testInput)
+                    .contextWrite(withUser(otherUserId));
 
             // Then
             StepVerifier.create(result)
@@ -222,17 +222,15 @@ class OrganizationMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should fail when JWT is null")
-        void shouldFail_WhenJwtIsNull() {
-            // When
-            Mono<Organization> result = resolver.updateOrganizationApplication(
-                    ORG_ID, testInput, null
-            );
+        @DisplayName("Should fail when not authenticated")
+        void shouldFail_WhenNotAuthenticated() {
+            // When (no security context written)
+            Mono<Organization> result = resolver.updateOrganizationApplication(ORG_ID, testInput);
 
             // Then
             StepVerifier.create(result)
                     .expectErrorMatches(error ->
-                            error instanceof IllegalStateException &&
+                            error instanceof SecurityException &&
                                     error.getMessage().contains("Authentication required")
                     )
                     .verify();
@@ -242,14 +240,12 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should fail when organization not found")
         void shouldFail_WhenOrganizationNotFound() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findById(ORG_ID))
                     .thenReturn(Mono.empty());
 
             // When
-            Mono<Organization> result = resolver.updateOrganizationApplication(
-                    ORG_ID, testInput, jwt
-            );
+            Mono<Organization> result = resolver.updateOrganizationApplication(ORG_ID, testInput)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -267,7 +263,6 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should submit for review when owner and valid status")
         void shouldSubmitForReview_WhenOwner() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findById(ORG_ID))
                     .thenReturn(Mono.just(testOrganization));
 
@@ -279,7 +274,8 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(reviewedOrg));
 
             // When
-            Mono<Organization> result = resolver.submitOrganizationForReview(ORG_ID, jwt);
+            Mono<Organization> result = resolver.submitOrganizationForReview(ORG_ID)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -297,12 +293,12 @@ class OrganizationMutationResolverTest {
         void shouldFail_WhenNotOwner() {
             // Given
             String otherUserId = "other-user-999";
-            when(jwt.getSubject()).thenReturn(otherUserId);
             when(organizationService.findById(ORG_ID))
                     .thenReturn(Mono.just(testOrganization));
 
             // When
-            Mono<Organization> result = resolver.submitOrganizationForReview(ORG_ID, jwt);
+            Mono<Organization> result = resolver.submitOrganizationForReview(ORG_ID)
+                    .contextWrite(withUser(otherUserId));
 
             // Then
             StepVerifier.create(result)
@@ -316,15 +312,15 @@ class OrganizationMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should fail when JWT is null")
-        void shouldFail_WhenJwtIsNull() {
-            // When
-            Mono<Organization> result = resolver.submitOrganizationForReview(ORG_ID, null);
+        @DisplayName("Should fail when not authenticated")
+        void shouldFail_WhenNotAuthenticated() {
+            // When (no security context written)
+            Mono<Organization> result = resolver.submitOrganizationForReview(ORG_ID);
 
             // Then
             StepVerifier.create(result)
                     .expectErrorMatches(error ->
-                            error instanceof IllegalStateException &&
+                            error instanceof SecurityException &&
                                     error.getMessage().contains("Authentication required")
                     )
                     .verify();
@@ -339,12 +335,12 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should return existing organization if user has one")
         void shouldReturnExisting_WhenUserHasOrganization() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(onboardingService.getOrCreateOrganization(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
 
             // When
-            Mono<Organization> result = resolver.getOrCreateMyOrganization(jwt);
+            Mono<Organization> result = resolver.getOrCreateMyOrganization()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -369,12 +365,12 @@ class OrganizationMutationResolverTest {
                     .status(OrganizationStatus.DRAFT)
                     .build();
 
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(onboardingService.getOrCreateOrganization(USER_ID))
                     .thenReturn(Mono.just(newOrg));
 
             // When
-            Mono<Organization> result = resolver.getOrCreateMyOrganization(jwt);
+            Mono<Organization> result = resolver.getOrCreateMyOrganization()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -386,15 +382,15 @@ class OrganizationMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should fail when JWT is null")
-        void shouldFail_WhenJwtIsNull() {
-            // When
-            Mono<Organization> result = resolver.getOrCreateMyOrganization(null);
+        @DisplayName("Should fail when not authenticated")
+        void shouldFail_WhenNotAuthenticated() {
+            // When (no security context written)
+            Mono<Organization> result = resolver.getOrCreateMyOrganization();
 
             // Then
             StepVerifier.create(result)
                     .expectErrorMatches(error ->
-                            error instanceof IllegalStateException &&
+                            error instanceof SecurityException &&
                                     error.getMessage().contains("Authentication required")
                     )
                     .verify();
@@ -410,7 +406,6 @@ class OrganizationMutationResolverTest {
         void shouldUpgrade_WhenOwner() {
             // Given
             String businessName = "Test Business Ltd";
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findById(ORG_ID))
                     .thenReturn(Mono.just(testOrganization));
 
@@ -422,9 +417,8 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(businessOrg));
 
             // When
-            Mono<Organization> result = resolver.upgradeToBusinessOrganization(
-                    ORG_ID, businessName, jwt
-            );
+            Mono<Organization> result = resolver.upgradeToBusinessOrganization(ORG_ID, businessName)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -440,14 +434,12 @@ class OrganizationMutationResolverTest {
         void shouldFail_WhenNotOwner() {
             // Given
             String otherUserId = "other-user-999";
-            when(jwt.getSubject()).thenReturn(otherUserId);
             when(organizationService.findById(ORG_ID))
                     .thenReturn(Mono.just(testOrganization));
 
             // When
-            Mono<Organization> result = resolver.upgradeToBusinessOrganization(
-                    ORG_ID, "Business Name", jwt
-            );
+            Mono<Organization> result = resolver.upgradeToBusinessOrganization(ORG_ID, "Business Name")
+                    .contextWrite(withUser(otherUserId));
 
             // Then
             StepVerifier.create(result)
@@ -471,8 +463,6 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should approve organization when admin requests")
         void shouldApprove_WhenAdmin() {
             // Given
-            when(jwt.getSubject()).thenReturn(ADMIN_ID);
-
             Organization approvedOrg = testOrganization.toBuilder()
                     .status(OrganizationStatus.APPROVED)
                     .approvedAt(Instant.now())
@@ -482,7 +472,8 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(approvedOrg));
 
             // When
-            Mono<Organization> result = resolver.approveOrganization(ORG_ID, jwt);
+            Mono<Organization> result = resolver.approveOrganization(ORG_ID)
+                    .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -497,8 +488,8 @@ class OrganizationMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should handle null JWT gracefully")
-        void shouldHandleNullJwt() {
+        @DisplayName("Should fall back to 'system' when not authenticated")
+        void shouldFallBackToSystem_WhenNotAuthenticated() {
             // Given
             Organization approvedOrg = testOrganization.toBuilder()
                     .status(OrganizationStatus.APPROVED)
@@ -506,14 +497,13 @@ class OrganizationMutationResolverTest {
             when(onboardingService.approve(ORG_ID, "system"))
                     .thenReturn(Mono.just(approvedOrg));
 
-            // When
-            Mono<Organization> result = resolver.approveOrganization(ORG_ID, null);
+            // When (no security context written)
+            Mono<Organization> result = resolver.approveOrganization(ORG_ID);
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(org -> {
-                        assertThat(org.getStatus()).isEqualTo(OrganizationStatus.APPROVED);
-                    })
+                    .assertNext(org ->
+                            assertThat(org.getStatus()).isEqualTo(OrganizationStatus.APPROVED))
                     .verifyComplete();
 
             verify(onboardingService).approve(ORG_ID, "system");
@@ -529,7 +519,6 @@ class OrganizationMutationResolverTest {
         void shouldRequestChanges_WithReason() {
             // Given
             String reason = "Please provide valid business registration number";
-            when(jwt.getSubject()).thenReturn(ADMIN_ID);
 
             Organization changesRequestedOrg = testOrganization.toBuilder()
                     .status(OrganizationStatus.CHANGES_REQUESTED)
@@ -540,9 +529,8 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(changesRequestedOrg));
 
             // When
-            Mono<Organization> result = resolver.requestOrganizationChanges(
-                    ORG_ID, reason, jwt
-            );
+            Mono<Organization> result = resolver.requestOrganizationChanges(ORG_ID, reason)
+                    .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -564,7 +552,6 @@ class OrganizationMutationResolverTest {
         void shouldReject_WithReason() {
             // Given
             String reason = "Business not registered in Zambia";
-            when(jwt.getSubject()).thenReturn(ADMIN_ID);
 
             Organization rejectedOrg = testOrganization.toBuilder()
                     .status(OrganizationStatus.REJECTED)
@@ -575,7 +562,8 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(rejectedOrg));
 
             // When
-            Mono<Organization> result = resolver.rejectOrganization(ORG_ID, reason, jwt);
+            Mono<Organization> result = resolver.rejectOrganization(ORG_ID, reason)
+                    .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -606,7 +594,6 @@ class OrganizationMutationResolverTest {
                     "https://example.com/banner.png"
             );
 
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(memberService.hasPermission(USER_ID, ORG_ID, "ORG_EDIT"))
                     .thenReturn(Mono.just(true));
 
@@ -625,7 +612,8 @@ class OrganizationMutationResolverTest {
             )).thenReturn(Mono.just(updatedOrg));
 
             // When
-            Mono<Organization> result = resolver.updateOrganization(ORG_ID, input, jwt);
+            Mono<Organization> result = resolver.updateOrganization(ORG_ID, input)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -644,12 +632,12 @@ class OrganizationMutationResolverTest {
                     "Updated Name", "Description", null, null
             );
 
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(memberService.hasPermission(USER_ID, ORG_ID, "ORG_EDIT"))
                     .thenReturn(Mono.just(false));
 
             // When
-            Mono<Organization> result = resolver.updateOrganization(ORG_ID, input, jwt);
+            Mono<Organization> result = resolver.updateOrganization(ORG_ID, input)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -675,6 +663,7 @@ class OrganizationMutationResolverTest {
                     true,  // allowMemberInvites
                     false, // requireApprovalForEvents
                     true,  // notifyOnNewMember
+                    false, // notifyOnTicketSale
                     "PUBLIC" // defaultEventVisibility
             );
 
@@ -683,7 +672,6 @@ class OrganizationMutationResolverTest {
                     .settings(currentSettings)
                     .build();
 
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(memberService.hasPermission(USER_ID, ORG_ID, "ORG_MANAGE_SETTINGS"))
                     .thenReturn(Mono.just(true));
             when(organizationService.findById(ORG_ID))
@@ -698,13 +686,13 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(updatedOrg));
 
             // When
-            Mono<Organization> result = resolver.updateOrganizationSettings(ORG_ID, input, jwt);
+            Mono<Organization> result = resolver.updateOrganizationSettings(ORG_ID, input)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(org -> {
-                        assertThat(org.getSettings()).isNotNull();
-                    })
+                    .assertNext(org ->
+                            assertThat(org.getSettings()).isNotNull())
                     .verifyComplete();
 
             verify(organizationService).updateSettings(eq(ORG_ID), any(OrganizationSettings.class));
@@ -715,15 +703,15 @@ class OrganizationMutationResolverTest {
         void shouldFail_WhenLacksPermission() {
             // Given
             UpdateOrganizationSettingsInput input = new UpdateOrganizationSettingsInput(
-                    true, false, true, "PUBLIC"
+                    true, false, true, false, "PUBLIC"
             );
 
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(memberService.hasPermission(USER_ID, ORG_ID, "ORG_MANAGE_SETTINGS"))
                     .thenReturn(Mono.just(false));
 
             // When
-            Mono<Organization> result = resolver.updateOrganizationSettings(ORG_ID, input, jwt);
+            Mono<Organization> result = resolver.updateOrganizationSettings(ORG_ID, input)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -744,7 +732,6 @@ class OrganizationMutationResolverTest {
         void shouldSuspend_WithReason() {
             // Given
             String reason = "Terms of service violation";
-            when(jwt.getSubject()).thenReturn(ADMIN_ID);
 
             Organization suspendedOrg = testOrganization.toBuilder()
                     .status(OrganizationStatus.SUSPENDED)
@@ -754,7 +741,8 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(suspendedOrg));
 
             // When
-            Mono<Organization> result = resolver.suspendOrganization(ORG_ID, reason, jwt);
+            Mono<Organization> result = resolver.suspendOrganization(ORG_ID, reason)
+                    .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -769,7 +757,8 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should fail when reason is blank")
         void shouldFail_WhenReasonIsBlank() {
             // When
-            Mono<Organization> result = resolver.suspendOrganization(ORG_ID, "", jwt);
+            Mono<Organization> result = resolver.suspendOrganization(ORG_ID, "")
+                    .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -786,7 +775,8 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should fail when reason is null")
         void shouldFail_WhenReasonIsNull() {
             // When
-            Mono<Organization> result = resolver.suspendOrganization(ORG_ID, null, jwt);
+            Mono<Organization> result = resolver.suspendOrganization(ORG_ID, null)
+                    .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -806,8 +796,6 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should unsuspend organization")
         void shouldUnsuspend() {
             // Given
-            when(jwt.getSubject()).thenReturn(ADMIN_ID);
-
             Organization unsuspendedOrg = testOrganization.toBuilder()
                     .status(OrganizationStatus.APPROVED)
                     .build();
@@ -815,13 +803,13 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(unsuspendedOrg));
 
             // When
-            Mono<Organization> result = resolver.unsuspendOrganization(ORG_ID, jwt);
+            Mono<Organization> result = resolver.unsuspendOrganization(ORG_ID)
+                    .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(org -> {
-                        assertThat(org.getStatus()).isEqualTo(OrganizationStatus.APPROVED);
-                    })
+                    .assertNext(org ->
+                            assertThat(org.getStatus()).isEqualTo(OrganizationStatus.APPROVED))
                     .verifyComplete();
         }
     }
@@ -834,8 +822,6 @@ class OrganizationMutationResolverTest {
         @DisplayName("Should update status to ACTIVE")
         void shouldUpdateStatus_ToActive() {
             // Given
-            when(jwt.getSubject()).thenReturn(ADMIN_ID);
-
             Organization activeOrg = testOrganization.toBuilder()
                     .status(OrganizationStatus.ACTIVE)
                     .build();
@@ -843,15 +829,13 @@ class OrganizationMutationResolverTest {
                     .thenReturn(Mono.just(activeOrg));
 
             // When
-            Mono<Organization> result = resolver.updateOrganizationStatus(
-                    ORG_ID, OrganizationStatus.ACTIVE, jwt
-            );
+            Mono<Organization> result = resolver.updateOrganizationStatus(ORG_ID, OrganizationStatus.ACTIVE)
+                    .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(org -> {
-                        assertThat(org.getStatus()).isEqualTo(OrganizationStatus.ACTIVE);
-                    })
+                    .assertNext(org ->
+                            assertThat(org.getStatus()).isEqualTo(OrganizationStatus.ACTIVE))
                     .verifyComplete();
         }
     }

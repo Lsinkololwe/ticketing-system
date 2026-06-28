@@ -9,6 +9,8 @@ spring:
     allow-bean-definition-overriding: true
   lifecycle:
     timeout-per-shutdown-phase: 60s
+  reactor:
+    context-propagation: auto
 
   modulith:
     events:
@@ -107,6 +109,12 @@ dgs:
       enabled: false
     introspection:
       enabled: true
+    # Disable DGS's built-in DateTime/Date/Time scalars (OffsetDateTime-backed,
+    # cannot serialize Instant). Replaced by com.pml.shared.graphql.DateTimeScalar.
+    extensions:
+      scalars:
+        time-dates:
+          enabled: false
 
 keycloak:
   server-url: ${KEYCLOAK_URL:http://localhost:8084}

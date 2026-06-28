@@ -16,15 +16,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
+import static com.pml.identity.testsupport.SecurityContextTestUtils.withUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -32,8 +31,13 @@ import static org.mockito.Mockito.*;
 /**
  * Comprehensive unit tests for VerificationDocumentMutationResolver.
  *
+ * <p>The resolver extracts the authenticated user from the reactive
+ * {@code SecurityContext}; tests inject identity via
+ * {@link com.pml.identity.testsupport.SecurityContextTestUtils#withUser}. Calls
+ * with no security context simulate an unauthenticated request.</p>
+ *
  * Tests cover:
- * - Document upload (direct and pre-uploaded)
+ * - Document upload (pre-uploaded URL)
  * - Presigned URL generation
  * - Admin approval/rejection
  * - Document deletion
@@ -56,9 +60,6 @@ class VerificationDocumentMutationResolverTest {
 
     @Mock
     private FileStorageService fileStorageService;
-
-    @Mock
-    private Jwt jwt;
 
     @InjectMocks
     private VerificationDocumentMutationResolver resolver;
@@ -112,7 +113,6 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should upload document when valid pre-uploaded URL provided")
         void shouldUploadDocument_WhenPreUploadedUrl() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(fileUploadValidator.validateRawFile(anyString(), anyString(), anyLong(), any()))
@@ -128,7 +128,8 @@ class VerificationDocumentMutationResolverTest {
 
             // When
             Mono<VerificationDocumentUploadResponse> result =
-                    resolver.uploadVerificationDocument(uploadInput, jwt);
+                    resolver.uploadVerificationDocument(uploadInput)
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -151,11 +152,11 @@ class VerificationDocumentMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should fail when JWT is null")
-        void shouldFail_WhenJwtIsNull() {
-            // When
+        @DisplayName("Should fail when not authenticated")
+        void shouldFail_WhenNotAuthenticated() {
+            // When (no security context written)
             Mono<VerificationDocumentUploadResponse> result =
-                    resolver.uploadVerificationDocument(uploadInput, null);
+                    resolver.uploadVerificationDocument(uploadInput);
 
             // Then
             StepVerifier.create(result)
@@ -172,13 +173,13 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should fail when organization not found")
         void shouldFail_WhenOrganizationNotFound() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.empty());
 
             // When
             Mono<VerificationDocumentUploadResponse> result =
-                    resolver.uploadVerificationDocument(uploadInput, jwt);
+                    resolver.uploadVerificationDocument(uploadInput)
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -193,7 +194,6 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should fail when file validation fails")
         void shouldFail_WhenValidationFails() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(fileUploadValidator.validateRawFile(anyString(), anyString(), anyLong(), any()))
@@ -201,7 +201,8 @@ class VerificationDocumentMutationResolverTest {
 
             // When
             Mono<VerificationDocumentUploadResponse> result =
-                    resolver.uploadVerificationDocument(uploadInput, jwt);
+                    resolver.uploadVerificationDocument(uploadInput)
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -224,7 +225,6 @@ class VerificationDocumentMutationResolverTest {
             Map<String, Object> inputWithoutUrl = new HashMap<>(uploadInput);
             inputWithoutUrl.remove("documentUrl");
 
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(fileUploadValidator.validateRawFile(anyString(), anyString(), anyLong(), any()))
@@ -232,7 +232,8 @@ class VerificationDocumentMutationResolverTest {
 
             // When
             Mono<VerificationDocumentUploadResponse> result =
-                    resolver.uploadVerificationDocument(inputWithoutUrl, jwt);
+                    resolver.uploadVerificationDocument(inputWithoutUrl)
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -247,7 +248,6 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should handle service errors gracefully")
         void shouldHandleServiceErrors() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(fileUploadValidator.validateRawFile(anyString(), anyString(), anyLong(), any()))
@@ -257,13 +257,14 @@ class VerificationDocumentMutationResolverTest {
 
             // When
             Mono<VerificationDocumentUploadResponse> result =
-                    resolver.uploadVerificationDocument(uploadInput, jwt);
+                    resolver.uploadVerificationDocument(uploadInput)
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
                     .assertNext(response -> {
                         assertThat(response.success()).isFalse();
-                        assertThat(response.message()).contains("Upload failed");
+                        assertThat(response.message()).contains("Failed to save document");
                     })
                     .verifyComplete();
         }
@@ -273,20 +274,21 @@ class VerificationDocumentMutationResolverTest {
     @DisplayName("requestDocumentUploadUrl - Presigned URL")
     class RequestUploadUrlTests {
 
-        @Test
-        @DisplayName("Should generate presigned URL when valid request")
-        void shouldGeneratePresignedUrl_WhenValid() {
-            // Given
+        private Map<String, Object> urlRequestInput() {
             Map<String, Object> urlRequestInput = new HashMap<>();
             urlRequestInput.put("documentType", "BUSINESS_REGISTRATION");
             urlRequestInput.put("fileName", "registration.pdf");
             urlRequestInput.put("fileSize", 1024L * 500);
             urlRequestInput.put("mimeType", "application/pdf");
+            return urlRequestInput;
+        }
 
+        @Test
+        @DisplayName("Should generate presigned URL when valid request")
+        void shouldGeneratePresignedUrl_WhenValid() {
+            // Given
             String presignedUrl = "https://s3.amazonaws.com/presigned-url?expires=...";
-            String fileKey = "organizations/org-456/verification-documents/business_registration/uuid-registration.pdf";
 
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(fileUploadValidator.validateRawFile(anyString(), anyString(), anyLong(), any()))
                     .thenReturn(FileUploadValidator.ValidationResult.valid());
             when(organizationService.findByOwnerId(USER_ID))
@@ -296,7 +298,8 @@ class VerificationDocumentMutationResolverTest {
 
             // When
             Mono<DocumentUploadUrlResponse> result =
-                    resolver.requestDocumentUploadUrl(urlRequestInput, jwt);
+                    resolver.requestDocumentUploadUrl(urlRequestInput())
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -314,23 +317,16 @@ class VerificationDocumentMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should fail when JWT is null")
-        void shouldFail_WhenJwtIsNull() {
-            // Given
-            Map<String, Object> urlRequestInput = new HashMap<>();
-            urlRequestInput.put("documentType", "BUSINESS_REGISTRATION");
-            urlRequestInput.put("fileName", "registration.pdf");
-            urlRequestInput.put("fileSize", 1024L * 500);
-            urlRequestInput.put("mimeType", "application/pdf");
-
-            // When
+        @DisplayName("Should fail when not authenticated")
+        void shouldFail_WhenNotAuthenticated() {
+            // When (no security context written)
             Mono<DocumentUploadUrlResponse> result =
-                    resolver.requestDocumentUploadUrl(urlRequestInput, null);
+                    resolver.requestDocumentUploadUrl(urlRequestInput());
 
             // Then
             StepVerifier.create(result)
                     .expectErrorMatches(error ->
-                            error instanceof IllegalStateException &&
+                            error instanceof SecurityException &&
                                     error.getMessage().contains("Authentication required")
                     )
                     .verify();
@@ -340,19 +336,13 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should fail when validation fails")
         void shouldFail_WhenValidationFails() {
             // Given
-            Map<String, Object> urlRequestInput = new HashMap<>();
-            urlRequestInput.put("documentType", "BUSINESS_REGISTRATION");
-            urlRequestInput.put("fileName", "registration.pdf");
-            urlRequestInput.put("fileSize", 1024L * 500);
-            urlRequestInput.put("mimeType", "application/pdf");
-
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(fileUploadValidator.validateRawFile(anyString(), anyString(), anyLong(), any()))
                     .thenReturn(FileUploadValidator.ValidationResult.invalid("Invalid MIME type"));
 
             // When
             Mono<DocumentUploadUrlResponse> result =
-                    resolver.requestDocumentUploadUrl(urlRequestInput, jwt);
+                    resolver.requestDocumentUploadUrl(urlRequestInput())
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -369,13 +359,6 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should fail when organization not found")
         void shouldFail_WhenOrganizationNotFound() {
             // Given
-            Map<String, Object> urlRequestInput = new HashMap<>();
-            urlRequestInput.put("documentType", "BUSINESS_REGISTRATION");
-            urlRequestInput.put("fileName", "registration.pdf");
-            urlRequestInput.put("fileSize", 1024L * 500);
-            urlRequestInput.put("mimeType", "application/pdf");
-
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(fileUploadValidator.validateRawFile(anyString(), anyString(), anyLong(), any()))
                     .thenReturn(FileUploadValidator.ValidationResult.valid());
             when(organizationService.findByOwnerId(USER_ID))
@@ -383,7 +366,8 @@ class VerificationDocumentMutationResolverTest {
 
             // When
             Mono<DocumentUploadUrlResponse> result =
-                    resolver.requestDocumentUploadUrl(urlRequestInput, jwt);
+                    resolver.requestDocumentUploadUrl(urlRequestInput())
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -407,26 +391,25 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should approve document when admin requests")
         void shouldApproveDocument_WhenAdmin() {
             // Given
-            when(jwt.getSubject()).thenReturn(ADMIN_ID);
-
             VerificationDocument approvedDoc = testDocument.toBuilder()
                     .status(DocumentStatus.APPROVED)
-                    .reviewedBy(ADMIN_ID)
-                    .reviewedAt(Instant.now())
+                    .verifiedById(ADMIN_ID)
+                    .verifiedAt(Instant.now())
                     .build();
             when(documentService.approve(DOC_ID, ADMIN_ID))
                     .thenReturn(Mono.just(approvedDoc));
 
             // When
             Mono<VerificationDocument> result =
-                    resolver.approveVerificationDocument(DOC_ID, jwt);
+                    resolver.approveVerificationDocument(DOC_ID)
+                            .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
                     .assertNext(doc -> {
                         assertThat(doc.getStatus()).isEqualTo(DocumentStatus.APPROVED);
-                        assertThat(doc.getReviewedBy()).isEqualTo(ADMIN_ID);
-                        assertThat(doc.getReviewedAt()).isNotNull();
+                        assertThat(doc.getVerifiedById()).isEqualTo(ADMIN_ID);
+                        assertThat(doc.getVerifiedAt()).isNotNull();
                     })
                     .verifyComplete();
 
@@ -434,8 +417,8 @@ class VerificationDocumentMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should handle null JWT gracefully")
-        void shouldHandleNullJwt() {
+        @DisplayName("Should fall back to 'system' when not authenticated")
+        void shouldFallBackToSystem_WhenNotAuthenticated() {
             // Given
             VerificationDocument approvedDoc = testDocument.toBuilder()
                     .status(DocumentStatus.APPROVED)
@@ -443,15 +426,14 @@ class VerificationDocumentMutationResolverTest {
             when(documentService.approve(DOC_ID, "system"))
                     .thenReturn(Mono.just(approvedDoc));
 
-            // When
+            // When (no security context written)
             Mono<VerificationDocument> result =
-                    resolver.approveVerificationDocument(DOC_ID, null);
+                    resolver.approveVerificationDocument(DOC_ID);
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(doc -> {
-                        assertThat(doc.getStatus()).isEqualTo(DocumentStatus.APPROVED);
-                    })
+                    .assertNext(doc ->
+                            assertThat(doc.getStatus()).isEqualTo(DocumentStatus.APPROVED))
                     .verifyComplete();
 
             verify(documentService).approve(DOC_ID, "system");
@@ -467,19 +449,19 @@ class VerificationDocumentMutationResolverTest {
         void shouldRejectDocument_WithReason() {
             // Given
             String reason = "Document is expired";
-            when(jwt.getSubject()).thenReturn(ADMIN_ID);
 
             VerificationDocument rejectedDoc = testDocument.toBuilder()
                     .status(DocumentStatus.REJECTED)
                     .rejectionReason(reason)
-                    .reviewedBy(ADMIN_ID)
+                    .verifiedById(ADMIN_ID)
                     .build();
             when(documentService.reject(DOC_ID, reason, ADMIN_ID))
                     .thenReturn(Mono.just(rejectedDoc));
 
             // When
             Mono<VerificationDocument> result =
-                    resolver.rejectVerificationDocument(DOC_ID, reason, jwt);
+                    resolver.rejectVerificationDocument(DOC_ID, reason)
+                            .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -495,7 +477,8 @@ class VerificationDocumentMutationResolverTest {
         void shouldFail_WhenReasonIsBlank() {
             // When
             Mono<VerificationDocument> result =
-                    resolver.rejectVerificationDocument(DOC_ID, "", jwt);
+                    resolver.rejectVerificationDocument(DOC_ID, "")
+                            .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -513,7 +496,8 @@ class VerificationDocumentMutationResolverTest {
         void shouldFail_WhenReasonIsNull() {
             // When
             Mono<VerificationDocument> result =
-                    resolver.rejectVerificationDocument(DOC_ID, null, jwt);
+                    resolver.rejectVerificationDocument(DOC_ID, null)
+                            .contextWrite(withUser(ADMIN_ID));
 
             // Then
             StepVerifier.create(result)
@@ -537,7 +521,6 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should delete document when owner requests")
         void shouldDeleteDocument_WhenOwner() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(documentService.findById(DOC_ID))
                     .thenReturn(Mono.just(testDocument));
             when(organizationService.findByOwnerId(USER_ID))
@@ -548,7 +531,8 @@ class VerificationDocumentMutationResolverTest {
                     .thenReturn(Mono.empty());
 
             // When
-            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID, jwt);
+            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -560,15 +544,15 @@ class VerificationDocumentMutationResolverTest {
         }
 
         @Test
-        @DisplayName("Should fail when JWT is null")
-        void shouldFail_WhenJwtIsNull() {
-            // When
-            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID, null);
+        @DisplayName("Should fail when not authenticated")
+        void shouldFail_WhenNotAuthenticated() {
+            // When (no security context written)
+            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID);
 
             // Then
             StepVerifier.create(result)
                     .expectErrorMatches(error ->
-                            error instanceof IllegalStateException &&
+                            error instanceof SecurityException &&
                                     error.getMessage().contains("Authentication required")
                     )
                     .verify();
@@ -578,12 +562,12 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should fail when document not found")
         void shouldFail_WhenDocumentNotFound() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(documentService.findById(DOC_ID))
                     .thenReturn(Mono.empty());
 
             // When
-            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID, jwt);
+            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -605,14 +589,14 @@ class VerificationDocumentMutationResolverTest {
                     .organizationId(otherOrgId)
                     .build();
 
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(documentService.findById(DOC_ID))
                     .thenReturn(Mono.just(otherDoc));
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
 
             // When
-            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID, jwt);
+            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -629,7 +613,6 @@ class VerificationDocumentMutationResolverTest {
         @DisplayName("Should delete from storage even if database delete fails")
         void shouldAttemptStorageDelete_BeforeDatabaseDelete() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(documentService.findById(DOC_ID))
                     .thenReturn(Mono.just(testDocument));
             when(organizationService.findByOwnerId(USER_ID))
@@ -640,7 +623,8 @@ class VerificationDocumentMutationResolverTest {
                     .thenReturn(Mono.error(new RuntimeException("Database error")));
 
             // When
-            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID, jwt);
+            Mono<Boolean> result = resolver.deleteVerificationDocument(DOC_ID)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)

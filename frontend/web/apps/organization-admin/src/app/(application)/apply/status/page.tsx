@@ -43,7 +43,7 @@ const STATUS_CONFIG: Record<StatusKey, {
   },
   PENDING_REVIEW: {
     label: 'Under Review',
-    description: 'Being reviewed by our team. Usually takes 2-3 business days.',
+    description: 'Being reviewed by our team. Usually takes 1-3 business days.',
     icon: Clock,
     color: 'var(--info-500)',
     bg: 'var(--info-50)',
@@ -190,13 +190,6 @@ export default function StatusPage() {
     }
   }, [loading, hasOrganization, status, router]);
 
-  // Auto-refresh when pending
-  useEffect(() => {
-    if (status !== 'PENDING_REVIEW') return;
-    const id = setInterval(refetch, 30000);
-    return () => clearInterval(id);
-  }, [status, refetch]);
-
   const goToDashboard = useCallback(() => router.push('/dashboard'), [router]);
   const goToEdit = useCallback(() => router.push('/apply/business-info'), [router]);
 
@@ -265,23 +258,15 @@ export default function StatusPage() {
   return (
     <Box>
       {/* Status Banner */}
-      <Card
-        mb="4"
-        style={{
-          background: config.bg,
-          border: `1px solid ${config.border}`,
-          borderRadius: 'var(--radius-lg)',
-        }}
-      >
-        <Box p="4">
+      <Card size="3" mb="4" style={{ background: config.bg }}>
           <Flex align="start" gap="3">
             <Box
               aria-hidden="true"
               style={{
                 width: 40,
                 height: 40,
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--surface-primary)',
+                borderRadius: 'var(--radius-3)',
+                background: 'var(--color-surface)',
                 border: `1px solid ${config.border}`,
                 display: 'flex',
                 alignItems: 'center',
@@ -329,20 +314,12 @@ export default function StatusPage() {
               </Button>
             )}
           </Flex>
-
-          {isPending && (
-            <Text size="1" mt="3" style={{ color: 'var(--content-tertiary)', display: 'block' }}>
-              Auto-refreshes every 30 seconds
-            </Text>
-          )}
-        </Box>
       </Card>
 
       {/* Details + Timeline in Grid */}
       <Flex gap="4" direction={{ initial: 'column', sm: 'row' }}>
         {/* Details */}
-        <Card className="card" style={{ flex: 1 }}>
-          <Box p="4">
+        <Card size="3" style={{ flex: 1 }}>
             <Text size="2" weight="medium" mb="3" style={{ color: 'var(--content-primary)', display: 'block' }}>
               Application Details
             </Text>
@@ -360,12 +337,10 @@ export default function StatusPage() {
                 <Text size="2" style={{ color: 'var(--content-primary)' }}>{formatDate(organization.updatedAt) || '-'}</Text>
               </Flex>
             </Flex>
-          </Box>
         </Card>
 
         {/* Timeline */}
-        <Card className="card" style={{ flex: 1 }}>
-          <Box p="4">
+        <Card size="3" style={{ flex: 1 }}>
             <Text size="2" weight="medium" mb="3" style={{ color: 'var(--content-primary)', display: 'block' }}>
               Timeline
             </Text>
@@ -387,21 +362,12 @@ export default function StatusPage() {
               date={formatDate(organization.approvedAt)}
               isLast
             />
-          </Box>
         </Card>
       </Flex>
 
       {/* Tips while waiting */}
       {isPending && (
-        <Card
-          mt="4"
-          style={{
-            background: 'var(--info-50)',
-            border: '1px solid var(--info-200)',
-            borderRadius: 'var(--radius-md)',
-          }}
-        >
-          <Box p="3">
+        <Card size="3" mt="4" style={{ background: 'var(--info-50)' }}>
             <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-primary)', display: 'block' }}>
               While you wait
             </Text>
@@ -409,7 +375,6 @@ export default function StatusPage() {
               Create draft events, explore the dashboard, and prepare your event content.
               Drafts can be published once approved.
             </Text>
-          </Box>
         </Card>
       )}
 

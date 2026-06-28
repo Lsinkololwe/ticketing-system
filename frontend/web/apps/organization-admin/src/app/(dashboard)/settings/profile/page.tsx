@@ -14,6 +14,7 @@ import { useState, useCallback } from 'react';
 import { Box, Flex, Text, TextField, Button, Card, Avatar, Badge } from '@radix-ui/themes';
 import { User, FloppyDisk, Camera, Key, Shield, Mail, Phone } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
+import { PhoneNumberInput } from '@pml.tickets/shared';
 import { useSession } from '@/lib/auth/client';
 
 // =============================================================================
@@ -285,14 +286,13 @@ export default function ProfileSettingsPage() {
           <FormField label="Phone Number">
             <Flex align="center" gap="2">
               <Phone style={{ width: 18, height: 18, color: 'var(--content-muted)' }} />
-              <TextField.Root
-                size="3"
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => handleChange('phone', e.target.value)}
-                placeholder="+260 97X XXX XXX"
-                style={{ flex: 1 }}
-              />
+              <Box style={{ flex: 1 }}>
+                <PhoneNumberInput
+                  value={formData.phone}
+                  onChange={(v) => handleChange('phone', v ?? '')}
+                  placeholder="97X XXX XXX"
+                />
+              </Box>
             </Flex>
           </FormField>
         </Box>

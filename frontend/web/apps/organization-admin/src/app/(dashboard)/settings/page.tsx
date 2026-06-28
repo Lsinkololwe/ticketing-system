@@ -25,10 +25,10 @@ import {
   useUpdateOrganizationApplication,
   type OrganizationApplicationInput,
   canEditOrganization,
-  BUSINESS_TYPES,
   ZAMBIAN_PROVINCES,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
-import { isNetworkError } from '@pml.tickets/shared';
+import { isNetworkError, PhoneNumberInput } from '@pml.tickets/shared';
+import { ORGANIZATION_TYPE_OPTIONS } from '@/components/application';
 
 // =============================================================================
 // TYPES (inferred from centralized schema)
@@ -51,7 +51,7 @@ interface OrganizationFormData {
   province: string;
   country: string;
   postalCode: string;
-  businessType: string;
+  organizationType: string;
   businessRegistrationNumber: string;
   taxId: string;
 }
@@ -99,13 +99,8 @@ const provinces = ZAMBIAN_PROVINCES.map((province) => ({
   label: province.replace('_', '-').replace(/\b\w/g, (l) => l.toUpperCase()) + ' Province',
 }));
 
-// Business type options derived from centralized constants
-const businessTypes = BUSINESS_TYPES.map((type) => ({
-  value: type,
-  label: type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (l) => l.toUpperCase()),
-}));
-
-// Legacy businessTypes for backward compatibility (remove after full migration)
+// Organization type options (shared with the application wizard).
+const organizationTypes = ORGANIZATION_TYPE_OPTIONS;
 
 // =============================================================================
 // MAIN COMPONENT
@@ -132,7 +127,7 @@ export default function OrganizationSettingsPage() {
     province: '',
     country: 'Zambia',
     postalCode: '',
-    businessType: '',
+    organizationType: '',
     businessRegistrationNumber: '',
     taxId: '',
   });
@@ -152,7 +147,7 @@ export default function OrganizationSettingsPage() {
         province: organization.businessAddress?.province || '',
         country: organization.businessAddress?.country || 'Zambia',
         postalCode: organization.businessAddress?.postalCode || '',
-        businessType: organization.type || '',
+        organizationType: organization.type || '',
         businessRegistrationNumber: organization.businessRegistrationNumber || '',
         taxId: organization.taxId || '',
       });
@@ -182,7 +177,7 @@ export default function OrganizationSettingsPage() {
         city: formData.city || null,
         province: formData.province || null,
         country: formData.country || null,
-        type: (formData.businessType as 'INDIVIDUAL' | 'BUSINESS') || undefined,
+        type: (formData.organizationType as OrganizationApplicationInput['type']) || undefined,
         bannerUrl: null,
         logoUrl: null,
         socialLinks: null,
@@ -453,15 +448,15 @@ export default function OrganizationSettingsPage() {
             </FormField>
           </Box>
 
-          <FormField label="Business Type">
+          <FormField label="Organization Type">
             <Select.Root
-              value={formData.businessType}
-              onValueChange={(value) => handleChange('businessType', value)}
+              value={formData.organizationType}
+              onValueChange={(value) => handleChange('organizationType', value)}
               disabled={!canEdit}
             >
-              <Select.Trigger placeholder="Select business type" style={{ width: '100%' }} />
+              <Select.Trigger placeholder="Select organization type" style={{ width: '100%' }} />
               <Select.Content>
-                {businessTypes.map((type) => (
+                {organizationTypes.map((type) => (
                   <Select.Item key={type.value} value={type.value}>
                     {type.label}
                   </Select.Item>
@@ -505,13 +500,11 @@ export default function OrganizationSettingsPage() {
           </FormField>
 
           <FormField label="Business Phone">
-            <TextField.Root
-              size="3"
-              type="tel"
+            <PhoneNumberInput
               value={formData.businessPhone}
-              onChange={(e) => handleChange('businessPhone', e.target.value)}
+              onChange={(v) => handleChange('businessPhone', v ?? '')}
               disabled={!canEdit}
-              placeholder="+260 97X XXX XXX"
+              placeholder="97X XXX XXX"
             />
           </FormField>
 

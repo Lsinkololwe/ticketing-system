@@ -100,4 +100,16 @@ public class KeycloakUserDataDto {
      * Timestamp when the event occurred (epoch millis).
      */
     private long timestamp;
+
+    /**
+     * Whether this sync was triggered by a brand-new registration
+     * (Keycloak {@code REGISTER}) or an admin-side user creation
+     * ({@code ADMIN_CREATE}). Drives idempotent {@code UserRegisteredEvent}
+     * publication independent of whether this service or Better Auth created the
+     * MongoDB document first.
+     */
+    public boolean isRegistrationEvent() {
+        return "REGISTER".equalsIgnoreCase(eventType)
+                || "ADMIN_CREATE".equalsIgnoreCase(eventType);
+    }
 }

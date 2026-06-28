@@ -96,7 +96,6 @@ export {
 // ============== API Configuration ==============
 export {
   GRAPHQL_ENDPOINT,
-  GRAPHQL_WS_ENDPOINT,
   adminServiceBaseUrl,
   filesServiceBaseUrl,
 } from './api/service-base-urls';

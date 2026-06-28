@@ -9,7 +9,6 @@
       "firstName",
       "lastName",
       "roles",
-      "accountStatus",
       "createdAt"
     ],
     "properties": {
@@ -46,6 +45,11 @@
         "bsonType": ["string", "null"],
         "pattern": "^\\+[1-9]\\d{1,14}$",
         "description": "OWASP A03 - E.164 phone format"
+      },
+      "phoneCountry": {
+        "bsonType": ["string", "null"],
+        "pattern": "^[A-Z]{2}$",
+        "description": "ISO-3166 alpha-2 country of phoneNumber (e.g. ZM)"
       },
       "roles": {
         "bsonType": "array",
@@ -84,6 +88,10 @@
         "bsonType": "bool",
         "description": "Account locked (synced from Keycloak)"
       },
+      "registrationEventPublished": {
+        "bsonType": "bool",
+        "description": "Idempotency guard - UserRegisteredEvent emitted exactly once per user"
+      },
       "emailVerified": {
         "bsonType": "bool",
         "description": "Email verification status"
@@ -91,10 +99,6 @@
       "phoneVerified": {
         "bsonType": "bool",
         "description": "Phone verification status"
-      },
-      "identityVerified": {
-        "bsonType": "bool",
-        "description": "KYC verification status"
       },
       "twoFactorEnabled": {
         "bsonType": "bool",
@@ -105,49 +109,10 @@
         "enum": ["SMS", "TOTP", "EMAIL", null],
         "description": "2FA method if enabled"
       },
-      "avatarUrl": {
-        "bsonType": ["string", "null"],
-        "pattern": "^https?://.*",
-        "description": "OWASP A03 - URL pattern validation"
-      },
-      "bio": {
-        "bsonType": ["string", "null"],
-        "maxLength": 1000,
-        "description": "User bio/description"
-      },
-      "dateOfBirth": {
-        "bsonType": ["date", "null"],
-        "description": "User's date of birth"
-      },
       "gender": {
         "bsonType": ["string", "null"],
         "enum": ["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY", null],
         "description": "User's gender"
-      },
-      "locale": {
-        "bsonType": ["string", "null"],
-        "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
-        "description": "Preferred locale (e.g., en-ZM)"
-      },
-      "timezone": {
-        "bsonType": ["string", "null"],
-        "maxLength": 50,
-        "description": "Preferred timezone"
-      },
-      "primaryOrganizationId": {
-        "bsonType": ["string", "null"],
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "Primary organization ID for organizers"
-      },
-      "totalTicketsPurchased": {
-        "bsonType": "int",
-        "minimum": 0,
-        "description": "Total tickets purchased (denormalized stat)"
-      },
-      "totalEventsAttended": {
-        "bsonType": "int",
-        "minimum": 0,
-        "description": "Total events attended (denormalized stat)"
       },
       "lastLoginAt": {
         "bsonType": ["date", "null"],

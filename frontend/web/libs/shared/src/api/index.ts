@@ -29,7 +29,6 @@ export type { TokenGetter, AsyncTokenGetter } from './rest/http-client';
 // Service base URLs
 export {
   GRAPHQL_ENDPOINT,
-  GRAPHQL_WS_ENDPOINT,
   adminServiceBaseUrl,
   filesServiceBaseUrl,
 } from './service-base-urls';

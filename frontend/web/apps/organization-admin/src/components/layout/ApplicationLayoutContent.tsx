@@ -227,7 +227,7 @@ export function ApplicationLayoutContent({ children }: ApplicationLayoutContentP
         px={{ initial: '4', sm: '6', lg: '8' }}
         py={{ initial: '6', sm: '8' }}
         flexGrow="1"
-        maxWidth="900px"
+        maxWidth="1200px"
         width="100%"
         mx="auto"
       >

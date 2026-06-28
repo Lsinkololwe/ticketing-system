@@ -257,16 +257,26 @@ public class PhoneOtpAuthenticator implements Authenticator {
      * Normalize phone number to E.164 format.
      */
     private String normalizePhoneNumber(String phoneNumber) {
+        // Canonical E.164 rule (kept in sync with backend PhoneNumbers util and the
+        // frontend libphonenumber-js normalizer). The previous version prepended
+        // "+260" without dropping the national trunk 0, producing phantom-0 numbers
+        // like +2600969944454 that are invalid for delivery.
         String cleaned = phoneNumber.replaceAll("[^0-9+]", "");
-        if (!cleaned.startsWith("+")) {
-            // Default to Zambia (+260) if no country code
-            if (cleaned.length() <= 10) {
-                cleaned = "+260" + cleaned;
-            } else {
-                cleaned = "+" + cleaned;
-            }
+        if (cleaned.startsWith("+")) {
+            return cleaned;
         }
-        return cleaned;
+        if (cleaned.startsWith("00")) {
+            return "+" + cleaned.substring(2);
+        }
+        if (cleaned.startsWith("260")) {
+            return "+" + cleaned;
+        }
+        if (cleaned.startsWith("0")) {
+            // Local national format → drop trunk 0, add Zambia country code
+            return "+260" + cleaned.substring(1);
+        }
+        // Bare national subscriber number
+        return "+260" + cleaned;
     }
 
     /**

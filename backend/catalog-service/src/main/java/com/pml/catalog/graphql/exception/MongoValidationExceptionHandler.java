@@ -61,7 +61,15 @@ public class MongoValidationExceptionHandler implements DataFetcherExceptionHand
             return handleTenantIsolation(tenantEx, handlerParameters);
         }
 
-        // Not our exception, let default handler deal with it
+        // Unhandled exception: log the FULL stack trace so it is traceable on the
+        // server, then return a generic message to the client (no internal leakage).
+        log.error("Unhandled exception in GraphQL field '{}' at path {}: {}",
+                handlerParameters.getField() != null
+                        ? handlerParameters.getField().getName() : "unknown",
+                handlerParameters.getPath(),
+                exception.toString(),
+                exception);
+
         return CompletableFuture.completedFuture(
                 DataFetcherExceptionHandlerResult.newResult()
                         .error(TypedGraphQLError.newInternalErrorBuilder()

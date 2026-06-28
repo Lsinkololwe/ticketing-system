@@ -371,6 +371,7 @@ function AuthMessageContent() {
           align="center"
           mt="6"
           style={{ color: '#6B7280', display: 'block' }}
+          suppressHydrationWarning
         >
           &copy; {new Date().getFullYear()} MyTicket Zambia. All rights reserved.
         </Text>

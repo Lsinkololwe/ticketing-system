@@ -258,6 +258,9 @@ scalar DateTime
 scalar BigDecimal
 scalar JSON
 scalar Long
+# Phone number as canonical E.164 (e.g. +260971234567). Normalized + validated
+# (Google libphonenumber) on input; serialized as E.164 on output.
+scalar PhoneNumber
 
 # ============================================================================
 # SECTION 3: ENUMS - PLATFORM & ACCOUNT
@@ -311,7 +314,12 @@ enum OrganizationStatus {
 # Organization type
 enum OrganizationType {
     INDIVIDUAL          # Sole proprietor / personal account
-    BUSINESS            # Formal business entity
+    BUSINESS            # For-profit company / commercial promoter
+    NON_PROFIT          # NGO, charity or foundation
+    GOVERNMENT          # Government / public-sector entity
+    EDUCATIONAL         # School, college or university
+    COMMUNITY           # Community group, club, association or sports league
+    RELIGIOUS           # Church, mosque or faith-based group
 }
 
 # Know Your Business (KYB) verification status
@@ -603,18 +611,15 @@ type User @key(fields: "id") {
     fullName: String! @shareable    # Computed: firstName + lastName
     # ADMIN - Phone number is PII
     # @shareable allows booking-service to @provides this from cached Ticket data
-    phoneNumber: String @shareable @tag(name: "admin")
+    phoneNumber: PhoneNumber @shareable @tag(name: "admin")
+    # ISO-3166 alpha-2 country of phoneNumber (e.g. "ZM")
+    phoneCountry: String @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Profile Information
     # PUBLIC - Optional profile details
     # ─────────────────────────────────────────────────────────────────────
-    avatarUrl: String               # Profile picture URL
-    bio: String                     # User bio/description
-    dateOfBirth: DateTime
     gender: String
-    locale: String                  # Preferred locale (e.g., "en-ZM")
-    timezone: String                # Preferred timezone
 
     # ─────────────────────────────────────────────────────────────────────
     # Platform Roles & Status
@@ -635,7 +640,6 @@ type User @key(fields: "id") {
     # ─────────────────────────────────────────────────────────────────────
     emailVerified: Boolean! @tag(name: "admin")
     phoneVerified: Boolean! @tag(name: "admin")
-    identityVerified: Boolean! @tag(name: "admin")  # KYC verification for organizers
 
     # ─────────────────────────────────────────────────────────────────────
     # Account Flags
@@ -663,10 +667,6 @@ type User @key(fields: "id") {
     # ─────────────────────────────────────────────────────────────────────
     organizationMemberships: [OrganizationMember!] @tag(name: "organizer")
 
-    # Primary organization (for quick access)
-    primaryOrganizationId: ID @tag(name: "organizer")
-    primaryOrganization: Organization @tag(name: "organizer")
-
     # ─────────────────────────────────────────────────────────────────────
     # Notification Preferences
     # MOBILE - User manages their own notification preferences
@@ -677,8 +677,6 @@ type User @key(fields: "id") {
     # Statistics (as customer)
     # PUBLIC - Gamification/profile stats
     # ─────────────────────────────────────────────────────────────────────
-    totalTicketsPurchased: Int
-    totalEventsAttended: Int
     memberSince: DateTime
 
     # ─────────────────────────────────────────────────────────────────────
@@ -1638,7 +1636,7 @@ type EventAccessGrantEdge {
 
 input CreateUserInput {
     email: String!
-    phoneNumber: String
+    phoneNumber: PhoneNumber
     firstName: String!
     lastName: String!
     password: String
@@ -1648,13 +1646,10 @@ input CreateUserInput {
 input UpdateUserInput {
     firstName: String
     lastName: String
-    phoneNumber: String
-    avatarUrl: String
-    bio: String
-    dateOfBirth: DateTime
+    phoneNumber: PhoneNumber
+    # ISO-3166 alpha-2 country of phoneNumber (e.g. "ZM")
+    phoneCountry: String
     gender: String
-    locale: String
-    timezone: String
 }
 
 input UpdateNotificationPreferencesInput {
@@ -1998,9 +1993,9 @@ input SetMobileMoneyAccountInput {
 
     """
     Phone number in E.164 format (e.g., +260971234567).
-    SECURITY: Validated against Zambian mobile prefixes, sanitized, and masked for display.
+    Normalized + validated by the PhoneNumber scalar (libphonenumber).
     """
-    phoneNumber: String!
+    phoneNumber: PhoneNumber!
 
     """
     Account holder name (must match business/individual name).

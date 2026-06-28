@@ -9,10 +9,16 @@ import com.pml.identity.repository.UserRepository;
 import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.service.UserSyncService;
 import com.pml.shared.constants.UserType;
+import com.pml.shared.util.PhoneNumbers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -46,6 +52,7 @@ public class UserSyncServiceImpl implements UserSyncService {
     private final UserRepository userRepository;
     private final KeycloakService keycloakService;
     private final StreamBridge streamBridge;
+    private final ReactiveMongoTemplate mongoTemplate;
 
     @Override
     public Mono<User> syncUserFromKeycloak(String keycloakUserId) {
@@ -72,7 +79,11 @@ public class UserSyncServiceImpl implements UserSyncService {
                     // Update existing user
                     log.debug("Updating existing user from data: {}", userData.getId());
                     updateUserFromData(existingUser, userData);
-                    return userRepository.save(existingUser);
+                    // Better Auth may have created the row first; if this is a
+                    // REGISTER/ADMIN_CREATE landing on the update branch, still
+                    // publish (idempotently) so onboarding is never skipped.
+                    return userRepository.save(existingUser)
+                            .flatMap(saved -> publishRegistrationIfNeeded(saved, userData.isRegistrationEvent()));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Create new user
@@ -80,7 +91,7 @@ public class UserSyncServiceImpl implements UserSyncService {
                     log.info("Creating new user from data: {}", userData.getId());
                     User newUser = createUserFromData(userData);
                     return userRepository.save(newUser)
-                            .doOnSuccess(this::publishUserRegisteredEvent);
+                            .flatMap(saved -> publishRegistrationIfNeeded(saved, true));
                 }))
                 .doOnSuccess(user -> log.info("User synced successfully from data: {}", userData.getId()));
     }
@@ -90,6 +101,7 @@ public class UserSyncServiceImpl implements UserSyncService {
      */
     private User createUserFromData(KeycloakUserDataDto data) {
         Set<UserType> roles = extractRolesFromData(data);
+        String e164 = PhoneNumbers.toE164(data.getPhoneNumber());
 
         return User.builder()
                 .id(data.getId())
@@ -97,7 +109,8 @@ public class UserSyncServiceImpl implements UserSyncService {
                 .email(data.getEmail())
                 .firstName(data.getFirstName() != null ? data.getFirstName() : "")
                 .lastName(data.getLastName() != null ? data.getLastName() : "")
-                .phoneNumber(data.getPhoneNumber())
+                .phoneNumber(e164)
+                .phoneCountry(e164 != null ? PhoneNumbers.regionFor(e164) : null)
                 .phoneVerified(data.isPhoneVerified())
                 .emailVerified(data.isEmailVerified())
                 .active(data.isEnabled())
@@ -109,18 +122,24 @@ public class UserSyncServiceImpl implements UserSyncService {
 
     /**
      * Update an existing User entity from Keycloak user data DTO.
+     *
+     * <p>SHARED COLLECTION OWNERSHIP: the {@code users} collection is shared with Better
+     * Auth. Better Auth owns its core fields ({@code email}, {@code name},
+     * {@code emailVerified}, {@code image}, {@code createdAt}) and re-asserts them on every
+     * login. This sync therefore updates ONLY the business fields it owns
+     * (username, firstName, lastName, phoneNumber/phoneVerified, roles, active) and must
+     * NOT touch the Better-Auth-owned fields, otherwise the two writers would fight.</p>
      */
     private void updateUserFromData(User user, KeycloakUserDataDto data) {
         user.setUsername(data.getUsername());
-        user.setEmail(data.getEmail());
         user.setFirstName(data.getFirstName() != null ? data.getFirstName() : user.getFirstName());
         user.setLastName(data.getLastName() != null ? data.getLastName() : user.getLastName());
-        user.setEmailVerified(data.isEmailVerified());
+        // NOTE: email + emailVerified are Better-Auth-owned and intentionally not set here.
         user.setActive(data.isEnabled());
         user.setUpdatedAt(Instant.now());
 
         if (data.getPhoneNumber() != null) {
-            user.setPhoneNumber(data.getPhoneNumber());
+            applyNormalizedPhone(user, data.getPhoneNumber());
             user.setPhoneVerified(data.isPhoneVerified());
         }
 
@@ -291,7 +310,7 @@ public class UserSyncServiceImpl implements UserSyncService {
                     log.info("Creating new user from Keycloak: {}", keycloakUserId);
                     User newUser = createUserFromKeycloak(keycloakUser);
                     return userRepository.save(newUser)
-                            .doOnSuccess(this::publishUserRegisteredEvent);
+                            .flatMap(saved -> publishRegistrationIfNeeded(saved, true));
                 }))
                 .doOnSuccess(user -> log.debug("User synced successfully: {}", keycloakUserId));
     }
@@ -321,7 +340,8 @@ public class UserSyncServiceImpl implements UserSyncService {
         // Extract custom attributes
         // Note: Business fields (companyName, etc.) belong to Organization, not User
         if (attributes != null) {
-            extractAttribute(attributes, "phoneNumber").ifPresent(user::setPhoneNumber);
+            extractAttribute(attributes, "phoneNumber")
+                    .ifPresent(p -> applyNormalizedPhone(user, p));
             extractAttribute(attributes, "phoneVerified")
                     .ifPresent(v -> user.setPhoneVerified(Boolean.parseBoolean(v)));
         }
@@ -418,10 +438,23 @@ public class UserSyncServiceImpl implements UserSyncService {
         // Extract and update custom attributes
         // Note: Business fields (companyName, etc.) belong to Organization, not User
         if (attributes != null) {
-            extractAttribute(attributes, "phoneNumber").ifPresent(user::setPhoneNumber);
+            extractAttribute(attributes, "phoneNumber")
+                    .ifPresent(p -> applyNormalizedPhone(user, p));
             extractAttribute(attributes, "phoneVerified")
                     .ifPresent(v -> user.setPhoneVerified(Boolean.parseBoolean(v)));
         }
+    }
+
+    /**
+     * Normalize a raw phone number to E.164 and set it (with derived ISO country)
+     * on the user. A value that cannot be made valid E.164 is stored as {@code null}
+     * rather than persisting a malformed number that would fail the {@code users}
+     * validator. This is the single phone-write funnel for the Keycloak→Mongo sync.
+     */
+    private void applyNormalizedPhone(User user, String rawPhone) {
+        String e164 = PhoneNumbers.toE164(rawPhone);
+        user.setPhoneNumber(e164);
+        user.setPhoneCountry(e164 != null ? PhoneNumbers.regionFor(e164) : null);
     }
 
     /**
@@ -451,6 +484,33 @@ public class UserSyncServiceImpl implements UserSyncService {
             log.warn("Unknown user type: {}, defaulting to CUSTOMER", value);
             return UserType.CUSTOMER;
         }
+    }
+
+    /**
+     * Idempotently publish {@link UserRegisteredEvent} for a registration.
+     *
+     * <p>The shared {@code users} document can be created by EITHER Better Auth
+     * (web OIDC sign-in) OR this sync (mobile/OTP, admin), so the event must not
+     * be tied to "who created the row". It is published exactly once, guarded by
+     * an atomic compare-and-set on {@code registrationEventPublished}: only the
+     * writer that flips the flag false→true publishes, so concurrent create/update
+     * paths and retries can never double-publish.</p>
+     *
+     * @param user                the synced user
+     * @param registrationTrigger whether this sync represents a registration
+     *                            (a fresh create, or a REGISTER/ADMIN_CREATE event)
+     */
+    private Mono<User> publishRegistrationIfNeeded(User user, boolean registrationTrigger) {
+        if (!registrationTrigger) {
+            return Mono.just(user);
+        }
+        Query claim = Query.query(Criteria.where("_id").is(user.getId())
+                .and("registrationEventPublished").ne(true));
+        Update markPublished = new Update().set("registrationEventPublished", true);
+        return mongoTemplate.findAndModify(claim, markPublished,
+                        FindAndModifyOptions.options().returnNew(true), User.class)
+                .doOnNext(this::publishUserRegisteredEvent) // emits only if the claim won
+                .thenReturn(user);
     }
 
     /**

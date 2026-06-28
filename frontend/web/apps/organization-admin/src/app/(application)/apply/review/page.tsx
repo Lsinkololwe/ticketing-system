@@ -9,12 +9,10 @@
 
 import { useCallback, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Box, Flex, Text, Heading, Button, Card, Checkbox, Spinner } from '@radix-ui/themes';
+import { Box, Flex, Text, Heading, Button, Card, Checkbox, Spinner, Separator } from '@radix-ui/themes';
 import { ArrowLeft, SendDiagonal, Building, Phone, Globe, Link as LinkIcon, Shield, WarningTriangle, EditPencil } from 'iconoir-react';
 import {
-  StepIndicator,
   ReviewSkeleton,
-  APPLICATION_STEPS,
   ORGANIZATION_TYPE_LABELS,
   PROVINCE_LABELS,
 } from '@/components/application';
@@ -35,6 +33,26 @@ import {
 const INITIAL_FORM_DATA: ApplicationReviewFormData = {
   agreedToTerms: false,
   agreedToPrivacy: false,
+};
+
+// Light, professionally-themed card surface (subtle accent tint + border).
+// Same footprint as the business-info cards (Card size="3") — just tinted.
+const CARD_SURFACE: React.CSSProperties = {
+  backgroundColor: 'var(--accent-a2)',
+  borderColor: 'var(--accent-a5)',
+};
+
+// Rounded-square teal-tint icon chip used in each section header.
+const SECTION_ICON_CHIP: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  borderRadius: 'var(--radius-2)',
+  background: 'var(--accent-a3)',
+  color: 'var(--accent-11)',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
 };
 
 // =============================================================================
@@ -69,11 +87,13 @@ function Section({
   onEdit?: () => void;
 }) {
   return (
-    <Box mb="4">
-      <Flex justify="between" align="center" mb="2">
-        <Flex align="center" gap="2">
-          <Icon width={16} height={16} className="icon-accent" aria-hidden="true" />
-          <Text size="2" weight="medium" highContrast>
+    <Box>
+      <Flex justify="between" align="center" mb="3">
+        <Flex align="center" gap="3">
+          <span style={SECTION_ICON_CHIP} aria-hidden="true">
+            <Icon width={16} height={16} />
+          </span>
+          <Text size="3" weight="bold" highContrast>
             {title}
           </Text>
         </Flex>
@@ -85,11 +105,12 @@ function Section({
             onClick={onEdit}
             aria-label={`Edit ${title}`}
           >
-            <EditPencil width={12} height={12} aria-hidden="true" />
+            <EditPencil width={14} height={14} aria-hidden="true" />
+            Edit
           </Button>
         )}
       </Flex>
-      <Box pl="5">{children}</Box>
+      <Box pl={{ initial: '0', sm: '6' }}>{children}</Box>
     </Box>
   );
 }
@@ -149,9 +170,6 @@ export default function ReviewPage() {
   const canSubmit = allFieldsValid && agreedToTerms && agreedToPrivacy && !isFormSubmitting;
 
   const goToEdit = useCallback(() => router.push('/apply/business-info'), [router]);
-  const handleStepClick = useCallback((step: number) => {
-    if (step === 0) goToEdit();
-  }, [goToEdit]);
 
   // Loading state
   if (orgLoading) {
@@ -171,8 +189,6 @@ export default function ReviewPage() {
 
   return (
     <Box>
-      <StepIndicator steps={APPLICATION_STEPS} currentStep={1} onStepClick={handleStepClick} />
-
       {/* Header */}
       <Flex justify="between" align="start" mb="5">
         <Box>
@@ -202,23 +218,22 @@ export default function ReviewPage() {
       )}
 
       {/* Review Card */}
-      <Card variant="surface" mb="4">
-        <Box p="5">
+      <Card size="3" variant="surface" mb="4" style={CARD_SURFACE}>
           <Section title="Organization" icon={Building} onEdit={goToEdit}>
             <Field label="Name" value={organization.name} />
             <Field label="Type" value={organization.type ? ORGANIZATION_TYPE_LABELS[organization.type] || organization.type : undefined} />
             <Field label="Tagline" value={organization.tagline} />
-            {organization.description && (
-              <Box py="2">
-                <Text as="label" size="1" color="gray" mb="1" style={{ display: 'block' }}>
-                  Description
-                </Text>
-                <Text as="p" size="2" color="gray">
-                  {organization.description}
-                </Text>
-              </Box>
-            )}
+            <Box py="2">
+              <Text as="label" size="2" color="gray" mb="1" style={{ display: 'block' }}>
+                Description
+              </Text>
+              <Text as="p" size="2" color={organization.description ? undefined : 'gray'} style={{ fontStyle: organization.description ? 'normal' : 'italic' }}>
+                {organization.description || '-'}
+              </Text>
+            </Box>
           </Section>
+
+          <Separator size="4" my="4" />
 
           <Section title="Contact" icon={Phone} onEdit={goToEdit}>
             <Field label="Email" value={organization.businessEmail} />
@@ -226,28 +241,30 @@ export default function ReviewPage() {
             <Field label="Website" value={organization.website} />
           </Section>
 
+          <Separator size="4" my="4" />
+
           <Section title="Location" icon={Globe} onEdit={goToEdit}>
             <Field label="City" value={organization.businessAddress?.city} />
             <Field label="Province" value={organization.businessAddress?.province ? PROVINCE_LABELS[organization.businessAddress.province] || organization.businessAddress.province : undefined} />
             <Field label="Country" value={organization.businessAddress?.country || 'Zambia'} />
           </Section>
 
-          {(organization.socialLinks?.facebook || organization.socialLinks?.instagram || organization.socialLinks?.twitter) && (
-            <Section title="Social" icon={LinkIcon} onEdit={goToEdit}>
-              {organization.socialLinks?.facebook && <Field label="Facebook" value={organization.socialLinks.facebook} />}
-              {organization.socialLinks?.instagram && <Field label="Instagram" value={organization.socialLinks.instagram} />}
-              {organization.socialLinks?.twitter && <Field label="Twitter" value={organization.socialLinks.twitter} />}
-            </Section>
-          )}
-        </Box>
+          <Separator size="4" my="4" />
+
+          <Section title="Social Media" icon={LinkIcon} onEdit={goToEdit}>
+            <Field label="Facebook" value={organization.socialLinks?.facebook} />
+            <Field label="Instagram" value={organization.socialLinks?.instagram} />
+            <Field label="Twitter / X" value={organization.socialLinks?.twitter} />
+          </Section>
       </Card>
 
       {/* Terms Card */}
-      <Card variant="surface" mb="4">
-        <Box p="5">
-          <Flex align="center" gap="2" mb="3">
-            <Shield width={16} height={16} className="icon-accent" aria-hidden="true" />
-            <Text size="2" weight="medium" highContrast>
+      <Card size="3" variant="surface" mb="4" style={CARD_SURFACE}>
+          <Flex align="center" gap="3" mb="3">
+            <span style={SECTION_ICON_CHIP} aria-hidden="true">
+              <Shield width={16} height={16} />
+            </span>
+            <Text size="3" weight="bold" highContrast>
               Agreements
             </Text>
           </Flex>
@@ -297,7 +314,6 @@ export default function ReviewPage() {
               </Text>
             )}
           </Flex>
-        </Box>
       </Card>
 
       {/* Info Banner */}
@@ -325,31 +341,48 @@ export default function ReviewPage() {
         </Card>
       )}
 
-      {/* Actions */}
-      <Flex justify="between" gap="3">
-        <Button variant="soft" size="3" onClick={goToEdit} disabled={isFormSubmitting}>
-          <ArrowLeft width={16} height={16} aria-hidden="true" />
-          Back
-        </Button>
-        <Button
-          size="3"
-          color="teal"
-          onClick={handleSubmit(onSubmit)}
-          disabled={!canSubmit}
-        >
-          {isFormSubmitting ? (
-            <>
-              <Spinner size="1" />
-              Submitting...
-            </>
-          ) : (
-            <>
-              Submit
-              <SendDiagonal width={16} height={16} aria-hidden="true" />
-            </>
-          )}
-        </Button>
-      </Flex>
+      {/* ════════════════ STICKY FOOTER ════════════════ */}
+      <Box
+        mt="6"
+        py="3"
+        style={{
+          position: 'sticky',
+          bottom: 0,
+          background: 'var(--color-background)',
+          borderTop: '1px solid var(--gray-a5)',
+          zIndex: 10,
+        }}
+      >
+        <Flex justify="between" align="center" gap="3">
+          <Button variant="soft" color="gray" size="3" onClick={goToEdit} disabled={isFormSubmitting}>
+            <ArrowLeft width={16} height={16} aria-hidden="true" />
+            Back
+          </Button>
+
+          <Box display={{ initial: 'none', sm: 'block' }}>
+            <Text size="2" color="gray" weight="medium">Step 2 of 2</Text>
+          </Box>
+
+          <Button
+            size="3"
+            color="teal"
+            onClick={handleSubmit(onSubmit)}
+            disabled={!canSubmit}
+          >
+            {isFormSubmitting ? (
+              <>
+                <Spinner size="1" />
+                Submitting...
+              </>
+            ) : (
+              <>
+                Submit Application
+                <SendDiagonal width={16} height={16} aria-hidden="true" />
+              </>
+            )}
+          </Button>
+        </Flex>
+      </Box>
 
       {/* Styles for field rows */}
       <style jsx global>{`

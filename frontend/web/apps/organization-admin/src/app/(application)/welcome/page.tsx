@@ -35,6 +35,11 @@ import {
 } from '@radix-ui/themes';
 import { Building, ArrowRight, Clock, ShieldCheck, Rocket } from 'iconoir-react';
 import { useSession } from '@/lib/auth/client';
+import {
+  useMyOrganization,
+  isApproved,
+  canEditApplication,
+} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
@@ -98,8 +103,27 @@ export default function WelcomePage() {
   const { data: session, isPending } = useSession();
   const ctaButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Organization status drives where the user belongs. Welcome is only the right
+  // place when there is no application yet, or it is still editable (not submitted).
+  const { hasOrganization, status, loading: orgLoading } = useMyOrganization({
+    fetchPolicy: 'cache-first',
+  });
+
   // Extract first name from session
   const firstName = session?.user?.name?.split(' ')[0] || 'there';
+
+  // Route the user to the page that matches their application status:
+  //   - APPROVED / ACTIVE        → dashboard
+  //   - PENDING_REVIEW / REJECTED / SUSPENDED (submitted) → status page
+  //   - DRAFT / CHANGES_REQUESTED (editable) or none      → stay on welcome
+  useEffect(() => {
+    if (orgLoading || !hasOrganization || !status) return;
+    if (isApproved(status)) {
+      router.replace('/dashboard');
+    } else if (!canEditApplication(status)) {
+      router.replace('/apply/status');
+    }
+  }, [orgLoading, hasOrganization, status, router]);
 
   // Handle CTA click
   const handleGetStarted = useCallback(() => {

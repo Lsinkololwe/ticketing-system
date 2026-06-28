@@ -39,13 +39,6 @@ export const API_BASE_URL =
 export const GRAPHQL_ENDPOINT =
   process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || `${API_BASE_URL}/graphql`;
 
-/**
- * WebSocket endpoint for GraphQL subscriptions
- */
-export const GRAPHQL_WS_ENDPOINT =
-  process.env.NEXT_PUBLIC_GRAPHQL_WS_ENDPOINT ||
-  GRAPHQL_ENDPOINT.replace(/^http/, 'ws').replace('/graphql', '/ws');
-
 // ============== REST Endpoints ==============
 
 /**

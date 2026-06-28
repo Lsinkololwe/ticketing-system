@@ -3,6 +3,7 @@ package com.pml.identity.service.impl;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.enums.OrganizationStatus;
 import com.pml.identity.domain.enums.OrganizationType;
+import com.pml.identity.domain.event.OrganizationApprovedEvent;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.model.User;
@@ -402,8 +403,8 @@ class OrganizationOnboardingServiceImplTest {
                     "https://example.com/banner.png",
                     "https://updated-website.com",
                     OrganizationType.BUSINESS,
-                    "new@example.com",
-                    "+260977777777",
+                    "+260977777777", // businessPhone (record order: phone before email)
+                    "new@example.com", // businessEmail
                     "Ndola",
                     "Copperbelt Province",
                     "Zambia",
@@ -433,10 +434,11 @@ class OrganizationOnboardingServiceImplTest {
         }
 
         @Test
-        @DisplayName("Should fail when organization is APPROVED")
-        void shouldFailWhenOrganizationIsApproved() {
-            // Given
-            testOrganization.setStatus(OrganizationStatus.APPROVED);
+        @DisplayName("Should fail when organization is SUSPENDED")
+        void shouldFailWhenOrganizationIsSuspended() {
+            // Given - SUSPENDED is a non-editable status (APPROVED/ACTIVE remain editable
+            // per OrganizationStatus.canBeEdited()).
+            testOrganization.setStatus(OrganizationStatus.SUSPENDED);
 
             OrganizationApplicationInput input = new OrganizationApplicationInput(
                     "Updated Name",

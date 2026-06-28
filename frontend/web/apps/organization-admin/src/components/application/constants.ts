@@ -64,9 +64,16 @@ export const PROVINCE_LABELS: Record<string, string> = Object.fromEntries(
  * Organization types with display labels
  * Values match the backend enum and Zod schema
  */
-export const ORGANIZATION_TYPE_OPTIONS: SelectOption<'INDIVIDUAL' | 'BUSINESS'>[] = [
+export const ORGANIZATION_TYPE_OPTIONS: SelectOption<
+  'INDIVIDUAL' | 'BUSINESS' | 'NON_PROFIT' | 'GOVERNMENT' | 'EDUCATIONAL' | 'COMMUNITY' | 'RELIGIOUS'
+>[] = [
   { value: 'INDIVIDUAL', label: 'Individual / Personal' },
   { value: 'BUSINESS', label: 'Business / Company' },
+  { value: 'NON_PROFIT', label: 'Non-Profit / NGO' },
+  { value: 'GOVERNMENT', label: 'Government / Public Sector' },
+  { value: 'EDUCATIONAL', label: 'Educational Institution' },
+  { value: 'COMMUNITY', label: 'Community Group / Club' },
+  { value: 'RELIGIOUS', label: 'Religious Organization' },
 ];
 
 /**

@@ -13,20 +13,26 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
 
+import static com.pml.identity.testsupport.SecurityContextTestUtils.withUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
  * Comprehensive unit tests for VerificationDocumentQueryResolver.
+ *
+ * <p>The resolver extracts the authenticated user from the reactive
+ * {@code SecurityContext}; tests inject identity via
+ * {@link com.pml.identity.testsupport.SecurityContextTestUtils#withUser}. The
+ * "my*" queries use {@code getCurrentUserId()} (not {@code requireCurrentUserId()}),
+ * so an unauthenticated call (no context) yields an empty result / zero count
+ * rather than an error.</p>
  *
  * Tests cover:
  * - Single document queries
@@ -34,7 +40,7 @@ import static org.mockito.Mockito.*;
  * - Admin document queries (all organizations)
  * - Filtering by status and type
  * - Security (data isolation, admin vs organizer access)
- * - Edge cases (null JWT, empty results, missing organization)
+ * - Edge cases (unauthenticated, empty results, missing organization)
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("VerificationDocumentQueryResolver Unit Tests")
@@ -45,9 +51,6 @@ class VerificationDocumentQueryResolverTest {
 
     @Mock
     private OrganizationService organizationService;
-
-    @Mock
-    private Jwt jwt;
 
     @InjectMocks
     private VerificationDocumentQueryResolver resolver;
@@ -91,8 +94,8 @@ class VerificationDocumentQueryResolverTest {
                 .mimeType("application/pdf")
                 .status(DocumentStatus.APPROVED)
                 .uploadedAt(Instant.now())
-                .reviewedAt(Instant.now())
-                .reviewedBy("admin-123")
+                .verifiedAt(Instant.now())
+                .verifiedById("admin-123")
                 .build();
 
         rejectedDocument = VerificationDocument.builder()
@@ -106,8 +109,8 @@ class VerificationDocumentQueryResolverTest {
                 .status(DocumentStatus.REJECTED)
                 .rejectionReason("Document is expired")
                 .uploadedAt(Instant.now())
-                .reviewedAt(Instant.now())
-                .reviewedBy("admin-123")
+                .verifiedAt(Instant.now())
+                .verifiedById("admin-123")
                 .build();
     }
 
@@ -169,14 +172,14 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return all documents when no status filter")
         void shouldReturnAllDocuments_WhenNoStatusFilter() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.findByOrganization(ORG_ID))
                     .thenReturn(Flux.just(testDocument, approvedDocument, rejectedDocument));
 
             // When
-            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null, jwt);
+            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -192,7 +195,6 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should filter documents by status")
         void shouldFilterByStatus_WhenStatusProvided() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.findByOrganizationAndStatus(ORG_ID, DocumentStatus.APPROVED))
@@ -200,23 +202,23 @@ class VerificationDocumentQueryResolverTest {
 
             // When
             Flux<VerificationDocument> result =
-                    resolver.myVerificationDocuments(DocumentStatus.APPROVED, jwt);
+                    resolver.myVerificationDocuments(DocumentStatus.APPROVED)
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(doc -> {
-                        assertThat(doc.getStatus()).isEqualTo(DocumentStatus.APPROVED);
-                    })
+                    .assertNext(doc ->
+                            assertThat(doc.getStatus()).isEqualTo(DocumentStatus.APPROVED))
                     .verifyComplete();
 
             verify(documentService).findByOrganizationAndStatus(ORG_ID, DocumentStatus.APPROVED);
         }
 
         @Test
-        @DisplayName("Should return empty when JWT is null")
-        void shouldReturnEmpty_WhenJwtIsNull() {
-            // When
-            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null, null);
+        @DisplayName("Should return empty when not authenticated")
+        void shouldReturnEmpty_WhenNotAuthenticated() {
+            // When (no security context written)
+            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null);
 
             // Then
             StepVerifier.create(result)
@@ -229,12 +231,12 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return empty when user has no organization")
         void shouldReturnEmpty_WhenUserHasNoOrganization() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.empty());
 
             // When
-            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null, jwt);
+            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null)
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -247,7 +249,6 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return pending documents only")
         void shouldReturnPendingDocuments() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.findByOrganizationAndStatus(ORG_ID, DocumentStatus.PENDING))
@@ -255,13 +256,13 @@ class VerificationDocumentQueryResolverTest {
 
             // When
             Flux<VerificationDocument> result =
-                    resolver.myVerificationDocuments(DocumentStatus.PENDING, jwt);
+                    resolver.myVerificationDocuments(DocumentStatus.PENDING)
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(doc -> {
-                        assertThat(doc.getStatus()).isEqualTo(DocumentStatus.PENDING);
-                    })
+                    .assertNext(doc ->
+                            assertThat(doc.getStatus()).isEqualTo(DocumentStatus.PENDING))
                     .verifyComplete();
         }
 
@@ -269,7 +270,6 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return rejected documents only")
         void shouldReturnRejectedDocuments() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.findByOrganizationAndStatus(ORG_ID, DocumentStatus.REJECTED))
@@ -277,7 +277,8 @@ class VerificationDocumentQueryResolverTest {
 
             // When
             Flux<VerificationDocument> result =
-                    resolver.myVerificationDocuments(DocumentStatus.REJECTED, jwt);
+                    resolver.myVerificationDocuments(DocumentStatus.REJECTED)
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -329,9 +330,8 @@ class VerificationDocumentQueryResolverTest {
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(doc -> {
-                        assertThat(doc.getStatus()).isEqualTo(DocumentStatus.APPROVED);
-                    })
+                    .assertNext(doc ->
+                            assertThat(doc.getStatus()).isEqualTo(DocumentStatus.APPROVED))
                     .verifyComplete();
         }
     }
@@ -396,7 +396,6 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return document when type exists")
         void shouldReturnDocument_WhenTypeExists() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.findByOrganizationAndType(ORG_ID, "BUSINESS_REGISTRATION"))
@@ -404,13 +403,13 @@ class VerificationDocumentQueryResolverTest {
 
             // When
             Mono<VerificationDocument> result =
-                    resolver.myVerificationDocumentByType("BUSINESS_REGISTRATION", jwt);
+                    resolver.myVerificationDocumentByType("BUSINESS_REGISTRATION")
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(doc -> {
-                        assertThat(doc.getDocumentType()).isEqualTo("BUSINESS_REGISTRATION");
-                    })
+                    .assertNext(doc ->
+                            assertThat(doc.getDocumentType()).isEqualTo("BUSINESS_REGISTRATION"))
                     .verifyComplete();
         }
 
@@ -418,7 +417,6 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return empty when type not found")
         void shouldReturnEmpty_WhenTypeNotFound() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.findByOrganizationAndType(ORG_ID, "NONEXISTENT_TYPE"))
@@ -426,7 +424,8 @@ class VerificationDocumentQueryResolverTest {
 
             // When
             Mono<VerificationDocument> result =
-                    resolver.myVerificationDocumentByType("NONEXISTENT_TYPE", jwt);
+                    resolver.myVerificationDocumentByType("NONEXISTENT_TYPE")
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -434,11 +433,11 @@ class VerificationDocumentQueryResolverTest {
         }
 
         @Test
-        @DisplayName("Should return empty when JWT is null")
-        void shouldReturnEmpty_WhenJwtIsNull() {
-            // When
+        @DisplayName("Should return empty when not authenticated")
+        void shouldReturnEmpty_WhenNotAuthenticated() {
+            // When (no security context written)
             Mono<VerificationDocument> result =
-                    resolver.myVerificationDocumentByType("BUSINESS_REGISTRATION", null);
+                    resolver.myVerificationDocumentByType("BUSINESS_REGISTRATION");
 
             // Then
             StepVerifier.create(result)
@@ -451,13 +450,13 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return empty when user has no organization")
         void shouldReturnEmpty_WhenUserHasNoOrganization() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.empty());
 
             // When
             Mono<VerificationDocument> result =
-                    resolver.myVerificationDocumentByType("BUSINESS_REGISTRATION", jwt);
+                    resolver.myVerificationDocumentByType("BUSINESS_REGISTRATION")
+                            .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -479,14 +478,14 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return count when user has documents")
         void shouldReturnCount_WhenUserHasDocuments() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.countByOrganization(ORG_ID))
                     .thenReturn(Mono.just(3L));
 
             // When
-            Mono<Long> result = resolver.myVerificationDocumentCount(jwt);
+            Mono<Long> result = resolver.myVerificationDocumentCount()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -495,10 +494,10 @@ class VerificationDocumentQueryResolverTest {
         }
 
         @Test
-        @DisplayName("Should return 0 when JWT is null")
-        void shouldReturnZero_WhenJwtIsNull() {
-            // When
-            Mono<Long> result = resolver.myVerificationDocumentCount(null);
+        @DisplayName("Should return 0 when not authenticated")
+        void shouldReturnZero_WhenNotAuthenticated() {
+            // When (no security context written)
+            Mono<Long> result = resolver.myVerificationDocumentCount();
 
             // Then
             StepVerifier.create(result)
@@ -512,12 +511,12 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return 0 when user has no organization")
         void shouldReturnZero_WhenUserHasNoOrganization() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.empty());
 
             // When
-            Mono<Long> result = resolver.myVerificationDocumentCount(jwt);
+            Mono<Long> result = resolver.myVerificationDocumentCount()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -529,14 +528,14 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return 0 when user has no documents")
         void shouldReturnZero_WhenUserHasNoDocuments() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.countByOrganization(ORG_ID))
                     .thenReturn(Mono.empty());
 
             // When
-            Mono<Long> result = resolver.myVerificationDocumentCount(jwt);
+            Mono<Long> result = resolver.myVerificationDocumentCount()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -553,14 +552,14 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return count of approved documents")
         void shouldReturnApprovedCount() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.countApprovedByOrganization(ORG_ID))
                     .thenReturn(Mono.just(2L));
 
             // When
-            Mono<Long> result = resolver.myApprovedDocumentCount(jwt);
+            Mono<Long> result = resolver.myApprovedDocumentCount()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -569,10 +568,10 @@ class VerificationDocumentQueryResolverTest {
         }
 
         @Test
-        @DisplayName("Should return 0 when JWT is null")
-        void shouldReturnZero_WhenJwtIsNull() {
-            // When
-            Mono<Long> result = resolver.myApprovedDocumentCount(null);
+        @DisplayName("Should return 0 when not authenticated")
+        void shouldReturnZero_WhenNotAuthenticated() {
+            // When (no security context written)
+            Mono<Long> result = resolver.myApprovedDocumentCount();
 
             // Then
             StepVerifier.create(result)
@@ -586,14 +585,14 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("Should return 0 when user has no approved documents")
         void shouldReturnZero_WhenNoApprovedDocuments() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.countApprovedByOrganization(ORG_ID))
                     .thenReturn(Mono.empty());
 
             // When
-            Mono<Long> result = resolver.myApprovedDocumentCount(jwt);
+            Mono<Long> result = resolver.myApprovedDocumentCount()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -614,14 +613,14 @@ class VerificationDocumentQueryResolverTest {
         @DisplayName("User should only see their own organization's documents")
         void shouldOnlyReturnOwnDocuments() {
             // Given - User has their own organization
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
             when(documentService.findByOrganization(ORG_ID))
                     .thenReturn(Flux.just(testDocument, approvedDocument));
 
             // When
-            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null, jwt);
+            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null)
+                    .contextWrite(withUser(USER_ID));
 
             // Then - Should only get documents from their organization
             StepVerifier.create(result)
@@ -645,14 +644,14 @@ class VerificationDocumentQueryResolverTest {
                     .ownerId(otherUserId)
                     .build();
 
-            when(jwt.getSubject()).thenReturn(otherUserId);
             when(organizationService.findByOwnerId(otherUserId))
                     .thenReturn(Mono.just(otherOrg));
             when(documentService.findByOrganization(otherOrgId))
                     .thenReturn(Flux.empty());
 
             // When
-            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null, jwt);
+            Flux<VerificationDocument> result = resolver.myVerificationDocuments(null)
+                    .contextWrite(withUser(otherUserId));
 
             // Then - Should not get documents from ORG_ID
             StepVerifier.create(result)

@@ -30,10 +30,6 @@
  * never importing Apollo libraries directly.
  */
 
-// ==================== App APIs ====================
-
-// Organization Admin App
-export * from './organization-admin';
 
 // ALL OTHER APP APIs HAVE BEEN MIGRATED TO DOMAIN MODULES
 //

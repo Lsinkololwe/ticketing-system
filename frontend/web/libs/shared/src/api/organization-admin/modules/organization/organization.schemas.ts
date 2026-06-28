@@ -12,6 +12,39 @@
  */
 
 import { z } from 'zod';
+import { isValidPhoneNumber, parsePhoneNumber } from 'libphonenumber-js';
+
+// ==========================================
+// Phone helpers (libphonenumber-js)
+// ==========================================
+
+/** Default region for bare local numbers (e.g. "0971234567" → Zambia). */
+const DEFAULT_PHONE_REGION = 'ZM' as const;
+
+function isValidPhone(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  try {
+    return v.startsWith('+')
+      ? isValidPhoneNumber(v)
+      : isValidPhoneNumber(v, DEFAULT_PHONE_REGION);
+  } catch {
+    return false;
+  }
+}
+
+/** Normalize any accepted form to canonical E.164, or return the input unchanged. */
+function toE164(value: string): string {
+  const v = value.trim();
+  try {
+    const parsed = v.startsWith('+')
+      ? parsePhoneNumber(v)
+      : parsePhoneNumber(v, DEFAULT_PHONE_REGION);
+    return parsed ? parsed.number : v;
+  } catch {
+    return v;
+  }
+}
 
 // ==========================================
 // Sanitization Utilities (OWASP A03:2021)
@@ -68,9 +101,19 @@ export const ZAMBIAN_PROVINCES = [
 ] as const;
 
 /**
- * Organization types
+ * Organization (event organizer) types.
+ * Must stay in sync with the backend `OrganizationType` enum, the GraphQL
+ * schema, and the `organizations` MongoDB `$jsonSchema` enum.
  */
-export const ORGANIZATION_TYPES = ['INDIVIDUAL', 'BUSINESS'] as const;
+export const ORGANIZATION_TYPES = [
+  'INDIVIDUAL',
+  'BUSINESS',
+  'NON_PROFIT',
+  'GOVERNMENT',
+  'EDUCATIONAL',
+  'COMMUNITY',
+  'RELIGIOUS',
+] as const;
 
 /**
  * Business types for settings
@@ -99,22 +142,25 @@ export const emailFieldSchema = z
   .transform(sanitizeText);
 
 /**
- * Zambian phone number schema with normalization
+ * Phone number schema (international, libphonenumber-js validated).
+ *
+ * Accepts E.164 (from the PhoneNumberInput component) or a bare local number
+ * (defaulting to Zambia), validates it per-country, and normalizes to canonical
+ * E.164 — matching the backend `PhoneNumber` scalar / `users` E.164 validator.
+ *
+ * Exported as `zambianPhoneFieldSchema` for backwards compatibility, but it is
+ * no longer Zambia-only.
  */
-export const zambianPhoneFieldSchema = z
+export const phoneFieldSchema = z
   .string()
   .min(1, 'Phone number is required')
-  .regex(ZAMBIAN_PHONE_REGEX, {
-    message:
-      'Please enter a valid Zambian phone number (e.g., +260971234567 or 0971234567)',
+  .refine(isValidPhone, {
+    message: 'Please enter a valid phone number (e.g., +260971234567)',
   })
-  .transform((val) => {
-    // Normalize to E.164 format (+260...)
-    if (val.startsWith('+260')) return val;
-    if (val.startsWith('260')) return `+${val}`;
-    if (val.startsWith('0')) return `+260${val.slice(1)}`;
-    return `+260${val}`;
-  });
+  .transform(toE164);
+
+/** @deprecated use {@link phoneFieldSchema} — kept for existing imports. */
+export const zambianPhoneFieldSchema = phoneFieldSchema;
 
 /**
  * Optional URL schema
@@ -182,8 +228,8 @@ export const businessInfoFormSchema = z.object({
   type: z.enum(ORGANIZATION_TYPES, {
     message: 'Organization type is required',
   }),
-  tagline: optionalTextField(150),
-  description: optionalTextField(2000),
+  tagline: optionalTextField(50),
+  description: optionalTextField(50),
 
   // Contact information
   businessEmail: emailFieldSchema,
@@ -191,11 +237,11 @@ export const businessInfoFormSchema = z.object({
   website: optionalUrlFieldSchema,
 
   // Location
-  city: requiredTextField('City', 100),
+  city: requiredTextField('City', 50),
   province: z.enum(ZAMBIAN_PROVINCES, {
     message: 'Province is required',
   }),
-  country: z.string().default('Zambia'),
+  country: z.string().max(50, 'Country must be less than 50 characters').default('Zambia'),
 
   // Social links
   facebook: socialUrlFieldSchema,
@@ -217,17 +263,18 @@ export type BusinessInfoFormInput = z.input<typeof businessInfoFormSchema>;
 export const organizationSettingsFormSchema = z.object({
   // Basic Information
   companyName: requiredTextField('Company name', 100),
-  tagline: optionalTextField(150),
-  companyDescription: optionalTextField(2000),
+  tagline: optionalTextField(50),
+  companyDescription: optionalTextField(50),
   businessType: z.enum(BUSINESS_TYPES).optional(),
 
   // Contact Information
   businessEmail: emailFieldSchema,
   businessPhone: z
     .string()
-    .regex(ZAMBIAN_PHONE_REGEX, {
-      message: 'Please enter a valid Zambian phone number',
+    .refine((v) => v === '' || isValidPhone(v), {
+      message: 'Please enter a valid phone number',
     })
+    .transform((v) => (v === '' ? v : toE164(v)))
     .optional()
     .or(z.literal('')),
   website: optionalUrlFieldSchema,
@@ -238,9 +285,9 @@ export const organizationSettingsFormSchema = z.object({
 
   // Address
   businessAddress: optionalTextField(200),
-  city: optionalTextField(100),
-  province: z.string().optional(),
-  country: z.string().default('Zambia'),
+  city: optionalTextField(50),
+  province: z.string().max(50, 'Province must be less than 50 characters').optional(),
+  country: z.string().max(50, 'Country must be less than 50 characters').default('Zambia'),
   postalCode: optionalTextField(20),
 });
 

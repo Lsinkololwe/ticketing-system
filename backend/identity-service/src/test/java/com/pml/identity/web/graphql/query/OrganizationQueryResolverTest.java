@@ -15,7 +15,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -23,7 +22,9 @@ import reactor.test.StepVerifier;
 import java.time.Instant;
 import java.util.List;
 
+import static com.pml.identity.testsupport.SecurityContextTestUtils.withUser;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -51,9 +52,6 @@ class OrganizationQueryResolverTest {
 
     @Mock
     private PermissionResolutionService permissionService;
-
-    @Mock
-    private Jwt jwt;
 
     @InjectMocks
     private OrganizationQueryResolver resolver;
@@ -148,10 +146,11 @@ class OrganizationQueryResolverTest {
         @Test
         @DisplayName("Should throw NPE when ID is null")
         void shouldThrowNPE_WhenIdIsNull() {
-            // When/Then
-            StepVerifier.create(resolver.organization(null))
-                    .expectError(NullPointerException.class)
-                    .verify();
+            // When/Then: the resolver validates the id synchronously (Objects.requireNonNull)
+            // before returning the Mono, so the NPE surfaces on the call itself.
+            assertThatThrownBy(() -> resolver.organization(null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("Organization ID is required");
         }
     }
 
@@ -239,8 +238,6 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should return organizations user is a member of")
         void shouldReturnOrganizations_WhenUserIsMember() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
-
             OrganizationMember member1 = OrganizationMember.builder()
                     .id("member-1")
                     .organizationId(ORG_ID)
@@ -261,7 +258,8 @@ class OrganizationQueryResolverTest {
                     .thenReturn(Mono.just(testOrganizations.get(1)));
 
             // When
-            Flux<Organization> result = resolver.myOrganizations(jwt);
+            Flux<Organization> result = resolver.myOrganizations()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -271,26 +269,27 @@ class OrganizationQueryResolverTest {
         }
 
         @Test
-        @DisplayName("Should return empty when JWT is null")
-        void shouldReturnEmpty_WhenJwtIsNull() {
-            // When
-            Flux<Organization> result = resolver.myOrganizations(null);
+        @DisplayName("Should error when not authenticated")
+        void shouldError_WhenNotAuthenticated() {
+            // When (no security context written)
+            Flux<Organization> result = resolver.myOrganizations();
 
             // Then
             StepVerifier.create(result)
-                    .verifyComplete();
+                    .expectError(SecurityException.class)
+                    .verify();
         }
 
         @Test
         @DisplayName("Should return empty when user is not a member of any organization")
         void shouldReturnEmpty_WhenUserHasNoMemberships() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(memberService.findByUser(USER_ID))
                     .thenReturn(Flux.empty());
 
             // When
-            Flux<Organization> result = resolver.myOrganizations(jwt);
+            Flux<Organization> result = resolver.myOrganizations()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -306,42 +305,42 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should return organization when user owns one")
         void shouldReturnOrganization_WhenUserOwnsOne() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.just(testOrganization));
 
             // When
-            Mono<Organization> result = resolver.myOwnedOrganization(jwt);
+            Mono<Organization> result = resolver.myOwnedOrganization()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
-                    .assertNext(org -> {
-                        assertThat(org.getOwnerId()).isEqualTo(USER_ID);
-                    })
+                    .assertNext(org ->
+                            assertThat(org.getOwnerId()).isEqualTo(USER_ID))
                     .verifyComplete();
         }
 
         @Test
-        @DisplayName("Should return empty when JWT is null")
-        void shouldReturnEmpty_WhenJwtIsNull() {
-            // When
-            Mono<Organization> result = resolver.myOwnedOrganization(null);
+        @DisplayName("Should error when not authenticated")
+        void shouldError_WhenNotAuthenticated() {
+            // When (no security context written)
+            Mono<Organization> result = resolver.myOwnedOrganization();
 
             // Then
             StepVerifier.create(result)
-                    .verifyComplete();
+                    .expectError(SecurityException.class)
+                    .verify();
         }
 
         @Test
         @DisplayName("Should return empty when user owns no organization")
         void shouldReturnEmpty_WhenUserOwnsNoOrganization() {
             // Given
-            when(jwt.getSubject()).thenReturn(USER_ID);
             when(organizationService.findByOwnerId(USER_ID))
                     .thenReturn(Mono.empty());
 
             // When
-            Mono<Organization> result = resolver.myOwnedOrganization(jwt);
+            Mono<Organization> result = resolver.myOwnedOrganization()
+                    .contextWrite(withUser(USER_ID));
 
             // Then
             StepVerifier.create(result)
@@ -361,7 +360,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should return pending applications with pagination")
         void shouldReturnPendingApplications_WithPagination() {
             // Given
-            OffsetPaginationInput pagination = OffsetPaginationInput.of(0, 10);
+            OffsetPaginationInput pagination = new OffsetPaginationInput(0, 10, null, null);
             List<Organization> pendingOrgs = testOrganizations.stream()
                     .filter(org -> org.getStatus() == OrganizationStatus.PENDING_REVIEW)
                     .toList();
@@ -390,7 +389,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should return all approval workflow orgs when status is null")
         void shouldReturnAllApprovalWorkflow_WhenStatusIsNull() {
             // Given
-            OffsetPaginationInput pagination = OffsetPaginationInput.of(0, 10);
+            OffsetPaginationInput pagination = new OffsetPaginationInput(0, 10, null, null);
             when(organizationService.findInApprovalWorkflow())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 
@@ -436,7 +435,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should return cursor-based pagination")
         void shouldReturnCursorPagination() {
             // Given
-            CursorPaginationInput pagination = CursorPaginationInput.first(10);
+            CursorPaginationInput pagination = new CursorPaginationInput(10, null, null, null);
             when(organizationService.findInApprovalWorkflow())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 
@@ -458,7 +457,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should filter by status in cursor pagination")
         void shouldFilterByStatus() {
             // Given
-            CursorPaginationInput pagination = CursorPaginationInput.first(10);
+            CursorPaginationInput pagination = new CursorPaginationInput(10, null, null, null);
             List<Organization> approvedOrgs = testOrganizations.stream()
                     .filter(org -> org.getStatus() == OrganizationStatus.APPROVED)
                     .toList();
@@ -495,7 +494,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should return all organizations with pagination")
         void shouldReturnAll_WithPagination() {
             // Given
-            OffsetPaginationInput pagination = OffsetPaginationInput.of(0, 10);
+            OffsetPaginationInput pagination = new OffsetPaginationInput(0, 10, null, null);
             when(organizationService.findAll())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 
@@ -517,7 +516,7 @@ class OrganizationQueryResolverTest {
         void shouldFilterBySearch() {
             // Given
             String searchTerm = "Test";
-            OffsetPaginationInput pagination = OffsetPaginationInput.of(0, 10);
+            OffsetPaginationInput pagination = new OffsetPaginationInput(0, 10, null, null);
             when(organizationService.findAll())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 
@@ -538,7 +537,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should filter by status")
         void shouldFilterByStatus() {
             // Given
-            OffsetPaginationInput pagination = OffsetPaginationInput.of(0, 10);
+            OffsetPaginationInput pagination = new OffsetPaginationInput(0, 10, null, null);
             when(organizationService.findAll())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 
@@ -562,7 +561,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should filter by verified flag")
         void shouldFilterByVerified() {
             // Given
-            OffsetPaginationInput pagination = OffsetPaginationInput.of(0, 10);
+            OffsetPaginationInput pagination = new OffsetPaginationInput(0, 10, null, null);
             when(organizationService.findAll())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 
@@ -583,7 +582,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should combine multiple filters")
         void shouldCombineFilters() {
             // Given
-            OffsetPaginationInput pagination = OffsetPaginationInput.of(0, 10);
+            OffsetPaginationInput pagination = new OffsetPaginationInput(0, 10, null, null);
             when(organizationService.findAll())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 
@@ -618,7 +617,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should return cursor-based results")
         void shouldReturnCursorResults() {
             // Given
-            CursorPaginationInput pagination = CursorPaginationInput.first(2);
+            CursorPaginationInput pagination = new CursorPaginationInput(2, null, null, null);
             when(organizationService.findAll())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 
@@ -639,7 +638,7 @@ class OrganizationQueryResolverTest {
         @DisplayName("Should apply filters to cursor pagination")
         void shouldApplyFilters() {
             // Given
-            CursorPaginationInput pagination = CursorPaginationInput.first(10);
+            CursorPaginationInput pagination = new CursorPaginationInput(10, null, null, null);
             when(organizationService.findAll())
                     .thenReturn(Flux.fromIterable(testOrganizations));
 

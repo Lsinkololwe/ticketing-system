@@ -22,7 +22,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Set;
@@ -53,8 +52,6 @@ import java.util.Set;
  * <h2>What MongoDB Owns</h2>
  * <ul>
  *   <li>User profile data (name, email, phone) - CACHED from Keycloak</li>
- *   <li>Application preferences (locale, timezone)</li>
- *   <li>Statistics (totalTicketsPurchased, totalEventsAttended)</li>
  *   <li>Application-specific metadata (lastLoginAt)</li>
  * </ul>
  *
@@ -81,9 +78,13 @@ public class User implements Identifiable<String>, Auditable {
     // Core Identity (synced from Keycloak)
     // ─────────────────────────────────────────────────────────────────────
 
+    // Sparse unique index: the `users` collection is shared with Better Auth, which
+    // creates the document on first OIDC login WITHOUT a username (it is populated later
+    // by the keycloak-extensions sync from Keycloak `preferred_username`). A sparse index
+    // lets those interim null usernames coexist without violating the unique constraint.
     @NotBlank(message = "Username is required")
     @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
-    @Indexed(unique = true)
+    @Indexed(unique = true, sparse = true)
     private String username;
 
     @NotBlank(message = "Email is required")
@@ -98,9 +99,19 @@ public class User implements Identifiable<String>, Auditable {
     private String lastName;
 
     /**
-     * Primary phone number in E.164 format (e.g., +260971234567)
+     * Primary phone number in E.164 format (e.g., +260971234567).
+     * Always normalized via {@code com.pml.shared.util.PhoneNumbers} before persistence.
      */
     private String phoneNumber;
+
+    /**
+     * ISO-3166 alpha-2 country of {@link #phoneNumber} (e.g. "ZM").
+     *
+     * Stored alongside the E.164 value because the country cannot always be
+     * re-derived from E.164 alone (shared dial codes like +1), and it is needed
+     * to re-render the national format / flag when editing.
+     */
+    private String phoneCountry;
 
     // ─────────────────────────────────────────────────────────────────────
     // Platform Roles & Status
@@ -139,12 +150,6 @@ public class User implements Identifiable<String>, Auditable {
     @Builder.Default
     private boolean emailVerified = false;
 
-    /**
-     * Whether identity is verified (KYC)
-     */
-    @Builder.Default
-    private boolean identityVerified = false;
-
     // ─────────────────────────────────────────────────────────────────────
     // Account Flags
     // ─────────────────────────────────────────────────────────────────────
@@ -162,39 +167,23 @@ public class User implements Identifiable<String>, Auditable {
     @Builder.Default
     private boolean locked = false;
 
+    /**
+     * Idempotency guard: whether the cross-service {@code UserRegisteredEvent}
+     * has been published for this user. Ensures the event is emitted exactly
+     * once regardless of whether Better Auth or the keycloak-extensions sync
+     * created the document first.
+     */
+    @Builder.Default
+    private boolean registrationEventPublished = false;
+
     // ─────────────────────────────────────────────────────────────────────
     // Profile Information (application-specific)
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Profile picture URL
-     */
-    private String avatarUrl;
-
-    /**
-     * User bio/description
-     */
-    private String bio;
-
-    /**
-     * Date of birth
-     */
-    private LocalDate dateOfBirth;
-
-    /**
      * Gender
      */
     private String gender;
-
-    /**
-     * Preferred locale (e.g., "en-ZM")
-     */
-    private String locale;
-
-    /**
-     * Preferred timezone (e.g., "Africa/Lusaka")
-     */
-    private String timezone;
 
     // ─────────────────────────────────────────────────────────────────────
     // Two-Factor Authentication
@@ -204,27 +193,6 @@ public class User implements Identifiable<String>, Auditable {
     private boolean twoFactorEnabled = false;
 
     private String twoFactorMethod;
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Organization Link (for quick access)
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Primary organization ID (set when user becomes an organizer).
-     * This is for quick access; full membership data is in OrganizationMember.
-     */
-    @Indexed(sparse = true)
-    private String primaryOrganizationId;
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Statistics (computed/aggregated)
-    // ─────────────────────────────────────────────────────────────────────
-
-    @Builder.Default
-    private int totalTicketsPurchased = 0;
-
-    @Builder.Default
-    private int totalEventsAttended = 0;
 
     // ─────────────────────────────────────────────────────────────────────
     // Timestamps (using Instant for timezone-agnostic storage)

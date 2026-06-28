@@ -1,5 +1,6 @@
 package com.pml.identity.infrastructure.cache;
 
+import com.pml.shared.util.PhoneNumbers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -191,20 +192,12 @@ public class OtpService {
      * Normalize phone number to E.164 format.
      */
     private String normalizePhoneNumber(String phoneNumber) {
-        // Remove all non-digit characters except leading +
-        String cleaned = phoneNumber.replaceAll("[^0-9+]", "");
-
-        // Ensure it starts with +
-        if (!cleaned.startsWith("+")) {
-            // Assume country code is needed - default to +260 (Zambia) if not present
-            if (cleaned.length() <= 10) {
-                cleaned = "+260" + cleaned;
-            } else {
-                cleaned = "+" + cleaned;
-            }
-        }
-
-        return cleaned;
+        // Canonical E.164 normalization (Google libphonenumber). Used as the Redis
+        // key for OTP storage/lookup, so request + verify must normalize identically.
+        // Falls back to a digits-only form if the number cannot be validated, so an
+        // unrecognized-but-consistent value still keys correctly.
+        String e164 = PhoneNumbers.toE164(phoneNumber);
+        return e164 != null ? e164 : phoneNumber.replaceAll("[^0-9+]", "");
     }
 
     /**

@@ -202,15 +202,19 @@ public class UserSyncEventListener implements EventListenerProvider {
         if (attributes != null) {
             data.setAttributes(attributes);
 
-            // Extract specific attributes for convenience
-            List<String> phoneNumbers = attributes.get("phoneNumber");
-            if (phoneNumbers != null && !phoneNumbers.isEmpty()) {
-                data.setPhoneNumber(phoneNumbers.get(0));
+            // Extract specific attributes for convenience.
+            // Phone attributes are written under different keys depending on the source:
+            //  - PhoneOtpAuthenticator writes snake_case: phone_number / phone_verified
+            //  - KeycloakService (admin API) writes camelCase: phoneNumber / phoneVerified
+            // Read both so phone data syncs regardless of which path created the user.
+            String phoneNumber = firstAttributeValue(attributes, "phone_number", "phoneNumber");
+            if (phoneNumber != null) {
+                data.setPhoneNumber(phoneNumber);
             }
 
-            List<String> phoneVerified = attributes.get("phoneVerified");
-            if (phoneVerified != null && !phoneVerified.isEmpty()) {
-                data.setPhoneVerified(Boolean.parseBoolean(phoneVerified.get(0)));
+            String phoneVerified = firstAttributeValue(attributes, "phone_verified", "phoneVerified");
+            if (phoneVerified != null) {
+                data.setPhoneVerified(Boolean.parseBoolean(phoneVerified));
             }
 
             // Extract accountType (from registration)
@@ -313,6 +317,23 @@ public class UserSyncEventListener implements EventListenerProvider {
     // ========================================================================
     // HELPER METHODS
     // ========================================================================
+
+    /**
+     * Return the first non-empty value among the given attribute keys, or null.
+     * Used to tolerate both snake_case and camelCase attribute naming conventions.
+     */
+    private String firstAttributeValue(Map<String, List<String>> attributes, String... keys) {
+        if (attributes == null) {
+            return null;
+        }
+        for (String key : keys) {
+            List<String> values = attributes.get(key);
+            if (values != null && !values.isEmpty() && values.get(0) != null && !values.get(0).isEmpty()) {
+                return values.get(0);
+            }
+        }
+        return null;
+    }
 
     private boolean shouldProcessEvent(Event event) {
         // Check if event has required data

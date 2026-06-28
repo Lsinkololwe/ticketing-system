@@ -35,12 +35,12 @@
       },
       "description": {
         "bsonType": ["string", "null"],
-        "maxLength": 2000,
+        "maxLength": 50,
         "description": "Organization description"
       },
       "tagline": {
         "bsonType": ["string", "null"],
-        "maxLength": 200,
+        "maxLength": 50,
         "description": "Short tagline for the organization"
       },
       "logoUrl": {
@@ -75,8 +75,8 @@
       },
       "type": {
         "bsonType": "string",
-        "enum": ["INDIVIDUAL", "BUSINESS"],
-        "description": "OWASP A04 - Organization type (INDIVIDUAL created lazily, BUSINESS requires formal registration)"
+        "enum": ["INDIVIDUAL", "BUSINESS", "NON_PROFIT", "GOVERNMENT", "EDUCATIONAL", "COMMUNITY", "RELIGIOUS"],
+        "description": "OWASP A04 - Organization type (INDIVIDUAL created lazily; BUSINESS/NON_PROFIT/GOVERNMENT/EDUCATIONAL/COMMUNITY/RELIGIOUS require formal registration)"
       },
       "keycloakGroupId": {
         "bsonType": ["string", "null"],
@@ -88,8 +88,8 @@
       },
       "status": {
         "bsonType": "string",
-        "enum": ["ACTIVE", "SUSPENDED", "INACTIVE", "PENDING_DELETION"],
-        "description": "OWASP A04 - Organization operational status"
+        "enum": ["DRAFT", "PENDING_REVIEW", "CHANGES_REQUESTED", "APPROVED", "REJECTED", "ACTIVE", "SUSPENDED", "INACTIVE", "PENDING_DELETION"],
+        "description": "OWASP A04 - Organization status (approval workflow + operational states)"
       },
       "kybStatus": {
         "bsonType": "string",
@@ -121,9 +121,9 @@
       },
       "businessPhone": {
         "bsonType": ["string", "null"],
-        "pattern": "^\\+?[0-9\\s-]{7,30}$",
-        "maxLength": 30,
-        "description": "OWASP A03 - Business phone validation"
+        "pattern": "^\\+[1-9]\\d{1,14}$",
+        "maxLength": 16,
+        "description": "OWASP A03 - E.164 phone format (consistent with users.phoneNumber)"
       },
       "businessEmail": {
         "bsonType": ["string", "null"],
@@ -136,10 +136,10 @@
         "properties": {
           "addressLine1": { "bsonType": ["string", "null"], "maxLength": 200 },
           "addressLine2": { "bsonType": ["string", "null"], "maxLength": 200 },
-          "city": { "bsonType": ["string", "null"], "maxLength": 100 },
-          "province": { "bsonType": ["string", "null"], "maxLength": 100 },
+          "city": { "bsonType": ["string", "null"], "maxLength": 50 },
+          "province": { "bsonType": ["string", "null"], "maxLength": 50 },
           "postalCode": { "bsonType": ["string", "null"], "maxLength": 20 },
-          "country": { "bsonType": ["string", "null"], "maxLength": 100 },
+          "country": { "bsonType": ["string", "null"], "maxLength": 50 },
           "countryCode": { "bsonType": ["string", "null"], "pattern": "^[A-Z]{2}$" }
         },
         "description": "Physical business address"

@@ -105,23 +105,23 @@ export function getRouteForStatus(
   status: import('../../../../types/graphql').OrganizationStatus | string | null,
   organizationId?: string
 ): string {
-  if (!status) return '/apply/start';
+  if (!status) return '/welcome';
 
   switch (status) {
     case 'DRAFT':
     case 'CHANGES_REQUESTED':
+      // Not submitted — editable, send to the form.
       return '/apply/business-info';
     case 'PENDING_REVIEW':
-      return '/status';
+    case 'REJECTED':
+    case 'SUSPENDED':
+      // Submitted / terminal — show the status page.
+      return '/apply/status';
     case 'APPROVED':
     case 'ACTIVE':
       return '/dashboard';
-    case 'REJECTED':
-      return '/status';
-    case 'SUSPENDED':
-      return '/status';
     default:
-      return '/apply/start';
+      return '/welcome';
   }
 }
 

@@ -11,7 +11,6 @@ import reactor.core.publisher.Mono;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,6 +35,14 @@ import java.util.stream.Collectors;
  *     .switchIfEmpty(Mono.error(new UnauthorizedException("Not authenticated")));
  * </pre>
  *
+ * <h2>Role-Based Access Control</h2>
+ * <p>For role checks, use Spring Security's {@code @PreAuthorize} annotations instead of
+ * programmatic checks. This provides declarative security and better auditability.</p>
+ * <pre>
+ * &#64;PreAuthorize("hasRole('ORGANIZER')")
+ * public Mono&lt;Event&gt; createEvent(...) { ... }
+ * </pre>
+ *
  * @since 1.0.0
  */
 public final class SecurityContextUtils {
@@ -48,50 +55,19 @@ public final class SecurityContextUtils {
     // PRIMARY IDENTITY EXTRACTION
     // ========================================================================
 
-    // Common claim names for user ID across different OAuth providers
-    private static final String[] USER_ID_CLAIMS = {"sub", "user_id", "userId", "id", "oid", "uid"};
-
     /**
-     * Get the current authenticated user's ID.
+     * Get the current authenticated user's ID from the JWT 'sub' claim.
      *
-     * <p>This is the primary method for getting the user's identity.
-     * Supports multiple OAuth providers by checking common claim names:
-     * sub (standard), user_id, userId, id, oid, uid.</p>
+     * <p>Uses the OIDC standard 'sub' (subject) claim which is the unique,
+     * immutable identifier for the user. This is the industry-standard
+     * approach per RFC 7519 and OpenID Connect Core 1.0.</p>
      *
      * @return Mono containing the user ID, or empty if not authenticated
      */
     public static Mono<String> getCurrentUserId() {
         return getJwt()
-                .mapNotNull(SecurityContextUtils::extractUserId);
-    }
-
-    /**
-     * Extract user ID from JWT, trying multiple common claim names.
-     * Different OAuth providers (Keycloak, Better Auth, Auth0, etc.) use different claims.
-     */
-    private static String extractUserId(Jwt jwt) {
-        if (jwt == null) {
-            return null;
-        }
-
-        // Try standard 'sub' claim first (most common)
-        String subject = jwt.getSubject();
-        if (subject != null && !subject.isBlank()) {
-            return subject;
-        }
-
-        // Try alternative claims used by various OAuth providers
-        for (String claim : USER_ID_CLAIMS) {
-            Object value = jwt.getClaim(claim);
-            if (value != null) {
-                String stringValue = value.toString();
-                if (!stringValue.isBlank()) {
-                    return stringValue;
-                }
-            }
-        }
-
-        return null;
+                .mapNotNull(Jwt::getSubject)
+                .filter(subject -> !subject.isBlank());
     }
 
     /**
@@ -108,16 +84,6 @@ public final class SecurityContextUtils {
     }
 
     /**
-     * Get the current authenticated user's username.
-     *
-     * @return Mono containing the username, or empty if not authenticated
-     */
-    public static Mono<String> getCurrentUsername() {
-        return getJwt()
-                .map(jwt -> jwt.getClaimAsString("preferred_username"));
-    }
-
-    /**
      * Get the current authenticated user's email.
      *
      * @return Mono containing the email, or empty if not authenticated or no email claim
@@ -128,162 +94,8 @@ public final class SecurityContextUtils {
     }
 
     // ========================================================================
-    // ROLE AND AUTHORITY CHECKS
-    // ========================================================================
-
-    /**
-     * Get all granted authorities for the current user.
-     *
-     * @return Mono containing set of authority strings (e.g., "ROLE_ORGANIZER", "SCOPE_internal-read")
-     */
-    public static Mono<Set<String>> getCurrentAuthorities() {
-        return getAuthentication()
-                .map(auth -> auth.getAuthorities().stream()
-                        .map(GrantedAuthority::getAuthority)
-                        .collect(Collectors.toSet()))
-                .defaultIfEmpty(Collections.emptySet());
-    }
-
-    /**
-     * Check if the current user has a specific role.
-     *
-     * @param role Role name without ROLE_ prefix (e.g., "ORGANIZER", "ADMIN")
-     * @return Mono<Boolean> true if user has the role
-     */
-    public static Mono<Boolean> hasRole(String role) {
-        return getCurrentAuthorities()
-                .map(authorities -> authorities.contains("ROLE_" + role));
-    }
-
-    /**
-     * Check if the current user has any of the specified roles.
-     *
-     * @param roles Role names without ROLE_ prefix
-     * @return Mono<Boolean> true if user has any of the roles
-     */
-    public static Mono<Boolean> hasAnyRole(String... roles) {
-        return getCurrentAuthorities()
-                .map(authorities -> {
-                    for (String role : roles) {
-                        if (authorities.contains("ROLE_" + role)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                });
-    }
-
-    /**
-     * Check if the current user is an admin.
-     *
-     * @return Mono<Boolean> true if user has ADMIN or SUPER_ADMIN role
-     */
-    public static Mono<Boolean> isAdmin() {
-        return hasAnyRole("ADMIN", "SUPER_ADMIN");
-    }
-
-    /**
-     * Check if the current user is an organizer.
-     *
-     * @return Mono<Boolean> true if user has ORGANIZER role
-     */
-    public static Mono<Boolean> isOrganizer() {
-        return hasRole("ORGANIZER");
-    }
-
-    /**
-     * Check if the current user is an internal service.
-     *
-     * @return Mono<Boolean> true if request is from an internal service
-     */
-    public static Mono<Boolean> isInternalService() {
-        return getCurrentAuthorities()
-                .map(authorities ->
-                        authorities.contains("ROLE_INTERNAL_SERVICE") ||
-                        authorities.contains("SCOPE_internal-read") ||
-                        authorities.contains("SCOPE_internal-write"));
-    }
-
-    // ========================================================================
     // CUSTOM CLAIMS EXTRACTION
     // ========================================================================
-
-    /**
-     * Get user roles from JWT realm_access.roles claim.
-     *
-     * @return Mono containing set of roles (CUSTOMER, ORGANIZER, ADMIN, etc.)
-     */
-    @SuppressWarnings("unchecked")
-    public static Mono<java.util.Set<String>> getUserRoles() {
-        return getJwt()
-                .map(jwt -> {
-                    java.util.Set<String> roles = new java.util.HashSet<>();
-                    Map<String, Object> realmAccess = jwt.getClaim("realm_access");
-                    if (realmAccess != null) {
-                        Object rolesObj = realmAccess.get("roles");
-                        if (rolesObj instanceof List) {
-                            ((List<String>) rolesObj).forEach(roles::add);
-                        }
-                    }
-                    // Ensure CUSTOMER is always present
-                    if (roles.isEmpty()) {
-                        roles.add("CUSTOMER");
-                    }
-                    return roles;
-                })
-                .defaultIfEmpty(java.util.Set.of("CUSTOMER"));
-    }
-
-    /**
-     * Get phone number from JWT claims.
-     *
-     * @return Mono containing phone number, or empty
-     */
-    public static Mono<String> getPhoneNumber() {
-        return getJwt()
-                .mapNotNull(jwt -> jwt.getClaimAsString("phone_number"));
-    }
-
-    /**
-     * Check if phone is verified.
-     *
-     * @return Mono<Boolean> true if phone is verified
-     */
-    public static Mono<Boolean> isPhoneVerified() {
-        return getJwt()
-                .map(jwt -> Boolean.TRUE.equals(jwt.getClaim("phone_verified")))
-                .defaultIfEmpty(false);
-    }
-
-    /**
-     * Get organization IDs from JWT claims (if custom claim is set).
-     *
-     * @return Mono containing list of organization IDs user belongs to
-     */
-    @SuppressWarnings("unchecked")
-    public static Mono<List<String>> getOrganizationIds() {
-        return getJwt()
-                .map(jwt -> {
-                    Object orgClaim = jwt.getClaim("organizations");
-                    if (orgClaim instanceof List) {
-                        return ((List<Map<String, Object>>) orgClaim).stream()
-                                .map(org -> (String) org.get("id"))
-                                .collect(Collectors.toList());
-                    }
-                    return Collections.<String>emptyList();
-                })
-                .defaultIfEmpty(Collections.emptyList());
-    }
-
-    /**
-     * Get primary organization ID from JWT claims.
-     *
-     * @return Mono containing primary organization ID, or empty
-     */
-    public static Mono<String> getPrimaryOrganizationId() {
-        return getJwt()
-                .mapNotNull(jwt -> jwt.getClaimAsString("primaryOrganizationId"));
-    }
 
     /**
      * Get a custom claim value from the JWT.
@@ -294,21 +106,6 @@ public final class SecurityContextUtils {
     public static Mono<String> getClaim(String claimName) {
         return getJwt()
                 .mapNotNull(jwt -> jwt.getClaimAsString(claimName));
-    }
-
-    /**
-     * Get a custom claim value as a specific type.
-     *
-     * @param claimName Name of the claim
-     * @param claimType Expected type of the claim
-     * @param <T> Type parameter
-     * @return Mono containing claim value, or empty
-     */
-    public static <T> Mono<T> getClaim(String claimName, Class<T> claimType) {
-        return getJwt()
-                .mapNotNull(jwt -> jwt.getClaim(claimName))
-                .filter(claimType::isInstance)
-                .cast(claimType);
     }
 
     // ========================================================================
@@ -332,25 +129,29 @@ public final class SecurityContextUtils {
      *
      * @return Mono containing Authentication, or empty if not authenticated
      */
-    public static Mono<Authentication> getAuthentication() {
+    private static Mono<Authentication> getAuthentication() {
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .filter(Authentication::isAuthenticated);
     }
 
     /**
-     * Check if there is an authenticated user.
+     * Get all granted authorities for the current user.
      *
-     * @return Mono<Boolean> true if authenticated
+     * @return Mono containing set of authority strings (e.g., "ROLE_ORGANIZER", "SCOPE_internal-read")
      */
-    public static Mono<Boolean> isAuthenticated() {
-        return getAuthentication()
-                .map(auth -> true)
-                .defaultIfEmpty(false);
+    private static Mono<Set<String>> getCurrentAuthorities() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .filter(Authentication::isAuthenticated)
+                .map(auth -> auth.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .collect(Collectors.toSet()))
+                .defaultIfEmpty(Collections.emptySet());
     }
 
     /**
-     * Get the full authentication context for debugging.
+     * Get the full authentication context for debugging and comprehensive user info.
      *
      * @return Mono containing AuthenticationContext with all relevant info
      */
@@ -359,7 +160,7 @@ public final class SecurityContextUtils {
         return getJwt()
                 .flatMap(jwt -> getCurrentAuthorities()
                         .map(authorities -> {
-                            // Extract roles from realm_access
+                            // Extract roles from realm_access (Keycloak standard)
                             java.util.Set<String> roles = new java.util.HashSet<>();
                             Map<String, Object> realmAccess = jwt.getClaim("realm_access");
                             if (realmAccess != null) {
@@ -376,7 +177,6 @@ public final class SecurityContextUtils {
                                     .userId(jwt.getSubject())
                                     .username(jwt.getClaimAsString("preferred_username"))
                                     .email(jwt.getClaimAsString("email"))
-                                    .phoneNumber(jwt.getClaimAsString("phone_number"))
                                     .roles(roles)
                                     .authorities(authorities)
                                     .tokenId(jwt.getId())
@@ -396,7 +196,6 @@ public final class SecurityContextUtils {
         String userId;
         String username;
         String email;
-        String phoneNumber;
         Set<String> roles;
         Set<String> authorities;
         String tokenId;
