@@ -998,6 +998,15 @@ type TicketCategoryStats @tag(name: "organizer") @tag(name: "admin") {
 }
 
 # ADMIN - Platform-wide transaction statistics
+# ADMIN/FINANCE - Booking-owned pending request-queue counts (action-center
+# badges). Computed with MongoDB aggregation (PendingApprovalStatsService).
+type BookingPendingCounts @tag(name: "admin") {
+    # Payout requests awaiting review (status = PENDING)
+    payoutRequests: Int!
+    # Refund requests awaiting review (status = PENDING)
+    refundRequests: Int!
+}
+
 type TransactionStats @tag(name: "admin") {
     totalTransactions: Int!
     completedTransactions: Int!
@@ -2578,6 +2587,12 @@ type Query {
     transactionStats(eventId: ID, organizerId: ID): TransactionStats! @tag(name: "admin")
     # ADMIN - Payout request statistics
     payoutRequestStats(organizerId: ID): PayoutRequestStats! @tag(name: "admin")
+
+    # ADMIN/FINANCE - Booking-owned pending request-queue counts for the
+    # action-center sidebar badges. One of three federated root fields
+    # (identity/catalog/booking) the Apollo Router composes into the frontend's
+    # single PendingCounts query.
+    bookingPendingCounts: BookingPendingCounts! @tag(name: "admin")
 
     # ========================================================================
     # FINANCIAL REPORTING QUERIES

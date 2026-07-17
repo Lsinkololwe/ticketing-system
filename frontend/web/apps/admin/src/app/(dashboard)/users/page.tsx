@@ -6,7 +6,7 @@ export default function UsersPage() {
     <PagePlaceholder
       title="All Users"
       description="Manage platform users and their accounts"
-      icon={<Group style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Group style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

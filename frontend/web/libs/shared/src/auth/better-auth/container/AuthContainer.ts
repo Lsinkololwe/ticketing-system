@@ -283,6 +283,14 @@ export class AuthContainer {
               // (realm_access.roles). `roles` is a Keycloak default client scope,
               // but we request it explicitly so the dependency is self-evident.
               scopes: ['openid', 'profile', 'email', 'phone', 'roles'],
+              // Re-apply mapProfileToUser on EVERY sign-in (not just creation), so
+              // roles and profile fields stay in sync with Keycloak on each login.
+              // This keeps the admin realm correct WITHOUT UserSync: a role-less
+              // admin who is later granted ADMIN gets it refreshed on next login.
+              // Only the fields mapProfileToUser returns are updated — token-derived
+              // values — so keycloak-extensions-owned fields (e.g. accountStatus) on
+              // the public realm are left intact.
+              overrideUserInfo: true,
               // Map Keycloak profile to Better Auth user.
               //
               // Better Auth owns ONLY its core fields here (email, name,
@@ -350,7 +358,7 @@ export class AuthContainer {
                   'SCANNER',
                   'FINANCE',
                 ];
-                const roles = Array.from(
+                const appRoles = Array.from(
                   new Set(
                     ((profile.realm_access as { roles?: string[] })?.roles ?? [])
                       .map((r) => String(r).toUpperCase())
@@ -358,26 +366,82 @@ export class AuthContainer {
                   )
                 );
 
+                // ---------------------------------------------------------------
+                // SCHEMA-SAFE DEFAULTS (backend `users` OWASP $jsonSchema)
+                //
+                // The validator REQUIRES: username (>=3, pattern), email (pattern),
+                // firstName/lastName (minLength 1), roles (>=1, enum). Tokens do NOT
+                // always carry every claim — e.g. an admin created in the Keycloak
+                // console without a name, or with no app-level role. Better Auth's
+                // insert is the ONLY creator for realms without UserSync (the admin
+                // realm), so we must NEVER emit a document that violates the schema.
+                //
+                // Every fallback below is DERIVED from data we already hold (the sub,
+                // the email local-part, the `name` claim) — nothing is fabricated. The
+                // keycloak-extensions sync remains the authoritative owner and
+                // re-asserts real values on later Keycloak events.
+                // ---------------------------------------------------------------
+                const sub = profile.sub as string;
+                const usernameClaim = ((profile.preferred_username as string) || '').trim();
+                const emailClaim = ((profile.email as string) || '').trim();
+                const emailLocal = emailClaim.split('@')[0] || '';
+                const nameParts = ((profile.name as string) || '')
+                  .trim()
+                  .split(/\s+/)
+                  .filter(Boolean);
+
+                // username: >=3 chars + pattern. Keycloak usernames are pattern-safe;
+                // fall back to email local-part, else the sub (a UUID — always valid).
+                const username =
+                  usernameClaim.length >= 3
+                    ? usernameClaim
+                    : emailLocal.length >= 3
+                      ? emailLocal
+                      : sub;
+
+                // email: required + pattern-validated. If Keycloak has none, use a
+                // clearly non-deliverable address so the insert never fails.
+                const email = emailClaim || `${username}@no-email.myticket.local`;
+
+                // firstName/lastName: minLength 1 — fall back through the `name`
+                // claim, then username, then 'User' so they are never empty.
+                const firstName =
+                  ((profile.given_name as string) || '').trim() ||
+                  nameParts[0] ||
+                  usernameClaim ||
+                  emailLocal ||
+                  'User';
+                const lastName =
+                  ((profile.family_name as string) || '').trim() ||
+                  (nameParts.length > 1 ? nameParts.slice(1).join(' ') : '') ||
+                  usernameClaim ||
+                  'User';
+
+                // roles: >=1 entry. An account with no recognised app role is a
+                // misconfiguration; default to the least-privilege base role CUSTOMER
+                // so the insert succeeds while granting NO elevated access (a role-less
+                // admin then fails the dashboard's role gate instead of crashing login).
+                const roles = appRoles.length > 0 ? appRoles : ['CUSTOMER'];
+
                 return {
-                  // Better Auth core fields (from token).
-                  email: (profile.email as string) || '',
-                  name: (profile.name as string) || '',
+                  // Better Auth core fields.
+                  email,
+                  name: (profile.name as string) || `${firstName} ${lastName}`.trim(),
                   emailVerified,
                   // Keycloak sub → promoted to `_id` in the create hook, then
                   // stripped (NOT persisted — the doc is keyed by `_id` == sub).
-                  keycloakId: profile.sub as string,
-                  // Business fields (all from token claims).
-                  username: profile.preferred_username as string,
-                  firstName: profile.given_name as string,
-                  lastName: profile.family_name as string,
+                  keycloakId: sub,
+                  // Business fields (schema-safe).
+                  username,
+                  firstName,
+                  lastName,
                   phoneNumber,
                   phoneCountry,
                   phoneVerified,
                   roles,
                   // NOTE: `accountStatus` is intentionally NOT set here. It is not
                   // a token claim, and the keycloak-extensions sync owns it
-                  // exclusively (the backend schema no longer requires it at
-                  // insert).
+                  // exclusively (the backend schema no longer requires it at insert).
                 };
               },
             },

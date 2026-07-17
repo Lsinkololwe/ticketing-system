@@ -64,7 +64,7 @@ export interface IEnvironmentProvider {
   /** Keycloak OAuth client secret */
   readonly keycloakClientSecret: string;
 
-  /** Keycloak realm issuer URL (e.g., http://localhost:8084/realms/event-ticketing) */
+  /** Keycloak realm issuer URL (e.g., http://localhost:8084/realms/myticketzm) */
   readonly keycloakIssuer: string;
 
   // ===========================================================================

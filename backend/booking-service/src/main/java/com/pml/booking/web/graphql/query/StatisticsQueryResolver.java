@@ -4,6 +4,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.service.FinancialReportService;
+import com.pml.booking.service.PendingApprovalStatsService;
 import com.pml.booking.web.graphql.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,22 @@ import reactor.core.publisher.Mono;
 public class StatisticsQueryResolver {
 
     private final FinancialReportService financialReportService;
+    private final PendingApprovalStatsService pendingApprovalStatsService;
+
+    /**
+     * Booking-owned pending request-queue counts (payouts + refunds awaiting
+     * review) for the admin action center.
+     * Schema: bookingPendingCounts: BookingPendingCounts!
+     *
+     * One of three federated root fields the Apollo Router composes into the
+     * frontend's single PendingCounts query.
+     */
+    @DgsQuery
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    public Mono<BookingPendingCounts> bookingPendingCounts() {
+        log.debug("GraphQL query: bookingPendingCounts");
+        return pendingApprovalStatsService.getPendingCounts();
+    }
 
     /**
      * Get comprehensive transaction statistics with optional filtering.

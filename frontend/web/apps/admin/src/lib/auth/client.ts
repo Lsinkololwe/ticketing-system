@@ -151,6 +151,46 @@ export const useSession = authClient.useSession;
 export const getSession = authClient.getSession;
 
 /**
+ * Get the Keycloak access token (a JWT) for the current session.
+ *
+ * Uses Better Auth's native client API (`authClient.getAccessToken`), which
+ * calls `/api/auth/get-access-token` (served by the [...all] route), reads the
+ * stored Keycloak token for the linked account, and transparently refreshes it
+ * via the refresh token when expired.
+ *
+ * This is the token backend resource servers expect as `Authorization: Bearer`
+ * — NOT the opaque Better Auth session token (sending that fails JWT parsing at
+ * the gateway with "Missing dot delimiter(s)"). Mirrors the organization-admin
+ * implementation.
+ *
+ * @example
+ * ```ts
+ * const jwt = await getAccessToken();
+ * ```
+ */
+export async function getAccessToken(): Promise<string | null> {
+  try {
+    const { data, error } = await authClient.getAccessToken({
+      providerId: 'keycloak',
+    });
+
+    if (error) {
+      // No linked Keycloak account yet (e.g. mid sign-in) — not an error.
+      if (error.message?.includes('No linked account')) {
+        return null;
+      }
+      console.error('[Auth] Failed to get access token:', error.message);
+      return null;
+    }
+
+    return data?.accessToken ?? null;
+  } catch (error) {
+    console.error('[Auth] Failed to get access token:', error);
+    return null;
+  }
+}
+
+/**
  * Sign in methods from Better Auth client
  *
  * @example
@@ -225,23 +265,28 @@ export function signInWithKeycloak(callbackURL = '/dashboard') {
  */
 export async function signOut() {
   try {
-    // Step 1: Call logout endpoint (blacklists JTI + clears session)
-    await fetch('/api/auth/logout', {
+    // Step 1: Server clears the Better Auth session + blacklists the JTI, and
+    // returns the Keycloak end_session URL built WITH id_token_hint (so the SSO
+    // session is actually terminated without a confirmation page).
+    const res = await fetch('/api/auth/logout', {
       method: 'POST',
       credentials: 'include',
     });
+    const data = (await res.json().catch(() => null)) as {
+      keycloakSessionEnded?: boolean;
+      logoutUrl?: string;
+    } | null;
 
-    // Step 2: Build Keycloak end_session URL
-    // https://www.keycloak.org/docs/latest/securing_apps/#logout
-    const logoutUrl = new URL(
-      `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/logout`
-    );
-    logoutUrl.searchParams.set('client_id', KEYCLOAK_CLIENT_ID);
-    logoutUrl.searchParams.set('post_logout_redirect_uri', `${APP_URL}/login`);
-
-    // Step 3: Redirect to Keycloak logout
-    // This terminates the SSO session and redirects back to /login
-    window.location.href = logoutUrl.toString();
+    // Step 2: If the server already ended the Keycloak SSO session via
+    // back-channel logout, just go to /login — NO Keycloak browser redirect and
+    // therefore NO "Do you want to log out?" confirmation page. Only fall back
+    // to the front-channel logout URL if back-channel logout couldn't run.
+    if (data?.keycloakSessionEnded) {
+      window.location.href = `${APP_URL}/login`;
+    } else {
+      window.location.href =
+        data?.logoutUrl || getKeycloakLogoutUrl(`${APP_URL}/login`);
+    }
   } catch (error) {
     console.error('[Auth] Logout failed:', error);
     // Fallback: redirect to login even if logout failed

@@ -4,10 +4,12 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.dto.*;
+import com.pml.catalog.web.graphql.dto.stats.CatalogPendingCounts;
 import com.pml.catalog.web.graphql.dto.stats.EventStats;
 import com.pml.catalog.domain.model.Event;
 import com.pml.catalog.service.EventService;
 import com.pml.catalog.service.EventStatsService;
+import com.pml.catalog.service.PendingApprovalStatsService;
 import com.pml.catalog.util.CursorUtils;
 import com.pml.shared.constants.EventStatus;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,7 @@ public class EventQueryResolver {
 
     private final EventService eventService;
     private final EventStatsService eventStatsService;
+    private final PendingApprovalStatsService pendingApprovalStatsService;
 
     // ==========================================
     // Single Event Query
@@ -564,6 +567,21 @@ public class EventQueryResolver {
     public Mono<EventStats> eventStats() {
         log.debug("GraphQL query: eventStats");
         return eventStatsService.getEventStats();
+    }
+
+    /**
+     * Catalog-owned pending approval-queue count (events awaiting review) for
+     * the admin action center.
+     * Schema: catalogPendingCounts: CatalogPendingCounts
+     *
+     * One of three federated root fields the Apollo Router composes into the
+     * frontend's single PendingCounts query.
+     */
+    @DgsQuery
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<CatalogPendingCounts> catalogPendingCounts() {
+        log.debug("GraphQL query: catalogPendingCounts");
+        return pendingApprovalStatsService.getPendingCounts();
     }
 
     // ==========================================

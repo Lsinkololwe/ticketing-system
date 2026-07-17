@@ -6,7 +6,7 @@ export default function EventsPage() {
     <PagePlaceholder
       title="All Events"
       description="Browse and manage all events on the platform"
-      icon={<Calendar style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Calendar style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

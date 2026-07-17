@@ -6,7 +6,7 @@ export default function EventReviewsPage() {
     <PagePlaceholder
       title="Event Reviews"
       description="Review and approve submitted events before they go live"
-      icon={<Calendar style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Calendar style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

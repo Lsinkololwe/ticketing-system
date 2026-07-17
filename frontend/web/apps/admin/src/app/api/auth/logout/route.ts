@@ -20,13 +20,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { auth } from '@/lib/auth';
-import {
-  blacklistTokenFromJwt,
-  removeSessionFromUserIndex,
-  revokeUserSessions,
-  getRedis,
-} from '@/lib/auth/token-blacklist';
+import { decodeJwt } from 'jose';
+import { auth, db, getTokenService, jtiBlacklist } from '@/lib/auth';
 
 // =============================================================================
 // TYPES
@@ -68,8 +63,11 @@ export async function POST(request: NextRequest) {
     tokenBlacklisted: false,
     userRevoked: false,
     sessionDeleted: false,
-    sessionIndexCleaned: false,
+    keycloakSessionEnded: false,
   };
+  // Keycloak ID token — required as id_token_hint for a clean RP-initiated
+  // logout (terminates the SSO session without a confirmation page).
+  let idTokenHint: string | undefined;
 
   try {
     // 1. Get current session cookie
@@ -101,57 +99,81 @@ export async function POST(request: NextRequest) {
       console.warn('[Logout] Failed to get session from Better Auth:', sessionError);
     }
 
-    // 3. Try to get stored tokens from Redis session
-    if (sessionData?.session) {
-      const redis = getRedis();
-      const sessionKey = `pml-admin:session:${sessionData.session.id}`;
-
-      try {
-        const storedSession = await redis.get(sessionKey);
-        if (storedSession) {
-          const sessionObj = JSON.parse(storedSession);
-          console.log('[Logout] Session data from Redis:', {
-            hasAccessToken: !!sessionObj.accessToken,
-            hasToken: !!sessionObj.token,
-            hasIdToken: !!sessionObj.idToken,
-          });
-
-          // 4. Blacklist access token if available
-          const accessToken = sessionObj.accessToken || sessionObj.token;
-          if (accessToken && typeof accessToken === 'string' && accessToken.includes('.')) {
-            results.tokenBlacklisted = await blacklistTokenFromJwt(accessToken);
-            console.log(`[Logout] Access token blacklisted: ${results.tokenBlacklisted}`);
-          }
-        }
-      } catch (redisError) {
-        console.warn('[Logout] Failed to read session from Redis:', redisError);
-      }
-    }
-
-    // 5. Create user revocation entry (defense-in-depth)
-    // This ensures that even if token blacklisting fails, we have a record
+    // 3. Read the Keycloak tokens NATIVELY from the Better Auth `account`
+    //    collection (MongoDB) — the canonical store Better Auth writes OAuth
+    //    tokens to. Same native source as the organization-admin app, rather
+    //    than digging into a Redis session blob.
     if (sessionData?.user?.id) {
       try {
-        await revokeUserSessions(sessionData.user.id);
-        results.userRevoked = true;
-        console.log(`[Logout] User revocation entry created for: ${sessionData.user.id.slice(0, 8)}...`);
-      } catch (revokeError) {
-        console.warn('[Logout] Failed to create user revocation:', revokeError);
+        const account = await db.collection('account').findOne({
+          userId: sessionData.user.id,
+          providerId: 'keycloak',
+        });
+
+        if (account) {
+          console.log('[Logout] Keycloak account tokens:', {
+            hasAccessToken: !!account.accessToken,
+            hasIdToken: !!account.idToken,
+          });
+
+          // Capture the ID token (fallback id_token_hint for front-channel logout).
+          if (typeof account.idToken === 'string') {
+            idTokenHint = account.idToken;
+          }
+
+          // 3a. Back-channel logout: terminate the Keycloak SSO session
+          //     server-side using the refresh token (confidential client). This
+          //     is what avoids the browser-facing "Do you want to log out?" page.
+          const refreshToken = account.refreshToken;
+          if (typeof refreshToken === 'string' && refreshToken.length > 0) {
+            results.keycloakSessionEnded =
+              await getTokenService().endKeycloakSession(refreshToken);
+            console.log(`[Logout] Keycloak SSO session ended: ${results.keycloakSessionEnded}`);
+          }
+
+          // 4. Blacklist the access token JTI via the shared JtiBlacklistService
+          //    (skips already-expired tokens internally).
+          const accessToken = account.accessToken;
+          if (jtiBlacklist && typeof accessToken === 'string' && accessToken.includes('.')) {
+            try {
+              const payload = decodeJwt(accessToken);
+              if (payload.jti) {
+                results.tokenBlacklisted = await jtiBlacklist.add({
+                  jti: payload.jti as string,
+                  userId: (payload.sub as string) || sessionData.user.id,
+                  reason: 'session_revoke',
+                  tokenExpiry: payload.exp as number | undefined,
+                });
+                console.log(`[Logout] Access token blacklisted: ${results.tokenBlacklisted}`);
+              }
+            } catch (decodeError) {
+              console.warn('[Logout] Failed to decode access token for blacklist:', decodeError);
+            }
+          }
+        } else {
+          console.log('[Logout] No Keycloak account found for user');
+        }
+      } catch (accountError) {
+        console.warn('[Logout] Failed to read Keycloak account tokens:', accountError);
       }
     }
 
-    // 6. Clean up user session index
-    if (sessionData?.session && sessionData?.user) {
+    // 5. Revoke all the user's tokens issued before now (defense-in-depth), via
+    //    the shared service's user-level blacklist.
+    if (jtiBlacklist && sessionData?.user?.id) {
       try {
-        await removeSessionFromUserIndex(sessionData.user.id, sessionData.session.id);
-        results.sessionIndexCleaned = true;
-        console.log('[Logout] Session removed from user index');
-      } catch (indexError) {
-        console.warn('[Logout] Failed to remove session from index:', indexError);
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        results.userRevoked = await jtiBlacklist.blacklistUserTokensBefore(
+          sessionData.user.id,
+          nowSeconds
+        );
+        console.log(`[Logout] User tokens revoked for: ${sessionData.user.id.slice(0, 8)}...`);
+      } catch (revokeError) {
+        console.warn('[Logout] Failed to revoke user tokens:', revokeError);
       }
     }
 
-    // 7. Sign out from Better Auth (deletes session from Redis + clears cookie)
+    // 6. Sign out from Better Auth (deletes session from Redis + clears cookie)
     try {
       await auth.api.signOut({
         headers: request.headers,
@@ -165,8 +187,15 @@ export async function POST(request: NextRequest) {
     const duration = Date.now() - startTime;
     console.log(`[Logout] Complete logout finished in ${duration}ms:`, results);
 
+    // The Keycloak SSO session is normally terminated server-side above
+    // (keycloakSessionEnded), so the client can just redirect to /login with no
+    // confirmation page. `logoutUrl` is only a front-channel fallback for when
+    // back-channel logout could not run (e.g. no refresh token).
+    const logoutUrl = getTokenService().getLogoutUrl(idTokenHint);
+
     return NextResponse.json({
       success: true,
+      logoutUrl,
       ...results,
     });
   } catch (error) {

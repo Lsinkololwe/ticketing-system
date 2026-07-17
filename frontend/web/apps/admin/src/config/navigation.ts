@@ -1,7 +1,7 @@
 /**
  * Admin Navigation Configuration
  *
- * Role-based navigation structure for the PML Admin Portal.
+ * Role-based navigation structure for the MyTicket Zambia Admin.
  *
  * Navigation Philosophy:
  * - Action-oriented: Show pending tasks, not just data views
@@ -12,14 +12,22 @@
  * - SUPER_ADMIN: Full access to all features
  * - ADMIN: Operations focus (approvals, user management, events)
  * - FINANCE: Financial focus (payouts, refunds, escrow, reports)
+ *
+ * Note: SCANNER, ORGANIZER, and CUSTOMER are valid AdminRole values but hold
+ * no dashboard-access sections — they will receive an empty navigation set.
  */
 
+// `import type` erases to nothing at runtime, so `server-only` in the barrel
+// is never triggered when this config is consumed by Client Components.
+import type { AdminRole } from '@/lib/auth/interfaces';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-export type AdminRole = 'SUPER_ADMIN' | 'ADMIN' | 'FINANCE';
+// Re-export AdminRole so existing callers that import it from this module
+// continue to work without changes.
+export type { AdminRole };
 
 export interface NavItem {
   id: string;
@@ -99,7 +107,7 @@ export const navigationConfig: NavSection[] = [
       {
         id: 'document-verification',
         label: 'Document Verification',
-        href: '/documents',
+        href: '/approvals/documents',
         icon: 'PageSearch',
         badge: 'dynamic',
         roles: ['SUPER_ADMIN', 'ADMIN'],
@@ -314,23 +322,43 @@ export const navigationConfig: NavSection[] = [
 // =============================================================================
 
 /**
- * Filter navigation based on user role
+ * Return the UNION of all navigation sections/items visible to ANY of the
+ * supplied roles.
+ *
+ * - Preserves the section and item order declared in `navigationConfig`.
+ * - Emits no duplicate sections or items (each appears at most once because
+ *   we iterate `navigationConfig` once and filter per-item by role set).
+ * - Roles not present in any section's `roles` array (e.g. SCANNER, CUSTOMER)
+ *   will yield an empty array — this is correct; never coerce unknown roles.
  */
-export function getNavigationForRole(role: AdminRole): NavSection[] {
+export function getNavigationForRoles(roles: AdminRole[]): NavSection[] {
+  // Use a Set for O(1) membership tests across potentially many items.
+  const roleSet = new Set<string>(roles);
+
   return navigationConfig
-    .filter((section) => section.roles.includes(role))
+    .filter((section) => section.roles.some((r) => roleSet.has(r)))
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => item.roles.includes(role)),
+      items: section.items.filter((item) => item.roles.some((r) => roleSet.has(r))),
     }))
     .filter((section) => section.items.length > 0);
 }
 
 /**
- * Get flat list of all nav items for a role
+ * Filter navigation based on a single user role.
+ *
+ * Kept for back-compat; implemented as `getNavigationForRoles([role])` so
+ * the Sidebar can migrate to `getNavigationForRoles` at its own pace.
+ */
+export function getNavigationForRole(role: AdminRole): NavSection[] {
+  return getNavigationForRoles([role]);
+}
+
+/**
+ * Get a flat list of all nav items (including children) visible to a role.
  */
 export function getAllNavItemsForRole(role: AdminRole): NavItem[] {
-  const sections = getNavigationForRole(role);
+  const sections = getNavigationForRoles([role]);
   const items: NavItem[] = [];
 
   for (const section of sections) {
@@ -346,10 +374,51 @@ export function getAllNavItemsForRole(role: AdminRole): NavItem[] {
 }
 
 /**
- * Check if a path is active (exact match only)
+ * Check if a nav item's href matches the current pathname.
+ *
+ * Uses PREFIX-AWARE matching: a nav item is active when the pathname equals
+ * the href exactly OR begins with `href + '/'`.  This keeps parent items
+ * highlighted on nested routes (e.g. `/organizers/123` lights up `/organizers`)
+ * while preventing `/events` from matching `/events-archive`.
  */
 export function isNavItemActive(href: string, pathname: string): boolean {
-  return pathname === href;
+  return pathname === href || pathname.startsWith(href + '/');
+}
+
+/**
+ * Return the href of the BEST (most specific) visible nav item for the given
+ * pathname and role set, using longest-match precedence.
+ *
+ * This ensures that `/events/calendar` resolves to the Calendar item
+ * (`/events/calendar`, 16 chars) rather than "All Events" (`/events`, 7 chars),
+ * and `/dashboard/settings` resolves to Settings rather than "Dashboard".
+ *
+ * Returns `null` when no visible item matches the pathname.
+ */
+export function getActiveNavHref(pathname: string, roles: AdminRole[]): string | null {
+  // Collect every visible item (top-level + children) in config order.
+  const candidates: NavItem[] = [];
+  for (const section of getNavigationForRoles(roles)) {
+    for (const item of section.items) {
+      candidates.push(item);
+      if (item.children) {
+        candidates.push(...item.children);
+      }
+    }
+  }
+
+  // Among all matching hrefs, keep the longest (most specific) one.
+  let bestHref: string | null = null;
+  let bestLength = -1;
+
+  for (const item of candidates) {
+    if (isNavItemActive(item.href, pathname) && item.href.length > bestLength) {
+      bestHref = item.href;
+      bestLength = item.href.length;
+    }
+  }
+
+  return bestHref;
 }
 
 // =============================================================================

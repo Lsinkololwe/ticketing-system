@@ -12,8 +12,8 @@ import 'server-only';
  * ```typescript
  * const config: IAuthConfig = {
  *   graphqlEndpoint: 'http://localhost:4000/graphql',
- *   keycloakIssuer: 'http://localhost:8084/realms/event-ticketing',
- *   keycloakClientId: 'event-ticketing-admin',
+ *   keycloakIssuer: 'http://localhost:8084/realms/myticketzm',
+ *   keycloakClientId: 'myticketzm-organizer',
  *   appUrl: 'http://localhost:3030'
  * };
  * ```
@@ -67,7 +67,7 @@ export interface IAuthConfig {
    *
    * If not provided, constructed from keycloakIssuer.
    *
-   * @example 'http://localhost:8084/realms/event-ticketing/protocol/openid-connect/token'
+   * @example 'http://localhost:8084/realms/myticketzm/protocol/openid-connect/token'
    */
   readonly tokenEndpoint?: string;
 
@@ -76,7 +76,7 @@ export interface IAuthConfig {
    *
    * If not provided, constructed from keycloakIssuer.
    *
-   * @example 'http://localhost:8084/realms/event-ticketing/protocol/openid-connect/logout'
+   * @example 'http://localhost:8084/realms/myticketzm/protocol/openid-connect/logout'
    */
   readonly logoutEndpoint?: string;
 

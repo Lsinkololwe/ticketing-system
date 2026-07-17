@@ -3,7 +3,7 @@
 /**
  * Admin Login Page
  *
- * Professional enterprise login for the PML Ticketing Admin Portal.
+ * Professional enterprise login for the MyTicket Zambia Admin Portal.
  * Features:
  * - Split-screen layout with branding and login
  * - Dark mode OLED aesthetic
@@ -32,7 +32,7 @@ function LoadingScreen({ message }: { message: string }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#020617',
+        backgroundColor: '#0A0A0F',
       }}
     >
       <Flex direction="column" align="center" gap="4">
@@ -41,8 +41,8 @@ function LoadingScreen({ message }: { message: string }) {
             width: 48,
             height: 48,
             borderRadius: '50%',
-            border: '3px solid rgba(139, 92, 246, 0.2)',
-            borderTopColor: '#8B5CF6',
+            border: '3px solid rgba(16, 185, 129, 0.2)',
+            borderTopColor: '#10B981',
             animation: 'spin 1s linear infinite',
           }}
         />
@@ -72,8 +72,8 @@ function FeatureCard({ icon, title, description }: {
         style={{
           padding: '10px',
           borderRadius: '12px',
-          backgroundColor: 'rgba(139, 92, 246, 0.1)',
-          border: '1px solid rgba(139, 92, 246, 0.2)',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          border: '1px solid rgba(16, 185, 129, 0.2)',
           flexShrink: 0,
         }}
       >
@@ -142,7 +142,7 @@ function LoginContent() {
     <Box
       style={{
         minHeight: '100vh',
-        backgroundColor: '#020617',
+        backgroundColor: '#0A0A0F',
         display: 'flex',
       }}
     >
@@ -152,7 +152,7 @@ function LoginContent() {
           flex: 1,
           display: 'none',
           padding: '48px',
-          background: 'linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #0F172A 100%)',
+          background: 'linear-gradient(135deg, #0F172A 0%, #042F2E 50%, #0F172A 100%)',
           position: 'relative',
           overflow: 'hidden',
         }}
@@ -164,9 +164,9 @@ function LoginContent() {
             position: 'absolute',
             inset: 0,
             backgroundImage: `
-              radial-gradient(circle at 20% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
-              radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-              radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.05) 0%, transparent 70%)
+              radial-gradient(circle at 20% 80%, rgba(16, 185, 129, 0.15) 0%, transparent 50%),
+              radial-gradient(circle at 80% 20%, rgba(20, 184, 166, 0.1) 0%, transparent 50%),
+              radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.05) 0%, transparent 70%)
             `,
           }}
         />
@@ -177,8 +177,8 @@ function LoginContent() {
             position: 'absolute',
             inset: 0,
             backgroundImage: `
-              linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px)
+              linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px)
             `,
             backgroundSize: '50px 50px',
           }}
@@ -197,18 +197,18 @@ function LoginContent() {
                   width: 48,
                   height: 48,
                   borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%)',
+                  background: 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 0 30px rgba(139, 92, 246, 0.4)',
+                  boxShadow: '0 0 30px rgba(16, 185, 129, 0.4)',
                 }}
               >
-                <Text size="5" weight="bold" style={{ color: 'white' }}>P</Text>
+                <Text size="5" weight="bold" style={{ color: 'white' }}>M</Text>
               </Box>
               <Box>
                 <Text size="4" weight="bold" style={{ color: '#F8FAFC' }}>
-                  PML Tickets - Admin Portal
+                  MyTicket Zambia - Admin Portal
                 </Text>
               </Box>
             </Flex>
@@ -224,7 +224,7 @@ function LoginContent() {
               >
                 Event Management
                 <br />
-                <span style={{ color: '#8B5CF6' }}>Made Simple</span>
+                <span style={{ color: '#10B981' }}>Made Simple</span>
               </Heading>
               <Text
                 size="3"
@@ -239,17 +239,17 @@ function LoginContent() {
           {/* Features */}
           <Flex direction="column" gap="5">
             <FeatureCard
-              icon={<GraphUp style={{ width: 20, height: 20, color: '#8B5CF6' }} />}
+              icon={<GraphUp style={{ width: 20, height: 20, color: '#10B981' }} />}
               title="Real-time Analytics"
               description="Monitor ticket sales, revenue, and attendee data in real-time"
             />
             <FeatureCard
-              icon={<ShieldCheck style={{ width: 20, height: 20, color: '#8B5CF6' }} />}
+              icon={<ShieldCheck style={{ width: 20, height: 20, color: '#10B981' }} />}
               title="Organizer Verification"
               description="Approve and manage organizer applications with document verification"
             />
             <FeatureCard
-              icon={<Server style={{ width: 20, height: 20, color: '#8B5CF6' }} />}
+              icon={<Server style={{ width: 20, height: 20, color: '#10B981' }} />}
               title="Payment Management"
               description="Process payouts, track commissions, and manage escrow accounts"
             />
@@ -257,7 +257,7 @@ function LoginContent() {
 
           {/* Footer */}
           <Text size="1" style={{ color: '#475569' }}>
-            &copy; {new Date().getFullYear()} PML Tickets. Admin Portal.
+            &copy; {new Date().getFullYear()} MyTicket Zambia. Admin Portal.
           </Text>
         </Flex>
       </Box>
@@ -287,18 +287,18 @@ function LoginContent() {
                 width: 64,
                 height: 64,
                 borderRadius: '16px',
-                background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%)',
+                background: 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 0 40px rgba(139, 92, 246, 0.3)',
+                boxShadow: '0 0 40px rgba(16, 185, 129, 0.3)',
               }}
             >
-              <Text size="7" weight="bold" style={{ color: 'white' }}>P</Text>
+              <Text size="7" weight="bold" style={{ color: 'white' }}>M</Text>
             </Box>
             <Box style={{ textAlign: 'center' }}>
               <Heading size="6" style={{ color: '#F8FAFC' }}>
-                PML Admin Portal
+                MyTicket Zambia Admin
               </Heading>
               <Text size="2" style={{ color: '#64748B' }}>
                 Event Ticketing Management
@@ -345,10 +345,10 @@ function LoginContent() {
                 style={{
                   width: '100%',
                   height: 48,
-                  background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%)',
+                  background: 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
                   cursor: isSigningIn ? 'not-allowed' : 'pointer',
                   transition: 'all 200ms ease',
-                  boxShadow: '0 4px 14px rgba(139, 92, 246, 0.3)',
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)',
                 }}
               >
                 {isSigningIn ? (
@@ -370,7 +370,7 @@ function LoginContent() {
                 <a
                   href="mailto:support@pml.tickets"
                   style={{
-                    color: '#8B5CF6',
+                    color: '#10B981',
                     textDecoration: 'none',
                     cursor: 'pointer',
                   }}
@@ -388,7 +388,7 @@ function LoginContent() {
             mt="6"
             style={{ color: '#475569', display: 'block' }}
           >
-            &copy; {new Date().getFullYear()} PML Tickets. All rights reserved.
+            &copy; {new Date().getFullYear()} MyTicket Zambia. All rights reserved.
           </Text>
         </Box>
       </Flex>

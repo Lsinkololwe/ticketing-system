@@ -50,3 +50,14 @@ export {
   handleGraphQLError,
   getApolloErrorMessage,
 } from './client';
+
+// ==================== Analytics Domain ====================
+
+// Pending-queue counts for the admin action-center sidebar badges.
+export {
+  usePendingCounts,
+  type PendingCounts,
+  type PendingCountKey,
+  type UsePendingCountsResult,
+  PENDING_COUNTS,
+} from './analytics';

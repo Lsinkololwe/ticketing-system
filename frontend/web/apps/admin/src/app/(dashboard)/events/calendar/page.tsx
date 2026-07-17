@@ -6,7 +6,7 @@ export default function EventCalendarPage() {
     <PagePlaceholder
       title="Event Calendar"
       description="View events in calendar format with scheduling insights"
-      icon={<CalendarPlus style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<CalendarPlus style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

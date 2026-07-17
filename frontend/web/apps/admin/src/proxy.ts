@@ -55,14 +55,16 @@ const LOGIN_URL = '/login';
 const DASHBOARD_URL = '/dashboard';
 
 /**
- * Session cookie name (must match server config)
+ * Better Auth cookie prefix (MUST match `cookiePrefix` in lib/auth/index.ts).
  *
- * Server config: `cookiePrefix: 'pml_admin'`
- * Better Auth adds `.session_token` suffix
+ * IMPORTANT: pass `cookiePrefix` (NOT `cookieName`) to getSessionCookie — Better
+ * Auth builds the full cookie name (`<prefix>.session_token`, plus the `__Secure-`
+ * prefix in production) internally. Passing `cookieName` made it look for the
+ * wrong cookie, so the middleware never saw the session → infinite /login loop.
  *
  * @used-by getSessionCookie() - Cookie lookup
  */
-const COOKIE_NAME = 'pml_admin.session_token';
+const COOKIE_PREFIX = 'pml_admin';
 
 // =============================================================================
 // PROXY (Official Better Auth Pattern)
@@ -101,7 +103,7 @@ export async function proxy(request: NextRequest) {
    * @see https://better-auth.com/docs/integrations/next
    */
   const sessionCookie = getSessionCookie(request, {
-    cookieName: COOKIE_NAME,
+    cookiePrefix: COOKIE_PREFIX,
   });
 
   const isAuthenticated = !!sessionCookie;

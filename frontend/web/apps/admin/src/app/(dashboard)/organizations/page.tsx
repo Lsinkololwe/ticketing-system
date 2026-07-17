@@ -6,7 +6,7 @@ export default function OrganizationsPage() {
     <PagePlaceholder
       title="Organizations"
       description="Manage registered organizations and their profiles"
-      icon={<Community style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Community style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

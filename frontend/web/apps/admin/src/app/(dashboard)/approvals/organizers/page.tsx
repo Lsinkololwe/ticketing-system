@@ -6,7 +6,7 @@ export default function OrganizerApplicationsPage() {
     <PagePlaceholder
       title="Organizer Applications"
       description="Review and approve new organizer registration requests"
-      icon={<Group style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Group style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

@@ -373,6 +373,12 @@ export type BankAccountMutationResponse = {
   success: Scalars['Boolean']['output'];
 };
 
+export type BookingPendingCounts = {
+  __typename: 'BookingPendingCounts';
+  payoutRequests: Scalars['Int']['output'];
+  refundRequests: Scalars['Int']['output'];
+};
+
 export type BulkAccessGrantResponse = {
   __typename: 'BulkAccessGrantResponse';
   errors: Maybe<Array<BulkOperationError>>;
@@ -478,6 +484,11 @@ export type CancelTicketMutationResponse = {
   message: Maybe<Scalars['String']['output']>;
   metadata: Maybe<Scalars['JSON']['output']>;
   success: Scalars['Boolean']['output'];
+};
+
+export type CatalogPendingCounts = {
+  __typename: 'CatalogPendingCounts';
+  eventReviews: Scalars['Int']['output'];
 };
 
 export type CategoryMutationResponse = {
@@ -1595,6 +1606,12 @@ export type GrantEventAccessInput = {
   reason: InputMaybe<Scalars['String']['input']>;
   role: EventRole;
   userId: Scalars['ID']['input'];
+};
+
+export type IdentityPendingCounts = {
+  __typename: 'IdentityPendingCounts';
+  documentVerifications: Scalars['Int']['output'];
+  organizerApplications: Scalars['Int']['output'];
 };
 
 /**
@@ -4420,9 +4437,11 @@ export type Query = {
   availableTicketTiers: Array<TicketTier>;
   bankAccount: Maybe<BankAccount>;
   bankAccountsByOrganizer: Array<BankAccount>;
+  bookingPendingCounts: BookingPendingCounts;
   calculateRefundAmount: RefundCalculation;
   cancelledEventsCursorPagination: EventConnection;
   cancelledEventsOffsetPagination: EventOffsetPage;
+  catalogPendingCounts: CatalogPendingCounts;
   chargeback: Maybe<ChargebackRecord>;
   chargebackByChargebackId: Maybe<ChargebackRecord>;
   chargebackStats: ChargebackStats;
@@ -4518,6 +4537,7 @@ export type Query = {
   hasOrganizationPermission: Scalars['Boolean']['output'];
   hasPendingOwnershipTransfer: Scalars['Boolean']['output'];
   hasSuccessfulPayment: Scalars['Boolean']['output'];
+  identityPendingCounts: Maybe<IdentityPendingCounts>;
   invitationByToken: Maybe<TeamInvitation>;
   isSlugAvailable: Scalars['Boolean']['output'];
   isTicketEligibleForRefund: Scalars['Boolean']['output'];

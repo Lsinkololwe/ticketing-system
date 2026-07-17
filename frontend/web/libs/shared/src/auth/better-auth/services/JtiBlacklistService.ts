@@ -48,8 +48,15 @@ import type {
 // CONSTANTS
 // =============================================================================
 
-/** Default TTL for blacklist entries (24 hours) */
-const DEFAULT_TTL_SECONDS = 86400;
+/**
+ * Default TTL when a token's expiry is unknown (1 hour).
+ *
+ * A blacklist entry only needs to outlive the access token it shadows. The
+ * longest access-token lifespan across our realms is 1h, so 1h is a safe upper
+ * bound. (Previously 24h, which made entries for short-lived tokens linger far
+ * longer than the token itself and pile up in Redis.)
+ */
+const DEFAULT_TTL_SECONDS = 3600;
 
 /** Clock skew buffer for token expiry (5 minutes) */
 const CLOCK_SKEW_BUFFER_SECONDS = 300;
@@ -90,6 +97,19 @@ export class JtiBlacklistService implements IJtiBlacklistService {
    */
   async add(entry: BlacklistInput): Promise<boolean> {
     const { jti, userId, sessionId, reason, tokenExpiry } = entry;
+
+    // An already-expired token cannot be replayed — resource servers reject it
+    // on its `exp` claim regardless of any blacklist. Blacklisting it adds no
+    // security value and (under the fallback TTL) would linger in Redis long
+    // after the token died. Skip it. (Logout often hits this because the stored
+    // OAuth access token is short-lived and usually stale by sign-out time.)
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (tokenExpiry !== undefined && tokenExpiry <= nowSeconds) {
+      console.log(
+        `[JtiBlacklistService] Skipping already-expired JTI ${jti} (exp ${tokenExpiry} <= now ${nowSeconds})`
+      );
+      return false;
+    }
 
     const fullEntry: BlacklistEntry = {
       jti,
@@ -272,9 +292,10 @@ export class JtiBlacklistService implements IJtiBlacklistService {
     const now = Math.floor(Date.now() / 1000);
     const remainingSeconds = tokenExpiry - now;
 
-    // Token already expired or about to expire
+    // Token already expired (add() normally skips these). Use only the clock-skew
+    // buffer so it cannot linger — never the multi-hour default.
     if (remainingSeconds <= 0) {
-      return this.defaultTtlSeconds;
+      return CLOCK_SKEW_BUFFER_SECONDS;
     }
 
     // Add buffer for clock skew between servers

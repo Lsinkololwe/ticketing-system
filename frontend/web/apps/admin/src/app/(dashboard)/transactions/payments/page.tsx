@@ -6,7 +6,7 @@ export default function PaymentHistoryPage() {
     <PagePlaceholder
       title="Payment History"
       description="View and manage all payment transactions"
-      icon={<CreditCard style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<CreditCard style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

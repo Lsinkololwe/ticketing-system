@@ -6,7 +6,7 @@ export default function RefundRequestsPage() {
     <PagePlaceholder
       title="Refund Requests"
       description="Process and manage customer refund requests"
-      icon={<Undo style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Undo style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

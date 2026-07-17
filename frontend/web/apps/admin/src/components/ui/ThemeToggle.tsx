@@ -252,10 +252,10 @@ export function ThemeSelector() {
               key={option.value}
               p="4"
               style={{
-                backgroundColor: theme === option.value ? 'var(--violet-a3)' : 'var(--gray-a2)',
+                backgroundColor: theme === option.value ? 'var(--accent-a3)' : 'var(--gray-a2)',
                 borderRadius: 'var(--radius-3)',
                 border: theme === option.value
-                  ? '1px solid var(--violet-7)'
+                  ? '1px solid var(--accent-7)'
                   : '1px solid var(--gray-a4)',
                 cursor: 'pointer',
                 transition: 'all 150ms ease',
@@ -269,7 +269,7 @@ export function ThemeSelector() {
                     padding: '8px',
                     borderRadius: 'var(--radius-2)',
                     backgroundColor: theme === option.value
-                      ? 'var(--violet-a4)'
+                      ? 'var(--accent-a4)'
                       : 'var(--gray-a3)',
                   }}
                 >

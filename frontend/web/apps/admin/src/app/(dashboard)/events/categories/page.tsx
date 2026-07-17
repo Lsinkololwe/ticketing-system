@@ -6,7 +6,7 @@ export default function EventCategoriesPage() {
     <PagePlaceholder
       title="Event Categories"
       description="Manage event categories and classifications"
-      icon={<Folder style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Folder style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

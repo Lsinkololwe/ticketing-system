@@ -1,13 +1,23 @@
 /**
- * Admin Design System - Global Styles
+ * Admin Portal Design System - Global Styles
  *
- * This file implements the design system while
- * maintaining compatibility with Radix UI Themes.
+ * RADIX UI THEMES SINGLE SOURCE OF TRUTH
  *
- * Design Principles:
- * - Minimalist & Clean: White surfaces, subtle shadows
- * - Google-inspired: Light shadows, clean lines
- * - Semantic Colors: Soft tints for status colors
+ * Theme Configuration (Providers.tsx):
+ * - accentColor: "teal"
+ * - grayColor: "slate"
+ * - radius: "medium"
+ *
+ * This mirrors the organization-admin design system. Colors are NOT hardcoded
+ * here — they are aliased to Radix tokens so the whole palette follows the
+ * accent set on <Theme>. Light/dark are handled automatically by Radix.
+ *
+ * DO NOT define colors here - use Radix tokens:
+ * - --accent-1 to --accent-12 / --accent-a1 to --accent-a12 (teal)
+ * - --gray-1 to --gray-12 / --gray-a1 to --gray-a12 (slate)
+ * - --accent-contrast, --accent-surface, --accent-indicator
+ *
+ * @see https://www.radix-ui.com/themes/docs/theme/color
  */
 
 /* Import Inter font */
@@ -31,63 +41,95 @@
 }
 
 /* ===========================================
-   Design Tokens (CSS Variables)
-   Radix UI Themes - Light Mode
-   Clean whites with violet accent
+   BACKWARD COMPATIBILITY ALIASES
+   Maps legacy custom tokens to Radix tokens (teal accent / slate gray)
    =========================================== */
-:root {
-  /* Surface Colors - Radix light grays */
-  --surface-primary: #FFFFFF;
-  --surface-secondary: #FAFAFA;
-  --surface-tertiary: #F4F4F5;
-  --surface-hover: #EBEBEF;
-  --surface-border: #E4E4E9;
-  --surface-border-light: #F0F0F3;
+:root,
+.light,
+.light-theme {
+  /* BRAND COLORS → Radix Accent (teal) */
+  --brand-50: var(--accent-2);
+  --brand-100: var(--accent-3);
+  --brand-200: var(--accent-4);
+  --brand-300: var(--accent-5);
+  --brand-400: var(--accent-7);
+  --brand-500: var(--accent-9); /* Primary brand color */
+  --brand-600: var(--accent-10);
+  --brand-700: var(--accent-11);
 
-  /* Content Colors - Radix text scale */
-  --content-primary: #1C1C1E;
-  --content-secondary: #3C3C43;
-  --content-tertiary: #6E6E76;
-  --content-muted: #9D9DA5;
-  --content-inverse: #FFFFFF;
+  /* CONTENT COLORS → Radix Gray (slate) */
+  --content-primary: var(--gray-12);
+  --content-secondary: var(--gray-11);
+  --content-tertiary: var(--gray-10);
+  --content-muted: var(--gray-9);
+  --content-inverse: var(--gray-1);
 
-  /* Brand Colors - Violet accent (Radix violet) */
-  --brand-50: #F5F2FF;
-  --brand-100: #EDE9FE;
-  --brand-200: #DDD6FE;
-  --brand-300: #C4B5FD;
-  --brand-400: #A78BFA;
-  --brand-500: #8B5CF6;
-  --brand-600: #7C3AED;
-  --brand-700: #6D28D9;
+  /* SURFACE COLORS → Radix Color Scale */
+  --surface-primary: var(--color-background);
+  --surface-secondary: var(--gray-2);
+  --surface-tertiary: var(--gray-3);
+  --surface-hover: var(--gray-4);
+  --surface-border: var(--gray-6);
+  --surface-border-light: var(--gray-5);
 
-  /* Status Colors - Radix semantic colors */
-  --success-50: #E6F6EC;
-  --success-100: #D3F0DF;
-  --success-500: #30A46C;
-  --success-600: #299764;
-  --warning-50: #FFF4D5;
-  --warning-100: #FFECBC;
-  --warning-500: #F5A623;
-  --warning-600: #E09516;
-  --danger-50: #FFEFEF;
-  --danger-100: #FFE0E0;
-  --danger-500: #E5484D;
-  --danger-600: #D93D42;
+  /* Tonal surfaces using accent alpha */
+  --surface-base: var(--color-background);
+  --surface-raised: var(--color-panel-solid);
+  --surface-lowered: var(--gray-2);
+  --surface-sunken: var(--gray-3);
+  --surface-tinted: var(--accent-a2);
+  --surface-tinted-hover: var(--accent-a3);
+  --surface-tinted-strong: var(--accent-a4);
 
-  /* Shadows - Google-inspired, subtle */
+  /* STATUS COLORS → Radix Semantic Colors */
+  --success-50: var(--green-2);
+  --success-100: var(--green-3);
+  --success-500: var(--green-9);
+  --success-600: var(--green-10);
+  --warning-50: var(--amber-2);
+  --warning-100: var(--amber-3);
+  --warning-500: var(--amber-9);
+  --warning-600: var(--amber-10);
+  --danger-50: var(--red-2);
+  --danger-100: var(--red-3);
+  --danger-500: var(--red-9);
+  --danger-600: var(--red-10);
+  --info-50: var(--blue-2);
+  --info-100: var(--blue-3);
+  --info-500: var(--blue-9);
+  --info-600: var(--blue-10);
+
+  /* TYPOGRAPHY */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* TRANSITIONS */
+  --transition-fast: 150ms;
+  --transition-default: 200ms;
+  --transition-slow: 300ms;
+  --transition-duration: var(--transition-default);
+}
+
+/* ===========================================
+   CUSTOM TOKENS (NOT in Radix)
+   Neutral (non-color) tokens + accent-tinted effects
+   =========================================== */
+:root,
+.light,
+.light-theme {
+  /* Shadows - neutral scale (Radix also exposes --shadow-1 to --shadow-6) */
   --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.03);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.03);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.03);
-  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.02);
-  --shadow-card-hover: 0 4px 12px 0 rgb(0 0 0 / 0.06), 0 2px 4px -1px rgb(0 0 0 / 0.03);
-  --shadow-elevated: 0 2px 8px 0 rgb(0 0 0 / 0.06);
-  --shadow-dropdown: 0 4px 16px 0 rgb(0 0 0 / 0.08), 0 2px 4px 0 rgb(0 0 0 / 0.04);
-  --shadow-modal: 0 25px 50px -12px rgb(0 0 0 / 0.15);
+  --shadow-sm: var(--shadow-2);
+  --shadow-md: var(--shadow-3);
+  --shadow-lg: var(--shadow-4);
+  --shadow-xl: var(--shadow-5);
+  --shadow-card: var(--shadow-2);
+  --shadow-card-hover: var(--shadow-3);
+  --shadow-elevated: var(--shadow-4);
+  --shadow-dropdown: var(--shadow-5);
+  --shadow-modal: var(--shadow-6);
 
-  /* Border Radius */
+  /* Border Radius - named scale used by component classes */
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
@@ -95,182 +137,117 @@
   --radius-2xl: 1.25rem;
   --radius-3xl: 1.5rem;
 
-  /* ===========================================
-     CARD TOKENS - Centralized Card Styling
-     All cards must use these tokens
-     =========================================== */
-  --card-radius: var(--radius-xl);           /* 1rem - matches status card */
-  --card-border-color: rgba(229, 231, 235, 0.6);
+  /* Card Tokens */
+  --card-radius: var(--radius-4);
+  --card-border-color: var(--gray-a5);
   --card-border-width: 1px;
   --card-border: var(--card-border-width) solid var(--card-border-color);
   --card-shadow: var(--shadow-card);
   --card-shadow-hover: var(--shadow-card-hover);
-  --card-bg: var(--surface-primary);
+  --card-bg: var(--color-panel-solid);
   --card-transition: box-shadow 0.2s ease, border-color 0.2s ease;
 
-  /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Fira Code', 'JetBrains Mono', Menlo, Monaco, monospace;
-
-  /* Transitions */
-  --transition-fast: 150ms;
-  --transition-default: 200ms;
-  --transition-slow: 300ms;
-
-  /* ===========================================
-     TONAL SURFACE SYSTEM
-     Surface elevation using color tints
-     =========================================== */
-  --surface-base: #FFFFFF;
-  --surface-raised: #FFFFFF;
-  --surface-lowered: #FAFAFA;
-  --surface-sunken: #F4F4F5;
-
-  /* Brand-tinted surfaces (subtle violet presence) */
-  --surface-tinted: rgba(139, 92, 246, 0.02);
-  --surface-tinted-hover: rgba(139, 92, 246, 0.04);
-  --surface-tinted-strong: rgba(139, 92, 246, 0.06);
-
-  /* Gradient zone colors */
-  --gradient-brand-start: rgba(139, 92, 246, 0.03);
-  --gradient-brand-end: rgba(167, 139, 250, 0.02);
-  --gradient-success-start: rgba(48, 164, 108, 0.03);
-  --gradient-success-end: rgba(48, 164, 108, 0.02);
-  --gradient-warning-start: rgba(245, 166, 35, 0.03);
-  --gradient-warning-end: rgba(245, 166, 35, 0.02);
+  /* Gradient zone colors - accent gradients */
+  --gradient-brand-start: var(--accent-a3);
+  --gradient-brand-end: var(--accent-a2);
+  --gradient-success-start: var(--green-a3);
+  --gradient-success-end: var(--green-a2);
+  --gradient-warning-start: var(--amber-a3);
+  --gradient-warning-end: var(--amber-a2);
 
   /* Ambient glow colors */
-  --glow-brand: rgba(139, 92, 246, 0.08);
-  --glow-success: rgba(48, 164, 108, 0.08);
-  --glow-warning: rgba(245, 166, 35, 0.08);
+  --glow-brand: var(--accent-a4);
+  --glow-success: var(--green-a4);
+  --glow-warning: var(--amber-a4);
 
-  /* ===========================================
-     Dashboard Layout Backgrounds - Light Mode
-     Clean Radix-inspired surfaces with dark sidebar
-     =========================================== */
-  --dashboard-sidebar-bg: linear-gradient(180deg, #111113 0%, #19191B 50%, #111113 100%);
-  --dashboard-sidebar-border: rgba(110, 86, 207, 0.15);
-  --dashboard-header-bg: rgba(255, 255, 255, 0.95);
+  /* Dashboard Layout — header/main only. Sidebar tokens live on .radix-themes
+     (see below) because they reference Radix gray/accent scale vars, which are
+     NOT defined at :root in light mode — declaring them here collapsed
+     --dashboard-sidebar-bg to an empty value (invisible sidebar in light mode). */
+  --dashboard-header-bg: var(--color-panel-translucent);
   --dashboard-header-blur: 12px;
-  --dashboard-header-border: rgba(0, 0, 0, 0.06);
-  --dashboard-main-bg: #FFFFFF;
+  --dashboard-header-border: var(--gray-a4);
+  --dashboard-main-bg: var(--color-background);
   --dashboard-main-pattern: none;
-  --dashboard-accent-glow: radial-gradient(ellipse at top right, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
+  --dashboard-accent-glow: radial-gradient(ellipse at top right, var(--accent-a3) 0%, transparent 50%);
 }
 
 /* ===========================================
-   Dark Mode Design Tokens
-   Radix UI Themes - Slate Gray Scale
-   Cool neutral grays with violet accent
+   SIDEBAR RAIL TOKENS — declared on .radix-themes (NOT :root)
+   so Radix's gray/accent scale variables resolve in BOTH appearances.
+   Foreground tokens reference the Radix scales, so they auto-flip per theme:
+   dark text on the light rail in light mode, light text on the dark rail in
+   dark mode — WCAG AA in both. Active state uses the accent scale so rebrands
+   propagate.
    =========================================== */
-.dark {
-  /* Surface Colors - Radix Slate scale (cool neutral) */
-  --surface-primary: #111113;
-  --surface-secondary: #19191B;
-  --surface-tertiary: #222225;
-  --surface-hover: #2A2A2D;
-  --surface-border: #313136;
-  --surface-border-light: #27272B;
+.radix-themes {
+  /* Light rail follows the theme (subtle accent wash → light surface). */
+  --dashboard-sidebar-bg: linear-gradient(180deg, var(--accent-2) 0%, var(--gray-2) 22%, var(--gray-1) 100%);
+  --dashboard-sidebar-border: var(--gray-a5);
 
-  /* Content Colors - Radix gray text scale */
-  --content-primary: #EEEEF0;
-  --content-secondary: #B0B0B5;
-  --content-tertiary: #71717A;
-  --content-muted: #52525A;
-  --content-inverse: #111113;
+  --sidebar-fg: var(--gray-12);          /* primary text — AAA both modes */
+  --sidebar-fg-muted: var(--gray-11);    /* secondary / inactive — AA both */
+  --sidebar-section-fg: var(--gray-11);  /* section headers — AA both */
 
-  /* Brand Colors - Violet accent for dark mode (Radix violet) */
-  --brand-50: #1D1B2F;
-  --brand-100: #2E2B4A;
-  --brand-200: #3D3866;
-  --brand-300: #6E56CF;
-  --brand-400: #8B7BD8;
-  --brand-500: #A89DE2;
-  --brand-600: #C5BDEB;
-  --brand-700: #E2DFF4;
+  --sidebar-active-fg: var(--accent-11); /* accent "text" step — AA both */
+  --sidebar-active-bg: var(--accent-a3);
+  --sidebar-active-border: var(--accent-9);
 
-  /* Status Colors - Radix dark mode optimized */
-  --success-50: #0D2818;
-  --success-100: #113B22;
-  --success-500: #30A46C;
-  --success-600: #3DD68C;
-  --warning-50: #271700;
-  --warning-100: #3D2200;
-  --warning-500: #F5A623;
-  --warning-600: #FFB938;
-  --danger-50: #2D1515;
-  --danger-100: #3C1F1F;
-  --danger-500: #E5484D;
-  --danger-600: #F16A6D;
+  --sidebar-item-hover-bg: var(--gray-a3);
+  --sidebar-divider: var(--gray-a5);
+  --sidebar-well-bg: var(--gray-a2);
+  --sidebar-well-border: var(--gray-a4);
 
-  /* Shadows - Radix style for dark mode */
+  /* Count badge — fixed dark red gives ≥6.5:1 with white text on either rail. */
+  --sidebar-badge-bg: #b91c1c;
+  --sidebar-badge-fg: #ffffff;
+}
+
+/* Dark mode: keep a deep, distinct rail. Foreground tokens above auto-flip,
+   so only the rail background needs an override. Target the .radix-themes
+   element in a dark context so it wins over the base light declaration. */
+:where(.dark, .dark-theme) .radix-themes,
+.radix-themes:where(.dark, .dark-theme) {
+  --dashboard-sidebar-bg: linear-gradient(180deg, var(--gray-1) 0%, var(--gray-2) 50%, var(--gray-1) 100%);
+}
+
+/* ===========================================
+   DARK MODE OVERRIDES
+   Radix flips accent/gray/status automatically; only custom tokens here.
+   =========================================== */
+.dark,
+.dark-theme {
+  --content-primary: var(--gray-12);
+  --content-secondary: var(--gray-11);
+  --content-tertiary: var(--gray-10);
+  --content-muted: var(--gray-9);
+  --content-inverse: var(--gray-1);
+
+  /* Shadows for dark mode */
   --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.5);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.6), 0 1px 2px -1px rgb(0 0 0 / 0.5);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.6), 0 2px 4px -2px rgb(0 0 0 / 0.5);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.6), 0 4px 6px -4px rgb(0 0 0 / 0.5);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.7), 0 8px 10px -6px rgb(0 0 0 / 0.5);
-  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 1px 2px 0 rgb(0 0 0 / 0.5);
-  --shadow-card-hover: 0 0 0 1px rgba(110, 86, 207, 0.3), 0 4px 12px 0 rgb(0 0 0 / 0.6);
-  --shadow-elevated: 0 2px 8px 0 rgb(0 0 0 / 0.6);
-  --shadow-dropdown: 0 4px 16px 0 rgb(0 0 0 / 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
-  --shadow-modal: 0 25px 50px -12px rgb(0 0 0 / 0.9);
+  --shadow-card: 0 0 0 1px var(--gray-a5), 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-card-hover: 0 0 0 1px var(--accent-a6), 0 4px 12px 0 rgb(0 0 0 / 0.6);
 
-  /* Card tokens for dark mode */
-  --card-border-color: rgba(255, 255, 255, 0.06);
-  --card-shadow: var(--shadow-card);
-  --card-shadow-hover: var(--shadow-card-hover);
-  --card-bg: #19191B;
-
-  /* Tonal surfaces - dark mode */
-  --surface-base: #111113;
-  --surface-raised: #19191B;
-  --surface-lowered: #0E0E10;
-  --surface-sunken: #09090B;
-
-  /* Brand-tinted surfaces (subtle violet glow) */
-  --surface-tinted: rgba(110, 86, 207, 0.06);
-  --surface-tinted-hover: rgba(110, 86, 207, 0.10);
-  --surface-tinted-strong: rgba(110, 86, 207, 0.15);
-
-  /* Gradient zone colors - dark mode */
-  --gradient-brand-start: rgba(110, 86, 207, 0.08);
-  --gradient-brand-end: rgba(139, 123, 216, 0.04);
-
-  /* Ambient glow colors - more visible in dark mode */
-  --glow-brand: rgba(110, 86, 207, 0.15);
-  --glow-success: rgba(48, 164, 108, 0.12);
-  --glow-warning: rgba(245, 166, 35, 0.12);
-
-  /* ===========================================
-     Dashboard Layout Backgrounds - Dark Mode
-     Radix dark theme - pure cool blacks
-     =========================================== */
-  --dashboard-sidebar-bg: linear-gradient(180deg, #0E0E10 0%, #111113 50%, #0E0E10 100%);
-  --dashboard-sidebar-border: rgba(110, 86, 207, 0.15);
-  --dashboard-header-bg: rgba(17, 17, 19, 0.92);
-  --dashboard-header-blur: 16px;
-  --dashboard-header-border: rgba(255, 255, 255, 0.06);
-  --dashboard-main-bg: #111113;
-  --dashboard-main-pattern: none;
-  --dashboard-accent-glow: radial-gradient(ellipse at top right, rgba(110, 86, 207, 0.06) 0%, transparent 60%);
+  /* Dashboard Layout - Dark mode (sidebar rail handled on .radix-themes above) */
+  --dashboard-accent-glow: radial-gradient(ellipse at top right, var(--accent-a4) 0%, transparent 60%);
   --dashboard-mesh-gradient:
-    radial-gradient(at 20% 80%, rgba(110, 86, 207, 0.06) 0%, transparent 50%),
-    radial-gradient(at 80% 20%, rgba(139, 123, 216, 0.04) 0%, transparent 50%),
-    radial-gradient(at 50% 50%, rgba(110, 86, 207, 0.02) 0%, transparent 70%);
+    radial-gradient(at 20% 80%, var(--accent-a3) 0%, transparent 50%),
+    radial-gradient(at 80% 20%, var(--accent-a2) 0%, transparent 50%),
+    radial-gradient(at 50% 50%, var(--accent-a1) 0%, transparent 70%);
 }
 
 /* Dark mode scrollbar */
 .dark ::-webkit-scrollbar-thumb {
-  background: #3F3F46;
+  background: var(--gray-7);
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #52525B;
+  background: var(--gray-8);
 }
 
 /* ===========================================
-   Radix Themes Customization
-   All Radix components inherit from these tokens
+   RADIX THEMES CUSTOMIZATION
+   No accent remap — let the <Theme accentColor="teal"> tokens flow through.
    =========================================== */
 .radix-themes {
   /* Cursor - All interactive elements show pointer */
@@ -289,36 +266,19 @@
   --heading-font-family: var(--font-sans);
   --code-font-family: var(--font-mono);
 
-  /* Map theme colors to Radix violet accent */
-  --accent-1: #FDFCFE;
-  --accent-2: #F5F2FF;
-  --accent-3: #EDE9FE;
-  --accent-9: #8B5CF6;
-  --accent-10: #7C3AED;
-  --accent-11: #6D28D9;
-  --accent-12: #5B21B6;
-
   /* Override Radix shadow tokens with theme shadows */
   --shadow-1: var(--shadow-xs);
-  --shadow-2: var(--card-shadow);              /* Card shadow */
-  --shadow-3: var(--card-shadow-hover);        /* Card hover shadow */
-  --shadow-4: var(--shadow-dropdown);          /* Popover, hover card */
-  --shadow-5: var(--shadow-elevated);          /* Elevated panels */
-  --shadow-6: var(--shadow-modal);             /* Dialog, modal */
-
-  /* Override Radix radius tokens */
-  --radius-1: var(--radius-sm);
-  --radius-2: var(--radius-md);
-  --radius-3: var(--radius-lg);
-  --radius-4: var(--radius-xl);                /* Default card radius */
-  --radius-5: var(--radius-2xl);
-  --radius-6: var(--radius-3xl);
+  --shadow-2: var(--card-shadow);
+  --shadow-3: var(--card-shadow-hover);
+  --shadow-4: var(--shadow-dropdown);
+  --shadow-5: var(--shadow-elevated);
+  --shadow-6: var(--shadow-modal);
 
   /* Card-specific overrides */
   --card-background-color: var(--card-bg);
 
-  /* Subtle focus ring - violet */
-  --focus-8: #A78BFA;
+  /* Subtle focus ring - accent */
+  --focus-8: var(--accent-8);
 }
 
 /* ===========================================
@@ -326,13 +286,13 @@
    =========================================== */
 @layer tailwind-base {
   * {
-    border-color: var(--surface-border);
+    border-color: var(--gray-6);
     font-family: var(--font-sans);
   }
 
   body {
-    background-color: var(--surface-secondary);
-    color: var(--content-primary);
+    background-color: var(--color-background);
+    color: var(--gray-12);
     font-family: var(--font-sans);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
@@ -350,12 +310,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--content-muted);
+    background: var(--gray-7);
     border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--content-tertiary);
+    background: var(--gray-8);
   }
 }
 
@@ -366,7 +326,6 @@
 
   /* ----------------------------------------
      Cards - Using centralized card tokens
-     All cards use --card-* tokens for consistency
      ---------------------------------------- */
   .card {
     background: var(--card-bg);
@@ -405,7 +364,7 @@
 
   .card-interactive:hover {
     box-shadow: var(--card-shadow-hover);
-    border-color: var(--brand-200);
+    border-color: var(--accent-a6);
   }
 
   /* ----------------------------------------
@@ -423,8 +382,8 @@
 
   .input:focus {
     @apply outline-none;
-    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
-    border-color: var(--brand-500);
+    box-shadow: 0 0 0 2px var(--accent-a5);
+    border-color: var(--accent-8);
   }
 
   .input-filled {
@@ -443,8 +402,8 @@
 
   .input-filled:focus {
     @apply outline-none bg-surface-primary;
-    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
-    border-color: var(--brand-500);
+    box-shadow: 0 0 0 2px var(--accent-a5);
+    border-color: var(--accent-8);
   }
 
   /* ----------------------------------------
@@ -468,7 +427,7 @@
   }
 
   .btn-primary:focus {
-    --tw-ring-color: var(--brand-500);
+    --tw-ring-color: var(--accent-8);
   }
 
   .btn-secondary {
@@ -517,8 +476,8 @@
 
   .badge-brand {
     @apply badge;
-    background-color: var(--brand-50);
-    color: var(--brand-600);
+    background-color: var(--accent-a3);
+    color: var(--accent-11);
   }
 
   .badge-neutral {
@@ -548,8 +507,8 @@
   .nav-item-active {
     @apply flex items-center gap-3 px-3 py-2.5
            rounded-lg text-sm font-medium;
-    background-color: var(--brand-50);
-    color: var(--brand-600);
+    background-color: var(--accent-a3);
+    color: var(--accent-11);
   }
 
   /* Dark sidebar variant */
@@ -557,19 +516,19 @@
     @apply flex items-center gap-3 px-3 py-2.5
            rounded-lg text-sm font-medium
            transition-all duration-150;
-    color: rgba(148, 163, 184, 1); /* slate-400 */
+    color: var(--gray-10);
   }
 
   .nav-item-dark:hover {
-    color: rgba(226, 232, 240, 1); /* slate-200 */
-    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--gray-12);
+    background-color: var(--gray-a3);
   }
 
   .nav-item-dark-active {
     @apply flex items-center gap-3 px-3 py-2.5
            rounded-lg text-sm font-medium shadow-sm;
-    background-color: rgba(139, 92, 246, 0.2);
-    color: rgba(96, 165, 250, 1); /* blue-400 */
+    background-color: var(--accent-a4);
+    color: var(--accent-11);
   }
 
   /* ----------------------------------------
@@ -585,11 +544,11 @@
 
   .table-row {
     @apply transition-colors;
-    border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+    border-bottom: 1px solid var(--gray-a4);
   }
 
   .table-row:hover {
-    background-color: rgba(248, 250, 252, 0.5);
+    background-color: var(--gray-a2);
   }
 
   /* ----------------------------------------
@@ -729,7 +688,7 @@
 
   .surface-card-tinted {
     background-color: var(--surface-tinted);
-    border: 1px solid rgba(139, 92, 246, 0.08);
+    border: 1px solid var(--accent-a4);
     border-radius: var(--radius-lg);
   }
 
@@ -785,8 +744,8 @@
   .hero-gradient-strong {
     background: linear-gradient(
       180deg,
-      rgba(139, 92, 246, 0.06) 0%,
-      rgba(139, 92, 246, 0.03) 40%,
+      var(--accent-a4) 0%,
+      var(--accent-a3) 40%,
       transparent 100%
     );
   }
@@ -794,8 +753,8 @@
   /* Section alternating backgrounds */
   .section-tinted {
     background-color: var(--surface-tinted);
-    border-top: 1px solid rgba(139, 92, 246, 0.05);
-    border-bottom: 1px solid rgba(139, 92, 246, 0.05);
+    border-top: 1px solid var(--accent-a3);
+    border-bottom: 1px solid var(--accent-a3);
   }
 
   .section-lowered {
@@ -881,7 +840,7 @@
 
   .card-zone-bordered {
     background-color: var(--surface-tinted);
-    border: 1px solid rgba(139, 92, 246, 0.08);
+    border: 1px solid var(--accent-a4);
     border-radius: var(--radius-xl);
     padding: 1.5rem;
   }
@@ -920,19 +879,18 @@
   /* Focus ring */
   .focus-ring {
     @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
-    --tw-ring-color: rgba(139, 92, 246, 0.2);
+    --tw-ring-color: var(--accent-a5);
   }
 }
 
 /* ===========================================
    Radix UI Component Overrides
-   Make Radix components blend with theme design
    =========================================== */
 
 /* TextField focus styling */
 .rt-TextFieldRoot:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
+  box-shadow: 0 0 0 2px var(--accent-a5) !important;
 }
 
 .rt-TextFieldInput:focus {
@@ -944,13 +902,13 @@
 .rt-SelectTrigger:focus-within,
 .rt-SelectTrigger:focus {
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
+  box-shadow: 0 0 0 2px var(--accent-a5) !important;
 }
 
 /* TextArea focus */
 .rt-TextAreaRoot:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important;
+  box-shadow: 0 0 0 2px var(--accent-a5) !important;
 }
 
 .rt-TextAreaInput:focus {
@@ -962,7 +920,7 @@
 .rt-Button:focus-visible,
 .rt-IconButton:focus-visible {
   outline: none !important;
-  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--accent-8) !important;
 }
 
 /* ===========================================
@@ -981,36 +939,34 @@
 
 .rt-Card:focus-visible {
   outline: none !important;
-  box-shadow: 0 0 0 2px var(--brand-200) !important;
+  box-shadow: 0 0 0 2px var(--accent-a6) !important;
 }
 
 /* Checkbox and Radio focus */
 .rt-CheckboxRoot:focus-within,
 .rt-RadioGroupItem:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--accent-8) !important;
 }
 
 /* Switch focus */
 .rt-SwitchRoot:focus-within {
   outline: none !important;
-  box-shadow: 0 0 0 2px var(--surface-primary), 0 0 0 4px rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--accent-8) !important;
 }
 
 /* Tabs trigger focus */
 .rt-TabsTrigger:focus-visible {
   outline: none !important;
-  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.4) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-8) !important;
 }
 
 /* ===========================================
    Tab System - Active state styling via CSS
-   Uses Radix data-state attribute for styling
-   without passing isActive prop (prevents re-renders)
    =========================================== */
 .tab-trigger[data-state="active"] .tab-badge {
-  background-color: var(--blue-3) !important;
-  color: var(--blue-11) !important;
+  background-color: var(--accent-3) !important;
+  color: var(--accent-11) !important;
 }
 
 .tab-trigger[data-state="inactive"] .tab-badge {
@@ -1177,6 +1133,20 @@ html {
 
 /* Focus visible styles for accessibility */
 :focus-visible {
-  outline: 2px solid var(--brand-500);
+  outline: 2px solid var(--accent-8);
   outline-offset: 2px;
+}
+
+/* ===========================================
+   ACCESSIBILITY: Reduced Motion
+   =========================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

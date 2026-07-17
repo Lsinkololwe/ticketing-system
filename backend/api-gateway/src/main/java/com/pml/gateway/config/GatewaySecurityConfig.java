@@ -1,6 +1,7 @@
 package com.pml.gateway.config;
 
 import com.pml.shared.security.KeycloakJwtAuthenticationConverter;
+import com.pml.shared.security.MultiIssuerJwtResolver;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -66,6 +67,22 @@ public class GatewaySecurityConfig {
     @Value("${keycloak.client-id:api-gateway}")
     private String keycloakClientId;
 
+    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8084/realms/myticketzm}")
+    private String issuerUri;
+
+    /**
+     * Additional trusted realm issuers (comma-separated), e.g. the platform-admin realm
+     * {@code http://localhost:8084/realms/myticketzm-admin}. Empty by default — when unset the
+     * gateway keeps the plain single-issuer {@code .jwt(...)} path. Set this to enable the
+     * admin-realm split (tokens are then validated per their {@code iss} claim).
+     */
+    @Value("${keycloak.trusted-issuers:}")
+    private String trustedIssuersCsv;
+
+    /** Optional expected audiences (comma-separated) enforced on the {@code aud} claim. */
+    @Value("${keycloak.expected-audiences:}")
+    private String expectedAudiencesCsv;
+
     /**
      * Configures the security filter chain for reactive (WebFlux) gateway.
      *
@@ -126,16 +143,24 @@ public class GatewaySecurityConfig {
                 )
 
                 // Configure as OAuth2 Resource Server (validates JWTs)
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt
-                                // Custom converter: Extracts Keycloak roles into Spring authorities
-                                // Converts realm_access.roles and resource_access.{client}.roles
-                                // to GrantedAuthority objects (e.g., ROLE_ADMIN, ROLE_ORGANIZER)
+                .oauth2ResourceServer(oauth2 -> {
+                    List<String> issuers = MultiIssuerJwtResolver.mergeIssuers(issuerUri, trustedIssuersCsv);
+                    if (issuers.size() > 1) {
+                        // Admin-realm split enabled: validate per the token's `iss` claim.
+                        oauth2.authenticationManagerResolver(
+                                MultiIssuerJwtResolver.forIssuers(
+                                        issuers,
+                                        keycloakClientId,
+                                        MultiIssuerJwtResolver.csv(expectedAudiencesCsv)));
+                    } else {
+                        // Default single-issuer path (unchanged).
+                        // Custom converter extracts Keycloak realm/client roles into authorities
+                        // (e.g. ROLE_ADMIN, ROLE_ORGANIZER).
+                        oauth2.jwt(jwt -> jwt
                                 .jwtAuthenticationConverter(
-                                        KeycloakJwtAuthenticationConverter.reactiveConverter(keycloakClientId)
-                                )
-                        )
-                )
+                                        KeycloakJwtAuthenticationConverter.reactiveConverter(keycloakClientId)));
+                    }
+                })
                 .build();
     }
 

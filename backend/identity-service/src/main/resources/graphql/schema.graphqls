@@ -1446,6 +1446,15 @@ type UserStats @tag(name: "admin") {
     usersByStatus: [UserStatusStats!]!
 }
 
+# ADMIN - Identity-owned pending approval-queue counts (action-center badges).
+# Counts are computed with MongoDB aggregation (PendingApprovalStatsService).
+type IdentityPendingCounts @tag(name: "admin") {
+    # Organizations awaiting admin review (status = PENDING_REVIEW)
+    organizerApplications: Int!
+    # Verification documents awaiting review (status = PENDING)
+    documentVerifications: Int!
+}
+
 # ADMIN - Statistics for users grouped by role
 # Note: Since users can have multiple roles, the total count across all
 # roles may exceed the total number of users (one user counted per role)
@@ -2227,6 +2236,11 @@ type Query {
 
     # ADMIN - User statistics for admin dashboard
     userStats: UserStats @tag(name: "admin")
+
+    # ADMIN - Identity-owned pending approval-queue counts for the action-center
+    # sidebar badges. One of three federated root fields (identity/catalog/booking)
+    # the Apollo Router composes into the frontend's single PendingCounts query.
+    identityPendingCounts: IdentityPendingCounts @tag(name: "admin")
 
     # ADMIN - Find users by role (multi-role support)
     """

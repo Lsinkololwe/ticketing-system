@@ -59,7 +59,15 @@ function ApolloProviderWithAuth({ children }: { children: ReactNode }) {
 
   // Create Apollo client with token getter (stable reference)
   const apolloClient = useMemo(
-    () => createGraphQLClient({ tokenGetter }),
+    () =>
+      createGraphQLClient({
+        tokenGetter,
+        // On session expiry, run the full logout (Better Auth + Keycloak SSO)
+        // via the existing /logout route.
+        onAuthError: () => {
+          window.location.href = '/logout';
+        },
+      }),
     [tokenGetter]
   );
 

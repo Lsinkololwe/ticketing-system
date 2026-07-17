@@ -853,6 +853,13 @@ type StatusTransition @tag(name: "organizer") @tag(name: "admin") {
 # These aggregate stats across all events on the platform.
 # Only platform administrators should see this data.
 
+# ADMIN - Catalog-owned pending approval-queue counts (action-center badges).
+# Computed with MongoDB aggregation (PendingApprovalStatsService).
+type CatalogPendingCounts @tag(name: "admin") {
+    # Events awaiting admin review (status = PENDING_APPROVAL, not soft-deleted)
+    eventReviews: Int!
+}
+
 type EventStats @tag(name: "admin") {
     totalEvents: Int!
     publishedEvents: Int!
@@ -1521,6 +1528,11 @@ type Query {
 
     # Platform-wide event statistics - ADMIN ONLY
     eventStats: EventStats! @auth(requires: ADMIN) @tag(name: "admin")
+
+    # ADMIN - Catalog-owned pending approval-queue counts for the action-center
+    # sidebar badges. One of three federated root fields (identity/catalog/booking)
+    # the Apollo Router composes into the frontend's single PendingCounts query.
+    catalogPendingCounts: CatalogPendingCounts! @auth(requires: ADMIN) @tag(name: "admin")
 
     # ========================================================================
     # ADMIN EVENT MANAGEMENT QUERIES

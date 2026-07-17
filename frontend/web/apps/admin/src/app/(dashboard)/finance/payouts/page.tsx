@@ -6,7 +6,7 @@ export default function PayoutRequestsPage() {
     <PagePlaceholder
       title="Payout Requests"
       description="Review and process organizer payout requests"
-      icon={<SendDiagonal style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<SendDiagonal style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

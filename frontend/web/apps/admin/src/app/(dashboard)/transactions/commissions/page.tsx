@@ -6,7 +6,7 @@ export default function CommissionsPage() {
     <PagePlaceholder
       title="Commissions"
       description="View platform commission earnings and distributions"
-      icon={<Percentage style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Percentage style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

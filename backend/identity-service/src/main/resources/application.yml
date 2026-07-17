@@ -124,6 +124,11 @@ keycloak:
   admin-realm: master
   client-id: identity-service
   client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+  # Platform-admin realm split (OFF by default). Add the admin realm issuer to enable
+  # validating tokens from BOTH realms, selected by the token's `iss` claim, e.g.:
+  #   KEYCLOAK_TRUSTED_ISSUERS=http://localhost:8084/realms/myticketzm-admin
+  trusted-issuers: ${KEYCLOAK_TRUSTED_ISSUERS:http://localhost:8084/realms/myticketzm-admin}
+  expected-audiences: ${KEYCLOAK_EXPECTED_AUDIENCES:}
 
 services:
   catalog:

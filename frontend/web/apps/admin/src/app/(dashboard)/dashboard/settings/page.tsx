@@ -36,7 +36,7 @@ function SettingsSection({ title, description, icon, children }: SettingsSection
             style={{
               padding: '10px',
               borderRadius: 'var(--radius-3)',
-              backgroundColor: 'var(--violet-a3)',
+              backgroundColor: 'var(--accent-a3)',
             }}
           >
             {icon}
@@ -107,7 +107,7 @@ export default function SettingsPage() {
           <SettingsSection
             title="Appearance"
             description="Customize how the dashboard looks"
-            icon={<SunLight style={{ width: 20, height: 20, color: 'var(--violet-11)' }} />}
+            icon={<SunLight style={{ width: 20, height: 20, color: 'var(--accent-11)' }} />}
           >
             <Flex direction="column" gap="4">
               <Box>
@@ -125,7 +125,7 @@ export default function SettingsPage() {
           <SettingsSection
             title="Notifications"
             description="Manage your notification preferences"
-            icon={<Bell style={{ width: 20, height: 20, color: 'var(--violet-11)' }} />}
+            icon={<Bell style={{ width: 20, height: 20, color: 'var(--accent-11)' }} />}
           >
             <Flex direction="column" gap="3">
               <SettingRow
@@ -164,7 +164,7 @@ export default function SettingsPage() {
           <SettingsSection
             title="Display"
             description="Configure display and accessibility options"
-            icon={<Eye style={{ width: 20, height: 20, color: 'var(--violet-11)' }} />}
+            icon={<Eye style={{ width: 20, height: 20, color: 'var(--accent-11)' }} />}
           >
             <Flex direction="column" gap="3">
               <SettingRow
@@ -203,7 +203,7 @@ export default function SettingsPage() {
           <SettingsSection
             title="Account"
             description="Manage your account settings"
-            icon={<UserCircle style={{ width: 20, height: 20, color: 'var(--violet-11)' }} />}
+            icon={<UserCircle style={{ width: 20, height: 20, color: 'var(--accent-11)' }} />}
           >
             <Flex direction="column" gap="3">
               <SettingRow
@@ -235,7 +235,7 @@ export default function SettingsPage() {
           <SettingsSection
             title="Security"
             description="Security and privacy settings"
-            icon={<Shield style={{ width: 20, height: 20, color: 'var(--violet-11)' }} />}
+            icon={<Shield style={{ width: 20, height: 20, color: 'var(--accent-11)' }} />}
           >
             <Flex direction="column" gap="3">
               <SettingRow
@@ -267,7 +267,7 @@ export default function SettingsPage() {
           <SettingsSection
             title="Data & Storage"
             description="Manage data preferences"
-            icon={<Database style={{ width: 20, height: 20, color: 'var(--violet-11)' }} />}
+            icon={<Database style={{ width: 20, height: 20, color: 'var(--accent-11)' }} />}
           >
             <Flex direction="column" gap="3">
               <SettingRow

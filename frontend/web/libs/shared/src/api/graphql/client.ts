@@ -30,7 +30,36 @@ export interface GraphQLClientConfig {
   headers?: Record<string, string>;
   /** Required: Function to get the access token (e.g., from Keycloak) */
   tokenGetter: TokenGetter;
+  /**
+   * Called once when an operation fails with an authentication error
+   * (GraphQL `UNAUTHENTICATED` or network 401), i.e. the session is expired or
+   * invalid. Apps with a dedicated logout route should navigate there (to also
+   * clear the Keycloak SSO session). If omitted, the client falls back to a
+   * safe `/login` redirect so apps without a `/logout` route never 404.
+   */
+  onAuthError?: () => void;
 }
+
+/**
+ * One-shot guard: a burst of failing operations (e.g. a background poll firing
+ * alongside other in-flight queries) should trigger the auth-error handler
+ * exactly once, not a redirect storm. Resets naturally on the next page load.
+ */
+let authErrorHandled = false;
+
+/**
+ * Handle an authentication failure. Runs the app-provided handler once; falls
+ * back to a safe `/login` redirect when none is supplied.
+ */
+const handleAuthError = (onAuthError?: () => void) => {
+  if (typeof window === 'undefined' || authErrorHandled) return;
+  authErrorHandled = true;
+  if (onAuthError) {
+    onAuthError();
+  } else {
+    window.location.href = '/login';
+  }
+};
 
 /**
  * Create retry link for network resilience
@@ -72,15 +101,15 @@ const createRetryLink = () =>
 /**
  * Create error handling link - Apollo Client 4.x API
  */
-const createErrorLink = () =>
+const createErrorLink = (onAuthError?: () => void) =>
   new ErrorLink(({ error, operation }) => {
     if (CombinedGraphQLErrors.is(error)) {
       for (const err of error.errors) {
         const errorCode = err.extensions?.code;
 
-        // Redirect to logout on authentication errors
-        if (errorCode === 'UNAUTHENTICATED' && typeof window !== 'undefined') {
-          window.location.href = '/logout';
+        // Session expired/invalid → run the app's auth-error handler (once).
+        if (errorCode === 'UNAUTHENTICATED') {
+          handleAuthError(onAuthError);
           return;
         }
 
@@ -99,8 +128,8 @@ const createErrorLink = () =>
       const statusCode = 'statusCode' in error ? (error as { statusCode?: number }).statusCode : undefined;
 
       // Handle 401 errors
-      if (statusCode === 401 && typeof window !== 'undefined') {
-        window.location.href = '/logout';
+      if (statusCode === 401) {
+        handleAuthError(onAuthError);
         return;
       }
 
@@ -160,8 +189,8 @@ export const createGraphQLClient = (config: GraphQLClientConfig) => {
   // Order: Retry -> Error -> Auth -> HTTP
   // Retry wraps everything so it can retry the full chain on failure
   const link = authLink
-    ? ApolloLink.from([createRetryLink(), createErrorLink(), authLink, httpLink])
-    : ApolloLink.from([createRetryLink(), createErrorLink(), httpLink]);
+    ? ApolloLink.from([createRetryLink(), createErrorLink(config.onAuthError), authLink, httpLink])
+    : ApolloLink.from([createRetryLink(), createErrorLink(config.onAuthError), httpLink]);
 
   return new ApolloClient({
     link,

@@ -6,7 +6,7 @@ export default function RevenueReportsPage() {
     <PagePlaceholder
       title="Revenue Reports"
       description="Detailed revenue analytics and financial reports"
-      icon={<GraphUp style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<GraphUp style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

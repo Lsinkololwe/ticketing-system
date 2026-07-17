@@ -34,7 +34,7 @@ export function PagePlaceholder({
               {title}
             </Heading>
             {comingSoon && (
-              <Badge color="violet" variant="soft" size="1">
+              <Badge color="teal" variant="soft" size="1">
                 Coming Soon
               </Badge>
             )}
@@ -61,8 +61,8 @@ export function PagePlaceholder({
             style={{
               padding: '20px',
               borderRadius: '16px',
-              background: 'linear-gradient(135deg, var(--violet-a3) 0%, var(--violet-a4) 100%)',
-              border: '1px solid var(--violet-a5)',
+              background: 'linear-gradient(135deg, var(--accent-a3) 0%, var(--accent-a4) 100%)',
+              border: '1px solid var(--accent-a5)',
             }}
           >
             {icon || (
@@ -70,7 +70,7 @@ export function PagePlaceholder({
                 style={{
                   width: 48,
                   height: 48,
-                  color: 'var(--violet-11)',
+                  color: 'var(--accent-11)',
                 }}
               />
             )}

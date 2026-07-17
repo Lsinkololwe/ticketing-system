@@ -4,7 +4,7 @@ import Providers from '../components/Providers';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
 export const metadata = {
-  title: 'PML Admin Dashboard - Event Management Platform',
+  title: 'MyTicket Zambia Admin - Event Management Platform',
   description: 'Admin dashboard for managing events, users, and system operations.',
 }
 

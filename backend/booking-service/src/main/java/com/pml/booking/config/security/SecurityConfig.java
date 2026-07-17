@@ -1,6 +1,7 @@
 package com.pml.booking.config.security;
 
 import com.pml.shared.security.KeycloakJwtAuthenticationConverter;
+import com.pml.shared.security.MultiIssuerJwtResolver;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,6 +11,8 @@ import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoders;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+
+import java.util.List;
 
 /**
  * OAuth2 Resource Server Configuration for Booking Service.
@@ -39,6 +42,19 @@ public class SecurityConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8084/realms/myticketzm}")
     private String issuerUri;
 
+    /**
+     * Additional trusted realm issuers (comma-separated), e.g. the platform-admin realm
+     * {@code http://localhost:8084/realms/myticketzm-admin}. Empty by default — when unset the
+     * service keeps the plain single-issuer {@code .jwt(...)} path. Set this to enable the
+     * admin-realm split (tokens are then validated per their {@code iss} claim).
+     */
+    @Value("${keycloak.trusted-issuers:}")
+    private String trustedIssuersCsv;
+
+    /** Optional expected audiences (comma-separated) enforced on the {@code aud} claim. */
+    @Value("${keycloak.expected-audiences:}")
+    private String expectedAudiencesCsv;
+
     @Bean
     public ReactiveJwtDecoder reactiveJwtDecoder() {
         return ReactiveJwtDecoders.fromIssuerLocation(issuerUri);
@@ -63,13 +79,22 @@ public class SecurityConfig {
                         // All other endpoints require authentication
                         .anyExchange().authenticated()
                 )
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt
+                .oauth2ResourceServer(oauth2 -> {
+                    List<String> issuers = MultiIssuerJwtResolver.mergeIssuers(issuerUri, trustedIssuersCsv);
+                    if (issuers.size() > 1) {
+                        // Admin-realm split enabled: validate per the token's `iss` claim.
+                        oauth2.authenticationManagerResolver(
+                                MultiIssuerJwtResolver.forIssuers(
+                                        issuers,
+                                        keycloakClientId,
+                                        MultiIssuerJwtResolver.csv(expectedAudiencesCsv)));
+                    } else {
+                        // Default single-issuer path (unchanged).
+                        oauth2.jwt(jwt -> jwt
                                 .jwtAuthenticationConverter(
-                                        KeycloakJwtAuthenticationConverter.reactiveConverter(keycloakClientId)
-                                )
-                        )
-                )
+                                        KeycloakJwtAuthenticationConverter.reactiveConverter(keycloakClientId)));
+                    }
+                })
                 .build();
     }
 }

@@ -6,7 +6,7 @@ export default function ApprovalsPage() {
     <PagePlaceholder
       title="Pending Approvals"
       description="Review and manage all pending approvals across the platform"
-      icon={<ClipboardCheck style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<ClipboardCheck style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

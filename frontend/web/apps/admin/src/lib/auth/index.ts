@@ -86,6 +86,33 @@ export const handleBackchannelLogout = services.handleBackchannelLogout;
 export const env = services.env;
 
 // =============================================================================
+// SERVICE CONTAINER EXPORTS (modular DI — mirrors organization-admin)
+// =============================================================================
+
+export {
+  getSessionService,
+  getTokenService,
+  getAccessService,
+  resetServices,
+  setMockServices,
+} from './container';
+
+// =============================================================================
+// SERVICE INTERFACE EXPORTS
+// =============================================================================
+
+export type {
+  ISessionService,
+  ITokenService,
+  IAccessService,
+  IAuthConfig,
+  AdminRole,
+  AccessCheckResult,
+} from './interfaces';
+
+export { ADMIN_DASHBOARD_ROLES } from './interfaces';
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 

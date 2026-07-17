@@ -1,81 +1,26 @@
 /** @type {import('tailwindcss').Config} */
 
-// Inlined theme values for Tailwind CSS (imported from src/theme/index.ts)
-const colors = {
-  surface: {
-    primary: '#FFFFFF',
-    secondary: '#F8FAFC',
-    tertiary: '#F1F5F9',
-    hover: '#E2E8F0',
-    border: '#E5E7EB',
-    borderLight: '#F1F5F9',
-  },
-  content: {
-    primary: '#1F2937',
-    secondary: '#4B5563',
-    tertiary: '#6B7280',
-    muted: '#9CA3AF',
-    inverse: '#FFFFFF',
-  },
-  brand: {
-    50: '#EFF6FF',
-    100: '#DBEAFE',
-    200: '#BFDBFE',
-    300: '#93C5FD',
-    400: '#60A5FA',
-    500: '#3B82F6',
-    600: '#2563EB',
-    700: '#1D4ED8',
-    800: '#1E40AF',
-    900: '#1E3A8A',
-  },
-  success: {
-    50: '#F0FDF4',
-    100: '#DCFCE7',
-    200: '#BBF7D0',
-    500: '#22C55E',
-    600: '#16A34A',
-    700: '#15803D',
-  },
-  warning: {
-    50: '#FFFBEB',
-    100: '#FEF3C7',
-    200: '#FDE68A',
-    500: '#F59E0B',
-    600: '#D97706',
-    700: '#B45309',
-  },
-  danger: {
-    50: '#FEF2F2',
-    100: '#FEE2E2',
-    200: '#FECACA',
-    500: '#EF4444',
-    600: '#DC2626',
-    700: '#B91C1C',
-  },
-};
+/**
+ * Admin Tailwind Config — Radix UI Themes token bridge.
+ *
+ * Colors resolve to CSS variables (NOT literal hex) so the whole palette
+ * follows the Radix accent set by <Theme accentColor="teal"> in Providers.tsx.
+ * The `--brand-*`, `--surface-*`, `--content-*` and status vars are aliased to
+ * Radix tokens in `src/app/global.css` (single source of truth), matching the
+ * organization-admin app.
+ */
 
 const shadows = {
-  xs: '0 1px 2px 0 rgb(0 0 0 / 0.03)',
-  sm: '0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04)',
-  md: '0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.03)',
-  lg: '0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.03)',
-  xl: '0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.03)',
-  card: '0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.02)',
-  cardHover: '0 4px 12px 0 rgb(0 0 0 / 0.06), 0 2px 4px -1px rgb(0 0 0 / 0.03)',
-  elevated: '0 2px 8px 0 rgb(0 0 0 / 0.06)',
-  dropdown: '0 4px 16px 0 rgb(0 0 0 / 0.08), 0 2px 4px 0 rgb(0 0 0 / 0.04)',
-  modal: '0 25px 50px -12px rgb(0 0 0 / 0.15)',
-};
-
-const borderRadius = {
-  sm: '0.375rem',
-  md: '0.5rem',
-  lg: '0.75rem',
-  xl: '1rem',
-  '2xl': '1.25rem',
-  '3xl': '1.5rem',
-  full: '9999px',
+  xs: 'var(--shadow-xs)',
+  sm: 'var(--shadow-sm)',
+  md: 'var(--shadow-md)',
+  lg: 'var(--shadow-lg)',
+  xl: 'var(--shadow-xl)',
+  card: 'var(--card-shadow)',
+  'card-hover': 'var(--card-shadow-hover)',
+  elevated: 'var(--shadow-elevated)',
+  dropdown: 'var(--shadow-dropdown)',
+  modal: 'var(--shadow-modal)',
 };
 
 const config = {
@@ -87,15 +32,59 @@ const config = {
 
   important: false,
 
+  darkMode: 'class',
+
   theme: {
     extend: {
       colors: {
-        surface: colors.surface,
-        content: colors.content,
-        brand: colors.brand,
-        success: colors.success,
-        warning: colors.warning,
-        danger: colors.danger,
+        // Surface colors → Radix tokens (via global.css aliases)
+        'surface-primary': 'var(--surface-primary)',
+        'surface-secondary': 'var(--surface-secondary)',
+        'surface-tertiary': 'var(--surface-tertiary)',
+        'surface-hover': 'var(--surface-hover)',
+        'surface-border': 'var(--surface-border)',
+        'surface-border-light': 'var(--surface-border-light)',
+
+        // Content colors → Radix gray scale
+        'content-primary': 'var(--content-primary)',
+        'content-secondary': 'var(--content-secondary)',
+        'content-tertiary': 'var(--content-tertiary)',
+        'content-muted': 'var(--content-muted)',
+        'content-inverse': 'var(--content-inverse)',
+
+        // Brand colors → Radix accent (teal)
+        brand: {
+          50: 'var(--brand-50)',
+          100: 'var(--brand-100)',
+          200: 'var(--brand-200)',
+          300: 'var(--brand-300)',
+          400: 'var(--brand-400)',
+          500: 'var(--brand-500)',
+          600: 'var(--brand-600)',
+          700: 'var(--brand-700)',
+        },
+
+        // Status colors → Radix semantic scales
+        success: {
+          50: 'var(--success-50)',
+          100: 'var(--success-100)',
+          500: 'var(--success-500)',
+          600: 'var(--success-600)',
+        },
+        warning: {
+          50: 'var(--warning-50)',
+          100: 'var(--warning-100)',
+          500: 'var(--warning-500)',
+          600: 'var(--warning-600)',
+        },
+        danger: {
+          50: 'var(--danger-50)',
+          100: 'var(--danger-100)',
+          500: 'var(--danger-500)',
+          600: 'var(--danger-600)',
+        },
+
+        // Direct Radix scales (for components that need raw tokens)
         accent: {
           1: 'var(--accent-1)',
           2: 'var(--accent-2)',
@@ -127,20 +116,32 @@ const config = {
       },
 
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-        mono: ['Fira Code', 'JetBrains Mono', 'Menlo', 'Monaco', 'monospace'],
+        sans: ['var(--font-sans)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['var(--font-mono)', 'Menlo', 'Monaco', 'monospace'],
       },
 
       boxShadow: shadows,
 
       borderRadius: {
-        ...borderRadius,
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
+        '2xl': 'var(--radius-2xl)',
+        '3xl': 'var(--radius-3xl)',
+        full: '9999px',
         1: 'var(--radius-1)',
         2: 'var(--radius-2)',
         3: 'var(--radius-3)',
         4: 'var(--radius-4)',
         5: 'var(--radius-5)',
         6: 'var(--radius-6)',
+      },
+
+      transitionDuration: {
+        fast: 'var(--transition-fast)',
+        default: 'var(--transition-default)',
+        slow: 'var(--transition-slow)',
       },
 
       spacing: {

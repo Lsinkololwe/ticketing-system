@@ -5,9 +5,11 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.enums.AccountStatus;
 import com.pml.identity.domain.model.User;
+import com.pml.identity.service.PendingApprovalStatsService;
 import com.pml.identity.service.UserService;
 import com.pml.identity.service.UserStatsService;
 import com.pml.identity.web.graphql.dto.pagination.*;
+import com.pml.identity.web.graphql.dto.stats.IdentityPendingCounts;
 import com.pml.identity.web.graphql.dto.stats.UserStats;
 import com.pml.shared.constants.UserType;
 import com.pml.shared.security.SecurityContextUtils;
@@ -33,6 +35,7 @@ public class UserQueryResolver {
 
     private final UserService userService;
     private final UserStatsService userStatsService;
+    private final PendingApprovalStatsService pendingApprovalStatsService;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
@@ -176,6 +179,20 @@ public class UserQueryResolver {
     public Mono<UserStats> userStats() {
         log.debug("GraphQL query: userStats");
         return userStatsService.getUserStats();
+    }
+
+    /**
+     * Identity-owned pending approval-queue counts for the admin action center.
+     * Schema: identityPendingCounts: IdentityPendingCounts
+     *
+     * One of three federated root fields the Apollo Router composes into the
+     * frontend's single {@code PendingCounts} query.
+     */
+    @DgsQuery
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public Mono<IdentityPendingCounts> identityPendingCounts() {
+        log.debug("GraphQL query: identityPendingCounts");
+        return pendingApprovalStatsService.getPendingCounts();
     }
 
     // ========================================================================

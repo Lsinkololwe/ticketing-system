@@ -219,28 +219,28 @@ export default function DashboardPage() {
             value="156"
             change="12% from last month"
             changeType="positive"
-            icon={<Calendar style={{ width: 22, height: 22, color: 'var(--violet-11)' }} />}
+            icon={<Calendar style={{ width: 22, height: 22, color: 'var(--accent-11)' }} />}
           />
           <StatCard
             title="Active Organizers"
             value="48"
             change="5 new this week"
             changeType="positive"
-            icon={<Group style={{ width: 22, height: 22, color: 'var(--violet-11)' }} />}
+            icon={<Group style={{ width: 22, height: 22, color: 'var(--accent-11)' }} />}
           />
           <StatCard
             title="Tickets Sold"
             value="12,847"
             change="23% from last month"
             changeType="positive"
-            icon={<Label style={{ width: 22, height: 22, color: 'var(--violet-11)' }} />}
+            icon={<Label style={{ width: 22, height: 22, color: 'var(--accent-11)' }} />}
           />
           <StatCard
             title="Revenue"
             value="K 2.4M"
             change="18% from last month"
             changeType="positive"
-            icon={<CreditCard style={{ width: 22, height: 22, color: 'var(--violet-11)' }} />}
+            icon={<CreditCard style={{ width: 22, height: 22, color: 'var(--accent-11)' }} />}
           />
         </Grid>
 

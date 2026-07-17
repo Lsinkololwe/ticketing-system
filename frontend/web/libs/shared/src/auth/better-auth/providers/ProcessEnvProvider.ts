@@ -10,7 +10,7 @@
  * ```typescript
  * const env = new ProcessEnvProvider();
  * console.log(env.appUrl); // http://localhost:3030
- * console.log(env.keycloakIssuer); // http://localhost:8084/realms/event-ticketing
+ * console.log(env.keycloakIssuer); // http://localhost:8084/realms/myticketzm
  * ```
  *
  * @module libs/shared/src/auth/better-auth/providers/ProcessEnvProvider

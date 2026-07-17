@@ -6,7 +6,7 @@ export default function ApiKeysPage() {
     <PagePlaceholder
       title="API Keys"
       description="Manage API keys and integration credentials"
-      icon={<Key style={{ width: 48, height: 48, color: 'var(--violet-11)' }} />}
+      icon={<Key style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />
   );
 }

@@ -76,6 +76,16 @@ export {
   isServerUnavailable,
 } from './api/graphql/client';
 
+// ---- GraphQL feature domains (hooks consumed directly by app components) ----
+// Analytics domain: action-center / dashboard pending-count badges.
+export {
+  usePendingCounts,
+  type PendingCounts,
+  type PendingCountKey,
+  type UsePendingCountsResult,
+  PENDING_COUNTS,
+} from './api/graphql/analytics';
+
 // ============== API Modules ==============
 // Module-based architecture: All app-specific operations in dedicated modules
 export * from './api/admin/modules';

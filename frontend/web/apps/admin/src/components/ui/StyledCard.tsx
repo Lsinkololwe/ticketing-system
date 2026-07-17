@@ -113,20 +113,20 @@ export const StyledCard = forwardRef<HTMLDivElement, StyledCardProps>(
             }
             .styled-card-hover-lift:hover {
               transform: translateY(-2px);
-              border-color: var(--violet-a5);
-              box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--violet-a3);
+              border-color: var(--accent-a5);
+              box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--accent-a3);
             }
             .styled-card-hover-glow:hover {
-              border-color: var(--violet-a5);
-              box-shadow: 0 0 20px var(--violet-a4), 0 4px 16px rgba(0, 0, 0, 0.1);
+              border-color: var(--accent-a5);
+              box-shadow: 0 0 20px var(--accent-a4), 0 4px 16px rgba(0, 0, 0, 0.1);
             }
           }
           /* Dark mode card enhancements */
           .dark .styled-card {
-            background-image: linear-gradient(135deg, rgba(139, 92, 246, 0.03) 0%, transparent 100%);
+            background-image: linear-gradient(135deg, rgba(16, 185, 129, 0.03) 0%, transparent 100%);
           }
           .dark .styled-card-hover-lift:hover {
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--violet-a4), 0 0 30px var(--violet-a3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--accent-a4), 0 0 30px var(--accent-a3);
           }
         `}</style>
       </>
@@ -218,8 +218,8 @@ export function StatCard({
           style={{
             padding: '12px',
             borderRadius: '10px',
-            background: 'linear-gradient(135deg, var(--violet-a3) 0%, var(--violet-a4) 100%)',
-            border: '1px solid var(--violet-a4)',
+            background: 'linear-gradient(135deg, var(--accent-a3) 0%, var(--accent-a4) 100%)',
+            border: '1px solid var(--accent-a4)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -334,7 +334,7 @@ export function InfoCard({
           {icon && (
             <Box
               style={{
-                color: 'var(--violet-11)',
+                color: 'var(--accent-11)',
                 display: 'flex',
                 alignItems: 'center',
               }}

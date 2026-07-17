@@ -16,7 +16,7 @@
  */
 
 import { Box, Flex, Text, Button, DropdownMenu, Avatar, IconButton } from '@radix-ui/themes';
-import { Bell, LogOut, Settings, UserCircle, Menu } from 'iconoir-react';
+import { Bell, LogOut, Settings, UserCircle, Menu, NavArrowDown } from 'iconoir-react';
 import { useSession, signOut } from '@/lib/auth/client';
 import { ThemeToggleDropdown } from '@/components/ui/ThemeToggle';
 
@@ -151,8 +151,8 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
                         radius="full"
                         fallback={userInitials}
                         style={{
-                          background: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%)',
-                          boxShadow: '0 0 12px rgba(139, 92, 246, 0.3)',
+                          background: 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
+                          boxShadow: '0 0 12px rgba(16, 185, 129, 0.3)',
                         }}
                       />
                       <Flex
@@ -175,16 +175,23 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
                           Administrator
                         </Text>
                       </Flex>
+                      {/* Chevron affordance — signals this opens a dropdown */}
+                      <NavArrowDown
+                        className="user-menu-chevron"
+                        style={{
+                          width: 16,
+                          height: 16,
+                          color: 'var(--gray-9)',
+                          flexShrink: 0,
+                        }}
+                      />
                     </Flex>
                   </Button>
                 </DropdownMenu.Trigger>
 
                 <DropdownMenu.Content align="end" sideOffset={8}>
                   <Box px="3" py="2" style={{ borderBottom: '1px solid var(--gray-a4)' }}>
-                    <Text size="2" weight="medium" style={{ display: 'block' }}>
-                      {userName}
-                    </Text>
-                    <Text size="1" color="gray">
+                    <Text size="2" style={{ display: 'block', color: 'var(--gray-12)' }}>
                       {userEmail}
                     </Text>
                   </Box>
@@ -212,6 +219,18 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
       <style jsx global>{`
         .user-menu-trigger:hover {
           background-color: var(--gray-a3) !important;
+        }
+        /* Chevron rotates when the menu is open — clear open/closed affordance */
+        .user-menu-chevron {
+          transition: transform 150ms ease;
+        }
+        .user-menu-trigger[data-state='open'] .user-menu-chevron {
+          transform: rotate(180deg);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .user-menu-chevron {
+            transition: none;
+          }
         }
         @media (max-width: 640px) {
           .user-info {
