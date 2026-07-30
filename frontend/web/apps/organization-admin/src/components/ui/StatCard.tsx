@@ -1,259 +1,143 @@
 'use client';
 
 /**
- * StatCard Component
+ * StatCard — MyTicketZM design system bento tile.
  *
- * Displays a metric/statistic with:
- * - Large value display
- * - Trend indicator (up/down/neutral)
- * - Optional comparison label
- * - Icon and title
+ * Contract (spec §7): `title, value, icon, change, changeLabel, trend`
+ *   trend: up | down | neutral
+ *
+ * Layout notes:
+ *   - Bento radius (14px) so tiles read as a distinct language from the 6-8px
+ *     form controls sitting next to them.
+ *   - The value renders in `.ds-amount` (Fira Code, tabular figures) so a row
+ *     of stat cards never jitters between renders and the digits line up
+ *     column-to-column. Currency should already be formatted as "K 125,430"
+ *     by the caller — this component does not invent a currency symbol.
+ *   - Trend uses generic status colors (green/red), NOT jade. Jade is the money
+ *     role and belongs to the amount, not to the direction it moved.
  */
 
-import { ReactNode } from 'react';
-import { Box, Flex, Text, Heading } from '@radix-ui/themes';
+import type { ReactNode } from 'react';
 import { NavArrowUp, NavArrowDown, Minus } from 'iconoir-react';
 
-// =============================================================================
-// TYPES
-// =============================================================================
+export type StatTrend = 'up' | 'down' | 'neutral';
 
-type TrendDirection = 'up' | 'down' | 'neutral';
-
-interface StatCardProps {
-  /** Card title */
+export interface StatCardProps {
   title: string;
-  /** Main value to display */
   value: string | number;
-  /** Optional icon */
   icon?: ReactNode;
-  /** Percentage change */
   change?: number;
-  /** Comparison label (e.g., "vs last month") */
   changeLabel?: string;
-  /** Trend direction */
-  trend?: TrendDirection;
-  /** Format as currency */
-  isCurrency?: boolean;
-  /** Currency symbol */
-  currencySymbol?: string;
-  /** Additional subtitle */
-  subtitle?: string;
-  /** Loading state */
-  loading?: boolean;
-  /** Size variant */
-  size?: 'sm' | 'md' | 'lg';
+  trend?: StatTrend;
 }
 
-// =============================================================================
-// COMPONENT
-// =============================================================================
+const TREND: Record<StatTrend, { color: string; surface: string; icon: ReactNode }> = {
+  up: {
+    color: 'var(--status-success-11)',
+    surface: 'var(--status-success-a3)',
+    icon: <NavArrowUp width={14} height={14} />,
+  },
+  down: {
+    color: 'var(--status-danger-11)',
+    surface: 'var(--status-danger-a3)',
+    icon: <NavArrowDown width={14} height={14} />,
+  },
+  neutral: {
+    color: 'var(--gray-11)',
+    surface: 'var(--gray-a3)',
+    icon: <Minus width={14} height={14} />,
+  },
+};
 
-export function StatCard({
-  title,
-  value,
-  icon,
-  change,
-  changeLabel,
-  trend,
-  isCurrency = false,
-  currencySymbol = 'K',
-  subtitle,
-  loading = false,
-  size = 'md',
-}: StatCardProps) {
-  // Size configurations
-  const sizeConfig = {
-    sm: {
-      padding: '16px',
-      iconSize: 32,
-      iconInner: 16,
-      valueSize: '5' as const,
-    },
-    md: {
-      padding: '24px',
-      iconSize: 40,
-      iconInner: 20,
-      valueSize: '6' as const,
-    },
-    lg: {
-      padding: '32px',
-      iconSize: 48,
-      iconInner: 24,
-      valueSize: '7' as const,
-    },
-  };
+export function StatCard({ title, value, icon, change, changeLabel, trend }: StatCardProps) {
+  // Derive direction from the delta when the caller does not state one.
+  const direction: StatTrend | undefined =
+    trend ?? (change === undefined ? undefined : change > 0 ? 'up' : change < 0 ? 'down' : 'neutral');
 
-  const config = sizeConfig[size];
-
-  // Trend configuration
-  const trendConfig: Record<TrendDirection, { color: string; icon: ReactNode }> = {
-    up: {
-      color: 'var(--success-500)',
-      icon: <NavArrowUp style={{ width: 14, height: 14 }} />,
-    },
-    down: {
-      color: 'var(--error-500)',
-      icon: <NavArrowDown style={{ width: 14, height: 14 }} />,
-    },
-    neutral: {
-      color: 'var(--content-muted)',
-      icon: <Minus style={{ width: 14, height: 14 }} />,
-    },
-  };
-
-  // Format value
-  const formattedValue = isCurrency
-    ? `${currencySymbol} ${typeof value === 'number' ? value.toLocaleString() : value}`
-    : typeof value === 'number'
-      ? value.toLocaleString()
-      : value;
-
-  // Determine trend direction from change if not provided
-  const effectiveTrend = trend ?? (change !== undefined ? (change > 0 ? 'up' : change < 0 ? 'down' : 'neutral') : undefined);
-
-  if (loading) {
-    return (
-      <Box
-        style={{
-          padding: config.padding,
-          background: 'var(--color-panel-solid)',
-          border: '1px solid var(--gray-a5)',
-          borderRadius: '16px',
-        }}
-      >
-        <Flex direction="column" gap="3">
-          <Box
-            className="skeleton"
-            style={{
-              width: config.iconSize,
-              height: config.iconSize,
-              borderRadius: '12px',
-            }}
-          />
-          <Box
-            className="skeleton skeleton-text"
-            style={{ width: '60%' }}
-          />
-          <Box
-            className="skeleton skeleton-heading"
-            style={{ width: '80%' }}
-          />
-        </Flex>
-      </Box>
-    );
-  }
+  const display = typeof value === 'number' ? value.toLocaleString() : value;
 
   return (
-    <Box
-      style={{
-        padding: config.padding,
-        background: 'var(--surface-elevated)',
-        border: '1px solid var(--surface-border)',
-        borderRadius: '16px',
-        transition: 'all 200ms ease',
-      }}
-    >
-      {/* Header with Icon and Trend */}
-      <Flex justify="between" align="start" mb="4">
+    <div className="ds-card-bento" style={{ padding: 'var(--space-5)' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 'var(--space-3)',
+          marginBottom: 'var(--space-4)',
+        }}
+      >
         {icon && (
-          <Box
+          <span
+            aria-hidden="true"
             style={{
-              width: config.iconSize,
-              height: config.iconSize,
-              borderRadius: '12px',
-              background: 'rgba(16, 185, 129, 0.1)',
-              border: '1px solid rgba(16, 185, 129, 0.2)',
+              width: 40,
+              height: 40,
+              flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'var(--brand-500)',
+              borderRadius: 'var(--radius-3)',
+              background: 'var(--accent-a3)',
+              color: 'var(--accent-11)',
             }}
           >
             {icon}
-          </Box>
+          </span>
         )}
 
-        {/* Trend Badge */}
-        {effectiveTrend && change !== undefined && (
-          <Flex
-            align="center"
-            gap="1"
+        {direction && change !== undefined && (
+          <span
             style={{
-              color: trendConfig[effectiveTrend].color,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
               padding: '4px 8px',
-              borderRadius: '6px',
-              background: `${trendConfig[effectiveTrend].color}15`,
+              borderRadius: 'var(--radius-2)',
+              background: TREND[direction].surface,
+              color: TREND[direction].color,
+              fontSize: 'var(--text-1-size)',
+              fontWeight: 'var(--weight-medium)',
             }}
           >
-            {trendConfig[effectiveTrend].icon}
-            <Text size="1" weight="medium">
-              {change > 0 ? '+' : ''}{change}%
-            </Text>
-          </Flex>
+            {TREND[direction].icon}
+            <span className="ds-amount">
+              {change > 0 ? '+' : ''}
+              {change}%
+            </span>
+          </span>
         )}
-      </Flex>
+      </div>
 
-      {/* Title */}
-      <Text
-        size="2"
-        style={{
-          color: 'var(--content-muted)',
-          display: 'block',
-          marginBottom: '4px',
-        }}
-      >
+      <span className="ds-label" style={{ display: 'block', marginBottom: 6 }}>
         {title}
-      </Text>
+      </span>
 
-      {/* Value */}
-      <Heading
-        size={config.valueSize}
+      <div
+        className="ds-amount"
         style={{
-          color: 'var(--content-primary)',
-          letterSpacing: '-0.02em',
+          fontSize: 'var(--heading-6-size)',
+          lineHeight: 'var(--heading-6-line)',
+          fontWeight: 'var(--weight-semibold)',
+          color: 'var(--gray-12)',
         }}
       >
-        {formattedValue}
-      </Heading>
+        {display}
+      </div>
 
-      {/* Subtitle or Change Label */}
-      {(subtitle || changeLabel) && (
-        <Text
-          size="1"
+      {changeLabel && (
+        <span
           style={{
-            color: 'var(--content-muted)',
             display: 'block',
-            marginTop: '8px',
+            marginTop: 'var(--space-2)',
+            fontSize: 'var(--text-1-size)',
+            color: 'var(--gray-10)',
           }}
         >
-          {subtitle || changeLabel}
-        </Text>
+          {changeLabel}
+        </span>
       )}
-    </Box>
-  );
-}
-
-// =============================================================================
-// STAT GRID
-// =============================================================================
-
-interface StatGridProps {
-  children: ReactNode;
-  columns?: number;
-}
-
-export function StatGrid({ children, columns = 4 }: StatGridProps) {
-  return (
-    <Box
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(auto-fit, minmax(${240}px, 1fr))`,
-        gap: '16px',
-      }}
-    >
-      {children}
-    </Box>
+    </div>
   );
 }
 

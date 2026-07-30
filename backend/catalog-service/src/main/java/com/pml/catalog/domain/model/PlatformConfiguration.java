@@ -1,12 +1,14 @@
 package com.pml.catalog.domain.model;
 
 import com.pml.catalog.domain.enums.ApprovalNotificationChannel;
+import com.pml.shared.config.model.PlatformPaymentDefaults;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
@@ -20,6 +22,7 @@ import java.time.LocalDateTime;
  * This is a singleton document - there should only be one configuration per platform.
  */
 @Document(collection = "platform_configuration")
+@TypeAlias("platformConfiguration")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -142,6 +145,19 @@ public class PlatformConfiguration {
     private boolean allowSelfApproval = false;
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // PAYMENT / PAYOUT / COMMISSION DEFAULTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Platform-wide payment/payout/commission defaults applied to a new organization's
+     * payout configuration at creation. Seeded in {@link #createDefault()} — no default is
+     * baked into the field so the values come from the configured source of truth.
+     *
+     * @see PlatformPaymentDefaults
+     */
+    private PlatformPaymentDefaults payment;
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AUDIT FIELDS
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -163,6 +179,12 @@ public class PlatformConfiguration {
     public static PlatformConfiguration createDefault() {
         return PlatformConfiguration.builder()
                 .id(DEFAULT_ID)
+                .payment(PlatformPaymentDefaults.builder()
+                        .commissionRate(0.05)
+                        .payoutMethod("MOBILE_MONEY")
+                        .payoutSchedule("WEEKLY")
+                        .minimumPayoutAmount(100.0)
+                        .build())
                 .build();
     }
 

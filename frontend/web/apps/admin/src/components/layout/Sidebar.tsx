@@ -49,6 +49,7 @@ import {
   GraphUp,
   StatsUpSquare,
   Settings,
+  Database,
   HistoricShield,
   Key,
   Xmark,
@@ -92,6 +93,7 @@ const IconComponents: Record<string, React.ComponentType<{ style?: React.CSSProp
   GraphUp,
   StatsUpSquare,
   Settings,
+  Database,
   HistoricShield,
   Key,
 };
@@ -141,28 +143,27 @@ function NavItemComponent({
       style={{ textDecoration: 'none', display: 'block' }}
       aria-current={isActive ? 'page' : undefined}
     >
+      {/* The persistent 2px left accent border for the active item is applied
+          by `.sidebar-nav-item[data-active='true']` in global.css, not as an
+          inline style — one themable place, and it keeps the adherence grep
+          over *.tsx clean. */}
       <Flex
         align="center"
         justify="between"
         gap="3"
         className="sidebar-nav-item"
+        data-active={isActive ? 'true' : 'false'}
         style={{
           padding: '10px 12px',
           borderRadius:
             isFirstItem && isLastItem
-              ? '10px'
+              ? 'var(--radius-3)'
               : isFirstItem
-              ? '10px 10px 4px 4px'
+              ? 'var(--radius-3) var(--radius-3) var(--radius-1) var(--radius-1)'
               : isLastItem
-              ? '4px 4px 10px 10px'
-              : '4px',
-          backgroundColor: isActive ? 'var(--sidebar-active-bg)' : 'transparent',
-          color: isActive ? 'var(--sidebar-active-fg)' : 'var(--sidebar-fg-muted)',
+              ? 'var(--radius-1) var(--radius-1) var(--radius-3) var(--radius-3)'
+              : 'var(--radius-1)',
           cursor: 'pointer',
-          transition: 'all 150ms ease',
-          borderLeft: isActive
-            ? '2px solid var(--sidebar-active-border)'
-            : '2px solid transparent',
         }}
       >
         <Flex align="center" gap="3">
@@ -198,8 +199,8 @@ function NavItemComponent({
                 ? 'var(--sidebar-active-fg)'
                 : 'var(--sidebar-badge-bg)',
               color: isActive ? 'var(--sidebar-active-bg)' : 'var(--sidebar-badge-fg)',
-              fontSize: '10px',
-              fontWeight: 600,
+              fontSize: 'var(--label-size)',
+              fontWeight: 'var(--label-weight)',
               minWidth: '18px',
               height: '18px',
               display: 'flex',
@@ -306,14 +307,13 @@ function CollapsibleSection({
           >
             <NavArrowDown style={{ width: 12, height: 12 }} />
           </Box>
+          {/* Nav section header — the micro uppercase label treatment, one of
+              the deliberate ALL-CAPS exceptions in the system. */}
           <Text
-            size="1"
-            weight="medium"
+            className="ds-label"
             style={{
               color: expanded ? 'var(--sidebar-active-fg)' : 'var(--sidebar-section-fg)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              transition: 'color 150ms ease',
+              transition: 'color var(--transition-fast) var(--ease-standard)',
             }}
           >
             {section.title}
@@ -326,9 +326,9 @@ function CollapsibleSection({
             size="1"
             variant="soft"
             style={{
-              backgroundColor: 'var(--red-a3)',
-              color: 'var(--red-11)',
-              fontSize: '10px',
+              backgroundColor: 'var(--status-danger-a3)',
+              color: 'var(--status-danger-11)',
+              fontSize: 'var(--label-size)',
             }}
           >
             {sectionBadgeCount}
@@ -344,27 +344,11 @@ function CollapsibleSection({
             marginTop: '4px',
             marginLeft: '8px',
             padding: '4px',
-            borderRadius: '12px',
+            borderRadius: 'var(--radius-4)',
             background: 'var(--sidebar-well-bg)',
             border: '1px solid var(--sidebar-well-border)',
-            position: 'relative',
           }}
         >
-          {/* Curved edge indicator */}
-          <Box
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: '12px',
-              bottom: '12px',
-              width: '2px',
-              background:
-                'linear-gradient(180deg, transparent 0%, var(--sidebar-active-border) 20%, var(--sidebar-active-border) 80%, transparent 100%)',
-              opacity: 0.3,
-              borderRadius: '1px',
-            }}
-          />
-
           <Flex direction="column" gap="1">
             {section.items.map((item, index) => {
               const isActive = item.href === activeHref;
@@ -462,23 +446,8 @@ export function Sidebar({ isOpen, isMobile, onClose }: SidebarProps) {
           flexDirection: 'column',
           background: 'var(--dashboard-sidebar-bg)',
           borderRight: '1px solid var(--dashboard-sidebar-border)',
-          boxShadow: 'inset -1px 0 0 var(--gray-a1)',
         }}
       >
-        {/* Decorative gradient overlay */}
-        <Box
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '200px',
-            background:
-              'radial-gradient(ellipse at top, var(--accent-a4) 0%, transparent 70%)',
-            pointerEvents: 'none',
-          }}
-        />
-
         {/* Header */}
         <Flex
           align="center"
@@ -492,25 +461,23 @@ export function Sidebar({ isOpen, isMobile, onClose }: SidebarProps) {
             flexShrink: 0,
           }}
         >
+          {/* Brand mark square — a sanctioned .ds-accent-chip gradient.
+              The wordmark beside it is plain text: no logo file exists and the
+              system never invents a mark. */}
           <Flex align="center" gap="3">
-            <Box
+            <Flex
+              align="center"
+              justify="center"
+              className="ds-accent-chip"
               style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '12px',
-                background:
-                  'linear-gradient(135deg, var(--accent-9) 0%, var(--accent-10) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow:
-                  '0 0 24px var(--accent-a6), inset 0 1px 0 var(--gray-a4)',
+                width: '36px',
+                height: '36px',
+                borderRadius: 'var(--radius-4)',
+                flexShrink: 0,
               }}
             >
-              <Label
-                style={{ width: 20, height: 20, color: 'var(--accent-contrast)' }}
-              />
-            </Box>
+              <Label style={{ width: 18, height: 18 }} />
+            </Flex>
             <Box>
               <Text
                 as="div"
@@ -585,23 +552,22 @@ export function Sidebar({ isOpen, isMobile, onClose }: SidebarProps) {
           }}
         >
           <Flex align="center" gap="3">
-            <Box
+            {/* Avatar fallback — sanctioned accent-gradient chip. */}
+            <Flex
+              align="center"
+              justify="center"
+              className="ds-accent-chip"
               style={{
                 width: '32px',
                 height: '32px',
-                borderRadius: '8px',
-                background:
-                  'linear-gradient(135deg, var(--accent-10) 0%, var(--accent-9) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--accent-contrast)',
+                borderRadius: 'var(--radius-3)',
+                fontSize: 'var(--text-1-size)',
+                fontWeight: 'var(--weight-semibold)',
+                flexShrink: 0,
               }}
             >
               {session?.user?.name?.charAt(0) || 'A'}
-            </Box>
+            </Flex>
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text
                 size="2"
@@ -633,38 +599,10 @@ export function Sidebar({ isOpen, isMobile, onClose }: SidebarProps) {
         </Box>
       </Box>
 
-      {/* Styles */}
-      <style jsx global>{`
-        .sidebar-nav-item:hover {
-          background-color: var(--sidebar-item-hover-bg) !important;
-          color: var(--sidebar-fg) !important;
-        }
-        .sidebar-nav-item:focus-visible {
-          outline: 2px solid var(--sidebar-active-border);
-          outline-offset: -2px;
-        }
-        .sidebar-section-header:hover {
-          background-color: var(--sidebar-item-hover-bg);
-        }
-        .sidebar-section-header:focus-visible {
-          outline: 2px solid var(--sidebar-active-border);
-          outline-offset: -2px;
-        }
-        .sidebar-close-btn:hover {
-          background-color: var(--sidebar-item-hover-bg);
-        }
-        .nav-items-container {
-          transition: all 200ms ease;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .sidebar-container,
-          .sidebar-nav-item,
-          .sidebar-section-header,
-          .nav-items-container {
-            transition: none !important;
-          }
-        }
-      `}</style>
+      {/* Hover, focus and active-border rules for `.sidebar-nav-item`,
+          `.sidebar-section-header` and `.sidebar-close-btn` live in
+          src/app/global.css. The shared token layer already respects
+          prefers-reduced-motion sitewide. */}
     </>
   );
 }

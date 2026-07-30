@@ -2,49 +2,102 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Platform Configuration Schema - OWASP Compliant",
-    "description": "Global platform settings and configuration",
+    "description": "Single platform-wide configuration document (approval workflow + payment/payout/commission defaults). Singleton keyed by a fixed _id.",
     "required": [
-      "key",
-      "value",
-      "isActive",
-      "createdAt"
+      "_id",
+      "approvalSlaHours",
+      "payment"
     ],
     "properties": {
       "_id": {
-        "bsonType": "objectId"
-      },
-      "key": {
         "bsonType": "string",
-        "pattern": "^[A-Z_]{3,100}$",
-        "description": "OWASP A03 - Configuration key format (e.g., COMMISSION_RATE)"
+        "pattern": "^platform-config$",
+        "description": "Fixed singleton identifier - only one configuration document may exist"
       },
-      "value": {
+      "_class": {
         "bsonType": "string",
-        "minLength": 1,
-        "maxLength": 5000
+        "description": "Spring Data type alias / discriminator"
       },
-      "dataType": {
+      "approvalSlaHours": {
+        "bsonType": "int",
+        "minimum": 1,
+        "maximum": 8760,
+        "description": "SLA for approval in hours"
+      },
+      "approvalWarningThresholdHours": {
+        "bsonType": "int",
+        "minimum": 0,
+        "maximum": 8760
+      },
+      "autoEscalationEnabled": { "bsonType": "bool" },
+      "escalationDelayHours": {
+        "bsonType": "int",
+        "minimum": 0,
+        "maximum": 8760
+      },
+      "escalationRecipientRole": {
         "bsonType": "string",
-        "enum": ["STRING", "NUMBER", "BOOLEAN", "JSON"],
-        "description": "OWASP A04 - Enum constraint"
+        "pattern": "^[A-Z_]{3,50}$",
+        "description": "OWASP A03 - role name format"
       },
-      "category": {
-        "bsonType": ["string", "null"],
-        "enum": ["FINANCIAL", "OPERATIONAL", "SECURITY", "FEATURE_FLAG", null]
+      "escalationReminderIntervalHours": {
+        "bsonType": "int",
+        "minimum": 0,
+        "maximum": 8760
       },
-      "description": {
-        "bsonType": ["string", "null"],
-        "maxLength": 500
+      "maxEscalationReminders": {
+        "bsonType": "int",
+        "minimum": 0,
+        "maximum": 100
       },
-      "isActive": {
-        "bsonType": "bool"
+      "organizerNotificationChannel": {
+        "bsonType": "string",
+        "enum": ["EMAIL", "IN_APP", "BOTH"]
       },
-      "createdAt": {
-        "bsonType": "date"
+      "adminNotificationChannel": {
+        "bsonType": "string",
+        "enum": ["EMAIL", "IN_APP", "BOTH"]
       },
-      "updatedAt": {
-        "bsonType": ["date", "null"]
+      "sendSlaWarningNotifications": { "bsonType": "bool" },
+      "sendEscalationNotifications": { "bsonType": "bool" },
+      "requireCommentsOnRejection": { "bsonType": "bool" },
+      "requireCommentsOnChangesRequested": { "bsonType": "bool" },
+      "allowSelfApproval": { "bsonType": "bool" },
+      "payment": {
+        "bsonType": "object",
+        "description": "Payment/payout/commission defaults applied to new organizations",
+        "required": [
+          "commissionRate",
+          "payoutMethod",
+          "payoutSchedule",
+          "minimumPayoutAmount"
+        ],
+        "properties": {
+          "commissionRate": {
+            "bsonType": "double",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "OWASP A04 - default commission rate bounded to [0,1] (0.05 = 5%)"
+          },
+          "payoutMethod": {
+            "bsonType": "string",
+            "enum": ["BANK_TRANSFER", "MOBILE_MONEY", "CHEQUE"],
+            "description": "OWASP A04 - enum constraint"
+          },
+          "payoutSchedule": {
+            "bsonType": "string",
+            "enum": ["DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY", "MANUAL"],
+            "description": "OWASP A04 - enum constraint"
+          },
+          "minimumPayoutAmount": {
+            "bsonType": "double",
+            "minimum": 0,
+            "description": "Default minimum payout amount in ZMW"
+          }
+        },
+        "additionalProperties": false
       },
+      "updatedAt": { "bsonType": ["date", "null"] },
       "updatedBy": {
         "bsonType": ["string", "null"],
         "maxLength": 100

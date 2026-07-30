@@ -120,13 +120,13 @@ function StepIndicator({ steps, currentStep, onStepClick }: StepIndicatorProps) 
                 height: 36,
                 borderRadius: '50%',
                 background: isCurrent
-                  ? 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)'
+                  ? 'linear-gradient(135deg, var(--accent-9), var(--accent-11))'
                   : isCompleted
                     ? 'var(--brand-500)'
                     : 'var(--surface-subtle)',
                 border: isCurrent || isCompleted ? 'none' : '2px solid var(--surface-border)',
                 cursor: isCompleted ? 'pointer' : 'default',
-                boxShadow: isCurrent ? '0 0 15px rgba(16, 185, 129, 0.4)' : 'none',
+                boxShadow: isCurrent ? '0 0 15px var(--accent-a7)' : 'none',
               }}
             >
               {isCompleted ? (
@@ -161,21 +161,20 @@ function FormField({ label, required, helper, error, children }: FormFieldProps)
     <Box mb="4">
       <Text
         as="label"
-        size="2"
-        weight="medium"
-        style={{ color: 'var(--content-secondary)', display: 'block', marginBottom: '8px' }}
+        className="ds-label"
+        style={{ display: 'block', marginBottom: '6px' }}
       >
         {label}
-        {required && <span style={{ color: 'var(--error-500)', marginLeft: 4 }}>*</span>}
+        {required && <span style={{ color: 'var(--status-danger-9)', marginLeft: 4 }}>*</span>}
       </Text>
       {children}
       {helper && !error && (
-        <Text size="1" style={{ color: 'var(--content-muted)', display: 'block', marginTop: '4px' }}>
+        <Text size="1" style={{ color: 'var(--gray-10)', display: 'block', marginTop: '4px' }}>
           {helper}
         </Text>
       )}
       {error && (
-        <Text size="1" style={{ color: 'var(--error-500)', display: 'block', marginTop: '4px' }}>
+        <Text role="alert" size="1" style={{ color: 'var(--status-danger-11)', display: 'block', marginTop: '4px' }}>
           {error}
         </Text>
       )}
@@ -326,7 +325,7 @@ export default function CreateEventPage() {
               padding: '32px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Heading size="4" mb="5" style={{ color: 'var(--content-primary)' }}>
@@ -372,7 +371,7 @@ export default function CreateEventPage() {
               <Box
                 style={{
                   height: 200,
-                  borderRadius: '12px',
+                  borderRadius: 'var(--card-radius)',
                   border: '2px dashed var(--surface-border)',
                   display: 'flex',
                   alignItems: 'center',
@@ -402,7 +401,7 @@ export default function CreateEventPage() {
               padding: '32px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Heading size="4" mb="5" style={{ color: 'var(--content-primary)' }}>
@@ -477,7 +476,7 @@ export default function CreateEventPage() {
                   variant={formData.locationType === 'venue' ? 'solid' : 'outline'}
                   onClick={() => handleChange('locationType', 'venue')}
                   style={formData.locationType === 'venue' ? {
-                    background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                    background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
                   } : {
                     borderColor: 'var(--surface-border)',
                   }}
@@ -489,7 +488,7 @@ export default function CreateEventPage() {
                   variant={formData.locationType === 'online' ? 'solid' : 'outline'}
                   onClick={() => handleChange('locationType', 'online')}
                   style={formData.locationType === 'online' ? {
-                    background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                    background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
                   } : {
                     borderColor: 'var(--surface-border)',
                   }}
@@ -550,7 +549,7 @@ export default function CreateEventPage() {
               padding: '32px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Flex justify="between" align="center" mb="5">
@@ -560,7 +559,7 @@ export default function CreateEventPage() {
               <Button
                 variant="outline"
                 onClick={handleAddTier}
-                style={{ borderColor: 'rgba(16, 185, 129, 0.3)', color: 'var(--brand-500)' }}
+                style={{ borderColor: 'var(--accent-a6)', color: 'var(--brand-500)' }}
               >
                 <Plus style={{ width: 18, height: 18, marginRight: 8 }} />
                 Add Tier
@@ -575,7 +574,7 @@ export default function CreateEventPage() {
                     padding: '20px',
                     background: 'var(--surface-subtle)',
                     border: '1px solid var(--surface-border)',
-                    borderRadius: '12px',
+                    borderRadius: 'var(--card-radius)',
                   }}
                 >
                   <Flex justify="between" align="center" mb="4">
@@ -610,7 +609,7 @@ export default function CreateEventPage() {
                       />
                     </FormField>
 
-                    <FormField label="Price (ZMW)" required>
+                    <FormField label="Price (K)" required>
                       <TextField.Root
                         size="2"
                         type="number"
@@ -654,7 +653,7 @@ export default function CreateEventPage() {
               padding: '32px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Heading size="4" mb="5" style={{ color: 'var(--content-primary)' }}>
@@ -711,7 +710,7 @@ export default function CreateEventPage() {
                     p="3"
                     style={{
                       background: 'var(--surface-subtle)',
-                      borderRadius: '8px',
+                      borderRadius: 'var(--radius-4)',
                     }}
                   >
                     <Text size="2" style={{ color: 'var(--content-primary)' }}>
@@ -740,11 +739,11 @@ export default function CreateEventPage() {
   return (
     <Box>
       <PageHeader
-        title="Create Event"
+        title="Create event"
         description="Set up a new event for your organization"
         breadcrumbs={[
           { label: 'Events', href: '/events' },
-          { label: 'Create Event' },
+          { label: 'Create event' },
         ]}
       />
 
@@ -790,7 +789,7 @@ export default function CreateEventPage() {
               size="3"
               onClick={handleNext}
               style={{
-                background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               }}
             >
               Continue
@@ -802,7 +801,7 @@ export default function CreateEventPage() {
               onClick={handlePublish}
               disabled={isSaving}
               style={{
-                background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               }}
             >
               {isSaving ? 'Publishing...' : 'Publish Event'}

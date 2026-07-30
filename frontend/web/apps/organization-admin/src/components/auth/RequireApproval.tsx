@@ -20,7 +20,14 @@
 import { useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Flex, Text, Button, Heading, Card } from '@radix-ui/themes';
-import { WarningTriangle, Clock, Xmark, ArrowRight } from 'iconoir-react';
+import {
+  WarningTriangle,
+  Clock,
+  Xmark,
+  ArrowRight,
+  CheckCircle,
+  PageEdit,
+} from 'iconoir-react';
 import { useSession } from '@/lib/auth/client';
 import {
   useMyOrganization,
@@ -60,6 +67,39 @@ interface StatusCardProps {
   status: OrganizationStatusString;
 }
 
+/**
+ * Status presentation.
+ *
+ * `tone` selects a semantic status ramp — never a raw hex. Note that an
+ * approved/active organization is `success` (GREEN), not jade: jade is the
+ * money role and is reserved for amounts, so an "Approved" chip can never be
+ * mistaken for a "Paid" amount.
+ *
+ * Copy: enums are humanized ("PENDING_REVIEW" reads as "Application under
+ * review") and each description says what happens next, in plain third person.
+ */
+type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+
+const TONE: Record<StatusTone, { fg: string; surface: string; border: string }> = {
+  neutral: { fg: 'var(--gray-11)', surface: 'var(--gray-a3)', border: 'var(--gray-a6)' },
+  info: { fg: 'var(--status-info-11)', surface: 'var(--status-info-a3)', border: 'var(--blue-a6)' },
+  success: {
+    fg: 'var(--status-success-11)',
+    surface: 'var(--status-success-a3)',
+    border: 'var(--green-a6)',
+  },
+  warning: {
+    fg: 'var(--status-warning-11)',
+    surface: 'var(--status-warning-a3)',
+    border: 'var(--amber-a6)',
+  },
+  danger: {
+    fg: 'var(--status-danger-11)',
+    surface: 'var(--status-danger-a3)',
+    border: 'var(--red-a6)',
+  },
+};
+
 const statusConfig: Record<
   string,
   {
@@ -68,80 +108,82 @@ const statusConfig: Record<
     description: string;
     actionLabel: string;
     actionHref: string;
-    color: string;
+    tone: StatusTone;
   }
 > = {
   DRAFT: {
-    icon: <Clock style={{ width: 32, height: 32 }} />,
-    title: 'Application Not Started',
-    description: 'You need to complete your organizer application to access the dashboard.',
-    actionLabel: 'Start Application',
+    icon: <PageEdit width={32} height={32} />,
+    title: 'Application not started',
+    description:
+      'Complete the organizer application to unlock the dashboard. It takes about ten minutes.',
+    actionLabel: 'Start application',
     actionHref: '/apply/business-info',
-    color: '#94A3B8',
+    tone: 'neutral',
   },
   PENDING_REVIEW: {
-    icon: <Clock style={{ width: 32, height: 32 }} />,
-    title: 'Application Under Review',
-    description: 'Your application is being reviewed. This typically takes 1-2 business days.',
-    actionLabel: 'View Status',
+    icon: <Clock width={32} height={32} />,
+    title: 'Application under review',
+    description: 'The application is with the review team. Most decisions land within two business days.',
+    actionLabel: 'View status',
     actionHref: '/apply/status',
-    color: '#3B82F6',
+    tone: 'info',
   },
   APPROVED: {
-    icon: <Clock style={{ width: 32, height: 32 }} />,
-    title: 'Approved',
-    description: 'Your application has been approved.',
-    actionLabel: 'Go to Dashboard',
+    icon: <CheckCircle width={32} height={32} />,
+    title: 'Application approved',
+    description: 'The organization is approved and the dashboard is open.',
+    actionLabel: 'Go to dashboard',
     actionHref: '/dashboard',
-    color: '#10B981',
+    tone: 'success',
   },
   ACTIVE: {
-    icon: <Clock style={{ width: 32, height: 32 }} />,
-    title: 'Active',
-    description: 'Your organization is active.',
-    actionLabel: 'Go to Dashboard',
+    icon: <CheckCircle width={32} height={32} />,
+    title: 'Organization active',
+    description: 'Everything is live. Events can be published and payouts requested.',
+    actionLabel: 'Go to dashboard',
     actionHref: '/dashboard',
-    color: '#10B981',
+    tone: 'success',
   },
   REJECTED: {
-    icon: <Xmark style={{ width: 32, height: 32 }} />,
-    title: 'Application Rejected',
-    description: 'Unfortunately, your application was not approved. Please contact support for more information.',
-    actionLabel: 'View Details',
+    icon: <Xmark width={32} height={32} />,
+    title: 'Application rejected',
+    description:
+      'The application was not approved. The status page lists the reason given by the review team.',
+    actionLabel: 'View details',
     actionHref: '/apply/status',
-    color: '#EF4444',
+    tone: 'danger',
   },
   CHANGES_REQUESTED: {
-    icon: <WarningTriangle style={{ width: 32, height: 32 }} />,
-    title: 'Changes Requested',
-    description: 'We need additional information or corrections to your application.',
-    actionLabel: 'Update Application',
+    icon: <WarningTriangle width={32} height={32} />,
+    title: 'Changes requested',
+    description: 'The review team needs corrections before the application can proceed.',
+    actionLabel: 'Update application',
     actionHref: '/apply/business-info',
-    color: '#F59E0B',
+    tone: 'warning',
   },
   SUSPENDED: {
-    icon: <Xmark style={{ width: 32, height: 32 }} />,
-    title: 'Account Suspended',
-    description: 'Your organization has been suspended. Please contact support for more information.',
-    actionLabel: 'Contact Support',
+    icon: <Xmark width={32} height={32} />,
+    title: 'Organization suspended',
+    description: 'Access is paused. Support can explain what triggered the suspension.',
+    actionLabel: 'Contact support',
     actionHref: '/apply/status',
-    color: '#EF4444',
+    tone: 'danger',
   },
   INACTIVE: {
-    icon: <Clock style={{ width: 32, height: 32 }} />,
-    title: 'Account Inactive',
-    description: 'Your organization is currently inactive.',
-    actionLabel: 'View Status',
+    icon: <Clock width={32} height={32} />,
+    title: 'Organization inactive',
+    description: 'This organization is not currently active.',
+    actionLabel: 'View status',
     actionHref: '/apply/status',
-    color: '#94A3B8',
+    tone: 'neutral',
   },
   PENDING_DELETION: {
-    icon: <WarningTriangle style={{ width: 32, height: 32 }} />,
-    title: 'Pending Deletion',
-    description: 'Your organization is scheduled for deletion.',
-    actionLabel: 'Contact Support',
+    icon: <WarningTriangle width={32} height={32} />,
+    title: 'Scheduled for deletion',
+    description: 'This organization is queued for deletion. Support can stop it before it runs.',
+    actionLabel: 'Contact support',
     actionHref: '/apply/status',
-    color: '#F59E0B',
+    tone: 'warning',
   },
 };
 
@@ -149,6 +191,7 @@ function StatusCard({ status }: StatusCardProps) {
   const router = useRouter();
 
   const config = statusConfig[status];
+  const tone = TONE[config.tone];
 
   return (
     <Box
@@ -157,48 +200,46 @@ function StatusCard({ status }: StatusCardProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#0F172A',
-        padding: '24px',
+        background: 'var(--color-background)',
+        padding: 'var(--space-5)',
       }}
     >
       <Card
         style={{
-          maxWidth: '480px',
+          maxWidth: 480,
           width: '100%',
-          padding: '40px',
-          background: 'rgba(30, 41, 59, 0.5)',
-          border: '1px solid rgba(148, 163, 184, 0.1)',
-          borderRadius: '20px',
+          padding: 'var(--space-7)',
           textAlign: 'center',
         }}
       >
         <Box
+          aria-hidden="true"
           style={{
             width: 72,
             height: 72,
             borderRadius: '50%',
-            background: `${config.color}15`,
-            border: `2px solid ${config.color}40`,
+            background: tone.surface,
+            border: `1px solid ${tone.border}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 24px',
-            color: config.color,
+            margin: '0 auto var(--space-5)',
+            color: tone.fg,
           }}
         >
           {config.icon}
         </Box>
 
-        <Heading size="5" mb="3" style={{ color: '#F8FAFC' }}>
+        <Heading size="5" mb="3" style={{ color: 'var(--gray-12)' }}>
           {config.title}
         </Heading>
 
         <Text
           size="2"
           style={{
-            color: '#94A3B8',
+            color: 'var(--gray-11)',
             display: 'block',
-            marginBottom: '32px',
+            marginBottom: 'var(--space-6)',
             lineHeight: 1.6,
           }}
         >
@@ -206,33 +247,27 @@ function StatusCard({ status }: StatusCardProps) {
         </Text>
 
         <Button
+          data-testid="require-approval-action"
           size="3"
+          color="teal"
           onClick={() => router.push(config.actionHref)}
-          style={{
-            background: `linear-gradient(135deg, ${config.color} 0%, ${config.color}CC 100%)`,
-            cursor: 'pointer',
-            width: '100%',
-          }}
+          style={{ cursor: 'pointer', width: '100%' }}
         >
           {config.actionLabel}
-          <ArrowRight style={{ width: 18, height: 18, marginLeft: 8 }} />
+          <ArrowRight width={18} height={18} style={{ marginLeft: 8 }} />
         </Button>
 
         {status !== 'DRAFT' && (
           <Text
             size="1"
-            style={{
-              color: '#94A3B8',
-              display: 'block',
-              marginTop: '24px',
-            }}
+            style={{ color: 'var(--gray-10)', display: 'block', marginTop: 'var(--space-5)' }}
           >
             Need help?{' '}
             <a
               href="mailto:support@myticket.zm"
-              style={{ color: '#10B981', textDecoration: 'none' }}
+              style={{ color: 'var(--accent-11)', textDecoration: 'none', fontWeight: 500 }}
             >
-              Contact Support
+              Contact support
             </a>
           </Text>
         )}
@@ -253,24 +288,27 @@ function DefaultLoadingComponent() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#0F172A',
+        background: 'var(--color-background)',
       }}
     >
       <Flex direction="column" align="center" gap="4">
         <Box
+          aria-hidden="true"
           style={{
-            width: 48,
-            height: 48,
+            width: 40,
+            height: 40,
             borderRadius: '50%',
-            border: '3px solid rgba(16, 185, 129, 0.2)',
-            borderTopColor: '#10B981',
-            animation: 'spin 1s linear infinite',
+            border: '3px solid var(--accent-a5)',
+            borderTopColor: 'var(--accent-9)',
+            animation: 'ds-spin 1s linear infinite',
           }}
         />
-        <Text style={{ color: '#94A3B8' }}>Loading organization...</Text>
+        <Text size="2" style={{ color: 'var(--gray-10)' }}>
+          Loading your organization…
+        </Text>
       </Flex>
       <style jsx global>{`
-        @keyframes spin {
+        @keyframes ds-spin {
           to {
             transform: rotate(360deg);
           }
@@ -347,35 +385,37 @@ export function RequireApproval({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#0F172A',
-          padding: '24px',
+          background: 'var(--color-background)',
+          padding: 'var(--space-5)',
         }}
       >
         <Card
-          style={{
-            maxWidth: '400px',
-            padding: '32px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
-            borderRadius: '16px',
-            textAlign: 'center',
-          }}
+          className="error-card"
+          style={{ maxWidth: 400, padding: 'var(--space-6)', textAlign: 'center' }}
         >
           <WarningTriangle
-            style={{ width: 48, height: 48, color: '#EF4444', margin: '0 auto 16px' }}
+            aria-hidden="true"
+            width={40}
+            height={40}
+            style={{ color: 'var(--status-danger-9)', margin: '0 auto var(--space-4)' }}
           />
-          <Heading size="4" mb="2" style={{ color: '#F8FAFC' }}>
-            Something went wrong
+          <Heading size="4" mb="2" style={{ color: 'var(--gray-12)' }}>
+            Could not load your organization
           </Heading>
-          <Text size="2" style={{ color: '#94A3B8', display: 'block', marginBottom: '24px' }}>
-            {error?.message || 'An unexpected error occurred'}
+          <Text
+            size="2"
+            style={{ color: 'var(--gray-11)', display: 'block', marginBottom: 'var(--space-5)' }}
+          >
+            {error?.message || 'The request did not complete. Reload to try again.'}
           </Text>
           <Button
+            data-testid="require-approval-retry"
             variant="outline"
+            color="red"
             onClick={() => window.location.reload()}
-            style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444' }}
+            style={{ cursor: 'pointer' }}
           >
-            Try Again
+            Reload
           </Button>
         </Card>
       </Box>

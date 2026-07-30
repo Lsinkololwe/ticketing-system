@@ -25,7 +25,7 @@ import {
   Avatar,
   Tooltip,
 } from '@radix-ui/themes';
-import { StyledCard, EmptyCard } from '@/components/ui/StyledCard';
+import { StyledCard, EmptyState } from '@/components/ui';
 import {
   Search,
   MoreVert,
@@ -113,7 +113,12 @@ function OrganizationsTable({
   }
 
   if (organizations.length === 0) {
-    return <EmptyCard message="No organizations found" />;
+    return (
+      <EmptyState
+        title="No organizations found"
+        description="Adjust the filters above, or wait for new applications to arrive."
+      />
+    );
   }
 
   return (

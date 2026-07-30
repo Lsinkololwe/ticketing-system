@@ -88,7 +88,8 @@
       ]
     },
     "outDir": "dist",
-    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+    "ignoreDeprecations": "6.0"
   },
   "include": [
     "../../apps/admin/.next/types/**/*.ts",

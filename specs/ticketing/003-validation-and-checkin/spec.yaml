@@ -1,0 +1,97 @@
+id: ET-TKT-003
+title: Validation, check-in and the offline gate
+status: draft
+area: TKT
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 5
+blocked_by: [ET-PLT-005, ET-TKT-002, ET-ORG-003, ET-CAT-001]
+conformance: "US-SCN-001 · US Part I §3 event-level roles"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/ticketing/002-ticket-issuance-and-qr/spec.md
+  - specs/organization/003-permission-resolution/spec.md
+  - docs/USER_STORIES.md
+
+persistence:
+  collections:
+    - booking_checkins
+    - booking_checkin_conflicts
+  indexes:
+    - "booking_checkins {ticketId} unique          # one accepted check-in per ticket"
+    - "booking_checkins {scanId} unique sparse     # upload idempotency"
+    - "booking_checkins {eventId,recordedAt} compound"
+    - "booking_checkin_conflicts {eventId,detectedAt} compound"
+  redis_keys: []
+
+events:
+  module:
+    - CheckInConflictDetectedEvent
+  bus:
+    - booking.TicketValidated    # v1 → catalog (check-in counters)
+  topics:
+    - booking-events
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "checkInSummary(eventId)               ORGANIZER  CheckInSummary!"
+    - "recentCheckIns(eventId, limit)        ORGANIZER  [CheckIn!]!   # bounded <= 100"
+    - "checkInConflicts(eventId, page)       ORGANIZER  CheckInConflictPage!"
+  mutations:
+    - "validateTicket(input)        ORGANIZER  ValidationResult!"
+    - "validateByReference(input)   ORGANIZER  ValidationResult!"
+    - "uploadScans(input)           ORGANIZER  [ScanResolution!]!"
+    - "reviewConflict(id, note)     ORGANIZER  CheckInConflict!"
+  # every one ALSO requires ticket:scan on that event via ET-ORG-003 — the coarse gate is never sufficient
+
+errors:
+  - TICKET_ALREADY_VALIDATED
+  - TICKET_NOT_VALID_FOR_EVENT
+  # TICKET_SIGNATURE_INVALID, TICKET_STATE_INVALID, ACTOR_NOT_PERMITTED raised here, owned elsewhere
+
+modes:
+  online:
+    signature: local
+    duplicate: "server, exactly-once via conditional findAndModify"
+    guarantee: "a ticket admits once"
+  offline:
+    signature: local
+    duplicate: "NONE at scan time"
+    guarantee: "a ticket admits once PER DEVICE"
+    note: "a duplicate across two offline devices CANNOT be prevented — only detected on upload"
+
+conflict_resolution: "earliest scannedAt wins; ties broken by scanId lexicographically — deterministic"
+
+validation_methods: [QR_ONLINE, QR_OFFLINE, MANUAL]
+
+config:
+  booking.checkin.upload-batch-max: 500
+  booking.checkin.upload-budget: PT10S
+  booking.checkin.max-clock-skew: PT5M
+  booking.checkin.manual-alert-ratio: "10%"
+  booking.checkin.summary-poll-interval: PT15S
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/ticketing/003-validation-and-checkin
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-003
+  - mvn -q -f backend verify -Dgroups=ET-TKT-003
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R5 re-checks the grant at every scan and upload through ET-ORG-003's internal API, which puts an HTTP call to identity-service on the gate path — the one path with the worst connectivity and the tightest latency budget. ET-ORG-003 already flags that its 30-second cache cannot meet a venue's needs and that offline scanning must resolve authorisation another way; this spec does not resolve it either. In practice the grant check has to be embedded in the key issue and trusted for the event's duration, which weakens R5's mid-event revocation guarantee to online scans only."
+  - "The offline duplicate hole compounds ET-TKT-002's re-issue hole: a lost phone's old QR still verifies offline, and two offline devices cannot detect either the re-issue or each other. A determined attacker with a photographed QR and knowledge that a gate is offline can admit repeatedly, and only the post-event conflict report shows it."
+  - "R4 breaks ties on the device clock, and R4's own last box flags a skewed clock as a device problem the report surfaces. But a device with a clock set 10 minutes SLOW always wins every conflict, which is an exploitable ordering rather than an arbitrary one. Server-side receipt order would be non-deterministic across batches; neither option is good and the spec picks the exploitable one."
+  - "booking_checkins is unique on ticketId, so a DUPLICATE offline scan cannot be recorded as a check-in row at all — it only produces a conflict row. That means the losing device's admission has no check-in record, and the attendance count is correct while the physical admission count is not."
+  - "R7's summary is served by an aggregation over booking_checkins and booking_tickets during the event, polled every 15 seconds by every organizer device watching. For a large event with several staff watching, that is a repeated multi-collection aggregation on the hottest write path of the evening."
+  - "validateByReference requires a 10-character reason but nothing validates that the reason is meaningful. The manual-ratio alert at 10% is the only real control, and a steward under queue pressure will type 'qr broken' for everything."
+  - "The scanner caches the event key for the event's duration. ET-TKT-002 R3 scopes the key to the grant's expiry, but a cached key on a device does not expire when the grant does — the device simply stops being able to refresh. Offline validation with a stale key continues to work, which is the intended availability trade and also an unrevokable capability."
+  - "R8 keeps a validated ticket refundable, but ET-FIN-004's refund policy schedule is computed from hours-before-event — which is negative once the event has started. The policy table has no row for after the event, so a post-validation refund falls through to an undefined percentage."

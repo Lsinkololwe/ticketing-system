@@ -17,3 +17,4 @@
 export * from './organization';
 export * from './document';
 export * from './admin';
+export * from './reference-data';

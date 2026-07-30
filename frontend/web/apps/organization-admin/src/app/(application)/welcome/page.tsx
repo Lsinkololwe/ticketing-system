@@ -230,7 +230,7 @@ export default function WelcomePage() {
               <li>
                 <FeatureItem
                   icon={<ShieldCheck width={16} height={16} strokeWidth={1.5} />}
-                  title="Verified Status"
+                  title="Verification status"
                   description="Build trust"
                 />
               </li>

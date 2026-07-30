@@ -1,0 +1,29 @@
+# =====================================================================
+# PROD profile  —  Real Azure Service Bus via Microsoft Entra (managed identity)
+# ---------------------------------------------------------------------
+# Activated with SPRING_PROFILES_ACTIVE=prod. Same binder & bindings as dev.
+#
+# OWASP-aligned posture (see docs/MESSAGING_AND_SERVICE_BUS.html):
+#  * A07 Auth / A02 Crypto: NO secrets in config or env. Auth is Microsoft
+#    Entra managed identity (DefaultAzureCredential) — connection-string blank
+#    so SAS keys are never used. Namespace should have local-auth DISABLED.
+#  * A01 Access Control: identity is granted least-privilege RBAC roles only
+#    ("Azure Service Bus Data Sender" + "Azure Service Bus Data Receiver").
+#  * A02 Crypto in transit: Service Bus enforces TLS 1.2+ (no override here).
+#  * Any secret that is still required is pulled from Azure Key Vault.
+# =====================================================================
+spring:
+  cloud:
+    azure:
+      credential:
+        managed-identity-enabled: ${AZURE_MANAGED_IDENTITY_ENABLED:true}
+        client-id: ${AZURE_CLIENT_ID:}
+      servicebus:
+        namespace: ${AZURE_SERVICEBUS_NAMESPACE}
+        connection-string: ""            # force token credential — no SAS
+      keyvault:
+        secret:
+          enabled: ${AZURE_KEYVAULT_ENABLED:true}
+          endpoint: ${AZURE_KEYVAULT_ENDPOINT:}
+    stream:
+      default-binder: servicebus

@@ -35,7 +35,7 @@ import {
   ScanQrCode,
   Download,
 } from 'iconoir-react';
-import { PageHeader, StatCard, StatGrid } from '@/components/ui';
+import { PageHeader, StatCard } from '@/components/ui';
 import { useSession } from '@/lib/auth/client';
 import {
   useMyOrganization,
@@ -121,10 +121,12 @@ const mockEvent: EventDetail = {
 // =============================================================================
 
 const statusConfig: Record<EventStatus, { color: string; bg: string; label: string }> = {
-  DRAFT: { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.1)', label: 'Draft' },
-  PUBLISHED: { color: '#10B981', bg: 'rgba(16, 185, 129, 0.1)', label: 'Published' },
-  ENDED: { color: '#94A3B8', bg: 'rgba(100, 116, 139, 0.1)', label: 'Ended' },
-  CANCELLED: { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.1)', label: 'Cancelled' },
+  // Humanized enums (spec §10): PUBLISHED reads as "Live". Status colors are
+  // the generic status ramps — never jade, which is reserved for amounts.
+  DRAFT: { color: 'var(--status-warning-11)', bg: 'var(--status-warning-a3)', label: 'Draft' },
+  PUBLISHED: { color: 'var(--status-success-11)', bg: 'var(--status-success-a3)', label: 'Live' },
+  ENDED: { color: 'var(--gray-11)', bg: 'var(--gray-a3)', label: 'Ended' },
+  CANCELLED: { color: 'var(--status-danger-11)', bg: 'var(--status-danger-a3)', label: 'Cancelled' },
 };
 
 // =============================================================================
@@ -172,27 +174,27 @@ export default function EventDetailPage() {
         ]}
         actions={canEdit ? [
           {
-            label: 'Edit Event',
-            icon: <Edit style={{ width: 18, height: 18, marginRight: 8 }} />,
+            label: 'Edit event',
+            icon: <Edit width={18} height={18} style={{ marginRight: 8 }} />,
             href: `/events/${event.id}/edit`,
             variant: 'outline',
           },
           {
             label: 'Check-in',
-            icon: <ScanQrCode style={{ width: 18, height: 18, marginRight: 8 }} />,
+            icon: <ScanQrCode width={18} height={18} style={{ marginRight: 8 }} />,
             href: `/check-in?event=${event.id}`,
           },
         ] : undefined}
-      >
-        <Flex align="center" gap="3" mt="2">
-          <Badge style={{ background: status.bg, color: status.color }}>
-            {status.label}
-          </Badge>
-          <Text size="2" style={{ color: 'var(--content-muted)' }}>
-            {formatDate(event.startDate)}
-          </Text>
-        </Flex>
-      </PageHeader>
+      />
+
+      {/* Status strip. PageHeader takes no children — its contract is
+          title / description / breadcrumbs / actions only. */}
+      <Flex align="center" gap="3" mt="-4" mb="6">
+        <Badge style={{ background: status.bg, color: status.color }}>{status.label}</Badge>
+        <Text size="2" style={{ color: 'var(--gray-10)' }}>
+          {formatDate(event.startDate)}
+        </Text>
+      </Flex>
 
       {/* Cover Image */}
       {event.coverImageUrl && (
@@ -200,7 +202,7 @@ export default function EventDetailPage() {
           mb="6"
           style={{
             height: 240,
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
             background: `url(${event.coverImageUrl}) center/cover`,
             position: 'relative',
           }}
@@ -210,42 +212,41 @@ export default function EventDetailPage() {
               position: 'absolute',
               inset: 0,
               background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.6) 100%)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           />
         </Box>
       )}
 
-      {/* Stats Grid */}
-      <StatGrid>
+      {/* Bento stat row — auto-fit minmax(240px, 1fr), not a fixed 12-col grid. */}
+      <Box className="ds-bento-grid" mb="6">
         <StatCard
-          title="Tickets Sold"
+          title="Tickets sold"
           value={event.ticketsSold}
-          icon={<Group style={{ width: 20, height: 20 }} />}
-          subtitle={`of ${event.ticketsTotal} total`}
+          icon={<Group width={20} height={20} />}
+          changeLabel={`of ${event.ticketsTotal} total`}
         />
         <StatCard
-          title="Total Revenue"
-          value={event.revenue}
-          icon={<CreditCard style={{ width: 20, height: 20 }} />}
-          isCurrency
+          title="Total revenue"
+          value={`K ${event.revenue.toLocaleString()}`}
+          icon={<CreditCard width={20} height={20} />}
           change={12}
           trend="up"
         />
         <StatCard
           title="Check-ins"
           value={event.checkedIn}
-          icon={<ScanQrCode style={{ width: 20, height: 20 }} />}
-          subtitle={`${Math.round((event.checkedIn / event.ticketsSold) * 100) || 0}% attendance`}
+          icon={<ScanQrCode width={20} height={20} />}
+          changeLabel={`${Math.round((event.checkedIn / event.ticketsSold) * 100) || 0}% attendance`}
         />
         <StatCard
-          title="Views"
+          title="Page views"
           value="1,234"
-          icon={<Eye style={{ width: 20, height: 20 }} />}
+          icon={<Eye width={20} height={20} />}
           change={8}
           trend="up"
         />
-      </StatGrid>
+      </Box>
 
       {/* Tabs */}
       <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
@@ -270,7 +271,7 @@ export default function EventDetailPage() {
                 padding: '24px',
                 background: 'var(--surface-elevated)',
                 border: '1px solid var(--surface-border)',
-                borderRadius: '16px',
+                borderRadius: 'var(--card-radius-bento)',
               }}
             >
               <Heading size="4" mb="4" style={{ color: 'var(--content-primary)' }}>
@@ -283,8 +284,8 @@ export default function EventDetailPage() {
                     style={{
                       width: 40,
                       height: 40,
-                      borderRadius: '10px',
-                      background: 'rgba(16, 185, 129, 0.1)',
+                      borderRadius: 'var(--radius-3)',
+                      background: 'var(--accent-a3)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -308,8 +309,8 @@ export default function EventDetailPage() {
                     style={{
                       width: 40,
                       height: 40,
-                      borderRadius: '10px',
-                      background: 'rgba(16, 185, 129, 0.1)',
+                      borderRadius: 'var(--radius-3)',
+                      background: 'var(--accent-a3)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -347,7 +348,7 @@ export default function EventDetailPage() {
                   padding: '24px',
                   background: 'var(--surface-elevated)',
                   border: '1px solid var(--surface-border)',
-                  borderRadius: '16px',
+                  borderRadius: 'var(--card-radius-bento)',
                 }}
               >
                 <Heading size="4" mb="4" style={{ color: 'var(--content-primary)' }}>
@@ -376,7 +377,7 @@ export default function EventDetailPage() {
                         width: `${progress}%`,
                         height: '100%',
                         borderRadius: 4,
-                        background: 'linear-gradient(90deg, var(--brand-500) 0%, var(--brand-400) 100%)',
+                        background: 'var(--accent-9)',
                       }}
                     />
                   </Box>
@@ -393,7 +394,7 @@ export default function EventDetailPage() {
                   padding: '24px',
                   background: 'var(--surface-elevated)',
                   border: '1px solid var(--surface-border)',
-                  borderRadius: '16px',
+                  borderRadius: 'var(--card-radius-bento)',
                 }}
               >
                 <Heading size="4" mb="4" style={{ color: 'var(--content-primary)' }}>
@@ -435,7 +436,7 @@ export default function EventDetailPage() {
               padding: '24px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Heading size="4" mb="4" style={{ color: 'var(--content-primary)' }}>
@@ -450,7 +451,7 @@ export default function EventDetailPage() {
                     padding: '20px',
                     background: 'var(--surface-subtle)',
                     border: '1px solid var(--surface-border)',
-                    borderRadius: '12px',
+                    borderRadius: 'var(--card-radius)',
                   }}
                 >
                   <Flex justify="between" align="center" mb="3">
@@ -496,7 +497,7 @@ export default function EventDetailPage() {
                           borderRadius: 3,
                           background: tier.sold === tier.total
                             ? 'var(--success-500)'
-                            : 'linear-gradient(90deg, var(--brand-500) 0%, var(--brand-400) 100%)',
+                            : 'var(--accent-9)',
                         }}
                       />
                     </Box>
@@ -514,7 +515,7 @@ export default function EventDetailPage() {
               padding: '24px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Flex justify="between" align="center" mb="4">
@@ -524,7 +525,7 @@ export default function EventDetailPage() {
               <Button
                 variant="outline"
                 size="2"
-                style={{ borderColor: 'rgba(16, 185, 129, 0.3)', color: 'var(--brand-500)' }}
+                style={{ borderColor: 'var(--accent-a6)', color: 'var(--brand-500)' }}
               >
                 <Download style={{ width: 16, height: 16, marginRight: 8 }} />
                 Export All

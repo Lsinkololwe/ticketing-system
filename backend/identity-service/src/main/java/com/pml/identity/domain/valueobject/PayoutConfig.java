@@ -18,29 +18,32 @@ import lombok.NoArgsConstructor;
 public class PayoutConfig {
 
     /**
-     * Preferred payout method
+     * Preferred payout method.
+     * Seeded from the {@code platform_configuration} document at organization creation —
+     * no default is baked into the entity.
      */
-    @Builder.Default
-    private PayoutMethod preferredMethod = PayoutMethod.MOBILE_MONEY;
+    private PayoutMethod preferredMethod;
 
     /**
-     * Payout schedule
+     * Payout schedule.
+     * Seeded from the {@code platform_configuration} document at organization creation —
+     * no default is baked into the entity.
      */
-    @Builder.Default
-    private PayoutSchedule schedule = PayoutSchedule.WEEKLY;
+    private PayoutSchedule schedule;
 
     /**
-     * Commission rate charged to this organization (e.g., 0.05 = 5%)
-     * Set by platform admin, can be negotiated for high-volume organizers
+     * Commission rate charged to this organization (e.g., 0.05 = 5%).
+     * Seeded from the {@code platform_configuration} document at organization creation;
+     * can be negotiated for high-volume organizers. No default is baked into the entity.
      */
-    @Builder.Default
-    private Double commissionRate = 0.05;
+    private Double commissionRate;
 
     /**
-     * Minimum payout amount (in ZMW)
+     * Minimum payout amount (in ZMW).
+     * Seeded from the {@code platform_configuration} document at organization creation —
+     * no default is baked into the entity.
      */
-    @Builder.Default
-    private Double minimumPayoutAmount = 100.0;
+    private Double minimumPayoutAmount;
 
     /**
      * Bank account for payouts (if preferredMethod = BANK_TRANSFER)

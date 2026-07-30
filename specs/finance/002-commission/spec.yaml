@@ -1,0 +1,105 @@
+id: ET-FIN-002
+title: Commission — rate resolution and two-stage recognition
+status: draft
+area: FIN
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 4
+blocked_by: [ET-PLT-005, ET-PLT-006, ET-FIN-001, ET-CAT-001, ET-CAT-002]
+conformance: "V3 §2.1 revenue streams · V3 §2.2 commission structure · V3 §10.3 two-stage model"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/finance/001-escrow-and-ledger/spec.md
+  - specs/catalog/002-ticket-tiers-and-inventory/spec.md
+  - specs/organization/001-organizer-onboarding/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+persistence:
+  collections:
+    - booking_commission_records
+  indexes:
+    - "booking_commission_records {eventId,status} compound   # the recognition sweep"
+    - "booking_commission_records {ticketId} unique"
+    - "booking_commission_records {organizationId,status} compound"
+  redis_keys:
+    - "lock:sweep:commission-recognition   STRING  30 s"
+
+events:
+  module: []
+  bus: []
+  consumes:
+    - catalog.EventCompleted     # eligibility once the hold elapses
+    - catalog.EventCancelled     # cancel PENDING, claw back EARNED
+    - booking.RefundCompleted    # cancel or claw back the refunded ticket
+  topics: []
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "commissionPreview(eventId)                        ORGANIZER  CommissionPreview!"
+    - "commissionRecords(eventId, status, page)          ORGANIZER  CommissionRecordPage!"
+    - "commissionSummary(organizationId, from, to)       ORGANIZER  CommissionSummary!"
+    - "platformCommissionSummary(from, to)               FINANCE    PlatformCommissionSummary!  @tag admin"
+  mutations:
+    - "recogniseCommission(eventId)   FINANCE  RecognitionResult!  @tag admin"
+
+errors:
+  - COMMISSION_ALREADY_RECOGNISED
+  - COMMISSION_RATE_UNKNOWN
+
+rate_card:      # lowest APPLICABLE rate wins — not first match, not an average
+  CHARITY:           { rate: 0.02, when: "businessType=NGO AND event flagged charity at approval" }
+  HIGH_VOLUME:       { rate: 0.03, when: "event soldQuantity >= 1000 at the moment of sale" }
+  PREMIUM_ORGANIZER: { rate: 0.04, when: "organization completed-event count >= 10" }
+  STANDARD:          { rate: 0.05, when: "always — the floor" }
+
+computation: |
+  discountShare     = order.discountAmount * lineTotal / order.subtotal
+  lineAfterDiscount = lineTotal - discountShare
+  commissionAmount  = round(lineAfterDiscount * rate, 2, HALF_UP)
+  netAmount         = lineAfterDiscount - commissionAmount
+  # apportion the discount BEFORE rounding; one rounding, per line, no residual
+
+status_machine:
+  states: [PENDING, EARNED, CANCELLED, CLAWED_BACK]
+  terminal: [CANCELLED, CLAWED_BACK]
+  journal:
+    collect:  "credit 2020   (part of ET-FIN-001's sale entry)"
+    recognise: "debit 2020 / credit 4010"
+    cancel:    "debit 2020 / credit 1010"
+    clawback:  "debit 4010 / credit 1010"
+
+config:
+  finance.commission.rate.charity: 0.02
+  finance.commission.rate.high-volume: 0.03
+  finance.commission.rate.premium-organizer: 0.04
+  finance.commission.rate.standard: 0.05
+  finance.commission.high-volume-threshold: 1000
+  finance.commission.premium-threshold: 10
+  finance.commission.recognition-interval: PT1H
+  finance.commission.recognition-batch: 500
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/finance/002-commission
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002
+  - mvn -q -f backend verify -Dgroups=ET-FIN-002
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R3 evaluates HIGH_VOLUME from the event's soldQuantity at the moment of sale, which means the rate depends on a counter that is being concurrently mutated by the very transaction resolving it. Two buyers crossing 1000 simultaneously may both read 999 or both read 1000, so the boundary is genuinely non-deterministic — R3's 999/1000/1001 boundary test can only be written against a serialised sequence, not against the concurrent reality."
+  - "The discount apportionment divides by order.subtotal. A 100% promotional discount makes lineAfterDiscount zero and commissionAmount zero, so the platform earns nothing on a free ticket that still consumes inventory, payment processing and support. ET-PAY-001 already flags that provider fees can exceed commission at the 2% rate; at 0% they always do."
+  - "Recognition batches many records into one journal entry, so a single entry may credit 4010 with the commission of a thousand tickets. Tracing one ticket's revenue back to its entry works via journalEntryId, but tracing an entry forward to its tickets requires a reverse lookup that no index in this spec supports."
+  - "R6 makes EARNED non-terminal so a late refund can claw back, while the ticket state machine in ET-TKT-002 makes REFUNDED terminal. A refund arriving after recognition therefore needs a commission transition from a state the record has already left in some readings, and the two specs' notions of terminal do not align."
+  - "The per-organization rate override is mentioned in §4 as replacing the resolved rate, but R1's acceptance boxes assert the lowest applicable tier rate always wins. An override that is HIGHER than the resolved tier contradicts R1, and nothing here says whether an override is a floor, a ceiling or a replacement."
+  - "Commission is snapshotted per ticket, and a partial refund cancels proportionally with one rounding. Rounding a proportion of an already-rounded amount reintroduces the residual that R2's per-line computation exists to avoid — a 1/3 refund of a K5.01 commission cannot be represented exactly and the remainder has no declared home."
+  - "The charity flag is 'set at approval' on the event, but ET-CAT-001's event document declares no charity field and its approval mutation takes no such input. The rate card depends on data no other spec creates."
+  - "recogniseCommission lets FINANCE trigger recognition for an event early. It shares the sweep's idempotent path, but it does not check that the hold period has elapsed — so a finance operator can recognise revenue on an event whose refund window is still open, which is precisely the reversal the two-stage model exists to prevent."

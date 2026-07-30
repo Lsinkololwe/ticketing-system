@@ -9,8 +9,24 @@
 
 import { useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Box, Flex, Text, Heading, Button, Card } from '@radix-ui/themes';
-import { Check, Clock, WarningTriangle, Xmark, Mail, Refresh, Wifi, EditPencil, ArrowRight } from 'iconoir-react';
+import { Box, Flex, Text, Heading, Button, Card, Avatar, Badge, Grid } from '@radix-ui/themes';
+import {
+  Check,
+  Clock,
+  WarningTriangle,
+  Xmark,
+  Mail,
+  Phone,
+  Building,
+  Calendar,
+  ShieldCheck,
+  Rocket,
+  SendDiagonal,
+  Refresh,
+  Wifi,
+  EditPencil,
+  ArrowRight,
+} from 'iconoir-react';
 import {
   useMyOrganization,
   canEditApplication,
@@ -170,6 +186,144 @@ function formatDate(d: string | null | undefined): string {
   }
 }
 
+/** Format an enum value (e.g. NON_PROFIT) into a readable label (Non-profit). */
+function formatEnum(v: string | null | undefined): string {
+  if (!v) return '';
+  const words = v.toLowerCase().split('_');
+  return words.map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join('-');
+}
+
+/** Derive up-to-two-letter initials from an organization name. */
+function initials(name: string | null | undefined): string {
+  if (!name) return '?';
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w.charAt(0).toUpperCase())
+    .join('');
+}
+
+type BadgeColor = 'gray' | 'blue' | 'green' | 'amber' | 'red' | 'teal';
+
+/** Map an organization status to a Radix Badge color. */
+function statusBadgeColor(status: string | null | undefined): BadgeColor {
+  switch (status) {
+    case 'APPROVED':
+    case 'ACTIVE':
+      return 'green';
+    case 'PENDING_REVIEW':
+      return 'blue';
+    case 'CHANGES_REQUESTED':
+      return 'amber';
+    case 'REJECTED':
+    case 'SUSPENDED':
+      return 'red';
+    default:
+      return 'gray';
+  }
+}
+
+/** Map a KYB status to a Radix Badge color. */
+function kybBadgeColor(kyb: string | null | undefined): BadgeColor {
+  switch (kyb) {
+    case 'VERIFIED':
+    case 'APPROVED':
+      return 'green';
+    case 'IN_PROGRESS':
+    case 'PENDING':
+    case 'SUBMITTED':
+      return 'blue';
+    case 'REJECTED':
+      return 'red';
+    default:
+      return 'gray';
+  }
+}
+
+/** A single label / value detail row with an optional leading icon. Hidden when there is no value. */
+function DetailRow({
+  icon: RowIcon,
+  label,
+  value,
+}: {
+  icon?: React.ElementType;
+  label: string;
+  value?: React.ReactNode;
+}) {
+  if (value === null || value === undefined || value === '') return null;
+  return (
+    <Flex justify="between" align="center" gap="3">
+      <Flex align="center" gap="2" style={{ flexShrink: 0 }}>
+        {RowIcon && <RowIcon style={{ width: 15, height: 15, color: 'var(--content-tertiary)' }} />}
+        <Text size="2" style={{ color: 'var(--content-tertiary)' }}>{label}</Text>
+      </Flex>
+      {typeof value === 'string' ? (
+        <Text size="2" align="right" style={{ color: 'var(--content-primary)', wordBreak: 'break-word' }}>
+          {value}
+        </Text>
+      ) : (
+        value
+      )}
+    </Flex>
+  );
+}
+
+/** A capability / readiness tile: icon chip + label + unlocked/locked state. */
+function Capability({
+  icon: TileIcon,
+  label,
+  enabled,
+}: {
+  icon: React.ElementType;
+  label: string;
+  enabled: boolean;
+}) {
+  return (
+    <Flex
+      direction="column"
+      align="center"
+      gap="2"
+      p="3"
+      style={{
+        borderRadius: 'var(--radius-3)',
+        border: '1px solid var(--surface-border)',
+        background: enabled ? 'var(--success-50)' : 'var(--surface-secondary)',
+        textAlign: 'center',
+      }}
+    >
+      <Box
+        aria-hidden="true"
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: enabled ? 'var(--success-100)' : 'var(--surface-tertiary)',
+          color: enabled ? 'var(--success-600)' : 'var(--content-tertiary)',
+        }}
+      >
+        <TileIcon style={{ width: 18, height: 18 }} />
+      </Box>
+      <Text size="1" weight="medium" style={{ color: 'var(--content-primary)', lineHeight: 1.2 }}>
+        {label}
+      </Text>
+      <Flex align="center" gap="1">
+        {enabled ? (
+          <Check style={{ width: 12, height: 12, color: 'var(--success-600)' }} />
+        ) : (
+          <Clock style={{ width: 12, height: 12, color: 'var(--content-tertiary)' }} />
+        )}
+        <Text size="1" style={{ color: enabled ? 'var(--success-600)' : 'var(--content-tertiary)' }}>
+          {enabled ? 'Available' : 'Locked'}
+        </Text>
+      </Flex>
+    </Flex>
+  );
+}
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -323,19 +477,85 @@ export default function StatusPage() {
             <Text size="2" weight="medium" mb="3" style={{ color: 'var(--content-primary)', display: 'block' }}>
               Application Details
             </Text>
-            <Flex direction="column" gap="2">
-              <Flex justify="between">
-                <Text size="2" style={{ color: 'var(--content-tertiary)' }}>Organization</Text>
-                <Text size="2" style={{ color: 'var(--content-primary)' }}>{organization.name || '-'}</Text>
-              </Flex>
-              <Flex justify="between">
-                <Text size="2" style={{ color: 'var(--content-tertiary)' }}>Submitted</Text>
-                <Text size="2" style={{ color: 'var(--content-primary)' }}>{formatDate(organization.submittedAt) || '-'}</Text>
-              </Flex>
-              <Flex justify="between">
-                <Text size="2" style={{ color: 'var(--content-tertiary)' }}>Updated</Text>
-                <Text size="2" style={{ color: 'var(--content-primary)' }}>{formatDate(organization.updatedAt) || '-'}</Text>
-              </Flex>
+
+            {/* Identity header: avatar, name, handle, type */}
+            <Flex align="center" gap="3" mb="3">
+              <Avatar
+                size="4"
+                radius="large"
+                src={organization.logoUrl ?? undefined}
+                fallback={initials(organization.name)}
+                style={{
+                  flexShrink: 0,
+                  background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
+                  color: 'var(--content-inverse)',
+                }}
+              />
+              <Box style={{ minWidth: 0, flex: 1 }}>
+                <Flex align="center" gap="2" wrap="wrap">
+                  <Text size="3" weight="bold" style={{ color: 'var(--content-primary)' }}>
+                    {organization.name || '-'}
+                  </Text>
+                  {organization.type && (
+                    <Badge color="teal" variant="soft" size="1" radius="full">
+                      {formatEnum(organization.type)}
+                    </Badge>
+                  )}
+                </Flex>
+                {organization.slug && (
+                  <Text size="1" style={{ color: 'var(--content-tertiary)' }}>@{organization.slug}</Text>
+                )}
+              </Box>
+            </Flex>
+
+            {/* Tagline + description */}
+            {organization.tagline && (
+              <Text size="2" style={{ color: 'var(--content-secondary)', fontStyle: 'italic', display: 'block', marginBottom: 8 }}>
+                {organization.tagline}
+              </Text>
+            )}
+            {organization.description && (
+              <Text size="2" style={{ color: 'var(--content-secondary)', lineHeight: 1.5, display: 'block', marginBottom: 12 }}>
+                {organization.description}
+              </Text>
+            )}
+
+            {/* Detail rows */}
+            <Flex
+              direction="column"
+              gap="2"
+              pt="3"
+              style={{ borderTop: '1px solid var(--surface-border)' }}
+            >
+              <DetailRow
+                icon={Building}
+                label="Location"
+                value={[organization.businessAddress?.city, organization.businessAddress?.province]
+                  .filter(Boolean)
+                  .join(', ') || undefined}
+              />
+              <DetailRow icon={Mail} label="Email" value={organization.businessEmail} />
+              <DetailRow icon={Phone} label="Phone" value={organization.businessPhone} />
+              <DetailRow
+                icon={Clock}
+                label="Status"
+                value={
+                  <Badge color={statusBadgeColor(organization.status)} variant="soft" size="1">
+                    {formatEnum(organization.status)}
+                  </Badge>
+                }
+              />
+              <DetailRow
+                icon={ShieldCheck}
+                label="KYB"
+                value={
+                  <Badge color={kybBadgeColor(organization.kybStatus)} variant="soft" size="1">
+                    {formatEnum(organization.kybStatus)}
+                  </Badge>
+                }
+              />
+              <DetailRow icon={Calendar} label="Submitted" value={formatDate(organization.submittedAt)} />
+              <DetailRow icon={Calendar} label="Updated" value={formatDate(organization.updatedAt)} />
             </Flex>
         </Card>
 
@@ -352,7 +572,7 @@ export default function StatusPage() {
             />
             <Step
               num={2}
-              title="Under Review"
+              title="Under review"
               status={isPending ? 'current' : (approved || rejected ? 'done' : 'pending')}
             />
             <Step
@@ -364,6 +584,30 @@ export default function StatusPage() {
             />
         </Card>
       </Flex>
+
+      {/* Readiness / capabilities infographic */}
+      <Card size="3" mt="4">
+        <Flex justify="between" align="center" mb="3" wrap="wrap" gap="2">
+          <Text size="2" weight="medium" style={{ color: 'var(--content-primary)' }}>
+            What you can do now
+          </Text>
+          <Text size="1" style={{ color: 'var(--content-tertiary)' }}>
+            {[
+              organization.canCreateDraftEvents,
+              organization.canPublishEvents,
+              organization.canReceivePayouts,
+              organization.verified,
+            ].filter(Boolean).length}{' '}
+            of 4 unlocked
+          </Text>
+        </Flex>
+        <Grid columns={{ initial: '2', sm: '4' }} gap="3">
+          <Capability icon={EditPencil} label="Create draft events" enabled={!!organization.canCreateDraftEvents} />
+          <Capability icon={Rocket} label="Publish events" enabled={!!organization.canPublishEvents} />
+          <Capability icon={SendDiagonal} label="Receive payouts" enabled={!!organization.canReceivePayouts} />
+          <Capability icon={ShieldCheck} label="Verified organization" enabled={!!organization.verified} />
+        </Grid>
+      </Card>
 
       {/* Tips while waiting */}
       {isPending && (

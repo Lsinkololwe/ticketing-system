@@ -12,7 +12,7 @@
  * @example
  * ```tsx
  * <ReviewSection
- *   title="Basic Information"
+ *   title="Basic information"
  *   icon={<Building style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />}
  *   editLink="/apply/business-info"
  * >

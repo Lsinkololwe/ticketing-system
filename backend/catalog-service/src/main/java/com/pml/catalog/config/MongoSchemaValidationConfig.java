@@ -81,6 +81,8 @@ public class MongoSchemaValidationConfig extends com.pml.shared.config.MongoSche
         // =========================================================================
         schemas.put("event_categories", "event-categories-schema.json");
 
+        schemas.put("reference_data", "reference-data-schema.json");
+
         // =========================================================================
         // APPROVAL WORKFLOW COLLECTIONS
         // =========================================================================

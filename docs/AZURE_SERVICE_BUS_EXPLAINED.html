@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Azure Service Bus, Explained — Event Ticketing Platform</title>
+<style>
+  :root{
+    --bg:#f6f7fb;--panel:#fff;--ink:#1f2733;--ink-soft:#55606f;--muted:#8a94a4;--line:#e4e8ef;
+    --accent:#2563eb;--accent-soft:#eff4ff;--green:#0f9d58;--green-soft:#e7f6ee;--amber:#b7791f;
+    --amber-soft:#fdf3e2;--red:#d64545;--red-soft:#fdecec;--purple:#7c3aed;--purple-soft:#f3ecfe;
+    --teal:#0d9488;--teal-soft:#ddf3f0;
+    --code-bg:#f2f4f8;--shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px rgba(16,24,40,.05);--radius:12px;
+  }
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55;font-size:15px}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code,.mono{font-family:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:.86em}
+  .layout{display:flex;max-width:1240px;margin:0 auto;gap:28px;padding:0 24px}
+  aside{position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto;width:256px;flex:0 0 256px;padding:28px 8px 40px 0}
+  aside .brand{font-weight:700;font-size:15px;margin:0 0 4px 12px}aside .brand span{color:var(--accent)}
+  aside .sub{color:var(--muted);font-size:12px;margin:0 0 20px 12px}
+  nav a{display:block;color:var(--ink-soft);padding:7px 12px;border-radius:8px;font-size:13.5px;font-weight:500}
+  nav a:hover{background:var(--accent-soft);color:var(--accent);text-decoration:none}
+  nav .navgroup{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:18px 0 4px 12px;font-weight:700}
+  main{flex:1 1 auto;min-width:0;padding:36px 0 100px}
+  .hero{background:linear-gradient(135deg,#fff,#f0f5ff);border:1px solid var(--line);border-radius:var(--radius);padding:30px 32px;box-shadow:var(--shadow);margin-bottom:26px}
+  .hero h1{margin:0 0 8px;font-size:26px;letter-spacing:-.02em}
+  .hero p{margin:0;color:var(--ink-soft);max-width:70ch}
+  .badges{margin-top:18px;display:flex;flex-wrap:wrap;gap:10px}
+  .badge{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px;font-size:12.5px;color:var(--ink-soft);font-weight:500}
+  .badge b{color:var(--ink)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot.g{background:var(--green)}.dot.a{background:var(--amber)}.dot.r{background:var(--red)}.dot.b{background:var(--accent)}
+  section{margin-bottom:46px;scroll-margin-top:24px}
+  section>h2{font-size:20px;margin:0 0 4px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  .parttag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);background:var(--accent-soft);border:1px solid #cfe0ff;border-radius:999px;padding:3px 10px}
+  section>.lead{color:var(--ink-soft);margin:0 0 18px;font-size:14px;max-width:76ch}
+  h3.subhead{font-size:15px;margin:26px 0 8px;color:var(--ink)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .card.pad{padding:18px 20px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{text-align:left;background:#fafbfd;color:var(--ink-soft);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;padding:12px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}tbody tr:hover{background:#fbfcfe}
+  td .name{font-weight:600;color:var(--ink)}td .desc{color:var(--muted);font-size:12.5px;display:block;margin-top:2px}
+  .chip{display:inline-block;background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--ink);white-space:nowrap}
+  .chip.topic{background:var(--accent-soft);border-color:#cfe0ff;color:#1d4ed8}
+  .chip.sub{background:var(--purple-soft);border-color:#e3d5fb;color:#6d28d9}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid transparent}
+  .pill.on{background:var(--green-soft);color:#0b7a44}
+  .pill.off{background:var(--red-soft);color:#b42318}
+  .pill.partial{background:var(--amber-soft);color:#92600e}
+  .pill.info{background:var(--accent-soft);color:#1d4ed8}
+  .pill.neutral{background:#eef2f6;color:#64748b}
+  .callout{border-radius:var(--radius);padding:14px 18px;font-size:13.5px;margin:18px 0;border:1px solid}
+  .callout.info{background:var(--accent-soft);border-color:#cfe0ff;color:#1e40af}
+  .callout.warn{background:var(--amber-soft);border-color:#f2dbb0;color:#92600e}
+  .callout.danger{background:var(--red-soft);border-color:#f4c9c9;color:#a3271f}
+  .callout.ok{background:var(--green-soft);border-color:#bfe6cf;color:#0b7a44}
+  .callout b{color:inherit}
+  pre{background:#0f1729;color:#e2e8f5;border-radius:var(--radius);padding:16px 18px;overflow-x:auto;font-size:12.6px;line-height:1.6;border:1px solid #1e293b}
+  pre .c{color:#7c89a4}pre .k{color:#7dd3fc}pre .s{color:#86efac}pre .y{color:#fbbf24}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;overflow-x:auto}
+  .diagram pre{background:transparent;color:var(--ink);border:none;padding:0;font-size:12.5px;line-height:1.45}
+  /* analogy box */
+  .analogy{display:flex;gap:14px;align-items:flex-start;background:var(--amber-soft);border:1px solid #f2dbb0;border-radius:var(--radius);padding:14px 18px;margin:16px 0;font-size:13.5px;color:#7a5310}
+  .analogy .ico{font-size:22px;line-height:1;flex:0 0 auto}
+  .analogy b{color:#5c3d0a}
+  /* concept diagram (CSS boxes) */
+  .flowrow{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;margin:14px 0}
+  .node{border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;background:#fff;font-size:12.5px;font-weight:600;text-align:center;min-width:92px;box-shadow:var(--shadow)}
+  .node.prod{border-color:#cfe0ff;background:var(--accent-soft);color:#1d4ed8}
+  .node.topic{border-color:#e3d5fb;background:var(--purple-soft);color:#6d28d9}
+  .node.cons{border-color:#bfe6cf;background:var(--green-soft);color:#0b7a44}
+  .node.dlq{border-color:#f4c9c9;background:var(--red-soft);color:#b42318}
+  .arrow{color:var(--muted);font-size:20px;font-weight:700}
+  .steps{counter-reset:step;list-style:none;padding:0;margin:0}
+  .steps>li{position:relative;padding:0 0 4px 44px;margin-bottom:20px}
+  .steps>li:before{counter-increment:step;content:counter(step);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+  .steps h4{margin:4px 0 6px;font-size:14.5px}
+  .steps p{margin:0 0 8px;color:var(--ink-soft);font-size:13.5px}
+  footer{color:var(--muted);font-size:12.5px;text-align:center;padding:30px 0 10px;border-top:1px solid var(--line);margin-top:20px}
+
+  /* ============ INTERACTIVE DEMO STYLES ============ */
+  .demo{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 20px 22px;margin:18px 0}
+  .demo h4{margin:0 0 4px;font-size:15px}
+  .demo .demolead{color:var(--ink-soft);font-size:13px;margin:0 0 14px}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
+  button.btn{font:inherit;font-size:13px;font-weight:600;cursor:pointer;border-radius:8px;padding:8px 14px;border:1px solid var(--accent);background:var(--accent);color:#fff;transition:filter .15s,background .15s}
+  button.btn:hover{filter:brightness(1.06)}
+  button.btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
+  button.btn.ghost{background:#fff;color:var(--accent)}
+  button.btn.ghost:hover{background:var(--accent-soft)}
+  .toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-soft);user-select:none}
+  .toggle input{width:16px;height:16px;accent-color:var(--red);cursor:pointer}
+  .statusline{font-size:12.5px;color:var(--ink-soft);min-height:18px;margin-top:4px;font-weight:500}
+  .statusline b{color:var(--ink)}
+  .stage{position:relative;border:1px dashed var(--line);border-radius:10px;background:linear-gradient(180deg,#fcfdff,#f7f9fd);padding:18px;min-height:230px}
+  .stage svg{display:block;width:100%;height:auto}
+  .box{position:absolute;border:1.5px solid var(--line);border-radius:9px;background:#fff;font-size:11.5px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:var(--shadow);padding:6px 4px;line-height:1.25}
+  .box small{font-weight:500;color:var(--muted);font-size:10px;margin-top:2px}
+  .box.prod{border-color:#cfe0ff;background:var(--accent-soft);color:#1d4ed8}
+  .box.topic{border-color:#e3d5fb;background:var(--purple-soft);color:#6d28d9}
+  .box.sub{border-color:#e3d5fb;background:#faf7ff;color:#6d28d9}
+  .box.cons{border-color:#bfe6cf;background:var(--green-soft);color:#0b7a44}
+  .box.dlq{border-color:#f4c9c9;background:var(--red-soft);color:#b42318}
+  .box.active{outline:2px solid var(--accent);outline-offset:1px}
+  .box.done{border-color:#bfe6cf;box-shadow:0 0 0 2px rgba(15,157,88,.25),var(--shadow)}
+  .token{position:absolute;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(37,99,235,.5);z-index:5;transition:left .5s cubic-bezier(.4,0,.2,1),top .5s cubic-bezier(.4,0,.2,1),background .3s,opacity .3s}
+  .token.fail{background:var(--red)}
+  .token.retry{background:var(--amber)}
+  .token.done{background:var(--green)}
+  .badgeflag{position:absolute;font-size:14px;z-index:6;transition:opacity .3s;opacity:0}
+  .badgeflag.show{opacity:1}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:12px;color:var(--ink-soft)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .lg-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+  .attempts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .attempt{font-size:11px;font-weight:600;border:1px solid var(--line);border-radius:6px;padding:3px 8px;color:var(--muted);background:#fff}
+  .attempt.try{border-color:#f2dbb0;background:var(--amber-soft);color:#92600e}
+  .attempt.fail{border-color:#f4c9c9;background:var(--red-soft);color:#b42318}
+  .attempt.ok{border-color:#bfe6cf;background:var(--green-soft);color:#0b7a44}
+  /* live event log */
+  .msglog{margin-top:14px;background:#0f1729;border:1px solid #1e293b;border-radius:10px;padding:10px 12px;max-height:190px;overflow-y:auto;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.55}
+  .msglog .loghdr{color:#7c89a4;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+  .msglog .ln{display:flex;gap:9px;padding:1px 0;color:#cdd6e6;animation:logIn .22s ease}
+  .msglog .ts{color:#6b7688;flex:0 0 auto}
+  .msglog .nd{flex:0 0 auto;font-weight:700;min-width:150px;color:#7dd3fc}
+  .msglog .ms{color:#e2e8f5}
+  .msglog .ln.ok .nd,.msglog .ln.ok .ms{color:#86efac}
+  .msglog .ln.warn .nd,.msglog .ln.warn .ms{color:#fbbf24}
+  .msglog .ln.fail .nd,.msglog .ln.fail .ms{color:#fca5a5}
+  .msglog .empty{color:#5b6678}
+  @keyframes logIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+  /* animated queue/topic mini-diagrams (Part 1) — looping message packets */
+  .animflow .arrow{position:relative;min-width:44px;height:26px;display:inline-flex;font-size:0;vertical-align:middle}
+  .animflow .arrow::before{content:"";position:absolute;left:3px;right:3px;top:50%;height:2px;margin-top:-1px;background:#dbe1ea;border-radius:2px}
+  .animflow .arrow::after{content:"";position:absolute;top:50%;left:0;width:9px;height:9px;margin-top:-4.5px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.16);animation:pktmove 1.9s ease-in-out infinite}
+  .animflow .node.sub ~ .arrow::after,.animflow .subline .arrow::after{background:var(--purple);box-shadow:0 0 0 3px rgba(124,58,237,.16);animation-delay:.55s}
+  .animflow .node.topic{animation:nodepulse 1.9s ease-in-out infinite}
+  @keyframes pktmove{0%{left:0;opacity:0}18%{opacity:1}82%{opacity:1}100%{left:calc(100% - 9px);opacity:0}}
+  @keyframes nodepulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}50%{box-shadow:0 0 0 5px rgba(37,99,235,.12)}}
+  @media (prefers-reduced-motion:reduce){.animflow .arrow::after,.animflow .node.topic{animation:none}.animflow .arrow::after{left:calc(50% - 4.5px)}}
+  /* competing consumers */
+  .ccbar{height:26px;border-radius:6px;background:var(--code-bg);border:1px solid var(--line);position:relative;overflow:hidden;margin-top:6px}
+  .ccbar .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#93c5fd,#2563eb);transition:width .4s ease}
+  .cccount{font-size:12px;font-weight:700;color:var(--ink)}
+  @media(max-width:900px){aside{display:none}.grid2,.grid3{grid-template-columns:1fr}.layout{padding:0 16px}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <p class="brand">My Ticket <span>Zambia</span></p>
+    <p class="sub">Azure Service Bus, Explained</p>
+    <nav>
+      <a href="#intro">Introduction</a>
+      <div class="navgroup">Part 1 · How it works</div>
+      <a href="#broker">Why async messaging</a>
+      <a href="#namespace">Namespaces</a>
+      <a href="#queue-topic">Queues vs Topics</a>
+      <a href="#messages">Messages &amp; sessions</a>
+      <a href="#settlement">Peek-Lock &amp; settlement</a>
+      <a href="#delivery">Delivery guarantees</a>
+      <a href="#retry-dlq">Retry &amp; Dead-Letter</a>
+      <a href="#retention">Retention, TTL &amp; offline consumers</a>
+      <a href="#filters">Subscription filters</a>
+      <a href="#scaling">Competing consumers</a>
+      <a href="#tiers">Tiers &amp; emulator</a>
+      <div class="navgroup">Part 2 · Interactive</div>
+      <a href="#demo-flow">▶ Pub/Sub flow demo</a>
+      <a href="#demo-cc">▶ Competing consumers</a>
+      <div class="navgroup">Part 3 · This project</div>
+      <a href="#project">Two-tier event model</a>
+      <a href="#binder">Binder configuration</a>
+      <a href="#topology">Topics &amp; flows</a>
+      <a href="#scenarios">End-to-end scenarios</a>
+      <a href="#devprod">Dev → Prod swap</a>
+      <a href="#reading">Further reading</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="hero" id="intro">
+      <h1>Azure Service Bus, Explained</h1>
+      <p>A from-first-principles guide to Azure Service Bus — what a message broker is, why asynchronous messaging matters, and how queues, topics, subscriptions, peek-lock, retries and dead-letter queues fit together — with plain-language analogies and <b>interactive animations you can play</b>. Then, exactly how Service Bus is wired into <b>this</b> event-ticketing platform (catalog / booking / identity microservices).</p>
+      <div class="badges">
+        <span class="badge"><span class="dot b"></span>Part 1: <b>Concepts &amp; analogies</b></span>
+        <span class="badge"><span class="dot g"></span>Part 2: <b>Interactive demos</b></span>
+        <span class="badge"><span class="dot a"></span>Part 3: <b>This project's use</b></span>
+        <span class="badge">Light theme · no network deps</span>
+      </div>
+    </div>
+
+    <!-- =================== PART 1 =================== -->
+    <section id="broker">
+      <h2><span class="parttag">Part 1</span> What is a message broker &amp; why go async?</h2>
+      <p class="lead">A <b>message broker</b> is a piece of infrastructure that sits <em>between</em> the programs that produce information and the programs that consume it. Instead of one service calling another directly and waiting for a reply, the producer drops a <b>message</b> into the broker and moves on. The broker holds it safely until a consumer is ready to pick it up.</p>
+
+      <div class="analogy">
+        <span class="ico">📮</span>
+        <div><b>Analogy — the postal system vs. handing over a letter in person.</b> A synchronous HTTP call is like walking to your neighbour's house and standing there until they read your note and answer. If they're out, you're stuck. A broker is the <b>postal system</b>: you drop the letter in a postbox (produce), the sorting depot holds and routes it (broker), and the recipient reads it whenever they open their mailbox (consume). Neither of you has to be available at the same instant.</div>
+      </div>
+
+      <p>That single shift — from "call and wait" to "send and forget" — buys three things that matter enormously in a microservices system like this ticketing platform:</p>
+      <div class="grid3">
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">🔗 Decoupling</h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0">Producer and consumer never need to know each other's address, be online together, or agree on speed. Catalog can publish an event even if booking is mid-deploy.</p>
+        </div>
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">🛡️ Resilience</h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0">If a consumer crashes, messages wait in the broker instead of being lost. When it recovers, it drains the backlog. A slow subscriber can't take down the publisher.</p>
+        </div>
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">⚖️ Load-leveling</h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0">A traffic spike (a big concert on-sale) fills the queue, and consumers work through it at their own steady rate — the broker absorbs the burst like a shock-absorber.</p>
+        </div>
+      </div>
+      <div class="callout info"><b>Azure Service Bus</b> is Microsoft's fully-managed enterprise message broker (a cloud SaaS). It is the "sorting depot" this platform uses for events that travel <em>between</em> microservices.</div>
+    </section>
+
+    <section id="namespace">
+      <h2>The namespace — the post office building</h2>
+      <p class="lead">Everything in Service Bus lives inside a <b>namespace</b>: a named container with its own address, security boundary and capacity. It's the top-level thing you create in Azure.</p>
+      <div class="analogy">
+        <span class="ico">🏤</span>
+        <div><b>Analogy.</b> The namespace is the <b>post office building</b> at a specific street address (e.g. <span class="mono">sb-myticketzm.servicebus.windows.net</span>). Inside it are counters (queues) and broadcast boards (topics). You get keys to the building, and everything inside shares its walls, staff and opening hours.</div>
+      </div>
+      <div class="flowrow">
+        <div class="node topic" style="min-width:auto;padding:14px 22px">
+          🏤 <b>Namespace</b><br><small style="font-weight:500;color:#6d28d9">sb-myticketzm.servicebus.windows.net</small>
+          <div class="flowrow" style="margin:12px 0 0">
+            <span class="node">📥 Queue</span>
+            <span class="node topic">📢 Topic</span>
+            <span class="node topic">📢 Topic</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="queue-topic">
+      <h2>Queues vs. Topics + Subscriptions</h2>
+      <p class="lead">Service Bus offers two delivery shapes. Knowing when to reach for each is the single most important concept.</p>
+
+      <h3 class="subhead">Queue — point-to-point, competing consumers</h3>
+      <p>A <b>queue</b> holds messages that are delivered to <b>exactly one</b> consumer. If several worker instances read the same queue, each message goes to just one of them — they <em>compete</em> and share the load.</p>
+      <div class="analogy">
+        <span class="ico">🧍‍♂️🧍‍♀️</span>
+        <div><b>Analogy.</b> A queue is a <b>single line at a bank counter</b>. There may be three tellers, but each customer is served by exactly one teller. No two tellers handle the same customer.</div>
+      </div>
+      <div class="flowrow animflow">
+        <span class="node prod">Producer</span><span class="arrow">→</span>
+        <span class="node topic" style="border-color:#cfe0ff;background:var(--accent-soft);color:#1d4ed8">📥 Queue</span><span class="arrow">→</span>
+        <span class="node cons">Consumer A <small>(one of these)</small></span>
+      </div>
+
+      <h3 class="subhead">Topic + Subscriptions — publish/subscribe fan-out</h3>
+      <p>A <b>topic</b> looks like a queue to the sender, but on the receiving side it fans out to one or more <b>subscriptions</b>. Every subscription gets its <em>own copy</em> of each message. Consumers read from a subscription, never the topic directly.</p>
+      <div class="analogy">
+        <span class="ico">📻</span>
+        <div><b>Analogy.</b> A topic is a <b>radio broadcast</b>. Each subscription is a listener's <b>personal filtered mailbox / recording</b> — everyone tuned in receives the same show, but each keeps their own copy to play back at their own pace. One event, many independent consumers.</div>
+      </div>
+      <div class="flowrow animflow">
+        <span class="node prod">Producer</span><span class="arrow">→</span>
+        <span class="node topic">📢 Topic</span>
+        <span class="arrow">⇉</span>
+        <span style="display:inline-flex;flex-direction:column;gap:8px">
+          <span class="subline" style="display:flex;gap:8px;align-items:center"><span class="node sub" style="border-color:#e3d5fb;background:var(--purple-soft);color:#6d28d9">Subscription 1</span><span class="arrow">→</span><span class="node cons">Consumer X</span></span>
+          <span class="subline" style="display:flex;gap:8px;align-items:center"><span class="node sub" style="border-color:#e3d5fb;background:var(--purple-soft);color:#6d28d9">Subscription 2</span><span class="arrow">→</span><span class="node cons">Consumer Y</span></span>
+        </span>
+      </div>
+      <div class="callout info"><b>Rule of thumb:</b> use a <b>queue</b> when exactly one worker should handle each message (a job to do once). Use a <b>topic</b> when several independent services each care about the same event. <b>This platform uses topics</b> so that (for example) a single "ticket purchased" event can eventually feed analytics, notifications and organizer dashboards independently.</div>
+    </section>
+
+    <section id="messages">
+      <h2>Messages, properties &amp; sessions (ordering)</h2>
+      <p class="lead">A Service Bus <b>message</b> has two parts: a <b>body</b> (the actual payload — usually JSON) and a set of <b>properties / headers</b> (metadata such as content type, a message ID, a correlation ID, and custom application properties used for routing and filtering).</p>
+      <div class="analogy">
+        <span class="ico">✉️</span>
+        <div><b>Analogy.</b> Think of an <b>envelope</b>. The <b>contents</b> (letter) are the body; the <b>writing on the envelope</b> — recipient, return address, "FRAGILE", a tracking number — are the properties. The sorting depot routes on the envelope without opening the letter.</div>
+      </div>
+      <h3 class="subhead">Sessions &amp; partition keys — keeping order</h3>
+      <p>Normally messages can be processed in parallel and may finish out of order. When order <em>within a related group</em> matters, you set a <b>session ID</b> (or partition key). All messages sharing that ID are delivered to one consumer, in order, one at a time.</p>
+      <div class="analogy">
+        <span class="ico">🗂️</span>
+        <div><b>Analogy.</b> A session is a clerk who <b>keeps one customer's letters in a single labelled folder and reads them strictly in the order they arrived</b>, while other clerks handle other customers in parallel. You get ordering <em>per customer</em> without serialising everyone.</div>
+      </div>
+    </section>
+
+    <section id="settlement">
+      <h2>Peek-Lock vs. Receive-and-Delete — settlement</h2>
+      <p class="lead">How does the broker know a message was actually handled — and not lost when a consumer crashes halfway? Through <b>settlement</b>. There are two receive modes.</p>
+      <div class="grid2">
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">Receive-and-Delete <span class="pill neutral">simple, risky</span></h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0">The broker hands over the message and deletes it immediately. Fast, but if the consumer crashes before finishing, the message is <b>gone forever</b>. Fine for throwaway telemetry, dangerous for business events.</p>
+        </div>
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">Peek-Lock <span class="pill on">safe, default</span></h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0">The broker gives the consumer the message but <b>keeps a locked copy</b>. The consumer must then <b>settle</b> it: <span class="chip">complete</span> (done — remove it), <span class="chip">abandon</span> (put it back for retry), or <span class="chip">dead-letter</span> (set aside as un-processable). If the lock expires with no settlement, the message reappears for another attempt.</p>
+        </div>
+      </div>
+      <div class="analogy">
+        <span class="ico">📄</span>
+        <div><b>Analogy.</b> Peek-lock is like taking a letter from the depot <b>but the depot keeps a photocopy</b> until you phone back to confirm "handled". If you never call (you crashed), they assume it wasn't done and hand the copy to someone else. That's why peek-lock gives <b>at-least-once</b> delivery.</div>
+      </div>
+      <div class="callout info"><b>Auto-complete OFF = manual settlement.</b> With auto-complete on, the framework settles the message the instant your handler returns. With it <b>off</b>, <em>your code</em> decides when to complete — only after the work is truly persisted. This platform uses manual settlement (<span class="mono">auto-complete: false</span>) so a message is completed only after booking-service has finished writing to MongoDB.</div>
+    </section>
+
+    <section id="delivery">
+      <h2>Delivery guarantees, idempotency &amp; duplicate detection</h2>
+      <p class="lead">Peek-lock's safety comes with a trade-off you must design for.</p>
+      <div class="card">
+        <table>
+          <thead><tr><th>Guarantee</th><th>What it means</th><th>Consequence</th></tr></thead>
+          <tbody>
+            <tr><td><span class="name">At-least-once</span></td><td>Every message is delivered one <em>or more</em> times (Service Bus's default with peek-lock).</td><td>Your consumer may see the <b>same message twice</b> — e.g. it processed successfully but crashed before completing.</td></tr>
+            <tr><td><span class="name">Idempotency</span></td><td>Your handler produces the same result no matter how many times it runs for a given message.</td><td>The correct defence against duplicates: key work by message ID and ignore repeats.</td></tr>
+            <tr><td><span class="name">Duplicate detection</span></td><td>A namespace feature: the broker drops messages with a repeated <span class="mono">MessageId</span> inside a time window.</td><td>Stops the <em>producer</em> from accidentally sending the same message twice.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="analogy">
+        <span class="ico">🧾</span>
+        <div><b>Analogy.</b> Idempotency is a shop that checks the <b>receipt number</b> before charging you again — if that receipt was already rung up, it does nothing rather than double-charging. In this platform, "initialise inventory for event X" must be safe to run twice.</div>
+      </div>
+    </section>
+
+    <section id="retry-dlq">
+      <h2>Retry, max delivery count &amp; the Dead-Letter Queue</h2>
+      <p class="lead">What happens when a consumer keeps failing on the same message? You don't want it stuck in an infinite loop, blocking everything behind it.</p>
+      <p>Each redelivery increments a <b>delivery count</b>. Consumers typically retry with <b>exponential backoff</b> (wait 1s, then 2s, then 4s… giving a struggling downstream time to recover). Once the delivery count crosses <b>max delivery count</b>, the broker moves the message to the <b>Dead-Letter Queue (DLQ)</b> — a special sub-queue for "poison" messages that a human or a repair job can inspect later.</p>
+      <div class="analogy">
+        <span class="ico">🗑️</span>
+        <div><b>Analogy.</b> The DLQ is the post office's <b>undeliverable-mail bin</b>. After the carrier tries the address N times and always fails, they stop wasting trips and set the letter aside in the dead-letter office for investigation — the rest of the mail keeps flowing.</div>
+      </div>
+      <div class="flowrow">
+        <span class="node topic">📢 Topic / Sub</span><span class="arrow">→</span>
+        <span class="node cons">Consumer</span>
+        <span class="arrow">⤳ fail ×N →</span>
+        <span class="node dlq">💀 Dead-Letter Queue</span>
+      </div>
+      <div class="callout warn"><b>In this platform:</b> consumers retry <b>3 times</b> with backoff <b>1s → 10s</b> (multiplier 2.0). After the attempts are exhausted, the message dead-letters instead of blocking the subscription. You'll see this animated in Part 2.</div>
+    </section>
+
+    <!-- RETENTION / TTL / OFFLINE CONSUMERS -->
+    <section id="retention">
+      <h2>Retention, TTL, quotas &amp; offline consumers — and where each is configured</h2>
+      <p class="lead">What happens to a message between being published and being processed: where it lives, how long it waits, what happens if no consumer is listening — and, importantly, <b>which knob is set where</b>. Service Bus splits configuration into two layers, and mixing them up is the number-one source of surprises.</p>
+
+      <h3 class="subhead">How messages are kept</h3>
+      <p>Every message is written to <b>durable, replicated storage</b> <em>before</em> the broker acknowledges the send — it survives broker restarts and is never held only in the producer's or consumer's memory. On a <b>topic</b>, each <b>subscription</b> keeps its <em>own independent copy</em>, so a slow or offline consumer on one subscription never affects another. A message stays put until it is <b>completed</b>, <b>expires (TTL)</b>, or is <b>dead-lettered</b>.</p>
+      <div class="analogy"><span class="ico">📪</span><div><b>Analogy.</b> A subscription is a <b>mailbox</b>. A letter stays in the box until you take it out (<b>complete</b>), it passes its use-by date (<b>TTL</b>), or the post office moves it to the undeliverable bin (<b>dead-letter</b>). It does not vanish just because you're away.</div></div>
+
+      <h3 class="subhead">Two layers of configuration (the key idea)</h3>
+      <p>Service Bus exposes these behaviours as <b>entity properties on the queue/topic/subscription</b> — set when the entity is <b>provisioned</b>, not in your app code. Your app's <span class="mono">application.yml</span> only tunes how the <em>client</em> talks to the entity.</p>
+      <div class="card"><table>
+        <thead><tr><th>Layer</th><th>Set where</th><th>Controls</th><th>Examples</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Broker-side entity properties</b> <span class="pill on" style="background:var(--green-soft);color:#0b7a44;border-radius:999px;padding:2px 8px;font-size:11px">retention</span></td>
+            <td>On the <b>queue / topic / subscription</b>, at <b>provisioning</b> — Portal, <span class="mono">az</span> CLI, Terraform, or the Admin SDK (locally: the emulator's <span class="mono">config.json</span>)</td>
+            <td><b>How long &amp; how messages are retained</b> — TTL, lock, delivery cap, dead-lettering, size quota, dedup, sessions</td>
+            <td><span class="chip">DefaultMessageTimeToLive</span> <span class="chip">LockDuration</span> <span class="chip">MaxDeliveryCount</span> <span class="chip">DeadLetteringOnMessageExpiration</span> <span class="chip">MaxSizeInMegabytes</span></td>
+          </tr>
+          <tr>
+            <td><b>Client-side app settings</b> <span class="pill" style="background:var(--accent-soft);color:#1d4ed8;border-radius:999px;padding:2px 8px;font-size:11px">behaviour</span></td>
+            <td>In the <b>producer / consumer app</b> — Spring Cloud Azure <span class="mono">application.yml</span></td>
+            <td><b>How the client talks to the entity</b> — throughput, settlement, retries. Does <b>not</b> change retention.</td>
+            <td><span class="chip">prefetch-count</span> <span class="chip">max-concurrent-calls</span> <span class="chip">max-auto-lock-renew-duration</span> <span class="chip">auto-complete</span> <span class="chip">retry/backoff</span></td>
+          </tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><b>Common trap:</b> TTL/retention/redelivery are <b>entity</b> properties — you cannot change them from consumer code. To keep messages <em>longer</em>, change the <b>topic/subscription</b> at provisioning, not <span class="mono">application.yml</span>.</div>
+
+      <h3 class="subhead">Time-to-live (TTL) — how long a message is kept</h3>
+      <ul style="font-size:13.5px;color:var(--ink-soft);line-height:1.7">
+        <li>Every queue/subscription has a <b><span class="mono">DefaultMessageTimeToLive</span></b> — an ISO-8601 duration (e.g. <span class="mono">PT1H</span> = 1 hour, <span class="mono">P14D</span> = 14 days). Azure's own default is <b>14 days</b> (also the max on Standard; Premium can hold longer).</li>
+        <li>A publisher may set a shorter TTL <em>per message</em> (<span class="mono">Message.TimeToLive</span>); the effective TTL is the <b>smaller</b> of the message's and the entity's.</li>
+        <li>When TTL elapses <b>before</b> the message is consumed, it <b>expires</b>. If <span class="mono">DeadLetteringOnMessageExpiration = true</span> it moves to the <b>Dead-Letter Queue</b> (recoverable); otherwise it is silently dropped.</li>
+      </ul>
+      <div class="callout info"><b>In this project (dev emulator):</b> TTL is deliberately short — <span class="mono">DefaultMessageTimeToLive = PT1H</span> on every topic <em>and</em> subscription, with <span class="mono">DeadLetteringOnMessageExpiration = true</span>. So a message left unconsumed for &gt; 1 hour is dead-lettered (not lost). In production you'd raise this at provisioning (e.g. <span class="mono">P3D</span>).</div>
+
+      <h3 class="subhead">Lock, redelivery &amp; dead-lettering — the lifecycle rules</h3>
+      <div class="flowrow" style="font-size:12px">
+        <span class="node" style="min-width:70px">Active</span><span class="arrow">→</span>
+        <span class="node" style="min-width:96px;border-color:#cfe0ff;background:var(--accent-soft);color:#1d4ed8">🔒 Locked<small>peek-lock</small></span><span class="arrow">→</span>
+        <span class="node" style="border-color:#bfe6cf;background:var(--green-soft);color:#0b7a44">✓ Complete<small>removed</small></span>
+      </div>
+      <ul style="font-size:13.5px;color:var(--ink-soft);line-height:1.7">
+        <li><b>Delivered under peek-lock</b> → the message is <b>Locked</b> (invisible to others) for <b><span class="mono">LockDuration</span></b>. Azure default is <b>30 s</b>, max <b>5 min</b>.</li>
+        <li>Consumer <b>completes</b> → removed. Consumer <b>abandons</b>, crashes, or the lock <b>expires</b> → back to <b>Active</b> and the <b>delivery count +1</b>.</li>
+        <li>Long handlers can <b>auto-renew the lock</b> beyond <span class="mono">LockDuration</span> (up to <span class="mono">max-auto-lock-renew-duration</span>) so they aren't cut off mid-work.</li>
+        <li>Once <b>delivery count &gt; <span class="mono">MaxDeliveryCount</span></b> (Azure default <b>10</b>) the message is <b>dead-lettered</b>. Expired-by-TTL messages dead-letter too. The DLQ is a real sub-queue you can read, inspect and replay.</li>
+      </ul>
+
+      <h3 class="subhead">Quotas &amp; what happens when consumers are DOWN</h3>
+      <p>If a consumer is offline, its messages simply <b>accumulate in the subscription</b>, durably and in order, and are processed when it returns — <b>nothing is lost</b> for being offline. Two limits apply while it's down:</p>
+      <div class="card"><table>
+        <thead><tr><th>Limit</th><th>Property / value</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td><b>TTL expiry</b></td><td><span class="mono">DefaultMessageTimeToLive</span> (dev: 1 h)</td><td>Backlog older than the TTL is dead-lettered — a long outage can DLQ a chunk of the backlog.</td></tr>
+          <tr><td><b>Entity size quota</b></td><td><span class="mono">MaxSizeInMegabytes</span> — Standard 1–5 GB, Premium up to 100 GB</td><td>When the subscription fills, the broker <b>rejects new sends</b> (<span class="mono">QuotaExceeded</span> / <span class="mono">ServerBusy</span>) — deliberate back-pressure that protects the system.</td></tr>
+          <tr><td><b>Auto-delete on idle</b></td><td><span class="mono">AutoDeleteOnIdle</span> (default: never)</td><td>Not set here, so idle subscriptions are kept indefinitely.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout ok"><b>On recovery:</b> the consumer's <span class="mono">prefetch-count</span> and <span class="mono">max-concurrent-calls</span> let it drain the backlog quickly — in this app, 10 prefetched and 5 processed concurrently.</div>
+
+      <h3 class="subhead">How the entity properties are actually set</h3>
+      <p>These live on the entity, so you set them at provisioning. Same knobs, three surfaces:</p>
+      <pre><span class="c"># az CLI — create the subscription with retention rules</span>
+<span class="k">az servicebus topic subscription create</span> -g rg-ticketing --namespace-name sb-myticketzm \
+  --topic-name <span class="s">catalog-events</span> --name <span class="s">booking-service</span> \
+  --default-message-time-to-live <span class="s">P3D</span> \      <span class="c"># TTL = 3 days</span>
+  --lock-duration <span class="s">PT1M</span> \                     <span class="c"># peek-lock window</span>
+  --max-delivery-count <span class="s">10</span> \                  <span class="c"># then → DLQ</span>
+  --dead-lettering-on-message-expiration <span class="s">true</span>
+
+<span class="c"># Terraform (azurerm_servicebus_subscription)</span>
+default_message_ttl                  = <span class="s">"P3D"</span>
+lock_duration                        = <span class="s">"PT1M"</span>
+max_delivery_count                   = <span class="s">10</span>
+dead_lettering_on_message_expiration = <span class="s">true</span>
+
+<span class="c"># Local emulator (docker-resources/servicebus/config.json) — same properties:</span>
+<span class="y">"Properties"</span>: { <span class="y">"DefaultMessageTimeToLive"</span>: <span class="s">"PT1H"</span>, <span class="y">"LockDuration"</span>: <span class="s">"PT1M"</span>,
+                 <span class="y">"MaxDeliveryCount"</span>: 3, <span class="y">"DeadLetteringOnMessageExpiration"</span>: true }</pre>
+
+      <h3 class="subhead">How THIS application is configured (verified)</h3>
+      <p><b>Broker-side</b> — from <span class="mono">docker-resources/servicebus/config.json</span> (applies to <span class="chip topic">catalog-events</span>/<span class="chip sub">booking-service</span> and the other topics):</p>
+      <div class="card"><table>
+        <thead><tr><th>Entity property</th><th>Value (dev)</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mono">DefaultMessageTimeToLive</span></td><td><span class="chip">PT1H</span></td><td>Unconsumed message expires after 1 hour</td></tr>
+          <tr><td><span class="mono">DeadLetteringOnMessageExpiration</span></td><td><span class="chip">true</span></td><td>Expired → Dead-Letter Queue (not dropped)</td></tr>
+          <tr><td><span class="mono">LockDuration</span></td><td><span class="chip">PT1M</span></td><td>Consumer must settle within 1 min or it's redelivered</td></tr>
+          <tr><td><span class="mono">MaxDeliveryCount</span></td><td><span class="chip">3</span></td><td>After 3 failed deliveries → DLQ</td></tr>
+          <tr><td><span class="mono">RequiresDuplicateDetection</span> / window</td><td><span class="chip">false</span> / <span class="chip">PT20S</span></td><td>Dedup off (window defined but inactive)</td></tr>
+          <tr><td><span class="mono">RequiresSession</span></td><td><span class="chip">false</span></td><td>No strict per-key ordering group</td></tr>
+        </tbody>
+      </table></div>
+      <p style="margin-top:16px"><b>Client-side</b> — from each service's <span class="mono">application.yml</span> (Spring Cloud Azure binder):</p>
+      <div class="card"><table>
+        <thead><tr><th>Client setting</th><th>Value</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mono">auto-complete</span> / <span class="mono">checkpoint-mode</span></td><td><span class="chip">false</span> / <span class="chip">RECORD</span></td><td>Manual settle — a message is completed only after the handler succeeds</td></tr>
+          <tr><td><span class="mono">max-auto-lock-renew-duration</span></td><td><span class="chip">5m</span></td><td>Lock auto-renewed up to 5 min for slow handlers (&gt; the 1-min LockDuration)</td></tr>
+          <tr><td><span class="mono">prefetch-count</span> / <span class="mono">max-concurrent-calls</span></td><td><span class="chip">10</span> / <span class="chip">5</span></td><td>Fetch 10 ahead, process 5 at once — drains backlog fast</td></tr>
+          <tr><td>consumer <span class="mono">max-attempts</span> / backoff</td><td><span class="chip">3</span> / <span class="chip">1s→10s ×2.0</span></td><td>In-process retry <em>within</em> one delivery before abandoning</td></tr>
+          <tr><td>producer <span class="mono">send-timeout</span> / retry</td><td><span class="chip">30s</span> / <span class="chip">exp 3× 1s→30s</span></td><td>Resilient publish (<span class="mono">try-timeout 60s</span>)</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="callout danger"><b>Consumer-down, end-to-end for this app:</b> if <b>booking-service</b> is down, <span class="chip topic">catalog-events</span> pile up in the <span class="chip sub">booking-service</span> subscription and survive the outage. But with the dev <b>1-hour TTL</b>, anything older than an hour is <b>dead-lettered</b> — so raise the TTL for real environments. When it recovers, because settlement is <b>manual</b> (<span class="mono">auto-complete=false</span>), each message is removed only after the handler <em>succeeds</em>; a crash mid-processing releases the lock after <b>1 min</b> and redelivers, up to <b>3</b> times, then dead-letters. The app also retries <b>3×</b> in-process (1s→10s) on each delivery before it abandons.</div>
+    </section>
+
+    <section id="filters">
+      <h2>Subscription filters &amp; rules</h2>
+      <p class="lead">A subscription doesn't have to receive <em>every</em> message on its topic. Each subscription can carry <b>rules</b> — most commonly <b>SQL filters</b> that test message properties, e.g. <span class="mono">eventType = 'EventPublished' AND region = 'ZM'</span>.</p>
+      <div class="analogy">
+        <span class="ico">📬</span>
+        <div><b>Analogy.</b> A filter is a <b>mailbox that only accepts letters matching a rule</b> — "only bills addressed to Flat 3". The broadcast still goes out to everyone's mailbox, but each mailbox quietly discards what it doesn't care about, so its consumer only ever sees relevant mail.</div>
+      </div>
+      <div class="callout info">Filters keep consumers simple and efficient: instead of one big consumer with a giant <span class="mono">if/switch</span>, you can have several narrowly-scoped subscriptions, each fed only the message types it handles.</div>
+    </section>
+
+    <section id="scaling">
+      <h2>Competing consumers &amp; scaling out</h2>
+      <p class="lead">When one consumer can't keep up, you run <b>more instances of the same consumer</b> reading the same queue or subscription. The broker load-balances messages across them — this is the <b>competing consumers</b> pattern, and it's how you scale throughput horizontally.</p>
+      <div class="analogy">
+        <span class="ico">🏦</span>
+        <div><b>Analogy.</b> Open more <b>tellers on the same line</b>. Customers (messages) are pulled by whichever teller is free. Double the tellers, roughly double the throughput — no code changes, just more instances. (See the live demo in Part 2.)</div>
+      </div>
+      <div class="callout warn"><b>Ordering caveat:</b> more competing consumers means messages can finish out of order. If you need order, use <b>sessions</b> — the broker pins each session to one consumer while still spreading different sessions across the pool.</div>
+    </section>
+
+    <section id="tiers">
+      <h2>Tiers &amp; the local emulator</h2>
+      <div class="card">
+        <table>
+          <thead><tr><th>Option</th><th>Topics?</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><span class="name">Basic tier</span></td><td><span class="pill off">no</span></td><td>Queues only — not enough for this platform (it uses topics).</td></tr>
+            <tr><td><span class="name">Standard tier</span></td><td><span class="pill on">yes</span></td><td>Topics + subscriptions, shared capacity. The baseline for pub/sub workloads.</td></tr>
+            <tr><td><span class="name">Premium tier</span></td><td><span class="pill on">yes</span></td><td>Dedicated resources, predictable latency, higher throughput, larger messages — for production scale.</td></tr>
+            <tr><td><span class="name">Local emulator</span> <span class="pill info">dev</span></td><td><span class="pill on">yes</span></td><td>An official Docker image that runs the real binder locally with <b>no Azure subscription</b>. Limits: 1 namespace, ≤50 topics/queues, ≤50 subscriptions per topic. <b>This is what the platform uses in local dev.</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- =================== PART 2 =================== -->
+    <section id="demo-flow">
+      <h2><span class="parttag">Part 2</span> Interactive: Publish → Topic → Subscriptions → Consumers</h2>
+      <p class="lead">Press <b>Publish message</b> and watch a token travel from the producer, into the topic, fan out to two subscription mailboxes, and reach the consumers — ending in a green "complete" tick. Toggle <b>Simulate failure</b> to watch the message retry (attempts 1 → 2 → 3 with backoff) and finally drop into the Dead-Letter Queue.</p>
+
+      <div class="demo">
+        <h4>Pub/Sub message flow with peek-lock, retry &amp; DLQ</h4>
+        <p class="demolead">Real names from this project: producer <b>catalog-service</b>, topic <b>catalog-events</b>, subscription <b>booking-service</b>.</p>
+        <div class="controls">
+          <button class="btn" id="flowPlay">▶ Publish message</button>
+          <button class="btn ghost" id="flowReset">↺ Reset</button>
+          <label class="toggle"><input type="checkbox" id="flowFail"> Simulate failure (retry → DLQ)</label>
+        </div>
+        <div class="stage" id="flowStage" style="min-height:320px" aria-live="polite">
+          <!-- SVG connectors -->
+          <svg id="flowSvg" viewBox="0 0 800 300" preserveAspectRatio="none" aria-hidden="true" style="position:absolute;inset:0;height:100%">
+            <defs>
+              <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#b6c0d0"/></marker>
+            </defs>
+            <path d="M120,150 L250,150" stroke="#b6c0d0" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+            <path d="M410,130 L540,70" stroke="#b6c0d0" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+            <path d="M410,170 L540,230" stroke="#b6c0d0" stroke-width="2" fill="none" marker-end="url(#ah)"/>
+            <path d="M690,70 L690,70" stroke="#b6c0d0" stroke-width="2" fill="none"/>
+          </svg>
+          <!-- boxes positioned by % so they scale -->
+          <div class="box prod" id="fx-prod" style="left:2%;top:42%;width:14%;height:16%">catalog-service<small>producer</small></div>
+          <div class="box topic" id="fx-topic" style="left:33%;top:40%;width:16%;height:20%">catalog-events<small>TOPIC</small></div>
+          <div class="box sub" id="fx-sub1" style="left:56%;top:14%;width:16%;height:16%">booking-service<small>subscription</small></div>
+          <div class="box sub" id="fx-sub2" style="left:56%;top:66%;width:16%;height:16%">analytics<small>subscription (future)</small></div>
+          <div class="box cons" id="fx-cons1" style="left:80%;top:14%;width:17%;height:16%">catalogEventConsumer<small>booking-service</small></div>
+          <div class="box cons" id="fx-cons2" style="left:80%;top:66%;width:17%;height:16%">consumer<small>analytics (future)</small></div>
+          <div class="box dlq" id="fx-dlq" style="left:80%;top:40%;width:15%;height:18%;opacity:.4">💀 Dead-Letter<small>catalog-events/booking-service</small></div>
+          <!-- tokens injected by JS -->
+        </div>
+        <div class="statusline" id="flowStatus">Idle — press <b>Publish message</b> to start.</div>
+        <div class="attempts" id="flowAttempts"></div>
+        <div class="msglog" id="flowLog" aria-live="polite"><div class="loghdr">Event log — what happens at each node</div><div class="empty">Press ▶ Publish message to see per-node events…</div></div>
+        <div class="legend">
+          <span><span class="lg-dot" style="background:var(--accent)"></span> in flight (peek-lock)</span>
+          <span><span class="lg-dot" style="background:var(--amber)"></span> retrying (backoff)</span>
+          <span><span class="lg-dot" style="background:var(--green)"></span> completed / settled</span>
+          <span><span class="lg-dot" style="background:var(--red)"></span> dead-lettered</span>
+        </div>
+      </div>
+      <div class="callout info">This is the animated version of <b>Scenario A</b> below: an <span class="mono">EventPublished</span> message flowing <span class="mono">catalog-service → catalog-events → subscription booking-service → catalogEventConsumer</span>, settled on success or dead-lettered after 3 failed attempts.</div>
+    </section>
+
+    <section id="demo-cc">
+      <h2>Interactive: Queue vs. Topic &amp; Competing Consumers</h2>
+      <p class="lead">Toggle between <b>Queue</b> (each message handled once, load-balanced) and <b>Topic</b> (every subscription gets a copy). Then send a burst and watch how work spreads. Add or remove consumer instances to see horizontal scaling.</p>
+
+      <div class="demo">
+        <div class="controls">
+          <span class="toggle" role="group" aria-label="Delivery mode">
+            <button class="btn" id="ccModeQueue" aria-pressed="true">Queue mode</button>
+            <button class="btn ghost" id="ccModeTopic" aria-pressed="false">Topic mode</button>
+          </span>
+          <button class="btn" id="ccSend">Send 12 messages</button>
+          <button class="btn ghost" id="ccAdd">+ Add consumer</button>
+          <button class="btn ghost" id="ccRemove">− Remove consumer</button>
+          <button class="btn ghost" id="ccReset">↺ Reset counts</button>
+        </div>
+        <div class="statusline" id="ccStatus"><b>Queue mode:</b> each message is delivered to exactly one consumer — they compete and share the load.</div>
+        <div class="card pad" id="ccPanel" style="margin-top:8px"></div>
+        <div class="msglog" id="ccLog" aria-live="polite"><div class="loghdr">Event log — message routing</div><div class="empty">Press Send 12 messages…</div></div>
+        <div class="legend">
+          <span><span class="lg-dot" style="background:var(--accent)"></span> messages delivered to this consumer instance</span>
+        </div>
+      </div>
+      <div class="callout info"><b>Queue mode</b> demonstrates the competing-consumers pattern (totals across consumers = messages sent). <b>Topic mode</b> shows fan-out: each of the subscriptions receives its <em>own copy</em> of every message, so the totals multiply by the number of subscriptions.</div>
+    </section>
+
+    <!-- =================== PART 3 =================== -->
+    <section id="project">
+      <h2><span class="parttag">Part 3</span> How this ticketing platform uses Service Bus</h2>
+      <p class="lead">The Event Ticketing System is a set of Spring Boot microservices (<b>catalog-service</b>, <b>booking-service</b>, <b>identity-service</b>) using Netflix DGS for GraphQL and <b>Spring Cloud Stream</b> with the <b>Azure Service Bus binder</b> for messaging. It runs a deliberate <b>two-tier event model</b>.</p>
+      <div class="grid2">
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">Tier 1 — Intra-service <span class="pill on">Modulith + PostgreSQL</span></h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0">Events <em>within</em> a single service use <b>Spring Modulith</b>, persisted to a PostgreSQL <span class="mono">event_publication</span> table before the listener runs. This gives guaranteed local delivery and auto-republish on restart. It never touches Service Bus.</p>
+        </div>
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">Tier 2 — Cross-service <span class="pill info">Cloud Stream → Service Bus</span></h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0">Events <em>between</em> services travel over <b>Spring Cloud Stream → Azure Service Bus topics</b>. This is where namespaces, topics, subscriptions, peek-lock, retry and DLQ from Part 1 all apply.</p>
+        </div>
+      </div>
+      <div class="callout info"><b>Why the split?</b> Modulith needs a blocking JDBC driver for its guaranteed local outbox, but the services are reactive (MongoDB). Rather than compromise, in-process events use the reliable PostgreSQL outbox, while anything crossing a service boundary rides the durable, fan-out-capable Service Bus. Right tool for each distance.</div>
+    </section>
+
+    <section id="binder">
+      <h2>Binder configuration (verified)</h2>
+      <div class="card">
+        <table>
+          <thead><tr><th>Setting</th><th>Value</th><th>Meaning (from Part 1)</th></tr></thead>
+          <tbody>
+            <tr><td><span class="name">Binder dependency</span></td><td><span class="chip">spring-cloud-azure-stream-binder-servicebus</span></td><td>The Spring Cloud Stream adapter for Service Bus.</td></tr>
+            <tr><td><span class="name">Default binder</span></td><td><span class="chip">spring.cloud.stream.default-binder: servicebus</span></td><td>All bindings use Service Bus unless overridden.</td></tr>
+            <tr><td><span class="name">Entity type</span></td><td><span class="chip">TOPIC</span></td><td>Pub/sub fan-out — not point-to-point queues.</td></tr>
+            <tr><td><span class="name">Settlement</span></td><td><span class="chip">auto-complete: false</span> · <span class="chip">checkpoint-mode: RECORD</span></td><td><b>Manual settlement</b> (peek-lock): complete only after the record is processed.</td></tr>
+            <tr><td><span class="name">Consumer retry</span></td><td><span class="chip">max-attempts: 3</span> · backoff <span class="chip">1s → 10s</span> · multiplier <span class="chip">2.0</span></td><td>Exponential backoff; after 3 attempts the message dead-letters.</td></tr>
+            <tr><td><span class="name">Producers publish via</span></td><td><span class="chip">StreamBridge.send("&lt;binding&gt;-out-0", event)</span></td><td>Imperative send — the producer emits and moves on.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="topology">
+      <h2>Topics, bindings &amp; flows</h2>
+      <p class="lead">Producers publish to a topic via an output binding; the one declared consumer today is booking-service reading <span class="chip topic">catalog-events</span> on the subscription <span class="chip sub">booking-service</span>.</p>
+      <div class="card">
+        <table>
+          <thead><tr><th>Service</th><th>Publishes to topic</th><th>Binding</th><th>Also emits (StreamBridge dynamic)</th></tr></thead>
+          <tbody>
+            <tr><td><span class="name">catalog-service</span></td><td><span class="chip topic">catalog-events</span></td><td><span class="mono">eventOutput-out-0</span></td><td>—</td></tr>
+            <tr><td><span class="name">identity-service</span></td><td><span class="chip topic">identity-events</span></td><td><span class="mono">userOutput-out-0</span></td><td>userRole / organization events</td></tr>
+            <tr><td><span class="name">booking-service</span></td><td><span class="chip topic">booking-events</span></td><td><span class="mono">ticketOutput-out-0</span></td><td>chargeback / notification / organization events</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="subhead">The one declared consumer</h3>
+      <div class="card">
+        <table>
+          <thead><tr><th>Consumer service</th><th>Consumes topic</th><th>Function binding</th><th>Consumer group / subscription</th></tr></thead>
+          <tbody>
+            <tr><td><span class="name">booking-service</span></td><td><span class="chip topic">catalog-events</span></td><td><span class="mono">catalogEventConsumer-in-0</span></td><td><span class="chip sub">booking-service</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="subhead">Topology diagram (as coded)</h3>
+      <div class="diagram">
+<pre>
+   CATALOG SERVICE            IDENTITY SERVICE                 BOOKING SERVICE
+   (event owner)             (user / org owner)            (ticket / payment owner)
+        │                          │                                │
+        │ eventOutput-out-0        │ userOutput-out-0               │ ticketOutput-out-0
+        ▼                          ▼                                ▼
+  ┌───────────────┐         ┌────────────────┐              ┌────────────────┐
+  │ catalog-events│         │ identity-events│              │ booking-events │  ◄─ Service Bus TOPICS
+  └───────┬───────┘         └────────────────┘              └────────────────┘
+          │
+          │  subscription "booking-service"
+          ▼
+  ┌───────────────────────────┐
+  │ BOOKING SERVICE           │  catalogEventConsumer-in-0
+  │ catalogEventConsumer      │  peek-lock · manual settle · retry ×3 (1s→10s ×2.0) → DLQ
+  └───────────────────────────┘
+
+  Binder: servicebus (default)   Entity type: TOPIC   Settlement: manual (auto-complete=false, checkpoint=RECORD)
+</pre>
+      </div>
+      <h3 class="subhead">Provisioned in the dev emulator</h3>
+      <div class="card">
+        <table>
+          <thead><tr><th>Topic</th><th>Subscription</th></tr></thead>
+          <tbody>
+            <tr><td><span class="chip topic">catalog-events</span></td><td><span class="chip sub">booking-service</span></td></tr>
+            <tr><td><span class="chip topic">booking-events</span></td><td><span class="chip sub">default</span></td></tr>
+            <tr><td><span class="chip topic">identity-events</span></td><td><span class="chip sub">default</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout warn"><b>Honest note:</b> <span class="chip topic">booking-events</span> and <span class="chip topic">identity-events</span> are <b>produced but have no in-repo subscriber yet</b>. Their <span class="chip sub">default</span> subscriptions exist so messages are retained, but nothing consumes them today — they are extension points for future analytics/notification services.</div>
+    </section>
+
+    <section id="scenarios">
+      <h2>End-to-end scenarios</h2>
+
+      <h3 class="subhead">Scenario A — Organizer publishes a new event (fully wired) <span class="pill on">has consumer</span></h3>
+      <p style="color:var(--ink-soft);font-size:13.5px">This is the flow the Part 2 animation mirrors, using the real names.</p>
+      <ol class="steps">
+        <li>
+          <h4>Organizer publishes an Event in catalog-service</h4>
+          <p>A Lusaka promoter creates and publishes "Afrobeats Live @ Heroes Stadium". catalog-service saves it (MongoDB) and calls <span class="mono">StreamBridge.send("eventOutput-out-0", EventPublished)</span>, sending an <b>EventPublished</b> message to the <span class="chip topic">catalog-events</span> topic.</p>
+        </li>
+        <li>
+          <h4>The topic fans out to the booking-service subscription</h4>
+          <p>Service Bus places a copy of the message in the <span class="chip sub">booking-service</span> subscription's mailbox. It waits there durably — even if booking-service is momentarily down.</p>
+        </li>
+        <li>
+          <h4>booking-service receives under peek-lock</h4>
+          <p><span class="mono">catalogEventConsumer-in-0</span> picks up the message with a <b>lock</b> (the broker keeps a copy). It initialises <b>ticket inventory</b> and the <b>escrow / commission</b> ledger for the new event.</p>
+        </li>
+        <li>
+          <h4>Settle on success</h4>
+          <p>Because settlement is <b>manual</b> (<span class="mono">auto-complete: false</span>), booking-service <b>completes</b> the message only after inventory + escrow are persisted. The copy is removed from the subscription. ✅</p>
+        </li>
+        <li>
+          <h4>On failure — retry then dead-letter</h4>
+          <p>If processing throws (say the escrow write fails), the message is redelivered with <b>exponential backoff</b>: attempt 1 → wait ~1s → attempt 2 → wait ~2s → attempt 3. After <b>3 failed attempts</b> the message is moved to the <b>Dead-Letter Queue</b> for <span class="chip topic">catalog-events</span>/<span class="chip sub">booking-service</span>, where it can be inspected and replayed — while the rest of the subscription keeps flowing.</p>
+        </li>
+      </ol>
+      <div class="callout ok"><b>Idempotency matters here:</b> because delivery is at-least-once, "initialise inventory for event X" must be safe to run more than once — key it by the event ID so a duplicate delivery is a no-op.</div>
+
+      <h3 class="subhead">Scenario B — Customer buys a ticket with mobile money <span class="pill partial">producer only</span></h3>
+      <ol class="steps">
+        <li>
+          <h4>Customer pays via MTN / Airtel / Zamtel</h4>
+          <p>A buyer pays for a ticket through mobile money. booking-service confirms the payment, mints the ticket (with its QR code for venue validation), and updates escrow/commission.</p>
+        </li>
+        <li>
+          <h4>booking-service emits TicketPurchased</h4>
+          <p>It calls <span class="mono">StreamBridge.send("ticketOutput-out-0", TicketPurchased)</span>, publishing a <b>TicketPurchased</b> message to the <span class="chip topic">booking-events</span> topic — intended for downstream consumers such as <b>analytics</b> and <b>notifications</b> (e.g. a WhatsApp "here's your ticket" message).</p>
+        </li>
+        <li>
+          <h4>No in-repo subscriber yet — extension point</h4>
+          <p><b>Called out honestly:</b> the <span class="chip topic">booking-events</span> topic has only a <span class="chip sub">default</span> subscription and <b>no consumer in this repository today</b>. Messages are retained but not yet processed. Adding an analytics or notification service is a drop-in: create a subscription and a <span class="mono">*Consumer-in-0</span> binding — no producer changes needed. This is exactly the pub/sub decoupling benefit from Part 1: the producer already does the right thing; consumers can be added later without touching it.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="devprod">
+      <h2>Dev → Prod swap (no code changes)</h2>
+      <p class="lead">The same binder configuration runs against a local emulator in dev and a real, credential-free namespace in production — the only difference is the active Spring profile.</p>
+      <div class="grid2">
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">Local dev — <span class="mono">local</span> profile</h3>
+          <ul style="font-size:13px;color:var(--ink-soft);margin:0;padding-left:18px">
+            <li>Official <b>Azure Service Bus emulator</b> in Docker (Colima / arm64)</li>
+            <li>Backed by <b>Azure SQL Edge</b> (arm64-native store)</li>
+            <li>Injects the emulator connection string with <span class="mono">UseDevelopmentEmulator=true</span></li>
+            <li>Topics/subscriptions pre-declared in the emulator config</li>
+          </ul>
+        </div>
+        <div class="card pad">
+          <h3 class="subhead" style="margin-top:0">Production — <span class="mono">prod</span> profile</h3>
+          <ul style="font-size:13px;color:var(--ink-soft);margin:0;padding-left:18px">
+            <li>Microsoft Entra <b>managed identity</b> — <b>no SAS keys</b></li>
+            <li>Secrets pulled from <b>Key Vault</b></li>
+            <li>Least-privilege RBAC: <em>Azure Service Bus Data Sender</em> + <em>Data Receiver</em></li>
+            <li>Real namespace, Standard/Premium tier</li>
+          </ul>
+        </div>
+      </div>
+<pre><span class="c"># The entire swap — no code, no rebuild:</span>
+<span class="k">export</span> <span class="y">SPRING_PROFILES_ACTIVE</span>=prod
+<span class="c"># prod profile -> managed identity + Key Vault + real namespace</span>
+<span class="c"># dev default  -> local profile -> emulator on 5673, UseDevelopmentEmulator=true</span></pre>
+      <div class="callout ok"><b>Why this is clean:</b> the application never hardcodes credentials. Dev uses a keyless emulator flag; prod uses keyless managed identity. Flipping one environment variable moves between them.</div>
+    </section>
+
+    <section id="reading">
+      <h2>📚 Further reading</h2>
+      <ul style="font-size:13.5px;color:var(--ink-soft)">
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-messaging-overview">Azure Service Bus messaging overview — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-queues-topics-subscriptions">Queues, topics, and subscriptions — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/message-transfers-locks-settlement">Message transfers, locks, and settlement (peek-lock) — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-dead-letter-queues">Overview of Service Bus dead-letter queues — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/topic-filters">Subscription rules and filters — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/message-sessions">Message sessions (ordering / FIFO) — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/duplicate-detection">Duplicate detection — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-premium-messaging">Standard vs Premium tiers — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/test-locally-with-service-bus-emulator">Test locally with the Service Bus emulator — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/developer/java/spring-framework/configure-spring-cloud-stream-binder-java-app-with-service-bus">Spring Cloud Stream with Azure Service Bus — Microsoft Learn</a></li>
+      </ul>
+      <div class="callout info">Companion docs in this folder: <span class="mono">MESSAGING_AND_SERVICE_BUS.html</span> (setup &amp; configuration) and <span class="mono">DEVELOPMENT_CREDENTIALS.html</span> (emulator endpoints &amp; credentials).</div>
+    </section>
+
+    <footer>Event Ticketing System · Azure Service Bus, Explained · light theme · self-contained · concepts + interactive demos + project-specific usage</footer>
+  </main>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   DEMO 1 — Publish → Topic → Subscriptions → Consumers
+   with peek-lock success path, and failure → retry → DLQ path
+   ============================================================ */
+(function(){
+  const stage = document.getElementById('flowStage');
+  const status = document.getElementById('flowStatus');
+  const attemptsEl = document.getElementById('flowAttempts');
+  const playBtn = document.getElementById('flowPlay');
+  const resetBtn = document.getElementById('flowReset');
+  const failToggle = document.getElementById('flowFail');
+  const logEl = document.getElementById('flowLog');
+  const boxes = {
+    prod: document.getElementById('fx-prod'),
+    topic: document.getElementById('fx-topic'),
+    sub1: document.getElementById('fx-sub1'),
+    sub2: document.getElementById('fx-sub2'),
+    cons1: document.getElementById('fx-cons1'),
+    cons2: document.getElementById('fx-cons2'),
+    dlq: document.getElementById('fx-dlq')
+  };
+  let running = false;
+
+  // center of a box in stage-relative %  (returns {x,y} in px)
+  function center(el){
+    const s = stage.getBoundingClientRect();
+    const b = el.getBoundingClientRect();
+    return { x: b.left - s.left + b.width/2, y: b.top - s.top + b.height/2 };
+  }
+  function clearTokens(){ stage.querySelectorAll('.token,.badgeflag').forEach(n=>n.remove()); }
+  function clearActive(){ Object.values(boxes).forEach(b=>{b.classList.remove('active','done');}); }
+
+  function makeToken(label){
+    const t = document.createElement('div');
+    t.className='token'; t.textContent = label || '✉'; t.setAttribute('role','img');
+    t.setAttribute('aria-label','message token');
+    stage.appendChild(t);
+    return t;
+  }
+  function placeAt(t, el){
+    const c = center(el);
+    t.style.left = (c.x-13)+'px';
+    t.style.top  = (c.y-13)+'px';
+  }
+  function flag(el, symbol){
+    const f=document.createElement('div');
+    f.className='badgeflag'; f.textContent=symbol;
+    const c=center(el);
+    f.style.left=(c.x+14)+'px'; f.style.top=(c.y-26)+'px';
+    stage.appendChild(f);
+    requestAnimationFrame(()=>f.classList.add('show'));
+    return f;
+  }
+  const wait = ms => new Promise(r=>setTimeout(r,ms));
+
+  const LOGHDR = '<div class="loghdr">Event log — what happens at each node</div>';
+  function nowts(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())+'.'+String(d.getMilliseconds()).padStart(3,'0'); }
+  function clearLog(){ logEl.innerHTML = LOGHDR; }
+  function emptyLog(){ logEl.innerHTML = LOGHDR + '<div class="empty">Press ▶ Publish message to see per-node events…</div>'; }
+  function log(node, msg, level){
+    const ln=document.createElement('div');
+    ln.className='ln '+(level||'info');
+    ln.innerHTML='<span class="ts">'+nowts()+'</span><span class="nd">'+node+'</span><span class="ms">'+msg+'</span>';
+    logEl.appendChild(ln);
+    logEl.scrollTop=logEl.scrollHeight;
+  }
+
+  function setAttempts(list){
+    attemptsEl.innerHTML='';
+    list.forEach(a=>{
+      const d=document.createElement('div');
+      d.className='attempt '+a.cls; d.textContent=a.text;
+      attemptsEl.appendChild(d);
+    });
+  }
+
+  async function run(){
+    if(running) return;
+    running=true; playBtn.disabled=true;
+    clearTokens(); clearActive(); setAttempts([]); clearLog();
+    const fail = failToggle.checked;
+    log('client', 'publish requested'+(fail?' — FAILURE mode ON':''), 'info');
+
+    // 1. produce
+    boxes.prod.classList.add('active');
+    status.innerHTML='<b>catalog-service</b> publishes <b>EventPublished</b> to topic <b>catalog-events</b> …';
+    log('catalog-service', 'StreamBridge.send() → "EventPublished" to catalog-events', 'info');
+    const tok = makeToken('E');
+    placeAt(tok, boxes.prod);
+    await wait(350);
+    boxes.prod.classList.remove('active');
+
+    // 2. to topic
+    boxes.topic.classList.add('active');
+    placeAt(tok, boxes.topic);
+    await wait(650);
+    status.innerHTML='Topic <b>catalog-events</b> fans out a copy to each subscription …';
+    log('catalog-events · TOPIC', 'message received; fanning out to subscriptions', 'info');
+    boxes.topic.classList.remove('active');
+
+    // 3. fan out — clone token to sub2 as well (fan-out), main travels via sub1
+    const tok2 = makeToken('E'); tok2.style.background='#a855f7';
+    placeAt(tok2, boxes.topic);
+    boxes.sub1.classList.add('active'); boxes.sub2.classList.add('active');
+    placeAt(tok, boxes.sub1);
+    placeAt(tok2, boxes.sub2);
+    await wait(650);
+    boxes.sub1.classList.remove('active'); boxes.sub2.classList.remove('active');
+    log('catalog-events · TOPIC', 'fan-out: 1 copy → booking-service, 1 copy → analytics', 'info');
+
+    // sub2 (analytics future) — no consumer, message just retained
+    tok2.style.opacity='0.45';
+    flag(boxes.sub2,'⏸');
+    log('analytics · subscription', 'copy retained ⏸ — no consumer bound yet', 'warn');
+    status.innerHTML='Subscription <b>booking-service</b> delivers to its consumer (peek-lock). <i>analytics</i> subscription retains its copy (no consumer yet).';
+
+    // 4. deliver to consumer under peek-lock
+    boxes.cons1.classList.add('active');
+    log('booking-service · subscription', 'deliver to catalogEventConsumer under peek-lock 🔒', 'info');
+    placeAt(tok, boxes.cons1);
+    await wait(650);
+
+    if(!fail){
+      // SUCCESS PATH
+      log('catalogEventConsumer', 'handler ran: initialised ticket inventory + escrow', 'ok');
+      log('catalogEventConsumer', '✓ COMPLETE — message settled & removed (manual)', 'ok');
+      status.innerHTML='<b>catalogEventConsumer</b> initialised inventory + escrow, then <b>completed</b> the message (manual settle). ✅';
+      tok.classList.add('done'); tok.textContent='✓';
+      boxes.cons1.classList.remove('active'); boxes.cons1.classList.add('done');
+      flag(boxes.cons1,'✅');
+      setAttempts([{cls:'ok',text:'Attempt 1 · processed · COMPLETE'}]);
+      await wait(500);
+      // fade token
+      tok.style.opacity='0';
+    } else {
+      // FAILURE PATH: retry 1,2,3 with visible backoff, then DLQ
+      const delays=[1000,2000,4000]; // shown scaled
+      const shown=['~1s','~2s','~4s'];
+      const list=[];
+      for(let i=0;i<3;i++){
+        tok.className='token retry'; tok.textContent=(i+1);
+        boxes.cons1.classList.add('active');
+        status.innerHTML='Processing failed — redelivery <b>attempt '+(i+1)+'</b> of 3 …';
+        log('catalogEventConsumer', '✗ attempt '+(i+1)+'/3 FAILED — lock released, will redeliver', 'fail');
+        list.push({cls:'try',text:'Attempt '+(i+1)+' · FAILED'});
+        setAttempts(list.slice());
+        flag(boxes.cons1,'⚠');
+        await wait(600);
+        boxes.cons1.classList.remove('active');
+        // backoff wait (scaled down for demo: /3)
+        if(i<2){
+          status.innerHTML='Backing off <b>'+shown[i]+'</b> before next attempt (exponential backoff ×2.0) …';
+          log('booking-service · subscription', 'backoff '+shown[i]+' before redelivery (×2.0)', 'warn');
+          // send token back toward subscription to signal re-queue
+          placeAt(tok, boxes.sub1);
+          await wait(Math.max(500, delays[i]/3));
+          placeAt(tok, boxes.cons1);
+          await wait(300);
+        }
+      }
+      // exhausted -> DLQ
+      list[list.length-1]={cls:'fail',text:'Attempt 3 · FAILED · max delivery count reached'};
+      list.push({cls:'fail',text:'→ moved to Dead-Letter Queue'});
+      setAttempts(list.slice());
+      log('catalogEventConsumer', '✗ max delivery count (3) reached', 'fail');
+      log('Dead-Letter Queue', '💀 message moved to DLQ for inspection', 'fail');
+      status.innerHTML='Max delivery count reached → message moved to the <b>Dead-Letter Queue</b> for inspection. 💀';
+      boxes.cons1.classList.remove('active');
+      boxes.dlq.style.opacity='1'; boxes.dlq.classList.add('active');
+      tok.className='token fail'; tok.textContent='💀';
+      placeAt(tok, boxes.dlq);
+      flag(boxes.dlq,'💀');
+      await wait(600);
+      boxes.dlq.classList.remove('active');
+    }
+    running=false; playBtn.disabled=false;
+  }
+
+  function reset(){
+    clearTokens(); clearActive(); setAttempts([]); emptyLog();
+    boxes.dlq.style.opacity='0.4';
+    status.innerHTML='Idle — press <b>Publish message</b> to start.';
+  }
+
+  playBtn.addEventListener('click', run);
+  resetBtn.addEventListener('click', reset);
+  // reposition tokens if the window resizes mid-idle
+  window.addEventListener('resize', ()=>{ if(!running) reset(); });
+})();
+
+/* ============================================================
+   DEMO 2 — Queue vs Topic + Competing Consumers
+   ============================================================ */
+(function(){
+  const panel = document.getElementById('ccPanel');
+  const status = document.getElementById('ccStatus');
+  const btnQueue = document.getElementById('ccModeQueue');
+  const btnTopic = document.getElementById('ccModeTopic');
+  const btnSend = document.getElementById('ccSend');
+  const btnAdd = document.getElementById('ccAdd');
+  const btnRemove = document.getElementById('ccRemove');
+  const btnReset = document.getElementById('ccReset');
+  const logEl = document.getElementById('ccLog');
+  const CCHDR = '<div class="loghdr">Event log — message routing</div>';
+  function cclog(node,msg,level){
+    const d=new Date(),p=n=>String(n).padStart(2,'0');
+    const ts=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())+'.'+String(d.getMilliseconds()).padStart(3,'0');
+    const ln=document.createElement('div'); ln.className='ln '+(level||'info');
+    ln.innerHTML='<span class="ts">'+ts+'</span><span class="nd">'+node+'</span><span class="ms">'+msg+'</span>';
+    logEl.appendChild(ln); logEl.scrollTop=logEl.scrollHeight;
+  }
+
+  let mode='queue';         // 'queue' | 'topic'
+  let consumers=3;          // number of consumer instances (queue) / subscriptions (topic)
+  let counts=[];            // delivered counts per instance
+  let total=0;
+  let sending=false;
+  const MAX=6, MIN=1;
+
+  function labelFor(i){
+    if(mode==='queue') return 'consumer-'+(i+1);
+    return (i===0?'booking-service':(i===1?'analytics':'sub-'+(i+1)));
+  }
+  function render(){
+    panel.innerHTML='';
+    const maxC = Math.max(1, ...counts, 1);
+    for(let i=0;i<consumers;i++){
+      const row=document.createElement('div');
+      row.style.margin='10px 0';
+      const top=document.createElement('div');
+      top.style.display='flex'; top.style.justifyContent='space-between'; top.style.alignItems='center';
+      const name=document.createElement('span');
+      name.innerHTML = (mode==='queue'?'🧑‍🔧 ':'📬 ')+'<b>'+labelFor(i)+'</b>'+(mode==='topic'?' <span style="color:var(--muted);font-weight:500">(subscription)</span>':'');
+      name.style.fontSize='13px';
+      const cnt=document.createElement('span');
+      cnt.className='cccount'; cnt.textContent=counts[i]+' msgs';
+      top.appendChild(name); top.appendChild(cnt);
+      const bar=document.createElement('div'); bar.className='ccbar';
+      const fill=document.createElement('div'); fill.className='fill';
+      fill.style.width=(counts[i]/maxC*100)+'%';
+      bar.appendChild(fill);
+      row.appendChild(top); row.appendChild(bar);
+      panel.appendChild(row);
+    }
+    const foot=document.createElement('div');
+    foot.style.marginTop='12px'; foot.style.fontSize='12.5px'; foot.style.color='var(--ink-soft)';
+    const totalDelivered = counts.reduce((a,b)=>a+b,0);
+    foot.innerHTML='<b>Messages sent:</b> '+total+' &nbsp;·&nbsp; <b>Total deliveries:</b> '+totalDelivered+
+      (mode==='topic'&&consumers>0?' &nbsp;(= sent × '+consumers+' subscriptions — fan-out)':' &nbsp;(= sent — each message handled once)');
+    panel.appendChild(foot);
+  }
+  function resetCounts(){ counts=new Array(consumers).fill(0); total=0; render(); if(logEl) logEl.innerHTML=CCHDR+'<div class="empty">Press Send 12 messages…</div>'; }
+
+  function setMode(m){
+    mode=m;
+    btnQueue.className='btn'+(m==='queue'?'':' ghost');
+    btnTopic.className='btn'+(m==='topic'?'':' ghost');
+    btnQueue.setAttribute('aria-pressed', m==='queue');
+    btnTopic.setAttribute('aria-pressed', m==='topic');
+    if(m==='queue'){
+      status.innerHTML='<b>Queue mode:</b> each message is delivered to exactly one consumer — they compete and share the load.';
+    } else {
+      status.innerHTML='<b>Topic mode:</b> every subscription receives its <em>own copy</em> of each message (pub/sub fan-out).';
+    }
+    resetCounts();
+  }
+
+  async function send(){
+    if(sending || consumers===0) return;
+    sending=true; btnSend.disabled=true;
+    const N=12;
+    logEl.innerHTML=CCHDR;
+    cclog(mode==='queue'?'queue':'topic', 'sending '+N+' messages in '+mode.toUpperCase()+' mode', 'info');
+    for(let k=0;k<N;k++){
+      total++;
+      if(mode==='queue'){
+        // round-robin-ish with slight randomness = load balancing
+        const idx = Math.floor(Math.random()*consumers);
+        counts[idx]++;
+        cclog('message #'+(k+1), '→ consumer '+(idx+1)+' (one wins — competing consumers)', 'info');
+      } else {
+        for(let i=0;i<consumers;i++) counts[i]++;
+        cclog('message #'+(k+1), '→ copied to ALL '+consumers+' subscriptions (fan-out)', 'ok');
+      }
+      render();
+      await new Promise(r=>setTimeout(r,90));
+    }
+    cclog(mode==='queue'?'queue':'topic', 'done — '+N+' messages sent', 'info');
+    sending=false; btnSend.disabled=false;
+  }
+
+  btnQueue.addEventListener('click',()=>setMode('queue'));
+  btnTopic.addEventListener('click',()=>setMode('topic'));
+  btnSend.addEventListener('click',send);
+  btnAdd.addEventListener('click',()=>{ if(consumers<MAX){consumers++; counts.push(0); render();} });
+  btnRemove.addEventListener('click',()=>{ if(consumers>MIN){consumers--; counts.pop(); render();} });
+  btnReset.addEventListener('click',resetCounts);
+
+  // init
+  counts=new Array(consumers).fill(0);
+  render();
+})();
+</script>
+</body>
+</html>

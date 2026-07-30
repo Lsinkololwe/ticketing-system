@@ -1,136 +1,74 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  PaymentMethod,
-  ZambianMobileProvider,
-  PaymentMethodInfo,
-  MobileProviderInfo,
-  PaymentConfig,
-  TicketPurchaseData,
-  PurchaseResult,
-} from '@/types/payment';
+import { ZambianMobileProvider, MobileProviderInfo } from '@/types/payment';
 
-const PAYMENT_CONFIG: PaymentConfig = {
-  currency: 'ZMW',
-  minAmount: 1,
-  maxAmount: 100000,
-};
-
-const PAYMENT_METHODS: Record<PaymentMethod, PaymentMethodInfo> = {
-  [PaymentMethod.MOBILE_MONEY]: {
-    name: 'Mobile Money',
-    description: 'Pay with MTN, Airtel, or Zamtel Money',
-    icon: '📱',
-    feeRate: 0.02,
-    isPopular: true,
-  },
-  [PaymentMethod.CARD]: {
-    name: 'Card Payment',
-    description: 'Pay with Visa or Mastercard',
-    icon: '💳',
-    feeRate: 0.03,
-  },
-  [PaymentMethod.BANK_TRANSFER]: {
-    name: 'Bank Transfer',
-    description: 'Pay directly from your bank account',
-    icon: '🏦',
-    feeRate: 0.01,
-  },
-};
-
-const MOBILE_PROVIDERS: Record<ZambianMobileProvider, MobileProviderInfo> = {
+/**
+ * Mobile-money helpers (MTN / Airtel / Zamtel).
+ *
+ * Pure client-side utilities for the checkout: provider metadata, phone-number
+ * validation and E.164 formatting, and prefix-based provider detection. The
+ * actual payment is driven by the backend reservation pipeline
+ * (`useReserveTickets` / `useCompleteReservation`) — this hook never touches
+ * card data or logs payment details.
+ */
+export const MOBILE_PROVIDERS: Record<ZambianMobileProvider, MobileProviderInfo> = {
   [ZambianMobileProvider.MTN]: {
-    name: 'MTN Mobile Money',
-    color: '#FFCC00',
+    name: 'MTN MoMo',
+    shortName: 'MTN',
+    colorVar: 'var(--momo-mtn)',
     prefix: ['096', '076'],
   },
   [ZambianMobileProvider.AIRTEL]: {
     name: 'Airtel Money',
-    color: '#FF0000',
+    shortName: 'Airtel',
+    colorVar: 'var(--momo-airtel)',
     prefix: ['097', '077'],
   },
   [ZambianMobileProvider.ZAMTEL]: {
     name: 'Zamtel Kwacha',
-    color: '#00A651',
+    shortName: 'Zamtel',
+    colorVar: 'var(--momo-zamtel)',
     prefix: ['095', '075'],
   },
 };
 
-export function usePayment() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export const MOBILE_PROVIDER_LIST = Object.values(ZambianMobileProvider);
 
-  const calculateFees = (amount: number, method: PaymentMethod): number => {
-    const methodInfo = PAYMENT_METHODS[method];
-    return Math.round(amount * methodInfo.feeRate * 100) / 100;
-  };
-
-  const validatePhoneNumber = (phone: string, provider: ZambianMobileProvider): boolean => {
-    const providerInfo = MOBILE_PROVIDERS[provider];
-    const cleanPhone = phone.replace(/\D/g, '');
-
-    if (cleanPhone.length !== 10) return false;
-
-    return providerInfo.prefix.some(prefix => cleanPhone.startsWith(prefix));
-  };
-
-  const formatPhoneNumber = (phone: string, provider: ZambianMobileProvider): string => {
-    const cleanPhone = phone.replace(/\D/g, '');
-    return `+260 ${cleanPhone.slice(0, 3)} ${cleanPhone.slice(3, 6)} ${cleanPhone.slice(6)}`;
-  };
-
-  const purchaseTicket = async (data: TicketPurchaseData): Promise<PurchaseResult> => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // In a real implementation, this would call the payment gateway
-      console.log('Processing purchase:', data);
-
-      return {
-        success: true,
-        transactionId: `TXN-${Date.now()}`,
-      };
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Payment failed';
-      setError(errorMessage);
-      return {
-        success: false,
-        error: errorMessage,
-      };
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return {
-    purchaseTicket,
-    isLoading,
-    error,
-    calculateFees,
-    validatePhoneNumber,
-    formatPhoneNumber,
-    paymentConfig: PAYMENT_CONFIG,
-  };
+/** Strip non-digits from a phone number. */
+export function normalizeDigits(phone: string): string {
+  return phone.replace(/\D/g, '');
 }
 
-export function usePaymentMethods() {
-  const getPaymentMethodInfo = (method: PaymentMethod): PaymentMethodInfo => {
-    return PAYMENT_METHODS[method];
-  };
+/** Validate a 10-digit local number against a provider's prefixes. */
+export function validatePhoneNumber(phone: string, provider: ZambianMobileProvider): boolean {
+  const digits = normalizeDigits(phone);
+  if (digits.length !== 10) return false;
+  return MOBILE_PROVIDERS[provider].prefix.some((p) => digits.startsWith(p));
+}
 
-  const getMobileProviderInfo = (provider: ZambianMobileProvider): MobileProviderInfo => {
-    return MOBILE_PROVIDERS[provider];
-  };
+/** Detect the provider from a phone number's prefix, if recognisable. */
+export function detectProvider(phone: string): ZambianMobileProvider | null {
+  const digits = normalizeDigits(phone);
+  if (digits.length < 3) return null;
+  const three = digits.slice(0, 3);
+  for (const provider of MOBILE_PROVIDER_LIST) {
+    if (MOBILE_PROVIDERS[provider].prefix.includes(three)) return provider;
+  }
+  return null;
+}
 
-  return {
-    getPaymentMethodInfo,
-    getMobileProviderInfo,
-    paymentMethods: Object.values(PaymentMethod),
-    mobileProviders: Object.values(ZambianMobileProvider),
-  };
+/** Format a local number to display E.164, e.g. "+260 96 123 4567". */
+export function formatPhoneDisplay(phone: string): string {
+  const digits = normalizeDigits(phone);
+  if (digits.length !== 10) return phone;
+  const national = digits.slice(1); // drop leading 0
+  return `+260 ${national.slice(0, 2)} ${national.slice(2, 5)} ${national.slice(5)}`;
+}
+
+/** Convert a local number to E.164 for the backend, e.g. "+260961234567". */
+export function toE164(phone: string): string {
+  const digits = normalizeDigits(phone);
+  if (digits.startsWith('0')) return `+260${digits.slice(1)}`;
+  if (digits.startsWith('260')) return `+${digits}`;
+  return `+260${digits}`;
 }

@@ -19,7 +19,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { decodeJwt } from 'jose';
 import { auth, db, getTokenService, jtiBlacklist } from '@/lib/auth';
 
@@ -70,20 +69,12 @@ export async function POST(request: NextRequest) {
   let idTokenHint: string | undefined;
 
   try {
-    // 1. Get current session cookie
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('pml_session');
-
-    if (!sessionCookie?.value) {
-      console.log('[Logout] No session cookie found - user may already be logged out');
-      return NextResponse.json({
-        success: true,
-        ...results,
-        message: 'No active session',
-      });
-    }
-
-    // 2. Get session data from Better Auth
+    // 1. Resolve the session the NATIVE Better Auth way — ask the auth instance,
+    //    not a hardcoded cookie name. `auth.api.getSession()` reads whatever
+    //    cookie Better Auth is actually configured with (prefix `pml_admin`) and
+    //    validates it. The previous `cookies().get('pml_session')` check looked
+    //    for a cookie that never exists, so it short-circuited EVERY logout
+    //    before any teardown ran (the session was never actually cleared).
     let sessionData: BetterAuthSession | null = null;
     try {
       const result = await auth.api.getSession({
@@ -97,6 +88,18 @@ export async function POST(request: NextRequest) {
       });
     } catch (sessionError) {
       console.warn('[Logout] Failed to get session from Better Auth:', sessionError);
+    }
+
+    // 2. No active session — nothing to tear down. Still return a front-channel
+    //    Keycloak logout URL so the client can finish the redirect cleanly.
+    if (!sessionData?.user) {
+      console.log('[Logout] No active session - user may already be logged out');
+      return NextResponse.json({
+        success: true,
+        logoutUrl: getTokenService().getLogoutUrl(),
+        ...results,
+        message: 'No active session',
+      });
     }
 
     // 3. Read the Keycloak tokens NATIVELY from the Better Auth `account`

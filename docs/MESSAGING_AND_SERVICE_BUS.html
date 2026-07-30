@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Event Ticketing — Messaging Architecture &amp; Azure Service Bus Setup</title>
+<style>
+  :root{
+    --bg:#f6f7fb;--panel:#fff;--ink:#1f2733;--ink-soft:#55606f;--muted:#8a94a4;--line:#e4e8ef;
+    --accent:#2563eb;--accent-soft:#eff4ff;--green:#0f9d58;--green-soft:#e7f6ee;--amber:#b7791f;
+    --amber-soft:#fdf3e2;--red:#d64545;--red-soft:#fdecec;--purple:#7c3aed;--purple-soft:#f3ecfe;
+    --code-bg:#f2f4f8;--shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px rgba(16,24,40,.05);--radius:12px;
+  }
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55;font-size:15px}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code,.mono{font-family:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:.86em}
+  .layout{display:flex;max-width:1240px;margin:0 auto;gap:28px;padding:0 24px}
+  aside{position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto;width:250px;flex:0 0 250px;padding:28px 8px 40px 0}
+  aside .brand{font-weight:700;font-size:15px;margin:0 0 4px 12px}aside .brand span{color:var(--accent)}
+  aside .sub{color:var(--muted);font-size:12px;margin:0 0 20px 12px}
+  nav a{display:block;color:var(--ink-soft);padding:7px 12px;border-radius:8px;font-size:13.5px;font-weight:500}
+  nav a:hover{background:var(--accent-soft);color:var(--accent);text-decoration:none}
+  nav .navgroup{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:18px 0 4px 12px;font-weight:700}
+  main{flex:1 1 auto;min-width:0;padding:36px 0 100px}
+  .hero{background:linear-gradient(135deg,#fff,#f0f5ff);border:1px solid var(--line);border-radius:var(--radius);padding:30px 32px;box-shadow:var(--shadow);margin-bottom:26px}
+  .hero h1{margin:0 0 8px;font-size:25px;letter-spacing:-.02em}
+  .hero p{margin:0;color:var(--ink-soft);max-width:66ch}
+  .badges{margin-top:18px;display:flex;flex-wrap:wrap;gap:10px}
+  .badge{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px;font-size:12.5px;color:var(--ink-soft);font-weight:500}
+  .badge b{color:var(--ink)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot.g{background:var(--green)}.dot.a{background:var(--amber)}.dot.r{background:var(--red)}
+  section{margin-bottom:42px;scroll-margin-top:24px}
+  section>h2{font-size:19px;margin:0 0 4px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  section>.lead{color:var(--ink-soft);margin:0 0 18px;font-size:14px;max-width:74ch}
+  h3.subhead{font-size:15px;margin:26px 0 8px;color:var(--ink)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{text-align:left;background:#fafbfd;color:var(--ink-soft);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;padding:12px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}tbody tr:hover{background:#fbfcfe}
+  td .name{font-weight:600;color:var(--ink)}td .desc{color:var(--muted);font-size:12.5px;display:block;margin-top:2px}
+  .chip{display:inline-block;background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--ink);white-space:nowrap}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid transparent}
+  .pill.on{background:var(--green-soft);color:#0b7a44}
+  .pill.off{background:var(--red-soft);color:#b42318}
+  .pill.partial{background:var(--amber-soft);color:#92600e}
+  .pill.info{background:var(--accent-soft);color:#1d4ed8}
+  .pill.neutral{background:#eef2f6;color:#64748b}
+  .callout{border-radius:var(--radius);padding:14px 18px;font-size:13.5px;margin:18px 0;border:1px solid}
+  .callout.info{background:var(--accent-soft);border-color:#cfe0ff;color:#1e40af}
+  .callout.warn{background:var(--amber-soft);border-color:#f2dbb0;color:#92600e}
+  .callout.danger{background:var(--red-soft);border-color:#f4c9c9;color:#a3271f}
+  .callout.ok{background:var(--green-soft);border-color:#bfe6cf;color:#0b7a44}
+  pre{background:#0f1729;color:#e2e8f5;border-radius:var(--radius);padding:16px 18px;overflow-x:auto;font-size:12.6px;line-height:1.6;border:1px solid #1e293b}
+  pre .c{color:#7c89a4}pre .k{color:#7dd3fc}pre .s{color:#86efac}pre .y{color:#fbbf24}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;overflow-x:auto}
+  .diagram pre{background:transparent;color:var(--ink);border:none;padding:0;font-size:12.5px;line-height:1.45}
+  .steps{counter-reset:step;list-style:none;padding:0;margin:0}
+  .steps>li{position:relative;padding:0 0 4px 44px;margin-bottom:20px}
+  .steps>li:before{counter-increment:step;content:counter(step);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+  .steps h4{margin:4px 0 6px;font-size:14.5px}
+  .steps p{margin:0 0 8px;color:var(--ink-soft);font-size:13.5px}
+  footer{color:var(--muted);font-size:12.5px;text-align:center;padding:30px 0 10px;border-top:1px solid var(--line);margin-top:20px}
+  @media(max-width:900px){aside{display:none}.grid2{grid-template-columns:1fr}.layout{padding:0 16px}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <p class="brand">My Ticket <span>Zambia</span></p>
+    <p class="sub">Messaging &amp; Azure Service Bus</p>
+    <nav>
+      <a href="#summary">Executive Summary</a>
+      <div class="navgroup">Current State</div>
+      <a href="#status">Is each configured?</a>
+      <a href="#why">Why we need each</a>
+      <div class="navgroup">Architecture</div>
+      <a href="#arch">Event Architecture Review</a>
+      <a href="#topology">Topic / Subscription Topology</a>
+      <div class="navgroup">Configure Azure SB</div>
+      <a href="#cloud">Option A — Real Azure</a>
+      <a href="#emulator">Option B — Local Emulator</a>
+      <a href="#access">▶ Access &amp; Credentials</a>
+      <a href="#rabbit">Option C — RabbitMQ binder</a>
+      <a href="#envvars">Env Vars Reference</a>
+      <a href="#recommend">Recommendations</a>
+      <a href="#sources">Sources</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="hero" id="summary">
+      <h1>Messaging Architecture &amp; Azure Service Bus Configuration</h1>
+      <p>How cross-service events flow in the Event Ticketing platform, the exact state of Azure Service Bus vs RabbitMQ in this codebase, why each exists, and a step-by-step guide to configuring Service Bus for real Azure, a local emulator, or a RabbitMQ fallback.</p>
+      <div class="badges">
+        <span class="badge"><span class="dot g"></span>Emulator: <b>RUNNING (local dev, Colima/arm64)</b></span>
+        <span class="badge"><span class="dot a"></span>RabbitMQ: <b>opt-in (5672 freed for emulator)</b></span>
+        <span class="badge"><span class="dot g"></span>Web GUI: <b>localhost:5235</b></span>
+        <span class="badge">Binder: <b>spring-cloud-azure-stream-binder-servicebus</b></span>
+        <span class="badge">Generated <b>2026-07-17</b></span>
+      </div>
+    </div>
+
+    <!-- STATUS -->
+    <section id="status">
+      <h2>✅❌ Are Azure Service Bus and RabbitMQ both configured?</h2>
+      <p class="lead"><b>Short answer: no.</b> Only <b>Azure Service Bus</b> is wired into the application code (via Spring Cloud Stream), but it has <b>no working credentials locally</b> so it isn't operational. <b>RabbitMQ runs as a container but no backend service connects to it</b> — it is orphaned infrastructure for the ticketing system.</p>
+      <div class="card">
+        <table>
+          <thead><tr><th>Broker</th><th>Dependency in code</th><th>App config</th><th>Container</th><th>Operational?</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="name">Azure Service Bus</span><span class="desc">Spring Cloud Stream binder</span></td>
+              <td><span class="pill on">yes</span><span class="desc"><span class="mono">spring-cloud-azure-stream-binder-servicebus</span></span></td>
+              <td><span class="pill on">yes</span><span class="desc"><span class="mono">default-binder: servicebus</span> + bindings + retry/consumer tuning in every service</span></td>
+              <td><span class="pill neutral">n/a (cloud SaaS)</span></td>
+              <td><span class="pill on">YES (dev) — via emulator</span><span class="desc">local <b>emulator running</b> on <span class="mono">5672</span> (<span class="mono">local</span> profile); real-Azure prod path ready via <span class="mono">prod</span> profile. See <a href="#access">Access &amp; Credentials</a></span></td>
+            </tr>
+            <tr>
+              <td><span class="name">RabbitMQ</span><span class="desc">AMQP broker (rabbitmq:4)</span></td>
+              <td><span class="pill off">no</span><span class="desc">no <span class="mono">binder-rabbit</span> / <span class="mono">starter-amqp</span> in any pom.xml</span></td>
+              <td><span class="pill off">no</span><span class="desc">no <span class="mono">spring.rabbitmq</span> in any application.yml</span></td>
+              <td><span class="pill on">running</span><span class="desc"><span class="mono">dev_rabbitmq</span> :5672 / :15672</span></td>
+              <td><span class="pill partial">idle</span><span class="desc">reachable, but no ticketing producer/consumer uses it</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout warn">
+        <b>This is the root of the booking-service warning</b> <span class="mono">AzureServiceBusProperties - The namespace must be between 6 and 50 characters long.</span>
+        The binder initializes, finds an empty namespace/connection-string, and cannot connect — so <b>cross-service events are not being delivered</b> in local dev.
+      </div>
+      <div class="callout info">
+        <b>Correction to the earlier log report:</b> the <span class="mono">spring.cloud.function.definition</span> <em>is</em> set in booking-service (<span class="mono">catalogEventConsumer;ticketOutput</span>). The “can't determine default function definition” line is a benign Spring Cloud Function fallback note, not a missing-config error — the explicit bindings still apply.
+      </div>
+    </section>
+
+    <!-- WHY -->
+    <section id="why">
+      <h2>🎯 Why we need each broker</h2>
+      <div class="grid2">
+        <div class="card" style="padding:18px">
+          <h3 class="subhead" style="margin-top:0">Azure Service Bus <span class="pill info">intended broker</span></h3>
+          <p style="color:var(--ink-soft);font-size:13.5px;margin:0 0 10px">The platform's designed <b>cross-service event bus</b> (topics <span class="mono">catalog-events</span>, <span class="mono">booking-events</span>, <span class="mono">identity-events</span>). Chosen for enterprise-grade delivery:</p>
+          <ul style="font-size:13.5px;color:var(--ink-soft);margin:0;padding-left:18px">
+            <li><b>Topics &amp; subscriptions</b> — pub/sub fan-out (multiple services consume one event)</li>
+            <li><b>Dead-letter queues</b> + exponential retry (already tuned: 3 retries, 1s→30s)</li>
+            <li><b>Managed identity + Key Vault</b> — credential-free auth in Azure</li>
+            <li><b>Sessions / ordering</b>, duplicate detection, at-least-once delivery</li>
+            <li>Fully managed SaaS — no broker to operate in production</li>
+          </ul>
+        </div>
+        <div class="card" style="padding:18px">
+          <h3 class="subhead" style="margin-top:0">RabbitMQ <span class="pill neutral">currently unused</span></h3>
+          <p style="color:var(--ink-soft);font-size:13.5px;margin:0 0 10px">In the ticketing system it serves <b>no purpose today</b> — nothing binds to it. It exists in the shared <span class="mono">docker-resources</span> stack (labelled “shared message broker”). Its realistic roles:</p>
+          <ul style="font-size:13.5px;color:var(--ink-soft);margin:0;padding-left:18px">
+            <li><b>Local-dev alternative</b> to Service Bus — run offline without an Azure namespace (needs the RabbitMQ binder added — see Option C)</li>
+            <li>Shared infra for a <b>sibling project</b> (e.g. twende-ride) in the same folder</li>
+            <li>Candidate for future queue/worker workloads</li>
+          </ul>
+          <p style="color:var(--ink-soft);font-size:13.5px;margin:10px 0 0"><b>Decision needed:</b> either wire it as the local binder, or drop it from the ticketing stack to avoid confusion.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ARCH -->
+    <section id="arch">
+      <h2>🏛️ Event architecture review</h2>
+      <p class="lead">The platform uses a deliberate <b>two-tier event model</b>. Understanding it explains why Service Bus matters and where it fits.</p>
+      <div class="grid2">
+        <div class="card" style="padding:18px">
+          <h3 class="subhead" style="margin-top:0">Tier 1 — Intra-service <span class="pill on">working</span></h3>
+          <p style="font-size:13.5px;color:var(--ink-soft);margin:0">Events <em>within</em> one service use <b>Spring Modulith</b> + PostgreSQL (<span class="mono">event_publication</span> table). Guaranteed delivery, auto-republish on restart. Verified healthy at boot: <span class="mono">“No publication found”</span>, Hikari pool up. <b>Independent of Service Bus.</b></p>
+        </div>
+        <div class="card" style="padding:18px">
+          <h3 class="subhead" style="margin-top:0">Tier 2 — Cross-service <span class="pill off">blocked</span></h3>
+          <p style="font-size:13.5px;color:var(--ink-soft);margin:0">Events <em>between</em> services use <b>Spring Cloud Stream → Azure Service Bus</b> (<span class="mono">StreamBridge.send()</span> and function bindings). This is the tier currently non-functional locally because Service Bus has no credentials.</p>
+        </div>
+      </div>
+
+      <h3 class="subhead">Cross-service event flow (as coded)</h3>
+      <div class="diagram">
+<pre>
+   CATALOG SERVICE            IDENTITY SERVICE                 BOOKING SERVICE
+   (event owner)             (user/org owner)              (ticket/payment owner)
+        │                          │                                │
+        │ eventOutput-out-0        │ userOutput-out-0               │ ticketOutput-out-0
+        │ userRoleOutput / org     │ organizationOutput            │ chargeback / notification / org
+        ▼                          ▼                                ▼
+  ┌───────────────┐         ┌────────────────┐              ┌────────────────┐
+  │ catalog-events│         │ identity-events│              │ booking-events │   ◄─ Azure Service Bus TOPICS
+  └───────┬───────┘         └────────────────┘              └────────────────┘
+          │
+          │  subscription: "booking-service"  (consumer group)
+          ▼
+  ┌───────────────────────────┐
+  │ BOOKING SERVICE           │   catalogEventConsumer-in-0
+  │ catalogEventConsumer      │   (max-attempts 3, backoff 1s→10s ×2.0)
+  └───────────────────────────┘
+
+  Binder: servicebus (default)   Entity type: TOPIC   Settlement: manual (auto-complete=false, checkpoint=RECORD)
+</pre>
+      </div>
+      <div class="callout info">
+        Producers publish imperatively via <span class="mono">StreamBridge.send("&lt;binding&gt;-out-0", event)</span>; the only declared <b>consumer</b> today is booking-service listening on <span class="mono">catalog-events</span>. Other topics (<span class="mono">booking-events</span>, <span class="mono">identity-events</span>) are produced but have no in-repo subscriber yet.
+      </div>
+    </section>
+
+    <!-- TOPOLOGY -->
+    <section id="topology">
+      <h2>🗺️ Topic / subscription topology to provision</h2>
+      <p class="lead">Everything you must create in a Service Bus namespace (or emulator) for the coded bindings to work.</p>
+      <div class="card">
+        <table>
+          <thead><tr><th>Topic (destination)</th><th>Producer(s)</th><th>Subscription (group)</th><th>Consumer</th><th>Source</th></tr></thead>
+          <tbody>
+            <tr><td><span class="chip">catalog-events</span></td><td>catalog-service <span class="mono">eventOutput-out-0</span></td><td><span class="chip">booking-service</span></td><td>booking-service <span class="mono">catalogEventConsumer-in-0</span></td><td>explicit binding</td></tr>
+            <tr><td><span class="chip">booking-events</span></td><td>booking-service <span class="mono">ticketOutput-out-0</span></td><td><span class="desc">none yet (add per consumer)</span></td><td>—</td><td>explicit binding</td></tr>
+            <tr><td><span class="chip">identity-events</span></td><td>identity-service <span class="mono">userOutput-out-0</span></td><td><span class="desc">none yet</span></td><td>—</td><td>explicit binding</td></tr>
+            <tr><td><span class="chip">chargeback-events</span></td><td>booking-service <span class="mono">chargeback-events-out-0</span></td><td><span class="desc">define if consumed</span></td><td>—</td><td>StreamBridge (dynamic)</td></tr>
+            <tr><td><span class="chip">notification / organization / userRole</span></td><td>booking &amp; identity <span class="mono">*Output-out-0</span></td><td><span class="desc">define binding + topic</span></td><td>—</td><td>StreamBridge (dynamic)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout warn">
+        The last two rows are <b>dynamic StreamBridge destinations</b> without explicit <span class="mono">bindings:</span> entries. Create a matching topic (and an explicit binding if you want per-destination tuning) for each one you actually publish, or those sends will fail once Service Bus is live.
+      </div>
+    </section>
+
+    <!-- OPTION A: real azure -->
+    <section id="cloud">
+      <h2>☁️ Option A — Configure a real Azure Service Bus namespace</h2>
+      <p class="lead">Production / staging path. Requires an Azure subscription. <b>Standard tier or higher</b> — the Basic tier has no topics, and this system uses topics.</p>
+      <ol class="steps">
+        <li>
+          <h4>Provision the namespace &amp; topics (Azure CLI)</h4>
+          <p>Standard tier gives topics + subscriptions. Create one namespace and the three core topics.</p>
+<pre><span class="c"># login + resource group</span>
+<span class="k">az login</span>
+<span class="k">az group create</span> --name <span class="s">rg-ticketing</span> --location <span class="s">southafricanorth</span>
+
+<span class="c"># namespace (name must be 6–50 chars, globally unique)</span>
+<span class="k">az servicebus namespace create</span> \
+  --resource-group <span class="s">rg-ticketing</span> \
+  --name <span class="s">sb-myticketzm-dev</span> \
+  --sku <span class="s">Standard</span>
+
+<span class="c"># topics</span>
+<span class="k">for</span> t <span class="k">in</span> catalog-events booking-events identity-events; <span class="k">do</span>
+  <span class="k">az servicebus topic create</span> -g <span class="s">rg-ticketing</span> \
+     --namespace-name <span class="s">sb-myticketzm-dev</span> --name <span class="s">$t</span>
+<span class="k">done</span>
+
+<span class="c"># subscription: booking-service consumes catalog-events (group = subscription name)</span>
+<span class="k">az servicebus topic subscription create</span> -g <span class="s">rg-ticketing</span> \
+  --namespace-name <span class="s">sb-myticketzm-dev</span> \
+  --topic-name <span class="s">catalog-events</span> --name <span class="s">booking-service</span></pre>
+        </li>
+        <li>
+          <h4>Choose an authentication method</h4>
+          <p><b>(a) Connection string</b> — simplest for dev. <b>(b) Managed identity + RBAC</b> — recommended for anything running in Azure (no secrets).</p>
+<pre><span class="c"># (a) SAS connection string (dev / quick start)</span>
+<span class="k">az servicebus namespace authorization-rule keys list</span> \
+  -g <span class="s">rg-ticketing</span> --namespace-name <span class="s">sb-myticketzm-dev</span> \
+  --name <span class="s">RootManageSharedAccessKey</span> --query primaryConnectionString -o tsv
+
+<span class="c"># (b) Managed identity — assign RBAC roles to the app's identity</span>
+<span class="c"># Roles: "Azure Service Bus Data Sender" + "Azure Service Bus Data Receiver"</span>
+<span class="k">az role assignment create</span> \
+  --assignee <span class="s">&lt;managed-identity-client-id&gt;</span> \
+  --role <span class="s">"Azure Service Bus Data Sender"</span> \
+  --scope <span class="s">/subscriptions/&lt;sub&gt;/resourceGroups/rg-ticketing/providers/Microsoft.ServiceBus/namespaces/sb-myticketzm-dev</span>
+<span class="c"># repeat for "Azure Service Bus Data Receiver"</span></pre>
+        </li>
+        <li>
+          <h4>Set the environment variables</h4>
+          <p>The services already read these (with empty defaults). Put them in <span class="mono">docker-resources/.env.ticketing</span> or your service's environment.</p>
+<pre><span class="c"># Option (a): connection string</span>
+<span class="y">AZURE_SERVICEBUS_CONNECTION_STRING</span>=Endpoint=sb://sb-myticketzm-dev.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=...
+
+<span class="c"># Option (b): managed identity (no secret)</span>
+<span class="y">AZURE_SERVICEBUS_NAMESPACE</span>=sb-myticketzm-dev
+<span class="y">AZURE_MANAGED_IDENTITY_ENABLED</span>=true
+<span class="y">AZURE_CLIENT_ID</span>=&lt;user-assigned-identity-client-id&gt;   <span class="c"># if user-assigned</span></pre>
+        </li>
+        <li>
+          <h4>Verify the binding is live</h4>
+          <p>Restart booking-service. The <span class="mono">“namespace must be 6–50 chars”</span> warning disappears, and you should see the Service Bus processor connect. Publish a catalog event and confirm booking-service's <span class="mono">catalogEventConsumer</span> receives it (check the <span class="mono">booking-service</span> subscription's active message count in the portal).</p>
+        </li>
+      </ol>
+      <div class="callout ok">
+        The app config in <span class="mono">application.yml</span> is already complete (retry, prefetch, checkpoint mode, topic entity type). You only supply <b>credentials + the provisioned topics/subscriptions</b> — no code changes required.
+      </div>
+    </section>
+
+    <!-- OPTION B: emulator -->
+    <section id="emulator">
+      <h2>🐳 Option B — Local Azure Service Bus Emulator (recommended for dev)</h2>
+      <p class="lead">Microsoft ships an official <b>Service Bus emulator</b> Docker image — run the real binder locally with <b>no Azure subscription</b>. It needs a companion SQL Server container for storage. Limits: 1 namespace, ≤50 topics/queues, ≤50 subscriptions/topic.</p>
+      <ol class="steps">
+        <li>
+          <h4>Define the entities in <span class="mono">servicebus-config.json</span></h4>
+          <p>Pre-declare the topics + the booking-service subscription (the emulator only creates what's in this file).</p>
+<pre><span class="c">// docker-resources/servicebus/config.json</span>
+{
+  <span class="y">"UserConfig"</span>: {
+    <span class="y">"Namespaces"</span>: [{
+      <span class="y">"Name"</span>: <span class="s">"sbemulatorns"</span>,
+      <span class="y">"Topics"</span>: [
+        { <span class="y">"Name"</span>: <span class="s">"catalog-events"</span>,
+          <span class="y">"Subscriptions"</span>: [{ <span class="y">"Name"</span>: <span class="s">"booking-service"</span> }] },
+        { <span class="y">"Name"</span>: <span class="s">"booking-events"</span>,  <span class="y">"Subscriptions"</span>: [] },
+        { <span class="y">"Name"</span>: <span class="s">"identity-events"</span>, <span class="y">"Subscriptions"</span>: [] }
+      ]
+    }],
+    <span class="y">"Logging"</span>: { <span class="y">"Type"</span>: <span class="s">"File"</span> }
+  }
+}</pre>
+        </li>
+        <li>
+          <h4>Add the emulator services to docker-compose</h4>
+<pre><span class="k">servicebus-emulator</span>:
+  image: <span class="s">mcr.microsoft.com/azure-messaging/servicebus-emulator:latest</span>
+  ports: [<span class="s">"5672:5672"</span>]
+  environment:
+    SQL_SERVER: <span class="s">sbemulator-mssql</span>
+    MSSQL_SA_PASSWORD: <span class="s">"${MSSQL_SA_PASSWORD}"</span>
+    ACCEPT_EULA: <span class="s">"Y"</span>
+  volumes:
+    - <span class="s">./servicebus/config.json:/ServiceBus_Emulator/ConfigFiles/Config.json</span>
+  depends_on: [sbemulator-mssql]
+
+<span class="k">sbemulator-mssql</span>:
+  image: <span class="s">mcr.microsoft.com/mssql/server:2022-latest</span>
+  environment:
+    ACCEPT_EULA: <span class="s">"Y"</span>
+    MSSQL_SA_PASSWORD: <span class="s">"${MSSQL_SA_PASSWORD}"</span>   <span class="c"># 8+ chars, strong</span></pre>
+        </li>
+        <li>
+          <h4>Point the services at the emulator</h4>
+          <p>The emulator uses a fixed connection string with the <span class="mono">UseDevelopmentEmulator=true</span> flag.</p>
+<pre><span class="y">AZURE_SERVICEBUS_CONNECTION_STRING</span>=Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;</pre>
+        </li>
+      </ol>
+      <div class="callout warn">
+        The emulator now uses the <b>default AMQP port 5672</b>. RabbitMQ also uses 5672, so it was made <b>opt-in</b> (profile <span class="mono">rabbitmq</span>) and does not auto-start — it is <b>not deleted</b> and stays available for twende-ride. The two cannot run at once; start RabbitMQ (after stopping the emulator) with <span class="mono">docker compose --profile rabbitmq up -d dev_rabbitmq</span>.
+      </div>
+    </section>
+
+    <!-- ACCESS & CREDENTIALS -->
+    <section id="access">
+      <h2>▶️ Access &amp; Credentials (implemented local emulator)</h2>
+      <div class="callout ok">
+        <b>Status: LIVE.</b> The emulator is configured and running on Colima (arm64) via <span class="mono">docker-resources</span>.
+        Backing store is <b>Azure SQL Edge</b> (arm64-native — no Rosetta/Docker Desktop). Bring it up with:
+        <span class="mono">cd docker-resources &amp;&amp; docker compose up -d dev_servicebus_mssql dev_servicebus_emulator</span>
+        (auto-starts with the stack via <span class="mono">COMPOSE_PROFILES=…,servicebus</span>).
+      </div>
+
+      <h3 class="subhead">Endpoints</h3>
+      <div class="card">
+        <table>
+          <thead><tr><th>Component</th><th>Host endpoint</th><th>Container</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><span class="name">Service Bus Emulator — AMQP</span></td><td><span class="chip">localhost:5672</span> <span class="pill on">default port</span></td><td><span class="mono">dev_servicebus_emulator</span></td><td>Send/receive messages (apps connect here)</td></tr>
+            <tr><td><span class="name">Service Bus Emulator — Management</span></td><td><span class="chip">localhost:5300</span></td><td><span class="mono">dev_servicebus_emulator</span></td><td>Admin/HTTP management</td></tr>
+            <tr><td><span class="name">Service Bus Explorer (Web GUI)</span> <span class="pill on">monitor</span></td><td><a href="http://localhost:5235">localhost:5235</a></td><td><span class="mono">dev_servicebus_explorer</span></td><td>Browser dashboard — browse topics/subscriptions, peek/send messages</td></tr>
+            <tr><td><span class="name">SQL Edge (backing store)</span></td><td><span class="chip">localhost:1433</span></td><td><span class="mono">dev_servicebus_mssql</span></td><td>Emulator's storage — DB tools connect here</td></tr>
+            <tr><td><span class="name">RabbitMQ</span> <span class="pill neutral">opt-in / stopped</span></td><td><span class="chip">localhost:5672</span> / <span class="chip">15672</span></td><td><span class="mono">dev_rabbitmq</span></td><td>Profile-gated (<span class="mono">rabbitmq</span>) so it frees 5672 for the emulator. Still available for twende-ride; can't run alongside the emulator.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="subhead">Visually monitor the emulator</h3>
+      <div class="card">
+        <table>
+          <thead><tr><th>Tool</th><th>How</th><th>Connect with</th></tr></thead>
+          <tbody>
+            <tr><td><span class="name">Web GUI</span> <span class="pill on">wired in</span></td><td>Open <a href="http://localhost:5235">http://localhost:5235</a> → <b>Configuration</b> → add a <b>ServiceBus</b> connection (<span class="mono">dev_servicebus_explorer</span> shares the emulator's netns)</td><td><span class="mono">Endpoint=sb://localhost:5300;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;</span></td></tr>
+            <tr><td><span class="name">VS Code extension</span></td><td>Install “Service Bus Emulator Explorer” — browse topics/subs, peek/send in the editor</td><td><span class="mono">Endpoint=sb://localhost;…;UseDevelopmentEmulator=true</span> (default 5672 → no custom port needed now)</td></tr>
+            <tr><td><span class="name">Terminal UI</span></td><td><span class="mono">brew install</span> service-bus-explorer-tui</td><td>same <span class="mono">localhost</span> emulator connection string</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout info">
+        Now that the emulator is on the <b>default 5672</b>, host tools (VS Code / TUI) connect with the plain
+        <span class="mono">sb://localhost;…;UseDevelopmentEmulator=true</span> — no custom port. The Web GUI runs in a container, so it reaches the
+        emulator by container name on the management port <span class="mono">5300</span>.
+      </div>
+
+      <h3 class="subhead">Credentials</h3>
+      <div class="card">
+        <table>
+          <thead><tr><th>Target</th><th>Username</th><th>Password / key</th><th>Where it lives</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="name">SQL Edge (SA)</span></td>
+              <td><span class="chip">sa</span></td>
+              <td><span class="cred-chip">Emul@torStr0ng!Pass2026</span></td>
+              <td><span class="mono">docker-resources/.env</span> → <span class="mono">MSSQL_SA_PASSWORD</span> (git-ignored)</td>
+            </tr>
+            <tr>
+              <td><span class="name">Service Bus Emulator (SAS)</span></td>
+              <td><span class="chip">RootManageSharedAccessKey</span></td>
+              <td><span class="cred-chip">SAS_KEY_VALUE</span> <span class="pill neutral">non-secret dev value</span></td>
+              <td>fixed emulator key; auth bypassed by <span class="mono">UseDevelopmentEmulator=true</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="subhead">Connect to SQL Edge (a DB tool or CLI)</h3>
+      <pre><span class="c"># Azure Data Studio / DBeaver: Server=localhost,1433  User=sa  Password=Emul@torStr0ng!Pass2026</span>
+<span class="c"># Encrypt: false / Trust server certificate: true</span>
+
+<span class="c"># CLI via the container (no host tools needed):</span>
+<span class="k">docker exec</span> -it dev_servicebus_mssql \
+  /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa \
+  -P <span class="s">'Emul@torStr0ng!Pass2026'</span> -C -Q <span class="s">"SELECT name FROM sys.databases"</span>
+
+<span class="c"># Emulator-created databases you will see:</span>
+<span class="c">#   SbGatewayDatabase , SbMessageContainerDatabase00001</span></pre>
+      <div class="callout warn">
+        Do <b>not</b> use these to store app data — that SQL instance is the emulator's private backing store. Your apps talk to the
+        emulator on <span class="mono">5672</span>, never to SQL directly.
+      </div>
+
+      <h3 class="subhead">App connection string (already wired in the <span class="mono">local</span> profile)</h3>
+      <pre><span class="c"># backend/*/src/main/resources/application-local.yml (active by default)</span>
+<span class="y">Endpoint</span>=sb://localhost:5672;<span class="y">SharedAccessKeyName</span>=RootManageSharedAccessKey;<span class="y">SharedAccessKey</span>=SAS_KEY_VALUE;<span class="y">UseDevelopmentEmulator</span>=true;</pre>
+
+      <h3 class="subhead">Provisioned topics / subscriptions</h3>
+      <div class="card">
+        <table>
+          <thead><tr><th>Topic</th><th>Subscription</th></tr></thead>
+          <tbody>
+            <tr><td><span class="chip">catalog-events</span></td><td><span class="chip">booking-service</span></td></tr>
+            <tr><td><span class="chip">booking-events</span></td><td><span class="chip">default</span></td></tr>
+            <tr><td><span class="chip">identity-events</span></td><td><span class="chip">default</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout info">
+        Change these in <span class="mono">docker-resources/servicebus/config.json</span> and re-create the emulator. The emulator requires
+        <b>≥1 subscription per topic</b>.
+      </div>
+
+      <h3 class="subhead">Dev → Prod swap (no code changes)</h3>
+      <pre><span class="c"># DEV (default): local profile -> emulator on 5672</span>
+<span class="c"># PROD: flip one env var -> managed identity + real namespace</span>
+<span class="k">export</span> <span class="y">SPRING_PROFILES_ACTIVE</span>=prod
+<span class="y">AZURE_SERVICEBUS_NAMESPACE</span>=sb-myticketzm-prod
+<span class="y">AZURE_MANAGED_IDENTITY_ENABLED</span>=true   <span class="c"># no SAS, no secrets (see application-prod.yml)</span></pre>
+
+      <div class="callout warn">
+        <b>Runtime note (Colima / Apple Silicon):</b> SQL Edge needs real memory. The Colima VM was raised to <b>6 GiB / 4 CPU</b>
+        (<span class="mono">colima start --cpu 4 --memory 6</span>) — a 2 GiB VM OOM-kills SQL Edge and destabilises the stack.
+      </div>
+    </section>
+
+    <!-- OPTION C: rabbit -->
+    <section id="rabbit">
+      <h2>🐰 Option C — Use the running RabbitMQ as the local binder</h2>
+      <p class="lead">If you'd rather use the RabbitMQ you already have running instead of the emulator, swap the Spring Cloud Stream binder. This puts the idle broker to work. Best done with a <b>Spring profile</b> so production still uses Service Bus.</p>
+<pre><span class="c">&lt;!-- pom.xml: add alongside the servicebus binder --&gt;</span>
+<span class="k">&lt;dependency&gt;</span>
+  <span class="k">&lt;groupId&gt;</span>org.springframework.cloud<span class="k">&lt;/groupId&gt;</span>
+  <span class="k">&lt;artifactId&gt;</span>spring-cloud-stream-binder-rabbit<span class="k">&lt;/artifactId&gt;</span>
+<span class="k">&lt;/dependency&gt;</span></pre>
+<pre><span class="c"># application-local.yml  (activate with SPRING_PROFILES_ACTIVE=local)</span>
+spring:
+  rabbitmq: { host: localhost, port: 5672, username: admin, password: admin_password }
+  cloud:
+    stream:
+      default-binder: <span class="s">rabbit</span>          <span class="c"># override 'servicebus'</span>
+      bindings:
+        catalogEventConsumer-in-0: { destination: catalog-events, group: booking-service }
+        ticketOutput-out-0:        { destination: booking-events }</pre>
+      <div class="callout info">
+        With the <span class="mono">rabbit</span> binder, Service Bus “topics” map to RabbitMQ <b>topic exchanges</b> and consumer <b>groups</b> map to durable queues — the same <span class="mono">StreamBridge</span> / function code works unchanged. Keep <span class="mono">servicebus</span> as the default binder for the prod profile.
+      </div>
+    </section>
+
+    <!-- ENV VARS -->
+    <section id="envvars">
+      <h2>🔧 Environment variables reference</h2>
+      <p class="lead">All are already declared in each service's <span class="mono">application.yml</span> with empty defaults — currently <b>none are set</b>, which is why Service Bus is inert.</p>
+      <div class="card">
+        <table>
+          <thead><tr><th>Variable</th><th>Purpose</th><th>Needed for</th></tr></thead>
+          <tbody>
+            <tr><td><span class="chip">AZURE_SERVICEBUS_CONNECTION_STRING</span></td><td>SAS connection string (auth + endpoint in one)</td><td>Option A(a), Emulator</td></tr>
+            <tr><td><span class="chip">AZURE_SERVICEBUS_NAMESPACE</span></td><td>Namespace host for token-credential auth</td><td>Option A(b) managed identity</td></tr>
+            <tr><td><span class="chip">AZURE_MANAGED_IDENTITY_ENABLED</span></td><td>Enable <span class="mono">DefaultAzureCredential</span> / MSI</td><td>Option A(b)</td></tr>
+            <tr><td><span class="chip">AZURE_CLIENT_ID / _SECRET / _TENANT_ID</span></td><td>Service-principal / user-assigned identity creds</td><td>Option A(b) non-MSI</td></tr>
+            <tr><td><span class="chip">AZURE_KEYVAULT_ENABLED / _ENDPOINT</span></td><td>Pull the connection string from Key Vault</td><td>optional hardening</td></tr>
+            <tr><td><span class="chip">MSSQL_SA_PASSWORD</span></td><td>Backing SQL Server for the emulator</td><td>Option B</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- RECOMMENDATIONS -->
+    <section id="recommend">
+      <h2>🧭 Recommendations</h2>
+      <div class="callout ok"><b>For local dev now:</b> use <b>Option B (emulator)</b> or <b>Option C (RabbitMQ binder + <span class="mono">local</span> profile)</b>. Both let cross-service events flow without an Azure subscription. Option C also gives the currently-idle RabbitMQ a real job.</div>
+      <div class="callout info"><b>For staging/production:</b> use <b>Option A with managed identity</b> (roles: <em>Azure Service Bus Data Sender</em> + <em>Data Receiver</em>) and pull the connection string from Key Vault (<span class="mono">AZURE_KEYVAULT_ENABLED=true</span>). No secrets in env.</div>
+      <div class="callout warn"><b>Decide RabbitMQ's fate:</b> either adopt it as the local binder (Option C) or remove <span class="mono">dev_rabbitmq</span> from the ticketing compose stack so it isn't mistaken for an active dependency. Also fix the <b>5672 port clash</b> before running the emulator alongside it.</div>
+      <div class="callout danger"><b>Complete the topology:</b> add explicit bindings + topics for the dynamic StreamBridge destinations (<span class="mono">chargeback-events</span>, <span class="mono">notification</span>, <span class="mono">organization</span>, <span class="mono">userRole</span>) and add subscribers for <span class="mono">booking-events</span> / <span class="mono">identity-events</span>, which are currently produced with no consumer.</div>
+    </section>
+
+    <section id="sources">
+      <h2>📚 Sources</h2>
+      <ul style="font-size:13.5px;color:var(--ink-soft)">
+        <li><a href="https://learn.microsoft.com/en-us/azure/service-bus-messaging/test-locally-with-service-bus-emulator">Test locally with the Azure Service Bus emulator — Microsoft Learn</a></li>
+        <li><a href="https://hub.docker.com/r/microsoft/azure-messaging-servicebus-emulator">microsoft/azure-messaging-servicebus-emulator — Docker Hub</a></li>
+        <li><a href="https://techcommunity.microsoft.com/blog/messagingonazureblog/introducing-local-emulator-for-azure-service-bus/4304457">Introducing the local emulator for Azure Service Bus — Microsoft Community Hub</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/developer/java/spring-framework/configure-spring-cloud-stream-binder-java-app-with-service-bus">Spring Cloud Stream with Azure Service Bus — Microsoft Learn</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/developer/java/spring-framework/using-service-bus-in-spring-applications">Use Azure Service Bus in Spring applications (managed identity / RBAC) — Microsoft Learn</a></li>
+      </ul>
+    </section>
+
+    <footer>Event Ticketing System · Messaging Architecture &amp; Azure Service Bus Setup · 2026-07-17 · derived from live codebase inspection</footer>
+  </main>
+</div>
+</body>
+</html>

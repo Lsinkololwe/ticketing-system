@@ -1,0 +1,99 @@
+id: ET-IDN-002
+title: Keycloak ↔ MongoDB user synchronisation
+status: draft
+area: IDN
+service: identity-service
+subgraph: identity
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 1
+blocked_by: [ET-PLT-002, ET-PLT-005, ET-PLT-007, ET-IDN-001]
+conformance: "US Part I §6 Keycloak integration · US Part II §7 user CRUD"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/identity/001-phone-otp-identity/spec.md
+  - docs/USER_STORIES.md
+  - docs/architecture/DATA_ARCHITECTURE.md
+  - docs/architecture/NAMING_CONVENTIONS.md
+
+persistence:
+  collections:
+    - identity_users          # _id IS the Keycloak user ID — no keycloakUserId field
+  indexes:
+    - "identity_users {email} unique sparse"
+    - "identity_users {phoneNumber} unique sparse"
+    - "identity_users {userType,accountStatus} compound"
+  redis_keys:
+    - "lock:sweep:user-reconciliation   STRING  30 s  — the R4 sweep mutex"
+
+events:
+  module: []
+  bus: []       # identity.UserRegistered has no cross-service consumer (ET-PLT-003 §4)
+  topics: []
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "me                      AUTHENTICATED  User!"
+    - "user(id)                ADMIN          User"
+    - "users(filter, page)     ADMIN          UserPage!"
+  mutations:
+    - "updateMyProfile(input)      AUTHENTICATED  User!"
+    - "changePhoneNumber(input)    AUTHENTICATED  User!"
+    - "updateUser(id, input)       ADMIN          User!"
+    - "suspendUser(id, reason)     ADMIN          User!"
+    - "reconcileUsers               SUPER_ADMIN    ReconciliationResult!"
+
+rest:
+  internal:
+    - "POST /api/internal/keycloak/sync/user   internal-write"
+    - "POST /api/internal/keycloak/sync/event  internal-write"
+
+errors:
+  - USER_UNKNOWN
+  - USER_SYNC_CONFLICT
+
+field_ownership:
+  keycloak: [username, email, firstName, lastName, emailVerified, phoneVerified,
+             phoneNumber, realm_roles, credentials, enabled]
+  mongodb:  [avatarUrl, bio, dateOfBirth, locale, timezone, userType, accountStatus,
+             primaryOrganizationId, syncedAt, createdAt, updatedAt, deletedAt]
+  write_through: [firstName, lastName, email]   # Keycloak first, then MongoDB
+
+config:
+  identity.sync.listener-timeout: PT2S
+  identity.sync.reconciliation-interval: PT6H
+  identity.sync.reconciliation-page-size: 200
+  identity.sync.lazy-repair.enabled: "true — a startup check refuses false outside tests"
+
+keycloak_spi:
+  module: backend/keycloak-extensions
+  registration: META-INF/services/org.keycloak.events.EventListenerProviderFactory
+  components: [UserSyncEventListener, UserSyncEventListenerFactory, IdentityServiceClient]
+  realm_listener: "user-sync — registered by the ET-PLT-007 T1 realm export"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/identity/002-keycloak-user-sync
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --persistence
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-002
+  - mvn -q -f backend/keycloak-extensions package
+  - mvn -q -f backend verify -Dgroups=ET-IDN-002
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "dateOfBirth is LocalDate, which is an explicit exception to ET-PLT-002 R5's Instant-only rule and to the --clock lint. The exception is justified in prose but the lint has no waiver mechanism wired up yet, so either specs/_waivers.txt gains its first entry or the lint reports a permanent false failure on this one field."
+  - "Lazy repair (R3) runs on the authenticated request path and may call the Keycloak Admin API synchronously to fill fields the JWT lacks. That is a blocking-shaped external call on the hot path for exactly the users whose document is missing — which, after a listener outage, is all of them at once, at login-storm rate."
+  - "R2 requires the listener to swallow every failure, and R3 makes the platform correct without it. Together they mean a permanently broken listener is invisible except through the lazy-repair rate metric. If nobody alerts on that metric, the listener can be dead for months and the only symptom is stale display names for users who never log in."
+  - "The reconciliation sweep pages through all Keycloak users every six hours. At platform scale that is a full scan of the identity provider on a schedule, and Keycloak's Admin API paging is not cheap. The interval and page size are stated but not sized against any user-count projection."
+  - "R4 forbids the sweep from writing MongoDB-owned fields, but the sweep upserts documents for users that have none — and at that moment every MongoDB-owned field must be defaulted. Distinguishing 'create with defaults' from 'update, do not touch' inside one upsert is where an avatar gets cleared."
+  - "R5 orders the write-through as Keycloak-then-MongoDB so a partial failure leaves MongoDB stale rather than Keycloak wrong. The stale MongoDB copy is then repaired only by the six-hourly sweep, so a user who changes their name and hits a MongoDB failure sees the old name for up to six hours with no indication anything failed."
+  - "R6 refuses a phone number already held by another user without disclosing which account holds it — but the refusal itself confirms the number is registered, which is precisely the membership oracle ET-IDN-001 R4 is built to prevent. The two specs disagree, and this one wins by necessity; the disclosure needs to be bounded by rate limiting rather than argued away."
+  - "R7 keeps a tombstone so financial records keep their foreign key, while ET-PLT-008 will later anonymise the personal fields on the same document. The order matters: anonymising before every consumer has stopped displaying the name produces receipts and tickets showing a blank purchaser, and nothing here says which consumers those are."

@@ -142,7 +142,7 @@ export const MENU_ITEMS: MenuItemConfig[] = [
     category: 'management',
   },
   {
-    title: 'Pending Approvals',
+    title: 'Pending approvals',
     description: 'Review and approve pending events',
     href: '/events/pending-approval',
     icon: null,

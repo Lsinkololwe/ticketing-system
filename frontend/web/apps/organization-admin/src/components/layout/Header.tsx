@@ -85,13 +85,12 @@ export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
     <Box
       asChild
       px={{ initial: '4', sm: '6' }}
+      className="ds-glass-header"
       style={{
-        height: '64px',
+        height: 'var(--header-height)',
         position: 'sticky',
         top: 0,
         zIndex: 30,
-        background: 'var(--dashboard-header-bg)',
-        backdropFilter: `blur(var(--dashboard-header-blur))`,
         borderBottom: '1px solid var(--dashboard-header-border)',
       }}
     >
@@ -105,30 +104,32 @@ export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
                 size="2"
                 onClick={onMenuClick}
                 aria-label="Open navigation menu"
-                style={{ color: 'var(--content-secondary)' }}
+                style={{ color: 'var(--gray-11)' }}
               >
                 <Menu style={{ width: 20, height: 20 }} />
               </IconButton>
             )}
 
-            {/* Organization Name */}
+            {/* Organization context. The chip is one of the two sanctioned
+                gradients in this system (.ds-accent-chip). */}
             <Flex align="center" gap="2">
               <Box
+                aria-hidden="true"
+                className="ds-accent-chip"
                 style={{
                   width: 32,
                   height: 32,
-                  borderRadius: '8px',
-                  background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                  borderRadius: 'var(--radius-3)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Building style={{ width: 16, height: 16, color: 'white' }} />
+                <Building width={16} height={16} />
               </Box>
               <Box className="hidden-mobile">
-                <Text size="2" weight="medium" style={{ color: 'var(--content-primary)' }}>
-                  {organization?.name || 'My Organization'}
+                <Text size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
+                  {organization?.name || 'Your organization'}
                 </Text>
               </Box>
             </Flex>
@@ -142,7 +143,7 @@ export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
               size="2"
               onClick={toggleTheme}
               aria-label={`Switch to ${theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark'} theme`}
-              style={{ color: 'var(--content-secondary)' }}
+              style={{ color: 'var(--gray-11)' }}
             >
               {getThemeIcon()}
             </IconButton>
@@ -162,45 +163,43 @@ export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
                 >
                   <Avatar
                     size="2"
-                    fallback={session?.user?.name?.charAt(0) || 'U'}
+                    fallback={session?.user?.name?.charAt(0)?.toUpperCase() || 'U'}
                     radius="full"
-                    style={{
-                      background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
-                    }}
+                    className="ds-accent-chip"
                   />
                 </Box>
               </DropdownMenu.Trigger>
 
               <DropdownMenu.Content align="end" sideOffset={8}>
                 {/* User Info */}
-                <Box px="3" py="2" style={{ borderBottom: '1px solid var(--surface-border)' }}>
-                  <Text size="2" weight="medium" style={{ display: 'block', color: 'var(--content-primary)' }}>
-                    {session?.user?.name || 'User'}
+                <Box px="3" py="2" style={{ borderBottom: '1px solid var(--gray-a5)' }}>
+                  <Text size="2" weight="medium" style={{ display: 'block', color: 'var(--gray-12)' }}>
+                    {session?.user?.name || 'Signed in'}
                   </Text>
-                  <Text size="1" style={{ color: 'var(--content-muted)' }}>
+                  <Text size="1" style={{ color: 'var(--gray-10)' }}>
                     {session?.user?.email || ''}
                   </Text>
                 </Box>
 
                 <DropdownMenu.Item asChild>
                   <Link href="/settings/profile" style={{ textDecoration: 'none', color: 'inherit' }}>
-                    <User style={{ width: 16, height: 16, marginRight: 8 }} />
-                    My Profile
+                    <User width={16} height={16} style={{ marginRight: 8 }} />
+                    My profile
                   </Link>
                 </DropdownMenu.Item>
 
                 {canManageSettings && (
                   <DropdownMenu.Item asChild>
                     <Link href="/settings" style={{ textDecoration: 'none', color: 'inherit' }}>
-                      <Building style={{ width: 16, height: 16, marginRight: 8 }} />
-                      Organization Settings
+                      <Building width={16} height={16} style={{ marginRight: 8 }} />
+                      Organization settings
                     </Link>
                   </DropdownMenu.Item>
                 )}
 
                 <DropdownMenu.Item asChild>
                   <Link href="/settings/notifications" style={{ textDecoration: 'none', color: 'inherit' }}>
-                    <Bell style={{ width: 16, height: 16, marginRight: 8 }} />
+                    <Bell width={16} height={16} style={{ marginRight: 8 }} />
                     Notifications
                   </Link>
                 </DropdownMenu.Item>
@@ -212,8 +211,8 @@ export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
                   onClick={handleLogout}
                   disabled={isLoggingOut}
                 >
-                  <LogOut style={{ width: 16, height: 16, marginRight: 8 }} />
-                  {isLoggingOut ? 'Signing out...' : 'Sign Out'}
+                  <LogOut width={16} height={16} style={{ marginRight: 8 }} />
+                  {isLoggingOut ? 'Signing out…' : 'Sign out'}
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Root>
@@ -222,7 +221,7 @@ export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
 
         <style jsx global>{`
           .user-avatar-trigger:hover {
-            border-color: var(--brand-400) !important;
+            border-color: var(--accent-7) !important;
           }
         `}</style>
       </header>

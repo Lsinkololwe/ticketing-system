@@ -1,0 +1,124 @@
+id: ET-ORG-001
+title: Organizer onboarding — nine states, staged access, the approval saga
+status: draft
+area: ORG
+service: identity-service
+subgraph: identity
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 1
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-IDN-002]
+conformance: "US Part I §4 onboarding stages · US Part II §8, §12 CRUD · US Part IV §20 approval saga · US Part IV §21 state machines"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/identity/002-keycloak-user-sync/spec.md
+  - docs/USER_STORIES.md
+  - docs/ONBOARDING_FLOW.md
+  - docs/FILE_UPLOAD_ARCHITECTURE.md
+  - docs/architecture/DATA_ARCHITECTURE.md
+
+persistence:
+  collections:
+    - identity_organizations            # the application AND the tenant — one document
+    - identity_verification_documents
+  indexes:
+    - "identity_organizations {slug} unique"
+    - "identity_organizations {ownerId} single"
+    - "identity_organizations {status,submittedAt} compound"
+    - "identity_verification_documents {organizationId,documentType} compound"
+  redis_keys: []
+
+events:
+  module:
+    - OrganizationSubmittedEvent    # transitions 3, 4 → notify the review queue
+    - OrganizationDecidedEvent      # transitions 5, 6, 7 → notify the applicant
+  bus:
+    - identity.OrganizationApproved     # v1, session organizationId → catalog, booking
+    - identity.OrganizationSuspended    # v1, session organizationId → catalog, booking
+  topics:
+    - identity-events
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "myOrganization                        AUTHENTICATED  Organization"
+    - "organization(id)                      AUTHENTICATED  Organization"
+    - "organizationBySlug(slug)              PUBLIC         Organization   # public projection only"
+    - "organizations(filter, page)           ADMIN          OrganizationPage!"
+    - "organizerApplications(status, page)   ADMIN          OrganizationPage!"
+    - "verificationDocuments(organizationId) AUTHENTICATED  [VerificationDocument!]!"
+  mutations:
+    - "applyToBeOrganizer(input)             AUTHENTICATED  Organization!"
+    - "updateOrganization(id, input)         AUTHENTICATED  Organization!"
+    - "submitForReview(id)                   AUTHENTICATED  Organization!"
+    - "approveOrganization(input)            ADMIN          Organization!"
+    - "rejectOrganization(input)             ADMIN          Organization!"
+    - "requestOrganizationChanges(input)     ADMIN          Organization!"
+    - "reviewDocument(input)                 ADMIN          VerificationDocument!"
+    - "suspendOrganization(id, reason)       ADMIN          Organization!"
+    - "reactivateOrganization(id)            AUTHENTICATED  Organization!"
+    - "deactivateOrganization(id)            AUTHENTICATED  Organization!"
+    - "requestOrganizationDeletion(id)       AUTHENTICATED  Organization!"
+    - "cancelOrganizationDeletion(id)        AUTHENTICATED  Organization!"
+
+rest:
+  - "POST /api/v1/organizations/{orgId}/documents/upload-url        member"
+  - "POST /api/v1/organizations/{orgId}/documents                   member"
+  - "GET  /api/v1/organizations/{orgId}/documents/{id}/download-url  member or ADMIN"
+
+errors:
+  - ORGANIZATION_UNKNOWN
+  - ORGANIZATION_STATE_INVALID
+  - ORGANIZATION_ALREADY_EXISTS
+  - SLUG_TAKEN
+  - APPLICATION_INCOMPLETE
+  - DOCUMENT_REQUIRED
+  - DOCUMENT_STATE_INVALID
+  # ORGANIZER_NOT_APPROVED is introduced by ET-CAT-001 and raised by R7's gate
+
+state_machine:
+  states: [DRAFT, PENDING_DOCUMENTS, PENDING_REVIEW, CHANGES_REQUESTED, REJECTED,
+           ACTIVE, SUSPENDED, INACTIVE, PENDING_DELETION]     # nine — no APPROVED
+  transitions: 15
+  pairs_tested: 100
+
+saga:
+  name: OrganizationApprovalSaga
+  state_on: "identity_organizations.approvalSagaStep / .approvalSagaAttempts"
+  steps: ["1 activate", "2 owner membership", "3 userType=ORGANIZER",
+          "4 grant ORGANIZER realm role", "5 group tree + owner", "6 publish approved"]
+  compensates: "in reverse, after retries are exhausted; returns status to PENDING_REVIEW"
+
+config:
+  identity.onboarding.document.max-size: 10MB
+  identity.onboarding.document.accepted-types: [image/jpeg, image/png, application/pdf]
+  identity.onboarding.upload-url-ttl: PT15M
+  identity.onboarding.saga.max-retries: 3
+  identity.onboarding.saga.backoff: PT2S
+  identity.onboarding.deletion-grace: P30D
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/organization/001-organizer-onboarding
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/identity-service test -Dgroups=ET-ORG-001
+  - mvn -q -f backend verify -Dgroups=ET-ORG-001
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The approval saga spans MongoDB and Keycloak, which cannot share a transaction. R6's kill-after-each-step test is the only thing that proves recovery works, and it is six separate integration tests against a real Keycloak — slow, and the first thing that gets marked @Disabled when CI is long. If it is disabled, the platform's worst failure mode (an ACTIVE organization whose owner cannot log into it) has no detection."
+  - "Compensation step 5 deliberately leaves the Keycloak group tree in place, calling it harmless. It is not quite: a compensated application that is never re-approved leaves an orphan /organizations/{slug} tree, and a later organization claiming that slug finds the group path taken. Slug generation must tolerate that, and nothing in R1 says it does."
+  - "Transition 8 (REJECTED → DRAFT) reuses the same document, so the rejection reason and reviewedById are overwritten by the next cycle. An applicant rejected three times leaves no history of why, which the approvals workbench (ET-ADM-001) will need and this spec does not retain."
+  - "The stage access matrix is enforced by OrganizationCapabilities in identity-service, reached by catalog and booking over an internal HTTP call. That puts a synchronous cross-service call on every gated operation in the platform — including event publishing and payout requests. Caching it reintroduces the staleness problem ET-PLT-007 rejected for organization roles."
+  - "R1 refuses a second organization for a caller who already owns one in any non-terminal state, which means the platform supports exactly one organization per owner. USER_STORIES describes myOrganizations (plural) and multi-org membership, so a user may be a MEMBER of many but OWNER of one. That constraint is stated nowhere in the product docs and may be wrong."
+  - "Presigned upload URLs are issued for 15 minutes and the registration step verifies the caller was issued the fileKey. Nothing verifies that what was uploaded matches the declared mimeType and fileSize — the browser declares them before the PUT. A reviewer therefore opens whatever was actually uploaded, and the accepted-types enforcement is advisory unless the storage layer or a post-upload scan checks it."
+  - "Documents are stored under a fileKey in object storage with only presigned access, but nothing here specifies encryption at rest, retention, or what happens to KYB documents when an organization is deleted. National IDs and tax certificates are the most sensitive data the platform holds and ET-PLT-008 has not been written."
+  - "identity.OrganizationApproved is published as saga step 6, after the Keycloak steps. If the bus publish itself fails, the saga has completed everything visible to the user but catalog still refuses to publish their events. Step 6 must be driven by the Modulith outbox rather than treated as a saga step that can fail, and R6 does not say which."

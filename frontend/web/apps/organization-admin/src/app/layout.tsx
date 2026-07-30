@@ -17,7 +17,7 @@ export default function RootLayout({
   return (
     // suppressHydrationWarning is required for next-themes to work without hydration mismatch
     // next-themes modifies the html element's class and style attributes on the client
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-brand="org-admin" suppressHydrationWarning>
       <body>
         <Providers>
           <ErrorBoundary>

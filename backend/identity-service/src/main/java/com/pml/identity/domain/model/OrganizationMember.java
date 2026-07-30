@@ -131,20 +131,44 @@ public class OrganizationMember {
     }
 
     /**
-     * Check if member has a specific permission
-     * Takes into account role permissions, custom, and denied
+     * Check if member has a specific permission.
+     * Resolution order: denied (revokes) → custom (grants) → role default.
+     * This is the actor's authority, independent of membership status.
      */
     public boolean hasPermission(String permission) {
         // Explicitly denied takes precedence
-        if (deniedPermissions.contains(permission)) {
+        if (deniedPermissions != null && deniedPermissions.contains(permission)) {
             return false;
         }
         // Custom permissions add to role
-        if (customPermissions.contains(permission)) {
+        if (customPermissions != null && customPermissions.contains(permission)) {
             return true;
         }
-        // Check role-based permissions (would need a permission mapping)
-        return false; // Actual implementation would check role permissions
+        // Fall back to the role's default permissions
+        return role != null && role.grants(permission);
+    }
+
+    /**
+     * Whether this actor can perform an action: the member must be active AND hold the
+     * permission. This is the "can the actor do this?" half of an authorization decision;
+     * the "can the organization do this?" half lives on {@link Organization#canPerform}.
+     */
+    public boolean canPerform(String permission) {
+        return isActive() && hasPermission(permission);
+    }
+
+    /**
+     * The actor's effective permission set: role defaults, plus custom, minus denied.
+     */
+    public Set<String> effectivePermissions() {
+        Set<String> perms = role != null ? role.permissions() : new HashSet<>();
+        if (customPermissions != null) {
+            perms.addAll(customPermissions);
+        }
+        if (deniedPermissions != null) {
+            perms.removeAll(deniedPermissions);
+        }
+        return perms;
     }
 
     /**

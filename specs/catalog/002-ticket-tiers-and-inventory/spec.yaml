@@ -1,0 +1,108 @@
+id: ET-CAT-002
+title: Ticket tiers, capacity and the authoritative inventory
+status: draft
+area: CAT
+service: catalog-service
+subgraph: catalog
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 2
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-CAT-001]
+conformance: "V3 §7.1 catalog collections · PDI Phase 4 optimistic locking · US Part III §16"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/004-federation-contract/spec.md
+  - specs/_platform/006-test-harness/spec.md
+  - specs/catalog/001-event-lifecycle/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+
+persistence:
+  collections:
+    - catalog_ticket_tiers      # definition — catalog owns
+    - booking_tier_inventory    # counters   — booking owns
+    - booking_promo_codes
+  indexes:
+    - "catalog_ticket_tiers {eventId,salesStartAt} compound"
+    - "booking_tier_inventory {tierId} unique      # HOT — the reservation decrement"
+    - "booking_tier_inventory {eventId} single"
+    - "booking_promo_codes {code} unique"
+  redis_keys:
+    - "cache:tier:{tierId}   STRING  30 s  — DISPLAY ONLY; no reservation reads it"
+
+events:
+  module:
+    - TierClosedEvent
+  bus:
+    - catalog.TicketTierPublished        # v1, session tierId → booking (create inventory)
+    - catalog.TicketTierCapacityChanged  # v1, session tierId → booking ($inc the delta)
+  topics:
+    - catalog-events
+
+graphql:
+  schema:
+    - backend/catalog-service/src/main/resources/graphql/schema.graphqls
+    - backend/booking-service/src/main/resources/graphql/schema.graphqls   # the extend block
+  queries:
+    - "ticketTiers(eventId)          PUBLIC         [TicketTier!]!   # bounded <= 50"
+    - "ticketTier(id)                PUBLIC         TicketTier"
+    - "promoCode(code, eventId)      AUTHENTICATED  PromoCodeValidation!"
+  mutations:
+    - "createTicketTier(input)          ORGANIZER  TicketTier!"
+    - "updateTicketTier(id, input)      ORGANIZER  TicketTier!"
+    - "changeTierCapacity(id, capacity) ORGANIZER  TicketTier!"
+    - "pauseTierSales(id)               ORGANIZER  TicketTier!"
+    - "resumeTierSales(id)              ORGANIZER  TicketTier!"
+    - "closeTier(id)                    ORGANIZER  TicketTier!"
+    - "deleteTier(id)                   ORGANIZER  Boolean!"
+    - "createPromoCode(input)           ORGANIZER  PromoCode!"
+    - "updatePromoCode(id, input)       ORGANIZER  PromoCode!"
+    - "deactivatePromoCode(id)          ORGANIZER  PromoCode!"
+  extensions:
+    - "booking extends TicketTier { availableQuantity, soldQuantity, onSale }"
+
+errors:
+  - TIER_UNKNOWN
+  - TIER_NOT_ON_SALE
+  - CAPACITY_BELOW_COMMITTED
+  - PROMO_CODE_UNKNOWN
+  - PROMO_CODE_EXHAUSTED
+  - PROMO_CODE_NOT_APPLICABLE
+  # TIER_SOLD_OUT (ET-PLT-002) and PURCHASE_LIMIT_EXCEEDED (ET-TKT-001) are raised here
+
+invariant: "availableQuantity + reservedQuantity + soldQuantity == capacity, always"
+
+counter_movements:
+  reserve: "filter status=ON_SALE, window open, available>=qty  →  available -qty, reserved +qty"
+  confirm: "filter reserved>=qty                                →  reserved -qty, sold +qty"
+  release: "filter reserved>=qty                                →  reserved -qty, available +qty"
+
+config:
+  catalog.tier.default-max-per-order: 10
+  catalog.tier.max-tiers-per-event: 20
+  booking.promo.release-on-failure: true
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/catalog/002-ticket-tiers-and-inventory
+  - ./scripts/spec-lint.sh --persistence
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-CAT-002
+  - mvn -q -f backend verify -Dgroups=ET-CAT-002
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "booking_tier_inventory mirrors price, window, limits and capacity from catalog. Every one of those is a second copy that can drift, and the reservation path reads only the mirror — so a price change in catalog that fails to propagate sells tickets at the old price and the buyer is charged it. Nothing here reconciles the mirror; ET-FIN-005 reconciles money, not definitions."
+  - "R3 distinguishes TIER_SOLD_OUT from TIER_NOT_ON_SALE by a follow-up read on the refusal path. Under an on-sale storm the refusal path is the majority path, so that follow-up read runs thousands of times a minute against the same document the successes are contending for — the diagnostic costs more than the decision."
+  - "The capacity-decrease guard uses a $expr comparison inside the findAndModify filter. $expr cannot use an index, so the guard forces a document-level evaluation; on a single-document lookup by unique tierId that is acceptable, but the query shape is fragile and a future rewrite that drops $expr silently removes the floor."
+  - "R6 says a failed purchase releases the promo redemption, but the release is a second write that can itself fail. A code whose redemptions leak on failure quietly exhausts, and the only symptom is an organizer reporting that a code stopped working early. No sweep reconciles redemptionCount against actual redemptions."
+  - "maxPerBuyer counts HELD reservations plus PURCHASED and VALIDATED tickets, which requires a query across two collections on the reservation hot path. At on-sale rates that is an extra indexed read per attempt, and the count is racy — R5's guarantee that two parallel attempts yield one success needs a unique constraint or a conditional write that this spec does not name."
+  - "Promotion discounts reduce the organizer's take and commission is computed on the discounted total. An organizer can therefore issue a 100% code and pay zero commission on tickets that still consume platform capacity, payment fees and support. Nothing here bounds discountValue."
+  - "R7 permits deleting a tier with zero sales, and the deletion of the inventory document is driven by an event. Between the catalog delete and booking's consumer, a reservation can arrive against an inventory document whose tier no longer exists — and it will succeed, because the reservation path reads only the mirror."
+  - "cache:tier:{tierId} is display-only with a 30-second TTL, so a listing can show tickets remaining for up to 30 seconds after a sell-out. That is deliberate, but it means the last minute of a hot on-sale shows availability to thousands of buyers who will all be refused, which is the worst possible moment for a misleading number."

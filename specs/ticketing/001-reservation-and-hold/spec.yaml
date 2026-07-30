@@ -1,0 +1,108 @@
+id: ET-TKT-001
+title: Reservation, the inventory hold, and the purchase saga
+status: draft
+area: TKT
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 3
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-006, ET-PLT-007, ET-CAT-002]
+conformance: "PDI Phase 2 transaction architecture · PDI Phase 7 saga state machine · V3 §4.1 · US-BUY-002"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/006-test-harness/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/catalog/002-ticket-tiers-and-inventory/spec.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+persistence:
+  collections:
+    - booking_reservations
+  indexes:
+    - "booking_reservations {expiresAt} ttl (ttl + grace = PT1H10M)  # fires AFTER the sweep"
+    - "booking_reservations {tierId,status} compound"
+    - "booking_reservations {userId,status} compound"
+    - "booking_reservations {status,expiresAt} compound          # the sweep claim"
+    - "booking_reservations {userId,tierId} PARTIAL UNIQUE where status=HELD"
+  redis_keys:
+    - "idem:{key}                        STRING  24 h  — ET-PLT-007 §4"
+    - "lock:sweep:reservation-expiry     STRING  30 s"
+    - "lock:sweep:reservation-recovery   STRING  30 s"
+
+events:
+  module:
+    - TicketReservedEvent
+    - TicketPurchasedEvent
+    - ReservationReleasedEvent
+  bus:
+    - booking.TicketPurchased      # v1 → catalog (sold counters), identity (notify)
+  topics:
+    - booking-events
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "reservation(id)           AUTHENTICATED  Reservation"
+    - "myActiveReservations      AUTHENTICATED  [Reservation!]!  # bounded <= 20"
+  mutations:
+    - "reserveTickets(input)     CUSTOMER  Reservation!   # idempotencyKey required"
+    - "cancelReservation(id)     CUSTOMER  Reservation!"
+  # confirmPurchase is NOT a client mutation — confirmation is driven by ET-PAY-002
+
+errors:
+  - RESERVATION_UNKNOWN
+  - RESERVATION_EXPIRED
+  - RESERVATION_STATE_INVALID
+  - PURCHASE_LIMIT_EXCEEDED
+  # TIER_SOLD_OUT, TIER_NOT_ON_SALE, IDEMPOTENCY_KEY_REUSED raised here, owned elsewhere
+
+state_machine:
+  states: [HELD, CONFIRMED, EXPIRED, RELEASED, FAILED]
+  transitions: 7
+  pairs_tested: 30
+  terminal: [CONFIRMED, EXPIRED, RELEASED, FAILED]
+
+saga:
+  name: PurchaseSaga
+  state_on: "booking_reservations.status + booking_payment_intents.status — no separate collection"
+  transactions: ["step 1 hold+reservation", "step 4 confirm: sold+tickets+escrow+commission"]
+
+release_paths:   # all four idempotent; at least two fire for the same row
+  - confirmPurchase
+  - cancelReservation
+  - expiry sweep
+  - TTL index (grace-delayed; cleans up rows the sweep already released)
+
+config:
+  booking.reservation.ttl: PT10M
+  booking.reservation.sweep-interval: PT30S
+  booking.reservation.ttl-grace: PT1H
+  booking.reservation.sweep-batch: 500
+  booking.payment.max-pending: PT30M
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/ticketing/001-reservation-and-hold
+  - ./scripts/spec-lint.sh --persistence
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-001
+  - mvn -q -f backend verify -Dgroups=ET-TKT-001
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The partial unique index on {userId, tierId} where status=HELD conflicts with R5's requirement that a second reserveTickets RETURN the existing reservation. The index makes the second insert throw DuplicateKeyException, which ET-PLT-005 R7 maps to RESOURCE_CONFLICT (retryable) — not to returning the original. The two behaviours must be reconciled in the service, and the natural implementation returns a retryable error to a buyer who should simply see their existing hold."
+  - "R7 requires confirmation to write tickets, credit escrow AND record commission in one MongoDB transaction. For a 10-ticket order that is 10 ticket inserts, an escrow update, two journal documents and a commission record — 14+ documents in one transaction, on the hot path, at on-sale rates. MongoDB transactions have a 60-second default limit and degrade under contention; nothing here bounds order size against that."
+  - "The reservation spans one event but potentially many tiers, and R1 requires taking every tier's inventory in one transaction. Each tier is a separate findAndModify against a separate hot document, so a multi-tier order serialises across several of the platform's most contended documents and holds a transaction open while doing it."
+  - "The TTL grace of PT1H means an expired-but-unreleased reservation is invisible to the TTL index for an hour. If the sweep is broken, inventory stays held for that hour with no automatic recovery, and the only signal is a tier that will not sell. The grace protects against the worse failure (permanent loss) but converts it into a slow one."
+  - "R8 escalates a reservation whose intent is PENDING past 30 minutes rather than releasing it, which is correct — the money may still arrive — but it means inventory can be held indefinitely by a provider that never answers. A tier can be effectively sold out by stuck intents that no sweep will ever clear, and only an operator can release them."
+  - "TicketPurchasedEvent is published inside the confirmation transaction so Modulith records it. Modulith's registry is in PostgreSQL and the confirmation transaction is in MongoDB — they are separate transaction managers and cannot enlist together (ET-PLT-003 risk). The event may therefore be recorded for a confirmation that rolls back, or lost for one that commits."
+  - "Reservations quote from booking_tier_inventory's mirrored price. If ET-CAT-002's mirror is stale, every reservation in that window quotes and charges the wrong price, and the buyer is charged what the reservation says — so a stale mirror is a pricing error the platform commits to before anyone notices."
+  - "R4's sweep claims rows with FOR UPDATE SKIP LOCKED, which is PostgreSQL syntax. MongoDB has no equivalent; claiming must be done by a conditional findAndModify per row or a status marker, and the stated claim query cannot be implemented as written."

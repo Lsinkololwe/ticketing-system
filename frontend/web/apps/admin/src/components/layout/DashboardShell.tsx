@@ -59,7 +59,10 @@ export function DashboardShell({ children }: DashboardShellProps) {
 
   return (
     <SidebarContext.Provider value={{ isOpen, setIsOpen, isMobile }}>
-      {/* Root container with main background */}
+      {/* Root container. The canvas is a flat --color-background: the design
+          system bans gradients as full-page dashboard backgrounds, so the
+          ambient accent glow and dark-mode mesh gradient that used to sit here
+          are gone. Depth comes from the card shadows instead. */}
       <Box
         className="dashboard-root"
         style={{
@@ -67,44 +70,20 @@ export function DashboardShell({ children }: DashboardShellProps) {
           background: 'var(--dashboard-main-bg)',
         }}
       >
-        {/* Ambient glow overlay */}
-        <Box
-          className="dashboard-glow"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'var(--dashboard-accent-glow)',
-            pointerEvents: 'none',
-            zIndex: 0,
-          }}
-        />
-
-        {/* Pattern overlay */}
-        <Box
-          className="dashboard-pattern"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundImage: 'var(--dashboard-main-pattern)',
-            backgroundRepeat: 'repeat',
-            pointerEvents: 'none',
-            zIndex: 0,
-          }}
-        />
-
         <Flex style={{ position: 'relative', zIndex: 1 }}>
-          {/* Backdrop for mobile sidebar */}
+          {/* Overlay-drawer backdrop, under 1024px. */}
           {isMobile && isOpen && (
             <Box
               onClick={() => setIsOpen(false)}
               className="sidebar-backdrop"
+              aria-hidden="true"
               style={{
                 position: 'fixed',
                 inset: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                backdropFilter: 'blur(4px)',
+                backgroundColor: 'var(--color-overlay)',
                 zIndex: 40,
-                transition: 'opacity 200ms ease',
+                transition:
+                  'opacity var(--transition-default) var(--ease-standard)',
               }}
             />
           )}
@@ -140,18 +119,6 @@ export function DashboardShell({ children }: DashboardShellProps) {
           </Box>
         </Flex>
       </Box>
-
-      {/* Dark mode mesh gradient (only in dark mode) */}
-      <style jsx global>{`
-        .dark .dashboard-root::before {
-          content: '';
-          position: fixed;
-          inset: 0;
-          background: var(--dashboard-mesh-gradient);
-          pointer-events: none;
-          z-index: 0;
-        }
-      `}</style>
     </SidebarContext.Provider>
   );
 }

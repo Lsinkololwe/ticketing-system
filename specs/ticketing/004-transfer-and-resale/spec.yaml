@@ -1,0 +1,107 @@
+id: ET-TKT-004
+title: Ticket transfer and controlled resale
+status: draft
+area: TKT
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: should
+wave: 5
+blocked_by: [ET-PLT-005, ET-PLT-007, ET-TKT-002, ET-TKT-003, ET-PAY-001, ET-FIN-001, ET-FIN-002]
+conformance: "US-BUY-003 ticket transfer"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/ticketing/002-ticket-issuance-and-qr/spec.md
+  - specs/ticketing/003-validation-and-checkin/spec.md
+  - specs/finance/001-escrow-and-ledger/spec.md
+  - docs/USER_STORIES.md
+
+persistence:
+  collections:
+    - booking_ticket_transfers
+  indexes:
+    - "booking_ticket_transfers {transferToken} unique"
+    - "booking_ticket_transfers {ticketId,status} compound"
+    - "booking_ticket_transfers {fromUserId,status} compound"
+    - "booking_ticket_transfers {expiresAt} ttl (ttl + grace)"
+  redis_keys:
+    - "idem:{key}                     STRING  24 h   — claimTransfer, buyResaleTicket"
+    - "lock:sweep:transfer-expiry     STRING  30 s"
+
+events:
+  module:
+    - TransferInitiatedEvent
+    - TransferExpiredEvent
+  bus:
+    - booking.TicketTransferred    # v1, session ticketId → identity (notify both parties)
+  topics:
+    - booking-events
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "transferByToken(token)                    PUBLIC         TransferPreview   # six fields only"
+    - "myTransfers(direction, page)              AUTHENTICATED  TicketTransferPage!"
+    - "ticketTransferChain(ticketId)             AUTHENTICATED  [TicketTransfer!]!"
+    - "resaleListings(eventId, first, after)     PUBLIC         ResaleListingConnection!"
+  mutations:
+    - "initiateTransfer(input)          CUSTOMER       TicketTransfer!"
+    - "cancelTransfer(id)               CUSTOMER       TicketTransfer!"
+    - "claimTransfer(token)             AUTHENTICATED  Ticket!          # idempotencyKey"
+    - "listForResale(input)             CUSTOMER       TicketTransfer!"
+    - "withdrawResaleListing(id)        CUSTOMER       TicketTransfer!"
+    - "buyResaleTicket(input)           CUSTOMER       PaymentIntent!   # idempotencyKey"
+
+errors:
+  - TICKET_NOT_TRANSFERABLE
+  - TRANSFER_TO_SELF
+  # TICKET_UNKNOWN, TICKET_STATE_INVALID raised here, owned by ET-TKT-002
+
+adds_to_other_specs:
+  - "ET-TKT-002 §4 ticket state machine: TRANSFER_PENDING state, two transitions, owned here"
+  - "ET-FIN-001 §4 chart of accounts: 2040 Seller Proceeds, LIABILITY, credit-normal"
+  - "ET-PLT-007 §4 idempotent-operation registry: buyResaleTicket (making it ten)"
+
+transfer:
+  mechanism: "claim link + token; recipient need not have an account first"
+  rotation: "a successful CLAIM re-issues (kills the sender's QR); expiry/cancellation does NOT"
+  holding: "ticket -> TRANSFER_PENDING: not scannable, not refundable, not re-transferable"
+  refund_rule: "purchasedById never moves — a refund returns to whoever PAID, not the current owner"
+
+resale:
+  default: "OFF per event"
+  cap: "at or below min(originalPrice, event.maxResalePrice) — face value"
+  settlement: "through ET-PAY-001; debit 1010 / credit 2040 net / credit 2020 commission"
+  seller_payout: "against 2040, via ET-FIN-003 — not against an event escrow"
+
+config:
+  booking.transfer.ttl: PT48H
+  booking.transfer.max-chain: 5
+  catalog.transfer.cutoff: PT2H
+  catalog.event.allow-transfer: true
+  catalog.event.allow-resale: false
+  catalog.event.max-resale-price: "the original price"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/ticketing/004-transfer-and-resale
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-004
+  - mvn -q -f backend verify -Dgroups=ET-TKT-004
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R1's QR rotation on claim is defeated by ET-TKT-003's offline mode exactly as re-issue is: an offline scanner accepts any correctly signed payload regardless of issuedAt, so the sender's old QR still admits at an offline gate after a completed transfer. Transfer is therefore only as strong as the gate's connectivity, and the spec's central mechanical guarantee has a hole it inherits rather than creates."
+  - "This spec adds a state (TRANSFER_PENDING), an account code (2040) and an idempotent operation to three specs in earlier waves. Each is a change to a document those specs describe as closed, and the build order does not serialise the edits — ET-TKT-002, ET-FIN-001 and ET-PLT-007 must each accept an amendment from a wave-5 spec."
+  - "An open claim link with no recipient identity is a bearer token for a ticket. Anyone who intercepts the message claims the ticket, and the sender has no recourse because the platform cannot tell an interceptor from the intended recipient. R2 permits this deliberately for usability and states it to the sender, but a stated risk is not a control."
+  - "R7 credits seller proceeds to 2040 and pays them out through ET-FIN-003, which is built entirely around per-event escrow accounts, payout eligibility tied to event completion, and organization-scoped bank accounts. A private individual reselling one ticket has no organization, no bank account and no escrow — the payout path described does not exist for them and ET-FIN-003 would need substantial extension."
+  - "Resale makes an ordinary customer a seller who receives money, which brings KYC, tax reporting and anti-money-laundering considerations the platform has not addressed anywhere in this corpus. Capping at face value reduces but does not remove that: the platform is still remitting funds to individuals."
+  - "The transfer TTL index has a grace like ET-TKT-001's reservations, but the sweep and the TTL both return the ticket. The return is idempotent per R3, yet the TTL deletes the transfer document while the ticket's TRANSFER_PENDING status lives on the ticket — if the sweep has not run, a deleted transfer leaves a permanently unusable ticket with nothing to recover it."
+  - "R5 refuses a transfer of a ticket the caller does not own with TICKET_UNKNOWN to avoid confirming existence. But transferByToken is PUBLIC and confirms a specific ticket exists to anyone holding a link, so the non-disclosure is inconsistent across the two surfaces."
+  - "max-chain of 5 is enforced on transferCount, but a resale followed by transfers followed by another resale is the pattern a ticket-flipping ring would use. Nothing tracks value extracted per ticket or flags a ticket that has been priced at face value five times to five different buyers."

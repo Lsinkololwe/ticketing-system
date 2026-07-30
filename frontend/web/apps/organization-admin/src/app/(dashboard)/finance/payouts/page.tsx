@@ -10,6 +10,7 @@
  */
 
 import { useState, useMemo, useCallback } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   Box,
@@ -138,11 +139,11 @@ const availableBalance = 12450.00;
 // =============================================================================
 
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-ZM', {
-    style: 'currency',
-    currency: 'ZMW',
+  // Currency is ALWAYS "K 125,430" (spec §10) — never "ZMW", never "$".
+  return `K ${amount.toLocaleString('en-ZM', {
     minimumFractionDigits: 2,
-  }).format(amount);
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatDate(dateString: string): string {
@@ -212,7 +213,7 @@ function PayoutCard({ payout, onClick }: PayoutCardProps) {
         padding: '20px',
         background: 'var(--surface-elevated)',
         border: '1px solid var(--surface-border)',
-        borderRadius: '12px',
+        borderRadius: 'var(--card-radius)',
         cursor: 'pointer',
         transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
       }}
@@ -225,8 +226,8 @@ function PayoutCard({ payout, onClick }: PayoutCardProps) {
             style={{
               width: 44,
               height: 44,
-              borderRadius: '12px',
-              background: 'rgba(16, 185, 129, 0.1)',
+              borderRadius: 'var(--card-radius)',
+              background: 'var(--accent-a3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -287,7 +288,7 @@ function PayoutDetailDialog({ payout, open, onOpenChange }: PayoutDetailDialogPr
             p="4"
             style={{
               background: 'var(--surface-subtle)',
-              borderRadius: '12px',
+              borderRadius: 'var(--card-radius)',
               textAlign: 'center',
             }}
           >
@@ -356,7 +357,7 @@ function PayoutDetailDialog({ payout, open, onOpenChange }: PayoutDetailDialogPr
                 p="3"
                 style={{
                   background: 'var(--surface-subtle)',
-                  borderRadius: '8px',
+                  borderRadius: 'var(--radius-4)',
                 }}
               >
                 <Text size="2" style={{ color: 'var(--content-secondary)' }}>
@@ -391,8 +392,26 @@ interface NewPayoutDialogProps {
   onSubmit: (amount: number, bankAccountId: string, notes: string) => void;
 }
 
+/**
+ * Payout destinations.
+ *
+ * Mobile money (MTN / Airtel / Zamtel) is a CORE destination family and is
+ * ALWAYS visible on this form — never behind a "more options" disclosure
+ * (spec §8). Providers whose wallet is not yet saved still render, with an
+ * inline route to add one, rather than being hidden.
+ */
+const PAYOUT_DESTINATIONS = [
+  { id: 'bank', label: 'Bank transfer', dot: null },
+  { id: 'mtn', label: 'MTN MoMo', dot: 'var(--momo-mtn)' },
+  { id: 'airtel', label: 'Airtel Money', dot: 'var(--momo-airtel)' },
+  { id: 'zamtel', label: 'Zamtel Kwacha', dot: 'var(--momo-zamtel)' },
+] as const;
+
+type PayoutDestination = (typeof PAYOUT_DESTINATIONS)[number]['id'];
+
 function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, onSubmit }: NewPayoutDialogProps) {
   const [amount, setAmount] = useState('');
+  const [destination, setDestination] = useState<PayoutDestination>('bank');
   const [selectedBank, setSelectedBank] = useState(bankAccounts.find((b) => b.isDefault)?.id || '');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -417,29 +436,32 @@ function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, o
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content style={{ maxWidth: 480 }}>
-        <Dialog.Title>Request Payout</Dialog.Title>
-        <Dialog.Description size="2" style={{ color: 'var(--content-muted)' }}>
-          Transfer funds from your escrow balance to your bank account.
+        <Dialog.Title>Request payout</Dialog.Title>
+        <Dialog.Description size="2" style={{ color: 'var(--gray-10)' }}>
+          Move money out of your escrow balance to a bank account or mobile money wallet.
         </Dialog.Description>
 
         <Flex direction="column" gap="4" mt="4">
-          {/* Available Balance */}
+          {/* Available balance — jade, because this is money. */}
           <Box
             p="4"
             style={{
-              background: 'rgba(16, 185, 129, 0.1)',
-              border: '1px solid rgba(16, 185, 129, 0.2)',
-              borderRadius: '12px',
+              background: 'var(--color-money-surface)',
+              border: '1px solid var(--gray-a5)',
+              borderRadius: 'var(--card-radius)',
             }}
           >
             <Flex justify="between" align="center">
               <Flex align="center" gap="2">
-                <Wallet style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />
-                <Text size="2" style={{ color: 'var(--content-secondary)' }}>
-                  Available Balance
-                </Text>
+                <Wallet width={20} height={20} style={{ color: 'var(--color-money-text)' }} />
+                <Text className="ds-label">Available balance</Text>
               </Flex>
-              <Text size="4" weight="bold" style={{ color: 'var(--brand-500)' }}>
+              <Text
+                size="4"
+                weight="bold"
+                className="ds-amount"
+                style={{ color: 'var(--color-money-text)' }}
+              >
                 {formatCurrency(availableBalance)}
               </Text>
             </Flex>
@@ -447,10 +469,11 @@ function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, o
 
           {/* Amount */}
           <Box>
-            <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-secondary)', display: 'block' }}>
-              Amount (ZMW)
+            <Text as="label" className="ds-label" mb="2" style={{ display: 'block' }}>
+              Amount (K)
             </Text>
             <TextField.Root
+              data-testid="payout-amount"
               size="3"
               type="number"
               value={amount}
@@ -458,68 +481,141 @@ function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, o
               placeholder="0.00"
               min={0}
               max={availableBalance}
+              aria-invalid={Boolean(amount) && !isValidAmount}
+              className="ds-amount"
               style={{
-                border: amount && !isValidAmount ? '1px solid var(--error-500)' : undefined,
+                border: amount && !isValidAmount ? '1px solid var(--status-danger-9)' : undefined,
               }}
             />
             {amount && !isValidAmount && (
-              <Text size="1" style={{ color: 'var(--error-500)', display: 'block', marginTop: '4px' }}>
+              <Text
+                role="alert"
+                size="1"
+                style={{ color: 'var(--status-danger-11)', display: 'block', marginTop: 4 }}
+              >
                 {amountNum > availableBalance
-                  ? 'Amount exceeds available balance'
-                  : 'Please enter a valid amount'}
+                  ? `That is more than your available balance of ${formatCurrency(availableBalance)}.`
+                  : 'Enter an amount greater than zero.'}
               </Text>
             )}
           </Box>
 
-          {/* Bank Account */}
+          {/* Destination family — mobile money is always on screen. */}
           <Box>
-            <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-secondary)', display: 'block' }}>
-              Bank Account
+            <Text as="p" className="ds-label" mb="2" style={{ display: 'block' }}>
+              Pay out to
             </Text>
-            <Select.Root value={selectedBank} onValueChange={setSelectedBank}>
-              <Select.Trigger style={{ width: '100%' }} />
-              <Select.Content>
-                {bankAccounts.map((account) => (
-                  <Select.Item key={account.id} value={account.id}>
-                    <Flex align="center" gap="2">
-                      <Bank style={{ width: 16, height: 16 }} />
-                      {account.bankName} - ****{account.accountNumber.slice(-4)}
-                      {account.isDefault && (
-                        <Badge size="1" variant="soft" color="green">Default</Badge>
-                      )}
-                    </Flex>
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select.Root>
+            <Flex gap="2" wrap="wrap">
+              {PAYOUT_DESTINATIONS.map((option) => {
+                const active = destination === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    data-testid={`payout-destination-${option.id}`}
+                    onClick={() => setDestination(option.id)}
+                    aria-pressed={active}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      minHeight: 40,
+                      padding: '0 12px',
+                      borderRadius: 'var(--radius-3)',
+                      border: `1px solid ${active ? 'var(--accent-8)' : 'var(--gray-a5)'}`,
+                      background: active ? 'var(--accent-a3)' : 'var(--color-surface)',
+                      color: active ? 'var(--accent-11)' : 'var(--gray-11)',
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: 'var(--text-2-size)',
+                      fontWeight: 'var(--weight-medium)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {option.dot && (
+                      <span
+                        aria-hidden="true"
+                        className="ds-momo-dot"
+                        style={{ background: option.dot }}
+                      />
+                    )}
+                    {!option.dot && <Bank width={16} height={16} aria-hidden="true" />}
+                    {option.label}
+                  </button>
+                );
+              })}
+            </Flex>
           </Box>
+
+          {/* Destination detail */}
+          {destination === 'bank' ? (
+            <Box>
+              <Text as="label" className="ds-label" mb="2" style={{ display: 'block' }}>
+                Bank account
+              </Text>
+              <Select.Root value={selectedBank} onValueChange={setSelectedBank}>
+                <Select.Trigger data-testid="payout-bank-account" style={{ width: '100%' }} />
+                <Select.Content>
+                  {bankAccounts.map((account) => (
+                    <Select.Item key={account.id} value={account.id}>
+                      <Flex align="center" gap="2">
+                        <Bank width={16} height={16} />
+                        <span className="ds-amount">
+                          {account.bankName} ····{account.accountNumber.slice(-4)}
+                        </span>
+                        {account.isDefault && (
+                          <Badge size="1" variant="soft" color="green">
+                            Default
+                          </Badge>
+                        )}
+                      </Flex>
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </Box>
+          ) : (
+            <Box
+              p="3"
+              style={{
+                background: 'var(--status-info-a3)',
+                borderRadius: 'var(--radius-4)',
+                border: '1px solid var(--gray-a5)',
+              }}
+            >
+              <Text as="p" size="2" style={{ color: 'var(--gray-12)' }}>
+                No {PAYOUT_DESTINATIONS.find((d) => d.id === destination)?.label} wallet is saved
+                yet.
+              </Text>
+              <Text as="p" size="2" style={{ color: 'var(--gray-11)', marginTop: 2 }}>
+                Add one under{' '}
+                <Link href="/finance/bank-accounts" style={{ color: 'var(--accent-11)' }}>
+                  payout destinations
+                </Link>
+                , then come back to request the payout.
+              </Text>
+            </Box>
+          )}
 
           {/* Notes */}
           <Box>
-            <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-secondary)', display: 'block' }}>
-              Notes (Optional)
+            <Text as="label" className="ds-label" mb="2" style={{ display: 'block' }}>
+              Note (optional)
             </Text>
             <TextArea
+              data-testid="payout-notes"
               size="2"
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add a note for your reference..."
+              placeholder="A reference for your own records"
             />
           </Box>
 
-          {/* Processing Info */}
-          <Box
-            p="3"
-            style={{
-              background: 'var(--surface-subtle)',
-              borderRadius: '8px',
-            }}
-          >
+          <Box p="3" style={{ background: 'var(--gray-a3)', borderRadius: 'var(--radius-4)' }}>
             <Flex align="center" gap="2">
-              <Clock style={{ width: 16, height: 16, color: 'var(--content-muted)' }} />
-              <Text size="1" style={{ color: 'var(--content-muted)' }}>
-                Payouts are typically processed within 1-3 business days
+              <Clock width={16} height={16} style={{ color: 'var(--gray-9)' }} aria-hidden="true" />
+              <Text size="1" style={{ color: 'var(--gray-10)' }}>
+                Payouts usually land within one to three business days.
               </Text>
             </Flex>
           </Box>
@@ -527,16 +623,20 @@ function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, o
 
         <Flex gap="3" justify="end" mt="5">
           <Dialog.Close>
-            <Button variant="outline" style={{ borderColor: 'var(--surface-border)' }}>
+            <Button data-testid="payout-cancel" variant="outline" color="gray">
               Cancel
             </Button>
           </Dialog.Close>
           <Button
+            data-testid="payout-submit"
+            color="teal"
             onClick={handleSubmit}
-            disabled={!isValidAmount || !selectedBank || isSubmitting}
+            disabled={!isValidAmount || !selectedBank || destination !== 'bank' || isSubmitting}
             style={{
-              background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
-              cursor: isValidAmount && selectedBank && !isSubmitting ? 'pointer' : 'not-allowed',
+              cursor:
+                isValidAmount && selectedBank && destination === 'bank' && !isSubmitting
+                  ? 'pointer'
+                  : 'not-allowed',
             }}
           >
             {isSubmitting ? 'Submitting...' : `Request ${amount ? formatCurrency(amountNum) : 'Payout'}`}
@@ -623,7 +723,7 @@ export default function PayoutsPage() {
         ]}
         actions={canPayout ? [
           {
-            label: 'Request Payout',
+            label: 'Request payout',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
             onClick: () => setShowNewPayoutDialog(true),
           },
@@ -637,7 +737,7 @@ export default function PayoutsPage() {
             padding: '16px 20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             flex: '1 1 150px',
           }}
         >
@@ -653,14 +753,14 @@ export default function PayoutsPage() {
             padding: '16px 20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             flex: '1 1 150px',
           }}
         >
           <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
             Pending
           </Text>
-          <Text size="4" weight="bold" style={{ color: '#F59E0B' }}>
+          <Text size="4" weight="bold" className="ds-amount" style={{ color: 'var(--status-warning-11)' }}>
             {stats.pending}
           </Text>
         </Card>
@@ -669,14 +769,14 @@ export default function PayoutsPage() {
             padding: '16px 20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             flex: '1 1 150px',
           }}
         >
           <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
             Processing
           </Text>
-          <Text size="4" weight="bold" style={{ color: '#3B82F6' }}>
+          <Text size="4" weight="bold" className="ds-amount" style={{ color: 'var(--status-info-11)' }}>
             {stats.processing}
           </Text>
         </Card>
@@ -685,7 +785,7 @@ export default function PayoutsPage() {
             padding: '16px 20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             flex: '1 1 150px',
           }}
         >
@@ -705,7 +805,7 @@ export default function PayoutsPage() {
           padding: '16px 20px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '12px',
+          borderRadius: 'var(--card-radius)',
         }}
       >
         <Flex gap="4" align="end" wrap="wrap">
@@ -741,7 +841,7 @@ export default function PayoutsPage() {
             padding: '60px 24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
             textAlign: 'center',
           }}
         >
@@ -772,7 +872,7 @@ export default function PayoutsPage() {
               size="3"
               onClick={() => setShowNewPayoutDialog(true)}
               style={{
-                background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               }}
             >
               <Plus style={{ width: 18, height: 18, marginRight: 8 }} />

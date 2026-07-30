@@ -27,38 +27,38 @@ export default function Error({ error, reset }: ErrorProps) {
     <Flex
       align="center"
       justify="center"
-      style={{ minHeight: '100vh', backgroundColor: 'var(--gray-2)', padding: 16 }}
+      style={{ minHeight: '100vh', backgroundColor: 'var(--color-background)', padding: 'var(--space-4)' }}
     >
       <Card size="4" style={{ maxWidth: 600, width: '100%' }}>
         <Flex direction="column" align="center" gap="4" p="6">
           <Box
             p="4"
             style={{
-              backgroundColor: 'var(--red-a3)',
+              backgroundColor: 'var(--status-danger-a3)',
               borderRadius: 'var(--radius-full)',
             }}
           >
-            <WarningTriangle className="h-10 w-10" style={{ color: 'var(--red-11)' }} />
+            <WarningTriangle style={{ width: 28, height: 28, color: 'var(--status-danger-11)' }} />
           </Box>
 
-          <Heading size="5" align="center">Something went wrong</Heading>
+          <Heading size="5" align="center">This page could not load</Heading>
           <Text size="3" color="gray" align="center">
-            {error.message || 'An unexpected error occurred'}
+            {error.message || 'An unexpected error interrupted this page.'}
           </Text>
 
           {/* Error details in development */}
           {process.env.NODE_ENV === 'development' && (
             <Callout.Root color="red" style={{ width: '100%' }}>
               <Callout.Icon>
-                <WarningTriangle className="h-4 w-4" />
+                <WarningTriangle style={{ width: 16, height: 16 }} />
               </Callout.Icon>
               <Callout.Text>
                 <Text size="2" weight="bold" style={{ display: 'block', marginBottom: 8 }}>
-                  Error Details (Development Only):
+                  Error details — development only
                 </Text>
                 <Box
                   style={{
-                    fontFamily: 'monospace',
+                    fontFamily: 'var(--font-mono)',
                     fontSize: 12,
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-all',
@@ -78,12 +78,12 @@ export default function Error({ error, reset }: ErrorProps) {
           {/* Action buttons */}
           <Flex gap="3" wrap="wrap" justify="center">
             <Button color="red" onClick={reset}>
-              <Refresh className="h-4 w-4" />
-              Try Again
+              <Refresh style={{ width: 16, height: 16 }} />
+              Try again
             </Button>
             <Button variant="soft" onClick={handleGoHome}>
-              <Home className="h-4 w-4" />
-              Go to Dashboard
+              <Home style={{ width: 16, height: 16 }} />
+              Go to dashboard
             </Button>
             <Button
               variant="soft"
@@ -94,13 +94,13 @@ export default function Error({ error, reset }: ErrorProps) {
                 }
               }}
             >
-              <Refresh className="h-4 w-4" />
-              Refresh Page
+              <Refresh style={{ width: 16, height: 16 }} />
+              Reload the page
             </Button>
           </Flex>
 
           <Text size="2" color="gray" align="center">
-            If this problem persists, please contact support.
+            If this keeps happening, contact support with the error ID above.
           </Text>
         </Flex>
       </Card>

@@ -1,5 +1,6 @@
 package com.pml.identity.domain.valueobject;
 
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -130,5 +131,75 @@ public enum OrganizationRole {
     public boolean isAtLeast(OrganizationRole other) {
         if (this == other) return true;
         return getInheritedRoles().contains(other);
+    }
+
+    /**
+     * Whether this role grants a named organization permission.
+     *
+     * <p>The single source of truth for role→permission mapping. Composes the granular
+     * capability methods above so the actor's authority is evaluated on the role itself,
+     * not in a service.</p>
+     *
+     * @param permission permission string (e.g. {@code "EVENT_PUBLISH"})
+     * @return true if the role grants the permission
+     */
+    public boolean grants(String permission) {
+        if (permission == null) {
+            return false;
+        }
+        return switch (permission) {
+            case "EVENT_CREATE", "EVENT_EDIT" -> canCreateEvents();
+            case "EVENT_PUBLISH" -> canPublishEvents();
+            case "EVENT_DELETE" -> canDeleteEvents();
+            case "EVENT_VIEW" -> true; // all members can view
+            case "FINANCIAL_VIEW" -> canViewFinancials();
+            case "PAYOUT_REQUEST" -> canRequestPayouts();
+            case "MEMBER_INVITE" -> canInviteMembers();
+            case "MEMBER_REMOVE" -> canRemoveMembers();
+            case "MEMBER_ROLE_CHANGE" -> canChangeRoles();
+            case "PROMOTION_MANAGE", "ANALYTICS_VIEW" -> canManagePromotions();
+            case "TICKET_SCAN" -> this == OWNER || this == ADMIN || this == MANAGER || this == CONTRIBUTOR;
+            case "ORG_EDIT", "ORG_SETTINGS" -> this == OWNER || this == ADMIN;
+            case "ORG_DELETE", "OWNERSHIP_TRANSFER" -> this == OWNER;
+            default -> false;
+        };
+    }
+
+    /**
+     * The full set of organization permissions granted by this role (role hierarchy resolved).
+     * Used to describe an actor's effective authority.
+     */
+    public Set<String> permissions() {
+        Set<String> perms = new HashSet<>();
+        switch (this) {
+            case OWNER:
+                perms.add("ORG_DELETE");
+                perms.add("OWNERSHIP_TRANSFER");
+                // fall through
+            case ADMIN:
+                perms.add("MEMBER_INVITE");
+                perms.add("MEMBER_REMOVE");
+                perms.add("MEMBER_ROLE_CHANGE");
+                perms.add("ORG_EDIT");
+                perms.add("ORG_SETTINGS");
+                perms.add("PAYOUT_REQUEST");
+                perms.add("EVENT_DELETE");
+                // fall through
+            case MANAGER:
+                perms.add("EVENT_CREATE");
+                perms.add("EVENT_EDIT");
+                perms.add("EVENT_PUBLISH");
+                perms.add("FINANCIAL_VIEW");
+                // fall through
+            case MARKETER:
+                perms.add("PROMOTION_MANAGE");
+                perms.add("ANALYTICS_VIEW");
+                // fall through
+            case CONTRIBUTOR:
+                perms.add("EVENT_VIEW");
+                perms.add("TICKET_SCAN");
+                break;
+        }
+        return perms;
     }
 }

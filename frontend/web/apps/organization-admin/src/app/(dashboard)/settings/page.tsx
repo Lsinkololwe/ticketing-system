@@ -72,16 +72,15 @@ function FormField({ label, required, helper, children }: FormFieldProps) {
     <Box mb="4">
       <Text
         as="label"
-        size="2"
-        weight="medium"
-        style={{ color: 'var(--content-secondary)', display: 'block', marginBottom: '8px' }}
+        className="ds-label"
+        style={{ display: 'block', marginBottom: '6px' }}
       >
         {label}
-        {required && <span style={{ color: 'var(--error-500)', marginLeft: 4 }}>*</span>}
+        {required && <span style={{ color: 'var(--status-danger-9)', marginLeft: 4 }}>*</span>}
       </Text>
       {children}
       {helper && (
-        <Text size="1" style={{ color: 'var(--content-muted)', display: 'block', marginTop: '4px' }}>
+        <Text size="1" style={{ color: 'var(--gray-10)', display: 'block', marginTop: '4px' }}>
           {helper}
         </Text>
       )}
@@ -177,7 +176,10 @@ export default function OrganizationSettingsPage() {
         city: formData.city || null,
         province: formData.province || null,
         country: formData.country || null,
-        type: (formData.organizationType as OrganizationApplicationInput['type']) || undefined,
+        // The generated input types every optional field as `T | null`, so an
+        // unset organization type must be `null` — `undefined` does not satisfy
+        // InputMaybe and broke the production typecheck.
+        type: (formData.organizationType as OrganizationApplicationInput['type']) || null,
         bannerUrl: null,
         logoUrl: null,
         socialLinks: null,
@@ -206,8 +208,8 @@ export default function OrganizationSettingsPage() {
     return (
       <Box>
         <PageHeader
-          title="Organization Settings"
-          description="Manage your organization profile and preferences"
+          title="Organization settings"
+          description="Your organization profile, branding and preferences."
           breadcrumbs={[
             { label: 'Settings', href: '/settings' },
             { label: 'Organization' },
@@ -218,7 +220,7 @@ export default function OrganizationSettingsPage() {
             padding: '48px 24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
             textAlign: 'center',
           }}
         >
@@ -228,7 +230,7 @@ export default function OrganizationSettingsPage() {
                 width: 64,
                 height: 64,
                 borderRadius: '50%',
-                background: 'rgba(239, 68, 68, 0.1)',
+                background: 'var(--status-danger-a3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -260,8 +262,8 @@ export default function OrganizationSettingsPage() {
     return (
       <Box>
         <PageHeader
-          title="Organization Settings"
-          description="Manage your organization profile and preferences"
+          title="Organization settings"
+          description="Your organization profile, branding and preferences."
           breadcrumbs={[
             { label: 'Settings', href: '/settings' },
             { label: 'Organization' },
@@ -272,7 +274,7 @@ export default function OrganizationSettingsPage() {
             padding: '48px 24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
             textAlign: 'center',
           }}
         >
@@ -287,15 +289,15 @@ export default function OrganizationSettingsPage() {
   return (
     <Box>
       <PageHeader
-        title="Organization Settings"
-        description="Manage your organization profile and preferences"
+        title="Organization settings"
+        description="Your organization profile, branding and preferences."
         breadcrumbs={[
           { label: 'Settings', href: '/settings' },
           { label: 'Organization' },
         ]}
         actions={canEdit ? [
           {
-            label: updating ? 'Saving...' : 'Save Changes',
+            label: updating ? 'Saving…' : 'Save changes',
             icon: <FloppyDisk style={{ width: 18, height: 18, marginRight: 8 }} />,
             onClick: handleSave,
             disabled: updating,
@@ -330,7 +332,7 @@ export default function OrganizationSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -343,7 +345,7 @@ export default function OrganizationSettingsPage() {
               fallback={formData.companyName?.charAt(0) || 'O'}
               radius="large"
               style={{
-                background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               }}
             />
             {canEdit && (
@@ -379,7 +381,7 @@ export default function OrganizationSettingsPage() {
                 variant="outline"
                 size="1"
                 style={{
-                  borderColor: 'rgba(16, 185, 129, 0.3)',
+                  borderColor: 'var(--accent-a6)',
                   color: 'var(--brand-500)',
                 }}
               >
@@ -398,7 +400,7 @@ export default function OrganizationSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Flex align="center" gap="2" mb="4">
@@ -474,7 +476,7 @@ export default function OrganizationSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -528,7 +530,7 @@ export default function OrganizationSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -570,7 +572,7 @@ export default function OrganizationSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>

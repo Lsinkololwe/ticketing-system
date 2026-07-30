@@ -1,0 +1,117 @@
+id: ET-FIN-004
+title: Refunds, cancellation refunds and chargebacks
+status: draft
+area: FIN
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 4
+blocked_by: [ET-PLT-005, ET-PLT-007, ET-FIN-001, ET-FIN-002, ET-FIN-003, ET-CAT-001, ET-TKT-002]
+conformance: "V3 §9.2 event cancellation · V3 §14 refund processing fees · US Part III §16"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/finance/001-escrow-and-ledger/spec.md
+  - specs/finance/002-commission/spec.md
+  - specs/finance/003-payouts-and-settlement/spec.md
+  - specs/catalog/001-event-lifecycle/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+persistence:
+  collections:
+    - booking_refund_requests
+    - booking_chargebacks
+  indexes:
+    - "booking_refund_requests {ticketId} PARTIAL UNIQUE where status != REJECTED"
+    - "booking_refund_requests {status,createdAt} compound"
+    - "booking_refund_requests {eventId,status} compound   # the mass-refund job"
+    - "booking_chargebacks {providerReference} unique"
+    - "booking_chargebacks {eventId,status} compound"
+  redis_keys:
+    - "idem:{key}   STRING  24 h   — requestRefund, approveRefund, retryRefund"
+
+events:
+  module:
+    - ChargebackReceivedEvent
+    - ChargebackResolvedEvent
+  bus:
+    - booking.RefundCompleted    # v1 → catalog (restore counters), identity (notify)
+  consumes:
+    - catalog.EventCancelled     # mass refund 100%, ORGANIZER_PAYS, then close escrow
+    - catalog.EventRescheduled   # open the 7-day unconditional window per ticket
+  topics:
+    - booking-events
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "refundQuote(ticketId)          AUTHENTICATED  RefundQuote!"
+    - "refundRequest(id)              AUTHENTICATED  RefundRequest"
+    - "myRefundRequests(page)         AUTHENTICATED  RefundRequestPage!"
+    - "refundRequests(status, page)   FINANCE        RefundRequestPage!  @tag admin"
+    - "chargebacks(status, page)      FINANCE        ChargebackPage!     @tag admin"
+  mutations:
+    - "requestRefund(input)           CUSTOMER  RefundRequest!   # idempotencyKey"
+    - "approveRefund(input)           FINANCE   RefundRequest!   @tag admin  # idempotencyKey"
+    - "rejectRefund(id, reason)       FINANCE   RefundRequest!   @tag admin"
+    - "retryRefund(id)                FINANCE   RefundRequest!   @tag admin"
+    - "contestChargeback(input)       FINANCE   Chargeback!      @tag admin"
+    - "acceptChargeback(id, reason)   FINANCE   Chargeback!      @tag admin"
+
+errors:
+  - REFUND_NOT_PERMITTED
+  - REFUND_WINDOW_CLOSED
+  - REFUND_ALREADY_ISSUED
+  - CHARGEBACK_STATE_INVALID
+
+refund_policies:      # percentage refundable, by hours before the event
+  FLEXIBLE:    { ">168h": 100, "168-48h": 100, "48-24h": 50, "<24h": 0 }
+  MODERATE:    { ">168h": 100, "168-48h": 50,  "48-24h": 0,  "<24h": 0 }
+  STRICT:      { ">168h": 50,  "168-48h": 0,   "48-24h": 0,  "<24h": 0 }
+  NO_REFUNDS:  { ">168h": 0,   "168-48h": 0,   "48-24h": 0,  "<24h": 0 }
+
+fee_bearers:
+  BUYER_REQUEST:      "CUSTOMER       — buyer receives refundable - fee"
+  EVENT_CANCELLED:    "ORGANIZER_PAYS — buyer receives 100%, escrow bears the fee"
+  EVENT_RESCHEDULED:  "ORGANIZER_PAYS — buyer receives 100%, escrow bears the fee"
+  PLATFORM_ERROR:     "PLATFORM       — buyer receives 100%, 5020 bears the fee"
+
+state_machines:
+  refund:     [PENDING_REVIEW, APPROVED, PROCESSING, COMPLETED, REJECTED, FAILED]
+  chargeback: [RECEIVED, UNDER_REVIEW, CONTESTED, ACCEPTED, REVERSED]
+
+invariants:
+  - "amountToCustomer + platformCost + retainedByOrganizer == grossAmount, K0.01"
+  - "escrowDebit + commissionCancelled + clawedBack == totalRefunded, per cancelled event"
+  - "a chargeback NEVER claws back a settled payout — the shortfall books to 5030"
+
+config:
+  finance.refund.fee-bearer: CUSTOMER
+  finance.refund.minimum: K10.00
+  finance.refund.auto-approve-threshold: K1000.00
+  finance.refund.max-attempts: 3
+  finance.cancellation.batch-size: 200
+  catalog.reschedule.refund-window: P7D
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/finance/004-refunds-and-chargebacks
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-004
+  - mvn -q -f backend verify -Dgroups=ET-FIN-004
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R6's guarantee that every buyer is refunded in full even when the escrow cannot fund it means the platform pays out of its own pocket for an organizer's cancellation after a payout has settled. Nothing bounds that exposure: an organizer can complete an event, take a payout, then cancel a second event and leave the platform funding every refund. The hold period is the only control and it is per event, not per organizer."
+  - "The chargeback path debits the escrow of the event the ticket belongs to, but a chargeback typically arrives weeks after purchase — by which time that escrow may be CLOSED. ET-FIN-001 R4 refuses credits and debits to a CLOSED account, so every post-payout chargeback hits the ESCROW_NOT_ACTIVE path rather than the insufficient-funds path, and the spec does not say which wins."
+  - "R2's calculation calls provider.refundFee(refundable) but ET-PAY-001's port declares refund(RefundRequest) with no fee-quotation method. The fee must either be quoted before the refund (a method that does not exist) or discovered afterwards (too late to compute amountToCustomer). The port needs a fourth method and ET-PAY-001 does not have one."
+  - "A partial refund apportions commission by the refunded fraction and rounds once, which ET-FIN-002 already flags as producing an unrepresentable remainder for thirds. Here the same rounding happens across four outputs that must sum to grossAmount exactly — four independently rounded figures will not reliably sum, and the spec does not name which absorbs the residual."
+  - "R5 auto-approves in-policy refunds below K1,000 with no human. A compromised buyer account can therefore refund every ticket it holds instantly, and a compromised organizer account cannot be used to refund but can cancel the event, which refunds everything at 100% with no approval at all."
+  - "The mass-refund job is resumable and idempotent per ticket, but for a 10,000-ticket cancelled event it issues 10,000 provider refund calls. At any realistic provider rate limit that is hours, during which the escrow is partially drained, the event is CANCELLED, and buyers see inconsistent states."
+  - "openDisputeCount is incremented on chargeback receipt and decremented on resolution. If a resolution event is missed the counter never returns to zero and the escrow is permanently ineligible for payout, with no sweep to correct it and no operator mutation exposed to reset it."
+  - "RefundQuote is computed before the request and the actual refund is computed at approval, potentially days later. The policy percentage depends on hours-before-event, so a quote shown at 49 hours and approved at 47 hours refunds a different amount than the buyer was shown — and R8's box asserting the two produce identical figures cannot hold across time."

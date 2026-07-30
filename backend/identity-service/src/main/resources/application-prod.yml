@@ -1,0 +1,21 @@
+# =====================================================================
+# PROD profile  —  Real Azure Service Bus via Microsoft Entra managed identity.
+# OWASP: no secrets (managed identity, connection-string blank => no SAS),
+# least-privilege RBAC (Data Sender/Receiver), TLS 1.2+, Key Vault for secrets.
+# See docs/MESSAGING_AND_SERVICE_BUS.html.
+# =====================================================================
+spring:
+  cloud:
+    azure:
+      credential:
+        managed-identity-enabled: ${AZURE_MANAGED_IDENTITY_ENABLED:true}
+        client-id: ${AZURE_CLIENT_ID:}
+      servicebus:
+        namespace: ${AZURE_SERVICEBUS_NAMESPACE}
+        connection-string: ""
+      keyvault:
+        secret:
+          enabled: ${AZURE_KEYVAULT_ENABLED:true}
+          endpoint: ${AZURE_KEYVAULT_ENDPOINT:}
+    stream:
+      default-binder: servicebus

@@ -1,0 +1,110 @@
+id: ET-NTF-001
+title: Notification transport — channels, templates, devices, delivery
+status: draft
+area: NTF
+service: identity-service
+subgraph: identity
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 5
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-IDN-002]
+conformance: "V3 §4 user journeys · US Part I §6"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/identity/001-phone-otp-identity/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+persistence:
+  collections:
+    - identity_notifications
+    - identity_notification_preferences
+    - identity_notification_templates    # added to the ET-PLT-002 §4 registry by this spec
+    - identity_user_devices
+  indexes:
+    - "identity_notifications {userId,status,createdAt} compound"
+    - "identity_notifications {deduplicationKey} unique"
+    - "identity_notifications {status,nextAttemptAt} compound   # the retry sweep"
+    - "identity_notifications {createdAt} ttl 180d"
+    - "identity_notification_templates {templateKey,channel,locale} unique"
+    - "identity_user_devices {deviceToken} unique"
+  redis_keys:
+    - "lock:sweep:notification-retry   STRING  30 s"
+    - "lock:sweep:device-pruning       STRING  30 s"
+
+events:
+  module:
+    - NotificationRequestedEvent
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "myNotifications(status, first, after)     AUTHENTICATED  NotificationConnection!"
+    - "unreadNotificationCount                   AUTHENTICATED  Int!"
+    - "myNotificationPreferences                 AUTHENTICATED  [NotificationPreference!]!"
+    - "myDevices                                 AUTHENTICATED  [UserDevice!]!"
+    - "notificationTemplates(channel, locale)    SUPER_ADMIN    [NotificationTemplate!]!  @tag admin"
+  mutations:
+    - "markNotificationRead(id)                  AUTHENTICATED  Notification!"
+    - "markAllNotificationsRead                  AUTHENTICATED  Int!"
+    - "updateNotificationPreferences(input)      AUTHENTICATED  [NotificationPreference!]!"
+    - "registerDevice(input)                     AUTHENTICATED  UserDevice!"
+    - "deregisterDevice(token)                   AUTHENTICATED  Boolean!"
+    - "updateNotificationTemplate(input)         SUPER_ADMIN    NotificationTemplate!  @tag admin"
+    - "resendNotification(id)                    ADMIN          Notification!          @tag admin"
+
+errors:
+  - NOTIFICATION_CHANNEL_UNAVAILABLE
+  - DEVICE_TOKEN_INVALID
+
+channels: [WHATSAPP, SMS, PUSH, EMAIL]
+
+categories:     # chain + whether preferences are honoured
+  OTP:            { kind: transactional, chain: [WHATSAPP, SMS],                     pref: ignored }
+  TICKET:         { kind: transactional, chain: [WHATSAPP, SMS, EMAIL],              pref: ignored }
+  PAYMENT:        { kind: transactional, chain: [WHATSAPP, SMS, EMAIL],              pref: ignored }
+  REFUND:         { kind: transactional, chain: [WHATSAPP, SMS, EMAIL],              pref: ignored }
+  EVENT_CHANGE:   { kind: transactional, chain: [PUSH, WHATSAPP, SMS, EMAIL],        pref: ignored }
+  PAYOUT:         { kind: transactional, chain: [EMAIL, WHATSAPP],                   pref: ignored }
+  ORGANIZATION:   { kind: transactional, chain: [EMAIL, WHATSAPP],                   pref: ignored }
+  TEAM_INVITE:    { kind: transactional, chain: [EMAIL, WHATSAPP, SMS],              pref: ignored }
+  EVENT_REMINDER: { kind: optional,      chain: [PUSH, WHATSAPP],                    pref: honoured }
+  MARKETING:      { kind: optional,      chain: [PUSH, EMAIL],                       pref: "honoured, OPT-IN" }
+
+port:
+  interface: com.pml.identity.infrastructure.messaging.NotificationChannelPort
+  adapters: [WhatsAppAdapter, SmsAdapter, PushAdapter, EmailAdapter]
+
+config:
+  notification.max-attempts: 3
+  notification.retry-backoff: "PT30S initial, exponential"
+  notification.dedup-window: PT24H
+  notification.send-timeout: PT10S
+  notification.device.stale-after: P90D
+  notification.default-locale: en
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/notification/001-notification-transport
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001
+  - mvn -q -f backend verify -Dgroups=ET-NTF-001
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "identity_notification_templates is a new collection that ET-PLT-002 §4's closed registry does not list. This spec adds a row to a registry that spec declares closed, which is the fourth such amendment in the corpus — the pattern suggests the registry should be assembled from the specs rather than declared upfront."
+  - "R2 makes templates editable by SUPER_ADMIN without a deploy, which means the body of a transactional message — including the OTP template — is runtime-mutable data. A compromised SUPER_ADMIN account can rewrite otp.login to exfiltrate codes to a different destination if the template controls anything beyond the body text, and nothing here bounds what a template may contain."
+  - "The OTP chain is WHATSAPP then SMS with no email fallback, and ET-IDN-001 R2 refuses the OTP request when every channel fails. So a WhatsApp and SMS outage makes login impossible platform-wide, with no degraded path. That is the correct trade for a 5-minute code but it makes two providers a hard availability dependency for all authentication."
+  - "Deduplication is on a caller-supplied key with a unique index and a 24-hour window, but the TTL on identity_notifications is 180 days. The unique index therefore blocks a legitimate re-send of the same key at day 30, long after the dedup window has notionally expired — the window and the index disagree."
+  - "R4 asserts that no @Transactional method calls the notification service, and the lint checks StreamBridge inside transactions but has no equivalent rule for the notification service. The acceptance box is not backed by an executable check."
+  - "PAYOUT and ORGANIZATION lead with EMAIL, but ET-IDN-001 establishes phone as the primary identity and email as optional — a user may have no email address at all. An organizer without one silently falls through to WhatsApp for every payout message, and if they also have no WhatsApp the chain is exhausted with nothing attempted."
+  - "MARKETING is opt-in by default, which is correct, but the spec provides no mechanism for capturing consent or recording when and how it was given. Any real marketing send needs that record, and ET-PLT-008 has not been written."
+  - "parameters is a Map<String,String> carrying rendering inputs, described as containing no PII beyond what the message needs — which for a ticket message is the attendee's name and for a payout is an amount. Those parameters sit in identity_notifications for 180 days with no encryption and are exactly what ET-PLT-008's erasure would have to reach."

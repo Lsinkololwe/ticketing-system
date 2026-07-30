@@ -41,6 +41,11 @@ import {
   useMyOrganization,
   canRequestPayouts,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import {
+  useMyFinanceOverview,
+  useMyTransactions,
+  useMyPayouts,
+} from '@pml.tickets/shared/api/organization-admin/modules/finance';
 
 // =============================================================================
 // TYPES
@@ -65,94 +70,58 @@ interface PayoutRequest {
 }
 
 // =============================================================================
-// MOCK DATA
+// DATA MAPPING
 // =============================================================================
 
-const mockTransactions: Transaction[] = [
-  {
-    id: '1',
-    type: 'sale',
-    description: 'Ticket Sale - Early Bird',
-    amount: 150,
-    date: '2025-05-19T10:30:00',
-    eventName: 'Summer Music Festival',
-    status: 'completed',
-  },
-  {
-    id: '2',
-    type: 'sale',
-    description: 'Ticket Sale - VIP',
-    amount: 500,
-    date: '2025-05-19T09:15:00',
-    eventName: 'Summer Music Festival',
-    status: 'completed',
-  },
-  {
-    id: '3',
-    type: 'refund',
-    description: 'Refund Processed',
-    amount: -75,
-    date: '2025-05-18T16:45:00',
-    eventName: 'Tech Conference 2025',
-    status: 'completed',
-  },
-  {
-    id: '4',
-    type: 'fee',
-    description: 'Platform Commission (5%)',
-    amount: -32.50,
-    date: '2025-05-18T14:00:00',
-    status: 'completed',
-  },
-  {
-    id: '5',
-    type: 'payout',
-    description: 'Payout to Bank Account',
-    amount: -5000,
-    date: '2025-05-17T12:00:00',
-    status: 'completed',
-  },
-];
+/** Map a backend transaction type to the row's display category + sign. */
+function mapTransactionType(type: string): Transaction['type'] {
+  switch (type) {
+    case 'TICKET_SALE':
+      return 'sale';
+    case 'REFUND':
+      return 'refund';
+    case 'PAYOUT':
+      return 'payout';
+    default:
+      return 'fee'; // PLATFORM_FEE, ADJUSTMENT
+  }
+}
 
-const mockPayouts: PayoutRequest[] = [
-  {
-    id: '1',
-    amount: 5000,
-    status: 'processing',
-    requestedAt: '2025-05-18T10:00:00',
-  },
-  {
-    id: '2',
-    amount: 3500,
-    status: 'pending',
-    requestedAt: '2025-05-17T15:30:00',
-  },
-];
+function mapTransactionStatus(status: string): Transaction['status'] {
+  const s = (status || '').toLowerCase();
+  if (s.includes('pending')) return 'pending';
+  if (s.includes('fail')) return 'failed';
+  return 'completed';
+}
 
-// =============================================================================
-// STATS CONFIG
-// =============================================================================
-
-const financialStats = {
-  escrowBalance: 12450.00,
-  totalRevenue: 45680.50,
-  pendingPayouts: 8500.00,
-  thisMonthRevenue: 8250.00,
-  lastMonthRevenue: 7100.00,
-  platformFees: 2284.03,
-  refunds: 450.00,
-};
+function mapPayoutStatus(status: string): PayoutRequest['status'] {
+  switch (status) {
+    case 'PENDING':
+      return 'pending';
+    case 'APPROVED':
+    case 'PROCESSING':
+      return 'processing';
+    case 'COMPLETED':
+      return 'completed';
+    default:
+      return 'rejected'; // REJECTED, FAILED, CANCELLED
+  }
+}
 
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
+/**
+ * Currency is ALWAYS rendered as "K 125,430" — Kwacha symbol, space, tabular
+ * figures (spec §10). Never "ZMW", never "$". Pair with `.ds-amount` so the
+ * figures set in Fira Code and columns of digits line up.
+ */
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-ZM', {
-    style: 'currency',
-    currency: 'ZMW',
+  return `K ${amount.toLocaleString('en-ZM', {
     minimumFractionDigits: 2,
-  }).format(amount);
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatDate(dateString: string): string {
@@ -171,11 +140,13 @@ function formatDate(dateString: string): string {
 function TransactionRow({ transaction }: { transaction: Transaction }) {
   const isPositive = transaction.amount > 0;
 
+  // A sale is money coming in — jade, the money role. Everything that reduces
+  // the balance uses a generic status ramp so the two never blur together.
   const typeConfig = {
-    sale: { color: 'var(--brand-500)', icon: <ArrowDownLeft style={{ width: 16, height: 16 }} /> },
-    payout: { color: 'var(--content-muted)', icon: <ArrowUpRight style={{ width: 16, height: 16 }} /> },
-    refund: { color: '#EF4444', icon: <ArrowUpRight style={{ width: 16, height: 16 }} /> },
-    fee: { color: '#F59E0B', icon: <ArrowUpRight style={{ width: 16, height: 16 }} /> },
+    sale: { color: 'var(--color-money-text)', icon: <ArrowDownLeft width={16} height={16} /> },
+    payout: { color: 'var(--gray-11)', icon: <ArrowUpRight width={16} height={16} /> },
+    refund: { color: 'var(--status-danger-11)', icon: <ArrowUpRight width={16} height={16} /> },
+    fee: { color: 'var(--status-warning-11)', icon: <ArrowUpRight width={16} height={16} /> },
   };
 
   const config = typeConfig[transaction.type];
@@ -192,7 +163,7 @@ function TransactionRow({ transaction }: { transaction: Transaction }) {
           style={{
             width: 36,
             height: 36,
-            borderRadius: '10px',
+            borderRadius: 'var(--radius-3)',
             background: `${config.color}15`,
             display: 'flex',
             alignItems: 'center',
@@ -255,8 +226,8 @@ function PayoutRow({ payout }: { payout: PayoutRequest }) {
           style={{
             width: 36,
             height: 36,
-            borderRadius: '10px',
-            background: 'rgba(16, 185, 129, 0.1)',
+            borderRadius: 'var(--radius-3)',
+            background: 'var(--accent-a3)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -291,22 +262,75 @@ function PayoutRow({ payout }: { payout: PayoutRequest }) {
 export default function FinancePage() {
   const { data: session } = useSession();
   const isAuthenticated = !!session?.user;
-  const { status } = useMyOrganization({ skip: !isAuthenticated });
+  const { organization, status } = useMyOrganization({ skip: !isAuthenticated });
   const canPayout = canRequestPayouts(status);
+  const organizerId = organization?.ownerId ?? null;
 
-  const revenueGrowth = useMemo(() => {
-    if (financialStats.lastMonthRevenue === 0) return 100;
-    return ((financialStats.thisMonthRevenue - financialStats.lastMonthRevenue) / financialStats.lastMonthRevenue) * 100;
-  }, []);
+  const { overview } = useMyFinanceOverview({ skip: !isAuthenticated });
+  const { transactions: txnRows } = useMyTransactions({ size: 5, skip: !isAuthenticated });
+  const { payouts: payoutRows } = useMyPayouts(organizerId);
+
+  const stats = useMemo(
+    () => ({
+      escrowBalance: Number(overview?.availableBalance ?? 0),
+      totalRevenue: Number(overview?.netEarnings ?? 0),
+      pendingPayouts: Number(overview?.pendingBalance ?? 0),
+      thisMonthRevenue: Number(overview?.earningsThisMonth ?? 0),
+      lastMonthRevenue: Number(overview?.earningsLastMonth ?? 0),
+      platformFees: Number(overview?.platformFees ?? 0),
+      refunds: Number(overview?.totalRefunds ?? 0),
+    }),
+    [overview]
+  );
+
+  const pendingPayoutCount = overview?.pendingPayoutRequests ?? 0;
+
+  const transactions: Transaction[] = useMemo(
+    () =>
+      txnRows.map((t) => {
+        const magnitude = Math.abs(Number(t.amount ?? 0));
+        const type = mapTransactionType(t.type);
+        return {
+          id: t.id,
+          type,
+          description: t.description,
+          amount: type === 'sale' ? magnitude : -magnitude,
+          date: t.timestamp,
+          eventName: t.eventTitle ?? undefined,
+          status: mapTransactionStatus(t.status),
+        };
+      }),
+    [txnRows]
+  );
+
+  const payouts: PayoutRequest[] = useMemo(
+    () =>
+      payoutRows
+        .map((p) => ({
+          id: p.id,
+          amount: Number(p.requestedAmount ?? 0),
+          status: mapPayoutStatus(p.status),
+          requestedAt: p.requestedAt,
+          completedAt: p.processedAt ?? undefined,
+        }))
+        .filter((p) => p.status === 'pending' || p.status === 'processing'),
+    [payoutRows]
+  );
+
+  const revenueGrowth =
+    overview?.monthlyGrowth ??
+    (stats.lastMonthRevenue === 0
+      ? 100
+      : ((stats.thisMonthRevenue - stats.lastMonthRevenue) / stats.lastMonthRevenue) * 100);
 
   return (
     <Box>
       <PageHeader
         title="Finance"
-        description="Manage your earnings, payouts, and financial reports"
+        description="Your balance, payouts and transaction history."
         actions={canPayout ? [
           {
-            label: 'Request Payout',
+            label: 'Request payout',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
             href: '/finance/payouts?action=new',
           },
@@ -323,31 +347,31 @@ export default function FinancePage() {
         }}
       >
         <StatCard
-          title="Available Balance"
-          value={formatCurrency(financialStats.escrowBalance)}
+          title="Available balance"
+          value={formatCurrency(stats.escrowBalance)}
           icon={<Wallet style={{ width: 20, height: 20 }} />}
           change={12}
-          changeLabel="Ready for payout"
+          changeLabel="Ready to pay out"
         />
         <StatCard
-          title="Total Revenue"
-          value={formatCurrency(financialStats.totalRevenue)}
+          title="Total revenue"
+          value={formatCurrency(stats.totalRevenue)}
           icon={<GraphUp style={{ width: 20, height: 20 }} />}
           change={18}
           changeLabel="All time"
         />
         <StatCard
-          title="This Month"
-          value={formatCurrency(financialStats.thisMonthRevenue)}
+          title="This month"
+          value={formatCurrency(stats.thisMonthRevenue)}
           icon={<Calendar style={{ width: 20, height: 20 }} />}
           change={revenueGrowth}
           changeLabel="vs last month"
         />
         <StatCard
-          title="Pending Payouts"
-          value={formatCurrency(financialStats.pendingPayouts)}
-          icon={<Clock style={{ width: 20, height: 20 }} />}
-          subtitle={`${mockPayouts.length} requests`}
+          title="Pending payouts"
+          value={formatCurrency(stats.pendingPayouts)}
+          icon={<Clock width={20} height={20} />}
+          changeLabel={`${pendingPayoutCount} request${pendingPayoutCount === 1 ? '' : 's'} waiting`}
         />
       </Box>
 
@@ -360,7 +384,7 @@ export default function FinancePage() {
               padding: '24px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Flex justify="between" align="center" mb="4">
@@ -375,11 +399,17 @@ export default function FinancePage() {
               </Link>
             </Flex>
 
-            <Flex direction="column">
-              {mockTransactions.slice(0, 5).map((transaction) => (
-                <TransactionRow key={transaction.id} transaction={transaction} />
-              ))}
-            </Flex>
+            {transactions.length === 0 ? (
+              <Box py="6" style={{ textAlign: 'center' }}>
+                <Text size="2" style={{ color: 'var(--content-muted)' }}>No transactions yet</Text>
+              </Box>
+            ) : (
+              <Flex direction="column">
+                {transactions.map((transaction) => (
+                  <TransactionRow key={transaction.id} transaction={transaction} />
+                ))}
+              </Flex>
+            )}
           </Card>
         </Box>
 
@@ -391,7 +421,7 @@ export default function FinancePage() {
               padding: '24px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Flex justify="between" align="center" mb="4">
@@ -405,9 +435,9 @@ export default function FinancePage() {
               </Link>
             </Flex>
 
-            {mockPayouts.length > 0 ? (
+            {payouts.length > 0 ? (
               <Flex direction="column">
-                {mockPayouts.map((payout) => (
+                {payouts.map((payout) => (
                   <PayoutRow key={payout.id} payout={payout} />
                 ))}
               </Flex>
@@ -426,7 +456,7 @@ export default function FinancePage() {
                     size="2"
                     style={{
                       width: '100%',
-                      background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                      background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
                     }}
                   >
                     <Plus style={{ width: 16, height: 16, marginRight: 8 }} />
@@ -443,7 +473,7 @@ export default function FinancePage() {
               padding: '24px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -458,7 +488,7 @@ export default function FinancePage() {
                     Gross Revenue
                   </Text>
                   <Text size="2" weight="medium" style={{ color: 'var(--content-primary)' }}>
-                    {formatCurrency(financialStats.totalRevenue + financialStats.platformFees + financialStats.refunds)}
+                    {formatCurrency(stats.totalRevenue + stats.platformFees + stats.refunds)}
                   </Text>
                 </Flex>
               </Box>
@@ -472,15 +502,15 @@ export default function FinancePage() {
                         width: 8,
                         height: 8,
                         borderRadius: '50%',
-                        background: '#F59E0B',
+                        background: 'var(--status-warning-9)',
                       }}
                     />
-                    <Text size="2" style={{ color: 'var(--content-secondary)' }}>
-                      Platform Fees (5%)
+                    <Text size="2" style={{ color: 'var(--gray-11)' }}>
+                      Platform fees (5%)
                     </Text>
                   </Flex>
-                  <Text size="2" style={{ color: '#F59E0B' }}>
-                    -{formatCurrency(financialStats.platformFees)}
+                  <Text size="2" className="ds-amount" style={{ color: 'var(--status-warning-11)' }}>
+                    -{formatCurrency(stats.platformFees)}
                   </Text>
                 </Flex>
                 <Progress value={5} max={100} color="orange" size="1" />
@@ -495,15 +525,15 @@ export default function FinancePage() {
                         width: 8,
                         height: 8,
                         borderRadius: '50%',
-                        background: '#EF4444',
+                        background: 'var(--status-danger-9)',
                       }}
                     />
-                    <Text size="2" style={{ color: 'var(--content-secondary)' }}>
+                    <Text size="2" style={{ color: 'var(--gray-11)' }}>
                       Refunds
                     </Text>
                   </Flex>
-                  <Text size="2" style={{ color: '#EF4444' }}>
-                    -{formatCurrency(financialStats.refunds)}
+                  <Text size="2" className="ds-amount" style={{ color: 'var(--status-danger-11)' }}>
+                    -{formatCurrency(stats.refunds)}
                   </Text>
                 </Flex>
                 <Progress value={1} max={100} color="red" size="1" />
@@ -516,7 +546,7 @@ export default function FinancePage() {
                     Net Revenue
                   </Text>
                   <Text size="3" weight="bold" style={{ color: 'var(--brand-500)' }}>
-                    {formatCurrency(financialStats.totalRevenue)}
+                    {formatCurrency(stats.totalRevenue)}
                   </Text>
                 </Flex>
               </Box>
@@ -529,7 +559,7 @@ export default function FinancePage() {
               padding: '20px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Flex direction="column" gap="2">
@@ -539,7 +569,7 @@ export default function FinancePage() {
                   justify="between"
                   p="3"
                   style={{
-                    borderRadius: '10px',
+                    borderRadius: 'var(--radius-3)',
                     cursor: 'pointer',
                     transition: 'background 0.15s ease',
                   }}
@@ -560,7 +590,7 @@ export default function FinancePage() {
                   justify="between"
                   p="3"
                   style={{
-                    borderRadius: '10px',
+                    borderRadius: 'var(--radius-3)',
                     cursor: 'pointer',
                     transition: 'background 0.15s ease',
                   }}

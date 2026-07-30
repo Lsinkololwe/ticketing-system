@@ -18,7 +18,7 @@
  */
 
 import { ReactNode, useMemo, useCallback } from 'react';
-import { Theme } from '@radix-ui/themes';
+import { Theme, Flex, Spinner } from '@radix-ui/themes';
 import { ThemeProvider as NextThemeProvider } from 'next-themes';
 import { ApolloProvider } from '@apollo/client/react';
 import { createGraphQLClient } from '@pml.tickets/shared';
@@ -68,9 +68,9 @@ function ApolloProviderWithAuth({ children }: { children: ReactNode }) {
   // This prevents flash of unauthenticated content
   if (isPending) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
-      </div>
+      <Flex align="center" justify="center" style={{ minHeight: '100vh' }}>
+        <Spinner size="3" />
+      </Flex>
     );
   }
 
@@ -90,10 +90,17 @@ function ApolloProviderWithAuth({ children }: { children: ReactNode }) {
 function RadixThemeWrapper({ children }: { children: ReactNode }) {
   return (
     <Theme
+      // MyTicketZM brand context: Admin Portal.
+      // accent teal / gray slate / radius medium / scaling 100% — see
+      // docs/MYTICKETZM_DESIGN_SYSTEM.md §1. `<html data-brand="admin">` is set
+      // in src/app/layout.tsx.
       accentColor="teal"
       grayColor="slate"
       radius="medium"
       scaling="100%"
+      // Solid panels: the DS reserves translucency for header bars only —
+      // never for content cards.
+      panelBackground="solid"
       // Use 'inherit' to let next-themes control via class attribute
       // This prevents flash of wrong theme on initial load
       appearance="inherit"

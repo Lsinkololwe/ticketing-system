@@ -23,10 +23,10 @@ import {
   Dialog,
   TextArea,
   Spinner,
-  Grid,
   Callout,
 } from '@radix-ui/themes';
-import { StyledCard, InfoCard } from '@/components/ui/StyledCard';
+import { StyledCard, InfoCard, Amount } from '@/components/ui';
+import { humanizeEnum } from '@/lib/format';
 import {
   ArrowLeft,
   Check,
@@ -150,7 +150,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 // ==================== Info Card Component ====================
-// Using InfoCard from @/components/ui/StyledCard
+// Using InfoCard from @/components/ui
 
 function InfoRow({
   label,
@@ -346,7 +346,7 @@ export default function OrganizerDetailPage() {
               <Heading size="5">{organization.name || 'Unnamed Organization'}</Heading>
               <Flex align="center" gap="2" mt="1">
                 <Badge color={STATUS_COLORS[organization.status]} variant="soft">
-                  {STATUS_LABELS[organization.status]}
+                  {STATUS_LABELS[organization.status] ?? humanizeEnum(organization.status)}
                 </Badge>
                 {organization.verified && (
                   <Badge color="green" variant="soft">
@@ -432,7 +432,7 @@ export default function OrganizerDetailPage() {
 
         {/* Details Tab */}
         <Tabs.Content value="details">
-          <Grid columns={{ initial: '1', md: '2' }} gap="4" mt="4">
+          <Box className="ds-bento-grid-wide" mt="4">
             {/* Business Information */}
             <InfoCard title="Business Information">
               <InfoRow icon={Building} label="Organization Name" value={organization.name} />
@@ -461,7 +461,14 @@ export default function OrganizerDetailPage() {
             <InfoCard title="Statistics">
               <InfoRow label="Total Events" value={organization.totalEvents} />
               <InfoRow label="Tickets Sold" value={organization.totalTicketsSold} />
-              <InfoRow label="Total Revenue" value={organization.totalRevenue ? `K${organization.totalRevenue}` : null} />
+              <InfoRow
+                label="Total revenue"
+                value={
+                  organization.totalRevenue ? (
+                    <Amount value={organization.totalRevenue} tone="money" />
+                  ) : null
+                }
+              />
               <InfoRow label="Average Rating" value={organization.averageRating ? `${organization.averageRating}/5` : null} />
             </InfoCard>
 
@@ -474,19 +481,19 @@ export default function OrganizerDetailPage() {
                 </Text>
               </StyledCard>
             )}
-          </Grid>
+          </Box>
         </Tabs.Content>
 
         {/* Verification Tab */}
         <Tabs.Content value="verification">
-          <Grid columns={{ initial: '1', md: '3' }} gap="4" mt="4">
+          <Box className="ds-bento-grid" mt="4">
             <StyledCard>
               <Flex direction="column" align="center" gap="3" py="4">
                 <Badge
                   size="2"
                   color={organization.verified ? 'green' : 'gray'}
                   variant="soft"
-                  style={{ padding: '12px 24px', borderRadius: '50%' }}
+                  style={{ width: 48, height: 48, padding: 0, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Building width={24} height={24} />
                 </Badge>
@@ -508,7 +515,7 @@ export default function OrganizerDetailPage() {
                   size="2"
                   color={organization.documentsVerified ? 'green' : 'gray'}
                   variant="soft"
-                  style={{ padding: '12px 24px', borderRadius: '50%' }}
+                  style={{ width: 48, height: 48, padding: 0, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   <ShieldCheck width={24} height={24} />
                 </Badge>
@@ -525,7 +532,7 @@ export default function OrganizerDetailPage() {
                   size="2"
                   color={organization.payoutAccountVerified ? 'green' : 'gray'}
                   variant="soft"
-                  style={{ padding: '12px 24px', borderRadius: '50%' }}
+                  style={{ width: 48, height: 48, padding: 0, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Building width={24} height={24} />
                 </Badge>
@@ -535,31 +542,31 @@ export default function OrganizerDetailPage() {
                 </Text>
               </Flex>
             </StyledCard>
-          </Grid>
+          </Box>
         </Tabs.Content>
 
         {/* Documents Tab */}
         <Tabs.Content value="documents">
           <Box mt="4">
             {organization.verificationDocuments && organization.verificationDocuments.length > 0 ? (
-              <Grid columns={{ initial: '1', md: '2' }} gap="4">
+              <Box className="ds-bento-grid-wide">
                 {organization.verificationDocuments.map((doc) => (
                   <StyledCard key={doc.id}>
                     <Flex justify="between" align="center">
                       <Box>
-                        <Text weight="medium" size="2">{doc.documentType}</Text>
+                        <Text weight="medium" size="2">{humanizeEnum(doc.documentType)}</Text>
                         <Text size="1" color="gray">{doc.fileName}</Text>
                       </Box>
                       <Badge
                         color={doc.status === ('APPROVED' as DocumentStatus) ? 'green' : doc.status === ('REJECTED' as DocumentStatus) ? 'red' : 'amber'}
                         variant="soft"
                       >
-                        {doc.status}
+                        {humanizeEnum(doc.status)}
                       </Badge>
                     </Flex>
                   </StyledCard>
                 ))}
-              </Grid>
+              </Box>
             ) : (
               <StyledCard>
                 <Flex align="center" justify="center" direction="column" gap="2" py="9">
@@ -572,7 +579,7 @@ export default function OrganizerDetailPage() {
 
         {/* Activity Tab */}
         <Tabs.Content value="activity">
-          <Grid columns={{ initial: '1', md: '2' }} gap="4" mt="4">
+          <Box className="ds-bento-grid-wide" mt="4">
             <InfoCard title="Timeline">
               <InfoRow icon={Calendar} label="Created" value={organization.createdAt ? new Date(organization.createdAt).toLocaleDateString() : null} />
               <InfoRow label="Submitted" value={organization.submittedAt ? new Date(organization.submittedAt).toLocaleDateString() : null} />
@@ -590,7 +597,7 @@ export default function OrganizerDetailPage() {
                 </Box>
               )}
             </InfoCard>
-          </Grid>
+          </Box>
         </Tabs.Content>
       </Tabs.Root>
 

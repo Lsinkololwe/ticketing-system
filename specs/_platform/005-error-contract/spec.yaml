@@ -1,0 +1,164 @@
+id: ET-PLT-005
+title: Error contract — the closed code registry, typed handlers, retryability
+status: draft
+area: PLT
+service: all
+subgraph: all
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 0
+blocked_by: [ET-PLT-001, ET-PLT-004]
+conformance: null
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/004-federation-contract/spec.md
+  - docs/API_DESIGN_SPECIFICATION.md
+
+persistence:
+  collections: []
+  indexes: []
+  redis_keys: []
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: null
+  queries: []
+  mutations: []
+
+shared_types:
+  - com.pml.shared.error.DomainRefusal      # abstract base for every refusal
+  - com.pml.shared.error.ErrorCode          # the registry, in code
+  - com.pml.shared.error.GraphQlErrors      # the only place extensions is built
+  - com.pml.shared.error.GlobalErrorHandler # the catch-all — the only source of INTERNAL_ERROR
+
+error_types: [BAD_REQUEST, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND,
+              FAILED_PRECONDITION, UNAVAILABLE, INTERNAL, UNKNOWN]
+
+# ---- the closed registry, mirrored from spec.md §4. 79 rows. ----
+errors:
+  platform:
+    - COMMAND_NOT_WELL_FORMED
+    - INTERNAL_ERROR
+    - RESOURCE_CONFLICT
+    - PAGE_SIZE_EXCEEDED
+    - ACTOR_NOT_AUTHENTICATED
+    - ACTOR_NOT_PERMITTED
+    - IDEMPOTENCY_KEY_REUSED
+    - RATE_LIMIT_EXCEEDED
+  identity:
+    - PHONE_NUMBER_INVALID
+    - OTP_INVALID
+    - OTP_EXPIRED
+    - OTP_COOLDOWN_ACTIVE
+    - OTP_ATTEMPTS_EXHAUSTED
+    - USER_UNKNOWN
+    - USER_SYNC_CONFLICT
+  organization:
+    - ORGANIZATION_UNKNOWN
+    - ORGANIZATION_STATE_INVALID
+    - ORGANIZATION_ALREADY_EXISTS
+    - SLUG_TAKEN
+    - APPLICATION_INCOMPLETE
+    - DOCUMENT_REQUIRED
+    - DOCUMENT_STATE_INVALID
+    - MEMBER_UNKNOWN
+    - MEMBER_ALREADY_EXISTS
+    - OWNER_CANNOT_BE_REMOVED
+    - OWNER_ROLE_IMMUTABLE
+    - INVITATION_UNKNOWN
+    - INVITATION_EXPIRED
+    - INVITATION_NOT_PENDING
+    - TRANSFER_TARGET_INELIGIBLE
+    - ACCESS_GRANT_UNKNOWN
+    - EVENT_ROLE_NOT_GRANTABLE
+  catalog:
+    - EVENT_UNKNOWN
+    - EVENT_STATE_INVALID
+    - ORGANIZER_NOT_APPROVED
+    - TIER_UNKNOWN
+    - TIER_NOT_ON_SALE
+    - CAPACITY_BELOW_COMMITTED
+    - LOCATION_UNKNOWN
+    - PROMO_CODE_UNKNOWN
+    - PROMO_CODE_EXHAUSTED
+    - PROMO_CODE_NOT_APPLICABLE
+  ticketing:
+    - TIER_SOLD_OUT
+    - RESERVATION_UNKNOWN
+    - RESERVATION_EXPIRED
+    - RESERVATION_STATE_INVALID
+    - PURCHASE_LIMIT_EXCEEDED
+    - TICKET_UNKNOWN
+    - TICKET_STATE_INVALID
+    - TICKET_ALREADY_VALIDATED
+    - TICKET_NOT_VALID_FOR_EVENT
+    - TICKET_SIGNATURE_INVALID
+    - TICKET_NOT_TRANSFERABLE
+    - TRANSFER_TO_SELF
+  payment:
+    - PAYMENT_INTENT_UNKNOWN
+    - PAYMENT_ALREADY_COMPLETED
+    - PAYMENT_DECLINED
+    - PAYMENT_AMOUNT_MISMATCH
+    - PAYMENT_PROVIDER_UNAVAILABLE
+    - MSISDN_PROVIDER_UNSUPPORTED
+    - WEBHOOK_SIGNATURE_INVALID
+    - WEBHOOK_REPLAYED
+  finance:
+    - ESCROW_ACCOUNT_UNKNOWN
+    - ESCROW_NOT_ACTIVE
+    - ESCROW_INSUFFICIENT_BALANCE
+    - JOURNAL_UNBALANCED
+    - ACCOUNT_CODE_UNKNOWN
+    - COMMISSION_ALREADY_RECOGNISED
+    - COMMISSION_RATE_UNKNOWN
+    - PAYOUT_BELOW_MINIMUM
+    - PAYOUT_WINDOW_NOT_OPEN
+    - PAYOUT_STATE_INVALID
+    - BANK_ACCOUNT_UNKNOWN
+    - BANK_ACCOUNT_NOT_VERIFIED
+    - REFUND_NOT_PERMITTED
+    - REFUND_WINDOW_CLOSED
+    - REFUND_ALREADY_ISSUED
+    - CHARGEBACK_STATE_INVALID
+    - RECONCILIATION_IN_PROGRESS
+  notification_and_admin:
+    - NOTIFICATION_CHANNEL_UNAVAILABLE
+    - DEVICE_TOKEN_INVALID
+    - CONFIGURATION_KEY_UNKNOWN
+    - CONFIGURATION_VALUE_INVALID
+    - TRANSACTION_NOT_RECOVERABLE
+
+retryable:
+  - RESOURCE_CONFLICT
+  - INTERNAL_ERROR
+  - RATE_LIMIT_EXCEEDED
+  - OTP_COOLDOWN_ACTIVE
+  - USER_SYNC_CONFLICT
+  - PAYMENT_PROVIDER_UNAVAILABLE
+  - RECONCILIATION_IN_PROGRESS
+  - NOTIFICATION_CHANNEL_UNAVAILABLE
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/005-error-contract
+  - ./scripts/spec-lint.sh --errors
+  - mvn -q -f backend test -Dgroups=ET-PLT-005
+  - mvn -q -f backend verify -Dgroups=ET-PLT-005
+
+risks:
+  - "The registry allocates codes to capabilities that are not yet specified — every ticketing, payment and finance row is written against a spec that has not been authored. If those specs later find a condition the registry does not describe, they must edit this file, and a closed registry edited by seven downstream specs is a merge point the build order has to serialise."
+  - "R6 makes a cross-tenant read indistinguishable from a missing resource, which means the tenant filter must run at the repository, before any existence check. A resolver that loads first and checks membership second returns NOT_FOUND correctly but has already read the other tenant's document into memory — and into any log line that dumps it."
+  - "RESOURCE_CONFLICT is retryable and IDEMPOTENCY_KEY_REUSED is not, but both arrive as DuplicateKeyException. Distinguishing them requires reading which index was violated out of the driver's error, which is a string match against a Mongo error message — brittle, and wrong in the direction that tells a client to retry a duplicate payment."
+  - "PAYMENT_DECLINED carries declineCategory, a platform enum mapped from the provider. PawaPay's decline vocabulary is not one-to-one with those five categories, so the mapping is lossy and OTHER will absorb the ambiguous cases. ET-PAY-001 owns that table; until it exists, the category is unpopulated."
+  - "The catch-all handler returns retryable: true for INTERNAL_ERROR, which tells a mobile client to retry a mutation that may have partially applied. That is only safe for operations carrying an idempotency key, and nothing in this spec restricts INTERNAL_ERROR to those. A non-idempotent mutation failing internally and being retried is the double-charge this corpus exists to prevent."
+  - "The enum-equals-registry test in T1 compares code names, not retryability or ErrorType. A row whose retryability is changed in prose but not in the enum passes, and the prose is what an implementer reads."
+  - "GraphQL returns errors alongside partial data. A federated query where booking errors and catalog succeeds returns both, and a client reading data without checking errors sees a ticket list that is silently short. Nothing in this spec forces clients to check, and the frontend's generic handling is where that has to be enforced."

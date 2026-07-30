@@ -1,162 +1,207 @@
 'use client';
 
 /**
- * Professional Toast Notification System using Radix UI
+ * Toast — MyTicketZM design system feedback primitive.
  *
- * Features:
- * - Four variants: success, error, warning, info
- * - Accessible (ARIA compliant)
- * - Auto-dismiss with configurable duration
- * - Manual dismiss with close button
- * - Smooth animations
- * - Dark mode support
+ * Contract (spec §7): `variant, title, description, icon, onClose`
+ *   variant: success | error | warning | info
+ *
+ * This file previously styled five variants with Tailwind default-palette
+ * utility classes — 44 of them, which was the entire palette-class debt in this
+ * app. Everything now resolves through the --status-* role tokens, so light/dark
+ * and brand context are handled by the token layer instead of by a
+ * hand-maintained dark-mode variant per class.
+ *
+ * Copy rule: errors explain what happened and how to fix it, in the interface's
+ * voice. They do not apologise and they are never vague.
  */
 
 import * as React from 'react';
 import * as ToastPrimitive from '@radix-ui/react-toast';
-import { cva, type VariantProps } from 'class-variance-authority';
 import {
-  CheckCircledIcon,
-  CrossCircledIcon,
-  ExclamationTriangleIcon,
-  InfoCircledIcon,
-  Cross2Icon,
-} from '@radix-ui/react-icons';
+  CheckCircle,
+  WarningCircle,
+  WarningTriangle,
+  InfoCircle,
+  Xmark,
+} from 'iconoir-react';
 
-// Toast variant styles using CVA for type-safe variants
-const toastVariants = cva(
-  [
-    'group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-lg border p-4 pr-8 shadow-lg transition-all',
-    'data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none',
-    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full',
-  ],
-  {
-    variants: {
-      variant: {
-        success: 'border-green-200 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950 dark:text-green-100',
-        error: 'border-red-200 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100',
-        warning: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100',
-        info: 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100',
-        default: 'border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100',
-      },
-    },
-    defaultVariants: {
-      variant: 'default',
-    },
-  }
-);
+export type ToastVariant = 'success' | 'error' | 'warning' | 'info';
 
-// Icon component based on variant
-const ToastIcon = ({ variant }: { variant?: 'success' | 'error' | 'warning' | 'info' | 'default' }) => {
-  const iconClass = 'h-5 w-5 flex-shrink-0';
+export interface ToastProps {
+  variant?: ToastVariant;
+  title: string;
+  description?: string;
+  icon?: React.ReactNode;
+  onClose?: () => void;
+}
 
-  switch (variant) {
-    case 'success':
-      return <CheckCircledIcon className={`${iconClass} text-green-600 dark:text-green-400`} />;
-    case 'error':
-      return <CrossCircledIcon className={`${iconClass} text-red-600 dark:text-red-400`} />;
-    case 'warning':
-      return <ExclamationTriangleIcon className={`${iconClass} text-amber-600 dark:text-amber-400`} />;
-    case 'info':
-      return <InfoCircledIcon className={`${iconClass} text-blue-600 dark:text-blue-400`} />;
-    default:
-      return null;
-  }
+const VARIANTS: Record<
+  ToastVariant,
+  { surface: string; border: string; text: string; icon: React.ReactNode }
+> = {
+  success: {
+    surface: 'var(--status-success-a3)',
+    border: 'var(--green-a6)',
+    text: 'var(--status-success-11)',
+    icon: <CheckCircle width={20} height={20} />,
+  },
+  error: {
+    surface: 'var(--status-danger-a3)',
+    border: 'var(--red-a6)',
+    text: 'var(--status-danger-11)',
+    icon: <WarningCircle width={20} height={20} />,
+  },
+  warning: {
+    surface: 'var(--status-warning-a3)',
+    border: 'var(--amber-a6)',
+    text: 'var(--status-warning-11)',
+    icon: <WarningTriangle width={20} height={20} />,
+  },
+  info: {
+    surface: 'var(--status-info-a3)',
+    border: 'var(--blue-a6)',
+    text: 'var(--status-info-11)',
+    icon: <InfoCircle width={20} height={20} />,
+  },
 };
 
-// Toast viewport (where toasts are rendered)
+export function Toast({ variant = 'info', title, description, icon, onClose }: ToastProps) {
+  const config = VARIANTS[variant];
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 'var(--space-3)',
+        width: '100%',
+        padding: 'var(--space-4)',
+        background: 'var(--color-panel-solid)',
+        borderRadius: 'var(--card-radius)',
+        border: `1px solid ${config.border}`,
+        boxShadow: 'var(--shadow-4)',
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 28,
+          height: 28,
+          borderRadius: 'var(--radius-2)',
+          background: config.surface,
+          color: config.text,
+        }}
+      >
+        {icon || config.icon}
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <ToastPrimitive.Title
+          style={{
+            display: 'block',
+            fontSize: 'var(--text-2-size)',
+            fontWeight: 'var(--weight-semibold)',
+            color: 'var(--gray-12)',
+          }}
+        >
+          {title}
+        </ToastPrimitive.Title>
+        {description && (
+          <ToastPrimitive.Description
+            style={{
+              display: 'block',
+              marginTop: 2,
+              fontSize: 'var(--text-2-size)',
+              lineHeight: 'var(--text-2-line)',
+              color: 'var(--gray-11)',
+            }}
+          >
+            {description}
+          </ToastPrimitive.Description>
+        )}
+      </div>
+
+      {onClose && (
+        <ToastPrimitive.Close asChild>
+          <button
+            type="button"
+            data-testid="toast-close"
+            className="ds-toast-close"
+            aria-label="Dismiss notification"
+            onClick={onClose}
+            style={{
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 24,
+              height: 24,
+              borderRadius: 'var(--radius-2)',
+              border: 0,
+              background: 'transparent',
+              color: 'var(--gray-9)',
+              cursor: 'pointer',
+              transition:
+                'background-color var(--transition-fast) var(--ease-standard), color var(--transition-fast) var(--ease-standard)',
+            }}
+          >
+            <Xmark width={16} height={16} />
+          </button>
+        </ToastPrimitive.Close>
+      )}
+
+      <style jsx global>{`
+        .ds-toast-close:hover {
+          background: var(--gray-a3);
+          color: var(--gray-12);
+        }
+        .ds-toast-close:focus-visible {
+          outline: none;
+          box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--accent-8);
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/**
+ * Viewport — bottom-right on desktop, top on mobile so a toast never covers a
+ * thumb-reachable primary action.
+ */
 export const ToastViewport = React.forwardRef<
   React.ElementRef<typeof ToastPrimitive.Viewport>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitive.Viewport>
->(({ className, ...props }, ref) => (
+>((props, ref) => (
   <ToastPrimitive.Viewport
     ref={ref}
-    className={`fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px] ${className || ''}`}
+    className="ds-toast-viewport"
+    style={{
+      position: 'fixed',
+      zIndex: 100,
+      display: 'flex',
+      flexDirection: 'column-reverse',
+      gap: 'var(--space-3)',
+      width: '100%',
+      maxWidth: 420,
+      maxHeight: '100vh',
+      padding: 'var(--space-4)',
+      listStyle: 'none',
+      margin: 0,
+      outline: 'none',
+    }}
     {...props}
   />
 ));
-ToastViewport.displayName = ToastPrimitive.Viewport.displayName;
+ToastViewport.displayName = 'ToastViewport';
 
-// Main Toast component
-export interface ToastProps
-  extends React.ComponentPropsWithoutRef<typeof ToastPrimitive.Root>,
-    VariantProps<typeof toastVariants> {}
-
-export const Toast = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitive.Root>,
-  ToastProps
->(({ className, variant, ...props }, ref) => (
-  <ToastPrimitive.Root
-    ref={ref}
-    className={toastVariants({ variant, className })}
-    {...props}
-  />
-));
-Toast.displayName = ToastPrimitive.Root.displayName;
-
-// Toast action button
-export const ToastAction = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitive.Action>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitive.Action>
->(({ className, ...props }, ref) => (
-  <ToastPrimitive.Action
-    ref={ref}
-    className={`inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:hover:bg-gray-800 ${className || ''}`}
-    {...props}
-  />
-));
-ToastAction.displayName = ToastPrimitive.Action.displayName;
-
-// Toast close button
-export const ToastClose = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitive.Close>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitive.Close>
->(({ className, ...props }, ref) => (
-  <ToastPrimitive.Close
-    ref={ref}
-    className={`absolute right-2 top-2 rounded-md p-1 text-gray-500 opacity-0 transition-opacity hover:text-gray-900 focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 dark:text-gray-400 dark:hover:text-gray-100 ${className || ''}`}
-    toast-close=""
-    {...props}
-  >
-    <Cross2Icon className="h-4 w-4" />
-  </ToastPrimitive.Close>
-));
-ToastClose.displayName = ToastPrimitive.Close.displayName;
-
-// Toast title
-export const ToastTitle = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitive.Title>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitive.Title>
->(({ className, ...props }, ref) => (
-  <ToastPrimitive.Title
-    ref={ref}
-    className={`text-sm font-semibold ${className || ''}`}
-    {...props}
-  />
-));
-ToastTitle.displayName = ToastPrimitive.Title.displayName;
-
-// Toast description
-export const ToastDescription = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitive.Description>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitive.Description>
->(({ className, ...props }, ref) => (
-  <ToastPrimitive.Description
-    ref={ref}
-    className={`text-sm opacity-90 ${className || ''}`}
-    {...props}
-  />
-));
-ToastDescription.displayName = ToastPrimitive.Description.displayName;
-
-// Toast Provider (re-export)
+export const ToastRoot = ToastPrimitive.Root;
+export const ToastAction = ToastPrimitive.Action;
 export const ToastProvider = ToastPrimitive.Provider;
-
-// Export the icon component for use in the toast context
-export { ToastIcon };
-
-// Type for toast data
-export type ToastVariant = 'success' | 'error' | 'warning' | 'info' | 'default';
 
 export interface ToastData {
   id: string;

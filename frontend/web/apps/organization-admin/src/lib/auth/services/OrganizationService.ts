@@ -182,7 +182,9 @@ export class OrganizationService implements IOrganizationService {
 
       const status = org.status;
 
-      // Return OrganizationStatus with computed boolean properties
+      // Return OrganizationStatus with lifecycle booleans derived from the
+      // backend-provided status. These describe business state (approved / under
+      // review / draft); routing decisions compose them in the presentation layer.
       return {
         hasOrganization: true,
         id: org.id,
@@ -289,9 +291,10 @@ export class OrganizationService implements IOrganizationService {
       };
     }
 
-    // Special case: Allow access to dashboard only if approved
+    // Special case: dashboard is available to operational orgs (approved/active)
+    // and to those under review (read-only preview) — both are business lifecycle states.
     if (requestedPath.startsWith('/dashboard')) {
-      if (orgStatus.isApproved) {
+      if (orgStatus.isApproved || orgStatus.isPendingReview) {
         return {
           allowed: true,
           currentStatus,
@@ -302,7 +305,7 @@ export class OrganizationService implements IOrganizationService {
         allowed: false,
         redirectTo: expectedRoute,
         currentStatus,
-        reason: 'Organization not approved',
+        reason: 'Organization cannot access dashboard in current status',
       };
     }
 

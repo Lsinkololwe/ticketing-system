@@ -10,8 +10,8 @@
  * - Quick actions
  */
 
-import { useState, useMemo } from 'react';
-import { Box, Flex, Text, TextField, Button, Badge, Card, Tabs, DropdownMenu } from '@radix-ui/themes';
+import { useState, useMemo, useCallback } from 'react';
+import { Box, Flex, Text, TextField, Button, Badge, Card, Tabs, DropdownMenu, Callout } from '@radix-ui/themes';
 import {
   Plus,
   Search,
@@ -25,15 +25,22 @@ import {
   Eye,
   Group,
   CreditCard,
+  Rocket,
 } from 'iconoir-react';
 import { useRouter } from 'next/navigation';
 import { PageHeader, NoEventsEmptyState } from '@/components/ui';
 import { useSession } from '@/lib/auth/client';
 import {
   useMyOrganization,
-  canCreateEvents,
-  canEditEvents,
+  canCreateDraftEvents,
+  isApproved,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import {
+  useMyEvents,
+  usePublishEvent,
+  useUnpublishEvent,
+  type MyEventRow,
+} from '@pml.tickets/shared/api/organization-admin/modules/events';
 
 // =============================================================================
 // TYPES
@@ -45,73 +52,53 @@ type ViewMode = 'grid' | 'list';
 interface Event {
   id: string;
   title: string;
-  slug: string;
   coverImageUrl?: string;
   startDate: string;
   endDate: string;
   location: string;
   status: EventStatus;
+  /** Real backend status, used to decide publish/unpublish availability. */
+  rawStatus: string;
   ticketsSold: number;
   ticketsTotal: number;
   revenue: number;
 }
 
 // =============================================================================
-// MOCK DATA
+// DATA MAPPING
 // =============================================================================
 
-const mockEvents: Event[] = [
-  {
-    id: '1',
-    title: 'Tech Summit Zambia 2025',
-    slug: 'tech-summit-zambia-2025',
-    coverImageUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800',
-    startDate: '2025-12-15T09:00:00Z',
-    endDate: '2025-12-15T18:00:00Z',
-    location: 'Mulungushi Conference Center, Lusaka',
-    status: 'PUBLISHED',
-    ticketsSold: 450,
-    ticketsTotal: 500,
-    revenue: 45000,
-  },
-  {
-    id: '2',
-    title: 'Lusaka Music Festival',
-    slug: 'lusaka-music-festival',
-    coverImageUrl: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=800',
-    startDate: '2025-12-20T14:00:00Z',
-    endDate: '2025-12-21T02:00:00Z',
-    location: 'National Heroes Stadium',
-    status: 'PUBLISHED',
-    ticketsSold: 1200,
-    ticketsTotal: 5000,
-    revenue: 180000,
-  },
-  {
-    id: '3',
-    title: 'Startup Pitch Night',
-    slug: 'startup-pitch-night',
-    startDate: '2025-12-28T18:00:00Z',
-    endDate: '2025-12-28T21:00:00Z',
-    location: 'BongoHive, Lusaka',
-    status: 'DRAFT',
-    ticketsSold: 0,
-    ticketsTotal: 100,
-    revenue: 0,
-  },
-  {
-    id: '4',
-    title: 'Corporate Workshop Series',
-    slug: 'corporate-workshop-series',
-    startDate: '2025-11-10T09:00:00Z',
-    endDate: '2025-11-10T17:00:00Z',
-    location: 'Radisson Blu Hotel',
-    status: 'ENDED',
-    ticketsSold: 75,
-    ticketsTotal: 80,
-    revenue: 22500,
-  },
-];
+/** Collapse the backend EventStatus into the four display buckets. */
+function toDisplayStatus(raw: string): EventStatus {
+  switch (raw) {
+    case 'PUBLISHED':
+      return 'PUBLISHED';
+    case 'CANCELLED':
+      return 'CANCELLED';
+    case 'COMPLETED':
+      return 'ENDED';
+    default:
+      // DRAFT, PENDING_REVIEW, CHANGES_REQUESTED, APPROVED
+      return 'DRAFT';
+  }
+}
+
+/** Map a backend event row to the card's view model. */
+function mapEvent(row: MyEventRow): Event {
+  return {
+    id: row.id,
+    title: row.title,
+    coverImageUrl: row.bannerImageUrl ?? undefined,
+    startDate: row.eventDateTime,
+    endDate: row.endDateTime,
+    location: row.locationName || row.cityName || '—',
+    status: toDisplayStatus(row.status),
+    rawStatus: row.status,
+    ticketsSold: row.soldTickets ?? 0,
+    ticketsTotal: row.totalCapacity ?? 0,
+    revenue: Number(row.revenue ?? 0),
+  };
+}
 
 // =============================================================================
 // EVENT CARD COMPONENT
@@ -121,20 +108,26 @@ interface EventCardProps {
   event: Event;
   viewMode: ViewMode;
   canEdit: boolean;
+  canPublish: boolean;
+  actionLoading: boolean;
+  onPublish: (id: string) => void;
+  onUnpublish: (id: string) => void;
 }
 
-function EventCard({ event, viewMode, canEdit }: EventCardProps) {
+function EventCard({ event, viewMode, canEdit, canPublish, actionLoading, onPublish, onUnpublish }: EventCardProps) {
   const router = useRouter();
 
+  // Humanized enums (spec §10): PUBLISHED reads as "Live". Status colors are
+  // the generic status ramps — never jade, which is reserved for amounts.
   const statusConfig: Record<EventStatus, { color: string; bg: string; label: string }> = {
-    DRAFT: { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.1)', label: 'Draft' },
-    PUBLISHED: { color: '#10B981', bg: 'rgba(16, 185, 129, 0.1)', label: 'Published' },
-    ENDED: { color: '#94A3B8', bg: 'rgba(100, 116, 139, 0.1)', label: 'Ended' },
-    CANCELLED: { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.1)', label: 'Cancelled' },
+    DRAFT: { color: 'var(--status-warning-11)', bg: 'var(--status-warning-a3)', label: 'Draft' },
+    PUBLISHED: { color: 'var(--status-success-11)', bg: 'var(--status-success-a3)', label: 'Live' },
+    ENDED: { color: 'var(--gray-11)', bg: 'var(--gray-a3)', label: 'Ended' },
+    CANCELLED: { color: 'var(--status-danger-11)', bg: 'var(--status-danger-a3)', label: 'Cancelled' },
   };
 
   const status = statusConfig[event.status];
-  const progress = (event.ticketsSold / event.ticketsTotal) * 100;
+  const progress = event.ticketsTotal > 0 ? (event.ticketsSold / event.ticketsTotal) * 100 : 0;
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {
@@ -155,7 +148,7 @@ function EventCard({ event, viewMode, canEdit }: EventCardProps) {
           padding: '16px 20px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '12px',
+          borderRadius: 'var(--card-radius)',
           cursor: 'pointer',
           transition: 'all 200ms ease',
         }}
@@ -168,10 +161,10 @@ function EventCard({ event, viewMode, canEdit }: EventCardProps) {
             style={{
               width: 64,
               height: 64,
-              borderRadius: '8px',
+              borderRadius: 'var(--radius-4)',
               background: event.coverImageUrl
                 ? `url(${event.coverImageUrl}) center/cover`
-                : 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                : 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               flexShrink: 0,
             }}
           />
@@ -254,6 +247,26 @@ function EventCard({ event, viewMode, canEdit }: EventCardProps) {
                   <Copy style={{ width: 16, height: 16, marginRight: 8 }} />
                   Duplicate
                 </DropdownMenu.Item>
+                {canPublish && event.rawStatus === 'APPROVED' && (
+                  <DropdownMenu.Item
+                    onClick={() => onPublish(event.id)}
+                    disabled={actionLoading}
+                    data-testid="event-publish"
+                  >
+                    <Rocket style={{ width: 16, height: 16, marginRight: 8 }} />
+                    Publish
+                  </DropdownMenu.Item>
+                )}
+                {canPublish && event.rawStatus === 'PUBLISHED' && (
+                  <DropdownMenu.Item
+                    onClick={() => onUnpublish(event.id)}
+                    disabled={actionLoading}
+                    data-testid="event-unpublish"
+                  >
+                    <Rocket style={{ width: 16, height: 16, marginRight: 8 }} />
+                    Unpublish
+                  </DropdownMenu.Item>
+                )}
                 <DropdownMenu.Separator />
                 <DropdownMenu.Item color="red">
                   <Trash style={{ width: 16, height: 16, marginRight: 8 }} />
@@ -273,7 +286,7 @@ function EventCard({ event, viewMode, canEdit }: EventCardProps) {
       style={{
         background: 'var(--surface-elevated)',
         border: '1px solid var(--surface-border)',
-        borderRadius: '16px',
+        borderRadius: 'var(--card-radius-bento)',
         overflow: 'hidden',
         cursor: 'pointer',
         transition: 'all 200ms ease',
@@ -287,7 +300,7 @@ function EventCard({ event, viewMode, canEdit }: EventCardProps) {
           height: 160,
           background: event.coverImageUrl
             ? `url(${event.coverImageUrl}) center/cover`
-            : 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+            : 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
           position: 'relative',
         }}
       >
@@ -365,7 +378,7 @@ function EventCard({ event, viewMode, canEdit }: EventCardProps) {
                 width: `${progress}%`,
                 height: '100%',
                 borderRadius: 3,
-                background: 'linear-gradient(90deg, var(--brand-500) 0%, var(--brand-400) 100%)',
+                background: 'var(--accent-9)',
               }}
             />
           </Box>
@@ -404,12 +417,49 @@ export default function EventsPage() {
   const [activeTab, setActiveTab] = useState('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
 
-  const canCreate = canCreateEvents(status);
-  const canEdit = canEditEvents(status);
+  // Draft authoring is allowed throughout the approval workflow (pending orgs too);
+  // publishing is approved-only. Both are ultimately enforced server-side.
+  const canCreate = canCreateDraftEvents(status);
+  const canEdit = canCreateDraftEvents(status);
+  const canPublish = isApproved(status);
+
+  const { events: rawEvents, loading, error, refetch } = useMyEvents({ skip: !isAuthenticated });
+  const { publish, loading: publishing } = usePublishEvent();
+  const { unpublish, loading: unpublishing } = useUnpublishEvent();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const actionLoading = publishing || unpublishing;
+
+  const allEvents = useMemo(() => rawEvents.map(mapEvent), [rawEvents]);
+
+  const handlePublish = useCallback(
+    async (id: string) => {
+      setActionError(null);
+      const res = await publish(id);
+      if (res.success) {
+        await refetch();
+      } else {
+        setActionError(res.message || res.errors[0] || 'Failed to publish event');
+      }
+    },
+    [publish, refetch]
+  );
+
+  const handleUnpublish = useCallback(
+    async (id: string) => {
+      setActionError(null);
+      const res = await unpublish(id);
+      if (res.success) {
+        await refetch();
+      } else {
+        setActionError(res.message || res.errors[0] || 'Failed to unpublish event');
+      }
+    },
+    [unpublish, refetch]
+  );
 
   // Filter events based on tab and search
   const filteredEvents = useMemo(() => {
-    let events = mockEvents;
+    let events = allEvents;
 
     // Filter by status
     if (activeTab !== 'all') {
@@ -432,29 +482,37 @@ export default function EventsPage() {
     }
 
     return events;
-  }, [activeTab, searchQuery]);
+  }, [allEvents, activeTab, searchQuery]);
 
   // Count events by status
   const counts = useMemo(() => ({
-    all: mockEvents.length,
-    published: mockEvents.filter((e) => e.status === 'PUBLISHED').length,
-    draft: mockEvents.filter((e) => e.status === 'DRAFT').length,
-    ended: mockEvents.filter((e) => ['ENDED', 'CANCELLED'].includes(e.status)).length,
-  }), []);
+    all: allEvents.length,
+    published: allEvents.filter((e) => e.status === 'PUBLISHED').length,
+    draft: allEvents.filter((e) => e.status === 'DRAFT').length,
+    ended: allEvents.filter((e) => ['ENDED', 'CANCELLED'].includes(e.status)).length,
+  }), [allEvents]);
 
   return (
     <Box>
       <PageHeader
         title="Events"
-        description="Manage your events and track ticket sales"
+        description="Your events and how their ticket sales are going."
         actions={canCreate ? [
           {
-            label: 'Create Event',
+            label: 'Create event',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
             href: '/events/new',
           },
         ] : undefined}
       />
+
+      {(actionError || error) && (
+        <Callout.Root color="red" size="1" mb="4" role="alert">
+          <Callout.Text>
+            {actionError || 'Failed to load events. Please try again.'}
+          </Callout.Text>
+        </Callout.Root>
+      )}
 
       {/* Filters Bar */}
       <Flex
@@ -499,7 +557,7 @@ export default function EventsPage() {
           <Flex
             style={{
               background: 'var(--surface-subtle)',
-              borderRadius: '8px',
+              borderRadius: 'var(--radius-4)',
               padding: '2px',
             }}
           >
@@ -510,7 +568,7 @@ export default function EventsPage() {
               style={{
                 background: viewMode === 'grid' ? 'var(--surface-elevated)' : 'transparent',
                 color: viewMode === 'grid' ? 'var(--content-primary)' : 'var(--content-muted)',
-                borderRadius: '6px',
+                borderRadius: 'var(--radius-3)',
               }}
             >
               <GridPlus style={{ width: 18, height: 18 }} />
@@ -522,7 +580,7 @@ export default function EventsPage() {
               style={{
                 background: viewMode === 'list' ? 'var(--surface-elevated)' : 'transparent',
                 color: viewMode === 'list' ? 'var(--content-primary)' : 'var(--content-muted)',
-                borderRadius: '6px',
+                borderRadius: 'var(--radius-3)',
               }}
             >
               <List style={{ width: 18, height: 18 }} />
@@ -532,13 +590,25 @@ export default function EventsPage() {
       </Flex>
 
       {/* Events Grid/List */}
-      {filteredEvents.length === 0 ? (
+      {loading && allEvents.length === 0 ? (
         <Card
           style={{
             padding: '60px 24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
+            textAlign: 'center',
+          }}
+        >
+          <Text size="2" style={{ color: 'var(--content-muted)' }}>Loading events…</Text>
+        </Card>
+      ) : filteredEvents.length === 0 ? (
+        <Card
+          style={{
+            padding: '60px 24px',
+            background: 'var(--surface-elevated)',
+            border: '1px solid var(--surface-border)',
+            borderRadius: 'var(--card-radius-bento)',
           }}
         >
           {searchQuery ? (
@@ -566,6 +636,10 @@ export default function EventsPage() {
               event={event}
               viewMode={viewMode}
               canEdit={canEdit}
+              canPublish={canPublish}
+              actionLoading={actionLoading}
+              onPublish={handlePublish}
+              onUnpublish={handleUnpublish}
             />
           ))}
         </Box>
@@ -577,6 +651,10 @@ export default function EventsPage() {
               event={event}
               viewMode={viewMode}
               canEdit={canEdit}
+              canPublish={canPublish}
+              actionLoading={actionLoading}
+              onPublish={handlePublish}
+              onUnpublish={handleUnpublish}
             />
           ))}
         </Flex>
@@ -586,7 +664,7 @@ export default function EventsPage() {
         .event-card-hover:hover {
           border-color: var(--brand-400);
           transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+          box-shadow: var(--shadow-3);
         }
 
         @media (max-width: 640px) {

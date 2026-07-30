@@ -1,0 +1,14 @@
+# =====================================================================
+# LOCAL / DEV profile  —  Azure Service Bus EMULATOR
+# See booking-service/application-local.yml for full notes.
+# Well-known emulator string (NOT a real credential); localhost + non-TLS.
+# Swap to real Azure with SPRING_PROFILES_ACTIVE=prod (no code changes).
+# =====================================================================
+spring:
+  cloud:
+    azure:
+      servicebus:
+        namespace: ""
+        connection-string: "Endpoint=sb://localhost:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+    stream:
+      default-binder: servicebus

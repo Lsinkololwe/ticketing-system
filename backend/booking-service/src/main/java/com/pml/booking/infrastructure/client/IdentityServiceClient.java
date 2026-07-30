@@ -1,6 +1,8 @@
 package com.pml.booking.infrastructure.client;
 
 import com.pml.shared.dto.UserSummaryDto;
+import com.pml.shared.dto.authorization.AuthorizationRequest;
+import com.pml.shared.dto.authorization.AuthorizationResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -116,6 +118,38 @@ public class IdentityServiceClient {
                 .onErrorResume(e -> {
                     log.error("Failed to get user organizations: {}", e.getMessage());
                     return Mono.just(new UserOrganizationsResponse(List.of()));
+                });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CENTRALIZED AUTHORIZATION (OWASP A01:2021)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Delegate an authorization decision to identity-service, the single source of truth.
+     *
+     * <p>identity-service evaluates both entity-level questions — can the actor perform the
+     * action (organization membership/role) and does the organization's lifecycle status permit
+     * it. Used for money-movement gates such as payout requests, so a pending/unapproved
+     * organization cannot initiate finance flows.</p>
+     *
+     * <p>Fails <b>closed</b>: if the check cannot be completed, the request is denied.</p>
+     *
+     * @param request authorization request (userId, requiredPermission, and organization/owner context)
+     * @return the authorization result; denied on any transport/service error
+     */
+    public Mono<AuthorizationResult> checkAuthorization(AuthorizationRequest request) {
+        log.debug("Checking authorization: permission={}, ownerId={}",
+                request.getRequiredPermission(), request.getOrganizationOwnerId());
+
+        return webClient.post()
+                .uri("/api/internal/authorization/check")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(AuthorizationResult.class)
+                .onErrorResume(e -> {
+                    log.error("Authorization check failed (denying by default): {}", e.getMessage());
+                    return Mono.just(AuthorizationResult.denied("Authorization service unavailable"));
                 });
     }
 

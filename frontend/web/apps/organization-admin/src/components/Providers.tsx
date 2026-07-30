@@ -83,9 +83,17 @@ function ApolloProviderWithAuth({ children }: { children: ReactNode }) {
 /**
  * Radix Theme Wrapper
  *
- * Syncs Radix UI Theme appearance with next-themes.
- * Uses 'inherit' to let next-themes control the appearance via CSS class.
- * Emerald/Teal accent for organization portal branding.
+ * MyTicketZM design system — Organization Admin brand context:
+ *   accent  teal    (--color-primary, the brand backbone)
+ *   gray    slate
+ *   radius  medium  (buttons/inputs 6-8px, cards 8px, bento tiles 14px)
+ *   scaling 100%
+ *   panels  solid   — dashboard content cards are FLAT fills. Translucent
+ *                     panels are reserved for the header bar and the marketing
+ *                     site's glass cards; they must never blur a content card.
+ *
+ * `appearance="inherit"` lets next-themes drive light/dark via the class
+ * attribute, which prevents a flash of the wrong theme on first paint.
  */
 function RadixThemeWrapper({ children }: { children: ReactNode }) {
   return (
@@ -94,8 +102,7 @@ function RadixThemeWrapper({ children }: { children: ReactNode }) {
       grayColor="slate"
       radius="medium"
       scaling="100%"
-      // Use 'inherit' to let next-themes control via class attribute
-      // This prevents flash of wrong theme on initial load
+      panelBackground="solid"
       appearance="inherit"
     >
       {children}

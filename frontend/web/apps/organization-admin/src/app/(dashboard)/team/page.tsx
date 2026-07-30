@@ -166,7 +166,7 @@ function MemberCard({ member, canManage, isCurrentUser, onRoleChange, onRemove }
         padding: '20px',
         background: 'var(--surface-elevated)',
         border: '1px solid var(--surface-border)',
-        borderRadius: '12px',
+        borderRadius: 'var(--card-radius)',
       }}
     >
       <Flex justify="between" align="start">
@@ -177,7 +177,7 @@ function MemberCard({ member, canManage, isCurrentUser, onRoleChange, onRemove }
             radius="full"
             src={member.avatarUrl}
             style={{
-              background: member.avatarUrl ? undefined : 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+              background: member.avatarUrl ? undefined : 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
             }}
           />
           <Box>
@@ -327,11 +327,11 @@ export default function TeamPage() {
   return (
     <Box>
       <PageHeader
-        title="Team Members"
+        title="Team members"
         description={`${members.length} members in your organization`}
         actions={canManage ? [
           {
-            label: 'Invite Member',
+            label: 'Invite member',
             icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
             href: '/team/invite',
           },
@@ -358,13 +358,13 @@ export default function TeamPage() {
         mb="6"
         style={{
           padding: '16px 20px',
-          background: 'rgba(59, 130, 246, 0.1)',
-          border: '1px solid rgba(59, 130, 246, 0.2)',
-          borderRadius: '12px',
+          background: 'var(--status-info-a3)',
+          border: '1px solid var(--blue-a5)',
+          borderRadius: 'var(--card-radius)',
         }}
       >
         <Flex align="center" gap="3" wrap="wrap">
-          <Shield style={{ width: 20, height: 20, color: '#3B82F6' }} />
+          <Shield style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
           <Text size="2" style={{ color: 'var(--content-secondary)' }}>
             <strong>Role Permissions:</strong>{' '}
             <Text style={{ color: 'var(--content-muted)' }}>
@@ -381,7 +381,7 @@ export default function TeamPage() {
             padding: '60px 24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
           }}
         >
           {searchQuery ? (
@@ -437,12 +437,8 @@ export default function TeamPage() {
                 Cancel
               </Button>
             </Dialog.Close>
-            <Button
-              color="red"
-              onClick={handleRemoveConfirm}
-              style={{ background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)' }}
-            >
-              Remove Member
+            <Button data-testid="team-remove-confirm" color="red" onClick={handleRemoveConfirm}>
+              Remove member
             </Button>
           </Flex>
         </Dialog.Content>

@@ -1,7 +1,7 @@
 'use client';
 
 import { Component, ReactNode } from 'react';
-import { Flex, Text, Button, Card, Heading } from '@radix-ui/themes';
+import { Box, Flex, Text, Button, Heading } from '@radix-ui/themes';
 
 interface Props {
   children: ReactNode;
@@ -41,21 +41,33 @@ export class ErrorBoundary extends Component<Props, State> {
         <Flex
           align="center"
           justify="center"
-          style={{ minHeight: '100vh', padding: '24px' }}
+          style={{ minHeight: '100vh', padding: 'var(--space-5)' }}
         >
-          <Card size="3" style={{ maxWidth: '500px', width: '100%' }}>
+          <Box
+            p="5"
+            style={{
+              maxWidth: '500px',
+              width: '100%',
+              background: 'var(--card-bg)',
+              border: 'var(--card-border)',
+              borderRadius: 'var(--card-radius-bento)',
+              boxShadow: 'var(--card-shadow)',
+            }}
+          >
             <Flex direction="column" gap="4">
-              <Heading size="5" color="red">
-                Something went wrong
+              <Heading size="5" style={{ color: 'var(--gray-12)' }}>
+                This section could not load
               </Heading>
-              <Text color="gray" size="2">
-                {this.state.error?.message || 'An unexpected error occurred'}
+              <Text size="2" style={{ color: 'var(--gray-11)' }}>
+                {this.state.error?.message ||
+                  'An unexpected error interrupted this part of the page.'}
               </Text>
               <Flex gap="2">
-                <Button onClick={this.handleReset} variant="soft">
+                <Button data-testid="error-boundary-retry" onClick={this.handleReset} variant="soft">
                   Try again
                 </Button>
                 <Button
+                  data-testid="error-boundary-reload"
                   onClick={() => window.location.reload()}
                   variant="outline"
                 >
@@ -63,7 +75,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 </Button>
               </Flex>
             </Flex>
-          </Card>
+          </Box>
         </Flex>
       );
     }

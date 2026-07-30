@@ -4,7 +4,7 @@ import { MapPin } from 'iconoir-react';
 export default function EventLocationsPage() {
   return (
     <PagePlaceholder
-      title="Event Locations"
+      title="Event locations"
       description="Manage venues and event locations"
       icon={<MapPin style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />

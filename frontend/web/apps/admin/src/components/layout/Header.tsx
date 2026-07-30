@@ -56,21 +56,18 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
 
   return (
     <>
+      {/* 64px fixed top bar. `.ds-glass-header` supplies the frosted
+          background — header bars are one of only two surfaces in the system
+          allowed to use blur. */}
       <Box
         asChild
-        className="dashboard-header"
+        className="dashboard-header ds-glass-header"
         style={{
           height: '64px',
           position: 'sticky',
           top: 0,
           zIndex: 30,
-          // Glassmorphism effect
-          backgroundColor: 'var(--dashboard-header-bg)',
-          backdropFilter: `blur(var(--dashboard-header-blur))`,
-          WebkitBackdropFilter: `blur(var(--dashboard-header-blur))`,
           borderBottom: '1px solid var(--dashboard-header-border)',
-          // Subtle top highlight for glass effect
-          boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
         }}
       >
         <header>
@@ -107,7 +104,7 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
                 style={{ position: 'relative' }}
               >
                 <Bell style={{ width: 18, height: 18 }} />
-                {/* Notification dot */}
+                {/* Unread dot — the danger status role, not a raw red. */}
                 <Box
                   style={{
                     position: 'absolute',
@@ -115,10 +112,9 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
                     right: '6px',
                     width: '8px',
                     height: '8px',
-                    backgroundColor: '#EF4444',
-                    borderRadius: '50%',
-                    border: '2px solid var(--gray-1)',
-                    boxShadow: '0 0 8px rgba(239, 68, 68, 0.5)',
+                    backgroundColor: 'var(--status-danger-9)',
+                    borderRadius: '9999px',
+                    border: '2px solid var(--color-panel-solid)',
                   }}
                 />
               </IconButton>
@@ -146,14 +142,14 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
                     }}
                   >
                     <Flex align="center" gap="3">
+                      {/* Avatar fallback — .ds-accent-chip is one of only two
+                          sanctioned gradients. The previous emerald gradient
+                          used the MONEY colour as brand identity. */}
                       <Avatar
                         size="2"
                         radius="full"
                         fallback={userInitials}
-                        style={{
-                          background: 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
-                          boxShadow: '0 0 12px rgba(16, 185, 129, 0.3)',
-                        }}
+                        className="ds-accent-chip"
                       />
                       <Flex
                         direction="column"

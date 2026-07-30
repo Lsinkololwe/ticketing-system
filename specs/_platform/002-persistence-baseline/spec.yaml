@@ -1,0 +1,143 @@
+id: ET-PLT-002
+title: Persistence baseline — replica set, the collection registry, money and time
+status: draft
+area: PLT
+service: all
+subgraph: null
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 0
+blocked_by: [ET-PLT-001]
+conformance: "PDI Phase 1 replica set · PDI Phase 4 optimistic locking · V3 §7 collections"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/001-runtime-baseline/spec.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+  - docs/USER_STORIES.md
+  - docs/architecture/DATA_ARCHITECTURE.md
+  - docs/architecture/NAMING_CONVENTIONS.md
+
+# ---- the contract, mirrored from spec.md §4 so scripts need not parse markdown ----
+persistence:
+  collections:
+    # catalog-service
+    - catalog_events
+    - catalog_ticket_tiers
+    - catalog_locations
+    - catalog_cities
+    - catalog_provinces
+    - catalog_categories
+    - catalog_reference_data
+    - catalog_approval_timelines
+    - catalog_approval_escalations
+    # booking-service
+    - booking_tier_inventory
+    - booking_reservations
+    - booking_tickets
+    - booking_payment_intents
+    - booking_payment_attempts
+    - booking_webhook_receipts
+    - booking_escrow_accounts
+    - booking_escrow_transactions
+    - booking_platform_accounts
+    - booking_chart_of_accounts
+    - booking_journal_entries
+    - booking_journal_lines
+    - booking_commission_records
+    - booking_bank_accounts
+    - booking_payout_requests
+    - booking_refund_requests
+    - booking_chargebacks
+    - booking_reconciliation_runs
+    - booking_reconciliation_items
+    - booking_promo_codes
+    # identity-service
+    - identity_users
+    - identity_organizations
+    - identity_organization_members
+    - identity_team_invitations
+    - identity_ownership_transfers
+    - identity_event_access_grants
+    - identity_permissions
+    - identity_role_permissions
+    - identity_verification_documents
+    - identity_notifications
+    - identity_notification_preferences
+    - identity_user_devices
+    - identity_event_reminders
+    - identity_audit_logs
+
+  # uniqueness constraints and TTLs only — the full registry is spec.md §4
+  indexes:
+    - "identity_organization_members {userId,organizationId} unique"
+    - "identity_event_access_grants {userId,eventId} unique"
+    - "identity_organizations {slug} unique"
+    - "identity_team_invitations {invitationToken} unique"
+    - "identity_team_invitations {expiresAt} ttl 0"
+    - "identity_users {email} unique sparse"
+    - "identity_users {phoneNumber} unique sparse"
+    - "identity_user_devices {deviceToken} unique"
+    - "booking_tier_inventory {tierId} unique"
+    - "booking_reservations {expiresAt} ttl 0"
+    - "booking_payment_intents {idempotencyKey} unique"
+    - "booking_payment_attempts {providerReference} unique sparse"
+    - "booking_webhook_receipts {providerEventId} unique"
+    - "booking_webhook_receipts {receivedAt} ttl 90d"
+    - "booking_escrow_accounts {eventId} unique"
+    - "booking_tickets {ticketReference} unique"
+    - "booking_promo_codes {code} unique"
+
+  redis_keys:
+    - "otp:{phone}                     STRING  300 s   — ephemeral by design"
+    - "otp:cooldown:{phone}            STRING   60 s   — ephemeral by design"
+    - "idem:{key}                      STRING   24 h   — authority booking_payment_intents.idempotencyKey"
+    - "evt:seen:{consumer}:{eventId}   STRING    7 d   — authority the consumer's own write"
+    - "lock:sweep:{name}               STRING   30 s   — ephemeral by design"
+    - "ratelimit:{scope}:{subject}     STRING window   — ephemeral by design"
+    - "cache:event:{eventId}           STRING  300 s   — authority catalog_events"
+    - "cache:tier:{tierId}             STRING   30 s   — DISPLAY ONLY, authority catalog_ticket_tiers"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: null
+  queries: []
+  mutations: []
+
+errors:
+  - TIER_SOLD_OUT          # raised by the conditional atomic decrement; row lands in ET-PLT-005
+
+versioned_documents:
+  - catalog_ticket_tiers
+  - booking_tier_inventory     # the hot one — the reservation decrement targets it
+  - booking_reservations
+  - booking_payment_intents
+  - booking_escrow_accounts
+  - booking_platform_accounts
+  - booking_payout_requests
+  - booking_promo_codes
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/002-persistence-baseline
+  - ./scripts/spec-lint.sh --persistence
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-PLT-002
+  - mvn -q -f backend verify -Dgroups=ET-PLT-002
+
+risks:
+  - "The collection registry renames every collection to a service-prefixed name. Existing data lives under the current names, so T3 is a rename plus a data migration, and the two must land together or a service starts against empty collections and reports healthy."
+  - "R1's requirement that the transaction test FAIL against a standalone mongod means the suite depends on topology. A developer running a bare `mongod` locally sees a failure that looks like a bug in the test rather than a misconfigured environment; the failure message has to say so explicitly."
+  - "TTL indexes on booking_reservations.expiresAt and identity_team_invitations.expiresAt delete documents on MongoDB's own schedule, which runs about once a minute and is not precise. A reservation is therefore released by the TTL index and by the ET-TKT-001 sweep, and both paths must be idempotent or a tier is credited twice."
+  - "R4 forbids intermediate rounding, but commission on a surcharged multi-tier order is a sum of products, and where the single rounding point sits changes the total by up to a ngwee per line. ET-FIN-002 must name the exact expression; this spec only fixes the mode and the scale."
+  - "booking_escrow_accounts is unique on eventId (D-05), while the existing model carries both an organizer-scoped and an event-scoped escrow notion. Whichever balances currently sit on an organizer-scoped account have no event to belong to under this registry, and ET-FIN-001 has to say what happens to them."
+  - "The 200-caller load test in T8 is the platform's central correctness proof and it needs a real replica set under contention. Run against an in-memory or single-connection test harness it passes trivially and proves nothing."
+  - "booking_tier_inventory mirrors capacity from catalog_ticket_tiers over catalog.TicketTierPublished and catalog.TicketTierCapacityChanged. Between an organizer reducing capacity and booking applying the event, the two disagree, and a reservation may succeed against a capacity that no longer exists. ET-CAT-002 must decide whether a capacity reduction below sold+reserved is refused at source or absorbed as oversold."
+  - "@Version on booking_payment_intents plus a unique index on idempotencyKey are two mechanisms guarding one thing. If a retry path catches OptimisticLockingFailureException and retries, it will hit the unique index instead, and the two failures need different handling — one is contention, the other is a duplicate request."

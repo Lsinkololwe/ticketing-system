@@ -77,12 +77,12 @@ export const navigationConfig: NavSection[] = [
   // ===========================================================================
   {
     id: 'action-center',
-    title: 'Action Center',
+    title: 'Action center',
     roles: ['SUPER_ADMIN', 'ADMIN'],
     items: [
       {
         id: 'pending-approvals',
-        label: 'All Approvals',
+        label: 'All approvals',
         href: '/approvals',
         icon: 'ClipboardCheck',
         badge: 'dynamic',
@@ -90,7 +90,7 @@ export const navigationConfig: NavSection[] = [
       },
       {
         id: 'organizer-applications',
-        label: 'Organizer Applications',
+        label: 'Organizer applications',
         href: '/approvals/organizers',
         icon: 'Group',
         badge: 'dynamic',
@@ -98,7 +98,7 @@ export const navigationConfig: NavSection[] = [
       },
       {
         id: 'event-reviews',
-        label: 'Event Reviews',
+        label: 'Event reviews',
         href: '/approvals/events',
         icon: 'Calendar',
         badge: 'dynamic',
@@ -106,7 +106,7 @@ export const navigationConfig: NavSection[] = [
       },
       {
         id: 'document-verification',
-        label: 'Document Verification',
+        label: 'Document verification',
         href: '/approvals/documents',
         icon: 'PageSearch',
         badge: 'dynamic',
@@ -125,7 +125,7 @@ export const navigationConfig: NavSection[] = [
     items: [
       {
         id: 'all-events',
-        label: 'All Events',
+        label: 'All events',
         href: '/events',
         icon: 'Calendar',
         roles: ['SUPER_ADMIN', 'ADMIN'],
@@ -164,7 +164,7 @@ export const navigationConfig: NavSection[] = [
     items: [
       {
         id: 'all-users',
-        label: 'All Users',
+        label: 'All users',
         href: '/users',
         icon: 'Group',
         roles: ['SUPER_ADMIN', 'ADMIN'],
@@ -191,12 +191,12 @@ export const navigationConfig: NavSection[] = [
   // ===========================================================================
   {
     id: 'financial-ops',
-    title: 'Financial Operations',
+    title: 'Financial operations',
     roles: ['SUPER_ADMIN', 'FINANCE', "ADMIN"],
     items: [
       {
         id: 'payout-requests',
-        label: 'Payout Requests',
+        label: 'Payout requests',
         href: '/finance/payouts',
         icon: 'SendDiagonal',
         badge: 'dynamic',
@@ -204,7 +204,7 @@ export const navigationConfig: NavSection[] = [
       },
       {
         id: 'refund-requests',
-        label: 'Refund Requests',
+        label: 'Refund requests',
         href: '/finance/refunds',
         icon: 'Undo',
         badge: 'dynamic',
@@ -212,7 +212,7 @@ export const navigationConfig: NavSection[] = [
       },
       {
         id: 'escrow-accounts',
-        label: 'Escrow Accounts',
+        label: 'Escrow accounts',
         href: '/finance/escrow',
         icon: 'Safe',
         roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
@@ -230,14 +230,14 @@ export const navigationConfig: NavSection[] = [
     items: [
       {
         id: 'payment-history',
-        label: 'Payment History',
+        label: 'Payment history',
         href: '/transactions/payments',
         icon: 'CreditCard',
         roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
       },
       {
         id: 'ticket-sales',
-        label: 'Ticket Sales',
+        label: 'Ticket sales',
         href: '/transactions/tickets',
         icon: 'Label',
         roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
@@ -262,21 +262,21 @@ export const navigationConfig: NavSection[] = [
     items: [
       {
         id: 'platform-analytics',
-        label: 'Platform Overview',
+        label: 'Platform overview',
         href: '/analytics',
         icon: 'StatsReport',
         roles: ['SUPER_ADMIN', 'ADMIN'],
       },
       {
         id: 'revenue-reports',
-        label: 'Revenue Reports',
+        label: 'Revenue reports',
         href: '/analytics/revenue',
         icon: 'GraphUp',
         roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
       },
       {
         id: 'user-growth',
-        label: 'User Growth',
+        label: 'User growth',
         href: '/analytics/users',
         icon: 'StatsUpSquare',
         roles: ['SUPER_ADMIN', 'ADMIN'],
@@ -300,15 +300,22 @@ export const navigationConfig: NavSection[] = [
         roles: ['SUPER_ADMIN', 'ADMIN'],
       },
       {
+        id: 'reference-data',
+        label: 'Reference data',
+        href: '/system/reference-data',
+        icon: 'Database',
+        roles: ['SUPER_ADMIN', 'ADMIN'],
+      },
+      {
         id: 'audit-logs',
-        label: 'Audit Logs',
+        label: 'Audit logs',
         href: '/system/audit',
         icon: 'HistoricShield',
         roles: ['SUPER_ADMIN', 'ADMIN'],
       },
       {
         id: 'api-keys',
-        label: 'API Keys',
+        label: 'API keys',
         href: '/system/api-keys',
         icon: 'Key',
         roles: ['SUPER_ADMIN', 'ADMIN'],
@@ -390,7 +397,7 @@ export function isNavItemActive(href: string, pathname: string): boolean {
  * pathname and role set, using longest-match precedence.
  *
  * This ensures that `/events/calendar` resolves to the Calendar item
- * (`/events/calendar`, 16 chars) rather than "All Events" (`/events`, 7 chars),
+ * (`/events/calendar`, 16 chars) rather than "All events" (`/events`, 7 chars),
  * and `/dashboard/settings` resolves to Settings rather than "Dashboard".
  *
  * Returns `null` when no visible item matches the pathname.
@@ -446,6 +453,7 @@ export const iconMap: Record<string, string> = {
   GraphUp: 'GraphUp',
   TrendingUp: 'TrendingUp',
   Settings: 'Settings',
+  Database: 'Database',
   HistoricShield: 'HistoricShield',
   Key: 'Key',
 };

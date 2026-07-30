@@ -1,0 +1,109 @@
+id: ET-PAY-002
+title: Provider callbacks — signature, replay defence and the confirmation path
+status: draft
+area: PAY
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 3
+blocked_by: [ET-PLT-002, ET-PLT-005, ET-PLT-007, ET-TKT-001, ET-PAY-001]
+conformance: "PDI Phase 6 webhook hardening · V3 §8 payment consistency · V3 §12 settlement"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/ticketing/001-reservation-and-hold/spec.md
+  - specs/payment/001-payment-intents-and-providers/spec.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+persistence:
+  collections:
+    - booking_webhook_receipts
+  indexes:
+    - "booking_webhook_receipts {providerEventId} unique   # THE replay guard"
+    - "booking_webhook_receipts {receivedAt} ttl 90d"
+    - "booking_webhook_receipts {status,receivedAt} compound  # orphan + verify sweeps"
+  redis_keys:
+    - "lock:sweep:webhook-orphans          STRING  30 s"
+    - "lock:sweep:webhook-verify           STRING  30 s"
+    - "lock:sweep:payment-reconciliation   STRING  30 s"
+
+events:
+  module:
+    - WebhookReceivedEvent
+    - PaymentDisputedEvent
+  bus: []      # the outcome's bus events are ET-PAY-001's, published from confirmation
+  topics: []
+
+graphql:
+  schema: null       # no graph surface — this is a REST callback endpoint
+  queries: []
+  mutations: []
+
+rest:
+  public:
+    - "POST /api/webhooks/pawapay   SIGNATURE ONLY — excluded from the JWT chain, deliberately"
+
+errors:
+  - WEBHOOK_SIGNATURE_INVALID
+  - WEBHOOK_REPLAYED
+  # neither reaches a GraphQL client; both are REST outcomes and metrics
+
+handler_order:
+  - "1 read raw body as bytes           — no parsing yet"
+  - "2 verify HMAC, constant-time       — 401 on failure"
+  - "3 timestamp vs max-age             — 401 on an old replay"
+  - "4 parse"
+  - "5 INSERT receipt (unique)          — duplicate => REPLAYED, 200"
+  - "6 correlate platformRef, then providerRef  — no match => ORPHANED, 200"
+  - "7 provider status() is the AUTHORITY — disagree => DISPUTED, apply nothing"
+  - "8 applyPaymentOutcome — compare-and-set, idempotent"
+  - "9 200"
+
+receipt_statuses: [RECEIVED, VERIFIED, APPLIED, REPLAYED, ORPHANED, DISPUTED, PENDING_VERIFICATION]
+
+response_codes:
+  200: [applied, replayed, orphaned, disputed, pending_verification, already_terminal]
+  401: [invalid_signature, expired_signature]
+  503: [dependency_unavailable]
+  # nothing returns 4xx for a business condition; nothing returns 500
+
+convergence:
+  method: applyPaymentOutcome
+  note: "the ONLY path to SUCCEEDED/FAILED/CANCELLED; callback and poll both call it; compare-and-set"
+
+sweeps:
+  - "orphan re-match         lock:sweep:webhook-orphans         PT5M"
+  - "pending verification    lock:sweep:webhook-verify          PT1M"
+  - "daily reconciliation    lock:sweep:payment-reconciliation  P1D"
+
+config:
+  booking.webhook.max-age: PT5M
+  booking.webhook.response-budget: PT3S
+  booking.webhook.orphan-retry: PT5M
+  booking.webhook.orphan-escalate: PT1H
+  booking.webhook.reconciliation-cron: "daily, off-peak"
+  PAWAPAY_WEBHOOK_SECRET: "${PAWAPAY_WEBHOOK_SECRET}"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/payment/002-webhooks-and-settlement
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-PAY-002
+  - mvn -q -f backend verify -Dgroups=ET-PAY-002
+
+risks:
+  - "R3 makes every success callback trigger a provider status() call, which doubles provider traffic on the success path and puts the platform's ticket issuance behind the provider's status API availability. During a provider degradation — precisely when callbacks are most delayed — the status endpoint is also degraded, so every payment lands in PENDING_VERIFICATION and no tickets issue at all."
+  - "R6's 3-second response budget conflicts with R3's synchronous status check. A provider status call with a 30-second read timeout (ET-PAY-001 config) cannot complete inside a 3-second budget, so verification must be asynchronous in the normal case — which means the handler returns 200 before knowing whether the callback was genuine, and the ordering described in the §4 handler table is not achievable as written."
+  - "The webhook path is excluded from the JWT filter chain, which is a deliberate hole in ET-PLT-007 R5's rule that everything is authenticated. The exclusion is correct but it is enforced only by a SecurityConfig entry; any future refactor of the filter chain that drops the exclusion breaks all payments, and any that widens it exposes more than intended."
+  - "rawBody is retained for 90 days and carries the subscriber's MSISDN. That is PII in a collection with no encryption specified, readable by anyone with database access, and ET-PLT-008 does not yet exist to say how it is erased when a user requests deletion."
+  - "R8's reconciliation escalates an intent the platform has as SUCCEEDED that the provider does not report — but by then a ticket has been issued, escrow credited and possibly a payout made against money that may not exist. Escalation is the right response, but the spec provides no mechanism to hold the downstream money movement while the discrepancy is open."
+  - "Correlating on the platform's own reference requires PawaPay to accept and echo a client-supplied depositId. If the provider does not support that, R4's entire overtaking-callback defence collapses to correlating on providerReference only — which is exactly the case that fails."
+  - "A DISPUTED receipt alerts and applies nothing, leaving the reservation HELD and the buyer with no outcome. If the dispute is a platform bug rather than an attack, a genuine buyer is stuck until an operator intervenes, and nothing bounds how long that takes."
+  - "Two identical callbacks in parallel are deduplicated by a unique index insert, but MongoDB's duplicate-key error arrives after the write attempt — so both handlers proceed to step 5 concurrently and one loses. That is correct, but the losing handler must not have performed steps 1-4's side effects, and step 4 (parse) is harmless while step 3's metrics are double-counted."

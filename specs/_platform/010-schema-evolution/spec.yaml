@@ -1,0 +1,106 @@
+id: ET-PLT-010
+title: Schema evolution — event versions, GraphQL deprecation, document migration
+status: draft
+area: PLT
+service: all
+subgraph: all
+owner: lazarous
+created: 2026-07-30
+priority: should
+wave: 7
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-004, ET-PLT-005]
+conformance: null
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/004-federation-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+
+persistence:
+  collections:
+    - admin_migration_runs      # added to the ET-PLT-002 §4 registry by this spec
+  indexes:
+    - "admin_migration_runs {collection,status} compound"
+  redis_keys:
+    - "lock:sweep:document-migration   STRING  30 s"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: null    # this spec adds no operations; it governs how the others change
+  queries: []
+  mutations: []
+
+errors: []        # UNSUPPORTED_SCHEMA_VERSION is ET-PLT-003's dead-letter reason
+
+compatibility:    # SAFE | VERSIONED | FORBIDDEN, per schema — full table in spec.md §4
+  add_optional_field:     { event: SAFE,       graphql: SAFE,      document: SAFE }
+  add_required_field:     { event: VERSIONED,  graphql: "FORBIDDEN on input, SAFE on output", document: VERSIONED }
+  remove_field:           { event: VERSIONED,  graphql: "deprecate then remove", document: VERSIONED }
+  rename_field:           { event: VERSIONED,  graphql: "deprecate old, add new", document: VERSIONED }
+  change_field_type:      { event: VERSIONED,  graphql: FORBIDDEN, document: VERSIONED }
+  add_enum_constant:      { event: SAFE,       graphql: "SAFE on output, VERSIONED on input", document: SAFE }
+  remove_enum_constant:   { event: VERSIONED,  graphql: "deprecate then remove", document: VERSIONED }
+  change_constant_meaning:{ event: FORBIDDEN,  graphql: FORBIDDEN, document: FORBIDDEN }
+  reuse_removed_name:     { event: FORBIDDEN,  graphql: FORBIDDEN, document: FORBIDDEN }
+
+event_versioning:
+  support: "N and N-1 only"
+  mechanism: "same wire name, schemaVersion increments, upcaster at the consumer"
+  upcaster: "pure function over the payload map, one per version STEP, chains compose"
+  acceptance:
+    current: handled
+    current_minus_1: "upcast, then handled"
+    older: "DEAD-LETTER, UNSUPPORTED_SCHEMA_VERSION"
+    newer: "DEAD-LETTER — the consumer has not deployed"
+  retirement: "no publications for P30D; remove acceptance and upcaster in separate releases"
+
+graphql_deprecation:
+  steps: ["@deprecated with replacement + earliest date", "wait >= P180D",
+          "measure GraphOS usage over P30D", "remove only when usage is ZERO",
+          "rover subgraph check must pass"]
+  rule: "a field still used at the end of its window STAYS — the window is a minimum, not a schedule"
+
+document_migration:
+  version_field: schemaVersion   # every document, default 1
+  lazy: "default — migrate on read, conditional write-back; a failure logs and returns unmigrated"
+  eager: "only when a new index, filter or aggregation needs the new shape; batched, resumable, off-peak, secondary reads"
+
+coordinated_types:   # incompatible change requires a written release plan; CI fails without one
+  - EventEnvelope
+  - ErrorCode enum
+  - "@auth directive and Role"
+  - "shared scalars: BigDecimal, DateTime, JSON, Long, PhoneNumber"
+  - TenantScope
+  - IdempotencyGuard
+
+config:
+  schema.deprecation.window: P180D
+  schema.event.support-versions: 2
+  schema.event.retirement-window: P30D
+  schema.migration.batch-size: 1000
+  schema.migration.usage-lookback: P30D
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/010-schema-evolution
+  - ./scripts/schema-compat.sh
+  - ./scripts/spec-lint.sh --events
+  - mvn -q -f backend test -Dgroups=ET-PLT-010
+  - mvn -q -f backend verify -Dgroups=ET-PLT-010
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R2 requires every consumer to accept N and N-1, which means a publisher can only move to version N once every consumer of that event supports it — but ET-PLT-003's registry has events with two consumers in different services. The deploy order is therefore: all consumers first, then the publisher, for every breaking change, and nothing in this spec enforces or even records that ordering."
+  - "R5's lazy migration writes back on read, which turns a read into a write on a path that may be inside a read-only transaction or a secondary read. A migration triggered by a reconciliation scan reading from a secondary cannot write back at all, so those documents stay unmigrated indefinitely and the unmigrated-count metric never reaches zero."
+  - "The compatibility table forbids changing what an enum constant means, but that is a semantic change no automated check can detect — renaming PENDING to PROCESSING is caught, redefining what PENDING means is not. The CI check in T1 can only enforce the structural rows, and the two most dangerous rows are exactly the ones it cannot see."
+  - "GraphOS field-usage reporting gates removal, but it only sees operations that go through the router. A mobile app calling a subgraph directly, or a client using persisted queries not registered with GraphOS, is invisible — and removing a field on the strength of zero reported usage breaks it."
+  - "schemaVersion is added to every document across three services and 40-plus collections, which is itself a migration of every existing document. The spec describes migration machinery that requires a field the machinery has to add, and does not say how that first migration runs."
+  - "R6's eager migration reads from a secondary and writes to the primary, which means it migrates a snapshot that may lag behind concurrent writes. A document written after the cursor passed its id but before the run finishes is migrated; one written to an id before the cursor is not. Resumability by lastProcessedId does not handle inserts behind the cursor."
+  - "Upcasters are pure functions over Map<String,Object>, which loses the type safety of the envelope's typed payload and pushes every field access to a string key. That is the standard trade for upcasting, and it means an upcaster with a typo in a key silently produces a payload missing a field the consumer then binds as null."
+  - "admin_migration_runs is the thirteenth amendment to ET-PLT-002 §4's closed collection registry."

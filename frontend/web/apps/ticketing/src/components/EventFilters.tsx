@@ -11,23 +11,51 @@ import {
   Button,
   Badge,
   IconButton,
-  Grid,
 } from '@radix-ui/themes';
-import { EventStatus } from '@/types/event';
-import { useMockEventCategories, useMockCities } from '@/hooks/useMocks';
-import { Filter, Xmark, Search, Calendar, MapPin } from 'iconoir-react';
+import { useActiveEventCategories, useCitiesWithEvents, type EventStatus } from '@pml.tickets/shared';
+import { Filter, Xmark, Search } from 'iconoir-react';
+
+export interface EventFilterValues {
+  search: string;
+  category: string;
+  status: EventStatus | '';
+  city: string;
+  dateRange: string;
+  priceRange: string;
+}
 
 interface EventFiltersProps {
-  filters: {
-    search: string;
-    category: string;
-    status: EventStatus | '';
-    city: string;
-    dateRange: string;
-    priceRange: string;
-  };
-  onFiltersChange: (filters: any) => void;
+  filters: EventFilterValues;
+  onFiltersChange: (filters: EventFilterValues) => void;
   onClearFilters: () => void;
+}
+
+/** Human labels for the machine values we store in filter state. */
+const DATE_LABELS: Record<string, string> = {
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  'this-week': 'This week',
+  'next-week': 'Next week',
+  'this-month': 'This month',
+  'next-month': 'Next month',
+};
+
+const PRICE_LABELS: Record<string, string> = {
+  free: 'Free',
+  '0-100': 'K 0 – K 100',
+  '100-250': 'K 100 – K 250',
+  '250-500': 'K 250 – K 500',
+  '500-1000': 'K 500 – K 1,000',
+  '1000+': 'K 1,000+',
+};
+
+/** Micro uppercase form label (spec §3 / §8). */
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text as="div" size="1" className="ds-label" mb="2">
+      {children}
+    </Text>
+  );
 }
 
 const EventFilters: React.FC<EventFiltersProps> = ({
@@ -35,78 +63,67 @@ const EventFilters: React.FC<EventFiltersProps> = ({
   onFiltersChange,
   onClearFilters,
 }) => {
-  const [isOpen, setIsOpen] = React.useState(false);
+  const { categories } = useActiveEventCategories();
+  const { cities } = useCitiesWithEvents();
 
-  // Fetch categories and cities from GraphQL
-  const { data: categoriesData } = useMockEventCategories();
-  const { data: citiesData } = useMockCities();
+  const set = (key: keyof EventFilterValues, value: string) =>
+    onFiltersChange({ ...filters, [key]: value } as EventFilterValues);
 
-  const categories = (categoriesData as any)?.eventCategories || [];
-  const cities = (citiesData as any)?.cities || [];
-
-  const handleFilterChange = (key: string, value: string) => {
-    onFiltersChange({
-      ...filters,
-      [key]: value,
-    });
-  };
-
-  const getActiveFiltersCount = () => {
-    let count = 0;
-    if (filters.search) count++;
-    if (filters.category) count++;
-    if (filters.status) count++;
-    if (filters.city) count++;
-    if (filters.dateRange) count++;
-    if (filters.priceRange) count++;
-    return count;
-  };
-
-  const activeFiltersCount = getActiveFiltersCount();
+  /* Note: `status` is deliberately NOT exposed to customers. Draft /
+     pending-review / changes-requested are organizer workflow states; the
+     public browse only ever shows what is live. The field stays in the shape
+     so the shared filter type is unchanged. */
+  const activeChips = [
+    filters.search && { key: 'search' as const, label: `“${filters.search}”` },
+    filters.category && { key: 'category' as const, label: filters.category },
+    filters.city && { key: 'city' as const, label: filters.city },
+    filters.dateRange && {
+      key: 'dateRange' as const,
+      label: DATE_LABELS[filters.dateRange] ?? filters.dateRange,
+    },
+    filters.priceRange && {
+      key: 'priceRange' as const,
+      label: PRICE_LABELS[filters.priceRange] ?? filters.priceRange,
+    },
+  ].filter(Boolean) as { key: keyof EventFilterValues; label: string }[];
 
   return (
-    <Card size="2">
-      <Box p="4">
-        {/* Filter Header */}
+    <Card size="2" style={{ borderRadius: 'var(--card-radius-bento)' }}>
+      <Box p="3">
         <Flex justify="between" align="center" mb="4">
           <Flex align="center" gap="2">
-            <Filter style={{ width: '1.25rem', height: '1.25rem' }} />
-            <Text size="4" weight="medium">
+            <Filter style={{ width: '1rem', height: '1rem', color: 'var(--gray-9)' }} />
+            <Text size="3" weight="medium">
               Filters
             </Text>
-            {activeFiltersCount > 0 && (
-              <Badge color="iris" ml="2">
-                {activeFiltersCount}
+            {activeChips.length > 0 && (
+              <Badge color="iris" variant="soft" radius="full">
+                {activeChips.length}
               </Badge>
             )}
           </Flex>
 
-          <Flex align="center" gap="2">
-            {activeFiltersCount > 0 && (
-              <Button variant="ghost" color="red" size="1" onClick={onClearFilters}>
-                <Xmark style={{ width: '1rem', height: '1rem' }} />
-                Clear All
-              </Button>
-            )}
-
-            <IconButton
+          {activeChips.length > 0 && (
+            <Button
               variant="ghost"
+              color="gray"
               size="1"
-              onClick={() => setIsOpen(!isOpen)}
-              className="md:hidden"
+              onClick={onClearFilters}
+              data-testid="filters-clear"
             >
-              <Filter style={{ width: '1.25rem', height: '1.25rem' }} />
-            </IconButton>
-          </Flex>
+              Clear all
+            </Button>
+          )}
         </Flex>
 
-        {/* Search Bar - Always Visible */}
         <Box mb="4">
+          <FieldLabel>Search</FieldLabel>
           <TextField.Root
-            placeholder="Search events..."
+            placeholder="Event, venue, or artist"
             value={filters.search}
-            onChange={(e) => handleFilterChange('search', e.target.value)}
+            onChange={(e) => set('search', e.target.value)}
             size="2"
+            data-testid="filters-search"
           >
             <TextField.Slot>
               <Search style={{ width: '1rem', height: '1rem', color: 'var(--gray-9)' }} />
@@ -114,217 +131,102 @@ const EventFilters: React.FC<EventFiltersProps> = ({
           </TextField.Root>
         </Box>
 
-        {/* Collapsible Filters */}
-        {(isOpen || typeof window !== 'undefined') && (
-          <Box style={{ display: isOpen ? 'block' : 'none' }} className="md:!block">
-            <Grid columns={{ initial: '1', md: '2', lg: '4' }} gap="4">
-              {/* Category Filter */}
-              <Box>
-                <Text size="2" weight="medium" mb="2" style={{ display: 'block' }}>
-                  Category
-                </Text>
-                <Select.Root
-                  value={filters.category || 'all'}
-                  onValueChange={(value) => handleFilterChange('category', value === 'all' ? '' : value)}
-                >
-                  <Select.Trigger placeholder="Select Category" />
-                  <Select.Content>
-                    <Select.Item value="all">All Categories</Select.Item>
-                    {categories.map((category: any) => (
-                      <Select.Item key={category.id} value={category.id}>
-                        {category.name}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select.Root>
-              </Box>
-
-              {/* Status Filter */}
-              <Box>
-                <Text size="2" weight="medium" mb="2" style={{ display: 'block' }}>
-                  Status
-                </Text>
-                <Select.Root
-                  value={filters.status || 'all'}
-                  onValueChange={(value) => handleFilterChange('status', value === 'all' ? '' : value)}
-                >
-                  <Select.Trigger placeholder="Select Status" />
-                  <Select.Content>
-                    <Select.Item value="all">All Status</Select.Item>
-                    <Select.Item value={EventStatus.PUBLISHED}>Published</Select.Item>
-                    <Select.Item value={EventStatus.DRAFT}>Draft</Select.Item>
-                    <Select.Item value={EventStatus.PENDING_APPROVAL}>Pending</Select.Item>
-                    <Select.Item value={EventStatus.CANCELLED}>Cancelled</Select.Item>
-                    <Select.Item value={EventStatus.COMPLETED}>Completed</Select.Item>
-                  </Select.Content>
-                </Select.Root>
-              </Box>
-
-              {/* City Filter */}
-              <Box>
-                <Flex align="center" gap="1" mb="2">
-                  <MapPin style={{ width: '1rem', height: '1rem' }} />
-                  <Text size="2" weight="medium">
-                    City
-                  </Text>
-                </Flex>
-                <Select.Root
-                  value={filters.city || 'all'}
-                  onValueChange={(value) => handleFilterChange('city', value === 'all' ? '' : value)}
-                >
-                  <Select.Trigger placeholder="Select City" />
-                  <Select.Content>
-                    <Select.Item value="all">All Cities</Select.Item>
-                    {cities.map((city: any) => (
-                      <Select.Item key={city.id} value={city.id}>
-                        {city.name}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select.Root>
-              </Box>
-
-              {/* Date Range Filter */}
-              <Box>
-                <Flex align="center" gap="1" mb="2">
-                  <Calendar style={{ width: '1rem', height: '1rem' }} />
-                  <Text size="2" weight="medium">
-                    Date Range
-                  </Text>
-                </Flex>
-                <Select.Root
-                  value={filters.dateRange || 'all'}
-                  onValueChange={(value) => handleFilterChange('dateRange', value === 'all' ? '' : value)}
-                >
-                  <Select.Trigger placeholder="Select Date Range" />
-                  <Select.Content>
-                    <Select.Item value="all">All Dates</Select.Item>
-                    <Select.Item value="today">Today</Select.Item>
-                    <Select.Item value="tomorrow">Tomorrow</Select.Item>
-                    <Select.Item value="this-week">This Week</Select.Item>
-                    <Select.Item value="next-week">Next Week</Select.Item>
-                    <Select.Item value="this-month">This Month</Select.Item>
-                    <Select.Item value="next-month">Next Month</Select.Item>
-                  </Select.Content>
-                </Select.Root>
-              </Box>
-            </Grid>
-
-            {/* Price Range Filter */}
-            <Box mt="4">
-              <Text size="2" weight="medium" mb="2" style={{ display: 'block' }}>
-                Price Range
-              </Text>
-              <Select.Root
-                value={filters.priceRange || 'all'}
-                onValueChange={(value) => handleFilterChange('priceRange', value === 'all' ? '' : value)}
-              >
-                <Select.Trigger placeholder="Select Price Range" style={{ maxWidth: '200px' }} />
-                <Select.Content>
-                  <Select.Item value="all">All Prices</Select.Item>
-                  <Select.Item value="free">Free</Select.Item>
-                  <Select.Item value="0-25">$0 - $25</Select.Item>
-                  <Select.Item value="25-50">$25 - $50</Select.Item>
-                  <Select.Item value="50-100">$50 - $100</Select.Item>
-                  <Select.Item value="100-250">$100 - $250</Select.Item>
-                  <Select.Item value="250+">$250+</Select.Item>
-                </Select.Content>
-              </Select.Root>
-            </Box>
+        <Flex direction="column" gap="4">
+          <Box>
+            <FieldLabel>Category</FieldLabel>
+            <Select.Root
+              value={filters.category || 'all'}
+              onValueChange={(v) => set('category', v === 'all' ? '' : v)}
+            >
+              <Select.Trigger placeholder="Any category" style={{ width: '100%' }} />
+              <Select.Content>
+                <Select.Item value="all">Any category</Select.Item>
+                {categories.map((category) => (
+                  <Select.Item key={category.id} value={category.name}>
+                    {category.name}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
           </Box>
-        )}
 
-        {/* Active Filters Display */}
-        {activeFiltersCount > 0 && (
-          <Box mt="4" pt="4" style={{ borderTop: '1px solid var(--gray-4)' }}>
-            <Text size="2" weight="medium" mb="2" style={{ display: 'block' }}>
-              Active Filters:
+          <Box>
+            <FieldLabel>City</FieldLabel>
+            <Select.Root
+              value={filters.city || 'all'}
+              onValueChange={(v) => set('city', v === 'all' ? '' : v)}
+            >
+              <Select.Trigger placeholder="Anywhere" style={{ width: '100%' }} />
+              <Select.Content>
+                <Select.Item value="all">Anywhere</Select.Item>
+                {cities.map((city) => (
+                  <Select.Item key={city.id} value={city.name}>
+                    {city.name}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </Box>
+
+          <Box>
+            <FieldLabel>When</FieldLabel>
+            <Select.Root
+              value={filters.dateRange || 'all'}
+              onValueChange={(v) => set('dateRange', v === 'all' ? '' : v)}
+            >
+              <Select.Trigger placeholder="Any time" style={{ width: '100%' }} />
+              <Select.Content>
+                <Select.Item value="all">Any time</Select.Item>
+                {Object.entries(DATE_LABELS).map(([value, label]) => (
+                  <Select.Item key={value} value={value}>
+                    {label}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </Box>
+
+          <Box>
+            <FieldLabel>Price</FieldLabel>
+            <Select.Root
+              value={filters.priceRange || 'all'}
+              onValueChange={(v) => set('priceRange', v === 'all' ? '' : v)}
+            >
+              <Select.Trigger placeholder="Any price" style={{ width: '100%' }} />
+              <Select.Content>
+                <Select.Item value="all">Any price</Select.Item>
+                {Object.entries(PRICE_LABELS).map(([value, label]) => (
+                  <Select.Item key={value} value={value}>
+                    {label}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </Box>
+        </Flex>
+
+        {activeChips.length > 0 && (
+          <Box mt="5" pt="4" style={{ borderTop: 'var(--hairline)' }}>
+            <Text as="div" size="1" className="ds-label" mb="2">
+              Applied
             </Text>
             <Flex gap="2" wrap="wrap">
-              {filters.search && (
-                <Flex align="center" gap="1">
-                  <Badge color="blue" variant="outline">
-                    Search: {filters.search}
+              {activeChips.map((chip) => (
+                <Flex key={chip.key} align="center" gap="1">
+                  <Badge color="iris" variant="soft" radius="full">
+                    {chip.label}
                   </Badge>
                   <IconButton
                     variant="ghost"
+                    color="gray"
                     size="1"
-                    onClick={() => handleFilterChange('search', '')}
+                    aria-label={`Remove ${chip.label} filter`}
+                    onClick={() => set(chip.key, '')}
                   >
                     <Xmark style={{ width: '0.75rem', height: '0.75rem' }} />
                   </IconButton>
                 </Flex>
-              )}
-              {filters.category && (
-                <Flex align="center" gap="1">
-                  <Badge color="iris" variant="outline">
-                    Category: {filters.category}
-                  </Badge>
-                  <IconButton
-                    variant="ghost"
-                    size="1"
-                    onClick={() => handleFilterChange('category', '')}
-                  >
-                    <Xmark style={{ width: '0.75rem', height: '0.75rem' }} />
-                  </IconButton>
-                </Flex>
-              )}
-              {filters.status && (
-                <Flex align="center" gap="1">
-                  <Badge color="green" variant="outline">
-                    Status: {filters.status}
-                  </Badge>
-                  <IconButton
-                    variant="ghost"
-                    size="1"
-                    onClick={() => handleFilterChange('status', '')}
-                  >
-                    <Xmark style={{ width: '0.75rem', height: '0.75rem' }} />
-                  </IconButton>
-                </Flex>
-              )}
-              {filters.city && (
-                <Flex align="center" gap="1">
-                  <Badge color="orange" variant="outline">
-                    City: {filters.city}
-                  </Badge>
-                  <IconButton
-                    variant="ghost"
-                    size="1"
-                    onClick={() => handleFilterChange('city', '')}
-                  >
-                    <Xmark style={{ width: '0.75rem', height: '0.75rem' }} />
-                  </IconButton>
-                </Flex>
-              )}
-              {filters.dateRange && (
-                <Flex align="center" gap="1">
-                  <Badge color="blue" variant="outline">
-                    Date: {filters.dateRange}
-                  </Badge>
-                  <IconButton
-                    variant="ghost"
-                    size="1"
-                    onClick={() => handleFilterChange('dateRange', '')}
-                  >
-                    <Xmark style={{ width: '0.75rem', height: '0.75rem' }} />
-                  </IconButton>
-                </Flex>
-              )}
-              {filters.priceRange && (
-                <Flex align="center" gap="1">
-                  <Badge color="gray" variant="outline">
-                    Price: {filters.priceRange}
-                  </Badge>
-                  <IconButton
-                    variant="ghost"
-                    size="1"
-                    onClick={() => handleFilterChange('priceRange', '')}
-                  >
-                    <Xmark style={{ width: '0.75rem', height: '0.75rem' }} />
-                  </IconButton>
-                </Flex>
-              )}
+              ))}
             </Flex>
           </Box>
         )}

@@ -213,14 +213,14 @@ export default function NotificationSettingsPage() {
     <Box>
       <PageHeader
         title="Notifications"
-        description="Manage how you receive notifications"
+        description="Choose which updates reach you, and where."
         breadcrumbs={[
           { label: 'Settings', href: '/settings' },
           { label: 'Notifications' },
         ]}
         actions={[
           {
-            label: isSaving ? 'Saving...' : 'Save Changes',
+            label: isSaving ? 'Saving…' : 'Save changes',
             icon: <FloppyDisk style={{ width: 18, height: 18, marginRight: 8 }} />,
             onClick: handleSave,
             disabled: isSaving,
@@ -243,7 +243,7 @@ export default function NotificationSettingsPage() {
             padding: '20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
           }}
         >
           <Flex align="center" gap="3" mb="3">
@@ -251,14 +251,14 @@ export default function NotificationSettingsPage() {
               style={{
                 width: 40,
                 height: 40,
-                borderRadius: '10px',
-                background: 'rgba(59, 130, 246, 0.1)',
+                borderRadius: 'var(--radius-3)',
+                background: 'var(--status-info-a3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Mail style={{ width: 20, height: 20, color: '#3B82F6' }} />
+              <Mail style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
             </Box>
             <Box>
               <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -295,7 +295,7 @@ export default function NotificationSettingsPage() {
             padding: '20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
           }}
         >
           <Flex align="center" gap="3" mb="3">
@@ -303,14 +303,14 @@ export default function NotificationSettingsPage() {
               style={{
                 width: 40,
                 height: 40,
-                borderRadius: '10px',
-                background: 'rgba(16, 185, 129, 0.1)',
+                borderRadius: 'var(--radius-3)',
+                background: 'var(--accent-a3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Bell style={{ width: 20, height: 20, color: '#10B981' }} />
+              <Bell style={{ width: 20, height: 20, color: 'var(--accent-11)' }} />
             </Box>
             <Box>
               <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -347,7 +347,7 @@ export default function NotificationSettingsPage() {
             padding: '20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
           }}
         >
           <Flex align="center" gap="3" mb="3">
@@ -355,14 +355,14 @@ export default function NotificationSettingsPage() {
               style={{
                 width: 40,
                 height: 40,
-                borderRadius: '10px',
-                background: 'rgba(168, 85, 247, 0.1)',
+                borderRadius: 'var(--radius-3)',
+                background: 'var(--accent-a3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <MessageText style={{ width: 20, height: 20, color: '#A855F7' }} />
+              <MessageText style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
             </Box>
             <Box>
               <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -400,7 +400,7 @@ export default function NotificationSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Flex align="center" gap="2" mb="4">
@@ -424,15 +424,15 @@ export default function NotificationSettingsPage() {
           </Text>
           <Flex gap="6" align="center">
             <Flex direction="column" align="center" style={{ width: 50 }}>
-              <Mail style={{ width: 16, height: 16, color: '#3B82F6' }} />
+              <Mail style={{ width: 16, height: 16, color: 'var(--status-info-11)' }} />
               <Text size="1" style={{ color: 'var(--content-muted)' }}>Email</Text>
             </Flex>
             <Flex direction="column" align="center" style={{ width: 50 }}>
-              <Bell style={{ width: 16, height: 16, color: '#10B981' }} />
+              <Bell style={{ width: 16, height: 16, color: 'var(--accent-11)' }} />
               <Text size="1" style={{ color: 'var(--content-muted)' }}>Push</Text>
             </Flex>
             <Flex direction="column" align="center" style={{ width: 50 }}>
-              <MessageText style={{ width: 16, height: 16, color: '#A855F7' }} />
+              <MessageText style={{ width: 16, height: 16, color: 'var(--status-info-11)' }} />
               <Text size="1" style={{ color: 'var(--content-muted)' }}>SMS</Text>
             </Flex>
           </Flex>
@@ -453,13 +453,13 @@ export default function NotificationSettingsPage() {
         mt="4"
         style={{
           padding: '16px 20px',
-          background: 'rgba(168, 85, 247, 0.1)',
-          border: '1px solid rgba(168, 85, 247, 0.2)',
-          borderRadius: '12px',
+          background: 'var(--accent-a3)',
+          border: '1px solid var(--accent-a5)',
+          borderRadius: 'var(--card-radius)',
         }}
       >
         <Flex align="center" gap="3">
-          <SmartphoneDevice style={{ width: 20, height: 20, color: '#A855F7' }} />
+          <SmartphoneDevice style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
           <Text size="2" style={{ color: 'var(--content-secondary)' }}>
             SMS notifications are sent to your registered phone number. Standard message rates may apply.
           </Text>

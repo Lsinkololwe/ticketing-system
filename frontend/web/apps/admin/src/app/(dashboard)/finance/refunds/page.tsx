@@ -4,7 +4,7 @@ import { Undo } from 'iconoir-react';
 export default function RefundRequestsPage() {
   return (
     <PagePlaceholder
-      title="Refund Requests"
+      title="Refund requests"
       description="Process and manage customer refund requests"
       icon={<Undo style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />

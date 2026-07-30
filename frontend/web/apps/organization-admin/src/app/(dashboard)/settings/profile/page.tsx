@@ -45,16 +45,15 @@ function FormField({ label, required, helper, children }: FormFieldProps) {
     <Box mb="4">
       <Text
         as="label"
-        size="2"
-        weight="medium"
-        style={{ color: 'var(--content-secondary)', display: 'block', marginBottom: '8px' }}
+        className="ds-label"
+        style={{ display: 'block', marginBottom: '6px' }}
       >
         {label}
-        {required && <span style={{ color: 'var(--error-500)', marginLeft: 4 }}>*</span>}
+        {required && <span style={{ color: 'var(--status-danger-9)', marginLeft: 4 }}>*</span>}
       </Text>
       {children}
       {helper && (
-        <Text size="1" style={{ color: 'var(--content-muted)', display: 'block', marginTop: '4px' }}>
+        <Text size="1" style={{ color: 'var(--gray-10)', display: 'block', marginTop: '4px' }}>
           {helper}
         </Text>
       )}
@@ -122,15 +121,15 @@ export default function ProfileSettingsPage() {
   return (
     <Box>
       <PageHeader
-        title="My Profile"
-        description="Manage your personal information and account settings"
+        title="My profile"
+        description="Your name, contact details and account settings."
         breadcrumbs={[
           { label: 'Settings', href: '/settings' },
           { label: 'Profile' },
         ]}
         actions={[
           {
-            label: isSaving ? 'Saving...' : 'Save Changes',
+            label: isSaving ? 'Saving…' : 'Save changes',
             icon: <FloppyDisk style={{ width: 18, height: 18, marginRight: 8 }} />,
             onClick: handleSave,
             disabled: isSaving,
@@ -145,7 +144,7 @@ export default function ProfileSettingsPage() {
           padding: '32px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Flex align="center" gap="5" direction={{ initial: 'column', sm: 'row' }}>
@@ -155,7 +154,7 @@ export default function ProfileSettingsPage() {
               fallback={session?.user?.name?.charAt(0) || 'U'}
               radius="full"
               style={{
-                background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               }}
             />
             <Box
@@ -203,7 +202,7 @@ export default function ProfileSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Flex align="center" gap="2" mb="4">
@@ -256,7 +255,7 @@ export default function ProfileSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -304,7 +303,7 @@ export default function ProfileSettingsPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Flex align="center" gap="2" mb="4">
@@ -322,7 +321,7 @@ export default function ProfileSettingsPage() {
             p="4"
             style={{
               background: 'var(--surface-subtle)',
-              borderRadius: '12px',
+              borderRadius: 'var(--card-radius)',
               border: '1px solid var(--surface-border)',
             }}
           >
@@ -331,8 +330,8 @@ export default function ProfileSettingsPage() {
                 style={{
                   width: 40,
                   height: 40,
-                  borderRadius: '10px',
-                  background: 'rgba(16, 185, 129, 0.1)',
+                  borderRadius: 'var(--radius-3)',
+                  background: 'var(--accent-a3)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -354,7 +353,7 @@ export default function ProfileSettingsPage() {
               size="2"
               onClick={handleChangePassword}
               style={{
-                borderColor: 'rgba(16, 185, 129, 0.3)',
+                borderColor: 'var(--accent-a6)',
                 color: 'var(--brand-500)',
               }}
             >
@@ -369,7 +368,7 @@ export default function ProfileSettingsPage() {
             p="4"
             style={{
               background: 'var(--surface-subtle)',
-              borderRadius: '12px',
+              borderRadius: 'var(--card-radius)',
               border: '1px solid var(--surface-border)',
             }}
           >
@@ -378,8 +377,8 @@ export default function ProfileSettingsPage() {
                 style={{
                   width: 40,
                   height: 40,
-                  borderRadius: '10px',
-                  background: 'rgba(16, 185, 129, 0.1)',
+                  borderRadius: 'var(--radius-3)',
+                  background: 'var(--accent-a3)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',

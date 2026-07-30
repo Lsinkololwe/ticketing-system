@@ -86,6 +86,38 @@ export {
   PENDING_COUNTS,
 } from './api/graphql/analytics';
 
+// Events domain (consumer ticketing app): browsing, detail, filters.
+export {
+  usePublishedEvents,
+  useUpcomingEvents,
+  useEvent,
+  useActiveEventCategories,
+  useCitiesWithEvents,
+  type EventListOptions,
+  type EventPageInfo,
+  GET_PUBLISHED_EVENTS,
+  GET_UPCOMING_EVENTS,
+  GET_EVENT_BY_ID,
+  GET_ACTIVE_EVENT_CATEGORIES,
+  GET_CITIES_WITH_EVENTS,
+  EVENT_CARD_FIELDS,
+  EVENT_DETAIL_FIELDS,
+} from './api/graphql/events';
+
+// Booking domain (consumer ticketing app): reservation, checkout, my tickets.
+export {
+  useReserveTickets,
+  useCompleteReservation,
+  useReservation,
+  useMyTickets,
+  type MyTicketsOptions,
+  RESERVE_TICKETS,
+  COMPLETE_RESERVATION,
+  GET_RESERVATION,
+  GET_MY_TICKETS,
+  TICKET_FIELDS,
+} from './api/graphql/booking';
+
 // ============== API Modules ==============
 // Module-based architecture: All app-specific operations in dedicated modules
 export * from './api/admin/modules';

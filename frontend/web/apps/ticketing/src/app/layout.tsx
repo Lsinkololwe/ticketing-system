@@ -4,15 +4,15 @@ import './global.css';
 import Providers from '@components/Providers';
 
 export const metadata: Metadata = {
-  title: 'Event Ticketing - Your Gateway to Amazing Events',
-  description: 'Discover and book tickets for the best events in Zambia. From concerts to conferences, we have it all.',
-  keywords: 'events, tickets, Zambia, concerts, conferences, entertainment',
-  authors: [{ name: 'Event Ticketing' }],
+  title: 'MyTicketZM — Every event in Zambia, one tap away',
+  description: 'Discover and book tickets for the best events in Zambia. Pay the way you already do — with mobile money (MTN, Airtel, Zamtel).',
+  keywords: 'events, tickets, Zambia, mobile money, MTN, Airtel, Zamtel, concerts, conferences, entertainment',
+  authors: [{ name: 'MyTicketZM' }],
   openGraph: {
-    title: 'Event Ticketing - Your Gateway to Amazing Events',
-    description: 'Discover and book tickets for the best events in Zambia',
+    title: 'MyTicketZM — Every event in Zambia, one tap away',
+    description: 'Discover and book tickets for the best events in Zambia, and pay with mobile money.',
     type: 'website',
-    locale: 'en_ZA',
+    locale: 'en_ZM',
   },
 };
 
@@ -22,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" data-brand="ticketing" suppressHydrationWarning>
       <body>
         <Providers>
           {children}

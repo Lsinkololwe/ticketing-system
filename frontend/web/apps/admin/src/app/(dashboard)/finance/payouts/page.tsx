@@ -4,7 +4,7 @@ import { SendDiagonal } from 'iconoir-react';
 export default function PayoutRequestsPage() {
   return (
     <PagePlaceholder
-      title="Payout Requests"
+      title="Payout requests"
       description="Review and process organizer payout requests"
       icon={<SendDiagonal style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />

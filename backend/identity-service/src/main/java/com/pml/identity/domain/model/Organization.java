@@ -205,10 +205,11 @@ public class Organization {
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Payout configuration (method, schedule, accounts)
+     * Payout configuration (method, schedule, accounts).
+     * Populated at organization creation from the seeded
+     * {@code platform_configuration} document — no default is baked into the entity.
      */
-    @Builder.Default
-    private PayoutConfig payoutConfig = new PayoutConfig();
+    private PayoutConfig payoutConfig;
 
     // ─────────────────────────────────────────────────────────────────────
     // Verification Flags
@@ -367,6 +368,35 @@ public class Organization {
             && payoutAccountVerified
             && payoutConfig != null
             && payoutConfig.isConfigured();
+    }
+
+    /**
+     * Evaluate whether this organization's current lifecycle status permits an action,
+     * keyed by the authorization permission string shared across services.
+     *
+     * <p>This deliberately lives on the entity (rich domain model): the authorization
+     * layer asks the organization whether an action is allowed rather than re-deriving
+     * the status rules elsewhere. It composes the granular {@code can*} capability methods
+     * so every status-based permission rule has a single home. Role-based checks are
+     * evaluated separately — both must pass.</p>
+     *
+     * @param permission the requested permission (e.g. {@code "EVENT_PUBLISH"}, {@code "PAYOUT_REQUEST"})
+     * @return {@code true} if the current status permits the action
+     */
+    public boolean canPerform(String permission) {
+        if (permission == null) {
+            return false;
+        }
+        return switch (permission) {
+            // Draft-level authoring — allowed throughout the approval workflow
+            case "EVENT_CREATE", "EVENT_EDIT", "EVENT_DELETE" -> canCreateDraftEvents();
+            // Going live — approved/active organizations only
+            case "EVENT_PUBLISH" -> canPublishEvents();
+            // Money movement — approved organizations only
+            case "PAYOUT_REQUEST" -> isApproved();
+            // Read-only / membership operations are not gated by approval status
+            default -> true;
+        };
     }
 
     /**

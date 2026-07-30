@@ -11,10 +11,12 @@ import com.pml.booking.web.graphql.dto.PayoutRequestMutationResponse;
 import com.pml.booking.web.graphql.dto.ProcessPayoutRequestMutationResponse;
 import com.pml.booking.web.graphql.dto.RejectPayoutRequestMutationResponse;
 import com.pml.booking.domain.model.PayoutRequest;
+import com.pml.booking.infrastructure.client.IdentityServiceClient;
 import com.pml.booking.service.BankAccountService;
 import com.pml.booking.service.PayoutRecoveryService;
 import com.pml.booking.service.PayoutRequestService;
 import com.pml.shared.constants.PayoutRequestStatus;
+import com.pml.shared.dto.authorization.AuthorizationRequest;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +48,7 @@ public class PayoutRequestMutationResolver {
     private final PayoutRequestService payoutRequestService;
     private final BankAccountService bankAccountService;
     private final PayoutRecoveryService payoutRecoveryService;
+    private final IdentityServiceClient identityServiceClient;
 
     /**
      * Create a payout request (organizer).
@@ -59,7 +62,45 @@ public class PayoutRequestMutationResolver {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("Creating payout request for organizer: {} by: {}",
                         input.organizerId(), userId))
-                .flatMap(userId -> bankAccountService.findById(input.bankAccountId())
+                // Organization-lifecycle gate (OWASP A01:2021): defer to identity-service, which
+                // evaluates the organizer's authority AND their organization's status. A pending or
+                // unapproved organization cannot request payouts, regardless of who initiates it.
+                // Keyed to the organizer (owner), so an ADMIN/FINANCE actor acting on their behalf
+                // is still bound by the organizer's org status.
+                .flatMap(userId -> identityServiceClient.checkAuthorization(
+                                AuthorizationRequest.builder()
+                                        .userId(input.organizerId())
+                                        .organizationOwnerId(input.organizerId())
+                                        .requiredPermission("PAYOUT_REQUEST")
+                                        .build())
+                        .flatMap(authz -> {
+                            if (!authz.isAuthorized()) {
+                                log.warn("Payout request denied for organizer {}: {}",
+                                        input.organizerId(), authz.getReason());
+                                return Mono.just(new CreatePayoutRequestMutationResponse(
+                                        false,
+                                        "Payout not permitted: " + authz.getReason(),
+                                        null,
+                                        List.of(authz.getReason()),
+                                        null));
+                            }
+                            return createPayoutRequestForAuthorized(input, userId);
+                        }))
+                .onErrorResume(SecurityException.class, e -> Mono.just(new CreatePayoutRequestMutationResponse(
+                        false, "Authentication required", null, List.of("Please log in"), null)))
+                .onErrorResume(e -> {
+                    log.error("Create payout request failed: {}", e.getMessage());
+                    return Mono.just(new CreatePayoutRequestMutationResponse(
+                            false, e.getMessage(), null, List.of(e.getMessage()), null));
+                });
+    }
+
+    /**
+     * Build and persist a payout request after authorization has passed.
+     */
+    private Mono<CreatePayoutRequestMutationResponse> createPayoutRequestForAuthorized(
+            CreatePayoutRequestInput input, String userId) {
+        return bankAccountService.findById(input.bankAccountId())
                         .flatMap(bankAccount -> {
                             // Calculate fees (platform takes 5% + ZMW 10 processing fee)
                             BigDecimal platformFee = input.requestedAmount()
@@ -98,14 +139,7 @@ public class PayoutRequestMutationResolver {
                         ))
                         .switchIfEmpty(Mono.just(new CreatePayoutRequestMutationResponse(
                                 false, "Bank account not found", null, List.of("Bank account not found"), null
-                        ))))
-                .onErrorResume(SecurityException.class, e -> Mono.just(new CreatePayoutRequestMutationResponse(
-                        false, "Authentication required", null, List.of("Please log in"), null)))
-                .onErrorResume(e -> {
-                    log.error("Create payout request failed: {}", e.getMessage());
-                    return Mono.just(new CreatePayoutRequestMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
+                        )));
     }
 
     /**

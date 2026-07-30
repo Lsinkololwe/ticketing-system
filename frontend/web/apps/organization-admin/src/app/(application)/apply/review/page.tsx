@@ -251,7 +251,7 @@ export default function ReviewPage() {
 
           <Separator size="4" my="4" />
 
-          <Section title="Social Media" icon={LinkIcon} onEdit={goToEdit}>
+          <Section title="Social media" icon={LinkIcon} onEdit={goToEdit}>
             <Field label="Facebook" value={organization.socialLinks?.facebook} />
             <Field label="Instagram" value={organization.socialLinks?.instagram} />
             <Field label="Twitter / X" value={organization.socialLinks?.twitter} />

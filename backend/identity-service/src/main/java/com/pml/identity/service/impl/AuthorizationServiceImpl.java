@@ -21,8 +21,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.HashSet;
-import java.util.Set;
 
 /**
  * Authorization Service Implementation
@@ -92,30 +90,37 @@ public class AuthorizationServiceImpl implements AuthorizationService {
     public Mono<AuthorizationResult> checkEventPermission(String userId, String organizationId, String permission) {
         log.debug("Checking event permission: userId={}, orgId={}, permission={}", userId, organizationId, permission);
 
+        // Authorization is two entity-level questions, both must pass:
+        //   1. Can the ACTOR do this?  -> OrganizationMember (role + custom/denied permissions)
+        //   2. Can the ORGANIZATION do this?  -> Organization (lifecycle status)
+        // Neither rule lives in this service; it just asks the entities and combines them.
         return memberService.findByUserAndOrganization(userId, organizationId)
-                .filter(member -> member.getStatus() == MemberStatus.ACTIVE)
+                .filter(OrganizationMember::isActive)
                 .flatMap(member -> {
-                    OrganizationRole role = member.getRole();
-
-                    // Check if role has the required permission
-                    if (hasOrganizationPermission(role, permission)) {
-                        Set<String> permissions = getPermissionsForRole(role);
-                        // Add custom permissions, remove denied
-                        if (member.getCustomPermissions() != null) {
-                            permissions.addAll(member.getCustomPermissions());
-                        }
-                        if (member.getDeniedPermissions() != null) {
-                            permissions.removeAll(member.getDeniedPermissions());
-                        }
-
-                        return Mono.just(AuthorizationResult.authorizedAsMember(
-                                organizationId,
-                                role.name(),
-                                permissions
-                        ));
+                    // (1) Actor check — the member's authority within the organization.
+                    if (!member.hasPermission(permission)) {
+                        return Mono.just(AuthorizationResult.deniedInsufficientPermissions(
+                                permission, member.getRole().name()));
                     }
 
-                    return Mono.just(AuthorizationResult.deniedInsufficientPermissions(permission, role.name()));
+                    // (2) Organization check — the lifecycle status must permit the action.
+                    // The ORGANIZER realm role is granted at registration, so it does not imply
+                    // "approved"; privileged actions (publish, payout) are gated here on the
+                    // backend, the single source of truth (OWASP A01:2021).
+                    return organizationService.findById(organizationId)
+                            .flatMap(org -> {
+                                if (!org.canPerform(permission)) {
+                                    return Mono.just(AuthorizationResult.denied(
+                                            "Organization status " + org.getStatus()
+                                                    + " does not permit " + permission));
+                                }
+                                return Mono.just(AuthorizationResult.authorizedAsMember(
+                                        organizationId,
+                                        member.getRole().name(),
+                                        member.effectivePermissions()
+                                ));
+                            })
+                            .switchIfEmpty(Mono.just(AuthorizationResult.denied("Organization not found")));
                 })
                 .switchIfEmpty(Mono.just(AuthorizationResult.deniedNotMember()));
     }
@@ -131,7 +136,8 @@ public class AuthorizationServiceImpl implements AuthorizationService {
                 .flatMap(grant -> {
                     EventRole eventRole = grant.getEventRole();
 
-                    if (hasEventPermission(eventRole, permission)) {
+                    // Actor check on the grant entity (custom permissions + event-role defaults).
+                    if (grant.hasPermission(permission)) {
                         return Mono.just(AuthorizationResult.authorizedByEventGrant(eventId, eventRole.name()));
                     }
 
@@ -161,7 +167,7 @@ public class AuthorizationServiceImpl implements AuthorizationService {
                         return AuthorizationResult.authorizedAsMember(
                                 organizationId,
                                 role.name(),
-                                getPermissionsForRole(role)
+                                role.permissions()
                         );
                     }
 
@@ -202,7 +208,7 @@ public class AuthorizationServiceImpl implements AuthorizationService {
                 .map(Organization::getId)
                 // If not owner, find first organization where user can create events
                 .switchIfEmpty(memberService.findActiveByUser(userId)
-                        .filter(member -> hasOrganizationPermission(member.getRole(), "EVENT_CREATE"))
+                        .filter(member -> member.hasPermission("EVENT_CREATE"))
                         .next()
                         .map(OrganizationMember::getOrganizationId));
     }
@@ -213,172 +219,6 @@ public class AuthorizationServiceImpl implements AuthorizationService {
 
         return organizationService.findByOwnerId(organizerId)
                 .map(Organization::getId);
-    }
-
-    // ========================================================================
-    // PERMISSION MAPPING
-    // ========================================================================
-
-    /**
-     * Check if an organization role has a specific permission.
-     */
-    private boolean hasOrganizationPermission(OrganizationRole role, String permission) {
-        return switch (permission) {
-            // Event management
-            case "EVENT_CREATE", "EVENT_PUBLISH" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN ||
-                    role == OrganizationRole.MANAGER;
-
-            case "EVENT_EDIT" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN ||
-                    role == OrganizationRole.MANAGER;
-
-            case "EVENT_DELETE" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN;
-
-            case "EVENT_VIEW" ->
-                    true; // All members can view
-
-            // Financial operations
-            case "FINANCIAL_VIEW" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN ||
-                    role == OrganizationRole.MANAGER;
-
-            case "PAYOUT_REQUEST" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN;
-
-            // Team management
-            case "MEMBER_INVITE", "MEMBER_REMOVE", "MEMBER_ROLE_CHANGE" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN;
-
-            // Ticket operations
-            case "TICKET_SCAN" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN ||
-                    role == OrganizationRole.MANAGER ||
-                    role == OrganizationRole.CONTRIBUTOR;
-
-            // Marketing
-            case "PROMOTION_MANAGE" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN ||
-                    role == OrganizationRole.MANAGER ||
-                    role == OrganizationRole.MARKETER;
-
-            // Analytics
-            case "ANALYTICS_VIEW" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN ||
-                    role == OrganizationRole.MANAGER ||
-                    role == OrganizationRole.MARKETER;
-
-            // Organization management
-            case "ORG_EDIT", "ORG_SETTINGS" ->
-                    role == OrganizationRole.OWNER ||
-                    role == OrganizationRole.ADMIN;
-
-            case "ORG_DELETE", "OWNERSHIP_TRANSFER" ->
-                    role == OrganizationRole.OWNER;
-
-            default -> {
-                log.warn("Unknown permission requested: {}", permission);
-                yield false;
-            }
-        };
-    }
-
-    /**
-     * Check if an event role has a specific permission.
-     */
-    private boolean hasEventPermission(EventRole role, String permission) {
-        return switch (permission) {
-            case "EVENT_EDIT" ->
-                    role == EventRole.EVENT_OWNER ||
-                    role == EventRole.EVENT_ADMIN ||
-                    role == EventRole.EDITOR;
-
-            case "EVENT_DELETE" ->
-                    role == EventRole.EVENT_OWNER;
-
-            case "EVENT_PUBLISH" ->
-                    role == EventRole.EVENT_OWNER ||
-                    role == EventRole.EVENT_ADMIN;
-
-            case "EVENT_VIEW" ->
-                    true; // All event roles can view
-
-            case "TICKET_SCAN" ->
-                    role == EventRole.EVENT_OWNER ||
-                    role == EventRole.EVENT_ADMIN ||
-                    role == EventRole.EDITOR ||
-                    role == EventRole.CHECK_IN;
-
-            case "REFUND_ISSUE" ->
-                    role == EventRole.EVENT_OWNER ||
-                    role == EventRole.EVENT_ADMIN;
-
-            case "ATTENDEE_VIEW" ->
-                    role == EventRole.EVENT_OWNER ||
-                    role == EventRole.EVENT_ADMIN ||
-                    role == EventRole.EDITOR ||
-                    role == EventRole.CHECK_IN;
-
-            case "NOTIFICATION_SEND" ->
-                    role == EventRole.EVENT_OWNER ||
-                    role == EventRole.EVENT_ADMIN ||
-                    role == EventRole.EDITOR;
-
-            default -> {
-                log.warn("Unknown event permission requested: {}", permission);
-                yield false;
-            }
-        };
-    }
-
-    /**
-     * Get all permissions for an organization role.
-     */
-    private Set<String> getPermissionsForRole(OrganizationRole role) {
-        Set<String> permissions = new HashSet<>();
-
-        // Add permissions based on role hierarchy
-        switch (role) {
-            case OWNER:
-                permissions.add("ORG_DELETE");
-                permissions.add("OWNERSHIP_TRANSFER");
-                // Fall through
-            case ADMIN:
-                permissions.add("MEMBER_INVITE");
-                permissions.add("MEMBER_REMOVE");
-                permissions.add("MEMBER_ROLE_CHANGE");
-                permissions.add("ORG_EDIT");
-                permissions.add("ORG_SETTINGS");
-                permissions.add("PAYOUT_REQUEST");
-                permissions.add("EVENT_DELETE");
-                // Fall through
-            case MANAGER:
-                permissions.add("EVENT_CREATE");
-                permissions.add("EVENT_EDIT");
-                permissions.add("EVENT_PUBLISH");
-                permissions.add("FINANCIAL_VIEW");
-                // Fall through
-            case MARKETER:
-                permissions.add("PROMOTION_MANAGE");
-                permissions.add("ANALYTICS_VIEW");
-                // Fall through
-            case CONTRIBUTOR:
-                permissions.add("EVENT_VIEW");
-                permissions.add("TICKET_SCAN");
-                break;
-        }
-
-        return permissions;
     }
 
     // ========================================================================

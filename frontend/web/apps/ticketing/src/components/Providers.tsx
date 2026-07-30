@@ -10,7 +10,6 @@ import {
   createGraphQLClient,
   type TokenGetter,
 } from '@pml.tickets/shared';
-import { getRadixThemeProps } from '@pml.tickets/shared/lib/theme';
 import { useMemo, type ReactNode } from 'react';
 
 const keycloakConfig = {
@@ -56,15 +55,21 @@ function ApolloProviderWithAuth({ children }: { children: ReactNode }) {
       return getToken();
     };
 
-    return createGraphQLClient({ tokenGetter });
+    // On auth failure, send the user to THIS app's login route (`/auth`),
+    // not the shared-lib default of `/login` (which 404s here).
+    const onAuthError = () => {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/auth';
+      }
+    };
+
+    return createGraphQLClient({ tokenGetter, onAuthError });
   }, [getToken, authenticated]);
 
   return <ApolloProvider client={apolloClient}>{children}</ApolloProvider>;
 }
 
 export default function Providers({ children }: ProvidersProps) {
-  const themeProps = getRadixThemeProps();
-
   return (
     <KeycloakProvider
       config={keycloakConfig}
@@ -77,8 +82,22 @@ export default function Providers({ children }: ProvidersProps) {
     >
       <QueryClientProvider client={queryClient}>
         <ApolloProviderWithAuth>
-          <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-            <Theme {...themeProps}>
+          {/* defaultTheme="system" matches the admin and organization-admin
+              apps, and follows the customer's OS preference — an accessibility
+              default we should not override. This is safe here because every
+              surface now routes through design tokens that carry both light
+              and dark values; the app no longer pins any literal white. */}
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+            {/* MyTicketZM Design System — "ticketing" brand context:
+                accent iris, gray slate, medium radius, solid panels.
+                The pinned brand hex lives in design-tokens.css, never here. */}
+            <Theme
+              accentColor="iris"
+              grayColor="slate"
+              panelBackground="solid"
+              radius="medium"
+              scaling="100%"
+            >
               {children}
             </Theme>
           </ThemeProvider>

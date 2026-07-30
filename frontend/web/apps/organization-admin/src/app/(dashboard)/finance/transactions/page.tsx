@@ -31,6 +31,8 @@ import {
   NavArrowRight,
 } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
+import { useSession } from '@/lib/auth/client';
+import { useMyTransactions } from '@pml.tickets/shared/api/organization-admin/modules/finance';
 
 // =============================================================================
 // TYPES
@@ -50,132 +52,35 @@ interface Transaction {
 }
 
 // =============================================================================
-// MOCK DATA
+// DATA MAPPING
 // =============================================================================
 
-const mockTransactions: Transaction[] = [
-  {
-    id: '1',
-    type: 'sale',
-    description: 'Ticket Sale - Early Bird',
-    amount: 150,
-    date: '2025-05-19T10:30:00',
-    eventName: 'Summer Music Festival',
-    ticketType: 'Early Bird',
-    customerName: 'John Doe',
-    status: 'completed',
-    reference: 'TXN-001-2025',
-  },
-  {
-    id: '2',
-    type: 'sale',
-    description: 'Ticket Sale - VIP',
-    amount: 500,
-    date: '2025-05-19T09:15:00',
-    eventName: 'Summer Music Festival',
-    ticketType: 'VIP',
-    customerName: 'Jane Smith',
-    status: 'completed',
-    reference: 'TXN-002-2025',
-  },
-  {
-    id: '3',
-    type: 'sale',
-    description: 'Ticket Sale - Regular',
-    amount: 100,
-    date: '2025-05-19T08:45:00',
-    eventName: 'Tech Conference 2025',
-    ticketType: 'Regular',
-    customerName: 'Mike Johnson',
-    status: 'completed',
-    reference: 'TXN-003-2025',
-  },
-  {
-    id: '4',
-    type: 'refund',
-    description: 'Refund Processed',
-    amount: -75,
-    date: '2025-05-18T16:45:00',
-    eventName: 'Tech Conference 2025',
-    customerName: 'Peter Brown',
-    status: 'completed',
-    reference: 'REF-001-2025',
-  },
-  {
-    id: '5',
-    type: 'fee',
-    description: 'Platform Commission (5%)',
-    amount: -32.50,
-    date: '2025-05-18T14:00:00',
-    status: 'completed',
-    reference: 'FEE-001-2025',
-  },
-  {
-    id: '6',
-    type: 'payout',
-    description: 'Payout to Stanbic Bank',
-    amount: -5000,
-    date: '2025-05-17T12:00:00',
-    status: 'completed',
-    reference: 'PAY-001-2025',
-  },
-  {
-    id: '7',
-    type: 'sale',
-    description: 'Ticket Sale - Regular',
-    amount: 200,
-    date: '2025-05-17T11:30:00',
-    eventName: 'Summer Music Festival',
-    ticketType: 'Regular (x2)',
-    customerName: 'Sarah Wilson',
-    status: 'completed',
-    reference: 'TXN-004-2025',
-  },
-  {
-    id: '8',
-    type: 'sale',
-    description: 'Ticket Sale - VIP',
-    amount: 500,
-    date: '2025-05-17T10:00:00',
-    eventName: 'Summer Music Festival',
-    ticketType: 'VIP',
-    customerName: 'Tom Anderson',
-    status: 'completed',
-    reference: 'TXN-005-2025',
-  },
-  {
-    id: '9',
-    type: 'fee',
-    description: 'Platform Commission (5%)',
-    amount: -35,
-    date: '2025-05-16T18:00:00',
-    status: 'completed',
-    reference: 'FEE-002-2025',
-  },
-  {
-    id: '10',
-    type: 'sale',
-    description: 'Ticket Sale - Early Bird',
-    amount: 150,
-    date: '2025-05-16T15:30:00',
-    eventName: 'Tech Conference 2025',
-    ticketType: 'Early Bird',
-    customerName: 'Lisa Davis',
-    status: 'completed',
-    reference: 'TXN-006-2025',
-  },
-];
+function mapTransactionType(type: string): Transaction['type'] {
+  switch (type) {
+    case 'TICKET_SALE': return 'sale';
+    case 'REFUND': return 'refund';
+    case 'PAYOUT': return 'payout';
+    default: return 'fee'; // PLATFORM_FEE, ADJUSTMENT
+  }
+}
+
+function mapTransactionStatus(status: string): Transaction['status'] {
+  const t = (status || '').toLowerCase();
+  if (t.includes('pending')) return 'pending';
+  if (t.includes('fail')) return 'failed';
+  return 'completed';
+}
 
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-ZM', {
-    style: 'currency',
-    currency: 'ZMW',
+  // Currency is ALWAYS "K 125,430" (spec §10) — never "ZMW", never "$".
+  return `K ${amount.toLocaleString('en-ZM', {
     minimumFractionDigits: 2,
-  }).format(amount);
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatDate(dateString: string): string {
@@ -225,15 +130,38 @@ const typeConfig = {
 // =============================================================================
 
 export default function TransactionsPage() {
+  const { data: session } = useSession();
+  const isAuthenticated = !!session?.user;
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  const { transactions: txnRows } = useMyTransactions({ size: 200, skip: !isAuthenticated });
+
+  const transactions: Transaction[] = useMemo(
+    () =>
+      txnRows.map((t) => {
+        const magnitude = Math.abs(Number(t.amount ?? 0));
+        const type = mapTransactionType(t.type);
+        return {
+          id: t.id,
+          type,
+          description: t.description,
+          amount: type === 'sale' ? magnitude : -magnitude,
+          date: t.timestamp,
+          eventName: t.eventTitle ?? undefined,
+          reference: t.reference ?? undefined,
+          status: mapTransactionStatus(t.status),
+        };
+      }),
+    [txnRows]
+  );
+
   // Filter transactions
   const filteredTransactions = useMemo(() => {
-    let result = mockTransactions;
+    let result = transactions;
 
     if (typeFilter !== 'all') {
       result = result.filter((t) => t.type === typeFilter);
@@ -266,7 +194,7 @@ export default function TransactionsPage() {
     }
 
     return result;
-  }, [typeFilter, dateFilter, searchQuery]);
+  }, [transactions, typeFilter, dateFilter, searchQuery]);
 
   // Pagination
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
@@ -292,15 +220,33 @@ export default function TransactionsPage() {
   }, [filteredTransactions]);
 
   const handleExport = () => {
-    // TODO: Implement CSV export
-    console.log('Exporting transactions...');
+    const header = ['Date', 'Type', 'Description', 'Event', 'Reference', 'Status', 'Amount'];
+    const rows = filteredTransactions.map((t) => [
+      t.date,
+      t.type,
+      t.description,
+      t.eventName ?? '',
+      t.reference ?? '',
+      t.status,
+      String(t.amount),
+    ]);
+    const csv = [header, ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'transactions.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <Box>
       <PageHeader
         title="Transactions"
-        description="View your complete transaction history"
+        description="Every sale, refund, fee and payout, newest first."
         breadcrumbs={[
           { label: 'Finance', href: '/finance' },
           { label: 'Transactions' },
@@ -322,7 +268,7 @@ export default function TransactionsPage() {
             padding: '16px 20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             flex: '1 1 150px',
           }}
         >
@@ -338,14 +284,14 @@ export default function TransactionsPage() {
             padding: '16px 20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             flex: '1 1 150px',
           }}
         >
           <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
             Total Expenses
           </Text>
-          <Text size="4" weight="bold" style={{ color: '#EF4444' }}>
+          <Text size="4" weight="bold" className="ds-amount" style={{ color: 'var(--status-danger-11)' }}>
             {formatCurrency(summary.expenses)}
           </Text>
         </Card>
@@ -354,7 +300,7 @@ export default function TransactionsPage() {
             padding: '16px 20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             flex: '1 1 150px',
           }}
         >
@@ -370,7 +316,7 @@ export default function TransactionsPage() {
             padding: '16px 20px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             flex: '1 1 150px',
           }}
         >
@@ -390,7 +336,7 @@ export default function TransactionsPage() {
           padding: '16px 20px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '12px',
+          borderRadius: 'var(--card-radius)',
         }}
       >
         <Flex gap="4" align="end" wrap="wrap">
@@ -433,7 +379,7 @@ export default function TransactionsPage() {
         style={{
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
           overflow: 'hidden',
         }}
       >
@@ -556,7 +502,7 @@ export default function TransactionsPage() {
                       style={{
                         borderColor: 'var(--surface-border)',
                         background: page === currentPage
-                          ? 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)'
+                          ? 'linear-gradient(135deg, var(--accent-9), var(--accent-11))'
                           : undefined,
                       }}
                     >

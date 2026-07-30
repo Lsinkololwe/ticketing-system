@@ -7664,3 +7664,40 @@ export type VerifyTwoFactorInput = {
   code: Scalars['String']['input'];
   method: TwoFactorMethod;
 };
+
+export type EventCardFieldsFragment = { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null };
+
+export type EventDetailFieldsFragment = { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, name: string, code: string, description: string | null, price: string, originalPrice: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, salesStartAt: string | null, salesEndAt: string | null, currency: string, quantity: number, soldQuantity: number, availableQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, isActive: boolean, isHidden: boolean, sortOrder: number }> | null, category: { __typename: 'EventCategory', id: string, name: string } | null };
+
+export type GetPublishedEventsQueryVariables = Exact<{
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type GetPublishedEventsQuery = { __typename: 'Query', publishedEventsCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', node: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null, totalPages: number | null, currentPage: number | null, pageSize: number | null, hasNext: boolean | null, hasPrevious: boolean | null, endCursor: string | null } } };
+
+export type GetUpcomingEventsQueryVariables = Exact<{
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type GetUpcomingEventsQuery = { __typename: 'Query', upcomingEventsCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', node: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null, totalPages: number | null, currentPage: number | null, pageSize: number | null, hasNext: boolean | null, hasPrevious: boolean | null, endCursor: string | null } } };
+
+export type GetEventByIdQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type GetEventByIdQuery = { __typename: 'Query', event: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, name: string, code: string, description: string | null, price: string, originalPrice: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, salesStartAt: string | null, salesEndAt: string | null, currency: string, quantity: number, soldQuantity: number, availableQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, isActive: boolean, isHidden: boolean, sortOrder: number }> | null, category: { __typename: 'EventCategory', id: string, name: string } | null } | null };
+
+export type GetActiveEventCategoriesQueryVariables = Exact<{
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type GetActiveEventCategoriesQuery = { __typename: 'Query', activeEventCategoriesCursorPagination: { __typename: 'EventCategoryConnection', edges: Array<{ __typename: 'EventCategoryEdge', node: { __typename: 'EventCategory', id: string, name: string, code: string, eventCount: number | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null } } };
+
+export type GetCitiesWithEventsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type GetCitiesWithEventsQuery = { __typename: 'Query', citiesWithEvents: Array<{ __typename: 'City', id: string, name: string, province: string | null }> };

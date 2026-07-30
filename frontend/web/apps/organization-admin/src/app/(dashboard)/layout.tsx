@@ -57,28 +57,41 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   // Redirects to /login if not authenticated
   await verifySession();
 
-  // Step 2: Check organization status (with graceful fallback)
+  // Step 2: Check organization status (with graceful fallback on transport errors only).
+  // Keep the GraphQL call inside try/catch, but NOT the redirects — redirect() throws a
+  // NEXT_REDIRECT control-flow error that must not be swallowed by this catch.
+  let organization: Awaited<ReturnType<typeof getOrganizationStatus>>;
   try {
-    const organization = await getOrganizationStatus();
-
-    // Step 3: Enforce authorization rules
-    if (!organization.hasOrganization) {
-      redirect('/welcome');
-    }
-
-    if (!organization.isApproved) {
-      const route = getRouteForStatus(organization.status);
-      redirect(route);
-    }
+    organization = await getOrganizationStatus();
   } catch (error) {
-    // GraphQL unavailable - redirect to welcome, client will handle
     console.warn('[DashboardLayout] Organization status check failed:', error);
     redirect('/welcome');
   }
 
+  // Step 3: Route by business lifecycle state (derived from backend status).
+  // The dashboard is for operational orgs (approved/active) and those under review
+  // (read-only preview); everything else routes to the application flow. This is a
+  // presentation guard only — every privileged action is independently enforced
+  // server-side at the GraphQL resolvers (defense in depth).
+  if (!organization.hasOrganization) {
+    redirect('/welcome');
+  }
+
+  const canUseDashboard = organization.isApproved || organization.isPendingReview;
+  if (!canUseDashboard) {
+    redirect(getRouteForStatus(organization.status));
+  }
+
   // ============================================================================
-  // User is authenticated with an approved organization - render dashboard
+  // Render the dashboard. Orgs still under review (not yet approved) see a
+  // read-only preview banner.
   // ============================================================================
 
-  return <DashboardLayoutContent>{children}</DashboardLayoutContent>;
+  const previewMode = organization.isPendingReview;
+
+  return (
+    <DashboardLayoutContent previewMode={previewMode}>
+      {children}
+    </DashboardLayoutContent>
+  );
 }

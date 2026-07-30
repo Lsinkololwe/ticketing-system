@@ -78,7 +78,16 @@ const SECTIONS = [
   { id: 'location', title: 'Location & Social', subtitle: 'City, province & links' },
 ] as const;
 
-const LABEL_STYLE: React.CSSProperties = { display: 'block', color: 'var(--gray-12)' };
+/* Micro uppercase form label (spec §8) — 10px / 600 / 0.08em tracking, the one
+   deliberate ALL-CAPS exception in the type system. Mirrors `.ds-label`. */
+const LABEL_STYLE: React.CSSProperties = {
+  display: 'block',
+  fontSize: 'var(--label-size)',
+  fontWeight: 'var(--label-weight)',
+  letterSpacing: 'var(--label-tracking)',
+  textTransform: 'uppercase',
+  color: 'var(--gray-11)',
+};
 const SECTION_SCROLL_STYLE: React.CSSProperties = { scrollMarginTop: '96px' };
 
 // Rounded-square icon chip (teal tint) used in each section header
@@ -371,7 +380,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="name" size="1" weight="bold" mb="1" style={LABEL_STYLE}>
+                      <Text as="label" htmlFor="name" mb="1" style={LABEL_STYLE}>
                         Organization Name <Text as="span" color="red">*</Text>
                       </Text>
                       <TextField.Root id="name" size="2" autoComplete="organization" placeholder="Enter your organization or company name" aria-invalid={!!fieldState.error} {...field} />
@@ -385,7 +394,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="type" size="1" weight="bold" mb="1" style={LABEL_STYLE}>
+                      <Text as="label" htmlFor="type" mb="1" style={LABEL_STYLE}>
                         Organization Type <Text as="span" color="red">*</Text>
                       </Text>
                       <SearchableSelect
@@ -410,7 +419,7 @@ export default function BusinessInfoPage() {
                     control={control}
                     render={({ field, fieldState }) => (
                       <Box>
-                        <Text as="label" htmlFor="tagline" size="1" weight="bold" mb="1" style={LABEL_STYLE}>Tagline</Text>
+                        <Text as="label" htmlFor="tagline" mb="1" style={LABEL_STYLE}>Tagline</Text>
                         <TextField.Root id="tagline" size="2" placeholder="e.g., Bringing Lusaka's best events to you" {...field} value={field.value || ''} />
                         {fieldState.error ? (
                           <Text as="p" size="1" color="red" mt="1">{fieldState.error.message}</Text>
@@ -428,7 +437,7 @@ export default function BusinessInfoPage() {
                     control={control}
                     render={({ field, fieldState }) => (
                       <Box>
-                        <Text as="label" htmlFor="description" size="1" weight="bold" mb="1" style={LABEL_STYLE}>About Your Organization</Text>
+                        <Text as="label" htmlFor="description" mb="1" style={LABEL_STYLE}>About your organization</Text>
                         <TextArea id="description" size="2" rows={4} placeholder="Tell us about your organization and the events you plan to organize..." {...field} value={field.value || ''} />
                         {fieldState.error ? (
                           <Text as="p" size="1" color="red" mt="1">{fieldState.error.message}</Text>
@@ -451,7 +460,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="businessEmail" size="1" weight="bold" mb="1" style={LABEL_STYLE}>
+                      <Text as="label" htmlFor="businessEmail" mb="1" style={LABEL_STYLE}>
                         Business Email <Text as="span" color="red">*</Text>
                       </Text>
                       <TextField.Root id="businessEmail" size="2" type="email" autoComplete="email" placeholder="contact@yourorganization.com" aria-invalid={!!fieldState.error} {...field} />
@@ -465,7 +474,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="businessPhone" size="1" weight="bold" mb="1" style={LABEL_STYLE}>
+                      <Text as="label" htmlFor="businessPhone" mb="1" style={LABEL_STYLE}>
                         Phone Number <Text as="span" color="red">*</Text>
                       </Text>
                       <PhoneNumberInput
@@ -489,7 +498,7 @@ export default function BusinessInfoPage() {
                     control={control}
                     render={({ field, fieldState }) => (
                       <Box>
-                        <Text as="label" htmlFor="website" size="1" weight="bold" mb="1" style={LABEL_STYLE}>Website</Text>
+                        <Text as="label" htmlFor="website" mb="1" style={LABEL_STYLE}>Website</Text>
                         <TextField.Root id="website" size="2" type="url" autoComplete="url" placeholder="https://yourorganization.com" {...field} value={field.value || ''} />
                         {fieldState.error ? (
                           <Text as="p" size="1" color="red" mt="1">{fieldState.error.message}</Text>
@@ -512,7 +521,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="city" size="1" weight="bold" mb="1" style={LABEL_STYLE}>
+                      <Text as="label" htmlFor="city" mb="1" style={LABEL_STYLE}>
                         City <Text as="span" color="red">*</Text>
                       </Text>
                       <TextField.Root id="city" size="2" autoComplete="address-level2" placeholder="e.g., Lusaka" aria-invalid={!!fieldState.error} {...field} />
@@ -526,7 +535,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="province" size="1" weight="bold" mb="1" style={LABEL_STYLE}>
+                      <Text as="label" htmlFor="province" mb="1" style={LABEL_STYLE}>
                         Province <Text as="span" color="red">*</Text>
                       </Text>
                       <SearchableSelect
@@ -550,7 +559,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field }) => (
                     <Box>
-                      <Text as="label" htmlFor="country" size="1" weight="bold" mb="1" style={LABEL_STYLE}>Country</Text>
+                      <Text as="label" htmlFor="country" mb="1" style={LABEL_STYLE}>Country</Text>
                       <TextField.Root id="country" size="2" autoComplete="country-name" disabled {...field} />
                     </Box>
                   )}
@@ -571,7 +580,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="facebook" size="1" weight="bold" mb="1" style={LABEL_STYLE}>Facebook</Text>
+                      <Text as="label" htmlFor="facebook" mb="1" style={LABEL_STYLE}>Facebook</Text>
                       <TextField.Root id="facebook" size="2" placeholder="https://facebook.com/yourpage" {...field} value={field.value || ''} />
                       {fieldState.error ? (
                         <Text as="p" size="1" color="red" mt="1">{fieldState.error.message}</Text>
@@ -587,7 +596,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="instagram" size="1" weight="bold" mb="1" style={LABEL_STYLE}>Instagram</Text>
+                      <Text as="label" htmlFor="instagram" mb="1" style={LABEL_STYLE}>Instagram</Text>
                       <TextField.Root id="instagram" size="2" placeholder="https://instagram.com/yourprofile" {...field} value={field.value || ''} />
                       {fieldState.error ? (
                         <Text as="p" size="1" color="red" mt="1">{fieldState.error.message}</Text>
@@ -603,7 +612,7 @@ export default function BusinessInfoPage() {
                   control={control}
                   render={({ field, fieldState }) => (
                     <Box>
-                      <Text as="label" htmlFor="twitter" size="1" weight="bold" mb="1" style={LABEL_STYLE}>Twitter / X</Text>
+                      <Text as="label" htmlFor="twitter" mb="1" style={LABEL_STYLE}>Twitter / X</Text>
                       <TextField.Root id="twitter" size="2" placeholder="https://twitter.com/yourprofile" {...field} value={field.value || ''} />
                       {fieldState.error ? (
                         <Text as="p" size="1" color="red" mt="1">{fieldState.error.message}</Text>

@@ -37,7 +37,8 @@ export interface ProtectedRouteProps {
 function DefaultLoadingComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
+        style={{ borderColor: 'var(--accent-9)', borderTopColor: 'transparent' }} />
     </div>
   );
 }
@@ -48,8 +49,9 @@ function DefaultLoadingComponent() {
 function DefaultAccessDeniedComponent() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-      <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-      <p className="text-gray-600">
+      <h1 className="text-2xl font-bold"
+        style={{ color: 'var(--status-danger-11)' }}>Access Denied</h1>
+      <p style={{ color: 'var(--gray-11)' }}>
         You do not have permission to access this page.
       </p>
     </div>
@@ -63,7 +65,7 @@ function DefaultUnauthenticatedComponent() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4">
       <h1 className="text-2xl font-bold">Authentication Required</h1>
-      <p className="text-gray-600">Please log in to access this page.</p>
+      <p style={{ color: 'var(--gray-11)' }}>Please log in to access this page.</p>
     </div>
   );
 }

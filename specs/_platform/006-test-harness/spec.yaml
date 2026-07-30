@@ -1,0 +1,83 @@
+id: ET-PLT-006
+title: Five-layer test harness — fixtures, Testcontainers, the frozen clock
+status: draft
+area: PLT
+service: all
+subgraph: null
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 0
+blocked_by: [ET-PLT-001, ET-PLT-002, ET-PLT-003, ET-PLT-004, ET-PLT-005]
+conformance: "PDI Phase 9 monitoring and verification"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/001-runtime-baseline/spec.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/004-federation-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+
+persistence:
+  collections: []
+  indexes: []
+  redis_keys: []
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: null
+  queries: []
+  mutations: []
+
+errors: []
+
+layers:
+  - "1 decision     — plain JUnit, no infrastructure, hundreds of tests, ~1 ms"
+  - "2 persistence  — @DataMongoTest + Mongo container, dozens, ~50 ms"
+  - "3 saga         — fixture + stubs, one per saga, ~50 ms"
+  - "4 contract     — rover over on-disk SDL, one per subgraph, ~1 s"
+  - "5 integration  — all containers + WireMock, a handful, seconds"
+
+shared_types:
+  - com.pml.shared.testing.TestContainers    # singleton Mongo REPLICA SET, Postgres, Redis
+  - com.pml.shared.testing.TestClock         # mutable fixed clock
+  - com.pml.shared.testing.CleanDatabase
+  - com.pml.shared.testing.Refusals          # assertRefused(code, thrown)
+  - com.pml.shared.testing.Persistence       # assertNothingPersisted(...)
+  - com.pml.shared.testing.Ledger            # assertBalanced()
+  - com.pml.shared.testing.Inventory         # assertConserved(tierId)
+  - com.pml.shared.testing.Concurrency       # inParallel(n, task)
+  - com.pml.shared.testing.Providers         # WireMock stubs, failure-first
+
+containers:
+  mongo:    "8.x --replSet rs0"    # a standalone container MUST fail R2
+  postgres: "16"
+  redis:    "7.x"
+  servicebus: "spring-cloud-stream test binder — no Azure subscription"
+
+budget:
+  fast:        "layers 1-3, < 60 s, every save"
+  full:        "layers 1-5, < 10 min, every CI run"
+  concurrency: "< 3 min, every CI run, not skippable"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/006-test-harness
+  - mvn -q -f backend test
+  - mvn -q -f backend verify -Dgroups=ET-PLT-006
+  - ./scripts/spec-status.sh --drift
+
+risks:
+  - "R4's mutation-test box requires deliberately introducing a write-then-throw defect to prove the assertion detects it. Nothing in the build keeps that proof alive: once written, assertNothingPersisted can be weakened later and no test notices. It needs to be a permanent mutation-testing step, not a one-off verification."
+  - "The 200-against-50 concurrency test is nondeterministic by nature. Run once it can pass with the defect present if the scheduler happens to serialise the callers; run enough times to be meaningful it becomes the slowest thing in CI. The repeat count is a real trade-off this spec states but does not resolve."
+  - "R2 requires that the transaction test FAIL against a standalone mongod, which means the suite has a test that must fail in a specific wrong environment. Expressing 'this test should fail there' inside a normal JUnit run is awkward, and the usual shortcut — a comment — is not a check."
+  - "Freezing the clock globally in tests breaks anything that measures elapsed time for a timeout or a retry backoff, because the elapsed time is always zero. Reactor's own timeout operators use a scheduler clock, not the injected bean, so the two notions of time diverge inside the same test."
+  - "The harness lives in shared-library's test-jar, which every service depends on. A change to Refusals or Persistence recompiles and potentially breaks all three services' suites at once, and there is no versioning between them."
+  - "R6 requires recorded sandbox fixtures rather than hand-written ones, but PawaPay's sandbox may not reproduce every failure mode the platform must handle — a webhook arriving before the API response in particular. Those fixtures will have to be hand-authored, which is precisely what this decision rejects, and the exception needs to be recorded rather than quietly taken."
+  - "The 10-minute full-suite budget is stated before any of the ~35 capability specs exist. Each one adds integration tests, and the budget is the first thing that will be exceeded — at which point the pressure will be on the concurrency stage, which is the one stage this spec says must not be dropped."

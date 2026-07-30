@@ -10,9 +10,9 @@
  * - Account settings
  */
 
-import { Box, Flex, Grid, Heading, Text, Separator, Switch } from '@radix-ui/themes';
+import { Box, Flex, Heading, Text, Separator, Switch } from '@radix-ui/themes';
 import { SunLight, Bell, Eye, UserCircle, Shield, Database } from 'iconoir-react';
-import { StyledCard } from '@/components/ui/StyledCard';
+import { StyledCard } from '@/components/ui';
 import { ThemeSelector } from '@/components/ui/ThemeToggle';
 
 // =============================================================================
@@ -99,7 +99,7 @@ export default function SettingsPage() {
         </Flex>
 
         {/* Settings Grid */}
-        <Grid columns={{ initial: '1', lg: '2' }} gap="4">
+        <Box className="ds-bento-grid-wide">
 
           {/* ============================================== */}
           {/* APPEARANCE SETTINGS */}
@@ -292,7 +292,7 @@ export default function SettingsPage() {
               </SettingRow>
             </Flex>
           </SettingsSection>
-        </Grid>
+        </Box>
       </Flex>
     </Box>
   );

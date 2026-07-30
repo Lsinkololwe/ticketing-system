@@ -1,0 +1,87 @@
+id: ET-PLT-004
+title: Federation contract — ownership, keys, contracts, composition
+status: draft
+area: PLT
+service: all
+subgraph: all
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 0
+blocked_by: [ET-PLT-001]
+conformance: null
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/001-runtime-baseline/spec.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - docs/APOLLO_FEDERATION_GUIDE.md
+  - docs/GRAPHQL_TAGGING_STRATEGY.md
+  - docs/API_DESIGN_SPECIFICATION.md
+
+persistence:
+  collections: []
+  indexes: []
+  redis_keys: []
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema:
+    - backend/catalog-service/src/main/resources/graphql/schema.graphqls
+    - backend/booking-service/src/main/resources/graphql/schema.graphqls
+    - backend/identity-service/src/main/resources/graphql/schema.graphqls
+    - backend/shared-library/src/main/resources/graphql/auth.graphqls
+  federation_version: v2.9
+  shared_scalars: [BigDecimal, DateTime, JSON, Long, PhoneNumber]
+  shared_types: [PageInfo, Role]
+  shared_directives: ["@auth"]
+  tags: [admin, internal]
+  contracts:
+    - name: full        # every element — apps/admin generates from this
+      excludes: []
+    - name: public      # apps/ticketing, apps/organization-admin, mobile
+      excludes: [admin, internal]
+
+  ownership:
+    identity: [User, Organization, OrganizationMember, TeamInvitation, OwnershipTransfer,
+               EventAccessGrant, VerificationDocument, Notification,
+               NotificationPreferences, UserDevice]
+    catalog:  [Event, TicketTier, Location, City, Province, Category]
+    booking:  [Ticket, Reservation, PaymentIntent, EscrowAccount, JournalEntry,
+               CommissionRecord, PayoutRequest, BankAccount, RefundRequest,
+               Chargeback, PromoCode, PlatformAccount]
+
+  extensions:
+    - "booking  extends Event         { tickets, ticketsSold, grossRevenue, escrowAccount }"
+    - "booking  extends User          { purchasedTickets, totalSpent }"
+    - "booking  extends Organization  { bankAccounts, payoutRequests, availableBalance }"
+    - "booking  extends TicketTier    { availableQuantity, soldQuantity }"
+    - "catalog  extends Organization  { events }"
+    - "identity extends Event         { accessGrants }"
+
+  queries: []      # declared by the spec that introduces the capability
+  mutations: []
+
+errors:
+  - PAGE_SIZE_EXCEEDED
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/004-federation-contract
+  - ./scripts/spec-lint.sh --federation
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+  - mvn -q -f backend test -Dgroups=ET-PLT-004
+  - cd frontend/web && npm run codegen && git diff --exit-code
+
+risks:
+  - "TicketTier.availableQuantity is contributed by booking while TicketTier itself is owned by catalog. That is correct given the ET-PLT-002 inventory split, but it means a discovery query showing remaining tickets fans out to two subgraphs on the hottest read path in the platform. Whether the router's query plan is acceptable there, or whether discovery should read a booking-owned projection instead, is not settled by this spec."
+  - "R3's public-contract test keys on an enumerated admin vocabulary. A new admin field named outside that vocabulary and left untagged passes the test and ships to mobile clients. The only complete check is a reviewed diff of the public contract on every publish, which is a process control this spec cannot enforce."
+  - "R4 removes every success/message mutation wrapper. The admin frontend's generic mutation handling is built around that shape, so T5 is a backend change that breaks the frontend until T8 regenerates and the call sites are reworked — the two cannot land independently."
+  - "rover subgraph check compares against the published graph, so the first publish has nothing to check against and CI passes vacuously. The gate only becomes real on the second change, and a breaking first publish is undetectable."
+  - "compose-supergraph.sh --static prepends shared-library's auth.graphqls to each subgraph to resolve @auth offline. If DGS's runtime merge ever diverges from that prepend — a directive added to one and not the other — static composition and live composition disagree, and CI trusts the one that is wrong."
+  - "Two paging shapes means every new list field is a decision, and the §4 registry has to be edited for each. A field added without a registry row defaults to whatever its author preferred, which is exactly the drift the registry exists to prevent."
+  - "The public contract excludes @tag(name: \"internal\"), but internal service-to-service calls in this platform go over REST at /api/internal/**, not over the graph. If nothing is actually tagged internal, the tag is dead vocabulary and its exclusion rule is untested."

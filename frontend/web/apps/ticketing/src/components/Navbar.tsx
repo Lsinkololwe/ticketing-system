@@ -10,7 +10,6 @@ import {
   Button,
   IconButton,
   Avatar,
-  Badge,
   DropdownMenu,
   Separator,
 } from '@radix-ui/themes';
@@ -19,20 +18,18 @@ import {
   Xmark,
   Calendar,
   ShoppingBag,
-  Bell,
   Plus,
   Home,
   Search,
-  Bookmark,
 } from 'iconoir-react';
 import { useAuth } from '@pml.tickets/shared';
-import { useUserRole } from '@/hooks/useMocks';
+import { BrandMark } from '@/components/ui';
 
 const NavbarComponent: React.FC = () => {
   const [isNavOpen, setIsNavOpen] = useState(false);
 
-  const { user, authenticated: isAuthenticated } = useAuth();
-  const { isOrganizer } = useUserRole();
+  const { user, authenticated: isAuthenticated, hasRole, logout } = useAuth();
+  const isOrganizer = hasRole('ORGANIZER');
   const router = useRouter();
   const pathname = usePathname();
 
@@ -50,7 +47,7 @@ const NavbarComponent: React.FC = () => {
     ? [
         {
           href: '/organizer/dashboard',
-          label: 'Create Event',
+          label: 'Create event',
           icon: Plus,
           isActive: pathname.startsWith('/organizer'),
         },
@@ -60,10 +57,12 @@ const NavbarComponent: React.FC = () => {
   const allNavLinks = [...navLinks, ...organizerLinks];
 
   return (
+    /* Simple, non-fixed top nav (spec §4 — the fixed/frosted header chrome
+       belongs to the two admin apps, not the customer app). */
     <Box
       style={{
-        borderBottom: '1px solid var(--gray-4)',
-        backgroundColor: 'var(--color-background)',
+        background: 'var(--color-panel-solid)',
+        borderBottom: 'var(--hairline)',
       }}
       py="3"
       px="4"
@@ -73,26 +72,9 @@ const NavbarComponent: React.FC = () => {
         align="center"
         style={{ maxWidth: '1280px', margin: '0 auto' }}
       >
-        {/* Logo */}
-        <Link href="/" style={{ textDecoration: 'none' }}>
-          <Flex align="center" gap="2">
-            <Box
-              style={{
-                width: '2rem',
-                height: '2rem',
-                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
-                borderRadius: 'var(--radius-2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Bookmark style={{ width: '1.25rem', height: '1.25rem', color: 'white' }} />
-            </Box>
-            <Text size="5" weight="bold" color="iris">
-              Event Ticketing
-            </Text>
-          </Flex>
+        {/* Wordmark — plain type, no invented logo (DS rule) */}
+        <Link href="/" style={{ textDecoration: 'none' }} aria-label="MyTicketZM home">
+          <BrandMark size="5" />
         </Link>
 
         {/* Desktop Navigation */}
@@ -122,48 +104,16 @@ const NavbarComponent: React.FC = () => {
             <Search style={{ width: '1.25rem', height: '1.25rem' }} />
           </IconButton>
 
-          {/* Notifications */}
+          {/* My tickets */}
           {isAuthenticated && (
-            <Box style={{ position: 'relative' }}>
-              <IconButton variant="ghost" size="2">
-                <Bell style={{ width: '1.25rem', height: '1.25rem' }} />
-              </IconButton>
-              <Badge
-                color="red"
-                style={{
-                  position: 'absolute',
-                  top: '-4px',
-                  right: '-4px',
-                  fontSize: '10px',
-                  minWidth: '18px',
-                  height: '18px',
-                }}
-              >
-                3
-              </Badge>
-            </Box>
-          )}
-
-          {/* Cart */}
-          {isAuthenticated && (
-            <Box style={{ position: 'relative' }}>
-              <IconButton variant="ghost" size="2">
-                <ShoppingBag style={{ width: '1.25rem', height: '1.25rem' }} />
-              </IconButton>
-              <Badge
-                color="red"
-                style={{
-                  position: 'absolute',
-                  top: '-4px',
-                  right: '-4px',
-                  fontSize: '10px',
-                  minWidth: '18px',
-                  height: '18px',
-                }}
-              >
-                2
-              </Badge>
-            </Box>
+            <IconButton
+              variant="ghost"
+              size="2"
+              aria-label="My tickets"
+              onClick={() => router.push('/my-tickets')}
+            >
+              <ShoppingBag style={{ width: '1.25rem', height: '1.25rem' }} />
+            </IconButton>
           )}
 
           {/* User Menu or Auth Buttons */}
@@ -175,8 +125,8 @@ const NavbarComponent: React.FC = () => {
                     <Avatar
                       radius="full"
                       size="2"
+                      color="iris"
                       fallback={(user?.givenName?.charAt(0) || 'U') + (user?.familyName?.charAt(0) || '')}
-                      src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.givenName || 'U')}+${encodeURIComponent(user?.familyName || '')}&background=8B5CF6&color=fff`}
                     />
                     <Text size="2" weight="medium" className="hidden lg:block">
                       {user?.givenName} {user?.familyName}
@@ -191,8 +141,8 @@ const NavbarComponent: React.FC = () => {
                     <Avatar
                       radius="full"
                       size="2"
+                      color="iris"
                       fallback={(user?.givenName?.charAt(0) || 'U') + (user?.familyName?.charAt(0) || '')}
-                      src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.givenName || 'U')}+${encodeURIComponent(user?.familyName || '')}&background=8B5CF6&color=fff`}
                     />
                     <Box>
                       <Text size="2" weight="medium" style={{ display: 'block' }}>
@@ -206,32 +156,27 @@ const NavbarComponent: React.FC = () => {
                 </Box>
                 <Separator size="4" />
                 <DropdownMenu.Item onSelect={() => router.push('/profile')}>
-                  My Profile
+                  My profile
                 </DropdownMenu.Item>
                 <DropdownMenu.Item onSelect={() => router.push('/settings')}>
                   Settings
                 </DropdownMenu.Item>
                 <DropdownMenu.Item onSelect={() => router.push('/my-tickets')}>
-                  My Tickets
+                  My tickets
                 </DropdownMenu.Item>
                 <Separator size="4" />
-                <DropdownMenu.Item
-                  color="red"
-                  onSelect={() => {
-                    console.log('Logout clicked');
-                  }}
-                >
-                  Logout
+                <DropdownMenu.Item color="red" onSelect={() => logout()}>
+                  Sign out
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Root>
           ) : (
             <Flex align="center" gap="2">
               <Button variant="ghost" size="2" onClick={() => router.push('/auth')}>
-                Sign In
+                Sign in
               </Button>
               <Button size="2" onClick={() => router.push('/auth')}>
-                Sign Up
+                Sign up
               </Button>
             </Flex>
           )}
@@ -288,7 +233,7 @@ const NavbarComponent: React.FC = () => {
                     setIsNavOpen(false);
                   }}
                 >
-                  Sign In
+                  Sign in
                 </Button>
                 <Button
                   onClick={() => {
@@ -296,7 +241,7 @@ const NavbarComponent: React.FC = () => {
                     setIsNavOpen(false);
                   }}
                 >
-                  Sign Up
+                  Sign up
                 </Button>
               </Flex>
             )}

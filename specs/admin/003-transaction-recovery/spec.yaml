@@ -1,0 +1,117 @@
+id: ET-ADM-003
+title: Transaction recovery — stuck money and the operator's tools
+status: draft
+area: ADM
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: should
+wave: 6
+blocked_by: [ET-PLT-003, ET-PLT-005, ET-PAY-001, ET-PAY-002, ET-FIN-003, ET-FIN-004, ET-FIN-005]
+conformance: "PDI Phase 8 dead-letter queue and recovery"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/payment/001-payment-intents-and-providers/spec.md
+  - specs/payment/002-webhooks-and-settlement/spec.md
+  - specs/finance/003-payouts-and-settlement/spec.md
+  - specs/finance/005-reconciliation/spec.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+  - docs/MISSING_FEATURES_RESEARCH_AND_RECOMMENDATIONS.md
+
+persistence:
+  collections:
+    - admin_recovery_proposals    # added to the ET-PLT-002 §4 registry by this spec
+  indexes:
+    - "admin_recovery_proposals {itemSource,itemId,status} compound"
+    - "admin_recovery_proposals {status,expiresAt} compound"
+  redis_keys:
+    - "idem:{key}   STRING  24 h   — every money-moving recovery action"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:      # every one FINANCE+ and @tag admin
+    - "recoveryQueue(source, page)               FINANCE  RecoveryItemPage!"
+    - "recoveryItemDetail(source, itemId)        FINANCE  RecoveryItemDetail!"
+    - "recoveryMetrics                           FINANCE  RecoveryMetrics!"
+    - "myRecoveryProposals                       FINANCE  [RecoveryProposal!]!"
+    - "pendingRecoveryProposals                  FINANCE  [RecoveryProposal!]!"
+    - "deadLetters(topic, subscription, page)    ADMIN    DeadLetterPage!"
+  mutations:
+    - "requeryProvider(input)              FINANCE      RecoveryOutcome!"
+    - "resolveReconciliationItem(input)    FINANCE      ReconciliationItem!"
+    - "markForReview(input)                FINANCE      RecoveryItem!"
+    - "proposeRecoveryAction(input)        FINANCE      RecoveryProposal!"
+    - "confirmRecoveryAction(id, reason)   FINANCE      RecoveryOutcome!"
+    - "withdrawRecoveryProposal(id)        FINANCE      RecoveryProposal!"
+    - "bulkRetry(input)                    FINANCE      [RecoveryOutcome!]!"
+    - "replayDeadLetter(id)                ADMIN        RecoveryOutcome!"
+    - "discardDeadLetter(id, reason)       SUPER_ADMIN  Boolean!"
+  # retryPayout and retryRefund are ET-FIN-003's and ET-FIN-004's, reached from here
+
+errors:
+  - TRANSACTION_NOT_RECOVERABLE
+  # ACTOR_NOT_PERMITTED raised by R3's identity check
+
+queue_sources:
+  - "stuck payment        intent PENDING past max-pending          ET-PAY-001 R5"
+  - "orphaned webhook     receipt ORPHANED past orphan-escalate    ET-PAY-002 R5"
+  - "disputed webhook     receipt DISPUTED                          ET-PAY-002 R3"
+  - "failed payout        request FAILED                            ET-FIN-003 R7"
+  - "unconfirmed payout   PAYOUT_UNCONFIRMED item                   ET-FIN-005 R4"
+  - "reconciliation item  OPEN past its class threshold             ET-FIN-005 R6"
+  - "failed refund        request FAILED                            ET-FIN-004"
+  - "dead letter          any dead-letter subscription message      ET-PLT-003 R6"
+
+actions:
+  single: [requeryProvider, retryPayout, retryRefund, resolveItem, replayDeadLetter, markForReview]
+  dual:   [applyConfirmedOutcome, releaseStuckReservation, reversePayout, writeOffItem, discardDeadLetter]
+  # dual = proposal by one operator, confirmation by a DIFFERENT identity, PT2H expiry
+
+bulk_safe_classes: [PROVIDER_UNAVAILABLE, PROVIDER_TIMEOUT, NETWORK_ERROR]
+bulk_unsafe:       [PAYMENT_DECLINED, AMOUNT_MISMATCH, SUSPECTED_FRAUD, BAD_ACCOUNT_DETAILS,
+                    UNSUPPORTED_SCHEMA_VERSION]
+
+ordering: "amountAtRisk desc, then age desc; items older than P7D float regardless of amount"
+
+provider_raw_exception: |
+  ET-PLT-005 §2 forbids returning a provider's raw message anywhere. recoveryItemDetail is
+  the ONE exception: providerStatusRaw and providerMessageRaw to FINANCE only, @tag admin,
+  every access audited. Without it an operator diagnoses a stuck payment from a five-value enum.
+
+invariant: "a recovery NEVER invents a fact — it re-queries, applies a CONFIRMED outcome, or records a loss"
+
+config:
+  admin.recovery.proposal-ttl: PT2H
+  admin.recovery.bulk-max: 50
+  admin.recovery.starvation-floor: P7D
+  admin.recovery.escalation-window: P3D
+  admin.recovery.risk-alert-threshold: K50000
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/admin/003-transaction-recovery
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-ADM-003
+  - mvn -q -f backend verify -Dgroups=ET-ADM-003
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The queue is a projection over eight heterogeneous sources, ordered by amount at risk across all of them. Computing that ordering requires reading and sorting every open item from every source on each page request — there is no single collection to index. At any real volume the queue needs a materialised projection collection, which this spec explicitly says it is not."
+  - "R3's dual approval requires two FINANCE identities. A platform with one finance operator cannot perform any dual action at all, which means a stuck payment cannot be resolved during a night incident with one person on call. There is no break-glass path and no SUPER_ADMIN override, so the control becomes an availability problem at exactly the wrong moment."
+  - "recoveryItemDetail is a deliberate exception to ET-PLT-005's no-provider-detail rule, gated on FINANCE and audited. But the same underlying data is also exposed by ET-PAY-001's paymentAttempts query, which is only ADMIN-gated and not audited — so the exception is not actually the only route to the raw message, and the tighter control here is undermined by the looser one there."
+  - "R6 asserts replay is safe because every consumer is idempotent per ET-PLT-003 R5, but that spec's own risk register notes that a consumer which wrongly self-assesses as idempotent gets no second line of defence. Replay inherits that risk and amplifies it — an operator replaying a batch under incident pressure is exactly when a non-idempotent consumer does damage."
+  - "releaseStuckReservation refunds any captured payment and releases inventory, but a stuck payment is stuck precisely because the platform does not know whether money moved. Refunding a payment that never captured is a refund of nothing, which the provider will reject; refunding one that did is correct. The action is dual-approved but the operator has no better information than the platform does."
+  - "admin_recovery_proposals is an eighth amendment to ET-PLT-002 §4's closed collection registry."
+  - "Amount at risk for a dead letter is '0 or the payload's amount', which means parsing an arbitrary envelope payload to extract a monetary field that may not exist. The ordering therefore treats most dead letters as zero-risk and sorts them last, behind every financial item — which is right for a notification failure and wrong for a dead-lettered TicketPurchased."
+  - "Nothing in this spec bounds how long an item may sit in the queue before something automatic happens. The escalation window alerts at 3 days and the starvation floor floats at 7, but an item nobody ever works simply stays there, counted in a metric, forever."

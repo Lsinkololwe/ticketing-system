@@ -1,0 +1,112 @@
+id: ET-CAT-001
+title: Event lifecycle — eight states, approval, publish, reschedule, cancel
+status: draft
+area: CAT
+service: catalog-service
+subgraph: catalog
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 2
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-ORG-001, ET-ORG-003]
+conformance: "V3 §5 event state machine · V3 §9 rescheduling and cancellation · US Part III §13–14"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/organization/001-organizer-onboarding/spec.md
+  - specs/organization/003-permission-resolution/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+  - docs/USER_STORIES.md
+
+persistence:
+  collections:
+    - catalog_events
+  indexes:
+    - "catalog_events {status,startsAt} compound       # HOT — public discovery"
+    - "catalog_events {organizationId,status} compound"
+    - "catalog_events {categoryId,cityId,startsAt} compound"
+    - "catalog_events {title,description} text"
+  redis_keys:
+    - "cache:event:{eventId}         STRING  300 s  — discovery read-through; authority catalog_events"
+    - "lock:sweep:event-completion   STRING   30 s  — the R6 sweep mutex"
+
+events:
+  module:
+    - EventSubmittedEvent
+    - EventDecidedEvent
+  bus:
+    - catalog.EventPublished       # v1 → booking (open escrow), identity (notify)
+    - catalog.EventRescheduled     # v1 → booking (refund window), identity (notify holders)
+    - catalog.EventCancelled       # v1 → booking (mass refund), identity (notify holders)
+    - catalog.EventCompleted       # v1 → booking (recognise commission, payout window), identity
+  consumes:
+    - identity.OrganizationApproved     # publishing unblocked
+    - identity.OrganizationSuspended    # PUBLISHED events return to APPROVED
+    - booking.TicketPurchased           # denormalised display counter
+    - booking.RefundCompleted           # decrements it
+  topics:
+    - catalog-events
+
+graphql:
+  schema: backend/catalog-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "event(id)                                    PUBLIC     Event"
+    - "events(filter, first, after)                 PUBLIC     EventConnection!"
+    - "eventsByCategory(categoryId, first, after)   PUBLIC     EventConnection!"
+    - "eventsByCity(cityId, first, after)           PUBLIC     EventConnection!"
+    - "searchEvents(query, filter, first, after)    PUBLIC     EventConnection!"
+    - "myOrganizationEvents(organizationId, status, page)  ORGANIZER  EventPage!"
+    - "eventsPendingApproval(page)                  ADMIN      EventPage!"
+  mutations:
+    - "createEvent(input)              ORGANIZER  Event!"
+    - "updateEvent(id, input)          ORGANIZER  Event!"
+    - "submitEventForApproval(id)      ORGANIZER  Event!"
+    - "approveEvent(id)                ADMIN      Event!"
+    - "rejectEvent(id, reason)         ADMIN      Event!"
+    - "publishEvent(id)                ORGANIZER  Event!"
+    - "unpublishEvent(id)              ORGANIZER  Event!"
+    - "rescheduleEvent(input)          ORGANIZER  Event!"
+    - "cancelEvent(id, reason)         ORGANIZER  Event!"
+    - "deleteEvent(id)                 ORGANIZER  Boolean!"
+
+errors:
+  - EVENT_UNKNOWN
+  - EVENT_STATE_INVALID
+  - ORGANIZER_NOT_APPROVED
+
+state_machine:
+  states: [DRAFT, PENDING_APPROVAL, REJECTED, APPROVED, PUBLISHED, COMPLETED, CANCELLED, DELETED]
+  transitions: 14
+  pairs_tested: 99
+  terminal: [COMPLETED, CANCELLED, DELETED]
+
+material_fields: [startsAt, endsAt, locationId, organizationId, totalCapacity]
+
+config:
+  catalog.completion.sweep-interval: PT15M
+  catalog.reschedule.refund-window: P7D
+  catalog.event.max-reschedules: 3
+  catalog.event.min-lead-time: PT24H
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/catalog/001-event-lifecycle
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-001
+  - mvn -q -f backend verify -Dgroups=ET-CAT-001
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R4's unpublish check queries booking for the sold count over HTTP, which makes unpublishing depend on booking being up and introduces a race: a ticket sold between the check and the status write leaves a PUBLISHED-then-APPROVED event with one live ticket. The check needs to be a conditional write against booking, or unpublish needs to be a two-phase close-sales-then-unpublish."
+  - "R7 asserts escrowDebit + commissionCancelled + clawedBack == totalRefunded across an entire event, but the refunds themselves are performed asynchronously by booking over many messages. The invariant is only checkable once every refund has settled, and there is no defined point at which the platform declares the cancellation complete and runs the assertion."
+  - "A material change to a PUBLISHED event is refused, and rescheduling is the only sanctioned way to change its date — but rescheduling does not permit a venue change. An organizer who must move both date and venue has no legal path except cancel-and-recreate, which refunds everyone. That may be correct, but it is a product decision this spec makes silently."
+  - "totalCapacity is material and lives on the event, while tier capacities live on catalog_ticket_tiers and the counters live in booking_tier_inventory. Three places hold a notion of capacity and this spec makes the event's copy material — meaning adding a tier to an APPROVED event returns it to DRAFT. ET-CAT-002 must decide whether that is intended."
+  - "The completion sweep moves events on endsAt, which is the organizer's declared end time. A multi-day festival whose endsAt is wrong by a day starts the commission and payout clocks a day early, and nothing validates endsAt against anything."
+  - "identity.OrganizationSuspended unpublishes every PUBLISHED event of that organization. For an organization with hundreds of events that is a bulk status change performed inside a bus consumer, with no batching, no progress and no partial-failure handling specified."
+  - "CANCELLED events stay in PUBLIC discovery so buyers can find them. The discovery index is {status, startsAt} and the discovery query filters status = PUBLISHED, so a cancelled event is in fact NOT returned by it — R8's first box and the visibility table contradict each other, and the visibility table is what a buyer needs."
+  - "catalog.EventPublished is emitted on every publish including re-publishes after an unpublish. Booking's consumer opens an escrow account on it and is idempotent on eventId, but identity's notify consumer is idempotent on eventId too — which means a re-publish notifies nobody, even though it is a genuine announcement."

@@ -15,7 +15,8 @@
  */
 
 import { useState, useCallback, useEffect, ReactNode } from 'react';
-import { Box } from '@radix-ui/themes';
+import { Box, Callout, Text } from '@radix-ui/themes';
+import { Clock } from 'iconoir-react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 
@@ -23,6 +24,7 @@ import { Header } from '@/components/layout/Header';
 // CONSTANTS
 // =============================================================================
 
+/** Fixed chrome per spec §4: 280px sidebar, drawer under 1024px. */
 const SIDEBAR_WIDTH = 280;
 const SIDEBAR_COLLAPSED_WIDTH = 72;
 const MOBILE_BREAKPOINT = 1024;
@@ -33,13 +35,18 @@ const MOBILE_BREAKPOINT = 1024;
 
 interface DashboardLayoutContentProps {
   children: ReactNode;
+  /**
+   * Renders the read-only "under review" preview banner. Backend-derived
+   * (organization is PENDING_REVIEW / can access dashboard but not yet approved).
+   */
+  previewMode?: boolean;
 }
 
 // =============================================================================
 // COMPONENT
 // =============================================================================
 
-export function DashboardLayoutContent({ children }: DashboardLayoutContentProps) {
+export function DashboardLayoutContent({ children, previewMode = false }: DashboardLayoutContentProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -85,20 +92,15 @@ export function DashboardLayoutContent({ children }: DashboardLayoutContentProps
     <Box
       style={{
         minHeight: '100vh',
-        backgroundColor: 'var(--dashboard-bg)',
+        backgroundColor: 'var(--color-background)',
       }}
     >
-      {/* Mobile Overlay */}
+      {/* Drawer scrim (under 1024px only) */}
       {isMobile && mobileSidebarOpen && (
         <Box
+          className="ds-sidebar-scrim"
           onClick={handleMobileSidebarClose}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 40,
-            transition: 'opacity 200ms ease',
-          }}
+          aria-hidden="true"
         />
       )}
 
@@ -139,66 +141,27 @@ export function DashboardLayoutContent({ children }: DashboardLayoutContentProps
             margin: '0 auto',
           }}
         >
-          <main>{children}</main>
+          <main>
+            {previewMode && (
+              <Callout.Root color="blue" variant="soft" size="2" mb="5" role="status">
+                <Callout.Icon>
+                  <Clock width={18} height={18} />
+                </Callout.Icon>
+                <Box>
+                  <Text as="p" size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
+                    Application under review — preview mode
+                  </Text>
+                  <Text as="p" size="2" style={{ color: 'var(--gray-11)', marginTop: 2 }}>
+                    Explore your dashboard and prepare draft events now. Publishing events and
+                    requesting payouts unlock automatically once your organization is approved.
+                  </Text>
+                </Box>
+              </Callout.Root>
+            )}
+            {children}
+          </main>
         </Box>
       </Box>
-
-      {/* Global Dashboard Styles */}
-      <style jsx global>{`
-        /* Dashboard CSS Variables */
-        :root {
-          --dashboard-bg: var(--surface-base);
-          --dashboard-header-bg: rgba(255, 255, 255, 0.8);
-          --dashboard-header-blur: 12px;
-          --dashboard-header-border: var(--surface-border);
-          --dashboard-sidebar-bg: #0F172A;
-          --dashboard-sidebar-border: rgba(148, 163, 184, 0.1);
-        }
-
-        .dark {
-          --dashboard-bg: #0A0E17;
-          --dashboard-header-bg: rgba(15, 23, 42, 0.8);
-          --dashboard-sidebar-bg: #0A0E17;
-        }
-
-        /* Hide mobile elements on desktop */
-        @media (min-width: 1024px) {
-          .hidden-desktop {
-            display: none !important;
-          }
-        }
-
-        /* Hide desktop elements on mobile */
-        @media (max-width: 1023px) {
-          .hidden-mobile {
-            display: none !important;
-          }
-        }
-
-        /* Smooth scrolling */
-        html {
-          scroll-behavior: smooth;
-        }
-
-        /* Custom scrollbar for dashboard */
-        .dashboard-scroll::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-
-        .dashboard-scroll::-webkit-scrollbar-track {
-          background: transparent;
-        }
-
-        .dashboard-scroll::-webkit-scrollbar-thumb {
-          background: var(--surface-border);
-          border-radius: 3px;
-        }
-
-        .dashboard-scroll::-webkit-scrollbar-thumb:hover {
-          background: var(--content-muted);
-        }
-      `}</style>
     </Box>
   );
 }

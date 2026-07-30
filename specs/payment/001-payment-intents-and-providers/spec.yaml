@@ -1,0 +1,116 @@
+id: ET-PAY-001
+title: Payment intents, the provider port and mobile-money collection
+status: draft
+area: PAY
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 3
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-TKT-001]
+conformance: "PDI Phase 5 payment idempotency · V3 §3.2 fund flow · V3 §8 payment integration"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/ticketing/001-reservation-and-hold/spec.md
+  - specs/identity/001-phone-otp-identity/spec.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+  - docs/MISSING_FEATURES_RESEARCH_AND_RECOMMENDATIONS.md
+
+persistence:
+  collections:
+    - booking_payment_intents
+    - booking_payment_attempts
+  indexes:
+    - "booking_payment_intents {idempotencyKey} unique"
+    - "booking_payment_intents {status,createdAt} compound   # the poll and stuck sweeps"
+    - "booking_payment_attempts {providerReference} unique sparse"
+  redis_keys:
+    - "idem:{key}                 STRING  24 h  — ET-PLT-007 §4"
+    - "lock:sweep:payment-poll    STRING  30 s  — the R5 poll mutex"
+
+events:
+  module:
+    - PaymentSubmittedEvent
+    - PaymentCompletedEvent
+    - PaymentFailedEvent
+  bus:
+    - booking.PaymentCompleted   # v1 → identity (receipt)
+    - booking.PaymentFailed      # v1 → identity (notify)
+  topics:
+    - booking-events
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "paymentIntent(id)                            AUTHENTICATED  PaymentIntent"
+    - "paymentIntentForReservation(reservationId)   AUTHENTICATED  PaymentIntent"
+    - "paymentAttempts(intentId)                    ADMIN          [PaymentAttempt!]!  @tag admin"
+  mutations:
+    - "initiatePayment(input)  CUSTOMER  PaymentIntent!   # idempotencyKey required"
+    - "cancelPayment(id)       CUSTOMER  PaymentIntent!"
+
+errors:
+  - PAYMENT_INTENT_UNKNOWN
+  - PAYMENT_ALREADY_COMPLETED
+  - PAYMENT_DECLINED
+  - PAYMENT_AMOUNT_MISMATCH
+  - PAYMENT_PROVIDER_UNAVAILABLE
+  - MSISDN_PROVIDER_UNSUPPORTED
+
+state_machine:
+  states: [CREATED, SUBMITTED, PENDING, SUCCEEDED, FAILED, CANCELLED]
+  terminal: [SUCCEEDED, FAILED, CANCELLED]
+  reservation_effect:
+    SUCCEEDED: confirm
+    FAILED: release
+    CANCELLED: release
+    PENDING_past_limit: "HELD — escalate to ET-ADM-003, never release"
+
+port:
+  interface: com.pml.booking.infrastructure.gateway.PaymentProviderPort
+  methods: [collect, status, refund]
+  adapters: [PawaPayAdapter]     # the ONLY class that names the provider
+
+decline_categories: [INSUFFICIENT_FUNDS, SUBSCRIBER_UNREACHABLE, LIMIT_EXCEEDED,
+                     REJECTED_BY_USER, OTHER]
+
+msisdn_routing:      # after +260; configuration, not code
+  MTN:    ["95", "96", "76"]
+  AIRTEL: ["97", "77"]
+  ZAMTEL: ["50", "21"]
+
+config:
+  booking.payment.provider: PAWAPAY
+  booking.payment.connect-timeout: PT5S
+  booking.payment.read-timeout: PT30S
+  booking.payment.max-pending: PT30M
+  booking.payment.poll-interval: "PT10S base, exponential, capped PT160S"
+  booking.payment.circuit-breaker.failure-rate: "50% over 20 calls"
+  PAWAPAY_API_URL: "${PAWAPAY_API_URL}"
+  PAWAPAY_API_TOKEN: "${PAWAPAY_API_TOKEN}"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/payment/001-payment-intents-and-providers
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-PAY-001
+  - mvn -q -f backend verify -Dgroups=ET-PAY-001
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R5 escalates rather than releases a payment stuck PENDING past 30 minutes, which is correct for the buyer's money but means inventory is held by an operator queue. During a provider outage every in-flight purchase escalates simultaneously, and a hot tier is fully held by intents nobody can resolve until the provider recovers. No mechanism bounds how much of a tier may be held this way."
+  - "The MSISDN routing table is stated as fact but Zambian mobile prefix allocations change and are not authoritatively documented here. The ZAMTEL row in particular (50, 21) mixes a mobile prefix with what is a fixed-line range. A wrong row routes a real subscriber to the wrong operator, which fails at the provider with a decline the buyer cannot act on."
+  - "PawaPay's DUPLICATE_IGNORED status is resolved by calling status() on the original reference, which is a second network call on the path of a response the platform already has. Under retry storms that doubles provider traffic at exactly the moment the provider is struggling."
+  - "R6 forbids reconciling an amount mismatch by adopting the provider's figure, and requires an alert. It does not say what happens to the reservation — it is neither confirmed nor released, so it sits HELD until a sweep escalates it, and the buyer sees nothing. The mismatch path needs a defined terminal outcome."
+  - "The intent is committed before the provider is called, so a crash between the two leaves a CREATED intent with no provider call. R5's poll sweep only polls PENDING intents, so a CREATED intent with no providerReference is polled by nothing and recovered by nothing — the reservation expires and the buyer retries, which is acceptable, but the intent is orphaned with no terminal state."
+  - "The circuit breaker refuses with PAYMENT_PROVIDER_UNAVAILABLE and leaves the reservation HELD for a retry. If the outage outlasts the 10-minute hold, the buyer loses the seat to expiry through no fault of theirs, during exactly the incident that made the platform unavailable. Nothing extends holds during a provider outage."
+  - "No buyer-facing service fee is a deliberate margin decision, but it means the provider's collection fee (1-3% per V3 §2.1) comes entirely out of the platform's 5% commission. On a charity event at the 2% rate the collection fee can exceed the commission, making the transaction loss-making. ET-FIN-002 must decide whether the rate floor accounts for it."
+  - "booking.PaymentCompleted is published to identity for a receipt, and ET-TKT-001 also publishes booking.TicketPurchased for a notification. A buyer therefore receives two messages for one purchase unless ET-NTF-002 coalesces them, and nothing here coordinates that."

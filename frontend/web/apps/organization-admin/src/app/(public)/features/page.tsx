@@ -100,8 +100,8 @@ function FeatureSection({ title, subtitle, features, reversed }: FeatureSectionP
                   style={{
                     width: 40,
                     height: 40,
-                    borderRadius: '10px',
-                    background: 'rgba(16, 185, 129, 0.1)',
+                    borderRadius: 'var(--radius-3)',
+                    background: 'var(--accent-a3)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -133,9 +133,9 @@ function FeatureSection({ title, subtitle, features, reversed }: FeatureSectionP
           <Card
             style={{
               padding: '40px',
-              background: 'linear-gradient(135deg, var(--surface-elevated) 0%, rgba(16, 185, 129, 0.05) 100%)',
+              background: 'linear-gradient(135deg, var(--surface-elevated) 0%, var(--accent-a2) 100%)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '24px',
+              borderRadius: 'var(--radius-6)',
               aspectRatio: '4/3',
               display: 'flex',
               alignItems: 'center',
@@ -146,8 +146,8 @@ function FeatureSection({ title, subtitle, features, reversed }: FeatureSectionP
               style={{
                 width: 120,
                 height: 120,
-                borderRadius: '24px',
-                background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                borderRadius: 'var(--radius-6)',
+                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -173,7 +173,7 @@ export default function FeaturesPage() {
       {/* Hero */}
       <Box
         style={{
-          background: 'linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, transparent 100%)',
+          background: 'linear-gradient(180deg, var(--accent-a2) 0%, transparent 100%)',
           padding: '80px 24px',
           textAlign: 'center',
         }}
@@ -326,7 +326,7 @@ export default function FeaturesPage() {
       {/* CTA */}
       <Box
         style={{
-          background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+          background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
           padding: '80px 24px',
           textAlign: 'center',
         }}
@@ -345,7 +345,7 @@ export default function FeaturesPage() {
           <Text
             size="3"
             style={{
-              color: 'rgba(255, 255, 255, 0.8)',
+              color: 'var(--color-panel-translucent)',
               marginBottom: 32,
               display: 'block',
             }}

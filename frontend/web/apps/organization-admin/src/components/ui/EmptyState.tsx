@@ -1,202 +1,146 @@
 'use client';
 
 /**
- * EmptyState Component
+ * EmptyState — MyTicketZM design system data-display primitive.
  *
- * Displays a placeholder when there's no data to show.
- * Provides visual feedback and optional call-to-action.
+ * Contract (spec §7): `icon, title, description, action, size`
+ *   size: sm | md | lg
+ *
+ * Copy rule: an empty screen is an invitation to act, not a mood. Each preset
+ * below names what will appear here and gives one concrete next step, in plain
+ * operational third person.
  */
 
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Box, Flex, Text, Heading, Button } from '@radix-ui/themes';
-import { Box as BoxIcon, Plus } from 'iconoir-react';
+import {
+  Calendar,
+  Group,
+  Wallet,
+  Bank,
+  Search,
+  StatsReport,
+  Plus,
+  Archive,
+} from 'iconoir-react';
 import Link from 'next/link';
 
-// =============================================================================
-// TYPES
-// =============================================================================
+export type EmptyStateSize = 'sm' | 'md' | 'lg';
 
-interface EmptyStateAction {
+export interface EmptyStateAction {
   label: string;
   icon?: ReactNode;
   onClick?: () => void;
   href?: string;
 }
 
-interface EmptyStateProps {
-  /** Icon to display */
+export interface EmptyStateProps {
   icon?: ReactNode;
-  /** Main title */
   title: string;
-  /** Description text */
   description?: string;
-  /** Primary action button */
   action?: EmptyStateAction;
-  /** Secondary action button */
-  secondaryAction?: EmptyStateAction;
-  /** Size variant */
-  size?: 'sm' | 'md' | 'lg';
-  /** Custom content below description */
-  children?: ReactNode;
+  size?: EmptyStateSize;
 }
 
-// =============================================================================
-// COMPONENT
-// =============================================================================
+const SIZES: Record<EmptyStateSize, { chip: number; glyph: number; heading: '3' | '4' | '5'; padding: string }> = {
+  sm: { chip: 48, glyph: 22, heading: '3', padding: 'var(--space-5)' },
+  md: { chip: 64, glyph: 28, heading: '4', padding: 'var(--space-7)' },
+  lg: { chip: 80, glyph: 34, heading: '5', padding: 'var(--space-9)' },
+};
 
-export function EmptyState({
-  icon,
-  title,
-  description,
-  action,
-  secondaryAction,
-  size = 'md',
-  children,
-}: EmptyStateProps) {
-  // Size configurations
-  const sizeConfig = {
-    sm: {
-      iconSize: 48,
-      iconInner: 24,
-      titleSize: '3' as const,
-      padding: '24px',
-    },
-    md: {
-      iconSize: 64,
-      iconInner: 32,
-      titleSize: '4' as const,
-      padding: '40px',
-    },
-    lg: {
-      iconSize: 80,
-      iconInner: 40,
-      titleSize: '5' as const,
-      padding: '60px',
-    },
-  };
-
-  const config = sizeConfig[size];
-
-  const renderAction = (actionConfig: EmptyStateAction, isPrimary: boolean) => {
-    const buttonProps = {
-      size: (size === 'sm' ? '2' : '3') as '2' | '3',
-      variant: isPrimary ? ('solid' as const) : ('outline' as const),
-      style: isPrimary
-        ? {
-            background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
-            cursor: 'pointer',
-          }
-        : {
-            borderColor: 'rgba(148, 163, 184, 0.3)',
-            color: 'var(--content-secondary)',
-            cursor: 'pointer',
-          },
-    };
-
-    if (actionConfig.href) {
-      return (
-        <Button {...buttonProps} asChild>
-          <Link href={actionConfig.href}>
-            {actionConfig.icon}
-            {actionConfig.label}
-          </Link>
-        </Button>
-      );
-    }
-
-    return (
-      <Button {...buttonProps} onClick={actionConfig.onClick}>
-        {actionConfig.icon}
-        {actionConfig.label}
-      </Button>
-    );
-  };
+export function EmptyState({ icon, title, description, action, size = 'md' }: EmptyStateProps) {
+  const config = SIZES[size];
 
   return (
     <Flex
       direction="column"
       align="center"
       justify="center"
-      style={{
-        padding: config.padding,
-        textAlign: 'center',
-      }}
+      style={{ padding: config.padding, textAlign: 'center' }}
     >
-      {/* Icon */}
       <Box
+        aria-hidden="true"
         style={{
-          width: config.iconSize,
-          height: config.iconSize,
+          width: config.chip,
+          height: config.chip,
+          marginBottom: 'var(--space-5)',
           borderRadius: '50%',
-          background: 'var(--surface-subtle)',
-          border: '1px dashed var(--surface-border)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          marginBottom: '20px',
-          color: 'var(--content-muted)',
+          background: 'var(--gray-a3)',
+          border: '1px dashed var(--gray-a6)',
+          color: 'var(--gray-9)',
         }}
       >
-        {icon || <BoxIcon style={{ width: config.iconInner, height: config.iconInner }} />}
+        {icon || <Archive width={config.glyph} height={config.glyph} />}
       </Box>
 
-      {/* Title */}
-      <Heading
-        size={config.titleSize}
-        mb="2"
-        style={{ color: 'var(--content-primary)' }}
-      >
+      <Heading size={config.heading} mb="2" style={{ color: 'var(--gray-12)' }}>
         {title}
       </Heading>
 
-      {/* Description */}
       {description && (
         <Text
           size="2"
-          style={{
-            color: 'var(--content-muted)',
-            maxWidth: '400px',
-            lineHeight: 1.5,
-          }}
+          style={{ color: 'var(--gray-10)', maxWidth: 400, lineHeight: 'var(--text-3-line)' }}
         >
           {description}
         </Text>
       )}
 
-      {/* Custom content */}
-      {children && <Box mt="4">{children}</Box>}
-
-      {/* Actions */}
-      {(action || secondaryAction) && (
-        <Flex gap="3" mt="5">
-          {action && renderAction(action, true)}
-          {secondaryAction && renderAction(secondaryAction, false)}
-        </Flex>
+      {action && (
+        <Box mt="5">
+          {action.href ? (
+            <Button
+              data-testid="empty-state-action"
+              size={size === 'sm' ? '2' : '3'}
+              color="teal"
+              style={{ cursor: 'pointer' }}
+              asChild
+            >
+              <Link href={action.href}>
+                {action.icon}
+                {action.label}
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              data-testid="empty-state-action"
+              size={size === 'sm' ? '2' : '3'}
+              color="teal"
+              style={{ cursor: 'pointer' }}
+              onClick={action.onClick}
+            >
+              {action.icon}
+              {action.label}
+            </Button>
+          )}
+        </Box>
       )}
     </Flex>
   );
 }
 
 // =============================================================================
-// PRESET EMPTY STATES
+// PRESETS
+// Each preset is a thin wrapper — it only ever passes contract props through.
 // =============================================================================
 
 interface PresetEmptyStateProps {
   action?: EmptyStateAction;
-  size?: 'sm' | 'md' | 'lg';
+  size?: EmptyStateSize;
 }
+
+const addIcon = <Plus width={18} height={18} />;
 
 export function NoEventsEmptyState({ action, size = 'md' }: PresetEmptyStateProps) {
   return (
     <EmptyState
-      icon={<BoxIcon style={{ width: 32, height: 32 }} />}
-      title="No Events Yet"
-      description="Create your first event to start selling tickets and managing attendees."
-      action={action || {
-        label: 'Create Event',
-        icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
-        href: '/events/new',
-      }}
+      icon={<Calendar width={28} height={28} />}
+      title="No events yet"
+      description="Create an event to start selling tickets and tracking attendance."
+      action={action || { label: 'Create event', icon: addIcon, href: '/events/new' }}
       size={size}
     />
   );
@@ -205,14 +149,10 @@ export function NoEventsEmptyState({ action, size = 'md' }: PresetEmptyStateProp
 export function NoTeamMembersEmptyState({ action, size = 'md' }: PresetEmptyStateProps) {
   return (
     <EmptyState
-      icon={<BoxIcon style={{ width: 32, height: 32 }} />}
-      title="No Team Members"
-      description="Invite team members to help manage your events and organization."
-      action={action || {
-        label: 'Invite Member',
-        icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
-        href: '/team/invite',
-      }}
+      icon={<Group width={28} height={28} />}
+      title="No team members yet"
+      description="Invite colleagues to help run events, scan tickets and manage payouts."
+      action={action || { label: 'Invite member', icon: addIcon, href: '/team/invite' }}
       size={size}
     />
   );
@@ -221,20 +161,27 @@ export function NoTeamMembersEmptyState({ action, size = 'md' }: PresetEmptyStat
 export function NoTransactionsEmptyState({ size = 'md' }: PresetEmptyStateProps) {
   return (
     <EmptyState
-      icon={<BoxIcon style={{ width: 32, height: 32 }} />}
-      title="No Transactions"
-      description="Transactions will appear here once you start selling tickets."
+      icon={<Wallet width={28} height={28} />}
+      title="No transactions yet"
+      description="Ticket sales, refunds and fees appear here as soon as the first ticket sells."
       size={size}
     />
   );
 }
 
-export function NoSearchResultsEmptyState({ query, size = 'md' }: PresetEmptyStateProps & { query?: string }) {
+export function NoSearchResultsEmptyState({
+  query,
+  size = 'md',
+}: PresetEmptyStateProps & { query?: string }) {
   return (
     <EmptyState
-      icon={<BoxIcon style={{ width: 32, height: 32 }} />}
-      title="No Results Found"
-      description={query ? `No results found for "${query}". Try adjusting your search.` : 'No results found. Try adjusting your filters.'}
+      icon={<Search width={28} height={28} />}
+      title="No matches"
+      description={
+        query
+          ? `Nothing matches "${query}". Try a shorter search or clear the filters.`
+          : 'Nothing matches the current filters. Try clearing one of them.'
+      }
       size={size}
     />
   );
@@ -243,14 +190,10 @@ export function NoSearchResultsEmptyState({ query, size = 'md' }: PresetEmptySta
 export function NoPayoutsEmptyState({ action, size = 'md' }: PresetEmptyStateProps) {
   return (
     <EmptyState
-      icon={<BoxIcon style={{ width: 32, height: 32 }} />}
-      title="No Payouts Yet"
-      description="Request a payout to transfer your earnings to your bank account."
-      action={action || {
-        label: 'Request Payout',
-        icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
-        href: '/finance/payouts?action=new',
-      }}
+      icon={<Wallet width={28} height={28} />}
+      title="No payouts yet"
+      description="Request a payout to move your available balance to a bank account or mobile money wallet."
+      action={action || { label: 'Request payout', icon: addIcon, href: '/finance/payouts?action=new' }}
       size={size}
     />
   );
@@ -259,14 +202,10 @@ export function NoPayoutsEmptyState({ action, size = 'md' }: PresetEmptyStatePro
 export function NoBankAccountsEmptyState({ action, size = 'md' }: PresetEmptyStateProps) {
   return (
     <EmptyState
-      icon={<BoxIcon style={{ width: 32, height: 32 }} />}
-      title="No Bank Accounts"
-      description="Add a bank account to start receiving payouts from your ticket sales."
-      action={action || {
-        label: 'Add Bank Account',
-        icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
-        href: '/finance/bank-accounts',
-      }}
+      icon={<Bank width={28} height={28} />}
+      title="No payout destinations"
+      description="Add a bank account or mobile money wallet so earnings have somewhere to land."
+      action={action || { label: 'Add account', icon: addIcon, href: '/finance/bank-accounts' }}
       size={size}
     />
   );
@@ -275,9 +214,9 @@ export function NoBankAccountsEmptyState({ action, size = 'md' }: PresetEmptySta
 export function NoAttendeesEmptyState({ size = 'md' }: PresetEmptyStateProps) {
   return (
     <EmptyState
-      icon={<BoxIcon style={{ width: 32, height: 32 }} />}
-      title="No Attendees Yet"
-      description="Attendees will appear here once tickets are sold for this event."
+      icon={<Group width={28} height={28} />}
+      title="No attendees yet"
+      description="Attendees appear here as tickets are sold for this event."
       size={size}
     />
   );
@@ -286,9 +225,9 @@ export function NoAttendeesEmptyState({ size = 'md' }: PresetEmptyStateProps) {
 export function NoAnalyticsEmptyState({ size = 'md' }: PresetEmptyStateProps) {
   return (
     <EmptyState
-      icon={<BoxIcon style={{ width: 32, height: 32 }} />}
-      title="No Analytics Data"
-      description="Analytics will be available once you start selling tickets."
+      icon={<StatsReport width={28} height={28} />}
+      title="No data to chart yet"
+      description="Sales, views and conversion figures appear once the first ticket sells."
       size={size}
     />
   );

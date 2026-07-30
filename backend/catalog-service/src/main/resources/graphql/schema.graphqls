@@ -1887,3 +1887,124 @@ type Mutation {
     deleteCity(id: ID!): DeleteMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
 }
 
+# ============================================================================
+# SECTION: REFERENCE DATA (polymorphic lookup / catalog store)
+# One collection, one CRUD surface for every business-editable list.
+# Reads are public (storefront dropdowns); writes are admin-only.
+# ============================================================================
+
+"""Discriminator for the polymorphic reference_data collection. Adding a value is a backend change."""
+enum ReferenceType {
+    COUNTRY
+    CURRENCY
+    LANGUAGE
+    TIMEZONE
+    PROVINCE
+    MOBILE_MONEY_OPERATOR
+    BANK
+    EVENT_TYPE
+    EVENT_CATEGORY
+    MUSIC_GENRE
+    AGE_RESTRICTION
+    KYB_DOCUMENT_TYPE
+    CANCELLATION_REASON
+    REFUND_REASON
+    REJECTION_REASON
+    TAX_RATE
+    CARD_SCHEME
+}
+
+"""A single reference/catalog row."""
+type ReferenceData {
+    id: ID!
+    type: ReferenceType!
+    code: String!
+    name: String!
+    description: String
+    parentType: ReferenceType
+    parentCode: String
+    displayOrder: Int!
+    isActive: Boolean!
+    isSystem: Boolean!
+    effectiveFrom: DateTime
+    effectiveTo: DateTime
+    metadata: JSON
+    createdAt: DateTime
+    updatedAt: DateTime
+    createdBy: String
+    updatedBy: String
+}
+
+"""Describes a ReferenceType for the admin type picker (label, group, metadata form fields)."""
+type ReferenceTypeInfo {
+    type: ReferenceType!
+    label: String!
+    group: String!
+    groupLabel: String!
+    requiredMetadataKeys: [String!]!
+}
+
+type ReferenceDataOffsetPage {
+    content: [ReferenceData!]!
+    pageNumber: Int!
+    pageSize: Int!
+    totalElements: Int!
+    totalPages: Int!
+    hasNext: Boolean!
+    hasPrevious: Boolean!
+}
+
+type ReferenceDataMutationResponse {
+    success: Boolean!
+    message: String
+    data: ReferenceData
+    errors: [String!]!
+    metadata: JSON
+}
+
+input CreateReferenceDataInput {
+    type: ReferenceType!
+    code: String!
+    name: String!
+    description: String
+    parentType: ReferenceType
+    parentCode: String
+    displayOrder: Int
+    isActive: Boolean
+    metadata: JSON
+}
+
+input UpdateReferenceDataInput {
+    name: String
+    description: String
+    parentType: ReferenceType
+    parentCode: String
+    displayOrder: Int
+    isActive: Boolean
+    metadata: JSON
+}
+
+extend type Query {
+    """A single reference item by type + code."""
+    referenceItem(type: ReferenceType!, code: String!): ReferenceData
+
+    """All rows of a type. activeOnly=true (default) is the dropdown query."""
+    referenceData(type: ReferenceType!, activeOnly: Boolean = true): [ReferenceData!]!
+
+    """Child rows within a hierarchy (active only), e.g. genres of a category."""
+    referenceDataByParent(type: ReferenceType!, parentCode: String!): [ReferenceData!]!
+
+    """The type registry that powers the generic admin management screen."""
+    referenceTypes: [ReferenceTypeInfo!]!
+
+    """Admin offset table for one reference type."""
+    referenceDataOffsetPagination(type: ReferenceType!, pagination: OffsetPaginationInput): ReferenceDataOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+}
+
+extend type Mutation {
+    createReferenceData(input: CreateReferenceDataInput!): ReferenceDataMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    updateReferenceData(id: ID!, input: UpdateReferenceDataInput!): ReferenceDataMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    deleteReferenceData(id: ID!): DeleteMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    setReferenceDataActive(id: ID!, active: Boolean!): ReferenceDataMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+}
+

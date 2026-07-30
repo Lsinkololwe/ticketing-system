@@ -244,7 +244,7 @@ export default function InviteMemberPage() {
             padding: '48px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '20px',
+            borderRadius: 'var(--card-radius-bento)',
             textAlign: 'center',
             maxWidth: 400,
           }}
@@ -254,8 +254,8 @@ export default function InviteMemberPage() {
               width: 64,
               height: 64,
               borderRadius: '50%',
-              background: 'rgba(16, 185, 129, 0.1)',
-              border: '2px solid rgba(16, 185, 129, 0.3)',
+              background: 'var(--accent-a3)',
+              border: '2px solid var(--accent-a6)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -279,11 +279,11 @@ export default function InviteMemberPage() {
   return (
     <Box>
       <PageHeader
-        title="Invite Team Members"
-        description="Send invitations to add new members to your organization"
+        title="Invite team members"
+        description="Invite colleagues and choose what each of them can do."
         breadcrumbs={[
           { label: 'Team', href: '/team' },
-          { label: 'Invite Member' },
+          { label: 'Invite member' },
         ]}
       />
 
@@ -294,7 +294,7 @@ export default function InviteMemberPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -315,15 +315,15 @@ export default function InviteMemberPage() {
               p="3"
               style={{
                 background: 'var(--surface-subtle)',
-                borderRadius: '10px',
+                borderRadius: 'var(--radius-3)',
               }}
             >
               <Box
                 style={{
                   width: 32,
                   height: 32,
-                  borderRadius: '8px',
-                  background: 'rgba(16, 185, 129, 0.1)',
+                  borderRadius: 'var(--radius-4)',
+                  background: 'var(--accent-a3)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -353,7 +353,7 @@ export default function InviteMemberPage() {
           padding: '24px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Flex justify="between" align="center" mb="4">
@@ -422,7 +422,7 @@ export default function InviteMemberPage() {
           onClick={handleSend}
           disabled={isSending || invites.every((i) => !i.email.trim())}
           style={{
-            background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+            background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
             cursor: isSending ? 'not-allowed' : 'pointer',
           }}
         >
@@ -433,7 +433,7 @@ export default function InviteMemberPage() {
                   width: 16,
                   height: 16,
                   borderRadius: '50%',
-                  border: '2px solid rgba(255,255,255,0.3)',
+                  border: '2px solid var(--accent-a7)',
                   borderTopColor: 'white',
                   animation: 'spin 1s linear infinite',
                   marginRight: 8,

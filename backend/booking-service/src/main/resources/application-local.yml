@@ -1,0 +1,21 @@
+# =====================================================================
+# LOCAL / DEV profile  —  Azure Service Bus EMULATOR
+# ---------------------------------------------------------------------
+# Activated by default (SPRING_PROFILES_ACTIVE defaults to "local").
+# Points the SAME servicebus binder at the local emulator container
+# (docker-resources, host port 5673). Swap to real Azure with:
+#     SPRING_PROFILES_ACTIVE=prod
+# No code or binding changes are required to move dev -> prod.
+#
+# SECURITY: the value below is the well-known Microsoft emulator string,
+# NOT a real credential. `UseDevelopmentEmulator=true` disables TLS and
+# bypasses auth, and only works against localhost — safe for dev only.
+# =====================================================================
+spring:
+  cloud:
+    azure:
+      servicebus:
+        namespace: ""
+        connection-string: "Endpoint=sb://localhost:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+    stream:
+      default-binder: servicebus

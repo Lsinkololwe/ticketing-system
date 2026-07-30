@@ -1,0 +1,80 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Reference Data Schema - OWASP Compliant",
+    "description": "Polymorphic lookup/catalog rows discriminated by 'type'. One code per type.",
+    "required": [
+      "type",
+      "code",
+      "name",
+      "isActive",
+      "isSystem"
+    ],
+    "properties": {
+      "_id": { "bsonType": "objectId" },
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data type alias / discriminator"
+      },
+      "type": {
+        "bsonType": "string",
+        "enum": [
+          "COUNTRY", "CURRENCY", "LANGUAGE", "TIMEZONE", "PROVINCE",
+          "MOBILE_MONEY_OPERATOR", "BANK",
+          "EVENT_TYPE", "EVENT_CATEGORY", "MUSIC_GENRE", "AGE_RESTRICTION",
+          "KYB_DOCUMENT_TYPE",
+          "CANCELLATION_REASON", "REFUND_REASON", "REJECTION_REASON",
+          "TAX_RATE", "CARD_SCHEME"
+        ],
+        "description": "OWASP A04 - reference type discriminator, bounded to the compiled enum"
+      },
+      "code": {
+        "bsonType": "string",
+        "pattern": "^[A-Za-z0-9_./+-]{1,60}$",
+        "description": "OWASP A03 - stable business key, unique within type"
+      },
+      "name": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 150
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 1000
+      },
+      "parentType": {
+        "bsonType": ["string", "null"],
+        "enum": [
+          "COUNTRY", "CURRENCY", "LANGUAGE", "TIMEZONE", "PROVINCE",
+          "MOBILE_MONEY_OPERATOR", "BANK",
+          "EVENT_TYPE", "EVENT_CATEGORY", "MUSIC_GENRE", "AGE_RESTRICTION",
+          "KYB_DOCUMENT_TYPE",
+          "CANCELLATION_REASON", "REFUND_REASON", "REJECTION_REASON",
+          "TAX_RATE", "CARD_SCHEME", null
+        ]
+      },
+      "parentCode": {
+        "bsonType": ["string", "null"],
+        "maxLength": 60
+      },
+      "displayOrder": {
+        "bsonType": "int",
+        "minimum": 0,
+        "maximum": 100000
+      },
+      "isActive": { "bsonType": "bool" },
+      "isSystem": { "bsonType": "bool" },
+      "effectiveFrom": { "bsonType": ["date", "null"] },
+      "effectiveTo": { "bsonType": ["date", "null"] },
+      "metadata": {
+        "bsonType": ["object", "null"],
+        "description": "Per-type payload, shape enforced at the service layer (ReferenceMetadataValidator)"
+      },
+      "createdAt": { "bsonType": ["date", "null"] },
+      "updatedAt": { "bsonType": ["date", "null"] },
+      "createdBy": { "bsonType": ["string", "null"], "maxLength": 100 },
+      "updatedBy": { "bsonType": ["string", "null"], "maxLength": 100 }
+    },
+    "additionalProperties": false
+  }
+}

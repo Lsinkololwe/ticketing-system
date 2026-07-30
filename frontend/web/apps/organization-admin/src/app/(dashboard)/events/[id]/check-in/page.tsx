@@ -184,7 +184,7 @@ function Scanner({ onScan, isScanning }: ScannerProps) {
         padding: '24px',
         background: 'var(--surface-elevated)',
         border: '1px solid var(--surface-border)',
-        borderRadius: '16px',
+        borderRadius: 'var(--card-radius-bento)',
       }}
     >
       {/* Camera Scanner Placeholder */}
@@ -194,7 +194,7 @@ function Scanner({ onScan, isScanning }: ScannerProps) {
           maxWidth: 300,
           margin: '0 auto 24px',
           background: 'linear-gradient(135deg, var(--surface-subtle) 0%, var(--surface-default) 100%)',
-          borderRadius: '16px',
+          borderRadius: 'var(--card-radius-bento)',
           border: '2px dashed var(--surface-border)',
           display: 'flex',
           flexDirection: 'column',
@@ -211,7 +211,7 @@ function Scanner({ onScan, isScanning }: ScannerProps) {
             position: 'absolute',
             inset: 20,
             border: '3px solid var(--brand-500)',
-            borderRadius: '12px',
+            borderRadius: 'var(--card-radius)',
             opacity: 0.3,
           }}
         />
@@ -237,7 +237,7 @@ function Scanner({ onScan, isScanning }: ScannerProps) {
         <Button
           size="2"
           variant="soft"
-          style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--brand-500)' }}
+          style={{ background: 'var(--accent-a4)', color: 'var(--brand-500)' }}
         >
           <ScanBarcode style={{ width: 18, height: 18, marginRight: 8 }} />
           {isScanning ? 'Scanning Active' : 'Start Scanner'}
@@ -272,7 +272,7 @@ function Scanner({ onScan, isScanning }: ScannerProps) {
             onClick={handleManualSubmit}
             disabled={!manualInput.trim()}
             style={{
-              background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+              background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
             }}
           >
             Check In
@@ -313,9 +313,9 @@ function CheckInResultDialog({ result, open, onOpenChange }: CheckInResultDialog
             height: 80,
             borderRadius: '50%',
             background: result.success
-              ? 'rgba(16, 185, 129, 0.1)'
-              : 'rgba(239, 68, 68, 0.1)',
-            border: `2px solid ${result.success ? 'var(--brand-500)' : '#EF4444'}`,
+              ? 'var(--accent-a3)'
+              : 'var(--status-danger-a3)',
+            border: `2px solid ${result.success ? 'var(--status-success-9)' : 'var(--status-danger-9)'}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -325,7 +325,7 @@ function CheckInResultDialog({ result, open, onOpenChange }: CheckInResultDialog
           {result.success ? (
             <Check style={{ width: 40, height: 40, color: 'var(--brand-500)' }} />
           ) : (
-            <Xmark style={{ width: 40, height: 40, color: '#EF4444' }} />
+            <Xmark style={{ width: 40, height: 40, color: 'var(--status-danger-9)' }} />
           )}
         </Box>
 
@@ -342,7 +342,7 @@ function CheckInResultDialog({ result, open, onOpenChange }: CheckInResultDialog
             style={{
               padding: '16px',
               background: 'var(--surface-subtle)',
-              borderRadius: '12px',
+              borderRadius: 'var(--card-radius)',
               marginBottom: 20,
             }}
           >
@@ -364,7 +364,7 @@ function CheckInResultDialog({ result, open, onOpenChange }: CheckInResultDialog
           style={{
             width: '100%',
             background: result.success
-              ? 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)'
+              ? 'linear-gradient(135deg, var(--accent-9), var(--accent-11))'
               : 'var(--surface-subtle)',
             color: result.success ? 'white' : 'var(--content-primary)',
           }}
@@ -400,7 +400,7 @@ function AttendeeRow({ attendee, onCheckIn }: AttendeeRowProps) {
           radius="full"
           style={{
             background: attendee.checkedIn
-              ? 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)'
+              ? 'linear-gradient(135deg, var(--accent-9), var(--accent-11))'
               : 'var(--surface-subtle)',
           }}
         />
@@ -441,7 +441,7 @@ function AttendeeRow({ attendee, onCheckIn }: AttendeeRowProps) {
           size="1"
           variant="soft"
           onClick={() => onCheckIn(attendee.id)}
-          style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--brand-500)' }}
+          style={{ background: 'var(--accent-a4)', color: 'var(--brand-500)' }}
         >
           Check In
         </Button>
@@ -563,9 +563,9 @@ export default function CheckInPage() {
         mb="6"
         style={{
           padding: '20px 24px',
-          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%)',
-          border: '1px solid rgba(16, 185, 129, 0.2)',
-          borderRadius: '16px',
+          background: 'linear-gradient(135deg, var(--accent-a3) 0%, var(--accent-a3) 100%)',
+          border: '1px solid var(--accent-a5)',
+          borderRadius: 'var(--card-radius-bento)',
         }}
       >
         <Flex justify="between" align="center" wrap="wrap" gap="4">
@@ -605,7 +605,7 @@ export default function CheckInPage() {
             <Box
               style={{
                 height: 8,
-                background: 'rgba(255, 255, 255, 0.3)',
+                background: 'var(--gray-a6)',
                 borderRadius: 4,
                 overflow: 'hidden',
               }}
@@ -638,7 +638,7 @@ export default function CheckInPage() {
               padding: '24px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Flex justify="between" align="center" mb="4">

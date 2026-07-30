@@ -1,0 +1,111 @@
+id: ET-PLT-007
+title: Keycloak realm, roles, @auth, tenant scoping, idempotency
+status: draft
+area: PLT
+service: all
+subgraph: all
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 1
+blocked_by: [ET-PLT-001, ET-PLT-004, ET-PLT-005]
+conformance: "PDI Phase 5 payment idempotency · US Part I §1 platform role hierarchy"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/001-runtime-baseline/spec.md
+  - specs/_platform/004-federation-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - docs/USER_STORIES.md
+  - docs/AUTHENTICATION_ARCHITECTURE_RECOMMENDATIONS.md
+  - docs/KEYCLOAK_IMPLEMENTATION_PLAN.md
+  - docs/BACKCHANNEL_LOGOUT.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+
+persistence:
+  collections: []          # reads identity_organization_members, identity_event_access_grants
+  indexes: []
+  redis_keys:
+    - "idem:{key}   STRING  24 h  — in-flight guard + cached response; authority is the persisted intent's unique index"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/shared-library/src/main/resources/graphql/auth.graphqls
+  directives: ["@auth(requires: Role)"]
+  queries: []
+  mutations: []
+
+errors:
+  - ACTOR_NOT_AUTHENTICATED
+  - ACTOR_NOT_PERMITTED
+  - IDEMPOTENCY_KEY_REUSED
+
+keycloak:
+  realm: event-ticketing
+  access_token_lifetime: 5m
+  default_role: CUSTOMER
+  roles:
+    SUPER_ADMIN: [ADMIN]
+    ADMIN:       [FINANCE]
+    FINANCE:     []
+    ORGANIZER:   [CUSTOMER]
+    CUSTOMER:    []
+  clients:
+    - "event-ticketing-web     public  code+PKCE  refresh 30m"
+    - "event-ticketing-admin   public  code+PKCE  refresh 30m"
+    - "event-ticketing-mobile  public  code+PKCE  refresh 30d"
+    - "internal-service        confidential  client_credentials"
+    - "catalog-service         confidential  client_credentials"
+    - "booking-service         confidential  client_credentials"
+    - "identity-service        confidential  client_credentials"
+  scopes: [internal-read, internal-write, openid, profile, phone]
+  groups: "/organizations/{slug}/{owners|admins|managers|marketers|contributors} — a MIRROR, never an authority"
+  user_attributes: [phone_number, phone_verified, primary_org_id]
+
+internal_rest_surface:
+  - "POST   /api/internal/otp/request          internal-write  ET-IDN-001"
+  - "POST   /api/internal/otp/verify           internal-write  ET-IDN-001"
+  - "GET    /api/internal/otp/status/{phone}   internal-read   ET-IDN-001"
+  - "DELETE /api/internal/otp/{phone}          internal-write  ET-IDN-001"
+  - "POST   /api/internal/keycloak/sync/user   internal-write  ET-IDN-002"
+  - "POST   /api/internal/keycloak/sync/event  internal-write  ET-IDN-002"
+  - "POST   /api/internal/permissions/resolve  internal-read   ET-ORG-003"
+
+idempotent_operations:
+  - reserveTickets     # ET-TKT-001
+  - confirmPurchase    # ET-PAY-001
+  - initiatePayment    # ET-PAY-001
+  - requestRefund      # ET-FIN-004
+  - approveRefund      # ET-FIN-004
+  - requestPayout      # ET-FIN-003
+  - approvePayout      # ET-FIN-003
+  - retryPayout        # ET-FIN-003
+  - transferTicket     # ET-TKT-004
+
+shared_types:
+  - com.pml.shared.security.TenantScope
+  - com.pml.shared.security.IdempotencyGuard
+  - com.pml.shared.security.KeycloakJwtAuthenticationConverter
+  - com.pml.shared.graphql.auth.AuthDirective
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/007-security-and-authorization
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --federation
+  - mvn -q -f backend test -Dgroups=ET-PLT-007
+  - mvn -q -f backend verify -Dgroups=ET-PLT-007
+
+risks:
+  - "R4 resolves organization membership per request from MongoDB, which puts a database read on every tenant-scoped call. Under a customer's my-tickets query that is one extra read; under an organizer dashboard fanning out across three subgraphs it is one per subgraph per request. Whether that needs a short-TTL cache — and if so, how a cache is invalidated fast enough to keep R7's sub-second removal guarantee — is not settled here."
+  - "Keycloak groups mirror MongoDB membership one way, so the two can diverge whenever a group write fails after the MongoDB write succeeds. This spec says no authorization reads the groups, which bounds the damage, but an administrator looking at Keycloak sees a membership list that may be wrong and has no indication of it. ET-ORG-002 owns the reconciliation."
+  - "R6's fingerprint excludes fields the client may vary via an explicit allowlist. Any field added to a mutation input later is included in the fingerprint by default, which is the safe direction — but it also means a client that starts sending a new optional field mid-retry gets IDEMPOTENCY_KEY_REUSED on a legitimate retry."
+  - "The idempotency response cache lives in Redis with a 24-hour TTL while the unique index on the intent is permanent. A replay arriving after 24 hours finds no cached response but does find the index, so it cannot re-apply and cannot return the original either. What it should return is undefined by this spec."
+  - "R3 requires @auth on every Query and Mutation field including PUBLIC ones, which contradicts the directive's own declared default of AUTHENTICATED in shared-library's auth.graphqls. Either the SDL default changes to something that cannot be silently correct, or the enumeration test is the only thing preventing an omission — and a test is weaker than a default that fails closed."
+  - "ORGANIZER is a realm role held platform-wide, so @auth(requires: ORGANIZER) passes for every organizer on every organizer's data. The coarse gate is therefore near-useless on organizer-scoped operations and the entire protection is R4's repository filter. A repository method that forgets the filter has no second line of defence."
+  - "The permitted-organization set is carried on the request context. Any code path that constructs a repository call outside a request — a scheduled sweep, a bus consumer, an admin bulk job — has no TenantScope and must construct one explicitly. Nothing in this spec says what those paths do, and the natural shortcut is a platform-wide scope."
+  - "R7's five-minute bound on a revoked platform role assumes access tokens are not cached beyond their lifetime anywhere. The Apollo Router and the gateway both hold connections and neither is specified here as re-validating."

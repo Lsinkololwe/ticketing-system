@@ -4,7 +4,7 @@ import { Folder } from 'iconoir-react';
 export default function EventCategoriesPage() {
   return (
     <PagePlaceholder
-      title="Event Categories"
+      title="Event categories"
       description="Manage event categories and classifications"
       icon={<Folder style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />

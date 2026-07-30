@@ -1,0 +1,113 @@
+id: ET-FIN-005
+title: Reconciliation — proving the ledger against the world
+status: draft
+area: FIN
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 4
+blocked_by: [ET-PLT-005, ET-FIN-001, ET-FIN-002, ET-FIN-003, ET-FIN-004, ET-PAY-002]
+conformance: "V3 §11 transaction tracking · V3 §12 settlement process and reconciliation"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/finance/001-escrow-and-ledger/spec.md
+  - specs/finance/003-payouts-and-settlement/spec.md
+  - specs/finance/004-refunds-and-chargebacks/spec.md
+  - specs/payment/002-webhooks-and-settlement/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+persistence:
+  collections:
+    - booking_reconciliation_runs
+    - booking_reconciliation_items
+  indexes:
+    - "booking_journal_lines {accountCode,postedAt} compound   # HOT — the trial balance"
+    - "booking_reconciliation_items {status,itemClass,createdAt} compound"
+    - "booking_reconciliation_runs {type,windowStart} compound"
+  redis_keys:
+    - "lock:sweep:reconciliation-internal     STRING  30 s"
+    - "lock:sweep:reconciliation-provider     STRING  30 s"
+    - "lock:sweep:reconciliation-escalation   STRING  30 s"
+
+events:
+  module:
+    - ReconciliationCompletedEvent
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:      # every one FINANCE + @tag admin
+    - "trialBalance(asOf)                                    FINANCE  TrialBalance!"
+    - "reconciliationRuns(type, page)                        FINANCE  ReconciliationRunPage!"
+    - "reconciliationRun(id)                                 FINANCE  ReconciliationRun"
+    - "reconciliationItems(runId, itemClass, status, page)   FINANCE  ReconciliationItemPage!"
+    - "openReconciliationItems(itemClass, page)              FINANCE  ReconciliationItemPage!"
+    - "financialSummary(from, to)                            FINANCE  FinancialSummary!"
+  mutations:
+    - "startReconciliation(type, windowStart, windowEnd)  FINANCE      ReconciliationRun!"
+    - "investigateItem(id, note)                          FINANCE      ReconciliationItem!"
+    - "resolveItem(input)                                 FINANCE      ReconciliationItem!"
+    - "writeOffItem(id, reason)                           SUPER_ADMIN  ReconciliationItem!"
+    - "recordBankSettlement(input)                        FINANCE      ReconciliationRun!"
+
+errors:
+  - RECONCILIATION_IN_PROGRESS
+  # JOURNAL_UNBALANCED, ACCOUNT_CODE_UNKNOWN are ET-FIN-001's and are raised here
+
+reconciliations:
+  INTERNAL: { question: "do cached balances match the journal?", cadence: PT1H,  repairs: "yes, below the limit" }
+  PROVIDER: { question: "do our payments match the provider's?", cadence: daily, repairs: "no — escalates" }
+  BANK:     { question: "did the money actually move?",          cadence: "on statement receipt", repairs: "no — escalates" }
+
+discrepancy_classes:
+  BALANCE_DRIFT:           { severity: medium,   escalate: "immediate if > limit" }
+  PROVIDER_ONLY:           { severity: high,     escalate: PT24H }
+  PLATFORM_ONLY:           { severity: critical, escalate: immediate }
+  AMOUNT_MISMATCH:         { severity: high,     escalate: PT24H }
+  STATUS_MISMATCH:         { severity: high,     escalate: PT24H }
+  UNATTRIBUTED_SETTLEMENT: { severity: high,     escalate: PT48H }
+  PAYOUT_UNCONFIRMED:      { severity: critical, escalate: P3D }
+
+settlement_entry:    # THIS spec closes the 1010 loop ET-FIN-001 opens at every purchase
+  debit_1020: "S      Platform Bank"
+  debit_5010: "G - S  Payment Processing Fees"
+  credit_1010: "G     Provider Settlement Receivable"
+
+item_lifecycle: [OPEN, INVESTIGATING, RESOLVED, WRITTEN_OFF, FALSE_POSITIVE]
+
+invariant: "trial balance: sum(debits) - sum(credits) == 0, exactly, at every instant"
+
+config:
+  finance.reconciliation.internal-interval: PT1H
+  finance.reconciliation.internal-budget: PT5M
+  finance.reconciliation.provider-cron: "daily, off-peak"
+  finance.reconciliation.auto-correct-limit: K1000.00
+  finance.reconciliation.write-off-limit: K500.00
+  finance.reconciliation.batch-size: 1000
+  finance.reconciliation.payout-match-window: P3D
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/finance/005-reconciliation
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --persistence
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-005
+  - mvn -q -f backend verify -Dgroups=ET-FIN-005
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R1 requires the trial balance to sum to zero exactly at every instant, but the journal is written by concurrent transactions across the platform. A trial balance computed with asOf = now will routinely observe a partially-committed set of lines on a busy system and report a spurious imbalance that pages somebody. It must be computed at a quiesced instant or tolerate in-flight entries, and the spec says neither."
+  - "The trial balance scans booking_journal_lines grouped by accountCode with no lower time bound. After a year the scan covers every line the platform has ever written, on an hourly schedule. The {accountCode, postedAt} index makes it an IXSCAN but not a small one; a running-balance snapshot per period is the usual answer and is not specified."
+  - "R2 auto-corrects a cached balance drift below K1,000 without writing a journal entry, on the grounds that the journal was already right. That is correct when the projection drifted, and catastrophic when the drift was caused by a missing journal entry — in which case the correction hides the missing entry rather than surfacing it. Nothing distinguishes the two cases."
+  - "recordBankSettlement takes the settled amount and window from a finance operator by hand. That makes the 1010 credit — the entry that keeps the balance sheet correct — dependent on manual data entry, with no validation against an actual statement file and no protection against a transposed figure."
+  - "PLATFORM_ONLY is declared critical because a ticket exists for money that may not have moved. But ET-PAY-002 R3 already verifies every callback against the provider's status API before confirming, so a PLATFORM_ONLY finding implies that verification passed and the provider later lost the record. The response to that is unclear: reversing the ticket punishes a buyer who may genuinely have paid."
+  - "Reconciliation reads use a secondary read preference, which on a single-node development replica set silently reads the primary and on a real deployment reads data that may lag. Reconciling against a lagging secondary produces false PLATFORM_ONLY findings for transactions that simply have not replicated yet, and the spec sets no staleness bound."
+  - "Six of the seven discrepancy classes escalate to ET-ADM-003, which has not been written. Until it exists, escalation is a status change and a metric with no operator surface, so every finding accumulates in a queue nobody can work."
+  - "The write-off gate at K500 requires SUPER_ADMIN, but there is no aggregate limit. A pattern of K499 write-offs by a FINANCE operator is indistinguishable from legitimate small-difference housekeeping and nothing alerts on the total written off per operator per period."

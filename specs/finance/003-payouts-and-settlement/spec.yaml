@@ -1,0 +1,129 @@
+id: ET-FIN-003
+title: Payout eligibility, bank accounts and the settlement saga
+status: draft
+area: FIN
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 4
+blocked_by: [ET-PLT-005, ET-PLT-007, ET-FIN-001, ET-FIN-002, ET-PAY-001, ET-ORG-003]
+conformance: "V3 §3.3 bank accounts · V3 §10.1 eligibility · V3 §10.2 payout flow · US-ORG-007 · US-FIN-001"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/finance/001-escrow-and-ledger/spec.md
+  - specs/finance/002-commission/spec.md
+  - specs/payment/001-payment-intents-and-providers/spec.md
+  - specs/organization/003-permission-resolution/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+  - docs/USER_STORIES.md
+
+persistence:
+  collections:
+    - booking_payout_requests
+    - booking_bank_accounts
+  indexes:
+    - "booking_payout_requests {organizationId,status} compound"
+    - "booking_payout_requests {status,requestedAt} compound   # the finance workbench"
+    - "booking_payout_requests {escrowAccountId} PARTIAL UNIQUE where status=PENDING"
+    - "booking_bank_accounts {organizationId,isDefault} compound"
+    - "booking_bank_accounts {organizationId} PARTIAL UNIQUE where isDefault=true"
+  redis_keys:
+    - "idem:{key}   STRING  24 h   — requestPayout, approvePayout, retryPayout"
+
+events:
+  module:
+    - PayoutApprovedEvent
+    - PayoutFailedEvent
+  bus:
+    - booking.PayoutCompleted    # v1 → identity (notify the organizer)
+  topics:
+    - booking-events
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "payoutEligibility(eventId)                       ORGANIZER  PayoutEligibility!"
+    - "payoutRequest(id)                                ORGANIZER  PayoutRequest"
+    - "myPayoutRequests(organizationId, status, page)   ORGANIZER  PayoutRequestPage!"
+    - "payoutRequests(status, page)                     FINANCE    PayoutRequestPage!  @tag admin"
+    - "payoutRequestsForReview(page)                    FINANCE    PayoutRequestPage!  @tag admin"
+    - "bankAccounts(organizationId)                     ORGANIZER  [BankAccount!]!"
+  mutations:
+    - "requestPayout(input)              ORGANIZER  PayoutRequest!   # idempotencyKey"
+    - "cancelPayout(id)                  ORGANIZER  PayoutRequest!"
+    - "approvePayout(input)              FINANCE    PayoutRequest!   @tag admin  # idempotencyKey"
+    - "rejectPayout(id, reason)          FINANCE    PayoutRequest!   @tag admin"
+    - "retryPayout(id)                   FINANCE    PayoutRequest!   @tag admin  # idempotencyKey"
+    - "createBankAccount(input)          ORGANIZER  BankAccount!"
+    - "updateBankAccount(id, input)      ORGANIZER  BankAccount!"
+    - "deleteBankAccount(id)             ORGANIZER  Boolean!"
+    - "setDefaultBankAccount(id)         ORGANIZER  BankAccount!"
+    - "startBankVerification(id)         ORGANIZER  BankAccount!"
+    - "confirmBankVerification(id, amt)  ORGANIZER  BankAccount!"
+  extensions:
+    - "booking extends Organization { bankAccounts, payoutRequests, availableBalance }"
+
+errors:
+  - PAYOUT_BELOW_MINIMUM
+  - PAYOUT_WINDOW_NOT_OPEN
+  - PAYOUT_STATE_INVALID
+  - BANK_ACCOUNT_UNKNOWN
+  - BANK_ACCOUNT_NOT_VERIFIED
+  # ESCROW_INSUFFICIENT_BALANCE, ACTOR_NOT_PERMITTED raised here, owned elsewhere
+
+eligibility:   # all four, checked at REQUEST and again at APPROVAL
+  - "event.status == COMPLETED"
+  - "escrow.holdUntil <= now"
+  - "escrow.openDisputeCount == 0"
+  - "escrow.currentBalance >= finance.payout.minimum"
+
+state_machine:
+  states: [PENDING, APPROVED, PROCESSING, COMPLETED, FAILED, REJECTED, CANCELLED]
+  terminal: [COMPLETED, REJECTED, CANCELLED]
+  note: "FAILED is NOT terminal — it permits retry and re-request"
+
+saga:
+  name: PayoutSettlementSaga
+  order: "debit escrow FIRST (transaction), THEN initiate transfer (outside)"
+  reason: "late debit lets two concurrent payouts both pass the balance check"
+  compensation: "reversing entry debit 1020 / credit 2010, escrow restored exactly"
+  journal:
+    settle:  "debit 2010 Event Escrow / credit 1020 Platform Bank"
+    reverse: "debit 1020 / credit 2010"
+    verify:  "debit 5040 Verification Costs / credit 1020   # 5040 added to ET-FIN-001's chart"
+
+separation_of_duties: "approvedById MUST NOT equal requestedById — checked on identity, not role"
+
+config:
+  finance.payout.minimum: K100.00
+  finance.payout.max-attempts: 3
+  finance.payout.retry-backoff: "PT5M initial, exponential"
+  finance.payout.micro-deposit: "K0.50 +/- a random cent"
+  finance.payout.verification-lockout: PT24H
+  BANK_ACCOUNT_ENCRYPTION_KEY: "${BANK_ACCOUNT_ENCRYPTION_KEY}"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/finance/003-payouts-and-settlement
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003
+  - mvn -q -f backend verify -Dgroups=ET-FIN-003
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "This spec adds account code 5040 Verification Costs to ET-FIN-001's chart, which that spec declares closed and seeded. Either ET-FIN-001 §4 gains the row in the same change or the seeder and this spec disagree, and the micro-deposit entry fails with ACCOUNT_CODE_UNKNOWN."
+  - "R6 debits the escrow before initiating the transfer, so a crash between the transaction and the provider call leaves money debited with no transfer in flight and no providerReference to poll. Recovery must distinguish 'never initiated' from 'initiated, outcome unknown', and the only way to tell is to ask the provider about a reference that may not exist."
+  - "The provider port declares payout() in this spec but ET-PAY-001's PaymentProviderPort declares only collect, status and refund. The interface must gain a fourth method, which is a change to a spec in an earlier wave."
+  - "escrow.openDisputeCount gates eligibility, and ET-FIN-001 already flags that nothing in the corpus increments it. Until ET-FIN-004 defines disputes, the third eligibility condition is permanently satisfied and a payout can be approved while a chargeback is in progress."
+  - "R3 forbids approvedById == requestedById, but an organization ADMIN who is also a platform FINANCE operator can approve a colleague's request for their own organization. The identity check catches self-approval and not collusion or single-person organizations where the requester is the only member."
+  - "Micro-deposit verification sends real money to an unverified account. A malicious organizer can farm K0.50 deposits by adding accounts they control, and nothing here rate-limits account creation or bounds total verification spend per organization."
+  - "R2 requires the payout to be the escrow's FULL balance, recomputed at approval. If a refund settles between approval and the debit, the recomputed amount is stale and the conditional debit either fails (ESCROW_INSUFFICIENT_BALANCE on an approved payout) or succeeds at the wrong figure. The recompute must happen inside the debit transaction, which R6 does not say."
+  - "Bank account numbers are encrypted with a single environment key and decrypted in the transfer adapter. There is no key rotation story, and re-encrypting every account under a new key is a migration nobody has planned for."

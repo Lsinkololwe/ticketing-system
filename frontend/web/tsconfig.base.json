@@ -38,6 +38,12 @@
       "@shared/*": [
         "libs/shared/src/*"
       ]
-    }
+    },
+    "noUncheckedSideEffectImports": false,
+    "types": [
+      "*"
+    ],
+    "esModuleInterop": false,
+    "ignoreDeprecations": "6.0"
   }
 }

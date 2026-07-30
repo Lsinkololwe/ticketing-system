@@ -1,0 +1,110 @@
+id: ET-ADM-001
+title: The approvals workbench — queues, SLA and escalation
+status: draft
+area: ADM
+service: catalog-service
+subgraph: catalog
+owner: lazarous
+created: 2026-07-30
+priority: should
+wave: 6
+blocked_by: [ET-PLT-004, ET-PLT-005, ET-ORG-001, ET-ORG-003, ET-CAT-001, ET-NTF-002]
+conformance: "US-PADM-001 · US-PADM-002 · US-ADM-001"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/organization/001-organizer-onboarding/spec.md
+  - specs/catalog/001-event-lifecycle/spec.md
+  - specs/notification/002-lifecycle-triggers/spec.md
+  - docs/USER_STORIES.md
+
+persistence:
+  collections:
+    - catalog_approval_timelines
+    - catalog_approval_escalations
+    - admin_review_claims         # added to the ET-PLT-002 §4 registry by this spec
+  indexes:
+    - "catalog_approval_timelines {subjectType,subjectId,occurredAt} compound"
+    - "catalog_approval_escalations {status,level,escalatedAt} compound"
+    - "admin_review_claims {subjectType,subjectId} unique"
+    - "admin_review_claims {status,expiresAt} compound   # the claim-expiry sweep"
+    - "identity_organizations {status,submittedAt} compound   # the organizer queue"
+    - "catalog_events {status,submittedAt} compound           # the event queue"
+  redis_keys:
+    - "lock:sweep:review-claims   STRING  30 s"
+    - "lock:sweep:approval-sla    STRING  30 s"
+
+events:
+  module: []
+  bus: []
+  consumes:
+    - OrganizationSubmittedEvent   # module, identity — see the ET-NTF-002 risk
+    - EventSubmittedEvent          # module, catalog
+  topics: []
+
+graphql:
+  schema:
+    - backend/catalog-service/src/main/resources/graphql/schema.graphqls
+    - backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:      # every one ADMIN + @tag admin
+    - "organizerApprovalQueue(page)                    ADMIN  OrganizationPage!    [identity]"
+    - "eventApprovalQueue(page)                        ADMIN  EventPage!           [catalog]"
+    - "approvalTimeline(subjectType, subjectId)        ADMIN  [ApprovalTimelineEntry!]!"
+    - "openEscalations(level, page)                    ADMIN  ApprovalEscalationPage!"
+    - "approvalMetrics(from, to)                       ADMIN  ApprovalMetrics!"
+    - "myClaimedItems                                  ADMIN  [ReviewClaim!]!"
+  mutations:
+    - "claimReviewItem(subjectType, subjectId)  ADMIN  ReviewClaim!"
+    - "releaseReviewItem(id)                    ADMIN  Boolean!"
+    - "bulkApproveEvents(ids)                   ADMIN  [BulkApprovalOutcome!]!"
+  # the DECISION mutations live in ET-ORG-001 and ET-CAT-001; this spec adds only the workbench
+
+errors: []      # DOCUMENT_REQUIRED, ORGANIZATION_STATE_INVALID, EVENT_STATE_INVALID raised here, owned elsewhere
+
+queues:
+  organizer: { source: identity_organizations, filter: PENDING_REVIEW,   sla: PT48H }
+  event:     { source: catalog_events,         filter: PENDING_APPROVAL, sla: PT24H }
+  ordering: "submittedAt ascending; breached items floated and marked"
+
+sla_clock: "now - submittedAt - time spent in CHANGES_REQUESTED"
+escalation_levels:
+  1: "1x sla  -> notify the claim holder, or the queue"
+  2: "2x sla  -> notify a supervisor"
+  3: "4x sla  -> notify platform leadership"
+
+bulk_eligibility:    # EVENTS ONLY — all six must hold; there is no bulk rejection
+  - "organization ACTIVE with >= 3 completed events"
+  - "no open escalation, suspension or chargeback in P180D"
+  - "event has >= 1 tier, a location and a capacity"
+  - "capacity <= 5000"
+  - "category not on the manual-review list"
+  - "in the queue less than 2x its SLA — a long-waiting item gets a human"
+
+config:
+  admin.sla.organizer: PT48H
+  admin.sla.event: PT24H
+  admin.review.claim-ttl: PT30M
+  admin.review.bulk-max: 50
+  admin.bulk.min-completed-events: 3
+  admin.bulk.clean-window: P180D
+  admin.bulk.max-capacity: 5000
+  admin.workbench.poll-interval: PT30S
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/admin/001-approvals-workbench
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-ADM-001
+  - mvn -q -f backend verify -Dgroups=ET-ADM-001
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The workbench spans two services: the organizer queue reads identity_organizations and the event queue reads catalog_events, while claims, timelines and escalations are declared as catalog collections. A claim on an organizer application therefore lives in catalog-service and references an identity-service document, which is precisely the cross-service ownership ET-PLT-002 R2 forbids. Either the workbench collections are duplicated per service or a fourth service owns them."
+  - "R2's claim expiry returns an item to its original queue position, but position is derived from submittedAt ordering rather than stored — so 'original position' is automatic and the acceptance box is trivially true. It reads as a guarantee about something the design does not actually have to work for."
+  - "The SLA clock pauses during CHANGES_REQUESTED, which requires summing intervals across the timeline for every item on every queue render. For a queue of a few hundred that is a per-item aggregation on a polled query every 30 seconds."
+  - "Escalation level 3 notifies 'platform leadership', which is not a role in ET-PLT-007's realm. There are five realm roles and none of them is leadership; the escalation target has to resolve to SUPER_ADMIN or to a configured distribution list that no spec defines."
+  - "Bulk approval rule 2 requires no chargeback in 180 days, but ET-FIN-004's chargebacks are per event and per organization, and querying that from catalog-service means a cross-service call per candidate event in a batch of 50. The bulk action's own latency budget is unstated."
+  - "R6 makes bulk approval idempotent by re-approving nothing twice, but ET-CAT-001's transition table refuses PENDING_APPROVAL -> APPROVED from any other state — so a re-submitted id simply fails its transition. That is idempotent in effect but the outcome reported to the reviewer will be a state error rather than 'already approved'."
+  - "Time-to-decision metrics and per-reviewer counts are computed from catalog_approval_timelines, which is append-only and unbounded. ET-PLT-009 has no retention policy yet, and the metrics query scans the whole collection for any window."
+  - "Nothing in this spec staffs the queues. The SLA, the escalation levels and the metrics all assume reviewers exist and are looking; if the platform has one part-time reviewer, every mechanism here produces escalations nobody actions and the workbench becomes a record of being late."

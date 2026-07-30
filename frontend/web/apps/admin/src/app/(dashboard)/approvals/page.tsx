@@ -4,7 +4,7 @@ import { ClipboardCheck } from 'iconoir-react';
 export default function ApprovalsPage() {
   return (
     <PagePlaceholder
-      title="Pending Approvals"
+      title="Pending approvals"
       description="Review and manage all pending approvals across the platform"
       icon={<ClipboardCheck style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />

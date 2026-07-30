@@ -12,7 +12,7 @@ export default async function AnalyticsPage() {
 
   return (
     <PagePlaceholder
-      title="Platform Overview"
+      title="Platform overview"
       description="View comprehensive platform analytics and insights"
       icon={<StatsReport style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />

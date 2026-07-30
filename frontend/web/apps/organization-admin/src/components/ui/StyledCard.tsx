@@ -1,203 +1,100 @@
 'use client';
 
 /**
- * StyledCard Component
+ * StyledCard — MyTicketZM design system surface primitive.
  *
- * Consistent card styling for dashboard content with:
- * - Glassmorphism effect
- * - Optional header with title and actions
- * - Loading and empty states
+ * Contract (spec §7): `children, padding, hover, interactive, style, onClick`
+ *   hover: default | lift | glow | none
+ *
+ * Card language (spec §5): flat fill (--card-bg), 1px hairline alpha-gray
+ * border (--gray-a5), soft two-step shadow. NO blur — transparency is reserved
+ * for header bars and the marketing site's glass cards. NO colored left-border
+ * accent: that pattern is banned, so emphasis is carried by the full hairline
+ * and the shadow step instead.
  */
 
-import { ReactNode } from 'react';
-import { Box, Flex, Text, Heading, Spinner } from '@radix-ui/themes';
+import type { CSSProperties, ReactNode } from 'react';
 
-// =============================================================================
-// TYPES
-// =============================================================================
+export type CardPadding = 'none' | 'sm' | 'md' | 'lg';
+export type CardHover = 'default' | 'lift' | 'glow' | 'none';
 
-interface CardHeaderAction {
-  label: string;
-  icon?: ReactNode;
+export interface StyledCardProps {
+  children?: ReactNode;
+  padding?: CardPadding;
+  hover?: CardHover;
+  interactive?: boolean;
+  style?: CSSProperties;
   onClick?: () => void;
 }
 
-interface StyledCardProps {
-  /** Optional title for the card header */
-  title?: string;
-  /** Optional subtitle */
-  subtitle?: string;
-  /** Optional icon displayed before the title */
-  icon?: ReactNode;
-  /** Header actions (links/buttons) */
-  headerActions?: CardHeaderAction[];
-  /** Custom header content (overrides title/subtitle/icon) */
-  header?: ReactNode;
-  /** Card content */
-  children?: ReactNode;
-  /** Show loading spinner */
-  loading?: boolean;
-  /** Padding size */
-  padding?: 'none' | 'sm' | 'md' | 'lg';
-  /** Card variant */
-  variant?: 'default' | 'elevated' | 'outlined' | 'filled';
-  /** Additional styles */
-  style?: React.CSSProperties;
-  /** Class name */
-  className?: string;
-}
-
-// =============================================================================
-// COMPONENT
-// =============================================================================
+const PADDING: Record<CardPadding, string> = {
+  none: '0',
+  sm: 'var(--space-4)',
+  md: 'var(--space-5)',
+  lg: 'var(--space-6)',
+};
 
 export function StyledCard({
-  title,
-  subtitle,
-  icon,
-  headerActions,
-  header,
   children,
-  loading = false,
   padding = 'md',
-  variant = 'default',
+  hover = 'default',
+  interactive = false,
   style,
-  className,
+  onClick,
 }: StyledCardProps) {
-  // Padding values
-  const paddingValues = {
-    none: '0',
-    sm: '16px',
-    md: '24px',
-    lg: '32px',
-  };
-
-  // Variant styles
-  const variantStyles: Record<string, React.CSSProperties> = {
-    default: {
-      background: 'var(--surface-elevated)',
-      border: '1px solid var(--surface-border)',
-    },
-    elevated: {
-      background: 'var(--surface-elevated)',
-      border: '1px solid var(--surface-border)',
-      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-    },
-    outlined: {
-      background: 'transparent',
-      border: '1px solid var(--surface-border)',
-    },
-    filled: {
-      background: 'var(--surface-subtle)',
-      border: 'none',
-    },
-  };
-
-  const hasHeader = title || subtitle || icon || header || headerActions;
-
   return (
-    <Box
-      className={className}
+    <div
+      className="ds-styled-card"
+      data-hover={hover}
+      data-interactive={interactive || Boolean(onClick) || undefined}
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       style={{
-        borderRadius: '16px',
-        overflow: 'hidden',
-        ...variantStyles[variant],
+        padding: PADDING[padding],
+        background: 'var(--card-bg)',
+        border: 'var(--card-border)',
+        borderRadius: 'var(--card-radius)',
+        boxShadow: 'var(--card-shadow)',
+        transition:
+          'box-shadow var(--transition-default) var(--ease-standard), border-color var(--transition-default) var(--ease-standard), transform var(--transition-default) var(--ease-standard)',
         ...style,
       }}
     >
-      {/* Header */}
-      {hasHeader && (
-        <Box
-          style={{
-            padding: paddingValues[padding],
-            paddingBottom: title ? '16px' : paddingValues[padding],
-            borderBottom: children ? '1px solid var(--surface-border)' : 'none',
-          }}
-        >
-          {header || (
-            <Flex justify="between" align="center">
-              <Flex align="center" gap="3">
-                {icon && (
-                  <Box
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: '10px',
-                      background: 'rgba(16, 185, 129, 0.1)',
-                      border: '1px solid rgba(16, 185, 129, 0.2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'var(--brand-500)',
-                    }}
-                  >
-                    {icon}
-                  </Box>
-                )}
-                <Box>
-                  {title && (
-                    <Heading size="4" style={{ color: 'var(--content-primary)' }}>
-                      {title}
-                    </Heading>
-                  )}
-                  {subtitle && (
-                    <Text size="2" style={{ color: 'var(--content-muted)', marginTop: '2px' }}>
-                      {subtitle}
-                    </Text>
-                  )}
-                </Box>
-              </Flex>
+      {children}
 
-              {headerActions && headerActions.length > 0 && (
-                <Flex gap="2">
-                  {headerActions.map((action, index) => (
-                    <Text
-                      key={index}
-                      size="2"
-                      weight="medium"
-                      onClick={action.onClick}
-                      style={{
-                        color: 'var(--brand-500)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                    >
-                      {action.icon}
-                      {action.label}
-                    </Text>
-                  ))}
-                </Flex>
-              )}
-            </Flex>
-          )}
-        </Box>
-      )}
-
-      {/* Content */}
-      {loading ? (
-        <Flex
-          align="center"
-          justify="center"
-          style={{
-            padding: paddingValues[padding],
-            minHeight: '120px',
-          }}
-        >
-          <Spinner size="3" />
-        </Flex>
-      ) : children ? (
-        <Box
-          style={{
-            padding: hasHeader ? paddingValues[padding] : paddingValues[padding],
-            paddingTop: hasHeader ? '16px' : paddingValues[padding],
-          }}
-        >
-          {children}
-        </Box>
-      ) : null}
-    </Box>
+      <style jsx global>{`
+        .ds-styled-card[data-hover='default']:hover {
+          box-shadow: var(--card-shadow-hover);
+        }
+        /* 2px rise — the system's only "press feel". No scale, no shrink. */
+        .ds-styled-card[data-hover='lift']:hover {
+          transform: translateY(-2px);
+          box-shadow: var(--card-shadow-hover);
+        }
+        .ds-styled-card[data-hover='glow']:hover {
+          border-color: var(--accent-a6);
+          box-shadow: var(--card-shadow-hover);
+        }
+        .ds-styled-card[data-interactive] {
+          cursor: pointer;
+        }
+        .ds-styled-card:focus-visible {
+          outline: 2px solid var(--accent-8);
+          outline-offset: 2px;
+        }
+      `}</style>
+    </div>
   );
 }
 

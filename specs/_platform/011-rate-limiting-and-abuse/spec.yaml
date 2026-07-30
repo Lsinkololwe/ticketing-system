@@ -1,0 +1,124 @@
+id: ET-PLT-011
+title: Rate limits, on-sale fairness and abuse control
+status: draft
+area: PLT
+service: all
+subgraph: all
+owner: lazarous
+created: 2026-07-30
+priority: should
+wave: 7
+blocked_by: [ET-PLT-001, ET-PLT-005, ET-PLT-007, ET-IDN-001, ET-CAT-002, ET-TKT-001, ET-PLT-009]
+conformance: null
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/001-runtime-baseline/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/identity/001-phone-otp-identity/spec.md
+  - specs/catalog/002-ticket-tiers-and-inventory/spec.md
+  - specs/catalog/003-locations-and-reference-data/spec.md
+
+persistence:
+  collections:
+    - admin_temporary_blocks     # added to the ET-PLT-002 §4 registry by this spec
+  indexes:
+    - "admin_temporary_blocks {scope,value,status} compound"
+    - "admin_temporary_blocks {expiresAt} ttl 0"
+  redis_keys:
+    - "ratelimit:ip:{ip}:{bucket}         STRING  window"
+    - "ratelimit:sub:{userId}:{bucket}    STRING  window"
+    - "ratelimit:phone:{phone}            STRING  60 s"
+    - "ratelimit:device:{deviceId}        STRING  1 d"
+    - "ratelimit:org:{orgId}:{bucket}     STRING  window"
+    - "queue:{eventId}                    LIST    sales window + 1 h"
+    - "queue:pos:{eventId}:{userId}       STRING  sales window + 1 h"
+    - "queue:pass:{eventId}:{userId}      STRING  5 min"
+    - "block:{scope}:{value}              STRING  operator-set"
+  note: "none is a business record — losing any of them FAILS OPEN"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema:
+    - backend/booking-service/src/main/resources/graphql/schema.graphqls
+    - backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "queuePosition(eventId)              AUTHENTICATED  QueuePosition"
+    - "eventQueueStatus(eventId)           ORGANIZER      QueueStatus!"
+    - "rateLimitStatus(scope, value)       ADMIN          RateLimitStatus!     @tag admin"
+    - "topLimitedSubjects(window, limit)   ADMIN          [LimitedSubject!]!   @tag admin"
+  mutations:
+    - "joinQueue(eventId)                              CUSTOMER   QueuePosition!"
+    - "leaveQueue(eventId)                             CUSTOMER   Boolean!"
+    - "setEventHighDemand(eventId, enabled, admitRate) ORGANIZER  Event!"
+    - "blockActor(input)                               ADMIN      TemporaryBlock!  @tag admin"
+    - "liftBlock(id, reason)                           ADMIN      TemporaryBlock!  @tag admin"
+
+errors:
+  - RATE_LIMIT_EXCEEDED     # UNAVAILABLE, retryable, carries retryAfterSeconds + scope
+
+adds_to_other_specs:
+  - "ET-PLT-009 §4 audit registry: ACTOR_BLOCKED"
+
+limits:     # 18 — full table in spec.md §4
+  ip:      ["discovery 120/min", "search 30/min", "any unauth 300/min", "OTP 10/h", "webhook 1000/min"]
+  subject: ["discovery 300/min", "any auth 600/min", "reserveTickets 20/min",
+            "initiatePayment 10/min", "requestRefund 5/h", "initiateTransfer 20/h",
+            "claimTransfer 10/h", "requestDataExport 1/d"]
+  phone:   ["OTP 1 per 60 s"]
+  device:  ["5 distinct numbers per day"]
+  org:     ["createEvent 50/d", "inviteTeamMember 100/d"]
+  event:   ["queue admission 100/min"]
+
+asymmetry: |
+  Discovery is limited HARD (scraping is what the public read surface is abused for).
+  The purchase path is limited LIGHTLY — inventory (ET-CAT-002 R2), purchase limits
+  (ET-CAT-002 R5) and idempotency (ET-PLT-007 R6) already bound it, and a tight limit
+  there refuses families rather than bots.
+
+queue:
+  applies_when: "event.highDemand set BEFORE the sales window opens — otherwise NO queue at all"
+  ordering: "arrival order by server receipt time — NOT a lottery"
+  pass: "bound to {eventId, userId}, TTL PT5M, not transferable"
+  expiry: "an unused pass lapses; the buyer rejoins at the BACK"
+  sellout: "everybody still queued is told immediately, not admitted to a refusal"
+  estimate: "ceil(position / admitRate) * 60, stated as an estimate, moves only downward"
+
+fail_open:
+  redis_unavailable: "SERVE the request, alert immediately"
+  rationale: "a rate limiter is a fairness and cost control, NOT a security boundary"
+  real_boundaries: ["authentication ET-PLT-007", "OTP attempt cap ET-IDN-001 R3",
+                    "webhook signatures ET-PAY-002 R1"]
+
+config:
+  ratelimit.enabled: true
+  ratelimit.timeout: PT50MS
+  ratelimit.fail-open: "true — NOT configurable to false"
+  admin.queue.admit-rate: "100/minute, per event"
+  admin.queue.pass-ttl: PT5M
+  admin.queue.max-size: 50000
+  admin.block.max-duration: P7D
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/011-rate-limiting-and-abuse
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-PLT-011
+  - mvn -q -f backend verify -Dgroups=ET-PLT-011
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The fairness queue is a Redis LIST holding up to 50,000 entries per event, with position lookups per buyer polling for their place. At on-sale that is 50,000 clients polling a single Redis key's derived position — the queue intended to protect the platform becomes the hottest thing on it, and nothing here specifies how position is read without scanning."
+  - "R4 requires a pass for reservation on a high-demand event, which means the reservation endpoint has a different contract depending on a flag. A client that does not implement the queue simply fails on high-demand events, and nothing forces the mobile app and three web apps to implement it before an organizer sets the flag."
+  - "Fail-open means an attacker who can degrade Redis removes every rate limit at once. Redis is also the OTP store, the idempotency guard and the distributed lock — so the same degradation that removes rate limiting also affects the mechanisms this spec names as the real security boundaries. The separation of concerns is stated but not achieved in the infrastructure."
+  - "Row 12 limits distinct phone numbers per DEVICE per day, but deviceId is supplied by the client on an unauthenticated OTP request. An attacker generates a new deviceId per request and the limit is defeated; only the IP limit constrains them, and IPs are cheap."
+  - "R5 forbids a position going backwards, but a buyer who leaves the queue and rejoins is at the back, and a pass that expires puts them at the back. Both are correct and both look to the buyer exactly like their position went backwards — the guarantee is about the queue's mechanics and not about what a person experiences."
+  - "The 18 capacities are YAML rather than runtime-configurable, so tightening a limit during an attack requires a deploy. That contradicts the purpose of having kill switches in ET-ADM-002 and is called out in §4 without being resolved."
+  - "Discovery at 120/min per IP will refuse a corporate NAT or a university before it refuses a scraper with a proxy pool. R1 mitigates this by limiting authenticated subjects separately, but discovery is PUBLIC by design and the buyers most likely to be behind shared addresses are exactly the ones on institutional networks."
+  - "admin_temporary_blocks is the fourteenth amendment to ET-PLT-002 §4's closed collection registry, and this spec also adds an action to ET-PLT-009's closed audit registry. Two closed registries amended by the last spec in the corpus is the clearest signal that both should be assembled rather than declared."

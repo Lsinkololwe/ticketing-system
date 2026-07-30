@@ -1,20 +1,26 @@
 'use client';
 
 /**
- * Placeholder Page Component
+ * PagePlaceholder — the standard "not built yet" screen.
  *
- * Used for pages that are under development.
- * Shows a consistent, professional placeholder UI.
+ * A composition of <PageHeader> + <EmptyState>, so an unbuilt page still reads
+ * as part of the same system as a finished one. Copy is sentence case and
+ * operational: it says what the page will do and that it is not ready, without
+ * apologising or over-promising.
  */
 
-import { Box, Flex, Heading, Text, Badge } from '@radix-ui/themes';
+import type { ReactNode } from 'react';
+import { Box } from '@radix-ui/themes';
 import { Hammer } from 'iconoir-react';
-import { StyledCard } from './StyledCard';
+import { Badge } from './Badge';
+import { EmptyState } from './EmptyState';
+import { PageHeader } from './PageHeader';
 
-interface PagePlaceholderProps {
+export interface PagePlaceholderProps {
   title: string;
   description?: string;
-  icon?: React.ReactNode;
+  /** Iconoir icon, 14–24px. Defaults to a hammer. */
+  icon?: ReactNode;
   comingSoon?: boolean;
 }
 
@@ -25,73 +31,26 @@ export function PagePlaceholder({
   comingSoon = true,
 }: PagePlaceholderProps) {
   return (
-    <Flex direction="column" gap="6">
-      {/* Page Header */}
-      <Flex justify="between" align="center">
-        <Box>
-          <Flex align="center" gap="3">
-            <Heading size="6" weight="bold" style={{ color: 'var(--gray-12)' }}>
-              {title}
-            </Heading>
-            {comingSoon && (
-              <Badge color="teal" variant="soft" size="1">
-                Coming Soon
-              </Badge>
-            )}
-          </Flex>
-          {description && (
-            <Text size="2" color="gray" style={{ marginTop: '4px' }}>
-              {description}
-            </Text>
-          )}
-        </Box>
-      </Flex>
+    <Box>
+      <PageHeader
+        title={title}
+        description={description}
+        actions={
+          comingSoon ? (
+            <Badge color="accent" variant="soft">
+              In development
+            </Badge>
+          ) : undefined
+        }
+      />
 
-      {/* Placeholder Content */}
-      <StyledCard hover="none">
-        <Flex
-          direction="column"
-          align="center"
-          justify="center"
-          gap="4"
-          py="9"
-          style={{ minHeight: '400px' }}
-        >
-          <Box
-            style={{
-              padding: '20px',
-              borderRadius: '16px',
-              background: 'linear-gradient(135deg, var(--accent-a3) 0%, var(--accent-a4) 100%)',
-              border: '1px solid var(--accent-a5)',
-            }}
-          >
-            {icon || (
-              <Hammer
-                style={{
-                  width: 48,
-                  height: 48,
-                  color: 'var(--accent-11)',
-                }}
-              />
-            )}
-          </Box>
-          <Flex direction="column" align="center" gap="2">
-            <Heading size="4" weight="medium" style={{ color: 'var(--gray-12)' }}>
-              {title}
-            </Heading>
-            <Text
-              size="2"
-              color="gray"
-              align="center"
-              style={{ maxWidth: '400px', lineHeight: 1.6 }}
-            >
-              This page is currently under development. Check back soon for the full implementation
-              with data management and analytics.
-            </Text>
-          </Flex>
-        </Flex>
-      </StyledCard>
-    </Flex>
+      <EmptyState
+        size="lg"
+        icon={icon ?? <Hammer style={{ width: 24, height: 24 }} />}
+        title="This screen is not ready yet"
+        description="It is being built. The data and controls for this area will appear here once the work lands."
+      />
+    </Box>
   );
 }
 

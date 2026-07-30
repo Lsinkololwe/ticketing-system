@@ -1,0 +1,108 @@
+id: ET-PLT-009
+title: The audit trail — what is recorded, by whom, and for how long
+status: draft
+area: PLT
+service: identity-service
+subgraph: identity
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 7
+blocked_by: [ET-PLT-001, ET-PLT-007, ET-PLT-008, ET-ADM-005]
+conformance: null
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/_platform/008-data-protection/spec.md
+  - specs/admin/005-observability-and-health/spec.md
+
+persistence:
+  collections:
+    - identity_audit_logs
+  indexes:
+    - "identity_audit_logs {subjectType,subjectId,occurredAt} compound   # the chain + subject view"
+    - "identity_audit_logs {actorId,occurredAt} compound"
+    - "identity_audit_logs {action,occurredAt} compound"
+    - "identity_audit_logs {organizationId,occurredAt} compound"
+    - "identity_audit_logs {actionClass,occurredAt} compound             # the class-based purge"
+  redis_keys:
+    - "lock:sweep:audit-verify   STRING  30 s"
+    - "lock:sweep:audit-purge    STRING  30 s"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "auditLogs(filter, page)                      ADMIN          AuditLogPage!      @tag admin"
+    - "auditLogsForSubject(subjectType, subjectId)  ADMIN          [AuditLog!]!       @tag admin"
+    - "myAuditTrail(page)                           AUTHENTICATED  AuditLogPage!      # own account only"
+    - "verifyAuditChain(subjectType, subjectId)     SUPER_ADMIN    ChainVerification! @tag admin"
+  mutations:
+    - "exportAuditTrail(filter)   SUPER_ADMIN  AuditExport!  @tag admin"
+
+errors: []     # an audit failure is an ALERT, not a client error
+
+registry:
+  total: 50
+  security: 8       # P7Y
+  financial: 21     # P7Y
+  operational: 21   # P2Y
+  note: "the full table is spec.md §4, each row naming the spec that introduced it"
+
+row_components:    # all five mandatory
+  who:  [actorId, actorRole, sourceIp, userAgent]
+  what: [action, actionClass, previousValue, newValue]
+  when: [occurredAt]           # from the Clock
+  to:   [subjectType, subjectId, organizationId]
+  why:  [reason]               # required per the registry
+  link: [correlationId, previousHash, rowHash]
+
+chain:
+  formula: "rowHash = SHA-256(previousHash || action || actorId || subjectType || subjectId || previousValue || newValue || occurredAt)"
+  scope: "per {subjectType, subjectId} — NOT global; a global chain serialises every audit write"
+  genesis: "first row for a subject: previousHash = GENESIS"
+  purge: "writes a CHAIN_CHECKPOINT row carrying the last purged hash — verification resumes, never gaps"
+
+redaction:     # driven by ET-PLT-008 §4's inventory
+  DIRECT_IDENTIFIER: "[redacted]"
+  SENSITIVE: "[redacted], or a masked suffix where the inventory allows"
+  INDIRECT_IDENTIFIER: "the id only"
+  everything_else: "IN FULL — statuses, amounts, dates and flags are what an investigator needs"
+
+rules:
+  - "a CLOSED registry — auditing every mutation is unsearchable"
+  - "append-only, ENFORCED by a hash chain, not by convention"
+  - "reading the trail is audited; the recursion stops at ONE level"
+  - "an audit write failure NEVER fails the action it records"
+  - "financial actions are visible to FINANCE+; a plain ADMIN's filter silently excludes them"
+
+config:
+  audit.retention.long: P7Y      # SECURITY, FINANCIAL
+  audit.retention.short: P2Y     # OPERATIONAL
+  audit.verification.sample-size: 1000
+  audit.purge.batch-size: 10000
+  audit.write.max-retries: 3
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/009-audit-trail
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-PLT-009
+  - mvn -q -f backend verify -Dgroups=ET-PLT-009
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The audit collection is identity_audit_logs, but 21 of the 50 actions occur in booking-service and 6 in catalog-service. Writing them means either those services write an identity-owned collection (forbidden by ET-PLT-002 R2) or every audited action makes a synchronous internal API call to identity-service on paths that include payout approval and manual ledger adjustment. Neither is stated and the second contradicts R7's requirement to write inside the action's transaction."
+  - "R3's per-subject hash chain requires reading the previous row for that subject before every write, which is an extra indexed read on every audited action, and two concurrent audited actions on one subject race for the same predecessor. The chain needs a per-subject lock or an optimistic retry that this spec does not name."
+  - "R7 requires the audit row to be written inside the action's transaction where one exists, and R3 requires a hash chained to the previous row. If the transaction rolls back, the chain has a gap where a row was reserved and never written — unless the hash is computed at write time inside the transaction, in which case a concurrent writer to the same subject in another transaction will conflict."
+  - "Financial actions are hidden from a plain ADMIN by silently excluding them from the filter. That is a deliberate design choice and it means an ADMIN investigating an incident sees an incomplete trail with no indication it is incomplete — which is exactly the property an audit trail should not have."
+  - "myAuditTrail shows a user actions taken on their own account, including USER_SUSPENDED and ROLE_REVOKED with their reasons. A reason written by an admin for internal purposes becomes visible to the subject, and nothing in the registry marks which reasons are subject-visible."
+  - "The 50-action registry cross-references roughly 30 acceptance criteria across 20 other specs. R1's cross-reference test has to parse those specs' markdown to verify the claim, which makes a documentation test a build dependency — or the check is manual, in which case the registry drifts."
+  - "Retention is enforced by a purge job rather than a TTL index because the class determines the window. That means audit rows accumulate for up to seven years with no automatic bound if the purge job breaks, in a collection every audited action writes to."
+  - "ET-PLT-008 R2 requires audit_logs.actorId to be anonymised on erasure, but R3 here makes the row immutable and hash-chained. Anonymising a field inside a chained row breaks its hash by construction — the two specs are in direct conflict and neither resolves it."

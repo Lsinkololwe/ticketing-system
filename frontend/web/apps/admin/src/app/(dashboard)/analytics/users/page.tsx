@@ -12,7 +12,7 @@ export default async function UserGrowthPage() {
 
   return (
     <PagePlaceholder
-      title="User Growth"
+      title="User growth"
       description="Track user acquisition and growth metrics"
       icon={<StatsUpSquare style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />

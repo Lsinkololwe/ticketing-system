@@ -60,7 +60,7 @@ const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8
  * Keycloak realm name
  * @used-by signOut() - Part of Keycloak logout URL
  */
-const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'myticketzm';
+const KEYCLOAK_REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'myticketzm-admin';
 
 /**
  * Keycloak client ID for this application

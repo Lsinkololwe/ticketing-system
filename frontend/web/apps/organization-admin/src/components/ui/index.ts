@@ -1,16 +1,40 @@
 /**
- * UI Components Index
+ * MyTicketZM design system — Organization Admin component barrel.
  *
- * Re-export all UI components for convenient imports:
- * import { PageHeader, StyledCard, StatCard, EmptyState, useToast } from '@/components/ui';
+ * Every component here matches its declared contract in
+ * `docs/MYTICKETZM_DESIGN_SYSTEM.md` §7 exactly — no extra props.
+ *
+ *   import { Button, Badge, StatCard, PageHeader, useToast } from '@/components/ui';
  */
 
-export { PageHeader } from './PageHeader';
-export type { Breadcrumb, PageAction } from './PageHeader';
+// --- Core -------------------------------------------------------------------
+export { Button } from './Button';
+export type { ButtonProps, ButtonVariant, ButtonColor, ButtonSize } from './Button';
 
+export { Badge } from './Badge';
+export type { BadgeProps, BadgeColor, BadgeVariant, BadgeSize } from './Badge';
+
+export { Input } from './Input';
+export type { InputProps, InputVariant, InputSize } from './Input';
+
+export { Textarea } from './Textarea';
+export type { TextareaProps, TextareaVariant } from './Textarea';
+
+export { Checkbox } from './Checkbox';
+export type { CheckboxProps, CheckboxSize } from './Checkbox';
+
+export { Radio } from './Radio';
+export type { RadioProps, RadioSize } from './Radio';
+
+// --- Data display -----------------------------------------------------------
 export { StyledCard } from './StyledCard';
+export type { StyledCardProps, CardPadding, CardHover } from './StyledCard';
 
-export { StatCard, StatGrid } from './StatCard';
+export { StatCard } from './StatCard';
+export type { StatCardProps, StatTrend } from './StatCard';
+
+export { QuickActionCard } from './QuickActionCard';
+export type { QuickActionCardProps } from './QuickActionCard';
 
 export {
   EmptyState,
@@ -23,17 +47,17 @@ export {
   NoAttendeesEmptyState,
   NoAnalyticsEmptyState,
 } from './EmptyState';
+export type { EmptyStateProps, EmptyStateAction, EmptyStateSize } from './EmptyState';
 
-// Toast Notifications
-export {
-  Toast,
-  ToastProvider,
-  ToastViewport,
-  ToastTitle,
-  ToastDescription,
-  ToastClose,
-  ToastAction,
-} from './Toast';
-export type { ToastData, ToastVariant, ToastProps } from './Toast';
+// --- Navigation -------------------------------------------------------------
+export { PageHeader } from './PageHeader';
+export type { PageHeaderProps, Breadcrumb, PageAction } from './PageHeader';
+
+export { SidebarNavItem } from './SidebarNavItem';
+export type { SidebarNavItemProps } from './SidebarNavItem';
+
+// --- Feedback ---------------------------------------------------------------
+export { Toast, ToastProvider, ToastViewport, ToastRoot, ToastAction } from './Toast';
+export type { ToastProps, ToastData, ToastVariant } from './Toast';
 
 export { ToastContextProvider, useToast } from './useToast';

@@ -37,7 +37,8 @@ import {
   Grid,
   Separator,
 } from '@radix-ui/themes';
-import { StyledCard, EmptyCard } from '@/components/ui/StyledCard';
+import { StyledCard, EmptyState, StatCard } from '@/components/ui';
+import { humanizeEnum } from '@/lib/format';
 import {
   Search,
   Eye,
@@ -49,6 +50,7 @@ import {
   WarningTriangle,
   Calendar,
   Building,
+  Folder,
 } from 'iconoir-react';
 import {
   usePendingDocuments,
@@ -381,7 +383,7 @@ function DocumentCard({
               </Text>
             </Box>
             <Badge color={STATUS_COLORS[document.status]} variant="soft">
-              {document.status}
+              {humanizeEnum(document.status)}
             </Badge>
           </Flex>
 
@@ -563,21 +565,19 @@ export default function DocumentsPage() {
         </Grid>
       </StyledCard>
 
-      {/* Statistics */}
-      <Flex gap="3" mb="4">
-        <StyledCard style={{ flex: 1 }} padding="4">
-          <Flex direction="column" gap="1">
-            <Text size="2" color="gray">Total Pending</Text>
-            <Heading size="6">{filteredDocuments.length}</Heading>
-          </Flex>
-        </StyledCard>
-        <StyledCard style={{ flex: 1 }} padding="4">
-          <Flex direction="column" gap="1">
-            <Text size="2" color="gray">Document Types</Text>
-            <Heading size="6">{documentTypes.length}</Heading>
-          </Flex>
-        </StyledCard>
-      </Flex>
+      {/* Stat tiles — bento auto-fit, not a fixed flex row. */}
+      <Box className="ds-bento-grid" mb="4">
+        <StatCard
+          title="Waiting for review"
+          value={filteredDocuments.length}
+          icon={<Page style={{ width: 20, height: 20 }} />}
+        />
+        <StatCard
+          title="Document types"
+          value={documentTypes.length}
+          icon={<Folder style={{ width: 20, height: 20 }} />}
+        />
+      </Box>
 
       {/* Error State */}
       {error && (
@@ -600,18 +600,23 @@ export default function DocumentsPage() {
 
       {/* Documents Grid */}
       {!loading && filteredDocuments.length === 0 && (
-        <EmptyCard
-          icon={<Page width={32} height={32} />}
-          message={
+        <EmptyState
+          icon={<Page width={24} height={24} />}
+          title={
             searchQuery || typeFilter !== 'ALL'
-              ? 'No documents match your filters'
-              : 'No pending documents to review'
+              ? 'No documents match these filters'
+              : 'No documents waiting for review'
+          }
+          description={
+            searchQuery || typeFilter !== 'ALL'
+              ? 'Clear the search or choose a different document type.'
+              : 'Documents submitted by organizers will appear here.'
           }
         />
       )}
 
       {!loading && filteredDocuments.length > 0 && (
-        <Grid columns={{ initial: '1', sm: '2', lg: '3', xl: '4' }} gap="4">
+        <Box className="ds-bento-grid-wide">
           {filteredDocuments.map((doc) => (
             <DocumentCard
               key={doc.id}
@@ -628,7 +633,7 @@ export default function DocumentsPage() {
               loading={isActionLoading}
             />
           ))}
-        </Grid>
+        </Box>
       )}
 
       {/* Document Preview */}

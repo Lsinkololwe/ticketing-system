@@ -1,10 +1,9 @@
-// Payment types for the ticketing application
-
-export enum PaymentMethod {
-  MOBILE_MONEY = 'MOBILE_MONEY',
-  CARD = 'CARD',
-  BANK_TRANSFER = 'BANK_TRANSFER',
-}
+// Mobile-money payment types for the ticketing app.
+//
+// The customer checkout is mobile-money-only (MTN / Airtel / Zamtel), matching
+// the MyTicketZM Design System. Card/bank capture is intentionally NOT handled
+// in the browser — raw PAN/CVV must never touch client JS (PCI-DSS). The backend
+// `PaymentMethod` enum (MOBILE_MONEY) comes from the generated GraphQL types.
 
 export enum ZambianMobileProvider {
   MTN = 'MTN',
@@ -12,47 +11,13 @@ export enum ZambianMobileProvider {
   ZAMTEL = 'ZAMTEL',
 }
 
-export interface PaymentMethodInfo {
-  name: string;
-  description: string;
-  icon: string;
-  feeRate: number;
-  isPopular?: boolean;
-}
-
 export interface MobileProviderInfo {
+  /** Full display name, e.g. "MTN MoMo". */
   name: string;
-  color: string;
+  /** Short chip label, e.g. "MTN". */
+  shortName: string;
+  /** Provider brand color — the `--momo-*` CSS token. */
+  colorVar: string;
+  /** Valid local number prefixes (10-digit form, e.g. 096…). */
   prefix: string[];
-}
-
-export interface PaymentConfig {
-  currency: string;
-  minAmount: number;
-  maxAmount: number;
-}
-
-export interface TicketPurchaseData {
-  eventId: string;
-  ticketCategoryId: string;
-  quantity: number;
-  buyerName: string;
-  buyerEmail: string;
-  buyerPhone: string;
-  paymentMethod: PaymentMethod;
-  phoneNumber?: string;
-  mobileProvider?: ZambianMobileProvider;
-  cardDetails?: {
-    number: string;
-    expiry: string;
-    cvv: string;
-    name: string;
-  };
-  metadata?: Record<string, any>;
-}
-
-export interface PurchaseResult {
-  success: boolean;
-  transactionId?: string;
-  error?: string;
 }

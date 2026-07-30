@@ -11,11 +11,8 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     if (initialized && !loading) {
-      if (authenticated) {
-        router.replace('/dashboard');
-      } else {
-        router.replace('/auth');
-      }
+      // The customer app has no /dashboard route — browsing events is home.
+      router.replace(authenticated ? '/' : '/auth');
     }
   }, [authenticated, initialized, loading, router]);
 
@@ -31,8 +28,8 @@ export default function AuthCallbackPage() {
     >
       <Flex direction="column" align="center" gap="4">
         <Spinner size="3" />
-        <Text size="3" color="gray">
-          Completing sign in...
+        <Text size="2" color="gray">
+          Finishing sign in…
         </Text>
       </Flex>
     </Box>

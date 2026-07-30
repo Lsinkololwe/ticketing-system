@@ -1,0 +1,105 @@
+id: ET-TKT-002
+title: Ticket issuance, the QR identity and delivery
+status: draft
+area: TKT
+service: booking-service
+subgraph: booking
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 3
+blocked_by: [ET-PLT-002, ET-PLT-005, ET-PLT-007, ET-TKT-001, ET-ORG-003]
+conformance: "V3 §4.1 purchase journey · US-BUY-002 · US Part III §18 scanner stories"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/ticketing/001-reservation-and-hold/spec.md
+  - specs/organization/003-permission-resolution/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+  - docs/USER_STORIES.md
+
+persistence:
+  collections:
+    - booking_tickets
+  indexes:
+    - "booking_tickets {ticketReference} unique"
+    - "booking_tickets {eventId,status} compound   # HOT — check-in and sales counts"
+    - "booking_tickets {ownerId,status} compound"
+  redis_keys:
+    - "lock:sweep:ticket-expiry   STRING  30 s"
+
+events:
+  module:
+    - TicketIssuedEvent
+    - TicketReissuedEvent
+  bus:
+    - booking.TicketPurchased    # v1 → catalog (counters), identity (deliver)
+  topics:
+    - booking-events
+
+graphql:
+  schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "ticket(id)                             AUTHENTICATED  Ticket"
+    - "ticketByReference(reference)           ORGANIZER      Ticket"
+    - "myTickets(status, first, after)        AUTHENTICATED  TicketConnection!"
+    - "eventTickets(eventId, status, page)    ORGANIZER      TicketPage!   @tag admin"
+    - "ticketQrPayload(id)                    AUTHENTICATED  String!       # owner only"
+    - "eventSigningKey(eventId)               ORGANIZER      String!       @tag internal"
+  mutations:
+    - "reissueTicket(id)                      AUTHENTICATED  Ticket!"
+    - "resendTicketDelivery(id, channel)      AUTHENTICATED  Boolean!"
+
+errors:
+  - TICKET_UNKNOWN
+  - TICKET_STATE_INVALID
+  - TICKET_SIGNATURE_INVALID
+
+state_machine:
+  states: [ISSUED, VALIDATED, TRANSFERRED, REFUND_PENDING, REFUNDED, CANCELLED, EXPIRED]
+  terminal: [REFUNDED, CANCELLED, EXPIRED]
+  transition_owners:
+    issue: ET-TKT-002
+    validate: ET-TKT-003
+    transfer: ET-TKT-004
+    refund: ET-FIN-004
+    event_cancelled: ET-CAT-001
+    expire: ET-TKT-002
+
+qr:
+  payload: "base64url(ticketId).base64url(eventId).issuedAtEpochSeconds.base64url(sig)"
+  event_key: "HKDF-SHA256(masterKey, salt='et-ticket-v1', info=eventId, len=32)"
+  signature: "HMAC-SHA256(eventKey, ticketId.eventId.issuedAt)[0..15]   # 128 bits"
+  rendering: "server returns the PAYLOAD; the client renders the image — works offline"
+
+reference:
+  format: "ET-XXXX-XXXX"
+  alphabet: "23456789ABCDEFGHJKMNPQRSTUVWXYZ"    # excludes 0 O 1 I L
+  security: "NOT a credential — admission by reference requires a recorded operator override"
+
+config:
+  booking.ticket.reissue-limit: "5 per day per ticket"
+  booking.ticket.signature-bits: 128
+  booking.ticket.key-rotation-window: P30D
+  TICKET_SIGNING_MASTER_KEY: "${TICKET_SIGNING_MASTER_KEY}"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/ticketing/002-ticket-issuance-and-qr
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-002
+  - mvn -q -f backend verify -Dgroups=ET-TKT-002
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "R5's re-issue rotation and R2's offline verification are in direct conflict. An offline scanner cannot know the ticket's current issuedAt, so it must accept any correctly signed payload — which means the old QR from a lost phone WILL be admitted by an offline scanner. The spec acknowledges this in R5's fourth box but presents it as a reconciliation detail; it is in fact a hole in the re-issue guarantee that only ET-TKT-003's duplicate defence can close, and only for the second scan."
+  - "eventSigningKey hands a scanner the key that forges every ticket for that event. Once delivered to a device the platform has no control over it, and the grant expiry does not revoke a key already downloaded. A dishonest steward with a five-minute grant can generate valid tickets for the whole event."
+  - "Master-key rotation is declared with a P30D dual-key window, but the event key is derived from the master, so rotating the master changes every event key — including for events already running with keys distributed to scanners. The dual-key window means scanners must hold both, and nothing here specifies how a scanner learns about the second."
+  - "R1 issues one document per seat inside the confirmation transaction. A 10-seat order adds 10 inserts to a transaction that ET-TKT-001 already flags as carrying 14+ documents. Large group bookings are exactly the orders most likely to exceed the transaction's practical limits."
+  - "The 128-bit truncated HMAC is ample against forgery but the payload also encodes ticketId and eventId in the clear. Anyone photographing a QR learns both ids, and ticketQrPayload is owner-gated while the QR itself is displayed on a phone screen in a queue."
+  - "EXPIRED is described as a reporting outcome that does not affect refund eligibility, but ET-FIN-004 has not been written and the ticket state machine makes EXPIRED terminal. A terminal state that must still permit a refund transition contradicts R7's own rule that transitions from terminal states are refused."
+  - "purchasedById never moves while ownerId does, so a refund on a transferred ticket returns money to the original purchaser rather than the current holder. That is defensible but it is a policy decision stated in one line here and owned by ET-FIN-004, which may decide otherwise."
+  - "Delivery attempts are stored as an unbounded array on the ticket document. A ticket whose delivery keeps failing and is retried grows its document indefinitely, and MongoDB documents are capped at 16 MB — remote, but the array has no declared bound."

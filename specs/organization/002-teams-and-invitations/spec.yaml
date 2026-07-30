@@ -1,0 +1,123 @@
+id: ET-ORG-002
+title: Members, invitations and ownership transfer
+status: draft
+area: ORG
+service: identity-service
+subgraph: identity
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 1
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-ORG-001]
+conformance: "US Part I §2 organization hierarchy · US Part I §5 team management · US Part II §9, §10 CRUD · US Part IV §21 member state machine"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/organization/001-organizer-onboarding/spec.md
+  - docs/USER_STORIES.md
+  - docs/architecture/DATA_ARCHITECTURE.md
+
+persistence:
+  collections:
+    - identity_organization_members
+    - identity_team_invitations
+    - identity_ownership_transfers
+  indexes:
+    - "identity_organization_members {userId,organizationId} unique"
+    - "identity_organization_members {organizationId,role,status} compound"
+    - "identity_organization_members {organizationId} PARTIAL UNIQUE where role=OWNER"
+    - "identity_team_invitations {invitationToken} unique"
+    - "identity_team_invitations {organizationId,email,status} compound"
+    - "identity_team_invitations {expiresAt} ttl 0"
+    - "identity_ownership_transfers {transferToken} unique"
+    - "identity_ownership_transfers {organizationId,status} compound"
+  redis_keys:
+    - "lock:sweep:group-mirror   STRING  30 s  — the R8 reconciliation mutex"
+
+events:
+  module:
+    - TeamMemberJoinedEvent
+    - InvitationCreatedEvent
+    - OwnershipTransferredEvent
+  bus:
+    - identity.MemberRoleChanged     # v1, session organizationId → catalog, booking
+    - identity.MemberRemoved         # v1, session organizationId → catalog, booking
+  topics:
+    - identity-events
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "organizationMembers(organizationId, role, status, page)  AUTHENTICATED  OrganizationMemberPage!"
+    - "myOrganizationMembership(organizationId)                 AUTHENTICATED  OrganizationMember"
+    - "myOrganizations                                          AUTHENTICATED  [Organization!]!"
+    - "pendingInvitations(organizationId)                       AUTHENTICATED  [TeamInvitation!]!"
+    - "myPendingInvitations                                     AUTHENTICATED  [TeamInvitation!]!"
+    - "invitationByToken(token)                                 PUBLIC         InvitationPreview  # five fields only"
+    - "pendingOwnershipTransfer(organizationId)                 AUTHENTICATED  OwnershipTransfer"
+  mutations:
+    - "inviteTeamMember(input)                ORGANIZER      TeamInvitation!"
+    - "resendInvitation(id)                   ORGANIZER      TeamInvitation!"
+    - "revokeInvitation(id)                   ORGANIZER      TeamInvitation!"
+    - "acceptInvitation(input)                AUTHENTICATED  OrganizationMember!"
+    - "declineInvitation(token)               AUTHENTICATED  Boolean!"
+    - "updateMemberRole(input)                ORGANIZER      OrganizationMember!"
+    - "suspendMember(input)                   ORGANIZER      OrganizationMember!"
+    - "reactivateMember(input)                ORGANIZER      OrganizationMember!"
+    - "removeMember(organizationId, memberId) ORGANIZER      OrganizationMember!"
+    - "leaveOrganization(organizationId)      AUTHENTICATED  Boolean!"
+    - "initiateOwnershipTransfer(input)       ORGANIZER      OwnershipTransfer!"
+    - "confirmOwnershipTransfer(token)        AUTHENTICATED  Organization!"
+    - "cancelOwnershipTransfer(id)            ORGANIZER      OwnershipTransfer!"
+
+errors:
+  - MEMBER_UNKNOWN
+  - MEMBER_ALREADY_EXISTS
+  - OWNER_CANNOT_BE_REMOVED
+  - OWNER_ROLE_IMMUTABLE
+  - INVITATION_UNKNOWN
+  - INVITATION_EXPIRED
+  - INVITATION_NOT_PENDING
+  - TRANSFER_TARGET_INELIGIBLE
+
+roles:
+  CONTRIBUTOR: { rank: 1, parents: [],                        adds: [event:view, attendee:view, ticket:scan] }
+  MARKETER:    { rank: 2, parents: [CONTRIBUTOR],             adds: [analytics:view, promotion:manage] }
+  MANAGER:     { rank: 2, parents: [CONTRIBUTOR],             adds: [event:create, event:edit, event:publish, analytics:view, promotion:manage, "financial:view*"] }
+  ADMIN:       { rank: 3, parents: [MANAGER, MARKETER],       adds: [event:delete, team:invite, team:remove, team:role, organization:edit, "payout:request*"] }
+  OWNER:       { rank: 4, parents: [ADMIN],                   adds: [organization:billing, organization:transfer, organization:delete, payout:request] }
+  # MARKETER and MANAGER share rank 2 and are NOT comparable
+  # * configurable per organization: settings.managersCanViewFinancials, settings.adminsCanRequestPayouts
+
+state_machines:
+  invitation: [PENDING, ACCEPTED, DECLINED, EXPIRED, REVOKED]
+  member:     [ACTIVE, INACTIVE, SUSPENDED, REMOVED]
+  transfer:   [PENDING, CONFIRMED, CANCELLED, EXPIRED]
+
+config:
+  identity.invitation.ttl: P7D
+  identity.transfer.ttl: P3D
+  identity.team.max-members: null
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/organization/002-teams-and-invitations
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/identity-service test -Dgroups=ET-ORG-002
+  - mvn -q -f backend verify -Dgroups=ET-ORG-002
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The TTL index on identity_team_invitations.expiresAt DELETES the document rather than moving it to EXPIRED, so the EXPIRED status in the state machine is unreachable and an accepted-after-expiry attempt finds nothing rather than an expired invitation. R4 asks for INVITATION_EXPIRED carrying expiredAt, which the platform cannot produce once the row is gone. Either the TTL is dropped in favour of a sweep, or the refusal degrades to INVITATION_UNKNOWN — and the two say different things to a user."
+  - "MARKETER and MANAGER share rank 2 and are declared incomparable, but rank is still a number and any code that compares ranks numerically will treat them as equal — which is wrong in both directions. The rank field invites exactly the total-order comparison R1 forbids; a partial order needs no rank at all."
+  - "R5 checks that the accepting identity matches the invitation's email or phone. An invitation sent to a work email by somebody who then logs in with a phone number that Keycloak has never associated with that email is refused, which is the common case in a market where phone is the login identity and email is secondary. The matching rule needs to be far more carefully specified than 'email and phone both differ'."
+  - "Ownership transfer changes two membership rows, the organization's ownerId and the user's primaryOrganizationId in one transaction — plus two Keycloak group moves that are outside it. The partial unique owner index means the transaction must remove the old OWNER role before adding the new one, and if the order is reversed the index rejects the write."
+  - "R8's mirror sweep is one-directional with MongoDB winning, and it removes Keycloak group memberships with no MongoDB row. Run against a misconfigured slug or a partially-migrated organization it will strip every member from a live group tree, and nothing here bounds how much it may remove in one pass."
+  - "custom and denied permissions live on the membership row but are resolved by ET-ORG-003. This spec defines the storage without defining the semantics, so the two specs must agree on whether a denied permission on a membership can override a platform role — and ET-ORG-003's stated order says it cannot."
+  - "settings.managersCanViewFinancials and settings.adminsCanRequestPayouts make two permissions organization-configurable, which breaks R1's claim that the effective set is a pure function of the role. Any cache keyed on role alone is wrong for those two, and a test asserting 'the effective set of each role equals the table' cannot be true for an organization that has changed either setting."
+  - "invitationByToken is PUBLIC and returns the organization name, logo, proposed role and inviter name. A 256-bit token is not guessable, but the endpoint is an unauthenticated oracle: anyone holding a forwarded link learns who invited whom to what, and nothing rate-limits enumeration attempts against it."

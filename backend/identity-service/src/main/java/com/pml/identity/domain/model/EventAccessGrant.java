@@ -157,14 +157,26 @@ public class EventAccessGrant {
     }
 
     /**
-     * Check if user has a specific permission for this event
+     * Check if this grant confers a specific permission for the event.
+     * Custom permissions take precedence, then the event role's defaults.
      */
     public boolean hasPermission(String permission) {
+        if (permission == null) {
+            return false;
+        }
         // Custom permissions take precedence
-        if (customPermissions.contains(permission)) {
+        if (customPermissions != null && customPermissions.contains(permission)) {
             return true;
         }
-        // Fall back to role-based check
-        return false; // Actual implementation would check role permissions
+        // Fall back to the event role's default permissions
+        return eventRole != null && eventRole.grants(permission);
+    }
+
+    /**
+     * Whether this grant permits the action: the grant must be active AND confer the permission.
+     */
+    public boolean canPerform(String permission) {
+        return status == com.pml.identity.domain.enums.AccessGrantStatus.ACTIVE
+            && hasPermission(permission);
     }
 }

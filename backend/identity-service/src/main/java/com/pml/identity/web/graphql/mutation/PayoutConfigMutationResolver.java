@@ -147,7 +147,7 @@ public class PayoutConfigMutationResolver {
                                         ));
                                     }
 
-                                    if (!payoutConfig.getMinimumPayoutAmount().equals(newMinimum)) {
+                                    if (!newMinimum.equals(payoutConfig.getMinimumPayoutAmount())) {
                                         payoutConfig.setMinimumPayoutAmount(newMinimum);
                                         changed = true;
                                     }

@@ -135,7 +135,7 @@ function BankAccountCard({ account, onSetDefault, onEdit, onDelete, canManage }:
         border: account.isDefault
           ? '2px solid var(--brand-500)'
           : '1px solid var(--surface-border)',
-        borderRadius: '16px',
+        borderRadius: 'var(--card-radius-bento)',
         position: 'relative',
       }}
     >
@@ -161,8 +161,8 @@ function BankAccountCard({ account, onSetDefault, onEdit, onDelete, canManage }:
           style={{
             width: 56,
             height: 56,
-            borderRadius: '14px',
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%)',
+            borderRadius: 'var(--card-radius-bento)',
+            background: 'var(--accent-a5)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -389,13 +389,13 @@ function BankAccountDialog({ open, onOpenChange, account, onSubmit }: BankAccoun
           <Box
             p="3"
             style={{
-              background: 'rgba(245, 158, 11, 0.1)',
-              border: '1px solid rgba(245, 158, 11, 0.2)',
-              borderRadius: '8px',
+              background: 'var(--status-warning-a3)',
+              border: '1px solid var(--amber-a5)',
+              borderRadius: 'var(--radius-4)',
             }}
           >
             <Flex align="start" gap="2">
-              <WarningTriangle style={{ width: 18, height: 18, color: '#F59E0B', flexShrink: 0, marginTop: 2 }} />
+              <WarningTriangle style={{ width: 18, height: 18, color: 'var(--status-warning-11)', flexShrink: 0, marginTop: 2 }} />
               <Text size="1" style={{ color: 'var(--content-secondary)' }}>
                 Please ensure all bank details are correct. Incorrect details may result in failed or delayed payouts.
               </Text>
@@ -413,7 +413,7 @@ function BankAccountDialog({ open, onOpenChange, account, onSubmit }: BankAccoun
             onClick={handleSubmit}
             disabled={!bankCode || !branchCode || !accountNumber || !accountHolder || isSubmitting}
             style={{
-              background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+              background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               cursor: !bankCode || !branchCode || !accountNumber || !accountHolder || isSubmitting
                 ? 'not-allowed'
                 : 'pointer',
@@ -454,12 +454,8 @@ function DeleteConfirmDialog({ open, onOpenChange, account, onConfirm }: DeleteC
             </Button>
           </AlertDialog.Cancel>
           <AlertDialog.Action>
-            <Button
-              color="red"
-              onClick={onConfirm}
-              style={{ background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)' }}
-            >
-              Remove Account
+            <Button data-testid="bank-account-remove-confirm" color="red" onClick={onConfirm}>
+              Remove account
             </Button>
           </AlertDialog.Action>
         </Flex>
@@ -524,7 +520,7 @@ export default function BankAccountsPage() {
   return (
     <Box>
       <PageHeader
-        title="Bank Accounts"
+        title="Payout destinations"
         description="Manage your bank accounts for receiving payouts"
         breadcrumbs={[
           { label: 'Finance', href: '/finance' },
@@ -544,13 +540,13 @@ export default function BankAccountsPage() {
         mb="6"
         style={{
           padding: '16px 20px',
-          background: 'rgba(59, 130, 246, 0.1)',
-          border: '1px solid rgba(59, 130, 246, 0.2)',
-          borderRadius: '12px',
+          background: 'var(--status-info-a3)',
+          border: '1px solid var(--blue-a5)',
+          borderRadius: 'var(--card-radius)',
         }}
       >
         <Flex align="center" gap="3">
-          <Bank style={{ width: 20, height: 20, color: '#3B82F6' }} />
+          <Bank style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
           <Text size="2" style={{ color: 'var(--content-secondary)' }}>
             <strong>Payout Information:</strong>{' '}
             <Text style={{ color: 'var(--content-muted)' }}>
@@ -567,7 +563,7 @@ export default function BankAccountsPage() {
             padding: '60px 24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
             textAlign: 'center',
           }}
         >
@@ -596,7 +592,7 @@ export default function BankAccountsPage() {
               size="3"
               onClick={() => setShowAddDialog(true)}
               style={{
-                background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               }}
             >
               <Plus style={{ width: 18, height: 18, marginRight: 8 }} />

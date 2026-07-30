@@ -116,9 +116,9 @@ const mockEventPerformance: EventPerformance[] = [
 
 const mockAudienceSegments: AudienceSegment[] = [
   { label: 'Returning Customers', count: 234, percentage: 45, color: 'var(--brand-500)' },
-  { label: 'New Customers', count: 187, percentage: 36, color: '#3B82F6' },
-  { label: 'VIP Members', count: 56, percentage: 11, color: '#8B5CF6' },
-  { label: 'Early Bird Buyers', count: 42, percentage: 8, color: '#F59E0B' },
+  { label: 'New Customers', count: 187, percentage: 36, color: 'var(--status-info-9)' },
+  { label: 'VIP Members', count: 56, percentage: 11, color: 'var(--accent-9)' },
+  { label: 'Early Bird Buyers', count: 42, percentage: 8, color: 'var(--status-warning-9)' },
 ];
 
 const mockTopCities = [
@@ -134,12 +134,7 @@ const mockTopCities = [
 // =============================================================================
 
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-ZM', {
-    style: 'currency',
-    currency: 'ZMW',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return `K ${amount.toLocaleString('en-ZM', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatNumber(num: number): string {
@@ -296,7 +291,7 @@ export default function AnalyticsPage() {
             padding: '60px 24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
             textAlign: 'center',
           }}
         >
@@ -338,28 +333,28 @@ export default function AnalyticsPage() {
         }}
       >
         <StatCard
-          title="Total Revenue"
+          title="Total revenue"
           value={formatCurrency(summaryStats.totalRevenue)}
           icon={<Dollar style={{ width: 20, height: 20 }} />}
           change={summaryStats.revenueGrowth}
           changeLabel="vs previous period"
         />
         <StatCard
-          title="Tickets Sold"
+          title="Tickets sold"
           value={formatNumber(summaryStats.totalTickets)}
           icon={<Label style={{ width: 20, height: 20 }} />}
           change={summaryStats.ticketsGrowth}
           changeLabel="vs previous period"
         />
         <StatCard
-          title="Page Views"
+          title="Page views"
           value={formatNumber(summaryStats.totalViews)}
           icon={<Eye style={{ width: 20, height: 20 }} />}
           change={12}
           changeLabel="Unique visitors"
         />
         <StatCard
-          title="Conversion Rate"
+          title="Conversion rate"
           value={`${summaryStats.conversionRate.toFixed(1)}%`}
           icon={<GraphUp style={{ width: 20, height: 20 }} />}
           change={0.5}
@@ -376,7 +371,7 @@ export default function AnalyticsPage() {
             padding: '24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
           }}
         >
           <Flex justify="between" align="center" mb="4">
@@ -405,7 +400,7 @@ export default function AnalyticsPage() {
             padding: '24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
           }}
         >
           <Flex justify="between" align="center" mb="4">
@@ -424,7 +419,7 @@ export default function AnalyticsPage() {
               </Flex>
             </Badge>
           </Flex>
-          <MiniChart data={mockDailyMetrics} dataKey="tickets" color="#3B82F6" />
+          <MiniChart data={mockDailyMetrics} dataKey="tickets" color="var(--status-info-9)" />
         </Card>
       </Flex>
 
@@ -437,7 +432,7 @@ export default function AnalyticsPage() {
             padding: '24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
           }}
         >
           <Flex justify="between" align="center" mb="4">
@@ -464,7 +459,7 @@ export default function AnalyticsPage() {
               padding: '24px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -511,7 +506,7 @@ export default function AnalyticsPage() {
               padding: '24px',
               background: 'var(--surface-elevated)',
               border: '1px solid var(--surface-border)',
-              borderRadius: '16px',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
@@ -526,7 +521,7 @@ export default function AnalyticsPage() {
                       style={{
                         width: 20,
                         height: 20,
-                        borderRadius: '6px',
+                        borderRadius: 'var(--radius-3)',
                         background: index === 0 ? 'var(--brand-500)' : 'var(--surface-subtle)',
                         display: 'flex',
                         alignItems: 'center',
@@ -562,9 +557,9 @@ export default function AnalyticsPage() {
           <Card
             style={{
               padding: '20px',
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%)',
-              border: '1px solid rgba(16, 185, 129, 0.2)',
-              borderRadius: '16px',
+              background: 'linear-gradient(135deg, var(--accent-a3) 0%, var(--accent-a3) 100%)',
+              border: '1px solid var(--accent-a5)',
+              borderRadius: 'var(--card-radius-bento)',
             }}
           >
             <Flex align="center" gap="3" mb="3">

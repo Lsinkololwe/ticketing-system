@@ -7,12 +7,18 @@ import com.pml.identity.domain.event.OrganizationApprovedEvent;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.model.User;
+import com.pml.identity.domain.enums.PayoutMethod;
+import com.pml.identity.domain.enums.PayoutSchedule;
+import com.pml.identity.domain.model.PlatformConfigurationView;
 import com.pml.identity.domain.valueobject.BusinessAddress;
 import com.pml.identity.domain.valueobject.OrganizationRole;
+import com.pml.identity.domain.valueobject.PayoutConfig;
 import com.pml.identity.domain.valueobject.SocialLinks;
 import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
+import com.pml.identity.repository.PlatformConfigurationRepository;
 import com.pml.identity.repository.UserRepository;
+import com.pml.shared.config.model.PlatformPaymentDefaults;
 import com.pml.identity.service.OrganizationOnboardingService;
 import com.pml.identity.service.RoleSyncService;
 import com.pml.identity.web.graphql.dto.organization.OrganizationApplicationInput;
@@ -50,6 +56,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     private final UserRepository userRepository;
     private final RoleSyncService roleSyncService;
     private final ApplicationEventPublisher eventPublisher;
+    private final PlatformConfigurationRepository platformConfigRepository;
 
     // =========================================================================
     // USER OPERATIONS
@@ -168,6 +175,12 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                     org.setRejectionReason(null); // Clear any previous rejection reason
                     org.setUpdatedAt(Instant.now());
 
+                    // NOTE: the ORGANIZER realm role is NOT granted here. It is assigned by Keycloak
+                    // at registration via the AccountTypeRoleMapper SPI (keycloak-extensions) based on
+                    // the user-selected account type, and mirrored to MongoDB by UserSyncEventListener.
+                    // Granting it again from the app would duplicate that flow. What actually gates a
+                    // pending organizer's privileged actions is organization STATUS, enforced in
+                    // AuthorizationServiceImpl — not the role.
                     return organizationRepository.save(org);
                 })
                 .doOnSuccess(org -> log.info("Organization {} submitted for review", org.getId()));
@@ -193,26 +206,28 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
         String baseSlug = toSlug(organizationName);
 
         return generateUniqueSlug(baseSlug)
-                .flatMap(slug -> {
-                    Organization organization = Organization.builder()
-                            .name(organizationName)
-                            .slug(slug)
-                            .type(OrganizationType.INDIVIDUAL)
-                            .ownerId(user.getId())
-                            .businessEmail(user.getEmail())
-                            .businessPhone(user.getPhoneNumber())
-                            .status(OrganizationStatus.DRAFT) // Start in DRAFT
-                            .createdAt(Instant.now())
-                            .updatedAt(Instant.now())
-                            .build();
+                .flatMap(slug -> buildDefaultPayoutConfig()
+                        .flatMap(payoutConfig -> {
+                            Organization organization = Organization.builder()
+                                    .name(organizationName)
+                                    .slug(slug)
+                                    .type(OrganizationType.INDIVIDUAL)
+                                    .ownerId(user.getId())
+                                    .businessEmail(user.getEmail())
+                                    .businessPhone(user.getPhoneNumber())
+                                    .status(OrganizationStatus.DRAFT) // Start in DRAFT
+                                    .payoutConfig(payoutConfig)
+                                    .createdAt(Instant.now())
+                                    .updatedAt(Instant.now())
+                                    .build();
 
-                    return organizationRepository.save(organization)
-                            .flatMap(savedOrg -> createOwnerMembership(savedOrg, user)
-                                    .thenReturn(savedOrg))
-                            .doOnSuccess(org -> log.info(
-                                    "Created organization: {} (slug: {}, status: DRAFT) for user: {}",
-                                    org.getId(), org.getSlug(), user.getId()));
-                });
+                            return organizationRepository.save(organization)
+                                    .flatMap(savedOrg -> createOwnerMembership(savedOrg, user)
+                                            .thenReturn(savedOrg))
+                                    .doOnSuccess(org -> log.info(
+                                            "Created organization: {} (slug: {}, status: DRAFT) for user: {}",
+                                            org.getId(), org.getSlug(), user.getId()));
+                        }));
     }
 
     @Override
@@ -397,7 +412,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
         String baseSlug = toSlug(organizationName);
 
         return generateUniqueSlug(baseSlug)
-                .flatMap(slug -> {
+                .flatMap(slug -> buildDefaultPayoutConfig().flatMap(payoutConfig -> {
                     Organization.OrganizationBuilder builder = Organization.builder()
                             .name(organizationName)
                             .slug(slug)
@@ -406,6 +421,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                             .businessEmail(input.businessEmail() != null ? input.businessEmail() : user.getEmail())
                             .businessPhone(input.businessPhone() != null ? input.businessPhone() : user.getPhoneNumber())
                             .status(OrganizationStatus.DRAFT)
+                            .payoutConfig(payoutConfig)
                             .createdAt(Instant.now())
                             .updatedAt(Instant.now());
 
@@ -448,6 +464,36 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                             .doOnSuccess(org -> log.info(
                                     "Created organization: {} (slug: {}, status: DRAFT) for user: {}",
                                     org.getId(), org.getSlug(), user.getId()));
+                }));
+    }
+
+    /**
+     * Build a new organization's {@link PayoutConfig} from the shared platform
+     * configuration. The commission rate, payout method/schedule and minimum payout
+     * amount all come from {@link PlatformPaymentDefaults} on the {@code platform_configuration}
+     * document — never from defaults baked into the entity.
+     *
+     * <p>Fails loudly if the configuration (or its payment section) is missing, since these
+     * are financial values that must originate from the configured source of truth.</p>
+     */
+    private Mono<PayoutConfig> buildDefaultPayoutConfig() {
+        return platformConfigRepository.getConfiguration()
+                .switchIfEmpty(Mono.error(new IllegalStateException(
+                        "Platform configuration not found. Ensure catalog-service has initialized the "
+                                + "platform_configuration document before creating organizations.")))
+                .map(config -> {
+                    PlatformPaymentDefaults payment = config.getPayment();
+                    if (payment == null) {
+                        throw new IllegalStateException(
+                                "Platform configuration is missing the payment/payout/commission section.");
+                    }
+                    return PayoutConfig.builder()
+                            .preferredMethod(PayoutMethod.valueOf(payment.getPayoutMethod()))
+                            .schedule(PayoutSchedule.valueOf(payment.getPayoutSchedule()))
+                            .commissionRate(payment.getCommissionRate())
+                            .minimumPayoutAmount(payment.getMinimumPayoutAmount())
+                            .verified(false)
+                            .build();
                 });
     }
 

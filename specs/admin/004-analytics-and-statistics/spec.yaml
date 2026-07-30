@@ -1,0 +1,130 @@
+id: ET-ADM-004
+title: Dashboard analytics and the polling contract
+status: draft
+area: ADM
+service: all
+subgraph: all
+owner: lazarous
+created: 2026-07-30
+priority: should
+wave: 6
+blocked_by: [ET-PLT-004, ET-PLT-007, ET-FIN-001, ET-FIN-005, ET-TKT-003]
+conformance: "MISSING_FEATURES Part 1 dashboard analytics · Part 5 real-time updates"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/finance/001-escrow-and-ledger/spec.md
+  - specs/finance/005-reconciliation/spec.md
+  - docs/MISSING_FEATURES_RESEARCH_AND_RECOMMENDATIONS.md
+  - docs/BACKEND_GAP_ANALYSIS_REPORT.md
+
+persistence:
+  collections:
+    - admin_statistics_rollups    # added to the ET-PLT-002 §4 registry by this spec
+  indexes:
+    - "admin_statistics_rollups {statisticKey,scope,scopeId,granularity,periodStart} unique"
+    - "admin_statistics_rollups {computedAt} single"
+  redis_keys:
+    - "lock:sweep:analytics-rollup-hourly    STRING  30 s"
+    - "lock:sweep:analytics-rollup-nightly   STRING  30 s"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema:
+    - backend/catalog-service/src/main/resources/graphql/schema.graphqls
+    - backend/booking-service/src/main/resources/graphql/schema.graphqls
+    - backend/identity-service/src/main/resources/graphql/schema.graphqls
+  by_subgraph:
+    catalog:  [eventStats, topCities, topCategories, sellThrough]
+    booking:  [ticketStats, eventSalesSummary, checkInSummary, revenueSummary,
+               commissionSummary, escrowSummary, payoutSummary, settlementSummary]
+    identity: [userStats, organizationStats]
+  composed_client_side: [platformSummary, growthTrends]   # no cross-service aggregation
+  subscriptions: NONE      # D-12 — asserted by a contract test
+
+errors: []    # a range beyond max-range refuses with COMMAND_NOT_WELL_FORMED
+
+figure_definitions:    # 14 — the SINGLE source; every dashboard figure is one of these
+  tickets_sold:        "booking_tickets status in {ISSUED, VALIDATED}"
+  tickets_refunded:    "booking_tickets status = REFUNDED"
+  tickets_checked_in:  "booking_checkins distinct ticketId"
+  gross_transaction_value: "sum 1010 debits, entryType TICKET_SALE, over the period"
+  platform_revenue:    "4010 Earned Revenue balance"
+  commission_collected:"2020 Pending Commission balance"
+  escrow_held:         "sum booking_escrow_accounts.currentBalance where status != CLOSED"
+  refunds_paid:        "sum 2030 debits over the period"
+  active_users:        "identity_users accountStatus = ACTIVE"
+  new_users:           "identity_users createdAt in the period"
+  active_organizations:"identity_organizations status = ACTIVE"
+  published_events:    "catalog_events status = PUBLISHED and endsAt in the future"
+  conversion_rate:     "confirmed reservations / created reservations, over the period"
+  sell_through:        "tickets sold / capacity, per event"
+
+poll_intervals:
+  checkInSummary: PT15S
+  eventSalesSummary: PT30S
+  eventRevenueSummary: PT60S
+  salesTimeSeries: PT60S
+  tierPerformance: PT60S
+  organizationSummary: PT5M
+  userStats: PT5M
+  organizationStats: PT5M
+  eventStats: PT5M
+  ticketStats: PT5M
+  platformSummary: PT5M
+  revenueSummary: PT5M
+  commissionSummary: PT5M
+  escrowSummary: PT5M
+  payoutSummary: PT5M
+  settlementSummary: PT5M
+  growthTrends: PT30M
+  topCities: PT30M
+  topCategories: PT30M
+
+polling_contract:
+  pause: "when document.hidden"
+  backoff: "exponential to PT5M on failure"
+  overlap: "never — no poll while one is in flight"
+  jitter: "+/-10% so replicas do not synchronise"
+
+rules:
+  - "every statistic is a server-side aggregation with $match FIRST"
+  - "every figure has exactly ONE definition, used by every consumer"
+  - "financial figures come from the LEDGER, never from summing tickets"
+  - "every response carries computedAt, live and rollup alike"
+  - "live aggregations capped at P90D; wider ranges must use a rollup"
+
+config:
+  admin.analytics.max-range: P90D
+  admin.analytics.query-timeout: PT10S
+  admin.analytics.max-backoff: PT5M
+  admin.analytics.rollup-hourly-cron: "hourly, off the hour"
+  admin.analytics.rollup-nightly-cron: "daily, off-peak"
+  admin.analytics.poll-jitter: "10%"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/admin/004-analytics-and-statistics
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-ADM-004
+  - mvn -q -f backend verify -Dgroups=ET-ADM-004
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+  - cd frontend/web && npm run codegen && git diff --exit-code
+
+risks:
+  - "platformSummary and growthTrends are composed client-side from three subgraphs' rollups because no service may read another's collections. That means the admin dashboard's headline numbers are assembled in the browser from three independently-timed rollups with three different computedAt values — and any figure that is a ratio across services (conversion rate spanning reservations in booking and events in catalog) cannot be computed correctly at all."
+  - "R3 requires financial figures to come from the ledger, and ET-FIN-005 already flags that the trial balance scans booking_journal_lines with no lower time bound. Every finance dashboard figure inherits that scan, polled at PT5M by every finance operator with a tab open."
+  - "The 19 declared poll intervals live in this spec, but the clients that honour them are three Next.js apps and an Expo app. Nothing in the build enforces that a widget polls at its declared interval, so the contract is documentation until somebody writes a lint over the frontend hooks."
+  - "R1 requires explain() to report IXSCAN on every pipeline's $match stage, but several figures match on status + a date range across collections whose ET-PLT-002 indexes were designed for other queries. At least eventSalesSummary, salesTimeSeries and the finance period figures will need indexes the registry does not currently declare."
+  - "Rollups are unique on {statisticKey, scope, scopeId, granularity, periodStart}, so a re-run replaces a period. That is correct, but a re-run after a data correction silently changes a historical figure somebody may have already reported externally, with no record that it changed."
+  - "R7 caps live aggregations at P90D and directs wider ranges to a rollup, but nightly rollups only exist for growthTrends, topCities and topCategories. A finance operator asking for a 12-month revenue summary has neither a live path (capped) nor a rollup (does not exist)."
+  - "admin_statistics_rollups is the ninth amendment to ET-PLT-002 §4's closed collection registry, and it is declared once while being written by three different services — which means either three services write one collection, violating the prefix ownership rule, or there are actually three collections and the spec names one."
+  - "checkInSummary appears in both this spec and ET-TKT-003 R7 with the same name and a 15-second interval declared in each. Two specs owning one operation is exactly the duplication R2 exists to prevent, one level up."

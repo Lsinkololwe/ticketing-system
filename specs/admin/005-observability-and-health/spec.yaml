@@ -1,0 +1,123 @@
+id: ET-ADM-005
+title: Observability — metrics, tracing, SLOs, health and alerting
+status: draft
+area: ADM
+service: all
+subgraph: identity
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 6
+blocked_by: [ET-PLT-001, ET-PLT-003, ET-PLT-005, ET-FIN-005, ET-ADM-003]
+conformance: "PDI Phase 9 monitoring and alerting · MISSING_FEATURES Part 4 system health"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/finance/005-reconciliation/spec.md
+  - specs/admin/003-transaction-recovery/spec.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+  - docs/MISSING_FEATURES_RESEARCH_AND_RECOMMENDATIONS.md
+
+persistence:
+  collections: []       # alerts live in Alertmanager; SLO state in Prometheus
+  indexes: []
+  redis_keys: []
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:      # every one ADMIN + @tag admin
+    - "systemHealth                                    ADMIN  SystemHealth!"
+    - "transactionHealth                               ADMIN  TransactionHealth!"
+    - "sloAttainment(window)                           ADMIN  [SloAttainment!]!"
+    - "systemAlerts(severity, unacknowledgedOnly)      ADMIN  [SystemAlert!]!"
+  mutations:
+    - "acknowledgeAlert(id, note)   ADMIN  SystemAlert!  @tag admin"
+
+errors: []
+
+metrics: 40    # the full registry is spec.md §4, grouped platform / eventing / identity /
+               # catalogue+ticketing / payment+finance / notification+approvals
+
+slos:
+  1: { name: purchase_success_rate,  target: ">= 99.0%",  window: 30d }
+  2: { name: purchase_latency_p95,   target: "<= 3s",     window: 30d }
+  3: { name: gate_scan_latency_p95,  target: "<= 1s",     window: 30d }
+  4: { name: payout_timeliness,      target: "95% <= 24h", window: 30d }
+  error_budget: "50% burned in a week -> TICKET; 90% -> PAGE"
+
+alert_classes:
+  PAGE:   "wakes on-call — money moving wrongly, or the platform is down"
+  TICKET: "work for the next working day"
+  INFO:   "posts to a channel"
+
+alerts:
+  page:   [TrialBalanceNonZero, NoSalesDuringOnSale, PaymentSuccessRateLow, RecoveryRiskHigh,
+           PayoutUnconfirmed, ServiceUnready, ErrorBudget90]
+  ticket: [DeadLetterDepth, ReconciliationBacklog, ReservationExpiryHigh, ApprovalSlaBreach,
+           KeycloakMirrorPending, LazyRepairRateHigh, ManualCheckinRatioHigh,
+           WebhookSignatureFailures, UnmappedProviderStatus, ErrorBudget50]
+  info:   [NotificationFailureRate, ConsumerLag]
+  rule: "every alert carries a runbook URL and a for-duration; a definition without one FAILS THE BUILD"
+
+health:
+  required:     # readiness FAILS when these are down
+    catalog:  [MongoDB]
+    booking:  [MongoDB, PostgreSQL]     # PostgreSQL holds the Modulith outbox guarantee
+    identity: [MongoDB, Keycloak]
+    gateway:  [ApolloRouter]
+  optional:     # DEGRADED — the service still serves
+    catalog:  [Redis, ServiceBus]
+    booking:  [Redis, ServiceBus, PawaPay]
+    identity: [Redis, ServiceBus, WhatsApp, SMS, SMTP]
+    gateway:  [Redis]
+
+correlation:
+  generated_at: gateway
+  propagated: "header -> MDC -> EventEnvelope.correlationId -> extensions.correlationId"
+  chain: "causationId links a derived event to the one that caused it"
+
+tracing:
+  baseline: 0.10
+  money_paths: 1.00      # reservation, payment, refund, payout
+  errors: 1.00
+  redaction: "provider spans carry name + outcome; NO msisdn, account number or raw message"
+
+config:
+  observability.trace.sample-rate: 0.10
+  observability.trace.money-path-rate: 1.00
+  observability.trace.retention: P14D
+  observability.metrics.export-interval: PT15S
+  observability.business.no-sales-window: PT1H
+  observability.health.check-interval: PT30S
+  observability.log.level: "INFO, structured JSON"
+
+external:
+  prometheus: ../docker-resources/prometheus/
+  grafana: ../docker-resources/grafana/
+  scrape: /actuator/prometheus
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/admin/005-observability-and-health
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-ADM-005
+  - mvn -q -f backend verify -Dgroups=ET-ADM-005
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The metric registry collects requirements from fourteen other specs, but each of those specs asserts its own metric in its own acceptance criteria. Nothing keeps the two in sync: a spec that adds a metric to its acceptance list without adding a §4 row here produces a metric R1's enumeration test will reject, failing a build for a metric somebody legitimately needed."
+  - "NoSalesDuringOnSale is a PAGE at one hour of zero sales while any event has an open sales window. On a platform with a long tail of small events, most of which sell nothing for hours at a time, this alert fires constantly and is the first one somebody silences — taking with it the genuine case it exists to catch. It needs a volume floor the spec does not give it."
+  - "R3 requires every PAGE alert to have fired in a drill before being relied upon, which is a process commitment no build can enforce. It is the right rule and it will be the first acceptance box marked complete without evidence."
+  - "PawaPay is optional for booking's readiness, so a total payment-provider outage leaves booking HEALTHY-but-degraded and in rotation. That is deliberate, but combined with ET-PAY-001's circuit breaker returning PAYMENT_PROVIDER_UNAVAILABLE it means the platform reports itself healthy while no ticket can be bought — and PaymentSuccessRateLow is the only thing that catches it, at 15 minutes."
+  - "The four SLOs are computed over a 30-day rolling window from Prometheus data with a 14-day trace retention and an unstated metric retention. A 30-day SLO needs 30 days of metric history, which nothing here provisions."
+  - "SLO 1 excludes user-declined payments from the purchase success rate, which is correct — but PAYMENT_DECLINED versus PAYMENT_PROVIDER_UNAVAILABLE is a distinction ET-PAY-001's adapter makes by mapping an unmapped provider status to PENDING. A provider whose declines map to OTHER inflates the success rate by excluding failures that were the platform's problem."
+  - "systemHealth is served by identity-service and reports on identity-service among others. R8's last box requires health queries not to depend on the components they report on, but a systemHealth query needs identity-service to be up to answer at all — so the endpoint can never report identity-service as down."
+  - "Alert routing, runbooks, dashboards and SLO recording rules all live in ../docker-resources, a separate repository. Six of this spec's nine tasks write files outside this repo, so the spec's verify block cannot check most of what it specifies."

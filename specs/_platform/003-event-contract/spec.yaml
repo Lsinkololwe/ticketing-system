@@ -1,0 +1,86 @@
+id: ET-PLT-003
+title: Event contract — two tiers, the envelope, the outbox, idempotent consumers
+status: draft
+area: PLT
+service: all
+subgraph: null
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 0
+blocked_by: [ET-PLT-001, ET-PLT-002]
+conformance: "PDI Phase 3 atomic outbox · PDI Phase 8 dead-letter queue and recovery"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/001-runtime-baseline/spec.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md
+  - docs/MISSING_FEATURES_RESEARCH_AND_RECOMMENDATIONS.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+# ---- the contract, mirrored from spec.md §4 so scripts need not parse markdown ----
+persistence:
+  collections: []
+  indexes: []
+  redis_keys:
+    - "evt:seen:{consumer}:{eventId}   STRING  7 d  — consumer deduplication"
+
+events:
+  topics:
+    - catalog-events      # publisher catalog-service   binding catalogEvents-out-0
+    - booking-events      # publisher booking-service   binding bookingEvents-out-0
+    - identity-events     # publisher identity-service  binding identityEvents-out-0
+
+  bus:
+    - catalog.EventPublished                # v1  → booking, identity
+    - catalog.TicketTierPublished           # v1  → booking            session tierId
+    - catalog.TicketTierCapacityChanged     # v1  → booking            session tierId
+    - catalog.EventRescheduled              # v1  → booking, identity
+    - catalog.EventCancelled                # v1  → booking, identity
+    - catalog.EventCompleted                # v1  → booking, identity
+    - booking.TicketPurchased               # v1  → catalog, identity
+    - booking.TicketTransferred             # v1  → identity           session ticketId
+    - booking.TicketValidated               # v1  → catalog
+    - booking.PaymentCompleted              # v1  → identity
+    - booking.PaymentFailed                 # v1  → identity
+    - booking.RefundCompleted               # v1  → catalog, identity
+    - booking.PayoutCompleted               # v1  → identity
+    - identity.OrganizationApproved         # v1  → catalog, booking   session organizationId
+    - identity.OrganizationSuspended        # v1  → catalog, booking   session organizationId
+    - identity.MemberRoleChanged            # v1  → catalog, booking   session organizationId
+    - identity.MemberRemoved                # v1  → catalog, booking   session organizationId
+    - identity.EventAccessGranted           # v1  → booking            session eventId
+    - identity.EventAccessRevoked           # v1  → booking            session eventId
+
+  module: []   # intra-service events are declared by the spec that introduces them
+
+graphql:
+  schema: null
+  queries: []
+  mutations: []
+
+errors:
+  - UNSUPPORTED_SCHEMA_VERSION   # dead-letter reason, not a client-facing code
+
+shared_types:
+  - com.pml.shared.event.EventEnvelope
+  - com.pml.shared.event.EventEnvelopes
+  - com.pml.shared.event.ConsumerGuard
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/003-event-contract
+  - ./scripts/spec-lint.sh --events
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-PLT-003
+  - mvn -q -f backend verify -Dgroups=ET-PLT-003
+
+risks:
+  - "R1's crash-recovery guarantee holds only if the module event is published inside the same transaction as the write. Spring Modulith records the publication when the transaction commits, so a doOnSuccess on a reactive chain that has already left the transactional boundary records nothing. The reactive/JDBC split makes this easy to get wrong and impossible to see in a passing test — the kill test in T1 is the only thing that detects it."
+  - "The two transaction managers cannot enlist together, so the MongoDB write and the PostgreSQL event_publication row are not atomic with each other. A crash in the window between them loses the publication for a write that succeeded. The window is small and the failure is silent; whether it is acceptable, or whether the platform needs a periodic reconciliation sweep comparing recent documents against published events, is an open decision this spec does not close."
+  - "Session-enabled subscriptions serialise per key, which is what the eight ordered rows need, but Azure Service Bus sessions also change the consumer's concurrency model and a session lock lost mid-handler redelivers the whole session. T7 must verify behaviour under lock expiry, not just under interleaving."
+  - "R5 requires a durable marker for non-idempotent consumers in addition to the Redis guard, but does not say which consumers those are — that judgement is left to each consuming spec, and a consumer that wrongly self-assesses as idempotent gets no second line of defence."
+  - "The 19-row registry names catalog and booking as consumers of identity.MemberRoleChanged for permission-cache invalidation, but ET-ORG-003 has not yet decided whether those services cache permissions at all. If they resolve permissions synchronously over the internal API instead, four of the nineteen rows have no consumer and should be withdrawn rather than published to nobody."
+  - "No-PII-in-payloads (R3, T8) is asserted by a test that must enumerate the forbidden shapes. A field named recipientName or contactDetail added later to a payload passes any check keyed on the field names known today."
+  - "spring.modulith.events.completion-mode=ARCHIVE retains every completed publication row. At the platform's volume that table grows monotonically and nothing here bounds it; a retention job belongs to ET-PLT-009 and until it exists the outbox table is an unbounded write-amplifier on the PostgreSQL instance Keycloak also runs on."

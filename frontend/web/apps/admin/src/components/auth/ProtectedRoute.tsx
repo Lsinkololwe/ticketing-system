@@ -11,6 +11,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { Flex, Spinner } from '@radix-ui/themes';
 import { useSession } from '@/lib/auth/client';
 
 export interface ProtectedRouteProps {
@@ -28,9 +29,9 @@ export interface ProtectedRouteProps {
  */
 function DefaultLoadingComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
-    </div>
+    <Flex align="center" justify="center" style={{ minHeight: '100vh' }}>
+      <Spinner size="3" />
+    </Flex>
   );
 }
 

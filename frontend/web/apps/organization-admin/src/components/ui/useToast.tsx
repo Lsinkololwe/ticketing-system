@@ -1,45 +1,34 @@
 'use client';
 
 /**
- * Toast Context and Hook
- *
- * Provides a simple API for showing toast notifications:
+ * Toast context and hook.
  *
  * ```tsx
  * const { toast } = useToast();
- *
- * // Success notification
- * toast.success('Changes saved successfully');
- *
- * // Error notification
- * toast.error('Failed to save changes', 'Please try again');
- *
- * // With action button
- * toast.info('New update available', undefined, {
- *   label: 'Refresh',
- *   onClick: () => window.location.reload()
- * });
+ * toast.success('Event published');
+ * toast.error('Payout request failed', 'Add a payout destination first.');
  * ```
+ *
+ * The Radix Toast primitives (Provider / Root / Viewport / Action) are plumbing
+ * and live here. `<Toast>` itself is the design-system component and keeps to
+ * its declared contract: variant, title, description, icon, onClose.
  */
 
 import * as React from 'react';
 import {
   Toast,
-  ToastClose,
-  ToastDescription,
-  ToastIcon,
-  ToastProvider as RadixToastProvider,
-  ToastTitle,
-  ToastViewport,
+  ToastRoot,
   ToastAction,
+  ToastProvider as RadixToastProvider,
+  ToastViewport,
   type ToastData,
   type ToastVariant,
 } from './Toast';
 
-// Default duration for auto-dismiss (5 seconds)
 const DEFAULT_DURATION = 5000;
+/** Errors linger — the reader usually has to act on them. */
+const ERROR_DURATION = 8000;
 
-// Toast context type
 interface ToastContextType {
   toasts: ToastData[];
   addToast: (toast: Omit<ToastData, 'id'>) => string;
@@ -55,45 +44,29 @@ interface ToastContextType {
 
 const ToastContext = React.createContext<ToastContextType | null>(null);
 
-// Generate unique ID for each toast
 let toastIdCounter = 0;
 const generateId = () => `toast-${++toastIdCounter}-${Date.now()}`;
 
-/**
- * Toast Provider Component
- *
- * Wrap your app with this provider to enable toast notifications.
- * Place at the root of your app, inside other providers.
- */
 export function ToastContextProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<ToastData[]>([]);
 
-  // Add a new toast
-  const addToast = React.useCallback((toast: Omit<ToastData, 'id'>): string => {
+  const addToast = React.useCallback((next: Omit<ToastData, 'id'>): string => {
     const id = generateId();
-    const newToast: ToastData = {
-      ...toast,
-      id,
-      duration: toast.duration ?? DEFAULT_DURATION,
-    };
-
-    setToasts((prev) => [...prev, newToast]);
+    setToasts((prev) => [...prev, { ...next, id, duration: next.duration ?? DEFAULT_DURATION }]);
     return id;
   }, []);
 
-  // Remove a toast by ID
   const removeToast = React.useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Convenience methods for different toast types
   const toast = React.useMemo(
     () => ({
       success: (title: string, description?: string, action?: ToastData['action']) =>
         addToast({ title, description, variant: 'success', action }),
 
       error: (title: string, description?: string, action?: ToastData['action']) =>
-        addToast({ title, description, variant: 'error', action, duration: 8000 }), // Errors stay longer
+        addToast({ title, description, variant: 'error', action, duration: ERROR_DURATION }),
 
       warning: (title: string, description?: string, action?: ToastData['action']) =>
         addToast({ title, description, variant: 'warning', action }),
@@ -107,12 +80,7 @@ export function ToastContextProvider({ children }: { children: React.ReactNode }
   );
 
   const contextValue = React.useMemo(
-    () => ({
-      toasts,
-      addToast,
-      removeToast,
-      toast,
-    }),
+    () => ({ toasts, addToast, removeToast, toast }),
     [toasts, addToast, removeToast, toast]
   );
 
@@ -121,33 +89,37 @@ export function ToastContextProvider({ children }: { children: React.ReactNode }
       <RadixToastProvider swipeDirection="right">
         {children}
 
-        {/* Render all active toasts */}
         {toasts.map((t) => (
-          <Toast
+          <ToastRoot
             key={t.id}
-            open={true}
-            variant={t.variant}
+            open
             duration={t.duration}
             onOpenChange={(open) => {
               if (!open) removeToast(t.id);
             }}
+            asChild
           >
-            <div className="flex items-start gap-3">
-              <ToastIcon variant={t.variant} />
-              <div className="flex-1 space-y-1">
-                <ToastTitle>{t.title}</ToastTitle>
-                {t.description && (
-                  <ToastDescription>{t.description}</ToastDescription>
-                )}
-              </div>
+            <div className="ds-toast-item">
+              <Toast
+                variant={t.variant}
+                title={t.title}
+                description={t.description}
+                onClose={() => removeToast(t.id)}
+              />
+              {t.action && (
+                <ToastAction asChild altText={t.action.label}>
+                  <button
+                    type="button"
+                    data-testid="toast-action"
+                    className="ds-toast-action"
+                    onClick={t.action.onClick}
+                  >
+                    {t.action.label}
+                  </button>
+                </ToastAction>
+              )}
             </div>
-            {t.action && (
-              <ToastAction altText={t.action.label} onClick={t.action.onClick}>
-                {t.action.label}
-              </ToastAction>
-            )}
-            <ToastClose />
-          </Toast>
+          </ToastRoot>
         ))}
 
         <ToastViewport />
@@ -156,27 +128,6 @@ export function ToastContextProvider({ children }: { children: React.ReactNode }
   );
 }
 
-/**
- * useToast Hook
- *
- * Access the toast context to show notifications.
- *
- * @example
- * ```tsx
- * function MyComponent() {
- *   const { toast } = useToast();
- *
- *   const handleSave = async () => {
- *     try {
- *       await saveData();
- *       toast.success('Saved!', 'Your changes have been saved.');
- *     } catch (error) {
- *       toast.error('Save failed', error.message);
- *     }
- *   };
- * }
- * ```
- */
 export function useToast(): ToastContextType {
   const context = React.useContext(ToastContext);
 
@@ -187,10 +138,4 @@ export function useToast(): ToastContextType {
   return context;
 }
 
-/**
- * Standalone toast function for use outside React components
- *
- * Note: This requires the ToastContextProvider to be mounted.
- * For most cases, prefer using the useToast hook.
- */
 export type { ToastData, ToastVariant };

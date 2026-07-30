@@ -3,6 +3,9 @@ server:
   shutdown: graceful
 
 spring:
+  profiles:
+    # Defaults to "local" (Service Bus emulator). Prod sets SPRING_PROFILES_ACTIVE=prod.
+    active: ${SPRING_PROFILES_ACTIVE:local}
   application:
     name: identity-service
   main:

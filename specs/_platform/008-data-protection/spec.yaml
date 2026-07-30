@@ -1,0 +1,122 @@
+id: ET-PLT-008
+title: PII inventory, erasure and the retention schedule
+status: draft
+area: PLT
+service: all
+subgraph: identity
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 7
+blocked_by: [ET-PLT-002, ET-PLT-007, ET-IDN-002, ET-FIN-001, ET-NTF-001]
+conformance: null
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/identity/002-keycloak-user-sync/spec.md
+  - specs/finance/001-escrow-and-ledger/spec.md
+  - specs/notification/001-notification-transport/spec.md
+
+persistence:
+  collections:
+    - identity_erasure_requests    # added to the ET-PLT-002 §4 registry by this spec
+    - identity_data_exports        # ditto
+    - identity_consent_records     # ditto
+  indexes:
+    - "identity_erasure_requests {userId} PARTIAL UNIQUE where status in (PENDING, DEFERRED, EXECUTING)"
+    - "identity_erasure_requests {status,scheduledFor} compound   # the erasure sweep"
+    - "identity_data_exports {userId,status} compound"
+    - "identity_consent_records {userId,consentType,recordedAt} compound"
+  redis_keys:
+    - "lock:sweep:erasure   STRING  30 s"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "myErasureRequest                AUTHENTICATED  ErasureRequest"
+    - "myDataExports                   AUTHENTICATED  [DataExport!]!"
+    - "myConsents                      AUTHENTICATED  [ConsentRecord!]!"
+    - "piiInventory                    SUPER_ADMIN    [PiiInventoryEntry!]!   @tag admin"
+    - "erasureRequests(status, page)   SUPER_ADMIN    ErasureRequestPage!     @tag admin"
+  mutations:
+    - "requestAccountDeletion(reason)  AUTHENTICATED  ErasureRequest!"
+    - "cancelAccountDeletion           AUTHENTICATED  Boolean!"
+    - "requestDataExport               AUTHENTICATED  DataExport!"
+    - "recordConsent(input)            AUTHENTICATED  ConsentRecord!"
+    - "withdrawConsent(consentType)    AUTHENTICATED  ConsentRecord!"
+    - "executeErasure(userId)          SUPER_ADMIN    ErasureRequest!  @tag admin"
+
+errors: []     # a deferred erasure is a STATUS, not an error
+
+principle: "erasure is ANONYMISATION, not deletion — the books stay balanced and the person is gone"
+
+classifications: [DIRECT_IDENTIFIER, INDIRECT_IDENTIFIER, SENSITIVE, FINANCIAL]
+
+erasure_actions:
+  anonymise: "overwrite with anonymised-{subjectToken}"
+  delete: "set to null"
+  retain: "unchanged — the id resolves to an anonymised subject"
+  delete_object: "remove the stored file; keep the metadata row"
+  partial: "keep a stated suffix — last two of an MSISDN, last four of an account"
+
+subject_token: "base64url(HMAC-SHA256(PII_SUBJECT_SALT, userId))[0..11] — deterministic, non-reversing, NEVER rotated"
+
+pii_inventory:    # the full table is spec.md §4; counts by service
+  identity: 13
+  booking: 9
+  catalog: 3
+
+deferring_obligations:
+  - "an unsettled payout          ET-FIN-003"
+  - "an open chargeback           ET-FIN-004"
+  - "a live ticket for a future event  ET-TKT-002"
+  - "an open reconciliation item  ET-FIN-005"
+  - "an owned organization with an active event  ET-ORG-001"
+
+erasure_sequence:
+  - "1  request        -> PENDING_DELETION, +P30D, notified"
+  - "2  grace          cancellable throughout; the account still works"
+  - "3  T-7d           reminder"
+  - "4  T              sweep claims under lock:sweep:erasure"
+  - "5  obligations    defer + tell the user + re-attempt"
+  - "6  inventory      apply each declared action, per service"
+  - "7  user           accountStatus = ERASED"
+  - "8  Keycloak       delete the user"
+  - "9  assert         Ledger.assertBalanced() unchanged"
+  - "10 certificate    what was erased, what retained, why"
+
+config:
+  data.retention.grace: P30D
+  data.retention.financial: P7Y
+  data.retention.notifications: P180D
+  data.retention.consent: P7Y
+  data.export.link-ttl: PT24H
+  data.erasure.sweep-interval: PT1H
+  PII_SUBJECT_SALT: "${PII_SUBJECT_SALT}  — NEVER rotated"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/_platform/008-data-protection
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --persistence
+  - mvn -q -f backend test -Dgroups=ET-PLT-008
+  - mvn -q -f backend verify -Dgroups=ET-PLT-008
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The erasure job writes to collections in all three services, which no single service may do (ET-PLT-002 R2). Erasure must therefore be an orchestrated sequence of internal API calls across three services with no shared transaction — so a partial erasure is possible, and step 9's ledger assertion runs after a sequence that may have half-completed. The resumability in R3 is the only defence and it is stated, not designed."
+  - "R2 asserts the original value is unrecoverable from any LOG, but logs are written by Logback to files and shipped to wherever the platform ships them. Anonymising a document does not reach a log line written six months ago, and nothing in this corpus specifies log retention or redaction. The acceptance box is not achievable as written without a log-retention policy that does not exist."
+  - "PII_SUBJECT_SALT is never rotated, which is correct for token stability and means a compromise of the salt permanently weakens every anonymisation the platform has ever performed — an attacker with the salt and a candidate user id can confirm whether a given person was erased."
+  - "The inventory marks bank account numbers as anonymised-with-last-four at P7Y, but ET-FIN-003 encrypts them at rest with a separate key. Two protection mechanisms over one field, with no statement about which applies when, and the erasure action operates on ciphertext unless it decrypts first."
+  - "R4 requires telling the subject what was retained and why. That certificate is generated from the inventory, so its accuracy depends entirely on the inventory being complete — and R1's build check only verifies that annotated fields have rows, not that every PII field is annotated. An unannotated PII field is invisible to both the check and the certificate."
+  - "Deferring erasure on a live ticket for a future event means a user who buys a ticket for a festival eleven months out cannot be erased for eleven months. That is defensible but it is a long deferral the user is unlikely to expect, and nothing caps it."
+  - "Three new collections are added to ET-PLT-002 §4's closed registry — the tenth, eleventh and twelfth amendments. The registry should be rebuilt from the specs during reconciliation rather than maintained as a closed list."
+  - "The export excludes third-party PII, but a ticket transfer, a team invitation and an organization membership all inherently involve another person. Deciding what is the subject's data and what is another person's in those cases is a judgement the spec asserts rather than specifies."

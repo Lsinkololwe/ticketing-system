@@ -16,7 +16,7 @@
  * - Customizable widget layout
  */
 
-import { Box, Flex, Text, Heading, Button, Card, Badge } from '@radix-ui/themes';
+import { Box, Flex, Text, Heading, Button, Card, Badge, Skeleton } from '@radix-ui/themes';
 import {
   Calendar,
   CreditCard,
@@ -30,6 +30,11 @@ import {
   CheckCircle,
 } from 'iconoir-react';
 import Link from 'next/link';
+import {
+  useMyDashboardStats,
+  useMyUpcomingEvents,
+  useMyRecentActivity,
+} from '@pml.tickets/shared/api/organization-admin/modules/dashboard';
 
 // =============================================================================
 // TYPES
@@ -80,16 +85,16 @@ function MetricCard({ title, value, change, changeLabel, icon, trend }: MetricCa
         padding: '24px',
         background: 'var(--surface-elevated)',
         border: '1px solid var(--surface-border)',
-        borderRadius: '16px',
+        borderRadius: 'var(--card-radius-bento)',
       }}
     >
       <Flex justify="between" align="start" mb="4">
         <Box
           style={{
             padding: '12px',
-            borderRadius: '12px',
-            background: 'rgba(16, 185, 129, 0.1)',
-            border: '1px solid rgba(16, 185, 129, 0.2)',
+            borderRadius: 'var(--card-radius)',
+            background: 'var(--accent-a3)',
+            border: '1px solid var(--accent-a5)',
           }}
         >
           {icon}
@@ -126,7 +131,7 @@ function QuickActionCard({ title, description, href, icon }: QuickActionProps) {
           padding: '20px',
           background: 'var(--surface-elevated)',
           border: '1px solid var(--surface-border)',
-          borderRadius: '12px',
+          borderRadius: 'var(--card-radius)',
           cursor: 'pointer',
           transition: 'all 200ms ease',
         }}
@@ -136,8 +141,8 @@ function QuickActionCard({ title, description, href, icon }: QuickActionProps) {
           <Box
             style={{
               padding: '10px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%)',
+              borderRadius: 'var(--radius-3)',
+              background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
               flexShrink: 0,
             }}
           >
@@ -172,7 +177,7 @@ function ActivityItem({ type, message, time }: ActivityItemProps) {
         style={{
           width: 32,
           height: 32,
-          borderRadius: '8px',
+          borderRadius: 'var(--radius-4)',
           background: 'var(--surface-subtle)',
           display: 'flex',
           alignItems: 'center',
@@ -191,11 +196,11 @@ function ActivityItem({ type, message, time }: ActivityItemProps) {
 }
 
 function UpcomingEventItem({ title, date, ticketsSold, ticketsTotal, status }: UpcomingEventProps) {
-  const progress = (ticketsSold / ticketsTotal) * 100;
+  const progress = ticketsTotal > 0 ? (ticketsSold / ticketsTotal) * 100 : 0;
   const statusColors: Record<string, { bg: string; color: string }> = {
-    published: { bg: 'rgba(16, 185, 129, 0.1)', color: 'var(--success-500)' },
-    draft: { bg: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning-500)' },
-    ended: { bg: 'rgba(148, 163, 184, 0.1)', color: 'var(--content-muted)' },
+    published: { bg: 'var(--accent-a3)', color: 'var(--success-500)' },
+    draft: { bg: 'var(--status-warning-a3)', color: 'var(--warning-500)' },
+    ended: { bg: 'var(--gray-a5)', color: 'var(--content-muted)' },
   };
 
   return (
@@ -240,7 +245,7 @@ function UpcomingEventItem({ title, date, ticketsSold, ticketsTotal, status }: U
               width: `${progress}%`,
               height: '100%',
               borderRadius: 3,
-              background: 'linear-gradient(90deg, var(--brand-500) 0%, var(--brand-400) 100%)',
+              background: 'var(--accent-9)',
               transition: 'width 300ms ease',
             }}
           />
@@ -251,45 +256,10 @@ function UpcomingEventItem({ title, date, ticketsSold, ticketsTotal, status }: U
 }
 
 // =============================================================================
-// MOCK DATA
+// HELPERS
 // =============================================================================
 
-const mockMetrics = [
-  {
-    title: 'Total Revenue',
-    value: 'K 125,430',
-    change: 12.5,
-    changeLabel: 'vs last month',
-    icon: <CreditCard style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
-    trend: 'up' as const,
-  },
-  {
-    title: 'Tickets Sold',
-    value: '2,847',
-    change: 8.2,
-    changeLabel: 'vs last month',
-    icon: <StatsReport style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
-    trend: 'up' as const,
-  },
-  {
-    title: 'Active Events',
-    value: '12',
-    change: -2,
-    changeLabel: '3 ending this week',
-    icon: <Calendar style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
-    trend: 'down' as const,
-  },
-  {
-    title: 'Total Attendees',
-    value: '8,234',
-    change: 15.3,
-    changeLabel: 'vs last month',
-    icon: <Group style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
-    trend: 'up' as const,
-  },
-];
-
-const mockQuickActions = [
+const QUICK_ACTIONS: QuickActionProps[] = [
   {
     title: 'Create Event',
     description: 'Start a new event from scratch',
@@ -310,25 +280,125 @@ const mockQuickActions = [
   },
 ];
 
-const mockActivity: ActivityItemProps[] = [
-  { type: 'sale', message: '5 tickets sold for Tech Summit 2025', time: '2m ago' },
-  { type: 'checkin', message: 'Guest checked in at Music Festival', time: '15m ago' },
-  { type: 'event', message: 'Networking Night was published', time: '1h ago' },
-  { type: 'payout', message: 'Payout of K 15,000 processed', time: '3h ago' },
-  { type: 'sale', message: '12 tickets sold for Startup Pitch Day', time: '5h ago' },
-];
+function trendOf(change?: number | null): 'up' | 'down' | 'neutral' {
+  if (change == null || change === 0) return 'neutral';
+  return change > 0 ? 'up' : 'down';
+}
 
-const mockUpcomingEvents: UpcomingEventProps[] = [
-  { id: '1', title: 'Tech Summit 2025', date: 'Dec 15, 2025', ticketsSold: 450, ticketsTotal: 500, status: 'published' },
-  { id: '2', title: 'Music Festival', date: 'Dec 20, 2025', ticketsSold: 1200, ticketsTotal: 2000, status: 'published' },
-  { id: '3', title: 'Networking Night', date: 'Dec 28, 2025', ticketsSold: 45, ticketsTotal: 100, status: 'draft' },
-];
+/** Format a BigDecimal string as money with a leading symbol (K for ZMW). */
+function formatMoney(amount?: string | null, currency?: string | null): string {
+  const n = Number(amount ?? 0);
+  const symbol = !currency || currency === 'ZMW' ? 'K' : currency;
+  return `${symbol} ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+/** Map the backend activity enum to the local icon category. */
+function activityCategory(type: string): ActivityItemProps['type'] {
+  switch (type) {
+    case 'TICKET_SALE':
+      return 'sale';
+    case 'CHECK_IN':
+      return 'checkin';
+    case 'PAYOUT_COMPLETED':
+    case 'PAYOUT_REQUESTED':
+    case 'REFUND_PROCESSED':
+      return 'payout';
+    default:
+      return 'event';
+  }
+}
+
+/** Coerce the backend status string to the local badge status. */
+function eventStatus(status: string): UpcomingEventProps['status'] {
+  const s = (status || '').toLowerCase();
+  if (s === 'published') return 'published';
+  if (s === 'ended') return 'ended';
+  return 'draft';
+}
+
+function formatEventDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function formatRelativeTime(iso: string): string {
+  try {
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.round(hrs / 24)}d ago`;
+  } catch {
+    return '';
+  }
+}
+
+/** Simple inline empty state for dashboard cards. */
+function CardEmptyState({ message, cta }: { message: string; cta?: { label: string; href: string } }) {
+  return (
+    <Flex direction="column" align="center" justify="center" gap="3" py="6" style={{ textAlign: 'center' }}>
+      <Text size="2" style={{ color: 'var(--content-muted)' }}>{message}</Text>
+      {cta && (
+        <Button size="1" variant="soft" asChild data-testid="dashboard-empty-cta">
+          <Link href={cta.href}>{cta.label}</Link>
+        </Button>
+      )}
+    </Flex>
+  );
+}
 
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
 export default function DashboardPage() {
+  const { stats, loading: statsLoading } = useMyDashboardStats();
+  const { events, loading: eventsLoading } = useMyUpcomingEvents(5);
+  const { activity, loading: activityLoading } = useMyRecentActivity(5);
+
+  const metrics: MetricCardProps[] = stats
+    ? [
+        {
+          title: 'Total Revenue',
+          value: formatMoney(stats.totalRevenue, stats.revenueCurrency),
+          change: stats.revenueChange ?? undefined,
+          changeLabel: 'vs last month',
+          icon: <CreditCard style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
+          trend: trendOf(stats.revenueChange),
+        },
+        {
+          title: 'Tickets Sold',
+          value: (stats.totalTicketsSold ?? 0).toLocaleString(),
+          change: stats.ticketsSoldChange ?? undefined,
+          changeLabel: 'vs last month',
+          icon: <StatsReport style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
+          trend: trendOf(stats.ticketsSoldChange),
+        },
+        {
+          title: 'Active Events',
+          value: String(stats.activeEvents ?? 0),
+          change: stats.eventsChange ?? undefined,
+          changeLabel: `${stats.eventsEndingThisWeek ?? 0} ending this week`,
+          icon: <Calendar style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
+          trend: trendOf(stats.eventsChange),
+        },
+        {
+          title: 'Total Attendees',
+          value: (stats.totalAttendees ?? 0).toLocaleString(),
+          change: stats.attendeesChange ?? undefined,
+          changeLabel: 'vs last month',
+          icon: <Group style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
+          trend: trendOf(stats.attendeesChange),
+        },
+      ]
+    : [];
+
+  const metricsLoading = statsLoading && !stats;
+
   return (
     <Box>
       {/* Page Header */}
@@ -350,9 +420,11 @@ export default function DashboardPage() {
           gap: '16px',
         }}
       >
-        {mockMetrics.map((metric, index) => (
-          <MetricCard key={index} {...metric} />
-        ))}
+        {metricsLoading
+          ? Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} style={{ height: 148, borderRadius: 16 }} />
+            ))
+          : metrics.map((metric, index) => <MetricCard key={index} {...metric} />)}
       </Box>
 
       {/* Quick Actions */}
@@ -367,7 +439,7 @@ export default function DashboardPage() {
             gap: '12px',
           }}
         >
-          {mockQuickActions.map((action, index) => (
+          {QUICK_ACTIONS.map((action, index) => (
             <QuickActionCard key={index} {...action} />
           ))}
         </Box>
@@ -387,21 +459,32 @@ export default function DashboardPage() {
             padding: '24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
           }}
         >
           <Flex justify="between" align="center" mb="4">
             <Heading size="4" style={{ color: 'var(--content-primary)' }}>
               Recent Activity
             </Heading>
-            <Button variant="ghost" size="1" asChild>
+            <Button variant="ghost" size="1" asChild data-testid="dashboard-activity-view-all">
               <Link href="/activity">View All</Link>
             </Button>
           </Flex>
           <Box>
-            {mockActivity.map((item, index) => (
-              <ActivityItem key={index} {...item} />
-            ))}
+            {activityLoading && activity.length === 0 ? (
+              <Skeleton style={{ height: 120, borderRadius: 8 }} />
+            ) : activity.length === 0 ? (
+              <CardEmptyState message="No recent activity yet. Sales and check-ins will appear here." />
+            ) : (
+              activity.map((item) => (
+                <ActivityItem
+                  key={item.id}
+                  type={activityCategory(item.type)}
+                  message={item.message}
+                  time={formatRelativeTime(item.timestamp)}
+                />
+              ))
+            )}
           </Box>
         </Card>
 
@@ -411,21 +494,38 @@ export default function DashboardPage() {
             padding: '24px',
             background: 'var(--surface-elevated)',
             border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
+            borderRadius: 'var(--card-radius-bento)',
           }}
         >
           <Flex justify="between" align="center" mb="4">
             <Heading size="4" style={{ color: 'var(--content-primary)' }}>
               Upcoming Events
             </Heading>
-            <Button variant="ghost" size="1" asChild>
+            <Button variant="ghost" size="1" asChild data-testid="dashboard-events-view-all">
               <Link href="/events">View All</Link>
             </Button>
           </Flex>
           <Box>
-            {mockUpcomingEvents.map((event) => (
-              <UpcomingEventItem key={event.id} {...event} />
-            ))}
+            {eventsLoading && events.length === 0 ? (
+              <Skeleton style={{ height: 120, borderRadius: 8 }} />
+            ) : events.length === 0 ? (
+              <CardEmptyState
+                message="No events yet. Create your first draft to get started."
+                cta={{ label: 'Create event', href: '/events/new' }}
+              />
+            ) : (
+              events.map((event) => (
+                <UpcomingEventItem
+                  key={event.id}
+                  id={event.id}
+                  title={event.title}
+                  date={formatEventDate(event.eventDateTime)}
+                  ticketsSold={event.ticketsSold}
+                  ticketsTotal={event.totalCapacity}
+                  status={eventStatus(event.status)}
+                />
+              ))
+            )}
           </Box>
         </Card>
       </Box>
@@ -435,7 +535,7 @@ export default function DashboardPage() {
         .quick-action-card:hover {
           border-color: var(--brand-400);
           transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);
+          box-shadow: 0 4px 12px var(--accent-a3);
         }
       `}</style>
     </Box>

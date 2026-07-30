@@ -119,4 +119,30 @@ public enum EventRole {
         if (this == other) return true;
         return getInheritedRoles().contains(other);
     }
+
+    /**
+     * Whether this event-level role grants a named permission.
+     *
+     * <p>Single source of truth for event-role→permission mapping, composed from the
+     * capability methods above. Keeps the actor's event authority on the role itself
+     * rather than in a service.</p>
+     *
+     * @param permission permission string (e.g. {@code "EVENT_PUBLISH"}, {@code "TICKET_SCAN"})
+     * @return true if the role grants the permission
+     */
+    public boolean grants(String permission) {
+        if (permission == null) {
+            return false;
+        }
+        return switch (permission) {
+            case "EVENT_EDIT" -> canEditEvent();
+            case "EVENT_DELETE" -> canDeleteEvent();
+            case "EVENT_PUBLISH" -> this == EVENT_OWNER || this == EVENT_ADMIN;
+            case "EVENT_VIEW" -> true; // all event roles can view
+            case "TICKET_SCAN", "ATTENDEE_VIEW" -> canScanTickets();
+            case "REFUND_ISSUE" -> canIssueRefunds();
+            case "NOTIFICATION_SEND" -> canSendNotifications();
+            default -> false;
+        };
+    }
 }

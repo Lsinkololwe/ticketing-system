@@ -1,0 +1,120 @@
+id: ET-ADM-002
+title: Platform configuration, feature flags and versioned settings
+status: draft
+area: ADM
+service: identity-service
+subgraph: identity
+owner: lazarous
+created: 2026-07-30
+priority: should
+wave: 6
+blocked_by: [ET-PLT-005, ET-ORG-003, ET-FIN-002]
+conformance: "V3 §2.2 commission structure · V3 §14.1 refund fee policy"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/finance/002-commission/spec.md
+  - specs/organization/003-permission-resolution/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+persistence:
+  collections:
+    - admin_platform_configuration    # added to the ET-PLT-002 §4 registry by this spec
+    - admin_feature_flags             # ditto
+  indexes:
+    - "admin_platform_configuration {configKey,scope,scopeId,version} unique"
+    - "admin_platform_configuration {configKey,scope,scopeId,createdAt} compound"
+    - "admin_feature_flags {flagKey,version} unique"
+  redis_keys:
+    - "cache:config:platform:{key}          STRING  30 s  — authority admin_platform_configuration"
+    - "cache:config:org:{orgId}:{key}       STRING  30 s  — ditto"
+    - "cache:flags                          STRING  30 s  — authority admin_feature_flags"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:      # ADMIN reads, all @tag admin
+    - "platformConfiguration                              ADMIN  [ConfigurationEntry!]!"
+    - "configurationHistory(key, scope, scopeId)          ADMIN  [ConfigurationVersion!]!"
+    - "organizationConfiguration(organizationId)          ADMIN  [ConfigurationEntry!]!"
+    - "featureFlags                                       ADMIN  [FeatureFlag!]!"
+    - "killSwitches                                       ADMIN  [FeatureFlag!]!"
+  mutations:    # SUPER_ADMIN writes only
+    - "setPlatformConfiguration(input)         SUPER_ADMIN  ConfigurationEntry!  @tag admin"
+    - "setOrganizationConfiguration(input)     SUPER_ADMIN  ConfigurationEntry!  @tag admin"
+    - "clearOrganizationConfiguration(input)   SUPER_ADMIN  Boolean!             @tag admin"
+    - "setFeatureFlag(input)                   SUPER_ADMIN  FeatureFlag!         @tag admin"
+
+errors:
+  - CONFIGURATION_KEY_UNKNOWN
+  - CONFIGURATION_VALUE_INVALID
+
+runtime_keys:   # 18 — CLOSED. Every other number in the corpus stays in YAML.
+  - "finance.commission.rate.standard             decimal [0,0.5]   0.05"
+  - "finance.commission.rate.charity              decimal [0,0.5]   0.02"
+  - "finance.commission.rate.high-volume          decimal [0,0.5]   0.03"
+  - "finance.commission.rate.premium-organizer    decimal [0,0.5]   0.04"
+  - "finance.commission.rate                      decimal [0,0.5]   ORG OVERRIDE"
+  - "finance.commission.high-volume-threshold     int     [1,100000] 1000"
+  - "finance.commission.premium-threshold         int     [1,1000]   10"
+  - "finance.escrow.hold-period                   duration [PT0S,P90D] P7D"
+  - "finance.payout.minimum                       money   [0,100000] K100"
+  - "finance.payout.schedule                      enum    WEEKLY|BIWEEKLY|MONTHLY|ON_REQUEST  ORG OVERRIDE"
+  - "finance.refund.minimum                       money   [0,10000]  K10"
+  - "finance.refund.auto-approve-threshold        money   [0,100000] K1000"
+  - "finance.refund.fee-bearer                    enum    CUSTOMER|PLATFORM|ORGANIZER  CUSTOMER"
+  - "booking.reservation.ttl                      duration [PT2M,PT60M] PT10M"
+  - "catalog.transfer.cutoff                      duration [PT0S,P7D]   PT2H"
+  - "admin.sla.organizer                          duration [PT1H,P14D]  PT48H"
+  - "admin.sla.event                              duration [PT1H,P14D]  PT24H"
+  - "notification.per-user-hourly-cap             int     [1,100]    10"
+
+feature_flags:  # 9 — CLOSED. Five are kill switches.
+  feature.resale:                { default: OFF, kill_switch: true }
+  feature.ticket-transfer:       { default: ON,  kill_switch: true }
+  feature.new-registrations:     { default: ON,  kill_switch: true }
+  feature.organizer-applications:{ default: ON,  kill_switch: true }
+  feature.payouts:               { default: ON,  kill_switch: true }
+  feature.promo-codes:           { default: ON,  kill_switch: false }
+  feature.event-reminders:       { default: ON,  kill_switch: false }
+  feature.organizer-digest:      { default: ON,  kill_switch: false }
+  feature.bulk-event-approval:   { default: OFF, kill_switch: false }
+
+resolution_order: "organization override -> platform configuration -> YAML default"
+
+commission_interaction: |
+  An organization override for finance.commission.rate REPLACES ET-FIN-002's resolved tier
+  rate entirely. Not a floor, not a ceiling, not another tier. A 3% override beats a 2%
+  charity tier and a 5% standard. This closes the contradiction ET-FIN-002's risk register
+  raises.
+
+prospective_only: "a change NEVER re-prices or re-times an existing entity; no key is marked retroactive today"
+
+config:      # itself YAML — the config system's own settings are not runtime-configurable
+  admin.config.cache-ttl: PT30S
+  admin.config.reason-min-length: 20
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/admin/002-platform-configuration
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --money
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend test -Dgroups=ET-ADM-002
+  - mvn -q -f backend verify -Dgroups=ET-ADM-002
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "Configuration lives in identity-service but eleven of the eighteen keys are consumed by booking-service on the purchase and payout paths. Every one of those reads is a cross-service call, cached for 30 seconds — so booking's commission calculation depends on identity-service being reachable, and a cold cache during an identity outage means either a stale-forever fallback or a failed purchase. Neither is specified."
+  - "R3 requires cross-instance cache eviction on write, which needs a Redis pub/sub channel or a short enough TTL that eviction does not matter. With a 30-second TTL the eviction is nearly redundant, and the acceptance box asking for immediate eviction across instances implies infrastructure the spec does not declare."
+  - "The commission override replaces the tier rate entirely, which means an organization negotiated onto 4% loses the 2% charity rate for a charity event. That is the stated intent, but it will surprise an organizer who is both premium and running a charity event, and nothing surfaces the interaction to them."
+  - "Feature flags include kill switches for payouts and registrations, which are exactly the switches an attacker with SUPER_ADMIN would flip. There is no two-person rule, no confirmation step and no automatic expiry on a kill switch — a flag turned off during an incident stays off until somebody remembers."
+  - "R6 asserts that changes are prospective for four named entities, but the mechanism is that each entity snapshots its value at creation. Any future value consumed by a query rather than snapshotted — the refund auto-approve threshold, for example, which ET-FIN-004 reads at approval time — IS retroactive in effect, and the spec's blanket claim does not hold for it."
+  - "admin_platform_configuration is append-only with no retention, and it stores every version of every key forever. That is correct for auditability and it means a key toggled frequently during an incident accumulates rows with no bound."
+  - "Two new collections are added to ET-PLT-002 §4's closed registry — the sixth and seventh amendments in the corpus. The registry pattern is not holding, and the reconciliation pass should probably rebuild ET-PLT-002 §4 from the specs rather than the reverse."
+  - "The eighteen runtime keys duplicate values that also exist as YAML defaults in eight other specs. Nothing keeps the two in sync, so a YAML default changed in a deploy while a platform value exists is silently ignored, and an operator reading the YAML sees a number the platform is not using."

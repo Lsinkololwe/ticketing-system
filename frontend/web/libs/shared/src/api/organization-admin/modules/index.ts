@@ -14,3 +14,6 @@
  */
 
 export * from './organization';
+export * from './dashboard';
+export * from './events';
+export * from './finance';

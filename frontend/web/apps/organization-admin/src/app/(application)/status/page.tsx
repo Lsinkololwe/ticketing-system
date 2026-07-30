@@ -22,7 +22,7 @@ export default function StatusPage() {
   return (
     <Box style={{ textAlign: 'center', padding: '60px 0' }}>
       <Spinner size="3" />
-      <Text size="2" style={{ color: '#94A3B8', display: 'block', marginTop: 16 }}>
+      <Text size="2" style={{ color: 'var(--gray-10)', display: 'block', marginTop: 16 }}>
         Redirecting...
       </Text>
     </Box>

@@ -1,32 +1,40 @@
 'use client';
 
 /**
- * Dashboard Home Page
+ * Dashboard Home
  *
- * Displays:
- * - Key platform metrics
- * - Recent activity
- * - Quick actions
+ * Layout is bento-first (DS §4): stat tiles and panels are auto-fit grids that
+ * reflow on their own content width, not a fixed 12-column grid.
  *
- * Responsive layout:
- * - 1 column on mobile
- * - 2 columns on tablet
- * - 4 columns on desktop (stats)
+ * Copy is operational and third-person (DS §10) — this is a back-office tool,
+ * not a greeting. Currency renders through <Amount> so it is always "K 2.4M"
+ * in Fira Code, and status enums go through humanizeEnum()/statusTone() so a
+ * raw PENDING_REVIEW can never reach the screen.
  */
 
-import { Box, Flex, Grid, Heading, Text, Badge, Button } from '@radix-ui/themes';
+import { Box, Flex, Text } from '@radix-ui/themes';
 import {
+  ArrowRight,
   Calendar,
+  CheckCircle,
+  Clock,
+  CreditCard,
   Group,
   Label,
-  CreditCard,
-  ArrowRight,
-  Clock,
-  CheckCircle,
   WarningTriangle,
 } from 'iconoir-react';
 import Link from 'next/link';
-import { StatCard, SectionCard, EmptyCard } from '@/components/ui/StyledCard';
+import {
+  Amount,
+  Badge,
+  Button,
+  EmptyState,
+  PageHeader,
+  SectionCard,
+  StatCard,
+  Toast,
+} from '@/components/ui';
+import { formatCount, humanizeEnum, statusTone } from '@/lib/format';
 
 // =============================================================================
 // MOCK DATA (Replace with real data from GraphQL)
@@ -38,21 +46,21 @@ const recentApplications = [
     name: 'John Banda Events',
     email: 'john@bandaevents.com',
     submittedAt: '2 hours ago',
-    status: 'pending',
+    status: 'PENDING',
   },
   {
     id: '2',
     name: 'Lusaka Concerts Ltd',
     email: 'info@lusakaconcerts.zm',
     submittedAt: '5 hours ago',
-    status: 'pending',
+    status: 'PENDING',
   },
   {
     id: '3',
     name: 'Copperbelt Entertainment',
     email: 'events@copperbelt.zm',
     submittedAt: '1 day ago',
-    status: 'under_review',
+    status: 'UNDER_REVIEW',
   },
 ];
 
@@ -63,7 +71,7 @@ const recentEvents = [
     organizer: 'ZMA Productions',
     date: 'Dec 15, 2024',
     ticketsSold: 2450,
-    status: 'active',
+    status: 'PUBLISHED',
   },
   {
     id: '2',
@@ -71,7 +79,7 @@ const recentEvents = [
     organizer: 'Foodies Zambia',
     date: 'Dec 20, 2024',
     ticketsSold: 890,
-    status: 'active',
+    status: 'PUBLISHED',
   },
   {
     id: '3',
@@ -79,7 +87,7 @@ const recentEvents = [
     organizer: 'ZamTech Hub',
     date: 'Jan 10, 2025',
     ticketsSold: 320,
-    status: 'draft',
+    status: 'DRAFT',
   },
 ];
 
@@ -87,22 +95,9 @@ const recentEvents = [
 // HELPER COMPONENTS
 // =============================================================================
 
+/** Renders any backend status enum as a humanised, correctly-toned chip. */
 function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { color: 'orange' | 'blue' | 'green' | 'gray'; label: string }> = {
-    pending: { color: 'orange', label: 'Pending' },
-    under_review: { color: 'blue', label: 'Under Review' },
-    approved: { color: 'green', label: 'Approved' },
-    active: { color: 'green', label: 'Active' },
-    draft: { color: 'gray', label: 'Draft' },
-  };
-
-  const { color, label } = config[status] || { color: 'gray', label: status };
-
-  return (
-    <Badge color={color} variant="soft" size="1">
-      {label}
-    </Badge>
-  );
+  return <Badge color={statusTone(status)}>{humanizeEnum(status)}</Badge>;
 }
 
 function ApplicationRow({
@@ -114,24 +109,31 @@ function ApplicationRow({
     <Flex
       align="center"
       justify="between"
+      gap="3"
       py="3"
-      style={{
-        borderBottom: '1px solid var(--gray-a4)',
-      }}
-      className="application-row"
+      className="dashboard-row"
+      style={{ borderBottom: 'var(--hairline)' }}
     >
       <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
         <Text size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
           {application.name}
         </Text>
-        <Text size="1" color="gray" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <Text
+          size="1"
+          style={{
+            color: 'var(--gray-11)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
           {application.email}
         </Text>
       </Flex>
-      <Flex align="center" gap="3">
-        <Flex align="center" gap="1" className="time-info">
+
+      <Flex align="center" gap="3" style={{ flexShrink: 0 }}>
+        <Flex align="center" gap="1" className="row-meta">
           <Clock style={{ width: 12, height: 12, color: 'var(--gray-9)' }} />
-          <Text size="1" color="gray">
+          <Text size="1" style={{ color: 'var(--gray-11)' }}>
             {application.submittedAt}
           </Text>
         </Flex>
@@ -146,33 +148,33 @@ function EventRow({ event }: { event: (typeof recentEvents)[0] }) {
     <Flex
       align="center"
       justify="between"
+      gap="3"
       py="3"
-      style={{
-        borderBottom: '1px solid var(--gray-a4)',
-      }}
-      className="event-row"
+      className="dashboard-row"
+      style={{ borderBottom: 'var(--hairline)' }}
     >
       <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
         <Text size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
           {event.title}
         </Text>
         <Flex align="center" gap="2">
-          <Text size="1" color="gray">
+          <Text size="1" style={{ color: 'var(--gray-11)' }}>
             {event.organizer}
           </Text>
-          <Text size="1" color="gray">
-            •
+          <Text size="1" style={{ color: 'var(--gray-9)' }}>
+            &middot;
           </Text>
-          <Text size="1" color="gray">
+          <Text size="1" style={{ color: 'var(--gray-11)' }}>
             {event.date}
           </Text>
         </Flex>
       </Flex>
-      <Flex align="center" gap="3">
-        <Flex align="center" gap="1" className="tickets-info">
+
+      <Flex align="center" gap="3" style={{ flexShrink: 0 }}>
+        <Flex align="center" gap="1" className="row-meta">
           <Label style={{ width: 12, height: 12, color: 'var(--gray-9)' }} />
-          <Text size="1" color="gray">
-            {event.ticketsSold.toLocaleString()}
+          <Text size="1" className="ds-amount" style={{ color: 'var(--gray-11)' }}>
+            {formatCount(event.ticketsSold)}
           </Text>
         </Flex>
         <StatusBadge status={event.status} />
@@ -188,76 +190,79 @@ function EventRow({ event }: { event: (typeof recentEvents)[0] }) {
 export default function DashboardPage() {
   return (
     <Box>
-      <Flex direction="column" gap="6">
-        {/* Page Header */}
-        <Flex
-          direction={{ initial: 'column', sm: 'row' }}
-          justify="between"
-          align={{ initial: 'start', sm: 'center' }}
-          gap="3"
-        >
-          <Box>
-            <Heading size="6" weight="bold" style={{ color: 'var(--gray-12)' }}>
-              Dashboard
-            </Heading>
-            <Text color="gray" size="2" mt="1" style={{ display: 'block' }}>
-              Welcome back! Here&apos;s an overview of your platform.
-            </Text>
-          </Box>
-          <Flex gap="2">
-            <Button variant="soft" size="2">
-              <Calendar style={{ width: 16, height: 16 }} />
-              Last 30 days
-            </Button>
-          </Flex>
-        </Flex>
+      <PageHeader
+        title="Dashboard"
+        description="Platform activity across events, organizers and revenue."
+        actions={
+          <Button
+            variant="soft"
+            size="2"
+            data-testid="dashboard-date-range-button"
+            icon={<Calendar style={{ width: 16, height: 16 }} />}
+          >
+            Last 30 days
+          </Button>
+        }
+      />
 
-        {/* Stats Grid */}
-        <Grid columns={{ initial: '1', xs: '2', lg: '4' }} gap="4">
+      <Flex direction="column" gap="5">
+        {/* Stat tiles — bento auto-fit, minmax(240px, 1fr). */}
+        <Box className="ds-bento-grid">
           <StatCard
-            title="Total Events"
-            value="156"
-            change="12% from last month"
-            changeType="positive"
-            icon={<Calendar style={{ width: 22, height: 22, color: 'var(--accent-11)' }} />}
+            title="Total events"
+            value={formatCount(156)}
+            trend="up"
+            change="12%"
+            changeLabel="from last month"
+            icon={<Calendar style={{ width: 20, height: 20 }} />}
           />
           <StatCard
-            title="Active Organizers"
-            value="48"
-            change="5 new this week"
-            changeType="positive"
-            icon={<Group style={{ width: 22, height: 22, color: 'var(--accent-11)' }} />}
+            title="Active organizers"
+            value={formatCount(48)}
+            trend="up"
+            change="5"
+            changeLabel="new this week"
+            icon={<Group style={{ width: 20, height: 20 }} />}
           />
           <StatCard
-            title="Tickets Sold"
-            value="12,847"
-            change="23% from last month"
-            changeType="positive"
-            icon={<Label style={{ width: 22, height: 22, color: 'var(--accent-11)' }} />}
+            title="Tickets sold"
+            value={<span className="ds-amount">{formatCount(12847)}</span>}
+            trend="up"
+            change="23%"
+            changeLabel="from last month"
+            icon={<Label style={{ width: 20, height: 20 }} />}
           />
           <StatCard
             title="Revenue"
-            value="K 2.4M"
-            change="18% from last month"
-            changeType="positive"
-            icon={<CreditCard style={{ width: 22, height: 22, color: 'var(--accent-11)' }} />}
+            // Money: jade tone, Fira Code, always "K 2.4M".
+            value={<Amount value={2_400_000} compact tone="money" />}
+            trend="up"
+            change="18%"
+            changeLabel="from last month"
+            icon={<CreditCard style={{ width: 20, height: 20 }} />}
           />
-        </Grid>
+        </Box>
 
-        {/* Activity Grid */}
-        <Grid columns={{ initial: '1', lg: '2' }} gap="4">
-          {/* Recent Organizer Applications */}
+        {/* Activity panels — wider bento, minmax(340px, 1fr). */}
+        <Box className="ds-bento-grid-wide">
           <SectionCard
-            title="Recent Organizer Applications"
+            title="Recent organizer applications"
+            minHeight="320px"
             action={
-              <Link href="/organizers?status=pending" style={{ textDecoration: 'none' }}>
-                <Button variant="ghost" size="1">
+              <Link
+                href="/organizers?status=pending"
+                style={{ textDecoration: 'none' }}
+              >
+                <Button
+                  variant="ghost"
+                  size="1"
+                  data-testid="dashboard-view-all-applications"
+                  icon={<ArrowRight style={{ width: 14, height: 14 }} />}
+                >
                   View all
-                  <ArrowRight style={{ width: 14, height: 14 }} />
                 </Button>
               </Link>
             }
-            minHeight="320px"
           >
             {recentApplications.length > 0 ? (
               <Flex direction="column">
@@ -266,25 +271,30 @@ export default function DashboardPage() {
                 ))}
               </Flex>
             ) : (
-              <EmptyCard
-                message="No pending applications at the moment."
-                icon={<CheckCircle style={{ width: 24, height: 24, color: 'var(--green-11)' }} />}
+              <EmptyState
+                size="sm"
+                icon={<CheckCircle style={{ width: 20, height: 20 }} />}
+                title="No applications waiting"
+                description="New organizer applications will appear here for review."
               />
             )}
           </SectionCard>
 
-          {/* Recent Events */}
           <SectionCard
-            title="Recent Events"
+            title="Recent events"
+            minHeight="320px"
             action={
-              <Link href="/dashboard/events" style={{ textDecoration: 'none' }}>
-                <Button variant="ghost" size="1">
+              <Link href="/events" style={{ textDecoration: 'none' }}>
+                <Button
+                  variant="ghost"
+                  size="1"
+                  data-testid="dashboard-view-all-events"
+                  icon={<ArrowRight style={{ width: 14, height: 14 }} />}
+                >
                   View all
-                  <ArrowRight style={{ width: 14, height: 14 }} />
                 </Button>
               </Link>
             }
-            minHeight="320px"
           >
             {recentEvents.length > 0 ? (
               <Flex direction="column">
@@ -293,92 +303,49 @@ export default function DashboardPage() {
                 ))}
               </Flex>
             ) : (
-              <EmptyCard
-                message="No events created yet."
-                icon={<Calendar style={{ width: 24, height: 24, color: 'var(--gray-9)' }} />}
+              <EmptyState
+                size="sm"
+                icon={<Calendar style={{ width: 20, height: 20 }} />}
+                title="No events yet"
+                description="Events created by organizers will be listed here."
               />
             )}
           </SectionCard>
-        </Grid>
+        </Box>
 
-        {/* Alerts Section */}
+        {/* System alerts — status-toned toasts, no left-border accent cards. */}
         <SectionCard
-          title="System Alerts"
-          action={
-            <Badge color="orange" variant="soft">
-              2 Active
-            </Badge>
-          }
+          title="System alerts"
+          action={<Badge color="amber">2 active</Badge>}
         >
-          <Flex direction="column" gap="2">
-            <Flex
-              align="center"
-              gap="3"
-              p="3"
-              style={{
-                backgroundColor: 'var(--orange-a2)',
-                borderRadius: '8px',
-                border: '1px solid var(--orange-a4)',
-              }}
-            >
-              <WarningTriangle style={{ width: 18, height: 18, color: 'var(--orange-11)', flexShrink: 0 }} />
-              <Box style={{ flex: 1 }}>
-                <Text size="2" weight="medium" style={{ color: 'var(--orange-11)' }}>
-                  3 payout requests pending review
-                </Text>
-                <Text size="1" style={{ color: 'var(--orange-10)' }}>
-                  Organizers are waiting for their funds to be released.
-                </Text>
-              </Box>
-              <Button variant="soft" color="orange" size="1">
-                Review
-              </Button>
-            </Flex>
-            <Flex
-              align="center"
-              gap="3"
-              p="3"
-              style={{
-                backgroundColor: 'var(--blue-a2)',
-                borderRadius: '8px',
-                border: '1px solid var(--blue-a4)',
-              }}
-            >
-              <Clock style={{ width: 18, height: 18, color: 'var(--blue-11)', flexShrink: 0 }} />
-              <Box style={{ flex: 1 }}>
-                <Text size="2" weight="medium" style={{ color: 'var(--blue-11)' }}>
-                  5 events starting within 24 hours
-                </Text>
-                <Text size="1" style={{ color: 'var(--blue-10)' }}>
-                  Ensure all ticket validations systems are operational.
-                </Text>
-              </Box>
-              <Button variant="soft" color="blue" size="1">
-                View
-              </Button>
-            </Flex>
+          <Flex direction="column" gap="3">
+            <Toast
+              variant="warning"
+              icon={<WarningTriangle style={{ width: 18, height: 18 }} />}
+              title="3 payout requests are waiting for review"
+              description="Organizers cannot receive funds until these are approved."
+            />
+            <Toast
+              variant="info"
+              icon={<Clock style={{ width: 18, height: 18 }} />}
+              title="5 events start within 24 hours"
+              description="Confirm ticket validation is online at each venue."
+            />
           </Flex>
         </SectionCard>
       </Flex>
 
-      {/* Responsive styles */}
       <style jsx global>{`
-        @media (max-width: 640px) {
-          .time-info,
-          .tickets-info {
-            display: none;
-          }
-        }
-        .application-row:last-child,
-        .event-row:last-child {
+        .dashboard-row:last-child {
           border-bottom: none;
         }
-        .application-row:hover,
-        .event-row:hover {
-          background-color: var(--gray-a2);
-          margin: 0 -16px;
-          padding-left: 16px;
-          padding-right: 16px;
+        .dashboard-row:hover {
+          background-color: var(--gray-a3);
+        }
+        @media (max-width: 640px) {
+          .row-meta {
+            display: none;
+          }
         }
       `}</style>
     </Box>

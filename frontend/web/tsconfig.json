@@ -12,5 +12,8 @@
     {
       "path": "./libs/shared"
     }
-  ]
+  ],
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0"
+  }
 }

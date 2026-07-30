@@ -19,3 +19,19 @@ app:
       # Base64-encoded 256-bit AES key
       # Replace with production key in production environments
       key: "4BL5P9rsrnVX9NOYJ3V9CoZbrInkrA+3hwju49qFl98="
+
+# ============================================================================
+# AZURE SERVICE BUS — local EMULATOR (docker-resources, host port 5673)
+# ----------------------------------------------------------------------------
+# Well-known Microsoft emulator connection string (NOT a real credential):
+# UseDevelopmentEmulator=true disables TLS + auth and only targets localhost.
+# Swap to real Azure with SPRING_PROFILES_ACTIVE=prod (managed identity).
+# ============================================================================
+spring:
+  cloud:
+    azure:
+      servicebus:
+        namespace: ""
+        connection-string: "Endpoint=sb://localhost:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+    stream:
+      default-binder: servicebus

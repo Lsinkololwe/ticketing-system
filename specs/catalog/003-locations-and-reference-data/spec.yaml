@@ -1,0 +1,100 @@
+id: ET-CAT-003
+title: Venues, geography, categories and discovery
+status: draft
+area: CAT
+service: catalog-service
+subgraph: catalog
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 2
+blocked_by: [ET-PLT-002, ET-PLT-004, ET-PLT-005, ET-CAT-001]
+conformance: "V3 §7.1 catalog collections · US Part III §16"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/002-persistence-baseline/spec.md
+  - specs/_platform/004-federation-contract/spec.md
+  - specs/catalog/001-event-lifecycle/spec.md
+  - specs/catalog/002-ticket-tiers-and-inventory/spec.md
+  - docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md
+
+persistence:
+  collections:
+    - catalog_provinces
+    - catalog_cities
+    - catalog_locations
+    - catalog_categories
+    - catalog_reference_data
+  indexes:
+    - "catalog_locations {cityId} single"
+    - "catalog_events {categoryId,status,startsAt} compound"
+    - "catalog_events {cityId,status,startsAt} compound"
+    - "catalog_events {categoryId,cityId,startsAt} compound"
+    - "catalog_events {status,minTierPrice,startsAt} compound"
+    - "catalog_events {title,description} text  weights title:10"
+  redis_keys:
+    - "cache:ref:provinces    STRING  24 h  — authority catalog_provinces"
+    - "cache:ref:cities       STRING  24 h  — authority catalog_cities"
+    - "cache:ref:categories   STRING  24 h  — authority catalog_categories"
+
+events:
+  module: []
+  bus: []
+  topics: []
+
+graphql:
+  schema: backend/catalog-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "provinces                 PUBLIC         [Province!]!   # bounded 10"
+    - "cities(provinceId)        PUBLIC         [City!]!       # bounded <= 200"
+    - "categories                PUBLIC         [Category!]!   # bounded 15"
+    - "location(id)              PUBLIC         Location"
+    - "locations(cityId, page)   AUTHENTICATED  LocationPage!"
+  mutations:
+    - "createLocation(input)       ORGANIZER    Location!"
+    - "updateLocation(id, input)   ORGANIZER    Location!"
+    - "deactivateLocation(id)      ORGANIZER    Location!"
+    - "createCity(input)           SUPER_ADMIN  City!"
+    - "updateCity(id, input)       SUPER_ADMIN  City!"
+    - "deactivateCity(id)          SUPER_ADMIN  City!"
+    - "createCategory(input)       SUPER_ADMIN  Category!"
+    - "updateCategory(id, input)   SUPER_ADMIN  Category!"
+    - "deactivateCategory(id)      SUPER_ADMIN  Category!"
+
+errors:
+  - LOCATION_UNKNOWN
+  # PAGE_SIZE_EXCEEDED is ET-PLT-004's
+
+categories:   # flat, closed, seeded — no parent field
+  [MUSIC, FESTIVAL, CONFERENCE, SPORTS, THEATRE, COMEDY, NIGHTLIFE, FOOD_DRINK,
+   ARTS_CULTURE, BUSINESS, EDUCATION, RELIGIOUS, COMMUNITY, CHARITY, OTHER]
+
+provinces:
+  [Central, Copperbelt, Eastern, Luapula, Lusaka, Muchinga, Northern,
+   North-Western, Southern, Western]
+
+config:
+  catalog.discovery.max-page-size: 100
+  catalog.discovery.max-depth: 1000
+  catalog.discovery.min-search-length: 3
+  catalog.reference.cache-ttl: PT24H
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/catalog/003-locations-and-reference-data
+  - ./scripts/spec-lint.sh --persistence
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-003
+  - mvn -q -f backend verify -Dgroups=ET-CAT-003
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The discovery indexes are declared on catalog_events, whose index registry lives in ET-PLT-002 §4. This spec adds four compound indexes and a text index that are not in that registry, so either ET-PLT-002 §4 is edited by this spec or the two disagree — and ET-PLT-002 R2 says the registry is closed."
+  - "MongoDB permits only one text index per collection. The declared text index covers title and description; any future need to search a tier name, venue name or organizer name cannot add a second index and must either extend this one or denormalise the searchable text into a single field."
+  - "minTierPrice is denormalised onto the event and maintained by ET-CAT-002's tier mutations, which means a spec in a different directory owns the correctness of this spec's price filter. A tier price change that fails to update minTierPrice leaves events filtered into the wrong price band with no symptom."
+  - "R4 requires refusing a filter combination with no index, but the filter input is a flat object with seven optional fields — 128 combinations. Enumerating and indexing all of them is not possible, so the resolver must map combinations to a small set of supported shapes and refuse the rest, which will refuse combinations a client can naturally construct."
+  - "Cursor depth is capped at 1000 results, but a Relay cursor over a compound index does not carry a natural notion of depth — enforcing it requires counting pages served per cursor chain, which is state the resolver does not have. The cap is likely to be implemented as an offset limit, which reintroduces the instability cursors exist to avoid."
+  - "Venues are visible across organizations and editable by whoever created them. An organizer can therefore rename or deactivate a venue that another organization's published event references, changing what a buyer sees on someone else's listing."
+  - "R2 validates venue coordinates against the province bounding box but only warns on failure. A warning with no surface to display it is a log line, so in practice coordinates are unvalidated — which matters if geospatial search is ever built on them."
+  - "Reference caching evicts on mutation from the mutating instance, but the cache is shared Redis across replicas while the eviction is a single DEL. That is correct for Redis, but any per-instance caffeine layer added later for latency would not be evicted and would serve stale reference data for its own TTL."

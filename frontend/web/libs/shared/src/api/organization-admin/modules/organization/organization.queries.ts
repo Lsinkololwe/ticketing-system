@@ -19,6 +19,7 @@ import { gql } from '@apollo/client';
 export const ORGANIZATION_FIELDS = gql`
   fragment OrganizationFields on Organization {
     id
+    ownerId
     name
     slug
     description

@@ -4,7 +4,7 @@ import { Group } from 'iconoir-react';
 export default function OrganizerApplicationsPage() {
   return (
     <PagePlaceholder
-      title="Organizer Applications"
+      title="Organizer applications"
       description="Review and approve new organizer registration requests"
       icon={<Group style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
     />

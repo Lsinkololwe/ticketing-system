@@ -1,0 +1,16 @@
+{
+  "name": "@pml.tickets/ticketing",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "targets": {
+    "build": {
+      "inputs": [
+        "default",
+        "^default",
+        {
+          "dependentTasksOutputFiles": "**/*.d.ts",
+          "transitive": true
+        }
+      ]
+    }
+  }
+}

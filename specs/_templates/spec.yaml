@@ -1,0 +1,38 @@
+id: ET-XXX-000
+title: <one line, what the system will do>
+status: draft            # draft | approved | in-progress | implemented | verified | deferred | withdrawn
+area: XXX                # PLT IDN ORG CAT TKT PAY FIN NTF ADM
+service: <catalog|booking|identity|api-gateway|shared-library>-service
+subgraph: <catalog|booking|identity|null>
+owner: lazarous
+created: 2026-07-30
+priority: must           # must | should | could
+wave: 0                  # build wave from ROADMAP.md
+blocked_by: []           # other ET- ids that must reach `implemented` first
+conformance: null        # external stop this spec satisfies, e.g. "V3 §10 · PDI Phase 7"
+sources:
+  - specs/CONVENTIONS.md
+
+# ---- the contract, mirrored from spec.md §4 so scripts need not parse markdown ----
+persistence:
+  collections: []        # each must be a row of the ET-PLT-002 §4 collection registry
+  indexes: []
+  redis_keys: []         # each with a TTL — Redis never holds business state
+
+events:
+  module: []             # intra-service, @ApplicationModuleListener
+  bus: []                # cross-service wire names, e.g. booking.TicketPurchased
+  topics: []             # catalog-events | booking-events | identity-events
+
+graphql:
+  schema: null           # backend/<svc>/src/main/resources/graphql/schema.graphqls
+  queries: []
+  mutations: []
+
+errors: []               # codes introduced here; each must land in ET-PLT-005 §4
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/<area>/<NNN>-<slug>
+
+risks: []

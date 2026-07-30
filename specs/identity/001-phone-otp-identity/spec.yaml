@@ -1,0 +1,97 @@
+id: ET-IDN-001
+title: Phone-OTP passwordless identity
+status: draft
+area: IDN
+service: identity-service
+subgraph: null            # no graph surface — the programmatic surface is internal REST
+owner: lazarous
+created: 2026-07-30
+priority: must
+wave: 1
+blocked_by: [ET-PLT-005, ET-PLT-007]
+conformance: "US Part I §6 Keycloak integration"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - docs/KEYCLOAK_PHONE_OTP_AUTHENTICATOR.md
+  - docs/AUTHENTICATION_ARCHITECTURE_RECOMMENDATIONS.md
+  - docs/KEYCLOAK_IMPLEMENTATION_PLAN.md
+  - docs/USER_STORIES.md
+
+persistence:
+  collections: []          # writes no collection; the Keycloak REGISTER event carries the user (ET-IDN-002)
+  indexes:
+    - "identity_users {phoneNumber} unique sparse"   # declared by ET-PLT-002; R1 depends on it
+  redis_keys:
+    - "otp:{phone}            STRING  300 s  — HMAC-SHA256(code, pepper), hex. NEVER the code"
+    - "otp:cooldown:{phone}   STRING   60 s  — resend throttle"
+    - "otp:attempts:{phone}   STRING  300 s  — remaining attempts, from 5"
+    - "otp:locked:{phone}     STRING  900 s  — lockout after exhaustion"
+
+events:
+  module: []
+  bus: []                  # Keycloak's own REGISTER event is the trigger; see ET-IDN-002
+  topics: []
+
+graphql:
+  schema: null
+  queries: []
+  mutations: []
+
+rest:
+  internal:
+    - "POST   /api/internal/otp/request         internal-write"
+    - "POST   /api/internal/otp/verify          internal-write"
+    - "GET    /api/internal/otp/status/{phone}  internal-read"
+    - "DELETE /api/internal/otp/{phone}         internal-write"
+
+errors:
+  - PHONE_NUMBER_INVALID
+  - OTP_INVALID
+  - OTP_EXPIRED
+  - OTP_COOLDOWN_ACTIVE
+  - OTP_ATTEMPTS_EXHAUSTED
+  # NOTIFICATION_CHANNEL_UNAVAILABLE is introduced by ET-NTF-001 and used here
+
+config:
+  identity.otp.length: 6
+  identity.otp.ttl: PT5M
+  identity.otp.cooldown: PT60S
+  identity.otp.max-attempts: 5
+  identity.otp.lockout: PT15M
+  identity.otp.pepper: "${OTP_PEPPER}"
+  identity.otp.default-channel: WHATSAPP
+  identity.otp.test-numbers: "empty in production — enforced by a startup check"
+  identity.phone.default-region: ZM
+
+keycloak_spi:
+  module: backend/keycloak-extensions
+  registration: META-INF/services/org.keycloak.authentication.AuthenticatorFactory
+  components:
+    - PhoneOtpAuthenticator
+    - PhoneOtpAuthenticatorFactory
+    - OtpServiceClient
+    - phone-otp-input.ftl
+    - phone-otp-verify.ftl
+  flow: "phone-otp-browser — bound by the ET-PLT-007 T1 realm export, not by a script"
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - ./scripts/spec-lint.sh specs/identity/001-phone-otp-identity
+  - ./scripts/spec-lint.sh --security
+  - ./scripts/spec-lint.sh --clock
+  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001
+  - mvn -q -f backend/keycloak-extensions package
+  - mvn -q -f backend verify -Dgroups=ET-IDN-001
+
+risks:
+  - "R4 requires that an unregistered number be indistinguishable from a registered one, but R6's find-or-create happens after verification, so the platform genuinely does not know at request time — which is what makes the property achievable. It breaks the moment any future feature wants to say 'no account found, sign up first' at the phone-entry step, and that is a natural product request."
+  - "Response-time indistinguishability (R4) is asserted as a 'same latency band' with no threshold. A registered number's flow does a Keycloak lookup that an unregistered one does not, and if that lookup ever moves earlier the timing difference becomes a real oracle that no test here would catch."
+  - "The OTP pepper is a single environment value with no rotation story. Rotating it invalidates every live code, which is acceptable, but there is no dual-pepper verification window specified, so a rotation during business hours logs out every in-flight login."
+  - "R7 excludes privileged roles from the phone flow, but the exclusion has to be evaluated inside the authenticator, which means the SPI must ask Keycloak for the user's roles before authenticating them — and at that point it has confirmed the number belongs to a privileged account, which is exactly the disclosure R4 forbids for ordinary accounts."
+  - "The SPI shades Gson while Keycloak 26 ships its own JSON stack. A future Keycloak upgrade that changes the classloader isolation model can break the shaded JAR in a way that surfaces only at runtime, in the login flow, for every customer at once."
+  - "Two concurrent verifications producing one user (R6) relies on Keycloak's own uniqueness on username. The username is derived deterministically from the number, so the collision resolves — but if the derivation ever includes a random component for readability, the guarantee silently disappears."
+  - "identity.otp.test-numbers must be empty in production and a startup check enforces it. That check is the only thing between a convenience list and a permanent backdoor into any account whose number is on it, and startup checks are exactly what gets relaxed during an incident."
+  - "The four internal endpoints are the platform's highest-value target: anything that can call /otp/verify with a chosen number and code can log in as anyone. They are protected by a single client_credentials secret held by keycloak-extensions, which runs inside Keycloak — so a compromise of Keycloak yields both the secret and the ability to use it."
