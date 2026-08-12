@@ -52,10 +52,11 @@ import type { IEnvironmentProvider } from '../interfaces/IEnvironmentProvider';
 import type { IDatabaseProvider } from '../interfaces/IDatabaseProvider';
 import type { IRedisProvider } from '../interfaces/IRedisProvider';
 import type { IJtiBlacklistService } from '../interfaces/IJtiBlacklistService';
+import { LegacyJtiBlacklistAdapter, type IRevocationService } from '../../revocation';
+import { JtiBlacklistService } from '../services/JtiBlacklistService';
 import type { IBackchannelLogoutHandler } from '../interfaces/IBackchannelLogoutHandler';
 import type { AppAuthConfig } from '../types';
 
-import { JtiBlacklistService } from '../services/JtiBlacklistService';
 import { BackchannelLogoutHandler } from '../services/BackchannelLogoutHandler';
 
 // =============================================================================
@@ -93,6 +94,7 @@ export class AuthContainer {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly auth: any;
   private readonly jtiBlacklist: IJtiBlacklistService | null;
+  private readonly revocationService: IRevocationService | null;
   private readonly backchannelHandler: IBackchannelLogoutHandler | null;
   private readonly config: AppAuthConfig;
 
@@ -117,6 +119,9 @@ export class AuthContainer {
 
     // Build JTI blacklist if Redis enabled
     this.jtiBlacklist = this.buildJtiBlacklist();
+    // Supplied by the app, not built here: the durable half needs an identity-service URL and
+    // a service account, which are per-app deployment concerns.
+    this.revocationService = this.config.revocationService ?? null;
 
     // Create Better Auth instance (preserves native API)
     this.auth = this.buildBetterAuth(secondaryStorage);
@@ -216,6 +221,14 @@ export class AuthContainer {
 
   /**
    * Get JTI blacklist service (may be null)
+   */
+  getRevocationService(): IRevocationService | null {
+    return this.revocationService;
+  }
+
+  /**
+   * @deprecated Redis-only, per-app keyspace. Supply `revocationService` instead; retained while
+   * `admin` and `ticketing` are migrated.
    */
   getJtiBlacklist(): IJtiBlacklistService | null {
     return this.jtiBlacklist;
@@ -568,12 +581,29 @@ export class AuthContainer {
     return new JtiBlacklistService(
       redis,
       this.config.redisKeyPrefix || `${this.config.appId}:`,
-      86400 // 24 hour default TTL
+      3600 // matches the realm accessTokenLifespan
     );
   }
 
-  private buildBackchannelHandler(): IBackchannelLogoutHandler | null {
+  /**
+   * Prefers the app-supplied durable service. Falls back to the legacy Redis blacklist so an
+   * app that has not been migrated keeps its current backchannel-logout behaviour.
+   */
+  private resolveRevocationService(): IRevocationService | null {
+    if (this.revocationService) return this.revocationService;
     if (!this.jtiBlacklist) return null;
+
+    console.warn(
+      `[Auth:${this.config.appId}] No revocationService configured — backchannel logout will ` +
+        'use the legacy Redis blacklist, which is not durable and is not read by the backend ' +
+        'services.'
+    );
+    return new LegacyJtiBlacklistAdapter(this.jtiBlacklist);
+  }
+
+  private buildBackchannelHandler(): IBackchannelLogoutHandler | null {
+    const revocationService = this.resolveRevocationService();
+    if (!revocationService) return null;
 
     const db = this.databaseProvider.getDb();
     const env = this.envProvider;
@@ -584,7 +614,7 @@ export class AuthContainer {
       keycloakJwksUrl: env.keycloakJwksUrl,
       keycloakIssuer: env.keycloakIssuer,
       clientId: env.keycloakClientId,
-      jtiBlacklist: this.jtiBlacklist,
+      revocationService,
       // Use Better Auth's native session revocation API
       // Note: revokeSessionBySid is intentionally omitted because:
       // - Keycloak's `sid` is not stored in Better Auth sessions

@@ -68,6 +68,9 @@ export const db = services.db;
 export const redis = services.redis;
 
 /** JTI blacklist service for token revocation (null if Redis not enabled) */
+export const revocationService = services.revocationService;
+
+/** @deprecated Redis-only, per-app keyspace. Use `revocationService` from `./revocation`. */
 export const jtiBlacklist = services.jtiBlacklist;
 
 /** Backchannel logout handler for Keycloak (null if Redis not enabled) */

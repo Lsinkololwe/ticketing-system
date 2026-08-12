@@ -31,6 +31,7 @@ import type { AppAuthConfig } from './types';
 import type { Db } from 'mongodb';
 import type { Redis } from 'ioredis';
 import type { IJtiBlacklistService } from './interfaces/IJtiBlacklistService';
+import type { IRevocationService } from '../revocation';
 
 // =============================================================================
 // AUTH SERVICES TYPE (Backward Compatible)
@@ -58,6 +59,8 @@ export interface AuthServices {
   /** Redis client (null if not configured) */
   redis: Redis | null;
   /** JTI blacklist service (null if Redis not configured) */
+  revocationService: IRevocationService | null;
+  /** @deprecated Redis-only, per-app keyspace. Use `revocationService`. */
   jtiBlacklist: IJtiBlacklistService | null;
   /** Backchannel logout handler (null if Redis not configured) */
   handleBackchannelLogout: ((token: string) => Promise<{ success: boolean; error?: string }>) | null;
@@ -106,6 +109,7 @@ function buildAuthServices(container: AuthContainer): AuthServices {
     auth: container.getAuth(),
     db: container.getDb(),
     redis: container.getRedis(),
+    revocationService: container.getRevocationService(),
     jtiBlacklist: container.getJtiBlacklist(),
     handleBackchannelLogout: backchannelHandler
       ? (token: string) => backchannelHandler.handle(token)

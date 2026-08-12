@@ -1,0 +1,140 @@
+package com.pml.identity.security.revocation;
+
+import com.pml.shared.security.revocation.DurableRevocationStore;
+import com.pml.shared.security.revocation.RevocationCacheTrust;
+import com.pml.shared.security.revocation.RevocationDecision;
+import com.pml.shared.security.revocation.RevocationIdentifier;
+import com.pml.shared.security.revocation.RevocationMetrics;
+import com.pml.shared.security.revocation.RevocationProperties;
+import com.pml.shared.security.revocation.RevocationType;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import reactor.core.publisher.Mono;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+
+/**
+ * identity-service's binding of the durable revocation store, plus the only write path in the
+ * platform.
+ *
+ * <h2>Ownership</h2>
+ * <p>identity-service owns identity data and therefore the revocation system of record, so the
+ * collection and the write path live here rather than in shared-library. Other services read
+ * through this service's internal API, keeping a single writer and a single copy of the data.
+ * The policy is shared; the storage is not.</p>
+ *
+ * <h2>Durable-first writes</h2>
+ * <p>{@link #revoke} persists to MongoDB before writing the cache and propagates the error if
+ * the persist fails, so a caller learns when a revocation did not land. The Redis write is
+ * best-effort: the record is already durable, so a cache miss costs a fallback lookup.</p>
+ */
+@Slf4j
+@RequiredArgsConstructor
+public class MongoRevocationStore implements DurableRevocationStore {
+
+    /** Every reader uses {@code EXISTS}, so the cached value is informational only. */
+    private static final String CACHE_MARKER = "revoked";
+
+    private final RevocationRepository repository;
+    private final ReactiveStringRedisTemplate cache;
+    private final RevocationCacheTrust cacheTrust;
+    private final RevocationProperties properties;
+    private final RevocationMetrics metrics;
+    private final Clock clock;
+
+    // =========================================================================
+    // DurableRevocationStore
+    // =========================================================================
+
+    @Override
+    public Mono<RevocationDecision> check(Collection<RevocationIdentifier> identifiers) {
+        Instant now = clock.instant();
+        List<String> ids = identifiers.stream().map(RevocationIdentifier::storageId).toList();
+
+        return repository.findAllById(ids)
+                // The TTL monitor sweeps roughly once a minute, so an expired record can still
+                // be readable; filter it out against the current clock.
+                .filter(record -> record.isActiveAt(now))
+                .hasElements()
+                .map(found -> found ? RevocationDecision.REVOKED : RevocationDecision.ACTIVE);
+    }
+
+    @Override
+    public Mono<Void> ping() {
+        return repository.count().then();
+    }
+
+    @Override
+    public String name() {
+        return "mongodb";
+    }
+
+    // =========================================================================
+    // Writes — identity-service only
+    // =========================================================================
+
+    /**
+     * Records a revocation durably, then primes the cache.
+     *
+     * @return the persisted record
+     * @throws IllegalArgumentException via the {@link Mono} for a blank identifier
+     */
+    public Mono<RevocationRecord> revoke(RevocationType type, String value,
+                                         String reason, String revokedBy) {
+        if (value == null || value.isBlank()) {
+            return Mono.error(new IllegalArgumentException(
+                    "Cannot revoke a blank " + type + " identifier"));
+        }
+
+        Instant now = clock.instant();
+        RevocationRecord record = RevocationRecord.builder()
+                .id(type.documentId(value))
+                .type(type)
+                .value(value)
+                .reason(reason)
+                .revokedBy(revokedBy)
+                .revokedAt(now)
+                .expiresAt(now.plus(properties.recordTtl()))
+                .build();
+
+        return repository.save(record)
+                .timeout(properties.getDurableTimeout())
+                .doOnError(error -> {
+                    metrics.writeCompleted("durable_failed");
+                    log.error("[Revocation] Could not persist revocation of {} — the token "
+                                    + "remains valid until it expires on its own",
+                            new RevocationIdentifier(type, value).masked(), error);
+                })
+                .flatMap(saved -> primeCache(saved).thenReturn(saved));
+    }
+
+    /** Best-effort cache population. Never fails the enclosing write. */
+    private Mono<Void> primeCache(RevocationRecord record) {
+        Duration ttl = Duration.between(clock.instant(), record.getExpiresAt());
+        if (ttl.isZero() || ttl.isNegative()) {
+            metrics.writeCompleted("ok");
+            return Mono.empty();
+        }
+
+        return cache.opsForValue()
+                .set(record.getType().cacheKey(record.getValue()), CACHE_MARKER, ttl)
+                .doOnNext(stored -> metrics.writeCompleted(
+                        Boolean.TRUE.equals(stored) ? "ok" : "cache_failed"))
+                .onErrorResume(error -> {
+                    metrics.writeCompleted("cache_failed");
+                    log.warn("[Revocation] Revocation of {} is durable but was not cached ({}) "
+                                    + "— checks will use the durable path until Redis recovers",
+                            new RevocationIdentifier(record.getType(), record.getValue()).masked(),
+                            error.toString());
+                    // The cache is now missing a live revocation, so a miss must stop counting
+                    // as an answer until the warmer reloads it.
+                    return cacheTrust.invalidate().thenReturn(false);
+                })
+                .then();
+    }
+}

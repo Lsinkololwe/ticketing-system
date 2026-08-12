@@ -5,11 +5,19 @@ spring:
   application:
     name: identity-service-test
 
-  # Test MongoDB (use Testcontainers or embedded)
+  # MongoDB is supplied per test class by @DynamicPropertySource from a MongoDBContainer.
+  # The fallback exists only so the context can start when a test does not override it.
   data:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/event_ticketing_test}
       database: event_ticketing_test
+
+# Mongock builds its own client from the URI it reads at start-up and does not see the
+# per-class container override, so it reaches the developer's local MongoDB instead. No
+# changeunits exist under com.pml.identity.migration, so running it here would only exercise
+# its own bookkeeping collections.
+mongock:
+  enabled: false
 
 # Keycloak Configuration (override with env vars for CI/CD)
 keycloak:

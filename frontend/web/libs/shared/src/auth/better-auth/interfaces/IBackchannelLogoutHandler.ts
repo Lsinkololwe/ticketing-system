@@ -185,8 +185,13 @@ export interface BackchannelLogoutDependencies {
   /** Expected audience (client ID) */
   clientId: string;
 
-  /** JTI blacklist service */
-  jtiBlacklist: import('./IJtiBlacklistService').IJtiBlacklistService;
+  /**
+   * Durable revocation service.
+   *
+   * The handler revokes by the logout token's `sid` and `sub`. Its `jti` identifies the logout
+   * event itself under the OIDC backchannel spec and matches no access token, so it is not used.
+   */
+  revocationService: import('../../revocation').IRevocationService;
 
   /**
    * Function to revoke all Better Auth sessions for a user.

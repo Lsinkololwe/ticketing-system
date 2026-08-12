@@ -24,6 +24,9 @@
         <spring-modulith.version>1.3.1</spring-modulith.version>
         <spring-cloud-azure.version>5.19.0</spring-cloud-azure.version>
         <dgs.version>10.5.0</dgs.version>
+        <!-- Ahead of the version Spring Boot 3.5.4 manages (1.21.3), which pins the Docker
+             API to 1.32 and is refused by Docker Engine 29 (minimum API 1.40). -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencyManagement>
@@ -185,6 +188,29 @@
             <artifactId>mongodb</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Flow B integration tests: Spring Modulith event registry runs on PostgreSQL -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Flow B integration tests: real Keycloak with the production realm,
+             themes and the keycloak-extensions SPI jar -->
+        <dependency>
+            <groupId>com.github.dasniko</groupId>
+            <artifactId>testcontainers-keycloak</artifactId>
+            <version>3.7.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Flow B integration tests: observable binding for StreamBridge.
+             Substitutes the Azure Service Bus wire protocol ONLY; binding name,
+             destination and payload serialization are still exercised. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-stream-test-binder</artifactId>
+            <version>4.2.0</version>
+            <scope>test</scope>
+        </dependency>
 
 
         <!-- Password Encoding -->
@@ -311,6 +337,25 @@
                     <source>21</source>
                     <target>21</target>
                 </configuration>
+            </plugin>
+            <!-- Container-backed integration tests (*IT) run in `verify`, not `test`,
+                 so `mvn test` stays fast and Docker-free. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

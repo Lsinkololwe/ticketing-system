@@ -131,7 +131,14 @@ class VerificationDocumentWorkflowIntegrationTest {
     private User adminUser;
 
     // Document constants
-    private static final String TEST_ORG_ID_PREFIX = "test-org-";
+    /**
+     * Organization ids must be ObjectId-shaped: the organizations collection carries a JSON
+     * schema validator requiring {@code _id} to be an objectId, so a readable placeholder is
+     * rejected by the same rule that applies in production.
+     */
+    private static String newOrganizationId() {
+        return new org.bson.types.ObjectId().toHexString();
+    }
     private static final String TEST_USER_ID_PREFIX = "test-user-";
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
     private static final String VALID_MIME_TYPE = "application/pdf";
@@ -175,7 +182,7 @@ class VerificationDocumentWorkflowIntegrationTest {
 
         // Create approved organization
         testOrganization = Organization.builder()
-                .id(TEST_ORG_ID_PREFIX + System.currentTimeMillis())
+                .id(newOrganizationId())
                 .name("Test Organization")
                 .slug("test-org-" + System.currentTimeMillis())
                 .ownerId(testUser.getId())
@@ -190,7 +197,7 @@ class VerificationDocumentWorkflowIntegrationTest {
 
         // Create another organization for cross-organization tests
         anotherOrganization = Organization.builder()
-                .id(TEST_ORG_ID_PREFIX + "another-" + System.currentTimeMillis())
+                .id(newOrganizationId())
                 .name("Another Organization")
                 .slug("another-org-" + System.currentTimeMillis())
                 .ownerId(TEST_USER_ID_PREFIX + "another")
@@ -228,7 +235,7 @@ class VerificationDocumentWorkflowIntegrationTest {
     void shouldUploadDocumentSuccessfully() {
         // Given: Document upload request
         String documentType = "ID_DOCUMENT";
-        String documentUrl = "s3://bucket/documents/" + testOrganization.getId() + "/id.pdf";
+        String documentUrl = "https://cdn.example.test/documents/" + testOrganization.getId() + "/id.pdf";
         String fileName = "national_id.pdf";
         Long fileSize = 2_500_000L; // 2.5 MB
         String mimeType = VALID_MIME_TYPE;
@@ -276,14 +283,14 @@ class VerificationDocumentWorkflowIntegrationTest {
         documentService.upload(
                 testOrganization.getId(),
                 documentType,
-                "s3://bucket/old-license.pdf",
+                "https://cdn.example.test/old-license.pdf",
                 "old_license.pdf",
                 1_000_000L,
                 VALID_MIME_TYPE
         ).block();
 
         // When: Same document type is uploaded again
-        String newUrl = "s3://bucket/new-license.pdf";
+        String newUrl = "https://cdn.example.test/new-license.pdf";
         String newFileName = "new_license.pdf";
         Long newFileSize = 1_500_000L;
 
@@ -324,7 +331,7 @@ class VerificationDocumentWorkflowIntegrationTest {
         Mono<VerificationDocument> uploadResult = documentService.upload(
                 invalidOrgId,
                 "ID_DOCUMENT",
-                "s3://bucket/doc.pdf",
+                "https://cdn.example.test/doc.pdf",
                 "doc.pdf",
                 1_000_000L,
                 VALID_MIME_TYPE
@@ -350,15 +357,15 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Three documents uploaded (minimum required for verification)
         VerificationDocument doc1 = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         VerificationDocument doc2 = documentService.upload(
                 testOrganization.getId(), "BUSINESS_LICENSE",
-                "s3://bucket/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         VerificationDocument doc3 = documentService.upload(
                 testOrganization.getId(), "TAX_CERTIFICATE",
-                "s3://bucket/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
 
         // When: Admin approves all documents
@@ -401,7 +408,7 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Already approved document
         VerificationDocument document = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         documentService.approve(document.getId(), adminUser.getId()).block();
 
@@ -453,7 +460,7 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Uploaded document
         VerificationDocument document = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
 
         // When: Admin rejects with reason
@@ -492,20 +499,20 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Rejected document
         VerificationDocument document = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/bad-id.pdf", "bad_id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/bad-id.pdf", "bad_id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         documentService.reject(document.getId(), "Poor quality", adminUser.getId()).block();
 
         // When: User uploads new document of same type
         Mono<VerificationDocument> reuploadResult = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/good-id.pdf", "good_id.pdf", 1_200_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/good-id.pdf", "good_id.pdf", 1_200_000L, VALID_MIME_TYPE
         );
 
         // Then: New document is pending review
         StepVerifier.create(reuploadResult)
                 .assertNext(newDoc -> {
-                    assertThat(newDoc.getDocumentUrl()).isEqualTo("s3://bucket/good-id.pdf");
+                    assertThat(newDoc.getDocumentUrl()).isEqualTo("https://cdn.example.test/good-id.pdf");
                     assertThat(newDoc.getStatus()).isEqualTo(DocumentStatus.PENDING);
                     assertThat(newDoc.getRejectionReason()).isNull();
                     assertThat(newDoc.getVerifiedAt()).isNull();
@@ -534,7 +541,7 @@ class VerificationDocumentWorkflowIntegrationTest {
             documentService.upload(
                     testOrganization.getId(),
                     docType,
-                    "s3://bucket/" + docType.toLowerCase() + ".pdf",
+                    "https://cdn.example.test/" + docType.toLowerCase() + ".pdf",
                     docType.toLowerCase() + ".pdf",
                     1_000_000L,
                     VALID_MIME_TYPE
@@ -565,15 +572,15 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Documents with different statuses
         VerificationDocument doc1 = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         VerificationDocument doc2 = documentService.upload(
                 testOrganization.getId(), "BUSINESS_LICENSE",
-                "s3://bucket/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         VerificationDocument doc3 = documentService.upload(
                 testOrganization.getId(), "TAX_CERTIFICATE",
-                "s3://bucket/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
 
         // Approve one, reject one, leave one pending
@@ -605,7 +612,7 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Uploaded document
         VerificationDocument document = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
 
         // When: Document is deleted
@@ -625,11 +632,11 @@ class VerificationDocumentWorkflowIntegrationTest {
     void shouldDeleteAllDocumentsForOrganization() {
         // Given: Multiple documents
         documentService.upload(testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE).block();
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE).block();
         documentService.upload(testOrganization.getId(), "BUSINESS_LICENSE",
-                "s3://bucket/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE).block();
+                "https://cdn.example.test/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE).block();
         documentService.upload(testOrganization.getId(), "TAX_CERTIFICATE",
-                "s3://bucket/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE).block();
+                "https://cdn.example.test/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE).block();
 
         // When: All documents are deleted
         Mono<Void> deleteResult = documentService.deleteByOrganization(testOrganization.getId());
@@ -661,7 +668,7 @@ class VerificationDocumentWorkflowIntegrationTest {
             documentService.upload(
                     testOrganization.getId(),
                     "DOC_TYPE_" + index,
-                    "s3://bucket/doc-" + index + ".pdf",
+                    "https://cdn.example.test/doc-" + index + ".pdf",
                     "doc-" + index + ".pdf",
                     1_000_000L,
                     VALID_MIME_TYPE
@@ -695,11 +702,11 @@ class VerificationDocumentWorkflowIntegrationTest {
     void shouldRetrievePendingDocumentsQueue() {
         // Given: Documents from multiple organizations
         documentService.upload(testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id1.pdf", "id1.pdf", 1_000_000L, VALID_MIME_TYPE).block();
+                "https://cdn.example.test/id1.pdf", "id1.pdf", 1_000_000L, VALID_MIME_TYPE).block();
         documentService.upload(testOrganization.getId(), "BUSINESS_LICENSE",
-                "s3://bucket/license1.pdf", "license1.pdf", 1_000_000L, VALID_MIME_TYPE).block();
+                "https://cdn.example.test/license1.pdf", "license1.pdf", 1_000_000L, VALID_MIME_TYPE).block();
         documentService.upload(anotherOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id2.pdf", "id2.pdf", 1_000_000L, VALID_MIME_TYPE).block();
+                "https://cdn.example.test/id2.pdf", "id2.pdf", 1_000_000L, VALID_MIME_TYPE).block();
 
         // When: Admin retrieves pending documents
         Flux<VerificationDocument> pendingQueue = documentService.findPendingDocuments();
@@ -724,15 +731,15 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Documents with different statuses
         VerificationDocument doc1 = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         VerificationDocument doc2 = documentService.upload(
                 testOrganization.getId(), "BUSINESS_LICENSE",
-                "s3://bucket/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         VerificationDocument doc3 = documentService.upload(
                 testOrganization.getId(), "TAX_CERTIFICATE",
-                "s3://bucket/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
 
         // Approve two documents
@@ -759,7 +766,7 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Document uploaded
         documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
 
         // When: Check existence
@@ -784,11 +791,11 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Two approved documents
         VerificationDocument doc1 = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         VerificationDocument doc2 = documentService.upload(
                 testOrganization.getId(), "BUSINESS_LICENSE",
-                "s3://bucket/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/license.pdf", "license.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
 
         documentService.approve(doc1.getId(), adminUser.getId()).block();
@@ -809,7 +816,7 @@ class VerificationDocumentWorkflowIntegrationTest {
         // When: Third document is approved
         VerificationDocument doc3 = documentService.upload(
                 testOrganization.getId(), "TAX_CERTIFICATE",
-                "s3://bucket/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/tax.pdf", "tax.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
         documentService.approve(doc3.getId(), adminUser.getId()).block();
 
@@ -836,7 +843,7 @@ class VerificationDocumentWorkflowIntegrationTest {
     void shouldHandleNullParameters() {
         // When: Null organization ID
         Mono<VerificationDocument> nullOrgResult = documentService.upload(
-                null, "ID_DOCUMENT", "s3://bucket/doc.pdf",
+                null, "ID_DOCUMENT", "https://cdn.example.test/doc.pdf",
                 "doc.pdf", 1_000_000L, VALID_MIME_TYPE
         );
 
@@ -853,7 +860,7 @@ class VerificationDocumentWorkflowIntegrationTest {
         // Given: Uploaded document
         VerificationDocument document = documentService.upload(
                 testOrganization.getId(), "ID_DOCUMENT",
-                "s3://bucket/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
+                "https://cdn.example.test/id.pdf", "id.pdf", 1_000_000L, VALID_MIME_TYPE
         ).block();
 
         // When: Rejection attempted without reason

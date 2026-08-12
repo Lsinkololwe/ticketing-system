@@ -26,10 +26,23 @@ export interface AppAuthConfig {
   appId: AppId;
   /** Cookie prefix for session cookies */
   cookiePrefix: string;
-  /** Redis key prefix for session storage (defaults to `${appId}:`) */
+  /**
+   * Redis key prefix for *session* storage (defaults to `${appId}:`).
+   *
+   * Applies to Better Auth's secondary storage only. Revocation keys are global and never
+   * namespaced by app — see `libs/shared/src/auth/revocation/keys.ts`.
+   */
   redisKeyPrefix?: string;
   /** Enable Redis secondary storage (defaults to true) */
   enableRedis?: boolean;
+  /**
+   * The app's durable revocation service.
+   *
+   * Supplied by the app rather than built by the container, because the durable half needs an
+   * identity-service URL and a service account, which differ per deployment. Backchannel logout
+   * is disabled when it is absent.
+   */
+  revocationService?: import('../revocation').IRevocationService;
 }
 
 // =============================================================================

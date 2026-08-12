@@ -1,0 +1,68 @@
+# Flow B integration-test profile.
+#
+# Only static overrides live here. Everything that depends on a container port is
+# supplied by FlowBIntegrationSupport via @DynamicPropertySource.
+#
+# Deliberately NOT overridden: SecurityConfig rules, the MongoDB JSON-schema validators,
+# the Modulith event registry, and the StreamBridge binding name/destination. Those are
+# part of what Flow B is asserted against.
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
+
+  cloud:
+    stream:
+      # The Azure Service Bus wire protocol is the one substitution in this suite
+      # (its emulator depends on azure-sql-edge, which has no arm64 image). The binding
+      # name `userOutput-out-0`, the destination `identity-events` and the serialized
+      # payload all still come from the production configuration in application.yml.
+      default-binder: integration
+
+  # No changeunits exist under com.pml.identity.migration; running Mongock here would
+  # only exercise its own bookkeeping collections.
+  data:
+    mongodb:
+      auto-index-creation: true
+
+mongock:
+  enabled: false
+
+# Keep the real validators on: rejecting a malformed user document is a Flow B assertion.
+mongodb:
+  schema-validation:
+    enabled: true
+    validation-action: ERROR
+    validation-level: STRICT
+    fail-on-validation-error: true
+
+# The platform-admin realm is not started by this suite; multi-issuer resolution is
+# covered by its own tests. Empty => SecurityConfig takes the single-issuer path.
+keycloak:
+  trusted-issuers: ""
+
+messaging:
+  provider: mock
+
+identity:
+  features:
+    use-keycloak: true
+
+file-storage:
+  type: local
+  local:
+    base-path: ./target/flowb-uploads
+
+logging:
+  level:
+    root: WARN
+    com.pml.identity: INFO
+    com.pml.identity.service.impl.UserSyncServiceImpl: DEBUG
+    com.pml.identity.web.rest.KeycloakSyncController: DEBUG
+    org.springframework.security: WARN
+    org.springframework.security.web.server: WARN
+    org.springframework.security.oauth2: WARN
+    org.springframework.modulith: WARN
+    com.pml.shared.security: WARN
+    org.testcontainers: INFO
+    tc: INFO

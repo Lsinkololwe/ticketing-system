@@ -10,6 +10,7 @@ import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationOnboardingService;
 import com.pml.identity.service.OrganizationService;
 import com.pml.shared.security.SecurityContextUtils;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -50,6 +51,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
+    @FailClosedOnRevocation("organizer.apply")
     public Mono<Organization> applyToBeOrganizer(
             @InputArgument OrganizationApplicationInput input) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -63,6 +65,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
+    @FailClosedOnRevocation("organizer.updateApplication")
     public Mono<Organization> updateOrganizationApplication(
             @InputArgument String id,
             @InputArgument OrganizationApplicationInput input) {
@@ -83,6 +86,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
+    @FailClosedOnRevocation("organizer.submitForReview")
     public Mono<Organization> submitOrganizationForReview(
             @InputArgument String id) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -102,6 +106,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
+    @FailClosedOnRevocation("organizer.getOrCreateOrganization")
     public Mono<Organization> getOrCreateMyOrganization() {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("User {} requesting organization (create if needed)", userId))
@@ -113,6 +118,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
+    @FailClosedOnRevocation("organizer.upgradeToBusiness")
     public Mono<Organization> upgradeToBusinessOrganization(
             @InputArgument String organizationId,
             @InputArgument String businessName) {
@@ -136,6 +142,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @FailClosedOnRevocation("admin.approveOrganization")
     public Mono<Organization> approveOrganization(
             @InputArgument String id) {
         return SecurityContextUtils.getCurrentUserId()
@@ -149,6 +156,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @FailClosedOnRevocation("admin.requestOrganizationChanges")
     public Mono<Organization> requestOrganizationChanges(
             @InputArgument String id,
             @InputArgument String reason) {
@@ -163,6 +171,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @FailClosedOnRevocation("admin.rejectOrganization")
     public Mono<Organization> rejectOrganization(
             @InputArgument String id,
             @InputArgument String reason) {
@@ -182,6 +191,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
+    @FailClosedOnRevocation("organizer.updateOrganization")
     public Mono<Organization> updateOrganization(
             @InputArgument String id,
             @InputArgument UpdateOrganizationInput input) {
@@ -209,6 +219,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
+    @FailClosedOnRevocation("organizer.updateOrganizationSettings")
     public Mono<Organization> updateOrganizationSettings(
             @InputArgument String id,
             @InputArgument UpdateOrganizationSettingsInput input) {
@@ -250,6 +261,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @FailClosedOnRevocation("admin.suspendOrganization")
     public Mono<Organization> suspendOrganization(
             @InputArgument String id,
             @InputArgument String reason) {
@@ -268,6 +280,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @FailClosedOnRevocation("admin.unsuspendOrganization")
     public Mono<Organization> unsuspendOrganization(
             @InputArgument String id) {
         return SecurityContextUtils.getCurrentUserId()
@@ -281,6 +294,7 @@ public class OrganizationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @FailClosedOnRevocation("admin.updateOrganizationStatus")
     public Mono<Organization> updateOrganizationStatus(
             @InputArgument String id,
             @InputArgument OrganizationStatus status) {

@@ -42,7 +42,7 @@ import type {
   BackchannelLogoutErrorCode,
   BackchannelLogoutDependencies,
 } from '../interfaces/IBackchannelLogoutHandler';
-import type { IJtiBlacklistService } from '../interfaces/IJtiBlacklistService';
+import type { IRevocationService } from '../../revocation';
 
 // =============================================================================
 // BACKCHANNEL LOGOUT EVENT URI
@@ -63,7 +63,7 @@ export class BackchannelLogoutHandler implements IBackchannelLogoutHandler {
   private readonly JWKS: ReturnType<typeof jose.createRemoteJWKSet>;
   private readonly keycloakIssuer: string;
   private readonly clientId: string;
-  private readonly jtiBlacklist: IJtiBlacklistService;
+  private readonly revocationService: IRevocationService;
   private readonly revokeUserSessions: (userId: string) => Promise<void>;
 
   /**
@@ -74,7 +74,7 @@ export class BackchannelLogoutHandler implements IBackchannelLogoutHandler {
   constructor(deps: BackchannelLogoutDependencies) {
     this.keycloakIssuer = deps.keycloakIssuer;
     this.clientId = deps.clientId;
-    this.jtiBlacklist = deps.jtiBlacklist;
+    this.revocationService = deps.revocationService;
     this.revokeUserSessions = deps.revokeUserSessions;
 
     // Native jose: Create remote JWKS fetcher with caching
@@ -109,18 +109,31 @@ export class BackchannelLogoutHandler implements IBackchannelLogoutHandler {
       });
 
       // =========================================================================
-      // STEP 2: Add JTI to blacklist
+      // STEP 2: Revoke the session and the user, durably
       // =========================================================================
-      const blacklistResult = await this.jtiBlacklist.add({
-        jti: claims.jti,
-        userId: claims.sub || 'unknown',
-        sessionId: claims.sid,
+      // `claims.jti` identifies the logout event, not an access token, so it is not revoked.
+      // `sid` covers every token minted for the session Keycloak is reporting, `sub` the user.
+      const revocation = await this.revocationService.revokeSignOut({
+        sid: claims.sid,
+        sub: claims.sub,
         reason: 'backchannel_logout',
-        tokenExpiry: claims.exp,
+        revokedBy: 'keycloak-backchannel',
       });
 
-      if (!blacklistResult) {
-        console.warn('[BackchannelLogoutHandler] Failed to add JTI to blacklist, continuing...');
+      if (!revocation.persisted) {
+        // Keycloak retries backchannel logout on a non-2xx, so reporting failure here is what
+        // triggers the retry.
+        console.error(
+          '[BackchannelLogoutHandler] Revocation was not persisted:',
+          revocation.error
+        );
+        return {
+          success: false,
+          error:
+            revocation.error ??
+            'Revocation could not be persisted; tokens for this session remain valid.',
+          errorCode: 'UNKNOWN_ERROR',
+        };
       }
 
       // =========================================================================
@@ -137,7 +150,7 @@ export class BackchannelLogoutHandler implements IBackchannelLogoutHandler {
           console.log(`[BackchannelLogoutHandler] Revoked all sessions for user: ${claims.sub}`);
         } catch (error) {
           console.error('[BackchannelLogoutHandler] Failed to revoke user sessions:', error);
-          // Continue - JTI is blacklisted
+          // Continue: the session and user revocations are already durable.
         }
       }
 

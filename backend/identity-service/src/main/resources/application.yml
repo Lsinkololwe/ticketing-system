@@ -287,6 +287,18 @@ resilience4j:
           - jakarta.ws.rs.ProcessingException
           - jakarta.ws.rs.WebApplicationException
           - java.util.concurrent.TimeoutException
+      # Guards the Redis revocation cache. While open, checks skip Redis and resolve
+      # against MongoDB directly rather than waiting out a connection timeout each.
+      revocationCache:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 80
+        slow-call-duration-threshold: 250ms
+        minimum-number-of-calls: 10
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
   retry:
     instances:
       keycloak:
@@ -296,6 +308,31 @@ resilience4j:
         retry-exceptions:
           - jakarta.ws.rs.ProcessingException
           - java.util.concurrent.TimeoutException
+  timelimiter:
+    instances:
+      # Set well below spring.data.redis.timeout (2s) so a slow cache hands over to the
+      # durable store instead of adding latency to every authenticated request.
+      revocationCache:
+        timeout-duration: 250ms
+        cancel-running-future: true
+
+# ==============================================================================
+# TOKEN REVOCATION
+# ==============================================================================
+# Redis caches the MongoDB system of record. Checks resolve against either store, so a
+# Redis outage costs latency rather than enforcement. Operations annotated
+# @FailClosedOnRevocation are refused when neither store can answer.
+pml:
+  security:
+    revocation:
+      enabled: ${REVOCATION_ENABLED:true}
+      # Tracks the realm's accessTokenLifespan (myticketzm-realm.json: 3600) so a
+      # revocation record outlives every token it revokes.
+      access-token-lifespan: ${ACCESS_TOKEN_LIFESPAN:1h}
+      clock-skew: 60s
+      cache-timeout: 250ms
+      durable-timeout: 2s
+      require-eviction-safe-cache: true
 
 file-upload:
   max-file-size: 10485760

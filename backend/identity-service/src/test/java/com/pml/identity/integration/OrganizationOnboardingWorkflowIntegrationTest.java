@@ -20,6 +20,9 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import com.pml.identity.domain.model.PlatformConfigurationView;
+import com.pml.identity.repository.PlatformConfigurationRepository;
+import com.pml.shared.config.model.PlatformPaymentDefaults;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -84,6 +87,9 @@ class OrganizationOnboardingWorkflowIntegrationTest {
     private OrganizationRepository organizationRepository;
 
     @Autowired
+    private PlatformConfigurationRepository platformConfigurationRepository;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -105,6 +111,19 @@ class OrganizationOnboardingWorkflowIntegrationTest {
         userRepository.deleteAll().block();
         organizationMemberRepository.deleteAll().block();
         auditLogRepository.deleteAll().block();
+
+        // Organization creation reads its payout defaults from the shared platform_configuration
+        // document, which catalog-service seeds in a running system. Without it, onboarding
+        // fails by design rather than inventing financial defaults.
+        PlatformConfigurationView platformConfiguration = new PlatformConfigurationView();
+        platformConfiguration.setId(PlatformConfigurationView.DEFAULT_ID);
+        platformConfiguration.setPayment(PlatformPaymentDefaults.builder()
+                .commissionRate(0.10)
+                .payoutMethod("MOBILE_MONEY")
+                .payoutSchedule("WEEKLY")
+                .minimumPayoutAmount(50.0)
+                .build());
+        platformConfigurationRepository.save(platformConfiguration).block();
 
         // Create test user
         testUser = User.builder()

@@ -1,19 +1,19 @@
 /**
  * Logout Endpoint with JTI Blacklisting
  *
- * Handles user-initiated logout with defense-in-depth:
- * 1. Blacklists the access token JTI in Redis
- * 2. Signs out via Better Auth (clears session)
- * 3. Returns Keycloak logout URL for SSO termination
+ * Handles user-initiated logout:
+ * 1. Revokes the access token, SSO session and user via identity-service (durable)
+ * 2. Signs out via Better Auth (clears the local session)
+ * 3. Returns the Keycloak logout URL for SSO termination
  *
- * This ensures the Keycloak access token is immediately invalidated,
- * not just when backchannel logout arrives.
+ * Responds 207 when the local session was cleared but the revocation did not persist.
  *
  * @see https://better-auth.com/docs/concepts/session-management
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth, db, jtiBlacklist } from '@/lib/auth';
+import { auth, db } from '@/lib/auth';
+import { revocationService } from '@/lib/auth/revocation';
 import { decodeJwt } from 'jose';
 
 // =============================================================================
@@ -31,7 +31,14 @@ const KEYCLOAK_CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ?? 'mytick
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  const results = {
+  const results: {
+    sessionFound: boolean;
+    /** True only when the revocation reached identity-service's system of record. */
+    jtiBlacklisted: boolean;
+    signedOut: boolean;
+    /** Present when the token could not be revoked. It is still valid until it expires. */
+    revocationError?: string;
+  } = {
     sessionFound: false,
     jtiBlacklisted: false,
     signedOut: false,
@@ -59,42 +66,55 @@ export async function POST(request: NextRequest) {
     console.log('[Logout] Processing logout for user:', userId?.slice(0, 8) + '...');
 
     // =========================================================================
-    // Step 2: Blacklist access token JTI (defense-in-depth)
+    // Step 2: Revoke the Keycloak credentials durably
     // =========================================================================
-    if (jtiBlacklist && db) {
+    // identity-service owns the revocation record and persists it to MongoDB before caching it
+    // in Redis, so the revocation survives a cache outage and is visible to every backend
+    // service. All three identifiers are sent: `jti` covers the token in hand, `sid` every
+    // token minted for the same SSO session, and `sub` the user.
+    if (db) {
       try {
-        // Find the Keycloak account to get the access token
         const account = await db.collection('account').findOne({
           userId: userId,
           providerId: 'keycloak',
         });
 
         if (account?.accessToken) {
-          try {
-            const payload = decodeJwt(account.accessToken);
+          const payload = decodeJwt(account.accessToken);
 
-            if (payload.jti) {
-              await jtiBlacklist.add({
-                jti: payload.jti as string,
-                userId: (payload.sub as string) || userId,
-                reason: 'session_revoke',
-                tokenExpiry: payload.exp as number | undefined,
-              });
-              results.jtiBlacklisted = true;
-              console.log('[Logout] Access token JTI blacklisted:', (payload.jti as string).slice(0, 8) + '...');
-            }
-          } catch (decodeError) {
-            console.warn('[Logout] Failed to decode access token:', decodeError);
+          const outcome = await revocationService.revokeSignOut({
+            jti: payload.jti as string | undefined,
+            sid: payload.sid as string | undefined,
+            sub: (payload.sub as string) || userId,
+            reason: 'user_logout',
+            revokedBy: userId,
+          });
+
+          results.jtiBlacklisted = outcome.persisted;
+          results.revocationError = outcome.error;
+
+          if (outcome.persisted) {
+            console.log(
+              `[Logout] Revoked ${outcome.identifiersRevoked} identifier(s), cached=${outcome.cachePrimed}`
+            );
+          } else {
+            // The local session is cleared regardless, but the access token stays valid until it
+            // expires, so the outcome is reported rather than dropped.
+            console.error('[Logout] Revocation was NOT persisted:', outcome.error);
           }
         } else {
-          console.log('[Logout] No access token found for user');
+          console.log('[Logout] No Keycloak access token on file — nothing to revoke');
+          results.jtiBlacklisted = true;
         }
-      } catch (blacklistError) {
-        // Non-critical - continue with logout
-        console.warn('[Logout] JTI blacklisting failed (non-critical):', blacklistError);
+      } catch (revocationError) {
+        const message =
+          revocationError instanceof Error ? revocationError.message : String(revocationError);
+        results.revocationError = message;
+        console.error('[Logout] Revocation failed:', message);
       }
     } else {
-      console.log('[Logout] JTI blacklist not available (Redis not enabled?)');
+      results.revocationError = 'account store unavailable';
+      console.error('[Logout] Cannot resolve the access token to revoke it');
     }
 
     // =========================================================================
@@ -117,12 +137,22 @@ export async function POST(request: NextRequest) {
     const duration = Date.now() - startTime;
     console.log(`[Logout] Completed in ${duration}ms:`, results);
 
-    return NextResponse.json({
-      success: true,
-      logoutUrl: buildKeycloakLogoutUrl(),
-      results,
-      duration,
-    });
+    // The user is redirected either way; 207 distinguishes a sign-out that cleared the local
+    // session from one that also revoked the access token centrally.
+    return NextResponse.json(
+      {
+        success: results.jtiBlacklisted,
+        partial: !results.jtiBlacklisted,
+        warning: results.jtiBlacklisted
+          ? undefined
+          : 'Signed out on this device, but the access token could not be revoked centrally. ' +
+            'It remains valid until it expires.',
+        logoutUrl: buildKeycloakLogoutUrl(),
+        results,
+        duration,
+      },
+      { status: results.jtiBlacklisted ? 200 : 207 }
+    );
 
   } catch (error) {
     const err = error as Error;
@@ -170,10 +200,10 @@ function buildKeycloakLogoutUrl(): string {
 export async function GET() {
   return NextResponse.json({
     endpoint: 'logout',
-    description: 'User-initiated logout with JTI blacklisting',
+    description: 'User-initiated logout with durable token revocation',
     method: 'POST',
     flow: [
-      '1. Blacklist access token JTI in Redis',
+      '1. Revoke jti, sid and sub via identity-service',
       '2. Clear Better Auth session',
       '3. Return Keycloak logout URL',
     ],

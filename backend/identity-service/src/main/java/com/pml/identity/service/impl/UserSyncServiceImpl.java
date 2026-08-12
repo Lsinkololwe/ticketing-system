@@ -19,6 +19,8 @@ import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -48,6 +50,12 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class UserSyncServiceImpl implements UserSyncService {
+
+    /** Output binding declared in {@code application.yml} (destination {@code identity-events}). */
+    private static final String USER_EVENTS_BINDING = "userOutput-out-0";
+
+    /** Header the binding's {@code partition-key-expression} reads. */
+    private static final String PARTITION_KEY_HEADER = "partitionKey";
 
     private final UserRepository userRepository;
     private final KeycloakService keycloakService;
@@ -204,9 +212,18 @@ public class UserSyncServiceImpl implements UserSyncService {
                                         batchNum + 1, totalBatches, offset);
 
                                 return keycloakService.getAllUsers(offset, batchSize)
-                                        .flatMap(this::syncKeycloakUserToMongo)
-                                        .doOnError(e -> log.error("Error syncing user in batch {}: {}",
-                                                batchNum + 1, e.getMessage()));
+                                        // Isolate per-user failures. A single unsyncable user
+                                        // (e.g. one missing the names the `users` schema requires)
+                                        // must not abort the reconciliation for everyone behind
+                                        // it — the whole point of this pass is to finish what an
+                                        // earlier outage left undone.
+                                        .flatMap(keycloakUser -> syncKeycloakUserToMongo(keycloakUser)
+                                                .onErrorResume(e -> {
+                                                    log.error("Skipping user {} in batch {}: {}",
+                                                            keycloakUser.getId(), batchNum + 1,
+                                                            e.getMessage());
+                                                    return Mono.empty();
+                                                }));
                             }, 4) // Process 4 batches concurrently
                             .then();
                 })
@@ -302,7 +319,13 @@ public class UserSyncServiceImpl implements UserSyncService {
                     // Update existing user
                     log.debug("Updating existing user: {}", keycloakUserId);
                     updateUserFromKeycloak(existingUser, keycloakUser);
-                    return userRepository.save(existingUser);
+                    // This branch is the reconciliation path (admin re-sync / full backfill).
+                    // A user whose document already exists may still be missing its
+                    // UserRegisteredEvent — because Better Auth created the row, or because an
+                    // earlier publish failed. The CAS in publishRegistrationIfNeeded makes this
+                    // exactly-once, so reconciliation can safely finish what was left undone.
+                    return userRepository.save(existingUser)
+                            .flatMap(saved -> publishRegistrationIfNeeded(saved, true));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Create new user
@@ -509,14 +532,40 @@ public class UserSyncServiceImpl implements UserSyncService {
         Update markPublished = new Update().set("registrationEventPublished", true);
         return mongoTemplate.findAndModify(claim, markPublished,
                         FindAndModifyOptions.options().returnNew(true), User.class)
-                .doOnNext(this::publishUserRegisteredEvent) // emits only if the claim won
+                // emits only if the claim won
+                .flatMap(claimed -> publishUserRegisteredEvent(claimed)
+                        ? Mono.just(claimed)
+                        : releaseRegistrationClaim(claimed))
                 .thenReturn(user);
     }
 
     /**
-     * Publish UserRegisteredEvent when a new user is synced.
+     * Give the claim back when publication failed.
+     *
+     * <p>The claim is taken before publishing so concurrent writers cannot both emit. If the
+     * send then fails — broker unavailable, serialization error, misconfigured binding — the
+     * flag must not stay set, otherwise the guard that guarantees <em>at most once</em> would
+     * also guarantee <em>never</em>: no later sync or backfill could ever emit the event, and
+     * the user would remain permanently invisible to catalog and booking. Releasing it lets
+     * the next sync or {@code syncAllUsersFromKeycloak} finish what this attempt started.</p>
      */
-    private void publishUserRegisteredEvent(User user) {
+    private Mono<User> releaseRegistrationClaim(User user) {
+        return mongoTemplate.findAndModify(
+                        Query.query(Criteria.where("_id").is(user.getId())),
+                        new Update().set("registrationEventPublished", false),
+                        FindAndModifyOptions.options().returnNew(true), User.class)
+                .doOnNext(released -> log.warn(
+                        "UserRegisteredEvent not published for user {}; claim released so a later "
+                                + "sync or backfill retries it", released.getId()))
+                .defaultIfEmpty(user);
+    }
+
+    /**
+     * Publish UserRegisteredEvent when a new user is synced.
+     *
+     * @return {@code true} only when the message was actually handed to the binder
+     */
+    private boolean publishUserRegisteredEvent(User user) {
         try {
             // Convert EnumSet<UserType> to Set<String> for the event
             Set<String> roleNames = user.getRoles() != null && !user.getRoles().isEmpty()
@@ -530,14 +579,24 @@ public class UserSyncServiceImpl implements UserSyncService {
                     roleNames
             );
 
-            boolean sent = streamBridge.send("userOutput-out-0", event);
+            // The binding declares producer.partition-key-expression=headers['partitionKey'],
+            // so the header is mandatory: Spring Cloud Stream rejects a null key before the
+            // message ever reaches the binder. Partitioning by user id also keeps all events
+            // for one user ordered on the same partition.
+            Message<UserRegisteredEvent> message = MessageBuilder.withPayload(event)
+                    .setHeader(PARTITION_KEY_HEADER, user.getId())
+                    .build();
+
+            boolean sent = streamBridge.send(USER_EVENTS_BINDING, message);
             if (sent) {
                 log.info("Published UserRegisteredEvent for user: {} with roles: {}", user.getId(), roleNames);
             } else {
                 log.warn("Failed to publish UserRegisteredEvent for user: {}", user.getId());
             }
+            return sent;
         } catch (Exception e) {
             log.error("Error publishing UserRegisteredEvent for user {}: {}", user.getId(), e.getMessage());
+            return false;
         }
     }
 }
