@@ -2,7 +2,7 @@ package com.pml.shared.service;
 
 import com.pml.shared.exception.TenantIsolationException;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.lang.reflect.Method;
@@ -29,7 +29,6 @@ import java.lang.reflect.Method;
  * @since 1.0.0
  */
 @Slf4j
-@Service
 public class TenantValidationService {
 
     /**
@@ -112,13 +111,16 @@ public class TenantValidationService {
             Iterable<T> documents,
             String expectedOrgId) {
 
-        return Mono.fromCallable(() -> {
-            for (T document : documents) {
-                // Validate each document synchronously
-                validateTenantContext(document, expectedOrgId).block();
-            }
-            return documents;
-        });
+        // Composed, never blocked. concatMap rather than flatMap because a tenant
+        // violation must be reported deterministically: the first offending document,
+        // every time, not whichever of them happened to lose the race.
+        //
+        // Flux.defer so a null `documents` arrives as onError, matching the lazy
+        // behaviour of the Mono.fromCallable this replaced, rather than throwing
+        // eagerly at assembly time.
+        return Flux.defer(() -> Flux.fromIterable(documents))
+                .concatMap(document -> validateTenantContext(document, expectedOrgId))
+                .then(Mono.just(documents));
     }
 
     /**

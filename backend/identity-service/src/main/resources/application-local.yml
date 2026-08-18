@@ -35,3 +35,28 @@ spring:
         connection-string: "Endpoint=sb://localhost:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
     stream:
       default-binder: servicebus
+
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          identity-service:
+            client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+
+# ---------------------------------------------------------------------------
+# ET-PLT-001 R6 · credentials for local development
+#
+# Deliberately NOT defaulted here. The real values live in the sibling repo,
+# already gitignored, and are the same variables the realm import substitutes:
+#
+#   docker-resources/.env.ticketing   IDENTITY_SERVICE_SECRET, CATALOG_SERVICE_SECRET,
+#                                     BOOKING_SERVICE_SECRET, API_GATEWAY_SECRET
+#   docker-resources/.env.keycloak    KC_BOOTSTRAP_ADMIN_USERNAME / _PASSWORD
+#
+#   set -a && . ../../docker-resources/.env.ticketing && set +a
+#
+# A default here would be a credential in git, and the placeholder ones this
+# replaced ("identity-service-secret") never matched the provisioned realm —
+# so they bought no convenience either.
+# ---------------------------------------------------------------------------

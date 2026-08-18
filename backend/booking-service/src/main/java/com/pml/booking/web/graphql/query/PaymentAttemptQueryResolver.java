@@ -84,9 +84,9 @@ public class PaymentAttemptQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Flux<PaymentAttempt> paymentAttemptsByTicket(@InputArgument String ticketId) {
-        log.debug("GraphQL query: paymentAttemptsByTicket(ticketId={})", ticketId);
-        return paymentAttemptService.findByTicketId(ticketId);
+    public Flux<PaymentAttempt> paymentAttemptsByReservation(@InputArgument String reservationId) {
+        log.debug("GraphQL query: paymentAttemptsByReservation(reservationId={})", reservationId);
+        return paymentAttemptService.findByReservationId(reservationId);
     }
 
     /**
@@ -94,9 +94,9 @@ public class PaymentAttemptQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<PaymentAttempt> latestPaymentAttemptByTicket(@InputArgument String ticketId) {
-        log.debug("GraphQL query: latestPaymentAttemptByTicket(ticketId={})", ticketId);
-        return paymentAttemptService.findLatestByTicketId(ticketId);
+    public Mono<PaymentAttempt> latestPaymentAttemptByReservation(@InputArgument String reservationId) {
+        log.debug("GraphQL query: latestPaymentAttemptByReservation(reservationId={})", reservationId);
+        return paymentAttemptService.findLatestByReservationId(reservationId);
     }
 
     /**
@@ -104,9 +104,9 @@ public class PaymentAttemptQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<PaymentAttempt> successfulPaymentAttemptByTicket(@InputArgument String ticketId) {
-        log.debug("GraphQL query: successfulPaymentAttemptByTicket(ticketId={})", ticketId);
-        return paymentAttemptService.findSuccessfulByTicketId(ticketId);
+    public Mono<PaymentAttempt> successfulPaymentAttemptByReservation(@InputArgument String reservationId) {
+        log.debug("GraphQL query: successfulPaymentAttemptByReservation(reservationId={})", reservationId);
+        return paymentAttemptService.findSuccessfulByReservationId(reservationId);
     }
 
     // ========================================================================
@@ -190,8 +190,8 @@ public class PaymentAttemptQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<Boolean> hasSuccessfulPayment(@InputArgument String ticketId) {
-        log.debug("GraphQL query: hasSuccessfulPayment(ticketId={})", ticketId);
-        return paymentAttemptService.hasSuccessfulPayment(ticketId);
+    public Mono<Boolean> hasSuccessfulPayment(@InputArgument String reservationId) {
+        log.debug("GraphQL query: hasSuccessfulPayment(reservationId={})", reservationId);
+        return paymentAttemptService.hasSuccessfulPayment(reservationId);
     }
 }

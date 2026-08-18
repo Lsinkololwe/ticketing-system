@@ -5,7 +5,7 @@ import com.pml.identity.web.graphql.dto.organization.UpdateOrganizationInput;
 import com.pml.identity.web.graphql.dto.organization.UpdateOrganizationSettingsInput;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.valueobject.OrganizationSettings;
-import com.pml.identity.domain.enums.OrganizationStatus;
+import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationOnboardingService;
 import com.pml.identity.service.OrganizationService;

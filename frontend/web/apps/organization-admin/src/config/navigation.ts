@@ -20,7 +20,16 @@
 // TYPES
 // =============================================================================
 
-export type OrganizationRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'MARKETER' | 'CONTRIBUTOR';
+/**
+ * Re-exported from codegen, not redeclared.
+ *
+ * This was previously a hand-written union duplicating the generated enum. A
+ * local copy silently drifts the moment a role is added to the schema, and the
+ * drift shows up as a nav item nobody can see rather than a compile error.
+ * All GraphQL types come from codegen (see frontend/web/CLAUDE.md).
+ */
+export type { OrganizationRole } from '@pml.tickets/shared/types/graphql';
+import type { OrganizationRole } from '@pml.tickets/shared/types/graphql';
 
 export interface NavItem {
   id: string;

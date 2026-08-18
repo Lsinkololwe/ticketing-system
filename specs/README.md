@@ -3,8 +3,7 @@
 A complete specification of the event ticketing platform, **written greenfield**: every
 spec describes a capability to be built from zero on the stack pinned in
 [CONVENTIONS.md](CONVENTIONS.md) — Java 21, Spring Boot 3.5.4 WebFlux, Netflix DGS 10.5
-over Apollo Federation 2.9, reactive MongoDB, Spring Modulith 1.3.1, Azure Service Bus,
-Keycloak 26.
+over Apollo Federation 2.9, reactive MongoDB, Azure Service Bus and Keycloak 26.
 
 Specs describe the target system, not the current one. They make no reference to what
 exists today, carry no migration tasks, and cite no line numbers in the working tree. A
@@ -19,11 +18,11 @@ One capability per directory, two files:
 
 ```
 specs/<area>/<NNN>-<slug>/
-├── spec.yaml    machine-readable header — parsed by scripts and workflows
+├── spec.yaml    machine-readable header — the contract with any orchestrator
 └── spec.md      capability, decisions, requirements, model, tasks
 ```
 
-`spec.md` has six fixed sections. `spec-lint.sh` reads them by heading.
+`spec.md` has six fixed sections, in this order, in every spec.
 
 | § | Section | Contains |
 |---|---|---|
@@ -76,28 +75,33 @@ draft ──▶ approved ──▶ in-progress ──▶ implemented ──▶ v
                  └──▶ deferred          └──▶ withdrawn
 ```
 
-**approved** is the gate a workflow checks before building. **verified** means every
-acceptance checkbox is ticked *and* backed by a test tagged with the spec ID.
-`spec-status.sh` flags `DRIFT` when a spec claims `verified` with unchecked boxes — that
-check is what stops the layer becoming theatre.
+**approved** is the gate before building. **verified** means every acceptance checkbox is
+ticked *and* backed by a test tagged with the spec ID.
+
+A spec claiming `verified` while acceptance boxes remain unchecked is the failure mode this
+lifecycle exists to prevent. Nothing enforces it mechanically — the boxes are checked by
+the person who read the spec and ran its tests, and `verified` is their statement that both
+happened. That makes honesty about an unchecked box the whole safeguard.
 
 ---
 
 ## Traceability
 
-The spec ID appears in three places, which makes coverage a grep rather than a judgement
+The spec ID appears in two places, which makes coverage a grep rather than a judgement
 call.
 
 1. **The spec** — `specs/finance/002-commission/`
-2. **The code** — `@Spec("ET-FIN-002-R3")` (`com.pml.shared.spec.Spec`, `SOURCE`
-   retention, zero runtime cost)
-3. **The test** — `@Tag("ET-FIN-002")` on the class, `@Spec("ET-FIN-002-R3")` on the method
+2. **The test** — `@Tag("ET-FIN-002")` on the class; each method's `@DisplayName` names the
+   requirement it proves, e.g. `ET-FIN-002-R3`
 
 ```bash
-grep -rl "ET-FIN-002" backend --include='*.java'                   # what implements it
-mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002         # what verifies it
-./scripts/spec-status.sh                                           # the roll-up
+grep -rn "ET-FIN-002" backend --include='*.java'    # what mentions it
+mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=true
 ```
+
+`-DfailIfNoTests=true` is not optional. Without it a tag that matches nothing exits 0, and
+the spec verifies green having executed no tests at all — which is worse than not running
+them, because it looks like proof.
 
 ---
 
@@ -190,7 +194,7 @@ MongoDB and PostgreSQL initialisation are all in the sibling repository:
 
 A spec that proposes creating any of these inside `ticketing-system/` is wrong. What
 stays in this repository is `backend/*/src/main/resources/graphql/schema.graphqls`,
-`scripts/`, and `specs/`.
+and `specs/`.
 
 ---
 

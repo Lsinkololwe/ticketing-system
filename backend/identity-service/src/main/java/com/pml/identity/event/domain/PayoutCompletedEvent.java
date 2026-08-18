@@ -1,6 +1,5 @@
 package com.pml.identity.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -15,7 +14,7 @@ import java.time.Instant;
  * - Notification Service: Send payout confirmation to organizer
  * - Finance Audit: Record completed payout for reconciliation
  */
-@Externalized("payment-events::PayoutCompleted")
+/** Cross-service wire name (ET-PLT-003 §4): payment-events::PayoutCompleted — staged into the outbox. */
 public record PayoutCompletedEvent(
         String payoutRequestId,
         String organizerId,

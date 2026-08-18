@@ -112,7 +112,7 @@ status and their permission, and IF either fails, THEN THE SYSTEM SHALL refuse.
 **Acceptance**
 - [ ] `createEvent` requires `event:create` and an organization in `PENDING_REVIEW` or later ([ET-ORG-001](../../organization/001-organizer-onboarding/) §4 stage matrix)
 - [ ] `publishEvent` requires `event:publish` and an organization in `ACTIVE`; anything else is refused with `ORGANIZER_NOT_APPROVED` carrying `organizationStatus`
-- [ ] Both checks resolve through [ET-ORG-003](../003-permission-resolution/)'s internal API — catalog-service contains no role comparison
+- [ ] Both checks resolve through [ET-ORG-003](../../organization/003-permission-resolution/)'s internal API — catalog-service contains no role comparison
 - [ ] The creating actor is granted `EVENT_OWNER` on the new event in the same operation
 - [ ] `identity.OrganizationSuspended` unpublishes every `PUBLISHED` event of that organization, returning them to `APPROVED`
 - [ ] `identity.OrganizationApproved` unblocks publishing with no further action

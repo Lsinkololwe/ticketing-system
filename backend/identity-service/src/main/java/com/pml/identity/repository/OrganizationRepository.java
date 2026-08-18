@@ -1,7 +1,7 @@
 package com.pml.identity.repository;
 
 import com.pml.identity.domain.model.Organization;
-import com.pml.identity.domain.enums.OrganizationStatus;
+import com.pml.shared.constants.OrganizationStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;

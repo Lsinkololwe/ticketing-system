@@ -1,6 +1,5 @@
 package com.pml.catalog.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -12,7 +11,7 @@ import java.time.LocalDateTime;
  * - Identity Service: Notify admins of pending approval
  * - Notification Service: Send submission confirmation to organizer
  */
-@Externalized("event-events::EventSubmitted")
+/** Cross-service wire name (ET-PLT-003 §4): event-events::EventSubmitted — staged into the outbox. */
 public record EventSubmittedEvent(
         String eventId,
         String organizerId,

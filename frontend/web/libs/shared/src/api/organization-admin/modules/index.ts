@@ -17,3 +17,6 @@ export * from './organization';
 export * from './dashboard';
 export * from './events';
 export * from './finance';
+export * from './team';
+export * from './checkin';
+export * from './settings';

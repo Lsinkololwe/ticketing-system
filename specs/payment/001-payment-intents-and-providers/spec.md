@@ -401,7 +401,7 @@ rows of [ET-PLT-005 §4](../../_platform/005-error-contract/) introduced by this
 - [ ] **T5 · `initiatePayment`: commit the intent, then call, outside any transaction**
   - requirements: R1, R6, R7
   - files: `backend/booking-service/.../service/impl/PaymentServiceImpl.java`
-  - verify: `./scripts/spec-lint.sh --events`; no `@Transactional` reaches the port
+  - verify: no `StreamBridge.send` appears inside a `@Transactional` method, no module boundary uses a bare `@EventListener`, and no `@TransactionalEventListener(AFTER_COMMIT)` rethrows a delivery failure; no `@Transactional` reaches the port
   - parallel-safe: no
   - depends: T3
 

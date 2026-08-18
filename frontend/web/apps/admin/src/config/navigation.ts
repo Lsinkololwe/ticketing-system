@@ -53,10 +53,23 @@ export interface NavSection {
 // NAVIGATION CONFIGURATION
 // =============================================================================
 
+/**
+ * The admin navigation, exactly as `Admin - Dashboard.dc.html` declares it.
+ *
+ * <h2>This list is not editorial</h2>
+ * It is a transcription of the `NAV` constant in the design project's admin
+ * dashboard screen — seven sections, fifteen items, in this order. The app
+ * previously carried eight sections with a four-item Action center and a
+ * Transactions group the design does not have, which is the drift that made the
+ * shell "totally different from the design".
+ *
+ * <p>Adding an item here without a corresponding entry in the design is how that
+ * drift starts again. If a screen needs navigation the design does not show,
+ * change the design first.
+ *
+ * @see frontend/web/docs/DESIGN_AUTHORITY.md
+ */
 export const navigationConfig: NavSection[] = [
-  // ===========================================================================
-  // DASHBOARD - All roles
-  // ===========================================================================
   {
     id: 'overview',
     title: 'Overview',
@@ -72,15 +85,15 @@ export const navigationConfig: NavSection[] = [
     ],
   },
 
-  // ===========================================================================
-  // ACTION CENTER - ADMIN/SUPER_ADMIN (Operations focus)
-  // ===========================================================================
   {
     id: 'action-center',
     title: 'Action center',
     roles: ['SUPER_ADMIN', 'ADMIN'],
     items: [
       {
+        // The design folds organizer applications, event reviews and document
+        // verification into one queue. They remain reachable as routes and as
+        // the dashboard's action cards; they are not separate nav items.
         id: 'pending-approvals',
         label: 'All approvals',
         href: '/approvals',
@@ -89,35 +102,15 @@ export const navigationConfig: NavSection[] = [
         roles: ['SUPER_ADMIN', 'ADMIN'],
       },
       {
-        id: 'organizer-applications',
-        label: 'Organizer applications',
-        href: '/approvals/organizers',
-        icon: 'Group',
-        badge: 'dynamic',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
-      {
-        id: 'event-reviews',
-        label: 'Event reviews',
-        href: '/approvals/events',
-        icon: 'Calendar',
-        badge: 'dynamic',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
-      {
-        id: 'document-verification',
-        label: 'Document verification',
-        href: '/approvals/documents',
-        icon: 'PageSearch',
-        badge: 'dynamic',
+        id: 'recovery-queue',
+        label: 'Recovery queue',
+        href: '/transactions/recovery',
+        icon: 'WarningTriangle',
         roles: ['SUPER_ADMIN', 'ADMIN'],
       },
     ],
   },
 
-  // ===========================================================================
-  // EVENTS - ADMIN/SUPER_ADMIN
-  // ===========================================================================
   {
     id: 'events',
     title: 'Events',
@@ -131,32 +124,15 @@ export const navigationConfig: NavSection[] = [
         roles: ['SUPER_ADMIN', 'ADMIN'],
       },
       {
-        id: 'event-calendar',
-        label: 'Calendar',
-        href: '/events/calendar',
-        icon: 'CalendarPlus',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
-      {
         id: 'event-categories',
         label: 'Categories',
         href: '/events/categories',
         icon: 'Folder',
         roles: ['SUPER_ADMIN', 'ADMIN'],
       },
-      {
-        id: 'event-locations',
-        label: 'Locations',
-        href: '/events/locations',
-        icon: 'MapPin',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
     ],
   },
 
-  // ===========================================================================
-  // USERS - ADMIN/SUPER_ADMIN
-  // ===========================================================================
   {
     id: 'users',
     title: 'Users',
@@ -186,13 +162,10 @@ export const navigationConfig: NavSection[] = [
     ],
   },
 
-  // ===========================================================================
-  // FINANCIAL OPERATIONS - FINANCE/SUPER_ADMIN
-  // ===========================================================================
   {
     id: 'financial-ops',
-    title: 'Financial operations',
-    roles: ['SUPER_ADMIN', 'FINANCE', "ADMIN"],
+    title: 'Financial ops',
+    roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
     items: [
       {
         id: 'payout-requests',
@@ -200,7 +173,7 @@ export const navigationConfig: NavSection[] = [
         href: '/finance/payouts',
         icon: 'SendDiagonal',
         badge: 'dynamic',
-        roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
+        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
       },
       {
         id: 'refund-requests',
@@ -208,53 +181,18 @@ export const navigationConfig: NavSection[] = [
         href: '/finance/refunds',
         icon: 'Undo',
         badge: 'dynamic',
-        roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
+        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
       },
       {
         id: 'escrow-accounts',
         label: 'Escrow accounts',
         href: '/finance/escrow',
         icon: 'Safe',
-        roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
+        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
       },
     ],
   },
 
-  // ===========================================================================
-  // TRANSACTIONS - FINANCE/SUPER_ADMIN
-  // ===========================================================================
-  {
-    id: 'transactions',
-    title: 'Transactions',
-    roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
-    items: [
-      {
-        id: 'payment-history',
-        label: 'Payment history',
-        href: '/transactions/payments',
-        icon: 'CreditCard',
-        roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
-      },
-      {
-        id: 'ticket-sales',
-        label: 'Ticket sales',
-        href: '/transactions/tickets',
-        icon: 'Label',
-        roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
-      },
-      {
-        id: 'commissions',
-        label: 'Commissions',
-        href: '/transactions/commissions',
-        icon: 'Percentage',
-        roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
-      },
-    ],
-  },
-
-  // ===========================================================================
-  // ANALYTICS - All roles (filtered views)
-  // ===========================================================================
   {
     id: 'analytics',
     title: 'Analytics',
@@ -265,60 +203,43 @@ export const navigationConfig: NavSection[] = [
         label: 'Platform overview',
         href: '/analytics',
         icon: 'StatsReport',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
+        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
       },
       {
-        id: 'revenue-reports',
-        label: 'Revenue reports',
-        href: '/analytics/revenue',
+        id: 'ledger-reconciliation',
+        label: 'Ledger & reconciliation',
+        href: '/analytics/ledger',
         icon: 'GraphUp',
-        roles: ['SUPER_ADMIN', 'FINANCE', 'ADMIN'],
-      },
-      {
-        id: 'user-growth',
-        label: 'User growth',
-        href: '/analytics/users',
-        icon: 'StatsUpSquare',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
+        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
       },
     ],
   },
 
-  // ===========================================================================
-  // SYSTEM - SUPER_ADMIN only
-  // ===========================================================================
   {
     id: 'system',
     title: 'System',
-    roles: ['SUPER_ADMIN', 'ADMIN'],
+    roles: ['SUPER_ADMIN'],
     items: [
       {
-        id: 'settings',
-        label: 'Settings',
-        href: '/dashboard/settings',
+        id: 'platform-configuration',
+        label: 'Platform configuration',
+        href: '/system/configuration',
         icon: 'Settings',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
+        roles: ['SUPER_ADMIN'],
       },
       {
-        id: 'reference-data',
-        label: 'Reference data',
-        href: '/system/reference-data',
-        icon: 'Database',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
+        id: 'observability',
+        label: 'Observability',
+        href: '/system/observability',
+        icon: 'Activity',
+        roles: ['SUPER_ADMIN'],
       },
       {
         id: 'audit-logs',
         label: 'Audit logs',
         href: '/system/audit',
         icon: 'HistoricShield',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
-      {
-        id: 'api-keys',
-        label: 'API keys',
-        href: '/system/api-keys',
-        icon: 'Key',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
+        roles: ['SUPER_ADMIN'],
       },
     ],
   },

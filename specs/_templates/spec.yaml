@@ -20,9 +20,13 @@ persistence:
   redis_keys: []         # each with a TTL â€” Redis never holds business state
 
 events:
-  module: []             # intra-service, @ApplicationModuleListener
-  bus: []                # cross-service wire names, e.g. booking.TicketPurchased
+  module: []             # intra-service, @TransactionalEventListener(AFTER_COMMIT)
+  bus: []                # cross-service wire names this spec PUBLISHES, e.g. booking.TicketPurchased
+  consumes: []           # cross-service wire names this spec SUBSCRIBES to
   topics: []             # catalog-events | booking-events | identity-events
+  # bus and consumes are directional and lint checks the closure: every name under
+  # consumes: must appear under bus: in some spec, or the subscriber waits on a
+  # message nobody sends.
 
 graphql:
   schema: null           # backend/<svc>/src/main/resources/graphql/schema.graphqls
@@ -33,6 +37,6 @@ errors: []               # codes introduced here; each must land in ET-PLT-005 Â
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/<area>/<NNN>-<slug>
+  - mvn -q -f backend/<module> test -Dgroups=<ET-ID> -DfailIfNoTests=true
 
 risks: []

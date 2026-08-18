@@ -5,3 +5,9 @@ test-output
 .claude/worktrees
 .claude/settings.local.json
 .nx/migrate-runs
+
+# Playwright: captured sessions hold real Keycloak tokens, never commit them.
+apps/*/e2e/.auth/
+apps/*/test-results/
+apps/*/playwright-report/
+

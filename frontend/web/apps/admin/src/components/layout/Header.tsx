@@ -56,14 +56,15 @@ export function Header({ onMenuClick, showMenuButton = false }: HeaderProps) {
 
   return (
     <>
-      {/* 64px fixed top bar. `.ds-glass-header` supplies the frosted
+      {/* 56px fixed top bar (design: Admin - Dashboard.dc.html). `.ds-glass-header` supplies the frosted
           background — header bars are one of only two surfaces in the system
           allowed to use blur. */}
       <Box
         asChild
         className="dashboard-header ds-glass-header"
         style={{
-          height: '64px',
+        // 56px, per the design's admin screens. 64px is the org-admin header.
+          height: '56px',
           position: 'sticky',
           top: 0,
           zIndex: 30,

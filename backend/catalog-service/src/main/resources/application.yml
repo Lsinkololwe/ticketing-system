@@ -13,34 +13,6 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 60s
 
-  modulith:
-    events:
-      jdbc:
-        enabled: true
-        schema: dev_ticketing_modulith
-        schema-initialization:
-          enabled: true
-      externalization:
-        enabled: false
-      republish-outstanding-events-on-restart: true
-      completion-mode: delete
-    async-termination:
-      enabled: true
-      timeout: 30s
-
-  datasource:
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/shared_db?currentSchema=dev_ticketing_modulith}
-    username: ${POSTGRES_USER:app_user}
-    password: ${POSTGRES_PASSWORD:app_password}
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      pool-name: ModulithEventsPool
-      minimum-idle: 2
-      maximum-pool-size: 5
-      idle-timeout: 30000
-      connection-timeout: 20000
-      max-lifetime: 1800000
-
   cloud:
     azure:
       servicebus:
@@ -87,8 +59,10 @@ spring:
       client:
         registration:
           catalog-service:
-            client-id: catalog-service
-            client-secret: ${CATALOG_SERVICE_SECRET:catalog-service-secret}
+            client-id: ${CATALOG_SERVICE_CLIENT_ID:myticketzm-catalog-service}
+            # ET-PLT-001 R6 · no default. Unset in prod must FAIL naming the variable, not start
+            # against Keycloak with a credential readable in git.
+            client-secret: ${CATALOG_SERVICE_SECRET}
             authorization-grant-type: client_credentials
             scope: internal-read,internal-write
         provider:
@@ -110,7 +84,7 @@ dgs:
           enabled: false
 
 keycloak:
-  client-id: ${KEYCLOAK_CLIENT_ID:catalog-service}
+  client-id: ${CATALOG_SERVICE_CLIENT_ID:myticketzm-catalog-service}
   # Platform-admin realm split (OFF by default). Add the admin realm issuer to enable
   # validating tokens from BOTH realms, selected by the token's `iss` claim, e.g.:
   #   KEYCLOAK_TRUSTED_ISSUERS=http://localhost:8084/realms/myticketzm-admin
@@ -155,8 +129,6 @@ logging:
   level:
     root: INFO
     com.pml.catalog: DEBUG
-    org.springframework.modulith: DEBUG
-    org.springframework.modulith.events: DEBUG
     # Spring Security debugging - set to INFO to disable
     # Core security
     org.springframework.security: TRACE

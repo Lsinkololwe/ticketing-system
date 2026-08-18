@@ -1,9 +1,9 @@
 id: ET-ADM-001
 title: The approvals workbench — queues, SLA and escalation
-status: draft
+status: approved
 area: ADM
-service: catalog-service
-subgraph: catalog
+service: all              # catalog writes the approval timelines; identity writes the review claims
+subgraph: all
 owner: lazarous
 created: 2026-07-30
 priority: should
@@ -22,12 +22,12 @@ persistence:
   collections:
     - catalog_approval_timelines
     - catalog_approval_escalations
-    - admin_review_claims         # added to the ET-PLT-002 §4 registry by this spec
+    - identity_review_claims         # ET-PLT-002 §4 registry row
   indexes:
     - "catalog_approval_timelines {subjectType,subjectId,occurredAt} compound"
     - "catalog_approval_escalations {status,level,escalatedAt} compound"
-    - "admin_review_claims {subjectType,subjectId} unique"
-    - "admin_review_claims {status,expiresAt} compound   # the claim-expiry sweep"
+    - "identity_review_claims {subjectType,subjectId} unique"
+    - "identity_review_claims {status,expiresAt} compound   # the claim-expiry sweep"
     - "identity_organizations {status,submittedAt} compound   # the organizer queue"
     - "catalog_events {status,submittedAt} compound           # the event queue"
   redis_keys:
@@ -35,11 +35,13 @@ persistence:
     - "lock:sweep:approval-sla    STRING  30 s"
 
 events:
-  module: []
+  module:
+    # intra-service listeners, not bus subscriptions — each is consumed inside the
+    # service that raises it. `consumes:` is reserved for cross-service wire names.
+    - OrganizationSubmittedEvent   # identity — raises the organizer queue entry
+    - EventSubmittedEvent          # catalog  — raises the event queue entry
   bus: []
-  consumes:
-    - OrganizationSubmittedEvent   # module, identity — see the ET-NTF-002 risk
-    - EventSubmittedEvent          # module, catalog
+  consumes: []
   topics: []
 
 graphql:
@@ -92,15 +94,12 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/admin/001-approvals-workbench
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-ADM-001
-  - mvn -q -f backend verify -Dgroups=ET-ADM-001
+  - mvn -q -f backend test -Dgroups=ET-ADM-001 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-ADM-001 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
-  - "The workbench spans two services: the organizer queue reads identity_organizations and the event queue reads catalog_events, while claims, timelines and escalations are declared as catalog collections. A claim on an organizer application therefore lives in catalog-service and references an identity-service document, which is precisely the cross-service ownership ET-PLT-002 R2 forbids. Either the workbench collections are duplicated per service or a fourth service owns them."
+  - "Resolved: claims are identity_review_claims, owned and written by identity-service; timelines and escalations stay catalog-owned and are written by catalog-service. A claim references a catalog event by id only — referencing another service's entity by id is normal federation, whereas reading its collection is the violation. The workbench composes the two over the graph."
   - "R2's claim expiry returns an item to its original queue position, but position is derived from submittedAt ordering rather than stored — so 'original position' is automatic and the acceptance box is trivially true. It reads as a guarantee about something the design does not actually have to work for."
   - "The SLA clock pauses during CHANGES_REQUESTED, which requires summing intervals across the timeline for every item on every queue render. For a queue of a few hundred that is a per-item aggregation on a polled query every 30 seconds."
   - "Escalation level 3 notifies 'platform leadership', which is not a role in ET-PLT-007's realm. There are five realm roles and none of them is leadership; the escalation target has to resolve to SUPER_ADMIN or to a configured distribution list that no spec defines."

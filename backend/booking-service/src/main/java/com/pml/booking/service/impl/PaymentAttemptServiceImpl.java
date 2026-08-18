@@ -2,7 +2,7 @@ package com.pml.booking.service.impl;
 
 import com.pml.booking.domain.enums.PaymentAttemptStatus;
 import com.pml.booking.domain.model.PaymentAttempt;
-import com.pml.booking.domain.model.Ticket;
+import com.pml.booking.domain.model.TicketReservation;
 import com.pml.booking.repository.PaymentAttemptRepository;
 import com.pml.booking.service.PaymentAttemptService;
 import lombok.RequiredArgsConstructor;
@@ -75,7 +75,7 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
 
     @Override
     public Mono<PaymentAttempt> initiatePayment(
-            Ticket ticket,
+            TicketReservation reservation,
             String buyerId,
             String payerPhone,
             String provider,
@@ -83,7 +83,7 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
             String clientIp,
             String sessionId
     ) {
-        log.info("Initiating payment for ticket {} by buyer {}", ticket.getId(), buyerId);
+        log.info("Initiating payment for reservation {} by buyer {}", reservation.getId(), buyerId);
 
         // Step 1: Generate depositId (UUID) for PawaPay idempotency
         String depositId = UUID.randomUUID().toString();
@@ -93,30 +93,42 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
         // Step 2: Create PaymentAttempt record
         PaymentAttempt attempt = PaymentAttempt.create(
                 depositId,
-                ticket.getId(),
-                ticket.getEventId(),
-                ticket.getOrganizerId(),
-                ticket.getOrganizationId(),
+                reservation.getId(),
+                reservation.getEventId(),
+                reservation.getOrganizerId(),
+                reservation.getOrganizationId(),
                 buyerId,
-                ticket.getPrice(),
-                ticket.getCurrency() != null ? ticket.getCurrency() : "ZMW",
+                reservation.getTotalAmount(),
+                reservation.getCurrency() != null ? reservation.getCurrency() : "ZMW",
                 provider,
                 payerPhone
         );
 
         attempt.setAttemptNumber(attemptNumber);
         attempt.setCorrelationId(effectiveCorrelationId);
-        attempt.setClientReferenceId(ticket.getTicketNumber());
+        attempt.setClientReferenceId(reservation.getId());
         attempt.setClientIpAddress(clientIp);
         attempt.setSessionId(sessionId);
-        attempt.setCustomerMessage("TKT " + ticket.getTicketNumber().substring(Math.max(0, ticket.getTicketNumber().length() - 8)));
+        // Shown on the buyer's handset next to the amount, so it has to be
+        // recognisable in isolation — this is the only text they see before
+        // approving a debit.
+        attempt.setCustomerMessage("Tickets " + shortRef(reservation.getId()));
 
         // Step 3: Save to database (CRASH RECOVERY POINT)
         // If system crashes after this, scheduled job will discover and poll PawaPay
         return paymentAttemptRepository.save(attempt)
-                .doOnSuccess(saved -> log.info("PaymentAttempt created: {} for ticket {}", saved.getDepositId(), ticket.getId()))
+                .doOnSuccess(saved -> log.info("PaymentAttempt created: {} for reservation {}",
+                        saved.getDepositId(), reservation.getId()))
                 .flatMap(this::callPawaPayApi)
-                .doOnError(e -> log.error("Failed to initiate payment for ticket {}: {}", ticket.getId(), e.getMessage()));
+                .doOnError(e -> log.error("Failed to initiate payment for reservation {}: {}",
+                        reservation.getId(), e.getMessage()));
+    }
+
+    private static String shortRef(String id) {
+        if (id == null || id.isBlank()) {
+            return "";
+        }
+        return id.substring(Math.max(0, id.length() - 8)).toUpperCase();
     }
 
     @Override
@@ -138,7 +150,7 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
 
                     PaymentAttempt newAttempt = PaymentAttempt.create(
                             newDepositId,
-                            original.getTicketId(),
+                            original.getReservationId(),
                             original.getEventId(),
                             original.getOrganizerId(),
                             original.getOrganizationId(),
@@ -429,18 +441,18 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
     }
 
     @Override
-    public Flux<PaymentAttempt> findByTicketId(String ticketId) {
-        return paymentAttemptRepository.findByTicketId(ticketId);
+    public Flux<PaymentAttempt> findByReservationId(String reservationId) {
+        return paymentAttemptRepository.findByReservationId(reservationId);
     }
 
     @Override
-    public Mono<PaymentAttempt> findLatestByTicketId(String ticketId) {
-        return paymentAttemptRepository.findFirstByTicketIdOrderByCreatedAtDesc(ticketId);
+    public Mono<PaymentAttempt> findLatestByReservationId(String reservationId) {
+        return paymentAttemptRepository.findFirstByReservationIdOrderByCreatedAtDesc(reservationId);
     }
 
     @Override
-    public Mono<PaymentAttempt> findSuccessfulByTicketId(String ticketId) {
-        return paymentAttemptRepository.findByTicketIdAndStatusIn(ticketId, SUCCESSFUL_STATUSES);
+    public Mono<PaymentAttempt> findSuccessfulByReservationId(String reservationId) {
+        return paymentAttemptRepository.findByReservationIdAndStatusIn(reservationId, SUCCESSFUL_STATUSES);
     }
 
     @Override
@@ -511,8 +523,8 @@ public class PaymentAttemptServiceImpl implements PaymentAttemptService {
     }
 
     @Override
-    public Mono<Boolean> hasSuccessfulPayment(String ticketId) {
-        return paymentAttemptRepository.findByTicketIdAndStatusIn(ticketId, SUCCESSFUL_STATUSES)
+    public Mono<Boolean> hasSuccessfulPayment(String reservationId) {
+        return paymentAttemptRepository.findByReservationIdAndStatusIn(reservationId, SUCCESSFUL_STATUSES)
                 .hasElement();
     }
 

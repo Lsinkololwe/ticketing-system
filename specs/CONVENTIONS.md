@@ -1,4 +1,4 @@
-# Event Ticketing · constructs and naming, Spring Boot 3.5.4 + DGS 10.5 + Modulith 1.3.1
+# Event Ticketing · constructs and naming, Spring Boot 3.5.4 + DGS 10.5 + WebFlux
 
 Every convention below is normative for this corpus and supersedes anything in
 `CLAUDE.md`, `docs/`, or existing code that contradicts it. Where a convention differs
@@ -20,8 +20,8 @@ language. What it adds is a decision about how the ones already chosen are used.
 | Web | Spring WebFlux — no `spring-boot-starter-web` on any classpath | — | ✓ |
 | GraphQL | Netflix DGS on Spring GraphQL | **10.5.0** | ✓ — `CLAUDE.md` says 10.0.1 and is stale |
 | Federation | Apollo Federation | **v2.9** | ✓ on all three subgraphs |
-| Business data | Spring Data MongoDB **Reactive**, replica set | 8.x | ✓ driver, ✗ replica set |
-| Event publication | Spring Modulith over PostgreSQL **JDBC** | 1.3.1 | ✓ |
+| Business data | Spring Data MongoDB **Reactive**, replica set | 8.x | ✓ driver, ✓ replica set — `docker-resources` runs `mongod --replSet rs0` with keyfile auth |
+| Event publication | MongoDB outbox, staged in the business transaction | — | ✗ ET-PLT-003 introduces it |
 | Cross-service bus | Azure Service Bus via Spring Cloud Stream | Azure 5.19.0 | ✓ |
 | Cache, OTP, locks | Redis, reactive | 7.x | ✓ |
 | Identity | Keycloak + custom SPI | 26.x | ✓ |
@@ -74,21 +74,24 @@ Specified by [ET-PLT-001](_platform/001-runtime-baseline/).
 | Store | Holds | Never holds |
 |---|---|---|
 | **MongoDB** (`ticketing`) | Every business document, in prefixed collections | Never framework infrastructure |
-| **PostgreSQL** (`shared_db`) | `modulith_events.event_publication`, Keycloak's own schema | **Never a business document** |
+| **PostgreSQL** | Keycloak's own schema, reached only by Keycloak | **Nothing a service connects to** |
 | **Redis** | OTP codes, idempotency guards, distributed locks, rate-limit counters, read-through caches — every key with a TTL | **Never business state.** A TTL expiry silently destroys it |
 
-The hybrid is deliberate and is the one place blocking JDBC is allowed: Spring Modulith's
-event publication registry has no reactive implementation, and its guarantee — the event
-is durably recorded in the same transaction as the write that caused it — is worth a
-second connection pool. `ModulithEventConfig` declares the JDBC `PlatformTransactionManager`;
-MongoDB gets a separate `ReactiveMongoTransactionManager`. **The two never participate in
-one transaction**, and no method is annotated as though they could.
+There is one datastore and one transaction manager. The event that must accompany a write
+is staged into `{service}_outbox` **through the same `ReactiveMongoTemplate` session as the
+write itself**, so the two commit together or neither does. That is the whole reason the
+outbox is in MongoDB: an outbox in a second store is two transaction managers that cannot
+enlist together, which means the document can commit while the event row fails — the exact
+dual-write failure an outbox exists to prevent, reintroduced by the thing meant to prevent
+it. A `@Scheduled` drain publishes to the bus afterwards, outside any transaction.
 
 ### MongoDB rules
 
 | Rule | Why |
 |---|---|
 | One database, `ticketing`; collections prefixed by owning service | A service reading another service's collection is a federation violation wearing a driver |
+| The prefix is the **writing** service — `catalog_`, `booking_`, `identity_`, and nothing else | `admin_` names a persona, not a service. A prefix by audience records no ownership and invites three writers into one collection |
+| Every `@Document` carries `@TypeAlias` with a short, stable name | Spring Data writes the FQCN into `_class` by default, which makes the Java package structure part of the persisted schema — move the class and the documents already written no longer deserialise |
 | A replica set in **every** environment, single-node in dev | `@Transactional` and `$currentDate`-style atomicity need one; a standalone `mongod` fails open |
 | Every collection is declared in the ET-PLT-002 §4 registry with its indexes | An index discovered in production is an outage discovered in production |
 | Money is `BigDecimal` in Java and `Decimal128` in Mongo | `double` cannot represent K0.10. This is not a style preference |
@@ -103,16 +106,20 @@ Specified by [ET-PLT-002](_platform/002-persistence-baseline/).
 ## 3 · Events — two tiers, and the line between them
 
 ```
-                    ┌──────────────────────────────────────────┐
-   intra-service    │  ApplicationEventPublisher.publishEvent  │
-   guaranteed       │  @ApplicationModuleListener              │
-   ordered per tx   │  → PostgreSQL event_publication          │
-                    └──────────────────────────────────────────┘
-                    ┌──────────────────────────────────────────┐
-   cross-service    │  StreamBridge.send(binding, envelope)     │
-   at-least-once    │  → Azure Service Bus topic               │
-   unordered        │  → subscription per consuming service    │
-                    └──────────────────────────────────────────┘
+                    ┌──────────────────────────────────────────────────┐
+   intra-service    │  ApplicationEventPublisher.publishEvent          │
+   after commit     │  @TransactionalEventListener(AFTER_COMMIT)       │
+   in-process       │  no durability of its own                        │
+                    └──────────────────────────────────────────────────┘
+                    ┌──────────────────────────────────────────────────┐
+   the outbox       │  outbox.stage(envelope)  ← SAME reactive tx      │
+   atomic           │  → {service}_outbox in MongoDB                   │
+                    └──────────────────────────────────────────────────┘
+                    ┌──────────────────────────────────────────────────┐
+   cross-service    │  @Scheduled drain → StreamBridge.send(...)       │
+   at-least-once    │  → Azure Service Bus topic                       │
+   unordered        │  → subscription per consuming service            │
+                    └──────────────────────────────────────────────────┘
 ```
 
 | Concern | Convention | Repo today |
@@ -121,7 +128,7 @@ Specified by [ET-PLT-002](_platform/002-persistence-baseline/).
 | Cross-service wire name | `{context}.{PastTense}` — `booking.TicketPurchased` | ✗ the Java FQN is the wire name |
 | Envelope | Every cross-service message carries `eventId`, `eventType`, `occurredAt`, `correlationId`, `causationId`, `schemaVersion`, `payload` | ✗ payload only |
 | Version | Integer counter, starts at `1` | ✗ absent |
-| Handler | `@ApplicationModuleListener` — never bare `@EventListener` | ✓ where listeners exist |
+| Handler | `@TransactionalEventListener(AFTER_COMMIT)` — never bare `@EventListener` | ✓ where listeners exist |
 | Topics | `catalog-events`, `booking-events`, `identity-events` | ✓ |
 | Consumer | Idempotent, keyed on `eventId` in a Redis `SET NX` guard with a 7-day TTL | ✗ |
 
@@ -129,7 +136,7 @@ Specified by [ET-PLT-002](_platform/002-persistence-baseline/).
 
 1. **Never call `StreamBridge.send` inside a MongoDB transaction.** The bus commits and
    the transaction then rolls back, and the platform has told three services about a
-   ticket that does not exist. Publish from an `@ApplicationModuleListener`, which runs
+   ticket that does not exist. Publish from an `@TransactionalEventListener(AFTER_COMMIT)`, which runs
    after commit by definition, or from the outbox drain.
 
 2. **Never let a delivery failure throw out of a listener.** A provider being down is a
@@ -319,8 +326,10 @@ commission arithmetic inside a Testcontainers test, move it down.
 exception still passes if the service wrote the reservation and *then* threw — and an
 oversold event is not recoverable by deleting a row.
 
-Repo today: **13 test files against ~830 production classes.** ET-PLT-006 is where that
-stops being a footnote.
+Repo today: **no test files at all.** The suite was removed deliberately so that every
+test is rewritten against the spec it proves, rather than inherited from code that predates
+the corpus. ET-PLT-006 is therefore not a clean-up — it is the whole of the platform's test
+evidence, and until it lands no spec can honestly reach `verified`.
 
 Specified by [ET-PLT-006](_platform/006-test-harness/).
 
@@ -328,7 +337,9 @@ Specified by [ET-PLT-006](_platform/006-test-harness/).
 
 ## 11 · Quick reference — forbidden constructs
 
-`spec-lint.sh` enforces every row.
+Every row below is a review rule. None of them is enforced by tooling, so each one holds
+only as long as the person writing the code knows it — which is why the *why* column is
+not decoration.
 
 | Forbidden | Use instead |
 |---|---|
@@ -337,9 +348,10 @@ Specified by [ET-PLT-006](_platform/006-test-harness/).
 | `spring-boot-starter-web` on any service classpath | `spring-boot-starter-webflux` |
 | `spring-cloud-starter-gateway` | `spring-cloud-starter-gateway-server-webflux` |
 | `spring.cloud.gateway.*` YAML for the WebFlux gateway | `spring.cloud.gateway.server.webflux.*` |
-| Spring Modulith's MongoDB event publication | JDBC over PostgreSQL — the reactive driver cannot back it |
-| `StreamBridge.send` inside a `@Transactional` method | Publish from an `@ApplicationModuleListener` |
-| bare `@EventListener` for a module boundary | `@ApplicationModuleListener` |
+| an outbox in PostgreSQL, or any second store | `{service}_outbox` in MongoDB, staged in the same reactive transaction |
+| a `DataSource`, JDBC driver or JPA entity in a service | nothing — no service connects to a relational database |
+| `StreamBridge.send` inside a `@Transactional` method | Publish from an `@TransactionalEventListener(AFTER_COMMIT)` |
+| bare `@EventListener` for a module boundary | `@TransactionalEventListener(AFTER_COMMIT)` |
 | `double` or `float` for money | `BigDecimal` / `Decimal128` |
 | `LocalDateTime`, `java.util.Date`, epoch `long` timestamps | `Instant` |
 | `Instant.now()` / `LocalDateTime.now()` / `System.currentTimeMillis()` inline | The injected `Clock` bean |
@@ -350,6 +362,9 @@ Specified by [ET-PLT-006](_platform/006-test-harness/).
 | an Apollo Router config inside `ticketing-system/` | `docker-resources/apollo-router/ticketing/` |
 | `User.keycloakUserId` | `User.id` **is** the Keycloak user ID |
 | a per-service MongoDB database | one `ticketing` database, prefixed collections |
+| an `admin_`-prefixed collection | the prefix of the service that writes it |
+| a collection with more than one writing service | one collection per writer, composed over the graph |
+| a `@Document` with no `@TypeAlias` | a stable alias, so `_class` never stores a Java class name |
 | read-modify-write on ticket inventory | one conditional atomic `findAndModify` |
 | a balance assignment outside the ledger | a double-entry journal pair |
 | a domain exception with no `@DgsExceptionHandler` | a registry row + a typed handler |

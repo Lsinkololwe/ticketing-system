@@ -19,6 +19,7 @@
 
 import type { ReactNode } from 'react';
 import { NavArrowUp, NavArrowDown, Minus } from 'iconoir-react';
+import { splitFigure } from '@/lib/format/figure';
 
 export type StatTrend = 'up' | 'down' | 'neutral';
 
@@ -55,6 +56,7 @@ export function StatCard({ title, value, icon, change, changeLabel, trend }: Sta
     trend ?? (change === undefined ? undefined : change > 0 ? 'up' : change < 0 ? 'down' : 'neutral');
 
   const display = typeof value === 'number' ? value.toLocaleString() : value;
+  const figure = splitFigure(display);
 
   return (
     <div className="ds-card-bento" style={{ padding: 'var(--space-5)' }}>
@@ -113,16 +115,14 @@ export function StatCard({ title, value, icon, change, changeLabel, trend }: Sta
         {title}
       </span>
 
-      <div
-        className="ds-amount"
-        style={{
-          fontSize: 'var(--heading-6-size)',
-          lineHeight: 'var(--heading-6-line)',
-          fontWeight: 'var(--weight-semibold)',
-          color: 'var(--gray-12)',
-        }}
-      >
-        {display}
+      {/* Figure treatment: the currency symbol and any unit render lighter and
+          smaller than the numeral core, so "K 125,430" reads as one number
+          instead of a wall of equally-heavy glyphs. This is the design
+          system's own StatCard behaviour, not a local flourish. */}
+      <div className="viz-figure">
+        {figure.prefix && <span className="viz-figure-unit">{figure.prefix}</span>}
+        <span className="viz-figure-core">{figure.core}</span>
+        {figure.suffix && <span className="viz-figure-unit">{figure.suffix}</span>}
       </div>
 
       {changeLabel && (

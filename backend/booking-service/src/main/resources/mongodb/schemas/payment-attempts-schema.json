@@ -16,6 +16,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -56,7 +60,13 @@
       },
       "currency": {
         "bsonType": "string",
-        "enum": ["ZMW", "USD", "EUR", "GBP", "ZAR"],
+        "enum": [
+          "ZMW",
+          "USD",
+          "EUR",
+          "GBP",
+          "ZAR"
+        ],
         "description": "ISO 4217 currency code"
       },
       "status": {
@@ -117,12 +127,18 @@
         "description": "Fee breakdown"
       },
       "failureReason": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 1000,
         "description": "Reason for payment failure"
       },
       "failureCode": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "description": "Provider error code"
       },
       "attempts": {
@@ -142,7 +158,10 @@
         "description": "Client user agent"
       },
       "completedAt": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "Payment completion timestamp"
       },
       "expiresAt": {

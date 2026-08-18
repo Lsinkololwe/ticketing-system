@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ET-PLT-012 · The backend parent.
+
+  One parent, one BOM set, one place a version is written. Before this file, the
+  modules each re-declared spring-boot-starter-parent, the DGS platform BOM, the
+  Azure BOM and the same six version properties — so a version bump was a five-file
+  edit that silently succeeded when only four of them landed.
+
+  keycloak-extensions is a module of this reactor but NOT a child of this POM. It
+  is a Keycloak 26 SPI JAR compiled against provided-scope server APIs; inheriting
+  a Spring Boot parent would put a runtime on its classpath that must never ship
+  inside Keycloak. Maven permits a module whose parent differs from its aggregator,
+  and that is deliberately what happens here.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.4</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.pml</groupId>
+    <artifactId>backend</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>Event Ticketing · backend</name>
+    <description>Parent and reactor for the ticketing platform's Maven modules</description>
+
+    <modules>
+        <module>shared-library</module>
+        <module>catalog-service</module>
+        <module>booking-service</module>
+        <module>identity-service</module>
+        <module>api-gateway</module>
+        <module>keycloak-extensions</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- ET-PLT-012 R6 · plugin versions, decided once. Everything else is
+             managed by spring-boot-starter-parent. -->
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+        <maven-jar-plugin.version>3.3.0</maven-jar-plugin.version>
+        <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+
+        <!-- the BOMs of CONVENTIONS §0, plus the gateway's Spring Cloud train -->
+        <dgs.version>10.5.0</dgs.version>
+        <spring-cloud-azure.version>5.19.0</spring-cloud-azure.version>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
+
+        <!-- pinned outside a BOM -->
+        <resilience4j.version>2.2.0</resilience4j.version>
+        <jjwt.version>0.12.3</jjwt.version>
+        <aws-sdk.version>2.28.29</aws-sdk.version>
+        <mongock.version>5.5.0</mongock.version>
+        <zxing.version>3.5.2</zxing.version>
+        <libphonenumber.version>8.13.50</libphonenumber.version>
+        <springdoc.version>2.8.4</springdoc.version>
+        <keycloak.version>26.0.7</keycloak.version>
+        <testcontainers-keycloak.version>3.7.0</testcontainers-keycloak.version>
+        <java-dataloader.version>5.0.1</java-dataloader.version>
+
+        <!-- Testcontainers 1.19 pins the Docker API to 1.32, which Docker Engine 29
+             refuses (minimum 1.40). Held here so one bump moves every module. -->
+        <testcontainers.version>1.21.4</testcontainers.version>
+        <docker.api.version>1.44</docker.api.version>
+
+        <!-- ET-PLT-006 R6 · every external provider is a WireMock stub and no test
+             reaches a real one. `standalone` deliberately: it shades Jetty and
+             Jackson, so the stub server cannot collide with the versions Spring
+             Boot puts on the test classpath. -->
+        <wiremock.version>3.13.1</wiremock.version>
+
+        <!-- ET-PLT-001 R1 · BlockHound turns "no blocking calls" from a grep into a
+             runtime guarantee: it fails the test when a blocking call reaches an
+             event-loop thread, including one inside a library we did not write. -->
+        <blockhound.version>1.0.13.RELEASE</blockhound.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Netflix DGS — Apollo Federation 2 support -->
+            <dependency>
+                <groupId>com.netflix.graphql.dgs</groupId>
+                <artifactId>graphql-dgs-platform-dependencies</artifactId>
+                <version>${dgs.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Override java-dataloader to match Spring for GraphQL 1.4.x -->
+            <dependency>
+                <groupId>com.graphql-java</groupId>
+                <artifactId>java-dataloader</artifactId>
+                <version>${java-dataloader.version}</version>
+            </dependency>
+
+            <!-- Spring Cloud Azure — the Service Bus binder -->
+            <dependency>
+                <groupId>com.azure.spring</groupId>
+                <artifactId>spring-cloud-azure-dependencies</artifactId>
+                <version>${spring-cloud-azure.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring Cloud — the WebFlux gateway -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Resilience4j — circuit breakers, declared in three modules -->
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-bom</artifactId>
+                <version>${resilience4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- JJWT — no BOM is published, so the three artifacts are managed here -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+
+            <!-- AWS SDK v2 — S3 presigned uploads -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Mongock — document migrations -->
+            <dependency>
+                <groupId>io.mongock</groupId>
+                <artifactId>mongock-bom</artifactId>
+                <version>${mongock.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Testcontainers -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Blocking-call detection (ET-PLT-001 R1) -->
+            <dependency>
+                <groupId>io.projectreactor.tools</groupId>
+                <artifactId>blockhound</artifactId>
+                <version>${blockhound.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <!-- Provider stubs (ET-PLT-006 R6) -->
+            <dependency>
+                <groupId>org.wiremock</groupId>
+                <artifactId>wiremock-standalone</artifactId>
+                <version>${wiremock.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- ==========================================================================
+         ET-PLT-012 R6, R7 · one place where a plugin version is decided, and the
+         enforcer that refuses the mistakes the corpus has already ruled out.
+
+         Surefire, failsafe and the rest are managed by spring-boot-starter-parent,
+         which is this POM's parent — so "managed in the parent" holds for them too.
+         What is pinned explicitly below is what the five modules were each
+         hardcoding for themselves.
+         ========================================================================== -->
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <!-- R5: `release` rather than source/target, so the compiler
+                             also checks the API against JDK 21 rather than only the
+                             bytecode level. -->
+                        <release>${maven.compiler.release}</release>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven-jar-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>${maven-enforcer-plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>et-plt-012-rules</id>
+                        <!-- `validate`, so a banned dependency fails before anything
+                             compiles rather than after a five-minute build. -->
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireMavenVersion>
+                                    <version>[3.9.0,)</version>
+                                </requireMavenVersion>
+                                <requireJavaVersion>
+                                    <version>[21,)</version>
+                                </requireJavaVersion>
+
+                                <!--
+                                    CONVENTIONS §1: WebFlux only, no servlet stack on
+                                    any classpath. This is not a style preference — one
+                                    blocking call on an event-loop thread stalls every
+                                    concurrent request that thread is carrying, which at
+                                    on-sale peak is thousands. The starter is what drags
+                                    Tomcat in, so the starter is what is banned.
+                                -->
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>org.springframework.boot:spring-boot-starter-web</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-tomcat</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-jetty</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-undertow</exclude>
+                                        <!-- ET-PLT-002 D-02: no service connects to
+                                             PostgreSQL. Keycloak runs its own schema and
+                                             nothing else relational exists. -->
+                                        <exclude>org.postgresql:postgresql</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-data-jpa</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-jdbc</exclude>
+                                    </excludes>
+                                    <message>
+ET-PLT-012 R7 · banned dependency in the module named above.
+
+  * spring-boot-starter-web / tomcat / jetty / undertow
+      CONVENTIONS §1 — this platform is WebFlux end to end. Use
+      spring-boot-starter-webflux. For the gateway use
+      spring-cloud-starter-gateway-server-webflux, never the deprecated
+      generic starter.
+
+  * postgresql / data-jpa / jdbc
+      ET-PLT-002 D-02 — MongoDB only. A blocking JDBC pool inside a strictly
+      reactive stack has to earn its place, and once the outbox lives in
+      MongoDB there is nothing left for it to do. Keycloak owns the only
+      relational schema and no service connects to it.
+                                    </message>
+                                </bannedDependencies>
+
+                                <!-- Two versions of one artifact is the failure BE-2's
+                                     BOM imports exist to prevent; catch it here rather
+                                     than in a dependency:tree nobody reads. -->
+                                <banDuplicatePomDependencyVersions/>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

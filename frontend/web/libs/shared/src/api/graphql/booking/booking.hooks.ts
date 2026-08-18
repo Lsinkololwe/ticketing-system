@@ -14,12 +14,13 @@ import type {
   TicketStatus,
   TicketReservation,
   ReserveTicketsInput,
-  CompleteReservationInput,
+  PayReservationInput,
+  PaymentInitiationResponse,
   CursorPaginationInput,
 } from '../../../types/graphql';
 import {
   RESERVE_TICKETS,
-  COMPLETE_RESERVATION,
+  PAY_RESERVATION,
   GET_RESERVATION,
   GET_MY_TICKETS,
 } from './booking.consumer.definitions';
@@ -35,15 +36,22 @@ export function useReserveTickets() {
   return { reserveTickets, reservation: data?.reserveTickets ?? null, loading, error, reset };
 }
 
-/** Complete a reservation — triggers the mobile-money push and mints tickets. */
-export function useCompleteReservation() {
+/**
+ * Ask for the mobile-money prompt on a held reservation.
+ *
+ * Returns the initiation outcome, never tickets. `success` here means the
+ * provider accepted the request and the buyer's handset should be ringing — not
+ * that money moved. Watch the reservation with `useReservation` for the real
+ * outcome (ET-TKT-001 §4).
+ */
+export function usePayReservation() {
   const [mutate, { data, loading, error, reset }] = useMutation<
-    { completeReservation: Ticket[] },
-    { input: CompleteReservationInput }
-  >(COMPLETE_RESERVATION);
+    { payReservation: PaymentInitiationResponse },
+    { input: PayReservationInput }
+  >(PAY_RESERVATION);
 
-  const completeReservation = (input: CompleteReservationInput) => mutate({ variables: { input } });
-  return { completeReservation, tickets: data?.completeReservation ?? null, loading, error, reset };
+  const payReservation = (input: PayReservationInput) => mutate({ variables: { input } });
+  return { payReservation, initiation: data?.payReservation ?? null, loading, error, reset };
 }
 
 /**

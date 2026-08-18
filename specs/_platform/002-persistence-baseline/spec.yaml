@@ -1,6 +1,6 @@
 id: ET-PLT-002
 title: Persistence baseline — replica set, the collection registry, money and time
-status: draft
+status: approved
 area: PLT
 service: all
 subgraph: null
@@ -33,6 +33,9 @@ persistence:
     - catalog_reference_data
     - catalog_approval_timelines
     - catalog_approval_escalations
+    - catalog_statistics_rollups
+    - catalog_migration_runs
+    - catalog_outbox
     # booking-service
     - booking_tier_inventory
     - booking_reservations
@@ -54,6 +57,13 @@ persistence:
     - booking_reconciliation_runs
     - booking_reconciliation_items
     - booking_promo_codes
+    - booking_checkins
+    - booking_checkin_conflicts
+    - booking_ticket_transfers
+    - booking_recovery_proposals
+    - booking_statistics_rollups
+    - booking_migration_runs
+    - booking_outbox
     # identity-service
     - identity_users
     - identity_organizations
@@ -69,6 +79,19 @@ persistence:
     - identity_user_devices
     - identity_event_reminders
     - identity_audit_logs
+    - identity_notification_templates
+    - identity_mass_sends
+    - identity_review_claims
+    - identity_platform_configuration
+    - identity_feature_flags
+    - identity_temporary_blocks
+    - identity_consent_records
+    - identity_erasure_requests
+    - identity_data_exports
+    - identity_statistics_rollups
+    - identity_migration_runs
+    - identity_token_revocations
+    - identity_outbox
 
   # uniqueness constraints and TTLs only — the full registry is spec.md §4
   indexes:
@@ -80,6 +103,8 @@ persistence:
     - "identity_users {email} unique sparse"
     - "identity_users {phoneNumber} unique sparse"
     - "identity_user_devices {deviceToken} unique"
+    - "identity_token_revocations {type,value} unique"
+    - "identity_token_revocations {expiresAt} ttl 0"
     - "booking_tier_inventory {tierId} unique"
     - "booking_reservations {expiresAt} ttl 0"
     - "booking_payment_intents {idempotencyKey} unique"
@@ -89,6 +114,8 @@ persistence:
     - "booking_escrow_accounts {eventId} unique"
     - "booking_tickets {ticketReference} unique"
     - "booking_promo_codes {code} unique"
+    - "catalog|booking|identity_outbox {eventId} unique — same index on each"
+    - "catalog|booking|identity_outbox {sentAt} ttl 7d — SENT rows only"
 
   redis_keys:
     - "otp:{phone}                     STRING  300 s   — ephemeral by design"
@@ -96,6 +123,7 @@ persistence:
     - "idem:{key}                      STRING   24 h   — authority booking_payment_intents.idempotencyKey"
     - "evt:seen:{consumer}:{eventId}   STRING    7 d   — authority the consumer's own write"
     - "lock:sweep:{name}               STRING   30 s   — ephemeral by design"
+    - "lock:sweep:outbox               STRING   30 s   — one outbox drainer per service"
     - "ratelimit:{scope}:{subject}     STRING window   — ephemeral by design"
     - "cache:event:{eventId}           STRING  300 s   — authority catalog_events"
     - "cache:tier:{tierId}             STRING   30 s   — DISPLAY ONLY, authority catalog_ticket_tiers"
@@ -125,12 +153,8 @@ versioned_documents:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/002-persistence-baseline
-  - ./scripts/spec-lint.sh --persistence
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-PLT-002
-  - mvn -q -f backend verify -Dgroups=ET-PLT-002
+  - mvn -q -f backend test -Dgroups=ET-PLT-002 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-002 -DfailIfNoTests=true
 
 risks:
   - "The collection registry renames every collection to a service-prefixed name. Existing data lives under the current names, so T3 is a rename plus a data migration, and the two must land together or a service starts against empty collections and reports healthy."

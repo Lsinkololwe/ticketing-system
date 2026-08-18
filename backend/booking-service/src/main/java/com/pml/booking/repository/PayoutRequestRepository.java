@@ -15,8 +15,42 @@ import reactor.core.publisher.Mono;
 @Repository
 public interface PayoutRequestRepository extends ReactiveMongoRepository<PayoutRequest, String> {
 
+    /**
+     * Look up an existing request by its client-supplied idempotency key.
+     *
+     * <p>The unique sparse index on {@code idempotencyKey} is what actually
+     * guarantees one payout per key; this lookup exists so a retry can be
+     * answered with the ORIGINAL request instead of a duplicate-key error the
+     * caller would have to interpret.
+     */
+    Mono<PayoutRequest> findByIdempotencyKey(String idempotencyKey);
+
     Mono<PayoutRequest> findByRequestId(String requestId);
 
+    /**
+     * Open requests against one escrow account.
+     *
+     * <p>ET-FIN-003 R2 allows at most one open request per account. Two open
+     * requests against the same balance would both pass their own balance check
+     * and between them withdraw the money twice.
+     */
+    Flux<PayoutRequest> findByEscrowAccountIdAndStatusIn(
+            String escrowAccountId, java.util.Collection<PayoutRequestStatus> statuses);
+
+    /**
+     * Every payout request belonging to an organization.
+     *
+     * <p>ET-FIN-003 §4 makes {@code organizationId} the tenant key. Scoping by
+     * organizer would hide an organization's payouts from everyone except the
+     * person who happened to request them.
+     */
+    Flux<PayoutRequest> findByOrganizationId(String organizationId);
+
+    /** Payout requests for an organization in a given state. */
+    Flux<PayoutRequest> findByOrganizationIdAndStatus(String organizationId, PayoutRequestStatus status);
+
+    /** @deprecated ET-FIN-003 scopes payouts by organization; never use for access decisions. */
+    @Deprecated
     Flux<PayoutRequest> findByOrganizerId(String organizerId);
 
     Flux<PayoutRequest> findByEventId(String eventId);
@@ -39,7 +73,7 @@ public interface PayoutRequestRepository extends ReactiveMongoRepository<PayoutR
      */
     @Aggregation(pipeline = {
         "{ $match: { status: 'COMPLETED' } }",
-        "{ $group: { _id: null, total: { $sum: '$netPayoutAmount' } } }"
+        "{ $group: { _id: null, total: { $sum: '$settledAmount' } } }"
     })
     Mono<PayoutTotalResult> calculateTotalCompletedPayouts();
 
@@ -51,7 +85,7 @@ public interface PayoutRequestRepository extends ReactiveMongoRepository<PayoutR
      */
     @Aggregation(pipeline = {
         "{ $match: { organizerId: ?0, status: 'COMPLETED' } }",
-        "{ $group: { _id: null, total: { $sum: '$netPayoutAmount' } } }"
+        "{ $group: { _id: null, total: { $sum: '$settledAmount' } } }"
     })
     Mono<PayoutTotalResult> calculateTotalCompletedPayoutsByOrganizer(String organizerId);
 

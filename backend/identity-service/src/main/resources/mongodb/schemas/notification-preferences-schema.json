@@ -11,6 +11,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -29,21 +33,39 @@
         "bsonType": "bool"
       },
       "preferences": {
-        "bsonType": ["object", "null"],
+        "bsonType": [
+          "object",
+          "null"
+        ],
         "properties": {
-          "ticketPurchase": {"bsonType": "bool"},
-          "eventReminders": {"bsonType": "bool"},
-          "eventCancellations": {"bsonType": "bool"},
-          "refundUpdates": {"bsonType": "bool"},
-          "payoutNotifications": {"bsonType": "bool"},
-          "promotionalEmails": {"bsonType": "bool"}
+          "ticketPurchase": {
+            "bsonType": "bool"
+          },
+          "eventReminders": {
+            "bsonType": "bool"
+          },
+          "eventCancellations": {
+            "bsonType": "bool"
+          },
+          "refundUpdates": {
+            "bsonType": "bool"
+          },
+          "payoutNotifications": {
+            "bsonType": "bool"
+          },
+          "promotionalEmails": {
+            "bsonType": "bool"
+          }
         }
       },
       "createdAt": {
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

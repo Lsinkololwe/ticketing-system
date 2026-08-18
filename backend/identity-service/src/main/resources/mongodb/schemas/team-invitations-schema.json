@@ -13,6 +13,10 @@
       "expiresAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -28,12 +32,23 @@
       },
       "role": {
         "bsonType": "string",
-        "enum": ["ADMIN", "ORGANIZER", "MEMBER", "VIEWER"],
+        "enum": [
+          "ADMIN",
+          "ORGANIZER",
+          "MEMBER",
+          "VIEWER"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "status": {
         "bsonType": "string",
-        "enum": ["PENDING", "ACCEPTED", "DECLINED", "EXPIRED", "CANCELLED"],
+        "enum": [
+          "PENDING",
+          "ACCEPTED",
+          "DECLINED",
+          "EXPIRED",
+          "CANCELLED"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "invitedBy": {
@@ -48,18 +63,30 @@
         "description": "Invitation expiry (typically 7 days from creation)"
       },
       "acceptedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "declinedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "userId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$",
         "description": "Set when invitation is accepted"
       },
       "message": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       }
     },

@@ -69,6 +69,18 @@ export const verifySession = () => getSessionService().verifySession();
  */
 export const getOrganizationStatus = () => getOrganizationService().getStatus();
 
+/**
+ * Resolve the caller's onboarding state for routing.
+ *
+ * Prefer this over {@link getOrganizationStatus} for any redirect decision: it
+ * reports `unknown` when the status could not be established, instead of
+ * silently reporting "no organization" and routing a submitted applicant back
+ * to the application form.
+ *
+ * @returns Three-valued onboarding state
+ */
+export const getOnboardingState = () => getOrganizationService().getOnboardingState();
+
 // =============================================================================
 // ROUTING HELPERS (Delegated to OrganizationService)
 // =============================================================================

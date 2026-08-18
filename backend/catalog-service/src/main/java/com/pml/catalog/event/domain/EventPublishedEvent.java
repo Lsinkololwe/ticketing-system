@@ -1,6 +1,5 @@
 package com.pml.catalog.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -9,7 +8,7 @@ import java.time.LocalDateTime;
 /**
  * Domain event published when an event goes live and tickets become available for purchase.
  *
- * Listeners (Internal - @ApplicationModuleListener):
+ * Listeners (Internal - @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)):
  * - None in catalog service
  *
  * External Listeners (via Azure Service Bus):
@@ -19,7 +18,7 @@ import java.time.LocalDateTime;
  * This event triggers the creation of financial infrastructure (escrow accounts)
  * needed to handle ticket sales and eventual payout to organizers.
  */
-@Externalized("event-events::EventPublished")
+/** Cross-service wire name (ET-PLT-003 §4): event-events::EventPublished — staged into the outbox. */
 public record EventPublishedEvent(
         String eventId,
         String organizerId,

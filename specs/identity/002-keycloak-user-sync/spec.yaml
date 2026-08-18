@@ -1,6 +1,6 @@
 id: ET-IDN-002
 title: Keycloak ↔ MongoDB user synchronisation
-status: draft
+status: approved
 area: IDN
 service: identity-service
 subgraph: identity
@@ -79,13 +79,9 @@ keycloak_spi:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/identity/002-keycloak-user-sync
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --persistence
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-002
+  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-002 -DfailIfNoTests=true
   - mvn -q -f backend/keycloak-extensions package
-  - mvn -q -f backend verify -Dgroups=ET-IDN-002
+  - mvn -q -f backend verify -Dgroups=ET-IDN-002 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

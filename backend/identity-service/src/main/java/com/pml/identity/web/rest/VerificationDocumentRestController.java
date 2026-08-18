@@ -1,6 +1,6 @@
 package com.pml.identity.web.rest;
 
-import com.pml.identity.domain.enums.DocumentStatus;
+import com.pml.shared.constants.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.VerificationDocumentService;

@@ -4,8 +4,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.PaymentAttempt;
-import com.pml.booking.domain.model.Ticket;
-import com.pml.booking.repository.TicketRepository;
+import com.pml.booking.repository.TicketReservationRepository;
 import com.pml.booking.service.PaymentAttemptService;
 import com.pml.booking.web.graphql.dto.PaymentAttemptMutationResponse;
 import com.pml.shared.security.SecurityContextUtils;
@@ -49,7 +48,7 @@ import java.math.BigDecimal;
 public class PaymentAttemptMutationResolver {
 
     private final PaymentAttemptService paymentAttemptService;
-    private final TicketRepository ticketRepository;
+    private final TicketReservationRepository reservationRepository;
 
     // ========================================================================
     // PAYMENT INITIATION
@@ -68,13 +67,14 @@ public class PaymentAttemptMutationResolver {
     public Mono<PaymentAttemptMutationResponse> initiatePaymentAttempt(
             @InputArgument InitiatePaymentAttemptInput input
     ) {
-        log.info("GraphQL mutation: initiatePaymentAttempt(ticketId={}, buyerId={}, provider={})",
-                input.ticketId(), input.buyerId(), input.provider());
+        log.info("GraphQL mutation: initiatePaymentAttempt(reservationId={}, buyerId={}, provider={})",
+                input.reservationId(), input.buyerId(), input.provider());
 
-        return ticketRepository.findById(input.ticketId())
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + input.ticketId())))
-                .flatMap(ticket -> paymentAttemptService.initiatePayment(
-                        ticket,
+        return reservationRepository.findById(input.reservationId())
+                .switchIfEmpty(Mono.error(new IllegalArgumentException(
+                        "RESERVATION_UNKNOWN: " + input.reservationId())))
+                .flatMap(reservation -> paymentAttemptService.initiatePayment(
+                        reservation,
                         input.buyerId(),
                         input.payerPhone(),
                         input.provider(),
@@ -85,7 +85,7 @@ public class PaymentAttemptMutationResolver {
                 .map(attempt -> PaymentAttemptMutationResponse.success(
                         "Payment initiated: " + attempt.getDepositId(), attempt))
                 .onErrorResume(e -> {
-                    log.error("Failed to initiate payment for ticket {}: {}", input.ticketId(), e.getMessage());
+                    log.error("Failed to initiate payment for reservation {}: {}", input.reservationId(), e.getMessage());
                     return Mono.just(PaymentAttemptMutationResponse.error(e.getMessage()));
                 });
     }
@@ -336,7 +336,7 @@ public class PaymentAttemptMutationResolver {
     // ========================================================================
 
     public record InitiatePaymentAttemptInput(
-            String ticketId,
+            String reservationId,
             String eventId,
             String buyerId,
             BigDecimal amount,

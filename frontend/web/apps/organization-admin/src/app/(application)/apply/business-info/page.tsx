@@ -1,17 +1,20 @@
 'use client';
 
 /**
- * Business Info Page - Organization Application
+ * Application step 1 — business details.
  *
- * Two-column wizard layout (built entirely from native Radix UI Themes
- * components: Card, Box, Grid, Flex, Text, Heading, TextField, TextArea, Select,
- * Button, Separator, Badge).
+ * Single centred column on the shared {@link WizardShell}, per the design
+ * authority. The previous two-column layout carried a sticky "On this page"
+ * scroll-spy rail: navigation *within* one step, given the same visual weight as
+ * navigation *between* steps — and the between-steps progress was the one not
+ * being shown at all. Its footer still read "Step 1 of 2" and offered "Continue
+ * to Review", describing the two-step wizard that existed before the documents
+ * step, and skipping straight past it.
  *
- *   Left rail  : step progress, an "On this page" section nav (scroll-spy), help.
- *   Right pane : page title + one Card per section (icon chip + title + divider).
+ * Form state via React Hook Form + Zod.
  *
- * Form state via React Hook Form + Zod (unchanged).
- *
+ * @see components/application/WizardShell.tsx
+ * @see Org Admin - Onboarding Wizard.dc.html
  * @see https://react-hook-form.com/docs/usecontroller
  */
 
@@ -19,21 +22,12 @@ import { useCallback, useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  Box,
-  Flex,
-  Text,
-  Heading,
-  Button,
-  TextField,
-  TextArea,
-  Spinner,
-  Grid,
-  Card,
-  Separator,
-  Badge,
-} from '@radix-ui/themes';
-import { ArrowRight, ArrowLeft, Building, Phone, Globe } from 'iconoir-react';
+import { Badge, Box, Flex, Grid, Separator, Text, TextArea, TextField } from '@radix-ui/themes';
+import { Building, Page, Phone, Globe } from 'iconoir-react';
+import { BusinessTypeCombobox } from '@/components/application/BusinessTypeCombobox';
+import { WizardShell, WizardSection } from '@/components/application/WizardShell';
+import { requiredDocuments } from '@/lib/onboarding/documents';
+import { ROUTES } from '@/lib/onboarding/state';
 import {
   BusinessInfoSkeleton,
   ORGANIZATION_TYPE_OPTIONS,
@@ -58,11 +52,16 @@ import {
 const DEFAULT_VALUES: BusinessInfoFormData = {
   name: '',
   type: 'INDIVIDUAL',
+  // No default: business type decides which documents step 2 demands, so a
+  // silent default would quietly pick the applicant's document burden for them.
+  businessType: undefined as unknown as BusinessInfoFormData['businessType'],
   tagline: '',
   description: '',
   businessEmail: '',
   businessPhone: '',
   website: '',
+  businessRegistrationNumber: '',
+  taxId: '',
   city: '',
   province: 'LUSAKA',
   country: 'Zambia',
@@ -71,12 +70,7 @@ const DEFAULT_VALUES: BusinessInfoFormData = {
   twitter: '',
 };
 
-// In-page sections (drives the "On this page" nav + scroll-spy)
-const SECTIONS = [
-  { id: 'basic', title: 'Basic Information', subtitle: 'Name, type & description' },
-  { id: 'contact', title: 'Contact Information', subtitle: 'Email, phone & website' },
-  { id: 'location', title: 'Location & Social', subtitle: 'City, province & links' },
-] as const;
+
 
 /* Micro uppercase form label (spec §8) — 10px / 600 / 0.08em tracking, the one
    deliberate ALL-CAPS exception in the type system. Mirrors `.ds-label`. */
@@ -88,17 +82,7 @@ const LABEL_STYLE: React.CSSProperties = {
   textTransform: 'uppercase',
   color: 'var(--gray-11)',
 };
-const SECTION_SCROLL_STYLE: React.CSSProperties = { scrollMarginTop: '96px' };
 
-// Rounded-square icon chip (teal tint) used in each section header
-const ICON_CHIP_STYLE: React.CSSProperties = {
-  width: 44,
-  height: 44,
-  borderRadius: 'var(--radius-3)',
-  background: 'var(--accent-a3)',
-  color: 'var(--accent-11)',
-  flexShrink: 0,
-};
 
 // =============================================================================
 // MAIN COMPONENT
@@ -110,7 +94,6 @@ export default function BusinessInfoPage() {
   const [isPending, startTransition] = useTransition();
   const [formInitialized, setFormInitialized] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<string>('basic');
 
   // Get user session for prepopulating email and phone
   const { data: session } = useSession();
@@ -128,18 +111,21 @@ export default function BusinessInfoPage() {
   const { update } = useUpdateOrganizationApplication();
 
   // React Hook Form with Zod
-  const { control, handleSubmit, reset, formState: { isSubmitting } } = useForm({
+  const { control, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm({
     resolver: zodResolver(businessInfoFormSchema),
     defaultValues: DEFAULT_VALUES,
     mode: 'onBlur', // Validate on blur for better UX
   });
 
+  // Tell the applicant the document cost of their choice before they commit to
+  // it, rather than surprising them on the next step.
+  const selectedBusinessType = watch('businessType');
+  const requiredCount = selectedBusinessType
+    ? requiredDocuments(selectedBusinessType).length
+    : null;
+
   // Navigation handlers
   const goBack = useCallback(() => router.push('/welcome'), [router]);
-
-  const scrollToSection = useCallback((id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
 
   // Build GraphQL input from form data
   const buildInput = useCallback(
@@ -148,6 +134,9 @@ export default function BusinessInfoPage() {
       description: data.description || null,
       tagline: data.tagline || null,
       type: data.type,
+      businessType: data.businessType,
+      businessRegistrationNumber: data.businessRegistrationNumber || null,
+      taxId: data.taxId || null,
       businessEmail: data.businessEmail,
       businessPhone: data.businessPhone,
       website: data.website || null,
@@ -180,7 +169,9 @@ export default function BusinessInfoPage() {
         const result = await update(organization.id, input);
         if (result) {
           toast.success('Changes saved', 'Your organization information has been updated.');
-          startTransition(() => router.push('/apply/review'));
+          // Step 1 → step 2. The documents step needs the businessType we just
+          // saved, so it must run after the mutation resolves, not before.
+          startTransition(() => router.push(ROUTES.documents));
         } else {
           toast.error('Update failed', 'No result returned from server.');
         }
@@ -188,7 +179,9 @@ export default function BusinessInfoPage() {
         const result = await apply(input);
         if (result) {
           toast.success('Application started', 'Your organization application has been created.');
-          startTransition(() => router.push('/apply/review'));
+          // Step 1 → step 2. The documents step needs the businessType we just
+          // saved, so it must run after the mutation resolves, not before.
+          startTransition(() => router.push(ROUTES.documents));
         } else {
           toast.error('Creation failed', 'No result returned from server.');
         }
@@ -208,11 +201,14 @@ export default function BusinessInfoPage() {
       reset({
         name: organization.name || '',
         type: (organization.type as BusinessInfoFormData['type']) || 'INDIVIDUAL',
+        businessType: (organization.businessType as BusinessInfoFormData['businessType']) ?? undefined,
         tagline: organization.tagline || '',
         description: organization.description || '',
         businessEmail: organization.businessEmail || userEmail,
         businessPhone: organization.businessPhone || userPhone,
         website: organization.website || '',
+        businessRegistrationNumber: organization.businessRegistrationNumber || '',
+        taxId: organization.taxId || '',
         city: organization.businessAddress?.city || '',
         province: (organization.businessAddress?.province as BusinessInfoFormData['province']) || 'LUSAKA',
         country: organization.businessAddress?.country || 'Zambia',
@@ -234,146 +230,28 @@ export default function BusinessInfoPage() {
   const isLoadingSkeleton = orgLoading && !formInitialized;
   const isFormSubmitting = isSubmitting || isPending;
 
-  // Scroll-spy: highlight the section currently in view (re-attaches once the
-  // form has rendered, i.e. when the skeleton is replaced).
-  useEffect(() => {
-    if (isLoadingSkeleton) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActiveSection(visible[0].target.id);
-      },
-      { rootMargin: '-100px 0px -55% 0px', threshold: 0 }
-    );
-    SECTIONS.forEach((s) => {
-      const el = document.getElementById(s.id);
-      if (el) observer.observe(el);
-    });
-    return () => observer.disconnect();
-  }, [isLoadingSkeleton]);
-
   if (isLoadingSkeleton) {
     return <BusinessInfoSkeleton />;
   }
 
-  // ── Section header (native Radix composition) ────────────────────────────
-  const sectionHeader = (icon: React.ReactNode, title: string, subtitle: string, optional = false) => (
-    <>
-      <Flex align="center" gap="3" mb="3">
-        <Flex align="center" justify="center" style={ICON_CHIP_STYLE} aria-hidden="true">
-          {icon}
-        </Flex>
-        <Box flexGrow="1">
-          <Flex align="center" gap="2">
-            <Heading as="h2" size="4" color="teal" highContrast style={{ letterSpacing: '-0.01em' }}>
-              {title}
-            </Heading>
-            {optional && <Badge color="teal" variant="soft" radius="full">OPTIONAL</Badge>}
-          </Flex>
-          <Text as="p" size="2" color="gray">{subtitle}</Text>
-        </Box>
-      </Flex>
-      <Separator size="4" mb="4" />
-    </>
-  );
-
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate>
-      <Flex gap="6" align="start" direction={{ initial: 'column', md: 'row' }}>
-        {/* ════════════════ LEFT RAIL ════════════════ */}
-        <Box
-          flexShrink="0"
-          width={{ initial: '100%', md: '300px' }}
-          display={{ initial: 'none', md: 'block' }}
-          style={{ position: 'sticky', top: '88px', alignSelf: 'flex-start' }}
-        >
-          <Flex direction="column" gap="4">
-            {/* On this page */}
-            <Card size="2">
-              <Text size="1" weight="bold" color="gray" style={{ letterSpacing: '0.08em', display: 'block' }} mb="2">
-                ON THIS PAGE
-              </Text>
-              <Flex direction="column" gap="1">
-                {SECTIONS.map((s, i) => {
-                  const active = activeSection === s.id;
-                  return (
-                    <Box key={s.id} asChild>
-                      <button
-                        type="button"
-                        onClick={() => scrollToSection(s.id)}
-                        style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          background: active ? 'var(--accent-a3)' : 'transparent',
-                          border: 'none',
-                          borderRadius: 'var(--radius-3)',
-                          padding: '8px',
-                        }}
-                      >
-                        <Flex align="center" gap="3">
-                          <Flex
-                            align="center"
-                            justify="center"
-                            style={{
-                              width: 24,
-                              height: 24,
-                              borderRadius: '50%',
-                              flexShrink: 0,
-                              background: active ? 'var(--color-background)' : 'var(--gray-a3)',
-                              border: active ? '2px solid var(--accent-9)' : '2px solid transparent',
-                              color: active ? 'var(--accent-11)' : 'var(--gray-9)',
-                            }}
-                          >
-                            <Text size="1" weight="bold">{i + 1}</Text>
-                          </Flex>
-                          <Box>
-                            <Text size="2" weight={active ? 'bold' : 'medium'} style={{ display: 'block', color: active ? 'var(--accent-12)' : 'var(--gray-12)' }}>
-                              {s.title}
-                            </Text>
-                            <Text size="1" color="gray">{s.subtitle}</Text>
-                          </Box>
-                        </Flex>
-                      </button>
-                    </Box>
-                  );
-                })}
-              </Flex>
-            </Card>
-
-            {/* Need a hand? */}
-            <Box
-              p="4"
-              style={{ background: 'var(--accent-a3)', borderRadius: 'var(--radius-4)' }}
-            >
-              <Text as="p" size="2" weight="bold" mb="1" style={{ color: 'var(--accent-12)' }}>
-                Need a hand?
-              </Text>
-              <Text as="p" size="2" style={{ color: 'var(--accent-12)', opacity: 0.85 }}>
-                Your organization details appear publicly on your event pages. You can edit them later from settings.
-              </Text>
-            </Box>
-          </Flex>
-        </Box>
-
-        {/* ════════════════ RIGHT PANE ════════════════ */}
-        <Box flexGrow="1" width="100%" style={{ minWidth: 0 }}>
-          {/* Page Header */}
-          <Box mb="5">
-            <Heading size="7" mb="1" color="teal" highContrast style={{ letterSpacing: '-0.02em' }}>
-              Organization Information
-            </Heading>
-            <Text as="p" size="3" color="gray">
-              Tell us about your organization. This information will be visible on your event pages.
-            </Text>
-          </Box>
-
-          <Flex direction="column" gap="5">
+    <form onSubmit={handleSubmit(onSubmit)} noValidate data-testid="business-info-form">
+      <WizardShell
+        currentStep={0}
+        title="Tell us about your business"
+        subtitle="This determines which documents we'll need from you next."
+        onBack={goBack}
+        nextType="submit"
+        nextLabel="Continue"
+        nextLoading={isFormSubmitting}
+      >
             {/* ── 1. Basic Information ──────────────────────────────── */}
-            <Card id="basic" size="3" style={SECTION_SCROLL_STYLE}>
-              {sectionHeader(<Building width={22} height={22} />, 'Basic Information', "Your organization's name, type, and what you do.")}
+            <WizardSection
+              id="basic"
+              icon={<Building width={20} height={20} />}
+              title="Basic Information"
+              subtitle="Your organization's name, type, and what you do."
+            >
               <Grid columns={{ initial: '1', sm: '2' }} gap="4" gapY="4">
                 <Controller
                   name="name"
@@ -449,11 +327,105 @@ export default function BusinessInfoPage() {
                   />
                 </Box>
               </Grid>
-            </Card>
+            </WizardSection>
 
-            {/* ── 2. Contact Information ────────────────────────────── */}
-            <Card id="contact" size="3" style={SECTION_SCROLL_STYLE}>
-              {sectionHeader(<Phone width={22} height={22} />, 'Contact Information', 'How attendees and the team can reach your organization.')}
+            {/* ── 2. Business Registration (KYB) ─────────────────────
+                Business type lives here rather than beside "Organization Type"
+                on purpose: the two read as near-duplicates side by side, and
+                only this one carries consequences — it decides which documents
+                the next step will ask for. */}
+            <WizardSection
+              id="kyb"
+              icon={<Page width={20} height={20} />}
+              title="Business Registration"
+              subtitle="Determines which verification documents we ask for next."
+            >
+              <Grid columns={{ initial: '1', sm: '2' }} gap="4" gapY="4">
+                <Box gridColumn={{ initial: '1', sm: '1 / -1' }}>
+                  <Controller
+                    name="businessType"
+                    control={control}
+                    render={({ field, fieldState }) => (
+                      <Box>
+                        <Text as="label" htmlFor="businessType" mb="1" style={LABEL_STYLE}>
+                          Business Type <Text as="span" color="red">*</Text>
+                        </Text>
+                        <BusinessTypeCombobox
+                          id="businessType"
+                          value={field.value ?? null}
+                          onChange={field.onChange}
+                          error={fieldState.error?.message}
+                        />
+                        {!fieldState.error && (
+                          <Text as="p" size="1" color="gray" mt="1">
+                            {requiredCount === null
+                              ? 'We only ask for documents your business type actually needs.'
+                              : `We'll ask for ${requiredCount} document${requiredCount === 1 ? '' : 's'} on the next step.`}
+                          </Text>
+                        )}
+                      </Box>
+                    )}
+                  />
+                </Box>
+
+                <Controller
+                  name="businessRegistrationNumber"
+                  control={control}
+                  render={({ field, fieldState }) => (
+                    <Box>
+                      <Text as="label" htmlFor="businessRegistrationNumber" mb="1" style={LABEL_STYLE}>
+                        Business Registration No.
+                      </Text>
+                      <TextField.Root
+                        id="businessRegistrationNumber"
+                        size="2"
+                        placeholder="PACRA number"
+                        {...field}
+                        value={field.value || ''}
+                      />
+                      {fieldState.error ? (
+                        <Text as="p" size="1" color="red" mt="1">{fieldState.error.message}</Text>
+                      ) : (
+                        <Text as="p" size="1" color="gray" mt="1">Optional — a reviewer may ask for it later</Text>
+                      )}
+                    </Box>
+                  )}
+                />
+
+                <Controller
+                  name="taxId"
+                  control={control}
+                  render={({ field, fieldState }) => (
+                    <Box>
+                      <Text as="label" htmlFor="taxId" mb="1" style={LABEL_STYLE}>
+                        Tax ID (TPIN)
+                      </Text>
+                      <TextField.Root
+                        id="taxId"
+                        size="2"
+                        inputMode="numeric"
+                        placeholder="10-digit ZRA TPIN"
+                        {...field}
+                        value={field.value || ''}
+                      />
+                      {fieldState.error ? (
+                        <Text as="p" size="1" color="red" mt="1">{fieldState.error.message}</Text>
+                      ) : (
+                        <Text as="p" size="1" color="gray" mt="1">Optional — a reviewer may ask for it later</Text>
+                      )}
+                    </Box>
+                  )}
+                />
+              </Grid>
+            </WizardSection>
+
+            {/* ── 3. Contact Information ────────────────────────────── */}
+            <WizardSection
+              id="contact"
+              icon={<Phone width={20} height={20} />}
+              title="Contact Information"
+              subtitle="How attendees and the team can reach your organization."
+            >
               <Grid columns={{ initial: '1', sm: '2' }} gap="4" gapY="4">
                 <Controller
                   name="businessEmail"
@@ -510,11 +482,15 @@ export default function BusinessInfoPage() {
                   />
                 </Box>
               </Grid>
-            </Card>
+            </WizardSection>
 
             {/* ── 3. Location & Social ──────────────────────────────── */}
-            <Card id="location" size="3" style={SECTION_SCROLL_STYLE}>
-              {sectionHeader(<Globe width={22} height={22} />, 'Location & Social', "Where you're based and where to find you online.")}
+            <WizardSection
+              id="location"
+              icon={<Globe width={20} height={20} />}
+              title="Location & Social"
+              subtitle="Where you are based, and where people can find you."
+            >
               <Grid columns={{ initial: '1', sm: '3' }} gap="4" gapY="4">
                 <Controller
                   name="city"
@@ -623,7 +599,7 @@ export default function BusinessInfoPage() {
                   )}
                 />
               </Grid>
-            </Card>
+            </WizardSection>
 
             {/* Error Display */}
             {submitError && (
@@ -636,47 +612,7 @@ export default function BusinessInfoPage() {
                 <Text size="2" color="red">{submitError}</Text>
               </Box>
             )}
-          </Flex>
-        </Box>
-      </Flex>
-
-      {/* ════════════════ STICKY FOOTER ════════════════ */}
-      <Box
-        mt="6"
-        py="3"
-        style={{
-          position: 'sticky',
-          bottom: 0,
-          background: 'var(--color-background)',
-          borderTop: '1px solid var(--gray-a5)',
-          zIndex: 10,
-        }}
-      >
-        <Flex justify="between" align="center" gap="3">
-          <Button type="button" variant="soft" color="gray" size="3" onClick={goBack} disabled={isFormSubmitting}>
-            <ArrowLeft width={16} height={16} aria-hidden="true" />
-            Back
-          </Button>
-
-          <Box display={{ initial: 'none', sm: 'block' }}>
-            <Text size="2" color="gray" weight="medium">Step 1 of 2</Text>
-          </Box>
-
-          <Button type="submit" size="3" disabled={isFormSubmitting}>
-            {isFormSubmitting ? (
-              <>
-                <Spinner size="1" />
-                Saving...
-              </>
-            ) : (
-              <>
-                Continue to Review
-                <ArrowRight width={18} height={18} aria-hidden="true" />
-              </>
-            )}
-          </Button>
-        </Flex>
-      </Box>
+      </WizardShell>
     </form>
   );
 }

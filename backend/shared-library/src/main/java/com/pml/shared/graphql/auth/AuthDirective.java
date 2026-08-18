@@ -160,8 +160,26 @@ public class AuthDirective implements SchemaDirectiveWiring {
                                     String.format("Access denied to %s.%s. Required role: %s",
                                             typeName, fieldName, requiredRole)));
                         }
-                    })
-                    .toFuture();
+                    });
+            // Returned unsubscribed, deliberately.
+            //
+            // This used to end in .toFuture(), which subscribes immediately —
+            // on the data-fetcher's calling thread, with an empty Reactor
+            // Context. ReactiveSecurityContextHolder reads the Context and not a
+            // ThreadLocal, so the security context was always absent, and
+            // checkAuthorization fell through to defaultIfEmpty(false). The
+            // effect was total: every @auth-guarded field in every service
+            // refused every caller, including a platform administrator holding
+            // SUPER_ADMIN.
+            //
+            // It presented as a role problem rather than a plumbing one, because
+            // the "Authorization denied ... has: [...]" warning lives inside the
+            // map() that an empty context never reaches — so the logs showed a
+            // bare AccessDeniedException with no authorities beside it.
+            //
+            // Handing the Mono back unsubscribed lets the GraphQL engine
+            // subscribe it inside the request's context, where the authentication
+            // actually is.
         };
     }
 

@@ -17,6 +17,11 @@ export const REFERENCE_DATA_FIELDS = gql`
     code
     name
     description
+    # The two fields that make a status configurable rather than merely listed.
+    # Their absence from this fragment is why the admin screen could show a
+    # status list and not the one thing about it that matters.
+    semantic
+    allowedTransitions
     parentType
     parentCode
     displayOrder

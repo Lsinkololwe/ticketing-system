@@ -1,0 +1,168 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Event Escrow Account Schema - OWASP Compliant",
+    "description": "ET-FIN-001 escrow account. Rewritten: the previous validator required totalDeposited/availableBalance/pendingBalance and forbade every field the model actually writes, so every escrow write was rejected.",
+    "required": [
+      "eventId",
+      "organizerId",
+      "organizationId",
+      "status",
+      "currency"
+    ],
+    "properties": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
+      "accountNumber": {
+        "bsonType": "string",
+        "pattern": "^ESC-[A-Za-z0-9]+-\\d{4}$",
+        "description": "Human-readable account number, ESC-{eventId}-{year}"
+      },
+      "eventId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "Event this escrow belongs to (unique per event)"
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        "description": "Event organizer user ID (Keycloak UUID format)"
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation: Required for financial data"
+      },
+      "eventTitle": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "organizerName": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": [
+          "ZMW",
+          "USD",
+          "EUR",
+          "GBP",
+          "ZAR"
+        ],
+        "description": "Account currency"
+      },
+      "status": {
+        "bsonType": "string",
+        "description": "Configurable at runtime; the closed set lives on statusSemantic"
+      },
+      "statusSemantic": {
+        "enum": [
+          "INITIAL",
+          "PENDING",
+          "IN_PROGRESS",
+          "SUCCEEDED",
+          "FAILED",
+          "CANCELLED",
+          null
+        ],
+        "description": "What status MEANS, denormalised from reference data. THIS is the closed set (OWASP A04) \u2014 the vocabulary is fixed in code while the codes above are not. null is allowed on purpose: a code with no reference-data row is left unclassified, which is findable, rather than guessed, which is not."
+      },
+      "currentBalance": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "description": "ET-FIN-001 R2 running balance"
+      },
+      "totalCredited": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "description": "ET-FIN-001 R2"
+      },
+      "totalDebited": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "description": "ET-FIN-001 R2"
+      },
+      "totalRefunded": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "description": "ET-FIN-001 R2"
+      },
+      "totalCommissions": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "description": "Kept delta, recorded rather than removed"
+      },
+      "payoutEligibleAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "holdUntil": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "openedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "closedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "openDisputeCount": {
+        "bsonType": [
+          "int",
+          "long",
+          "null"
+        ]
+      },
+      "transactions": {
+        "bsonType": [
+          "array",
+          "null"
+        ]
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": "date"
+      },
+      "version": {
+        "bsonType": [
+          "int",
+          "long",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  }
+}

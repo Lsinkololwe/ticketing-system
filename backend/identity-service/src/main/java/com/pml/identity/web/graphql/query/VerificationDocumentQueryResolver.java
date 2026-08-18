@@ -3,7 +3,7 @@ package com.pml.identity.web.graphql.query;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.identity.domain.enums.DocumentStatus;
+import com.pml.shared.constants.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.VerificationDocumentService;

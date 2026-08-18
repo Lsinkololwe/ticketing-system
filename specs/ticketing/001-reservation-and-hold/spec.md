@@ -177,7 +177,7 @@ release.
 - [ ] Confirmation moves `reserved → sold`, writes one `booking_tickets` row per seat, credits the event escrow, records the commission and sets `CONFIRMED` — all in one MongoDB transaction
 - [ ] A forced failure at each of those five points leaves none of them applied, asserted by five tests
 - [ ] A confirmation that cannot complete triggers a refund of the captured payment and releases the hold, and the reservation becomes `FAILED`
-- [ ] `booking.TicketPurchased` and `booking.PaymentCompleted` are published from an `@ApplicationModuleListener`, after commit ([ET-PLT-003](../../_platform/003-event-contract/) R2)
+- [ ] `booking.TicketPurchased` and `booking.PaymentCompleted` are published from an `@TransactionalEventListener(AFTER_COMMIT)`, after commit ([ET-PLT-003](../../_platform/003-event-contract/) R2)
 - [ ] Confirming an already-`CONFIRMED` reservation is a no-op returning the existing tickets
 - [ ] `Ledger.assertBalanced()` and `Inventory.assertConserved()` both hold after every confirmation
 - [ ] A confirmation arriving after expiry is refused with `RESERVATION_EXPIRED` and the payment is refunded
@@ -263,7 +263,7 @@ cannot tell a payments outage from a slow checkout.
 5  after commit        publish TicketPurchased, PaymentCompleted           ET-PLT-003
 ```
 
-Steps 1 and 4 are transactions. Step 5 is an `@ApplicationModuleListener`, so the bus is
+Steps 1 and 4 are transactions. Step 5 is an `@TransactionalEventListener(AFTER_COMMIT)`, so the bus is
 never reached inside one.
 
 ### Confirmation, in one transaction
@@ -284,7 +284,7 @@ public Mono<List<Ticket>> confirm(String reservationId) {
 }
 ```
 
-The module event is published inside the transaction so Spring Modulith records it with the
+The event is staged into `booking_outbox` inside the transaction, through the same reactive session, so it commits with the
 write; `StreamBridge` is reached only from the listener that consumes it
 ([ET-PLT-003](../../_platform/003-event-contract/) §2).
 

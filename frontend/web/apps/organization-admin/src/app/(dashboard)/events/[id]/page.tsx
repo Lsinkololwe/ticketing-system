@@ -10,7 +10,8 @@
  * - Quick actions
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useParams } from 'next/navigation';
 import {
   Box,
   Flex,
@@ -22,6 +23,7 @@ import {
   Tabs,
   Avatar,
   Table,
+  Skeleton,
 } from '@radix-ui/themes';
 import {
   Calendar,
@@ -41,6 +43,10 @@ import {
   useMyOrganization,
   canEditEvents,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import {
+  useMyEventDetail,
+  type EventDetailVM,
+} from '@pml.tickets/shared/api/organization-admin/modules/events';
 
 // =============================================================================
 // TYPES
@@ -85,36 +91,45 @@ interface EventDetail {
 }
 
 // =============================================================================
-// MOCK DATA
+// ADAPTER — catalog Event → this page's presentation shape
+//
+// No fixture data lives in this app. Fields the backend does not expose stay
+// empty rather than being filled with a plausible-looking default.
 // =============================================================================
 
-const mockEvent: EventDetail = {
-  id: '1',
-  title: 'Tech Summit Zambia 2025',
-  description: 'Join us for the biggest tech conference in Zambia. Network with industry leaders, attend workshops, and learn about the latest trends in technology.',
-  coverImageUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200',
-  status: 'PUBLISHED',
-  startDate: '2025-12-15T09:00:00Z',
-  endDate: '2025-12-15T18:00:00Z',
-  location: 'Mulungushi Conference Center',
-  address: 'Great East Road, Lusaka, Zambia',
-  ticketsSold: 450,
-  ticketsTotal: 500,
-  revenue: 67500,
-  checkedIn: 0,
-  tiers: [
-    { id: '1', name: 'Early Bird', price: 100, sold: 200, total: 200, revenue: 20000 },
-    { id: '2', name: 'Regular', price: 150, sold: 200, total: 250, revenue: 30000 },
-    { id: '3', name: 'VIP', price: 350, sold: 50, total: 50, revenue: 17500 },
-  ],
-  recentAttendees: [
-    { id: '1', name: 'John Mwanza', email: 'john@email.com', ticketType: 'VIP', purchaseDate: '2025-11-20', checkedIn: false },
-    { id: '2', name: 'Mary Banda', email: 'mary@email.com', ticketType: 'Regular', purchaseDate: '2025-11-19', checkedIn: false },
-    { id: '3', name: 'Peter Tembo', email: 'peter@email.com', ticketType: 'Early Bird', purchaseDate: '2025-11-18', checkedIn: false },
-    { id: '4', name: 'Grace Phiri', email: 'grace@email.com', ticketType: 'Regular', purchaseDate: '2025-11-17', checkedIn: false },
-    { id: '5', name: 'David Lungu', email: 'david@email.com', ticketType: 'VIP', purchaseDate: '2025-11-16', checkedIn: false },
-  ],
-};
+function toEventDetail(event: EventDetailVM): EventDetail {
+  const tiers: TicketTier[] = (event.ticketTiers ?? []).map((tier) => ({
+    id: tier.id,
+    name: tier.name,
+    price: Number(tier.price ?? 0),
+    sold: tier.soldQuantity ?? 0,
+    total: tier.quantity ?? 0,
+    // Per-tier revenue is not a field the catalog exposes; price x sold is the
+    // gross for the tier and is exactly what the column means.
+    revenue: Number(tier.price ?? 0) * (tier.soldQuantity ?? 0),
+  }));
+
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.description ?? '',
+    coverImageUrl: event.bannerImageUrl ?? undefined,
+    status: event.status as EventStatus,
+    startDate: event.eventDateTime,
+    endDate: event.endDateTime,
+    location: event.locationName ?? event.cityName ?? '',
+    address: event.locationAddress ?? '',
+    ticketsSold: event.soldTickets ?? 0,
+    ticketsTotal: event.totalCapacity ?? 0,
+    revenue: Number(event.revenue ?? 0),
+    // Gate attendance is a booking-service concern and is not on the catalog
+    // Event. Left at zero rather than invented; see ORG_ADMIN_REDESIGN_NOTES.
+    checkedIn: 0,
+    tiers,
+    recentAttendees: [],
+  };
+}
+
 
 // =============================================================================
 // STATUS CONFIG
@@ -140,9 +155,10 @@ export default function EventDetailPage() {
 
   const [activeTab, setActiveTab] = useState('overview');
 
-  // In real app, fetch event by ID
-  const event = mockEvent;
-  const status = statusConfig[event.status];
+  const params = useParams<{ id: string }>();
+  const { event: eventRow, loading } = useMyEventDetail(params?.id);
+
+  const event = useMemo(() => (eventRow ? toEventDetail(eventRow) : null), [eventRow]);
 
   const canEdit = canEditEvents(orgStatus);
 
@@ -162,7 +178,34 @@ export default function EventDetailPage() {
     });
   };
 
-  const progress = (event.ticketsSold / event.ticketsTotal) * 100;
+  if (loading && !event) {
+    return (
+      <Box data-testid="event-detail-loading">
+        <Skeleton style={{ height: 120, borderRadius: 'var(--card-radius-bento)', marginBottom: 16 }} />
+        <Skeleton style={{ height: 320, borderRadius: 'var(--card-radius-bento)' }} />
+      </Box>
+    );
+  }
+
+  // Null covers both "no such event" and "not yours" — `event(id:)` is public
+  // but the organizer-tagged fields resolve to null for a non-owner. Rendering
+  // an empty shell would look like a real event with no data in it.
+  if (!event) {
+    return (
+      <Box data-testid="event-detail-not-found">
+        <PageHeader
+          title="Event not found"
+          description="This event does not exist, or it is not one of yours."
+          breadcrumbs={[{ label: 'Events', href: '/events' }, { label: 'Not found' }]}
+        />
+      </Box>
+    );
+  }
+
+  const status = statusConfig[event.status];
+  // Guard the denominator: a draft with no allocation yet would otherwise
+  // render NaN% sold.
+  const progress = event.ticketsTotal > 0 ? (event.ticketsSold / event.ticketsTotal) * 100 : 0;
 
   return (
     <Box>

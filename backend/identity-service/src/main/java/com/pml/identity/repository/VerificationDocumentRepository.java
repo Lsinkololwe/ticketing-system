@@ -1,6 +1,6 @@
 package com.pml.identity.repository;
 
-import com.pml.identity.domain.enums.DocumentStatus;
+import com.pml.shared.constants.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;

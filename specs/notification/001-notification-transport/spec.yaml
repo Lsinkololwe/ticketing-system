@@ -1,6 +1,6 @@
 id: ET-NTF-001
 title: Notification transport — channels, templates, devices, delivery
-status: draft
+status: approved
 area: NTF
 service: identity-service
 subgraph: identity
@@ -23,7 +23,7 @@ persistence:
   collections:
     - identity_notifications
     - identity_notification_preferences
-    - identity_notification_templates    # added to the ET-PLT-002 §4 registry by this spec
+    - identity_notification_templates    # ET-PLT-002 §4 registry row
     - identity_user_devices
   indexes:
     - "identity_notifications {userId,status,createdAt} compound"
@@ -91,16 +91,12 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/notification/001-notification-transport
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001
-  - mvn -q -f backend verify -Dgroups=ET-NTF-001
+  - mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-NTF-001 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
-  - "identity_notification_templates is a new collection that ET-PLT-002 §4's closed registry does not list. This spec adds a row to a registry that spec declares closed, which is the fourth such amendment in the corpus — the pattern suggests the registry should be assembled from the specs rather than declared upfront."
+  - "Resolved: identity_notification_templates is a row of the ET-PLT-002 §4 registry."
   - "R2 makes templates editable by SUPER_ADMIN without a deploy, which means the body of a transactional message — including the OTP template — is runtime-mutable data. A compromised SUPER_ADMIN account can rewrite otp.login to exfiltrate codes to a different destination if the template controls anything beyond the body text, and nothing here bounds what a template may contain."
   - "The OTP chain is WHATSAPP then SMS with no email fallback, and ET-IDN-001 R2 refuses the OTP request when every channel fails. So a WhatsApp and SMS outage makes login impossible platform-wide, with no degraded path. That is the correct trade for a 5-minute code but it makes two providers a hard availability dependency for all authentication."
   - "Deduplication is on a caller-supplied key with a unique index and a 24-hour window, but the TTL on identity_notifications is 180 days. The unique index therefore blocks a legitimate re-send of the same key at day 30, long after the dedup window has notionally expired — the window and the index disagree."

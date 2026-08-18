@@ -61,6 +61,15 @@ public interface PayoutRequestService {
     Mono<PayoutRequest> findByRequestId(String requestId);
 
     /**
+     * Find an existing request by its client-supplied idempotency key.
+     *
+     * <p>Lets a retried create return the ORIGINAL payout instead of producing
+     * a second one for the same money. Required by
+     * {@code specs/finance/003-payouts-and-settlement}.
+     */
+    Mono<PayoutRequest> findByIdempotencyKey(String idempotencyKey);
+
+    /**
      * Retrieves all payout requests for an organizer.
      * Used in organizer earnings dashboard.
      *

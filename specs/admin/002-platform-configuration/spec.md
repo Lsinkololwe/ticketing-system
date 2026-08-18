@@ -94,7 +94,7 @@ WHEN a configuration value changes, THE SYSTEM SHALL append a new version and SH
 who changed it and why.
 
 **Acceptance**
-- [ ] Setting a value inserts a new `admin_platform_configuration` row; no row is updated or deleted
+- [ ] Setting a value inserts a new `identity_platform_configuration` row; no row is updated or deleted
 - [ ] The current value is the highest `version` for that key and scope
 - [ ] Every change requires a reason of at least 20 characters
 - [ ] Every change writes an audit row with the old value, the new value, the actor and the reason ([ET-PLT-009](../../_platform/009-audit-trail/))
@@ -212,7 +212,7 @@ finds them under pressure.
 
 ### Documents
 
-`admin_platform_configuration` — append-only, versioned.
+`identity_platform_configuration` — append-only, versioned.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -230,7 +230,7 @@ finds them under pressure.
 
 `{configKey, scope, scopeId, version}` is unique. Nothing is ever updated or deleted.
 
-`admin_feature_flags` — same shape, with `state` and `organizationIds`.
+`identity_feature_flags` — same shape, with `state` and `organizationIds`.
 
 ### Resolution order
 

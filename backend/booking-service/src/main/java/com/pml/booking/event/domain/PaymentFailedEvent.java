@@ -1,6 +1,5 @@
 package com.pml.booking.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -15,10 +14,10 @@ import java.time.Instant;
  * - Catalog Service: Increments available tickets
  * - Identity Service: Notifies buyer of failed payment
  */
-@Externalized("payment-events::PaymentFailed")
+/** Cross-service wire name (ET-PLT-003 §4): payment-events::PaymentFailed — staged into the outbox. */
 public record PaymentFailedEvent(
         String paymentIntentId,
-        String ticketId,
+        String reservationId,
         String eventId,
         String buyerId,
         BigDecimal amount,
@@ -30,7 +29,7 @@ public record PaymentFailedEvent(
 ) {
     public PaymentFailedEvent(
             String paymentIntentId,
-            String ticketId,
+            String reservationId,
             String eventId,
             String buyerId,
             BigDecimal amount,
@@ -39,7 +38,7 @@ public record PaymentFailedEvent(
             String failureReason,
             String failureCode
     ) {
-        this(paymentIntentId, ticketId, eventId, buyerId, amount, currency,
+        this(paymentIntentId, reservationId, eventId, buyerId, amount, currency,
                 paymentProvider, failureReason, failureCode, Instant.now());
     }
 }

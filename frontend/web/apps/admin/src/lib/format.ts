@@ -168,6 +168,16 @@ const STATUS_TONES: Record<string, StatusTone> = {
   AWAITING_DOCUMENTS: 'amber',
   CHANGES_REQUESTED: 'amber',
   ON_HOLD: 'amber',
+  // ET-FIN-001 R4: an escrow account counting down its post-event hold. Waiting
+  // on the clock rather than on a person, but amber for the same reason — it is
+  // not yet money anyone can draw.
+  HOLD: 'amber',
+
+  // Escrow, ET-FIN-001 R4. PAYOUT_ELIGIBLE is the one status that means the
+  // money is actually available, so it reads as settled rather than neutral —
+  // grey here would make "ready to pay" indistinguishable from "closed".
+  PAYOUT_ELIGIBLE: 'green',
+  CLOSED: 'gray',
 
   // In flight
   UNDER_REVIEW: 'blue',

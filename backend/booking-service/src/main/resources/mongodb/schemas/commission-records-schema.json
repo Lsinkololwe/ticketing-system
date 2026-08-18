@@ -2,7 +2,7 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Commission Records Schema - OWASP Compliant",
-    "description": "Two-stage commission tracking (PENDING → EARNED)",
+    "description": "Two-stage commission tracking (PENDING \u2192 EARNED)",
     "required": [
       "ticketId",
       "eventId",
@@ -17,6 +17,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -54,58 +58,99 @@
       },
       "currency": {
         "bsonType": "string",
-        "enum": ["ZMW", "USD"],
+        "enum": [
+          "ZMW",
+          "USD"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "status": {
         "bsonType": "string",
-        "enum": ["PENDING", "EARNED", "CANCELLED", "CLAWED_BACK"],
+        "enum": [
+          "PENDING",
+          "EARNED",
+          "CANCELLED",
+          "CLAWED_BACK"
+        ],
         "description": "OWASP A04 - Enum constraint for two-stage model"
       },
       "pendingAt": {
         "bsonType": "date"
       },
       "earnedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "cancelledAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "clawedBackAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "refundRequestId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "refundReason": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "pendingJournalEntryId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "earnedJournalEntryId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "cancelJournalEntryId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "clawbackJournalEntryId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "createdAt": {
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "version": {
-        "bsonType": ["long", "null"]
+        "bsonType": [
+          "long",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

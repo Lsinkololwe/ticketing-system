@@ -206,7 +206,7 @@ question or re-drives an existing, already-authorised operation.
 
 ### The proposal
 
-`admin_recovery_proposals`
+`booking_recovery_proposals`
 
 | Field | Notes |
 |---|---|

@@ -18,8 +18,8 @@ import {
   Callout,
   Dialog,
   Flex,
-  Heading,
   IconButton,
+  Select,
   Spinner,
   Switch,
   Table,
@@ -37,6 +37,7 @@ import {
   Trash,
   WarningTriangle,
 } from 'iconoir-react';
+import { EmptyState, PageHeader, SectionCard, StyledCard } from '@/components/ui';
 import {
   useReferenceTypes,
   useReferenceDataAdmin,
@@ -44,10 +45,26 @@ import {
   useUpdateReferenceData,
   useDeleteReferenceData,
   useToggleReferenceDataActive,
+  CODE_OWNED_MACHINES,
+  SEMANTIC_COLOR,
+  SEMANTIC_HELP,
+  WORKFLOW_SEMANTICS,
   type ReferenceData,
   type ReferenceType,
   type ReferenceTypeInfo,
+  type WorkflowSemantic,
 } from '@pml.tickets/shared/api/admin/modules/reference-data';
+
+/**
+ * A workflow type is one whose rows drive behaviour, so every row must declare
+ * what it means. Derived from the type name rather than a second hand-written
+ * list — the backend's own rule is that these are exactly the *_STATUS types.
+ */
+const isWorkflowType = (type: ReferenceType) => type.endsWith('_STATUS');
+
+/** Transitions for these are fixed by a state machine in code — see the types module. */
+const isCodeOwnedMachine = (type: ReferenceType) =>
+  (CODE_OWNED_MACHINES as readonly string[]).includes(type);
 
 interface FormState {
   code: string;
@@ -57,6 +74,10 @@ interface FormState {
   displayOrder: string;
   isActive: boolean;
   metadataJson: string;
+  /** '' means "not chosen yet" — a workflow row cannot be saved in that state. */
+  semantic: WorkflowSemantic | '';
+  /** Comma-separated codes this status may move to. Empty means unconstrained. */
+  allowedTransitions: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -67,6 +88,8 @@ const EMPTY_FORM: FormState = {
   displayOrder: '0',
   isActive: true,
   metadataJson: '{}',
+  semantic: '',
+  allowedTransitions: '',
 };
 
 export default function ReferenceDataPage() {
@@ -82,45 +105,51 @@ export default function ReferenceDataPage() {
 
   return (
     <Box p="5">
-      <Flex align="center" gap="3" mb="4">
-        <Database width={24} height={24} />
-        <Box>
-          <Heading size="6">Reference data</Heading>
-          <Text size="2" color="gray">
-            Manage every lookup list on the platform — operators, banks, currencies, genres, reasons and more.
-          </Text>
-        </Box>
-      </Flex>
+      <PageHeader
+        title="Reference data"
+        description="Every lookup list on the platform — operators, banks, currencies, genres, reasons — and the statuses that drive behaviour."
+        breadcrumbs={[{ label: 'System', href: '/system' }, { label: 'Reference data' }]}
+      />
 
       <Flex gap="5" align="start" direction={{ initial: 'column', md: 'row' }}>
         {/* ── Type rail ── */}
-        <Box style={{ minWidth: 240, width: 240, flexShrink: 0 }}>
-          {typesLoading ? (
-            <Spinner />
-          ) : (
-            groups.map((group) => (
-              <Box key={group.group} mb="4">
-                <Text className="ds-label" as="p">
-                  {group.groupLabel}
-                </Text>
-                <Flex direction="column" gap="1" mt="2">
-                  {group.items.map((t) => (
-                    <Button
-                      key={t.type}
-                      data-testid={`ref-type-${t.type}`}
-                      variant={t.type === activeType ? 'solid' : 'ghost'}
-                      color={t.type === activeType ? undefined : 'gray'}
-                      radius="medium"
-                      style={{ justifyContent: 'flex-start' }}
-                      onClick={() => setSelectedType(t.type)}
-                    >
-                      {t.label}
-                    </Button>
-                  ))}
-                </Flex>
-              </Box>
-            ))
-          )}
+        {/* Fixed rail on desktop; full width above the table on a phone, where a
+            248px column beside a table is what pushes the page sideways. */}
+        <Box
+          width={{ initial: '100%', md: '248px' }}
+          flexShrink="0"
+          style={{ minWidth: 0 }}
+        >
+          <StyledCard hover="none" padding="3">
+            {typesLoading ? (
+              <Flex align="center" gap="2" py="3">
+                <Spinner /> <Text size="2" color="gray">Loading types…</Text>
+              </Flex>
+            ) : (
+              groups.map((group, index) => (
+                <Box key={group.group} mb={index === groups.length - 1 ? '0' : '4'}>
+                  <Text className="ds-label" as="p">
+                    {group.groupLabel}
+                  </Text>
+                  <Flex direction="column" gap="1" mt="2">
+                    {group.items.map((t) => (
+                      <Button
+                        key={t.type}
+                        data-testid={`ref-type-${t.type}`}
+                        variant={t.type === activeType ? 'solid' : 'ghost'}
+                        color={t.type === activeType ? undefined : 'gray'}
+                        radius="medium"
+                        style={{ justifyContent: 'flex-start' }}
+                        onClick={() => setSelectedType(t.type)}
+                      >
+                        {t.label}
+                      </Button>
+                    ))}
+                  </Flex>
+                </Box>
+              ))
+            )}
+          </StyledCard>
         </Box>
 
         {/* ── Table pane ── */}
@@ -160,6 +189,7 @@ function ReferenceTypePanel({
   const { items, loading, error } = useReferenceDataAdmin(type);
   const { setActive } = useToggleReferenceDataActive(type);
   const { remove } = useDeleteReferenceData(type);
+  const workflow = isWorkflowType(type);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ReferenceData | null>(null);
@@ -180,10 +210,14 @@ function ReferenceTypePanel({
     setDialogOpen(true);
   };
 
-  const onDelete = async (item: ReferenceData) => {
+  // "Retire", not "delete". ET-CAT-003 R7: rows are referenced BY CODE from
+  // collections this screen cannot see, so removing one leaves those documents
+  // naming something that no longer renders. The backend deactivates and keeps
+  // it; the button says so.
+  const onRetire = async (item: ReferenceData) => {
     setBanner(null);
     const res = await remove(item.id);
-    if (res && !res.success) setBanner(res.message ?? 'Delete failed');
+    if (res && !res.success) setBanner(res.message ?? 'Retire failed');
   };
 
   const onToggle = async (item: ReferenceData) => {
@@ -193,29 +227,32 @@ function ReferenceTypePanel({
   };
 
   return (
-    <Box>
-      <Flex justify="between" align="center" mb="3" gap="3" wrap="wrap">
-        <Box>
-          <Heading size="4">{info.label}</Heading>
-          <Text size="1" color="gray">
-            {items.length} {items.length === 1 ? 'entry' : 'entries'}
-            {info.requiredMetadataKeys.length > 0 && (
-              <> · required metadata: {info.requiredMetadataKeys.join(', ')}</>
-            )}
-          </Text>
-        </Box>
-        <Flex gap="2">
+    <SectionCard
+      title={info.label}
+      action={
+        // wrap + a shrinkable field: on a phone the title and these controls
+        // together are wider than the card, and without this the whole page
+        // gains a horizontal scrollbar for the sake of 28 pixels.
+        <Flex gap="2" align="center" wrap="wrap" justify="end" style={{ minWidth: 0 }}>
           <TextField.Root
             placeholder="Search…"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            style={{ width: 220 }}
+            style={{ width: 'min(200px, 38vw)', minWidth: 0 }}
           />
           <Button data-testid="ref-add" onClick={openCreate}>
             <Plus width={16} height={16} /> Add
           </Button>
         </Flex>
-      </Flex>
+      }
+    >
+      <Text size="1" color="gray">
+        {items.length} {items.length === 1 ? 'entry' : 'entries'}
+        {workflow && <> · every status must declare what it means</>}
+        {info.requiredMetadataKeys.length > 0 && (
+          <> · required metadata: {info.requiredMetadataKeys.join(', ')}</>
+        )}
+      </Text>
 
       {banner && (
         <Callout.Root color="red" mb="3">
@@ -230,13 +267,18 @@ function ReferenceTypePanel({
         </Callout.Root>
       )}
 
-      <Box style={{ overflowX: 'auto' }}>
+      {/* Wide content scrolls inside its own container; the page never does. */}
+      <Box style={{ overflowX: 'auto', maxWidth: '100%', minWidth: 0 }}>
         <Table.Root variant="surface">
           <Table.Header>
             <Table.Row>
               <Table.ColumnHeaderCell>Code</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>Name</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>Parent</Table.ColumnHeaderCell>
+              {workflow ? (
+                <Table.ColumnHeaderCell>Means</Table.ColumnHeaderCell>
+              ) : (
+                <Table.ColumnHeaderCell>Parent</Table.ColumnHeaderCell>
+              )}
               <Table.ColumnHeaderCell>Order</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>Active</Table.ColumnHeaderCell>
               <Table.ColumnHeaderCell>Source</Table.ColumnHeaderCell>
@@ -250,7 +292,18 @@ function ReferenceTypePanel({
               </Table.Row>
             ) : filtered.length === 0 ? (
               <Table.Row>
-                <Table.Cell colSpan={7}><Text color="gray">No entries.</Text></Table.Cell>
+                <Table.Cell colSpan={7}>
+                  <EmptyState
+                    size="sm"
+                    icon={<Database width={20} height={20} />}
+                    title={search ? 'Nothing matches that search' : `No ${info.label.toLowerCase()} yet`}
+                    description={
+                      search
+                        ? 'Clear the search to see every entry.'
+                        : 'Add the first entry — it becomes selectable across the platform immediately.'
+                    }
+                  />
+                </Table.Cell>
               </Table.Row>
             ) : (
               filtered.map((item) => (
@@ -265,7 +318,29 @@ function ReferenceTypePanel({
                     )}
                   </Table.Cell>
                   <Table.Cell>
-                    {item.parentCode ? <Badge variant="soft" color="gray">{item.parentCode}</Badge> : <Text color="gray">—</Text>}
+                    {workflow ? (
+                      item.semantic ? (
+                        <Tooltip content={SEMANTIC_HELP[item.semantic]}>
+                          <Badge
+                            data-testid={`ref-semantic-${item.code}`}
+                            variant="soft"
+                            color={SEMANTIC_COLOR[item.semantic] as never}
+                          >
+                            {item.semantic.replace(/_/g, ' ').toLowerCase()}
+                          </Badge>
+                        </Tooltip>
+                      ) : (
+                        // Only reachable for a row written before the rule was
+                        // enforced. Records in it are recognised by no branch.
+                        <Badge color="red" variant="soft">
+                          <WarningTriangle width={12} height={12} /> no meaning
+                        </Badge>
+                      )
+                    ) : item.parentCode ? (
+                      <Badge variant="soft" color="gray">{item.parentCode}</Badge>
+                    ) : (
+                      <Text color="gray">—</Text>
+                    )}
                   </Table.Cell>
                   <Table.Cell>{item.displayOrder}</Table.Cell>
                   <Table.Cell>
@@ -288,16 +363,28 @@ function ReferenceTypePanel({
                   <Table.Cell align="right">
                     <Flex gap="2" justify="end">
                       <Tooltip content="Edit">
-                        <IconButton variant="soft" color="gray" onClick={() => openEdit(item)}>
+                        <IconButton
+                          data-testid={`ref-edit-${item.code}`}
+                          variant="soft"
+                          color="gray"
+                          onClick={() => openEdit(item)}
+                        >
                           <EditPencil width={16} height={16} />
                         </IconButton>
                       </Tooltip>
-                      <Tooltip content={item.isSystem ? 'System rows cannot be deleted — deactivate instead' : 'Delete'}>
+                      <Tooltip
+                        content={
+                          item.isSystem
+                            ? 'System rows are seeded from code and cannot be retired'
+                            : 'Retire — deactivates and keeps the row, so anything referencing it still resolves'
+                        }
+                      >
                         <IconButton
+                          data-testid={`ref-retire-${item.code}`}
                           variant="soft"
                           color="red"
-                          disabled={item.isSystem}
-                          onClick={() => onDelete(item)}
+                          disabled={item.isSystem || !item.isActive}
+                          onClick={() => onRetire(item)}
                         >
                           <Trash width={16} height={16} />
                         </IconButton>
@@ -319,7 +406,7 @@ function ReferenceTypePanel({
           onClose={() => setDialogOpen(false)}
         />
       )}
-    </Box>
+    </SectionCard>
   );
 }
 
@@ -341,6 +428,8 @@ function ReferenceDataDialog({
   const { create, loading: creating } = useCreateReferenceData(type);
   const { update, loading: updating } = useUpdateReferenceData(type);
   const isEdit = !!editing;
+  const workflow = isWorkflowType(type);
+  const machineInCode = isCodeOwnedMachine(type);
 
   const [form, setForm] = useState<FormState>(
     editing
@@ -352,6 +441,8 @@ function ReferenceDataDialog({
           displayOrder: String(editing.displayOrder),
           isActive: editing.isActive,
           metadataJson: JSON.stringify(editing.metadata ?? {}, null, 2),
+          semantic: editing.semantic ?? '',
+          allowedTransitions: (editing.allowedTransitions ?? []).join(', '),
         }
       : EMPTY_FORM
   );
@@ -375,26 +466,57 @@ function ReferenceDataDialog({
       return;
     }
 
+    // Caught here as well as on the server, so the administrator is told before
+    // the round trip rather than by a rejection afterwards. The server is still
+    // the authority — this is the message, not the guarantee.
+    if (workflow && !form.semantic) {
+      setFormError(
+        'Pick what this status means. A record reaching a status with no meaning ' +
+          'is recognised by no code path and stops moving, without anybody being told.'
+      );
+      return;
+    }
+
     const displayOrder = Number.parseInt(form.displayOrder, 10) || 0;
+    const semantic = workflow ? (form.semantic as WorkflowSemantic) : null;
+    const allowedTransitions =
+      workflow && !machineInCode
+        ? form.allowedTransitions
+            .split(',')
+            .map((c) => c.trim().toUpperCase())
+            .filter(Boolean)
+        : null;
 
     const res = isEdit
       ? await update(editing!.id, {
           name: form.name,
           description: form.description || null,
-          parentCode: form.parentCode || null,
+          // A hierarchy is a taxonomy idea; a status has no parent.
+          parentType: null,
+          parentCode: workflow ? null : form.parentCode || null,
           displayOrder,
           isActive: form.isActive,
           metadata,
+          semantic,
+          allowedTransitions,
+          // Untouched by this form. The generated input requires every key, so
+          // they are named rather than omitted — which is how the previous
+          // hand-written input let two fields go missing unnoticed.
+          effectiveFrom: null,
+          effectiveTo: null,
         })
       : await create({
           type,
           code: form.code,
           name: form.name,
           description: form.description || null,
-          parentCode: form.parentCode || null,
+          parentType: null,
+          parentCode: workflow ? null : form.parentCode || null,
           displayOrder,
           isActive: form.isActive,
           metadata,
+          semantic,
+          allowedTransitions,
         });
 
     if (res && !res.success) {
@@ -444,15 +566,77 @@ function ReferenceDataDialog({
             />
           </label>
 
+          {workflow && (
+            <>
+              <label>
+                <Text as="div" size="2" mb="1" weight="medium">
+                  What this status means
+                </Text>
+                <Select.Root
+                  value={form.semantic || undefined}
+                  onValueChange={(v) => set('semantic', v as WorkflowSemantic)}
+                >
+                  <Select.Trigger
+                    data-testid="ref-form-semantic"
+                    placeholder="Pick a meaning…"
+                    style={{ width: '100%' }}
+                  />
+                  <Select.Content>
+                    {WORKFLOW_SEMANTICS.map((sem) => (
+                      <Select.Item key={sem} value={sem}>
+                        {sem.replace(/_/g, ' ').toLowerCase()}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+                <Text size="1" color="gray" as="p" mt="1">
+                  {form.semantic
+                    ? SEMANTIC_HELP[form.semantic]
+                    : 'Code branches on this, never on the code above — which is what lets you add a status without a deployment.'}
+                </Text>
+              </label>
+
+              {machineInCode ? (
+                <Callout.Root color="blue" data-testid="ref-machine-locked">
+                  <Callout.Icon><Lock /></Callout.Icon>
+                  <Callout.Text>
+                    Transitions for {info.label.toLowerCase()} are fixed by a state machine in
+                    the code and cannot be edited here. You can still add and rename statuses —
+                    it is the routes between them that are set by specification.
+                  </Callout.Text>
+                </Callout.Root>
+              ) : (
+                <label>
+                  <Text as="div" size="2" mb="1" weight="medium">
+                    May move to
+                  </Text>
+                  <TextField.Root
+                    data-testid="ref-form-transitions"
+                    placeholder="e.g. APPROVED, REJECTED — leave empty for no restriction"
+                    value={form.allowedTransitions}
+                    onChange={(e) => set('allowedTransitions', e.target.value)}
+                  />
+                  <Text size="1" color="gray" as="p" mt="1">
+                    Comma-separated codes from this same list. Empty means unconstrained. A code
+                    that does not exist is refused — a route to nowhere reads exactly like a
+                    configured one.
+                  </Text>
+                </label>
+              )}
+            </>
+          )}
+
           <Flex gap="3">
-            <label style={{ flex: 1 }}>
-              <Text as="div" size="2" mb="1" weight="medium">Parent code</Text>
-              <TextField.Root
-                placeholder="Optional"
-                value={form.parentCode}
-                onChange={(e) => set('parentCode', e.target.value)}
-              />
-            </label>
+            {!workflow && (
+              <label style={{ flex: 1 }}>
+                <Text as="div" size="2" mb="1" weight="medium">Parent code</Text>
+                <TextField.Root
+                  placeholder="Optional"
+                  value={form.parentCode}
+                  onChange={(e) => set('parentCode', e.target.value)}
+                />
+              </label>
+            )}
             <label style={{ width: 120 }}>
               <Text as="div" size="2" mb="1" weight="medium">Order</Text>
               <TextField.Root

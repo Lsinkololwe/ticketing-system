@@ -2,7 +2,7 @@ package com.pml.booking.service.impl;
 
 import com.pml.booking.domain.enums.ChargebackFundSource;
 import com.pml.booking.domain.enums.ChargebackReason;
-import com.pml.booking.domain.enums.ChargebackStatus;
+import com.pml.shared.constants.ChargebackStatus;
 import com.pml.booking.domain.enums.RecoveryStatus;
 import com.pml.booking.domain.model.ChargebackRecord;
 import com.pml.booking.domain.model.PayoutRequest;
@@ -464,7 +464,6 @@ public class ChargebackServiceImpl implements ChargebackService {
         // Collect payouts in priority order: APPROVED first, then PENDING statuses
         return payoutRequestRepository.findByOrganizerIdAndStatus(record.getOrganizerId(), PayoutRequestStatus.APPROVED)
                 .concatWith(payoutRequestRepository.findByOrganizerIdAndStatus(record.getOrganizerId(), PayoutRequestStatus.PENDING))
-                .concatWith(payoutRequestRepository.findByOrganizerIdAndStatus(record.getOrganizerId(), PayoutRequestStatus.PENDING_FINANCE_APPROVAL))
                 .collectList()
                 .flatMap(payouts -> {
                     if (payouts.isEmpty()) {
@@ -480,7 +479,7 @@ public class ChargebackServiceImpl implements ChargebackService {
                     for (PayoutRequest payout : payouts) {
                         if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
 
-                        BigDecimal availableForDeduction = payout.getNetPayoutAmount();
+                        BigDecimal availableForDeduction = payout.getSettledAmount();
                         if (availableForDeduction == null || availableForDeduction.compareTo(BigDecimal.ZERO) <= 0) {
                             continue;
                         }
@@ -497,7 +496,7 @@ public class ChargebackServiceImpl implements ChargebackService {
                                 record.getEventId());
 
                         PayoutRequest updated = payout.toBuilder()
-                                .netPayoutAmount(newAmount)
+                                .settledAmount(newAmount)
                                 .notes((payout.getNotes() != null ? payout.getNotes() + "\n" : "") + note)
                                 .build();
 

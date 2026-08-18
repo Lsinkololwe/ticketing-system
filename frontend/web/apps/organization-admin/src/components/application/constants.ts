@@ -16,11 +16,18 @@ export interface ApplicationStep {
 }
 
 /**
- * Steps in the organization application wizard
+ * Steps in the organization application wizard.
+ *
+ * Three steps, per the design authority (`Org Admin - Onboarding Wizard.dc.html`).
+ * The documents step was previously absent, which meant an applicant could reach
+ * "Submit for review" without ever being offered a way to supply the
+ * verification documents the backend requires (spec ET-ORG-001 R3) — a submit
+ * that could only ever be refused.
  */
 export const APPLICATION_STEPS: ApplicationStep[] = [
-  { id: 'business-info', title: 'Organization Info' },
-  { id: 'review', title: 'Review & Submit' },
+  { id: 'business-info', title: 'Business details' },
+  { id: 'documents', title: 'Documents' },
+  { id: 'review', title: 'Review & submit' },
 ];
 
 // =============================================================================

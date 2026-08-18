@@ -164,7 +164,7 @@ indicators are healthy.
 - [ ] Reservation expiry rate above 40% over an hour raises a `TICKET` — buyers are abandoning
 - [ ] Zero check-ins 30 minutes into an event with sold tickets raises a `TICKET`
 - [ ] Recovery-queue amount at risk above its threshold raises a `PAGE` ([ET-ADM-003](../003-transaction-recovery/) R8)
-- [ ] Trial balance non-zero raises a `PAGE` immediately ([ET-FIN-005](../005-reconciliation/) R1)
+- [ ] Trial balance non-zero raises a `PAGE` immediately ([ET-FIN-005](../../finance/005-reconciliation/) R1)
 - [ ] Each has a runbook naming the first three things to check
 
 ### ET-ADM-005-R8 · The health surface is queryable by an operator
@@ -299,12 +299,13 @@ Nineteen alerts. Each carries a runbook URL; a definition without one fails the 
 | Service | Required — readiness fails | Optional — degraded |
 |---|---|---|
 | catalog | MongoDB | Redis, Service Bus |
-| booking | MongoDB, PostgreSQL | Redis, Service Bus, PawaPay |
+| booking | MongoDB | Redis, Service Bus, PawaPay |
 | identity | MongoDB, Keycloak | Redis, Service Bus, WhatsApp, SMS, SMTP |
 | gateway | Apollo Router | Redis |
 
-PostgreSQL is required for booking because the Modulith outbox is where its durability
-guarantee lives ([ET-PLT-003](../../_platform/003-event-contract/) R1). PawaPay is optional
+MongoDB is booking's only required datastore: the outbox lives there too, staged in the
+same transaction as the write it describes ([ET-PLT-003](../../_platform/003-event-contract/) R1),
+so there is no second store whose loss could break the durability guarantee. PawaPay is optional
 because a payment provider outage degrades purchasing without taking the service out of
 rotation — buyers can still browse, check in and manage tickets.
 

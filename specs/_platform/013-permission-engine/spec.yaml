@@ -1,0 +1,70 @@
+id: ET-PLT-013
+title: The permission engine — flat module:action catalogue, role mapping, evaluation
+status: approved            # draft | approved | in-progress | implemented | verified | deferred | withdrawn
+area: PLT
+service: identity-service
+subgraph: identity
+owner: lazarous
+created: 2026-08-18
+priority: must
+wave: 1
+blocked_by: [ET-PLT-002, ET-PLT-005, ET-PLT-007]
+conformance: "US Part IV §22 · V3 §3"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/_platform/007-security-and-authorization/spec.md
+  - specs/organization/003-permission-resolution/spec.md
+
+# ---- the contract, mirrored from spec.md §4 ----
+persistence:
+  collections:
+    - identity_permissions
+    - identity_role_permissions
+    - identity_role_permission_changes
+  indexes:
+    - "identity_permissions { module: 1, action: 1 } unique"
+    - "identity_permissions { group: 1, active: 1 }"
+    - "identity_role_permissions { active: 1 }"
+    - "identity_role_permission_changes { roleName: 1, occurredAt: -1 }"
+  redis_keys:
+    - "perm:role:{roleName}   STRING  ttl 5 min  — authority identity_role_permissions"
+
+events:
+  module:
+    - RolePermissionsChangedEvent
+  bus:
+    - identity.RolePermissionsChanged
+  consumes: []
+  topics:
+    - identity-events
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - permissionCatalogue
+    - rolePermissions
+    - rolePermissionMappings
+    - keycloakRoles
+    - rolePermissionHistory
+    - myPermissions
+  mutations:
+    - setRolePermissions
+    - setRolePermissionActive
+    - setPermissionActive
+
+errors:
+  - PERMISSION_KEY_INVALID
+  - PERMISSION_UNKNOWN
+  - ROLE_MAPPING_UNKNOWN
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - mvn -q -f backend/identity-service test -Dgroups=ET-PLT-013 -DfailIfNoTests=true
+  - mvn -q -f backend/shared-library test -Dgroups=ET-PLT-013 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-013 -DfailIfNoTests=true
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "Amends ET-ORG-003 R6: its fixed Permission enum is replaced by this catalogue. ET-ORG-003's precedence order, explicit-deny rule and single-implementation constraint are unchanged and remain authoritative."
+  - "A permission key enforced nowhere is protection that does not exist; R2's registry-versus-annotation scan is what keeps the two sets equal."
+  - "Keycloak remains the sole source of truth for roles. Any future MongoDB role list is a second source of truth and a defect."

@@ -111,27 +111,40 @@ export function usePendingOrganizations(pagination?: {
   size?: number;
 }) {
   const { data, loading, error, refetch } = useQuery<{
-    pendingOrganizations: PaginatedResult<OrganizationListItem>;
+    organizationsOffsetPagination: {
+      content: OrganizationListItem[];
+      pageInfo: {
+        currentPage: number | null;
+        pageSize: number | null;
+        totalCount: number | null;
+        hasNext: boolean | null;
+        hasPrevious: boolean | null;
+      };
+    };
   }>(PENDING_ORGANIZATIONS, {
-    variables: { pagination },
+    variables: {
+      pagination: {
+        page: pagination?.page ?? 0,
+        size: pagination?.size ?? 20,
+        // Oldest first: the workbench is a queue, and the application that has
+        // waited longest is the one closest to breaching its SLA.
+        sortBy: 'submittedAt',
+        sortDirection: 'ASC',
+      },
+    },
     fetchPolicy: 'cache-and-network',
     errorPolicy: 'all',
   });
 
-  const page = data?.pendingOrganizations || {
-    content: [],
-    totalElements: 0,
-    totalPages: 0,
-    page: 0,
-    size: 20,
-    hasNext: false,
-    hasPrevious: false,
-  };
+  const page = data?.organizationsOffsetPagination;
+  const info = page?.pageInfo;
+  const size = info?.pageSize ?? 20;
+  const total = info?.totalCount ?? 0;
 
   return {
-    organizations: page.content,
-    totalElements: page.totalElements,
-    totalPages: page.totalPages,
+    organizations: page?.content ?? [],
+    totalElements: total,
+    totalPages: size > 0 ? Math.ceil(total / size) : 0,
     loading,
     error,
     refetch,

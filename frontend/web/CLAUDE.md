@@ -1,3 +1,25 @@
+# Design Authority — READ BEFORE ANY UI WORK
+
+The **Claude Design project is the final authority on the design of all three
+apps** (`apps/admin`, `apps/organization-admin`, `apps/ticketing`). It outranks
+every design doc in this repo and every existing screen.
+
+- Project `03cea541-469f-44d2-aa91-a5c6f5456295` — "Ticketing System Design"
+- Access with the `DesignSync` MCP tool (`/design-login` if unauthorized)
+- Local mirror of the rules: [`docs/DESIGN_AUTHORITY.md`](./docs/DESIGN_AUTHORITY.md)
+
+**Before writing UI, read the `.dc.html` screen for that surface** — e.g.
+`Admin - Dashboard.dc.html` before touching the admin dashboard. Tokens alone
+give you the right colours and the wrong structure; the screens are the layout
+contract. If the design and the current screen disagree, the design wins.
+
+Hard rules: no raw hex, no raw `px`, fonts limited to Inter / Space Grotesk /
+Fira Code, barrel imports only, and closed component prop sets — full table in
+the local mirror.
+
+`docs/ADMIN_APP_DESIGN.md` §1.1 is **superseded** (it documents a purple/orange
+dark-OLED theme that never shipped). Do not implement from it.
+
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 

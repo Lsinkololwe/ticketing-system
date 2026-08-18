@@ -1840,6 +1840,13 @@ input OrganizationApplicationInput {
     website: String
     # Organization type: INDIVIDUAL or BUSINESS
     type: OrganizationType
+    # Legal business type. Determines which verification documents are required
+    # at submit time (spec ET-ORG-001 §4).
+    businessType: BusinessType
+    # Tax identification number (TPIN in Zambia)
+    taxId: String
+    # Business registration number (PACRA number in Zambia)
+    businessRegistrationNumber: String
     # Business contact phone number
     businessPhone: String
     # Business contact email
@@ -2977,4 +2984,3 @@ type Mutation {
     # ADMIN - Full sync all users
     syncAllUsersFromKeycloak: Boolean! @tag(name: "admin")
 }
-

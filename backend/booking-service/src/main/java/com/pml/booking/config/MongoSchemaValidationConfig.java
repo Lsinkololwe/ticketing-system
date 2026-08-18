@@ -66,7 +66,7 @@ public class MongoSchemaValidationConfig extends com.pml.shared.config.MongoSche
         // CORE TICKETING COLLECTIONS
         // =========================================================================
         schemas.put("tickets", "tickets-schema.json");
-        schemas.put("ticket_reservations", "ticket-reservations-schema.json");
+        schemas.put("booking_reservations", "booking-reservations-schema.json");
 
         // =========================================================================
         // PAYMENT COLLECTIONS
@@ -81,8 +81,8 @@ public class MongoSchemaValidationConfig extends com.pml.shared.config.MongoSche
         // =========================================================================
         schemas.put("escrow_accounts", "escrow-accounts-schema.json");
         schemas.put("escrow_transactions", "escrow-transactions-schema.json");
-        schemas.put("event_escrow_accounts", "event-escrow-accounts-schema.json");
-        schemas.put("payout_requests", "payout-requests-schema.json");
+        schemas.put("booking_escrow_accounts", "booking-escrow-accounts-schema.json");
+        schemas.put("booking_payout_requests", "booking-payout-requests-schema.json");
         schemas.put("commission_records", "commission-records-schema.json");
 
         // =========================================================================

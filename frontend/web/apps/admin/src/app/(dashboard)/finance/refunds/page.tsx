@@ -1,12 +1,6 @@
-import { PagePlaceholder } from '@/components/ui/PagePlaceholder';
-import { Undo } from 'iconoir-react';
+import { FinanceWorkbench } from '@/components/finance/FinanceWorkbench';
 
+/** `Admin - Finance.dc.html`, refunds view. */
 export default function RefundRequestsPage() {
-  return (
-    <PagePlaceholder
-      title="Refund requests"
-      description="Process and manage customer refund requests"
-      icon={<Undo style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
-    />
-  );
+  return <FinanceWorkbench view="refunds" />;
 }

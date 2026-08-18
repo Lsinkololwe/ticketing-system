@@ -80,9 +80,11 @@ export {
 // Analytics domain: action-center / dashboard pending-count badges.
 export {
   usePendingCounts,
+  usePlatformSummary,
   type PendingCounts,
   type PendingCountKey,
   type UsePendingCountsResult,
+  type UsePlatformSummaryResult,
   PENDING_COUNTS,
 } from './api/graphql/analytics';
 
@@ -107,12 +109,12 @@ export {
 // Booking domain (consumer ticketing app): reservation, checkout, my tickets.
 export {
   useReserveTickets,
-  useCompleteReservation,
+  usePayReservation,
   useReservation,
   useMyTickets,
   type MyTicketsOptions,
   RESERVE_TICKETS,
-  COMPLETE_RESERVATION,
+  PAY_RESERVATION,
   GET_RESERVATION,
   GET_MY_TICKETS,
   TICKET_FIELDS,

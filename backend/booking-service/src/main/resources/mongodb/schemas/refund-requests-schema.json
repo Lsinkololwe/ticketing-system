@@ -19,6 +19,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -65,17 +69,35 @@
       },
       "currency": {
         "bsonType": "string",
-        "enum": ["ZMW", "USD", "EUR", "GBP"],
+        "enum": [
+          "ZMW",
+          "USD",
+          "EUR",
+          "GBP"
+        ],
         "description": "OWASP A04 - Enum constraint for currency"
       },
       "status": {
         "bsonType": "string",
-        "enum": ["PENDING", "APPROVED", "PROCESSING", "COMPLETED", "FAILED", "REJECTED"],
+        "enum": [
+          "PENDING",
+          "APPROVED",
+          "PROCESSING",
+          "COMPLETED",
+          "FAILED",
+          "REJECTED"
+        ],
         "description": "OWASP A04 - Enum constraint for status"
       },
       "requestType": {
         "bsonType": "string",
-        "enum": ["CUSTOMER_REQUEST", "EVENT_CANCELLED", "DUPLICATE_CHARGE", "FRAUD", "OTHER"],
+        "enum": [
+          "CUSTOMER_REQUEST",
+          "EVENT_CANCELLED",
+          "DUPLICATE_CHARGE",
+          "FRAUD",
+          "OTHER"
+        ],
         "description": "OWASP A04 - Enum constraint for request type"
       },
       "requestReason": {
@@ -84,87 +106,150 @@
         "maxLength": 500
       },
       "additionalNotes": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 2000
       },
       "supportingDocuments": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "pawaPayRefundId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "pawaPayDepositId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "providerTransactionId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "isAutomatic": {
         "bsonType": "bool"
       },
       "requestedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "requestedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "reviewedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "reviewedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "reviewComments": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 1000
       },
       "rejectionReason": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "paymentReference": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "refundTransactionId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "processedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "processedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "originalTicketPrice": {
-        "bsonType": ["decimal", "null"],
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
         "minimum": 0
       },
       "processingFee": {
-        "bsonType": ["decimal", "null"],
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
         "minimum": 0
       },
       "netRefundAmount": {
-        "bsonType": ["decimal", "null"],
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
         "minimum": 0
       },
       "originalPaymentMethod": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 50
       },
       "originalPaymentTransactionId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "history": {
-        "bsonType": ["array", "null"],
+        "bsonType": [
+          "array",
+          "null"
+        ],
         "items": {
           "bsonType": "object",
           "properties": {
@@ -178,16 +263,28 @@
               "bsonType": "date"
             },
             "comments": {
-              "bsonType": ["string", "null"]
+              "bsonType": [
+                "string",
+                "null"
+              ]
             },
             "previousStatus": {
-              "bsonType": ["string", "null"]
+              "bsonType": [
+                "string",
+                "null"
+              ]
             },
             "newStatus": {
-              "bsonType": ["string", "null"]
+              "bsonType": [
+                "string",
+                "null"
+              ]
             },
             "metadata": {
-              "bsonType": ["object", "null"]
+              "bsonType": [
+                "object",
+                "null"
+              ]
             }
           }
         }
@@ -196,18 +293,30 @@
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "createdBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "updatedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "version": {
-        "bsonType": ["long", "null"],
+        "bsonType": [
+          "long",
+          "null"
+        ],
         "description": "Optimistic locking version"
       }
     },

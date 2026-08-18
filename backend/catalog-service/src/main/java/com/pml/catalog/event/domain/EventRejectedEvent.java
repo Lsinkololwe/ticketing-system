@@ -1,6 +1,5 @@
 package com.pml.catalog.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 
@@ -11,7 +10,7 @@ import java.time.Instant;
  * - Identity Service: Notify organizer of rejection with reason
  * - Notification Service: Send rejection notification
  */
-@Externalized("event-events::EventRejected")
+/** Cross-service wire name (ET-PLT-003 §4): event-events::EventRejected — staged into the outbox. */
 public record EventRejectedEvent(
         String eventId,
         String organizerId,

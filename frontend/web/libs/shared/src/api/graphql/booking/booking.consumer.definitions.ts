@@ -4,7 +4,7 @@
  * The customer checkout is a reservation-based flow (matches the backend's
  * mobile-money model):
  *   1. `reserveTickets`     — hold seats, start a 10-min countdown
- *   2. `completeReservation`— trigger the mobile-money STK push, mint tickets
+ *   2. `payReservation`     — trigger the mobile-money prompt (tickets come later)
  *   3. poll `reservation`   — watch status / remainingSeconds while paying
  *
  * These operations are `@tag(name: "mobile")` and (for purchase) `@auth`'d to
@@ -48,6 +48,11 @@ export const RESERVATION_FIELDS = gql`
     remainingSeconds
     discountAmount
     promoCodeApplied
+    paymentIntentId
+    confirmedAt
+    releasedAt
+    failedAt
+    failureReason
     items {
       ticketTierId
       tierName
@@ -68,14 +73,26 @@ export const RESERVE_TICKETS = gql`
   ${RESERVATION_FIELDS}
 `;
 
-/** Complete a reservation — triggers the mobile-money push and mints tickets. */
-export const COMPLETE_RESERVATION = gql`
-  mutation CompleteReservation($input: CompleteReservationInput!) {
-    completeReservation(input: $input) {
-      ...TicketFields
+/**
+ * Ask for the mobile-money prompt on a held reservation.
+ *
+ * This does NOT return tickets, and the absence is the point. Confirmation
+ * follows the provider's callback, never a client asserting that it paid
+ * (ET-TKT-001 §4), and mobile-money confirmation takes between eight seconds
+ * and four minutes. Poll `GET_RESERVATION` until its status reads CONFIRMED.
+ */
+export const PAY_RESERVATION = gql`
+  mutation PayReservation($input: PayReservationInput!) {
+    payReservation(input: $input) {
+      success
+      message
+      paymentIntentId
+      transactionRef
+      paymentStatus
+      reservationId
+      errors
     }
   }
-  ${TICKET_FIELDS}
 `;
 
 /** Poll a reservation's status / remaining time while payment is pending. */

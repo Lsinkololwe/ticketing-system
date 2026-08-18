@@ -3,476 +3,289 @@
 /**
  * Notification Settings Page
  *
- * Manage notification preferences:
- * - Email notifications
- * - Push notifications
- * - SMS notifications
- * - Notification categories
+ * Two independent axes, because that is what the backend actually stores:
+ *
+ *   CHANNELS    — how you are reached (email, SMS, WhatsApp, push, in-app)
+ *   CATEGORIES  — what you are told about (ticket sales, payouts, team, …)
+ *
+ * <h2>Why this is not a category x channel matrix</h2>
+ *
+ * It used to be one: eight categories, each with its own email/push/SMS
+ * toggle, twenty-four switches in all. None of them could be saved.
+ * `UpdateNotificationPreferencesInput` has five channel booleans and seven
+ * category booleans — flat, global, not a grid. There is no field in which
+ * "email me about payouts but not about marketing" could be stored, so every
+ * one of those twenty-four switches discarded its value on save.
+ *
+ * The screen now mirrors the storage model. Restoring the matrix means adding
+ * per-category channel columns to the backend first.
+ *
+ * @see backend/identity-service/src/main/resources/graphql/schema.graphqls
  */
 
-import { useState, useCallback } from 'react';
-import { Box, Flex, Text, Button, Card, Switch } from '@radix-ui/themes';
-import { Bell, Mail, MessageText, SmartphoneDevice, FloppyDisk } from 'iconoir-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Box, Flex, Text, Card, Switch, Skeleton } from '@radix-ui/themes';
+import { FloppyDisk } from 'iconoir-react';
 import { PageHeader } from '@/components/ui';
+import {
+  useMyNotificationPreferences,
+  useUpdateNotificationPreferences,
+  type NotificationPreferencesPatch,
+} from '@pml.tickets/shared/api/organization-admin/modules/settings';
 
 // =============================================================================
-// TYPES
+// FIELD DEFINITIONS
+//
+// Keys are the literal backend field names, so a rename shows up as a compile
+// error rather than a toggle that quietly stops saving.
 // =============================================================================
 
-interface NotificationCategory {
-  id: string;
+type PreferenceKey = keyof NotificationPreferencesPatch;
+
+interface PreferenceField {
+  key: PreferenceKey;
   title: string;
   description: string;
-  email: boolean;
-  push: boolean;
-  sms: boolean;
 }
 
+const CHANNELS: PreferenceField[] = [
+  { key: 'emailEnabled', title: 'Email', description: 'Sent to your account email address.' },
+  { key: 'smsEnabled', title: 'SMS', description: 'Text messages to your registered number.' },
+  {
+    key: 'whatsappEnabled',
+    title: 'WhatsApp',
+    description: 'The primary channel for most organizers in Zambia.',
+  },
+  { key: 'pushEnabled', title: 'Push', description: 'Alerts on the mobile app.' },
+  { key: 'inAppEnabled', title: 'In-app', description: 'Shown in your notification centre here.' },
+];
+
+const CATEGORIES: PreferenceField[] = [
+  {
+    key: 'ticketNotifications',
+    title: 'Ticket sales',
+    description: 'Someone buys, transfers or refunds a ticket.',
+  },
+  {
+    key: 'eventReminders',
+    title: 'Event reminders',
+    description: 'Ahead of an event you are running.',
+  },
+  {
+    key: 'eventUpdates',
+    title: 'Event updates',
+    description: 'Approval decisions and changes to your events.',
+  },
+  {
+    key: 'paymentNotifications',
+    title: 'Payments and payouts',
+    description: 'Payout approvals, transfers and failures.',
+  },
+  {
+    key: 'teamNotifications',
+    title: 'Team activity',
+    description: 'Invitations accepted, roles changed, members removed.',
+  },
+  {
+    key: 'systemAnnouncements',
+    title: 'Service announcements',
+    description: 'Planned maintenance and platform changes.',
+  },
+  {
+    key: 'marketingEmails',
+    title: 'Tips and marketing',
+    description: 'Advice on growing your events. Off by default.',
+  },
+];
+
 // =============================================================================
-// NOTIFICATION ROW COMPONENT
+// TOGGLE ROW
 // =============================================================================
 
-interface NotificationRowProps {
-  category: NotificationCategory;
-  onChange: (id: string, channel: 'email' | 'push' | 'sms', value: boolean) => void;
-}
-
-function NotificationRow({ category, onChange }: NotificationRowProps) {
+function PreferenceRow({
+  field,
+  checked,
+  onChange,
+}: {
+  field: PreferenceField;
+  checked: boolean;
+  onChange: (key: PreferenceKey, value: boolean) => void;
+}) {
   return (
     <Flex
       justify="between"
       align="center"
-      py="4"
-      style={{
-        borderBottom: '1px solid var(--surface-border)',
-      }}
+      gap="4"
+      py="3"
+      style={{ borderBottom: '1px solid var(--gray-a4)' }}
     >
-      <Box style={{ flex: 1, maxWidth: '400px' }}>
-        <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
-          {category.title}
+      <Box style={{ flex: 1, minWidth: 0 }}>
+        <Text as="p" size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
+          {field.title}
         </Text>
-        <Text size="1" style={{ color: 'var(--content-muted)' }}>
-          {category.description}
+        <Text as="p" size="1" style={{ color: 'var(--gray-11)' }}>
+          {field.description}
         </Text>
       </Box>
-
-      <Flex gap="6" align="center">
-        <Flex direction="column" align="center" gap="1">
-          <Switch
-            size="2"
-            checked={category.email}
-            onCheckedChange={(checked) => onChange(category.id, 'email', checked)}
-          />
-          <Text size="1" style={{ color: 'var(--content-muted)' }} className="hidden-mobile">
-            Email
-          </Text>
-        </Flex>
-
-        <Flex direction="column" align="center" gap="1">
-          <Switch
-            size="2"
-            checked={category.push}
-            onCheckedChange={(checked) => onChange(category.id, 'push', checked)}
-          />
-          <Text size="1" style={{ color: 'var(--content-muted)' }} className="hidden-mobile">
-            Push
-          </Text>
-        </Flex>
-
-        <Flex direction="column" align="center" gap="1">
-          <Switch
-            size="2"
-            checked={category.sms}
-            onCheckedChange={(checked) => onChange(category.id, 'sms', checked)}
-          />
-          <Text size="1" style={{ color: 'var(--content-muted)' }} className="hidden-mobile">
-            SMS
-          </Text>
-        </Flex>
-      </Flex>
+      <Switch
+        size="2"
+        checked={checked}
+        onCheckedChange={(value) => onChange(field.key, value)}
+        data-testid={`pref-${field.key}`}
+      />
     </Flex>
   );
 }
-
-// =============================================================================
-// INITIAL DATA
-// =============================================================================
-
-const initialCategories: NotificationCategory[] = [
-  {
-    id: 'ticket_sales',
-    title: 'Ticket Sales',
-    description: 'Get notified when tickets are sold for your events',
-    email: true,
-    push: true,
-    sms: false,
-  },
-  {
-    id: 'event_reminders',
-    title: 'Event Reminders',
-    description: 'Reminders about upcoming events you\'re managing',
-    email: true,
-    push: true,
-    sms: false,
-  },
-  {
-    id: 'payout_updates',
-    title: 'Payout Updates',
-    description: 'Updates on payout requests and settlements',
-    email: true,
-    push: true,
-    sms: true,
-  },
-  {
-    id: 'team_activity',
-    title: 'Team Activity',
-    description: 'When team members join, leave, or change roles',
-    email: true,
-    push: false,
-    sms: false,
-  },
-  {
-    id: 'check_in_alerts',
-    title: 'Check-in Alerts',
-    description: 'Real-time alerts during event check-in',
-    email: false,
-    push: true,
-    sms: false,
-  },
-  {
-    id: 'sales_reports',
-    title: 'Sales Reports',
-    description: 'Daily and weekly sales summary reports',
-    email: true,
-    push: false,
-    sms: false,
-  },
-  {
-    id: 'security_alerts',
-    title: 'Security Alerts',
-    description: 'Important security-related notifications',
-    email: true,
-    push: true,
-    sms: true,
-  },
-  {
-    id: 'marketing',
-    title: 'Marketing & Tips',
-    description: 'Tips for growing your events and platform updates',
-    email: true,
-    push: false,
-    sms: false,
-  },
-];
 
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
 export default function NotificationSettingsPage() {
-  const [categories, setCategories] = useState<NotificationCategory[]>(initialCategories);
-  const [isSaving, setIsSaving] = useState(false);
+  const { preferences, loading } = useMyNotificationPreferences();
+  const { updatePreferences, loading: isSaving } = useUpdateNotificationPreferences();
 
-  const handleChange = useCallback(
-    (id: string, channel: 'email' | 'push' | 'sms', value: boolean) => {
-      setCategories((prev) =>
-        prev.map((cat) =>
-          cat.id === id ? { ...cat, [channel]: value } : cat
-        )
-      );
+  // Only what the user has actually changed. Sending the whole object back
+  // would reset any preference this build does not know about — every input
+  // field is optional server-side precisely so partial updates are possible.
+  const [patch, setPatch] = useState<NotificationPreferencesPatch>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  // Clear pending edits whenever the server sends a newer set, so the switches
+  // never show a stale local value on top of fresh data.
+  useEffect(() => {
+    setPatch({});
+  }, [preferences]);
+
+  const valueOf = useCallback(
+    (key: PreferenceKey): boolean => {
+      if (key in patch) return patch[key] as boolean;
+      const stored = preferences as Record<string, unknown> | null;
+      return Boolean(stored?.[key]);
     },
-    []
+    [patch, preferences]
   );
 
+  const handleChange = useCallback((key: PreferenceKey, value: boolean) => {
+    setSavedAt(null);
+    setPatch((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
   const handleSave = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      // TODO: Save to GraphQL API
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log('Saving notification preferences:', categories);
-    } catch (error) {
-      console.error('Failed to save:', error);
-    } finally {
-      setIsSaving(false);
+    setSaveError(null);
+
+    if (Object.keys(patch).length === 0) {
+      setSavedAt(null);
+      return;
     }
-  }, [categories]);
 
-  const handleEnableAll = useCallback((channel: 'email' | 'push' | 'sms') => {
-    setCategories((prev) =>
-      prev.map((cat) => ({ ...cat, [channel]: true }))
-    );
-  }, []);
+    const result = await updatePreferences(patch);
 
-  const handleDisableAll = useCallback((channel: 'email' | 'push' | 'sms') => {
-    setCategories((prev) =>
-      prev.map((cat) => ({ ...cat, [channel]: false }))
-    );
-  }, []);
+    if (!result.success) {
+      setSaveError(result.error ?? 'Your preferences could not be saved.');
+      return;
+    }
+
+    setPatch({});
+    setSavedAt(new Date().toLocaleTimeString());
+  }, [patch, updatePreferences]);
+
+  const hasChanges = Object.keys(patch).length > 0;
 
   return (
     <Box>
       <PageHeader
         title="Notifications"
         description="Choose which updates reach you, and where."
-        breadcrumbs={[
-          { label: 'Settings', href: '/settings' },
-          { label: 'Notifications' },
-        ]}
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Notifications' }]}
         actions={[
           {
             label: isSaving ? 'Saving…' : 'Save changes',
             icon: <FloppyDisk style={{ width: 18, height: 18, marginRight: 8 }} />,
             onClick: handleSave,
-            disabled: isSaving,
+            // Nothing to save is not an error, but the button should not
+            // pretend work happened either.
+            disabled: isSaving || !hasChanges,
           },
         ]}
       />
 
-      {/* Channel Overview Cards */}
-      <Box
-        mb="6"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '16px',
-        }}
-      >
-        {/* Email */}
-        <Card
+      {saveError && (
+        <Box
+          className="error-card"
+          mb="4"
           style={{
-            padding: '20px',
-            background: 'var(--surface-elevated)',
-            border: '1px solid var(--surface-border)',
+            padding: 'var(--space-3) var(--space-4)',
             borderRadius: 'var(--card-radius)',
+            border: '1px solid var(--red-a6)',
           }}
+          role="alert"
+          data-testid="notifications-save-error"
         >
-          <Flex align="center" gap="3" mb="3">
-            <Box
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 'var(--radius-3)',
-                background: 'var(--status-info-a3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Mail style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
-            </Box>
-            <Box>
-              <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
-                Email
-              </Text>
-              <Text size="1" style={{ color: 'var(--content-muted)' }}>
-                {categories.filter((c) => c.email).length} of {categories.length} enabled
-              </Text>
-            </Box>
-          </Flex>
-          <Flex gap="2">
-            <Button
-              variant="ghost"
-              size="1"
-              onClick={() => handleEnableAll('email')}
-              style={{ color: 'var(--brand-500)', flex: 1 }}
-            >
-              Enable All
-            </Button>
-            <Button
-              variant="ghost"
-              size="1"
-              onClick={() => handleDisableAll('email')}
-              style={{ color: 'var(--content-muted)', flex: 1 }}
-            >
-              Disable All
-            </Button>
-          </Flex>
-        </Card>
-
-        {/* Push */}
-        <Card
-          style={{
-            padding: '20px',
-            background: 'var(--surface-elevated)',
-            border: '1px solid var(--surface-border)',
-            borderRadius: 'var(--card-radius)',
-          }}
-        >
-          <Flex align="center" gap="3" mb="3">
-            <Box
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 'var(--radius-3)',
-                background: 'var(--accent-a3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Bell style={{ width: 20, height: 20, color: 'var(--accent-11)' }} />
-            </Box>
-            <Box>
-              <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
-                Push
-              </Text>
-              <Text size="1" style={{ color: 'var(--content-muted)' }}>
-                {categories.filter((c) => c.push).length} of {categories.length} enabled
-              </Text>
-            </Box>
-          </Flex>
-          <Flex gap="2">
-            <Button
-              variant="ghost"
-              size="1"
-              onClick={() => handleEnableAll('push')}
-              style={{ color: 'var(--brand-500)', flex: 1 }}
-            >
-              Enable All
-            </Button>
-            <Button
-              variant="ghost"
-              size="1"
-              onClick={() => handleDisableAll('push')}
-              style={{ color: 'var(--content-muted)', flex: 1 }}
-            >
-              Disable All
-            </Button>
-          </Flex>
-        </Card>
-
-        {/* SMS */}
-        <Card
-          style={{
-            padding: '20px',
-            background: 'var(--surface-elevated)',
-            border: '1px solid var(--surface-border)',
-            borderRadius: 'var(--card-radius)',
-          }}
-        >
-          <Flex align="center" gap="3" mb="3">
-            <Box
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 'var(--radius-3)',
-                background: 'var(--accent-a3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <MessageText style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
-            </Box>
-            <Box>
-              <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
-                SMS
-              </Text>
-              <Text size="1" style={{ color: 'var(--content-muted)' }}>
-                {categories.filter((c) => c.sms).length} of {categories.length} enabled
-              </Text>
-            </Box>
-          </Flex>
-          <Flex gap="2">
-            <Button
-              variant="ghost"
-              size="1"
-              onClick={() => handleEnableAll('sms')}
-              style={{ color: 'var(--brand-500)', flex: 1 }}
-            >
-              Enable All
-            </Button>
-            <Button
-              variant="ghost"
-              size="1"
-              onClick={() => handleDisableAll('sms')}
-              style={{ color: 'var(--content-muted)', flex: 1 }}
-            >
-              Disable All
-            </Button>
-          </Flex>
-        </Card>
-      </Box>
-
-      {/* Notification Categories */}
-      <Card
-        style={{
-          padding: '24px',
-          background: 'var(--surface-elevated)',
-          border: '1px solid var(--surface-border)',
-          borderRadius: 'var(--card-radius-bento)',
-        }}
-      >
-        <Flex align="center" gap="2" mb="4">
-          <Bell style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />
-          <Text size="3" weight="medium" style={{ color: 'var(--content-primary)' }}>
-            Notification Categories
+          <Text as="p" size="2" style={{ color: 'var(--status-danger-11)' }}>
+            {saveError}
           </Text>
-        </Flex>
+        </Box>
+      )}
 
-        {/* Header Row */}
-        <Flex
-          justify="between"
-          align="center"
-          py="3"
-          style={{
-            borderBottom: '2px solid var(--surface-border)',
-          }}
+      {savedAt && !saveError && (
+        <Text
+          as="p"
+          size="1"
+          mb="4"
+          style={{ color: 'var(--status-success-11)' }}
+          data-testid="notifications-saved"
         >
-          <Text size="2" weight="medium" style={{ color: 'var(--content-secondary)', flex: 1, maxWidth: '400px' }}>
-            Category
-          </Text>
-          <Flex gap="6" align="center">
-            <Flex direction="column" align="center" style={{ width: 50 }}>
-              <Mail style={{ width: 16, height: 16, color: 'var(--status-info-11)' }} />
-              <Text size="1" style={{ color: 'var(--content-muted)' }}>Email</Text>
-            </Flex>
-            <Flex direction="column" align="center" style={{ width: 50 }}>
-              <Bell style={{ width: 16, height: 16, color: 'var(--accent-11)' }} />
-              <Text size="1" style={{ color: 'var(--content-muted)' }}>Push</Text>
-            </Flex>
-            <Flex direction="column" align="center" style={{ width: 50 }}>
-              <MessageText style={{ width: 16, height: 16, color: 'var(--status-info-11)' }} />
-              <Text size="1" style={{ color: 'var(--content-muted)' }}>SMS</Text>
-            </Flex>
-          </Flex>
+          Saved at {savedAt}.
+        </Text>
+      )}
+
+      {/* Preferences are never rendered from hardcoded defaults while loading.
+          Showing "marketing: off" before the real value arrives invites the
+          user to save a setting they never chose. */}
+      {loading && !preferences ? (
+        <Flex direction="column" gap="4" data-testid="notifications-loading">
+          <Skeleton style={{ height: 280, borderRadius: 'var(--card-radius-bento)' }} />
+          <Skeleton style={{ height: 340, borderRadius: 'var(--card-radius-bento)' }} />
         </Flex>
+      ) : (
+        <Flex direction="column" gap="5">
+          <Card className="ds-card-bento" style={{ padding: 'var(--space-5)' }}>
+            <Text as="p" className="viz-title" mb="1">
+              How we reach you
+            </Text>
+            <Text as="p" size="1" mb="3" style={{ color: 'var(--gray-11)' }}>
+              Turning a channel off silences it for every category below.
+            </Text>
+            {CHANNELS.map((field) => (
+              <PreferenceRow
+                key={field.key}
+                field={field}
+                checked={valueOf(field.key)}
+                onChange={handleChange}
+              />
+            ))}
+          </Card>
 
-        {/* Category Rows */}
-        {categories.map((category) => (
-          <NotificationRow
-            key={category.id}
-            category={category}
-            onChange={handleChange}
-          />
-        ))}
-      </Card>
-
-      {/* SMS Notice */}
-      <Card
-        mt="4"
-        style={{
-          padding: '16px 20px',
-          background: 'var(--accent-a3)',
-          border: '1px solid var(--accent-a5)',
-          borderRadius: 'var(--card-radius)',
-        }}
-      >
-        <Flex align="center" gap="3">
-          <SmartphoneDevice style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
-          <Text size="2" style={{ color: 'var(--content-secondary)' }}>
-            SMS notifications are sent to your registered phone number. Standard message rates may apply.
-          </Text>
+          <Card className="ds-card-bento" style={{ padding: 'var(--space-5)' }}>
+            <Text as="p" className="viz-title" mb="1">
+              What we tell you about
+            </Text>
+            <Text as="p" size="1" mb="3" style={{ color: 'var(--gray-11)' }}>
+              These apply across every channel you have switched on.
+            </Text>
+            {CATEGORIES.map((field) => (
+              <PreferenceRow
+                key={field.key}
+                field={field}
+                checked={valueOf(field.key)}
+                onChange={handleChange}
+              />
+            ))}
+          </Card>
         </Flex>
-      </Card>
-
-      <style jsx global>{`
-        @media (max-width: 640px) {
-          .hidden-mobile {
-            display: none !important;
-          }
-        }
-      `}</style>
+      )}
     </Box>
   );
 }

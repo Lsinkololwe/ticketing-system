@@ -1,7 +1,7 @@
 package com.pml.booking.repository;
 
 import com.pml.booking.domain.enums.ChargebackReason;
-import com.pml.booking.domain.enums.ChargebackStatus;
+import com.pml.shared.constants.ChargebackStatus;
 import com.pml.booking.domain.enums.RecoveryStatus;
 import com.pml.booking.domain.model.ChargebackRecord;
 import org.springframework.data.domain.Pageable;
@@ -100,6 +100,17 @@ public interface ChargebackRecordRepository extends ReactiveMongoRepository<Char
      * @return Flux of chargebacks for this event
      */
     Flux<ChargebackRecord> findByEventId(String eventId);
+
+    /**
+     * Chargebacks against one event in the given states.
+     *
+     * <p>Used to answer "are there open disputes" for payout eligibility. It
+     * counts by STATE rather than by presence, because a resolved chargeback
+     * must not block a payout forever — an event that won a dispute two months
+     * ago is not still disputed.
+     */
+    Mono<Long> countByEventIdAndStatusIn(
+            String eventId, java.util.Collection<ChargebackStatus> statuses);
 
     // ========================================================================
     // ORGANIZER QUERIES

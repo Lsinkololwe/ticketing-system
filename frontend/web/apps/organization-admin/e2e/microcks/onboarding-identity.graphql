@@ -1,0 +1,124 @@
+# microcksId: Onboarding Identity API : 1.0
+#
+# The identity subgraph, narrowed to the operations the organizer onboarding
+# flow actually calls.
+#
+# This is deliberately NOT the full `backend/identity-service/.../schema.graphqls`:
+# that file is a 2,000-line Federation 2 subgraph carrying `@key`, `@shareable`,
+# `@tag` and `@auth` directives that a plain GraphQL parser rejects. Microcks
+# needs a parseable IDL, and the mock only has to satisfy the operations under
+# test — every field below is one the `OrganizationFields` fragment selects.
+#
+# Kept honest by `RequiredDocuments` on the backend and the generated types in
+# `libs/shared/src/types/graphql`: if a field here drifts from the real schema,
+# the app's own fragment stops matching and the specs fail loudly.
+
+schema {
+  query: Query
+  mutation: Mutation
+}
+
+type Query {
+  "The caller's own organization, or null if they have not applied."
+  myOwnedOrganization: Organization
+}
+
+type Mutation {
+  applyToBeOrganizer(input: OrganizationApplicationInput!): Organization!
+  updateOrganizationApplication(id: ID!, input: OrganizationApplicationInput!): Organization!
+  submitOrganizationForReview(id: ID!): Organization!
+}
+
+type Organization {
+  id: ID!
+  ownerId: ID
+  name: String!
+  slug: String
+  description: String
+  tagline: String
+  logoUrl: String
+  bannerUrl: String
+  website: String
+  socialLinks: SocialLinks
+
+  type: String
+  status: String!
+  kybStatus: String
+
+  businessEmail: String
+  businessPhone: String
+  businessAddress: BusinessAddress
+
+  businessType: String
+  businessRegistrationNumber: String
+  taxId: String
+
+  verified: Boolean
+  documentsVerified: Boolean
+  payoutAccountVerified: Boolean
+  verifiedAt: String
+
+  submittedAt: String
+  approvedAt: String
+  rejectionReason: String
+  reviewedAt: String
+
+  canCreateDraftEvents: Boolean
+  canPublishEvents: Boolean
+  canReceivePayouts: Boolean
+  canBeEdited: Boolean
+  canSubmitForReview: Boolean
+  isApproved: Boolean
+  isInApprovalWorkflow: Boolean
+
+  createdAt: String
+  updatedAt: String
+}
+
+type SocialLinks {
+  facebook: String
+  instagram: String
+  twitter: String
+  linkedin: String
+  youtube: String
+  tiktok: String
+}
+
+type BusinessAddress {
+  addressLine1: String
+  addressLine2: String
+  city: String
+  province: String
+  country: String
+  countryCode: String
+  postalCode: String
+  formattedAddress: String
+}
+
+input OrganizationApplicationInput {
+  name: String!
+  description: String
+  tagline: String
+  logoUrl: String
+  bannerUrl: String
+  website: String
+  type: String
+  businessType: String
+  taxId: String
+  businessRegistrationNumber: String
+  businessPhone: String
+  businessEmail: String
+  city: String
+  province: String
+  country: String
+  socialLinks: SocialLinksInput
+}
+
+input SocialLinksInput {
+  facebook: String
+  instagram: String
+  twitter: String
+  linkedin: String
+  youtube: String
+  tiktok: String
+}

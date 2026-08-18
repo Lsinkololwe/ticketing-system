@@ -34,14 +34,6 @@ public class EventEscrowAccountFieldResolver {
             : BigDecimal.ZERO;
     }
 
-    /**
-     * Resolve EventEscrowAccount.lockReason - reason for account lock.
-     */
-    @DgsData(parentType = "EventEscrowAccount", field = "lockReason")
-    public String lockReason(DgsDataFetchingEnvironment dfe) {
-        EventEscrowAccount account = dfe.getSource();
-        return account.getLockReason();
-    }
 
     /**
      * Resolve EventEscrowAccount.closedAt - closure timestamp.
@@ -52,12 +44,4 @@ public class EventEscrowAccountFieldResolver {
         return account.getClosedAt();
     }
 
-    /**
-     * Resolve EventEscrowAccount.closedReason - reason for closure.
-     */
-    @DgsData(parentType = "EventEscrowAccount", field = "closedReason")
-    public String closedReason(DgsDataFetchingEnvironment dfe) {
-        EventEscrowAccount account = dfe.getSource();
-        return account.getClosedReason();
-    }
 }

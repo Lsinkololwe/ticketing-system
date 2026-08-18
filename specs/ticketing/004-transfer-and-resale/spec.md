@@ -173,8 +173,8 @@ take commission, all through the ledger.
 
 **Acceptance**
 - [ ] The buyer pays through [ET-PAY-001](../../payment/001-payment-intents-and-providers/) with an idempotency key
-- [ ] Commission is computed on the resale price by [ET-FIN-002](../002-commission/) and is `PENDING` like any sale
-- [ ] The seller's net proceeds credit a seller balance, payable through [ET-FIN-003](../003-payouts-and-settlement/)
+- [ ] Commission is computed on the resale price by [ET-FIN-002](../../finance/002-commission/) and is `PENDING` like any sale
+- [ ] The seller's net proceeds credit a seller balance, payable through [ET-FIN-003](../../finance/003-payouts-and-settlement/)
 - [ ] The entries balance: `debit 1010 resalePrice` / `credit 2040 Seller Proceeds net` / `credit 2020 Pending Commission`
 - [ ] `2040 Seller Proceeds` is added to the chart of accounts by this spec
 - [ ] Ownership moves only when the payment succeeds; a failed payment leaves the listing live
@@ -262,7 +262,7 @@ claim** rotates the signature.
 ### Resale accounting
 
 `2040 Seller Proceeds` — a liability, credit-normal — is added to
-[ET-FIN-001](../001-escrow-and-ledger/)'s chart by this spec.
+[ET-FIN-001](../../finance/001-escrow-and-ledger/)'s chart by this spec.
 
 | Account | Direction | Amount |
 |---|---|---|
@@ -271,7 +271,7 @@ claim** rotates the signature.
 | `2020` Pending Commission | credit | commissionAmount |
 
 The seller's proceeds are payable through
-[ET-FIN-003](../003-payouts-and-settlement/) against `2040` rather than an event escrow —
+[ET-FIN-003](../../finance/003-payouts-and-settlement/) against `2040` rather than an event escrow —
 the seller is not the organizer and their money is not the event's.
 
 ### Refusals

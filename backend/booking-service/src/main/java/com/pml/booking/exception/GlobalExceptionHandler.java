@@ -56,7 +56,7 @@ public class GlobalExceptionHandler {
         return Mono.just(ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
-                        "TICKET_ALREADY_USED",
+                        "TICKET_ALREADY_VALIDATED",
                         ex.getMessage(),
                         HttpStatus.CONFLICT.value()
                 )));

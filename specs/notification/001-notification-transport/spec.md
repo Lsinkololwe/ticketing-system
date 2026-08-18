@@ -131,7 +131,7 @@ operation that requested it.
 - [ ] No `@Transactional` method calls the notification service
 - [ ] A listener never rethrows a provider failure ([ET-PLT-003](../../_platform/003-event-contract/) R6)
 - [ ] Every messaging provider stopped, a purchase, a payout and a cancellation all still complete — asserted by three tests
-- [ ] `./scripts/spec-lint.sh --events` exits 0
+- [ ] No `StreamBridge.send` appears inside a `@Transactional` method, no module boundary uses a bare `@EventListener`, and no `@TransactionalEventListener(AFTER_COMMIT)` rethrows a delivery failure
 - [ ] The notification queue depth is a metric and alerts
 
 ### ET-NTF-001-R5 · Delivery follows a per-category fallback chain
@@ -273,7 +273,7 @@ public interface NotificationChannelPort {
 
 ```
 1  a business fact commits
-2  an @ApplicationModuleListener publishes NotificationRequestedEvent
+2  an @TransactionalEventListener(AFTER_COMMIT) publishes NotificationRequestedEvent
        { userId, category, templateKey, parameters, deduplicationKey }
 3  the notification service:
        dedup on deduplicationKey            → drop

@@ -152,6 +152,56 @@
 }
 
 /* ===========================================================================
+   2b. CONTRAST CORRECTIONS + DATA-VIZ TOKEN LAYER
+   ---------------------------------------------------------------------------
+   The imported design system fails WCAG 2.1 contrast in five measured places.
+   Every value below was computed, not eyeballed; the measurements and the
+   reasoning live in docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md §A4.
+
+     token / pair                     imported   corrected
+     --color-money-text     (light)   3.88:1  →  4.68:1
+     --status-warning-11    (light)   3.48:1  →  4.71:1
+     --status-success-11    (light)   4.13:1  →  4.74:1
+     micro-label            (dark)    3.97:1  →  8.79:1   (gray-9 → gray-11)
+     bar mark vs its track            2.32:1  →  4.68:1   (--viz-* layer)
+
+   These are ADDITIVE role-token overrides. The Radix scales themselves are
+   untouched, so the admin and ticketing apps are unaffected — the shared
+   token layer keeps resolving exactly as before for them.
+
+   WHY A SEPARATE --viz-* LAYER: the -9 steps are tuned for solid UI fills
+   against a page background, not for data marks read against a bar track. The
+   design's own dashboard paints teal-9 on gray-5 (2.3:1) and separates focal
+   from non-focal bars by hue alone at 1.36:1 — invisible in grayscale and to a
+   deuteranope. The viz layer restates the same brand teal at steps that clear
+   the 3:1 adjacent-mark threshold in both appearances.
+   =========================================================================== */
+:root,
+.light,
+.light-theme {
+  /* Text roles — darkened just enough to clear 4.5:1 on --color-panel-solid. */
+  --color-money-text: hsl(160 50% 34%); /* 4.68:1 */
+  --status-warning-11: hsl(40 90% 32%); /* 4.71:1 */
+  --status-success-11: hsl(150 50% 34%); /* 4.74:1 */
+
+  /* Data-viz marks. */
+  --viz-track: var(--gray-3); /* bar track — structure, deliberately faint */
+  --viz-accent: hsl(174 66% 28%); /* the mark the kernel is about — 4.68:1 vs track */
+  --viz-muted: var(--gray-10); /* reference marks — 4.76:1 vs track */
+  --viz-series: var(--gray-5); /* non-focal columns — 3.75:1 vs --viz-accent */
+  --viz-label: var(--gray-11); /* 6.57:1 */
+}
+
+.dark,
+.dark-theme {
+  --viz-track: var(--gray-5);
+  --viz-accent: hsl(174 52% 57%); /* 6.65:1 vs track */
+  --viz-muted: var(--gray-10); /* 3.91:1 vs track */
+  --viz-series: var(--gray-7); /* 4.55:1 vs --viz-accent */
+  --viz-label: var(--gray-11); /* 8.79:1 */
+}
+
+/* ===========================================================================
    3. MARKETING TOKEN LAYER
    The org-admin public site is the ONE sanctioned exception to the flat,
    light dashboard language: a premium near-black canvas with slow ambient
@@ -472,6 +522,255 @@ html {
     font-size: var(--text-1-size);
     font-weight: var(--weight-medium);
     color: var(--gray-10);
+  }
+
+  /* --- Data-viz primitives ---------------------------------------------
+     Every data mark on the dashboard is built from these. Spec:
+     docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md
+
+     Rules encoded here, not left to call sites:
+       - marks read against --viz-track at >=3:1 in both appearances
+       - no gradient, shadow or border on any mark (it would encode nothing
+         and distort perceived length)
+       - column heights are percentages of a ZERO baseline, always
+       - every mark is direct-labelled, so nothing depends on hue
+     ---------------------------------------------------------------------- */
+
+  /* Micro-label that titles a tile. The SMALLEST type on the tile — the
+     headline figure is the largest. */
+  .viz-title {
+    font-size: var(--label-size);
+    font-weight: var(--label-weight);
+    letter-spacing: var(--label-tracking);
+    text-transform: uppercase;
+    color: var(--viz-label);
+    display: block;
+  }
+
+  /* Headline figure. Fira Code + tabular figures so digits never jitter. */
+  .viz-figure {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    line-height: 1;
+  }
+
+  .viz-figure-unit {
+    font-size: var(--text-5-size);
+    font-weight: var(--weight-medium);
+    color: var(--gray-11);
+  }
+
+  .viz-figure-core {
+    font-family: var(--font-mono);
+    font-size: var(--heading-7-size);
+    font-weight: var(--weight-bold);
+    letter-spacing: -0.015em;
+    color: var(--gray-12);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .viz-figure-delta {
+    font-family: var(--font-mono);
+    font-size: var(--text-1-size);
+    font-weight: var(--weight-bold);
+    font-variant-numeric: tabular-nums;
+    margin-left: var(--space-1);
+  }
+
+  .viz-figure-delta[data-trend='up'] {
+    color: var(--status-success-11);
+  }
+
+  .viz-figure-delta[data-trend='down'] {
+    color: var(--status-danger-11);
+  }
+
+  .viz-figure-delta[data-trend='neutral'] {
+    color: var(--gray-11);
+  }
+
+  /* --- Column series (B1) — vertical bars, zero baseline ---------------- */
+  .viz-columns {
+    display: grid;
+    align-items: end;
+    gap: var(--space-3);
+    height: 110px;
+    margin-top: var(--space-4);
+    border-bottom: 1px solid var(--gray-a6);
+  }
+
+  .viz-column-slot {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+
+  /* The bar itself. Height is the only thing set at the call site, because it
+     is the encoded value. */
+  .viz-column {
+    background: var(--viz-series);
+    border-radius: var(--radius-1) var(--radius-1) 0 0;
+    min-height: 2px; /* a real but tiny value must stay visible */
+  }
+
+  .viz-column[data-focal='true'] {
+    background: var(--viz-accent);
+  }
+
+  .viz-column-labels {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-1);
+  }
+
+  .viz-column-label {
+    font-family: var(--font-mono);
+    font-size: var(--label-size);
+    text-align: center;
+    color: var(--gray-11);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .viz-column-label[data-focal='true'] {
+    color: var(--viz-accent);
+    font-weight: var(--weight-bold);
+  }
+
+  /* --- Share bars (B3 / B4 / B5) — horizontal, common left baseline ----- */
+  .viz-share-row {
+    display: grid;
+    grid-template-columns: minmax(52px, max-content) minmax(0, 1fr) minmax(34px, max-content);
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .viz-share-name {
+    font-size: var(--text-1-size);
+    color: var(--gray-11);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .viz-share-track {
+    height: 10px;
+    border-radius: var(--radius-1);
+    background: var(--viz-track);
+    overflow: hidden;
+  }
+
+  .viz-share-fill {
+    height: 100%;
+    border-radius: var(--radius-1);
+    background: var(--viz-accent);
+  }
+
+  /* Reference rows — used only where the tile genuinely has a non-focal
+     series. Never used to fake a categorical encoding. */
+  .viz-share-fill[data-role='reference'] {
+    background: var(--viz-muted);
+  }
+
+  .viz-share-value {
+    font-family: var(--font-mono);
+    font-size: var(--text-1-size);
+    color: var(--gray-11);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- Bullet meter (B2) — elapsed vs remaining on one baseline --------- */
+  .viz-meter {
+    display: flex;
+    height: 18px;
+    border-radius: var(--radius-1);
+    overflow: hidden;
+    background: var(--viz-track);
+  }
+
+  .viz-meter-segment {
+    display: flex;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: var(--label-size);
+    font-weight: var(--weight-semibold);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .viz-meter-segment[data-role='elapsed'] {
+    background: var(--viz-accent);
+    color: var(--accent-contrast);
+    padding-left: var(--space-2);
+  }
+
+  .viz-meter-segment[data-role='remaining'] {
+    justify-content: flex-end;
+    color: var(--gray-11);
+    padding-right: var(--space-2);
+  }
+
+  /* --- Annotation (the finding, in words, at the evidence) -------------- */
+  .viz-insight {
+    font-size: var(--text-1-size);
+    line-height: 1.55;
+    color: var(--gray-11);
+    border-left: 2px solid var(--viz-accent);
+    padding-left: var(--space-3);
+    margin-top: var(--space-4);
+  }
+
+  .viz-insight strong {
+    color: var(--viz-accent);
+    font-weight: var(--weight-bold);
+  }
+
+  /* Provenance — source, range, units. Small and gray is correct. */
+  .viz-note {
+    font-size: var(--text-1-size);
+    line-height: 1.5;
+    color: var(--gray-11);
+    margin-top: var(--space-2);
+  }
+
+  /* --- Bento bands ------------------------------------------------------ */
+  .viz-band {
+    display: grid;
+    gap: var(--bento-gap-sm);
+    margin-bottom: var(--bento-gap-sm);
+  }
+
+  /* Band 1 is genuinely asymmetric: trend gets twice the width of cash. */
+  .viz-band-split {
+    grid-template-columns: 2fr 1fr;
+  }
+
+  .viz-band-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .viz-band-thirds {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .viz-band-actions {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .viz-band-panels {
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: var(--bento-gap-md);
+  }
+
+  @media (max-width: 900px) {
+    .viz-band-split,
+    .viz-band-thirds {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   /* --- Surfaces --------------------------------------------------------- */

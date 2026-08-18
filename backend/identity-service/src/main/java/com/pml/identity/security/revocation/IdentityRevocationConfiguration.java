@@ -65,10 +65,6 @@ public class IdentityRevocationConfiguration {
      * deterministic: the auto-configuration's {@code @ConditionalOnBean(DurableRevocationStore)}
      * check needs this class's contributions to be present first.
      */
-    @Bean
-    public Clock revocationClock() {
-        return Clock.systemUTC();
-    }
 
     @Bean
     public RevocationMetrics revocationMetrics(MeterRegistry meterRegistry) {

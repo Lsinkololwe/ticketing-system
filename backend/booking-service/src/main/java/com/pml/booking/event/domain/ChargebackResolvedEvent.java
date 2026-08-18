@@ -1,7 +1,7 @@
 package com.pml.booking.event.domain;
 
 import com.pml.booking.domain.enums.ChargebackFundSource;
-import com.pml.booking.domain.enums.ChargebackStatus;
+import com.pml.shared.constants.ChargebackStatus;
 import com.pml.booking.domain.enums.RecoveryStatus;
 import lombok.Builder;
 import lombok.Value;

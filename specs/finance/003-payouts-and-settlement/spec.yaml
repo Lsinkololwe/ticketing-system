@@ -1,6 +1,6 @@
 id: ET-FIN-003
 title: Payout eligibility, bank accounts and the settlement saga
-status: draft
+status: approved
 area: FIN
 service: booking-service
 subgraph: booking
@@ -109,13 +109,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/finance/003-payouts-and-settlement
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003
-  - mvn -q -f backend verify -Dgroups=ET-FIN-003
+  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-FIN-003 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

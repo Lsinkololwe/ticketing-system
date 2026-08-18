@@ -1,5 +1,6 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.constants.EscrowStatus;
 import com.pml.booking.domain.enums.JournalEntryStatus;
 import com.pml.booking.domain.model.EventEscrowAccount;
 import com.pml.booking.domain.model.JournalEntry;
@@ -153,13 +154,13 @@ public class FinancialReportServiceImpl implements FinancialReportService {
                 .defaultIfEmpty(BigDecimal.ZERO);
 
         Mono<BigDecimal> pendingPayoutsMono = payoutRequestRepository.findByStatus(PayoutRequestStatus.PENDING)
-                .map(p -> p.getNetPayoutAmount() != null ? p.getNetPayoutAmount() : BigDecimal.ZERO)
+                .map(p -> p.getSettledAmount() != null ? p.getSettledAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Fetch escrow balance
         Mono<BigDecimal> escrowBalanceMono = escrowAccountRepository.findAll()
-                .filter(e -> e.getStatus() == EventEscrowAccount.EscrowStatus.ACTIVE ||
-                             e.getStatus() == EventEscrowAccount.EscrowStatus.LOCKED)
+                .filter(e -> e.getStatus() == EscrowStatus.ACTIVE ||
+                             e.getStatus() == EscrowStatus.HOLD)
                 .map(e -> e.getCurrentBalance() != null ? e.getCurrentBalance() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 

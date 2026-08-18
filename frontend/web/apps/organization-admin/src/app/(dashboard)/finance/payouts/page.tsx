@@ -40,6 +40,15 @@ import {
   useMyOrganization,
   canRequestPayouts,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import {
+  useMyPayouts,
+  useMyBankAccounts,
+  useMyFinanceOverview,
+  useCreatePayoutRequest,
+  type PayoutRowVM,
+  type BankAccountVM,
+} from '@pml.tickets/shared/api/organization-admin/modules/finance';
+import { useMyPayoutSources } from '@pml.tickets/shared/api/organization-admin/modules/dashboard';
 
 // =============================================================================
 // TYPES
@@ -68,71 +77,67 @@ interface BankAccount {
 }
 
 // =============================================================================
-// MOCK DATA
+// ADAPTERS — backend view models → this page's presentation shape
+//
+// There is no fixture data in this app. Everything below maps a real payload
+// from booking-service onto the shape this screen renders. When a field the
+// screen wants does not exist on the backend, it stays undefined and the UI
+// omits it — it is never filled in with a plausible-looking default.
 // =============================================================================
 
-const mockPayouts: PayoutRequest[] = [
-  {
-    id: '1',
-    amount: 5000,
-    status: 'processing',
-    requestedAt: '2025-05-18T10:00:00',
-    bankAccount: { bankName: 'Stanbic Bank', accountNumber: '****4521' },
-    notes: 'Monthly payout for April sales',
-  },
-  {
-    id: '2',
-    amount: 3500,
-    status: 'pending',
-    requestedAt: '2025-05-17T15:30:00',
-    bankAccount: { bankName: 'Zanaco', accountNumber: '****7832' },
-  },
-  {
-    id: '3',
-    amount: 8200,
-    status: 'completed',
-    requestedAt: '2025-05-10T09:00:00',
-    completedAt: '2025-05-12T14:30:00',
-    bankAccount: { bankName: 'Stanbic Bank', accountNumber: '****4521' },
-    reference: 'PAY-2025-0510-8200',
-  },
-  {
-    id: '4',
-    amount: 2100,
-    status: 'completed',
-    requestedAt: '2025-05-01T11:20:00',
-    completedAt: '2025-05-03T16:45:00',
-    bankAccount: { bankName: 'Stanbic Bank', accountNumber: '****4521' },
-    reference: 'PAY-2025-0501-2100',
-  },
-  {
-    id: '5',
-    amount: 1500,
-    status: 'rejected',
-    requestedAt: '2025-04-28T08:15:00',
-    bankAccount: { bankName: 'Invalid Bank', accountNumber: '****0000' },
-    notes: 'Rejected due to invalid bank details',
-  },
-];
+/**
+ * Backend payout status → the four states this screen renders.
+ *
+ * The backend enum is wider than the UI's. Mapping is explicit rather than
+ * lowercasing the enum, so a new backend status shows up as a compile error
+ * here instead of silently rendering as an unstyled badge.
+ */
+const PAYOUT_STATUS: Record<string, PayoutRequest['status']> = {
+  PENDING: 'pending',
+  APPROVED: 'processing',
+  PROCESSING: 'processing',
+  COMPLETED: 'completed',
+  REJECTED: 'rejected',
+  CANCELLED: 'rejected',
+  FAILED: 'rejected',
+};
 
-const mockBankAccounts: BankAccount[] = [
-  {
-    id: '1',
-    bankName: 'Stanbic Bank',
-    accountNumber: '1234567890004521',
-    accountHolder: 'Event Organizers Ltd',
-    isDefault: true,
-  },
-  {
-    id: '2',
-    bankName: 'Zanaco',
-    accountNumber: '9876543210007832',
-    accountHolder: 'Event Organizers Ltd',
-    isDefault: false,
-  },
-];
+/** Last four digits only. Never render a full account number in a list. */
+function maskAccount(accountNumber?: string | null): string {
+  if (!accountNumber) return '';
+  return `****${accountNumber.slice(-4)}`;
+}
 
-const availableBalance = 12450.00;
+function toPayoutRequest(row: PayoutRowVM): PayoutRequest {
+  return {
+    id: row.id,
+    // settledAmount is what actually lands in the organizer's account —
+    // requestedAmount is before fees, and showing it here would overstate
+    // what they receive. Named netPayoutAmount until ET-FIN-003 conformance;
+    // the spec's name is better because the figure is recomputed at approval
+    // rather than fixed at request time.
+    amount: Number(row.settledAmount ?? row.requestedAmount ?? 0),
+    status: PAYOUT_STATUS[(row.status ?? '').toUpperCase()] ?? 'pending',
+    requestedAt: row.requestedAt,
+    completedAt: row.processedAt ?? undefined,
+    bankAccount: {
+      bankName: row.bankName ?? 'Unknown bank',
+      accountNumber: maskAccount(row.accountNumber),
+    },
+    reference: row.requestId ?? undefined,
+    notes: row.notes ?? row.rejectionReason ?? undefined,
+  };
+}
+
+function toBankAccount(row: BankAccountVM): BankAccount {
+  return {
+    id: row.id,
+    bankName: row.bankName,
+    accountNumber: row.accountNumber,
+    accountHolder: row.accountHolderName,
+    isDefault: row.isDefault,
+  };
+}
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -410,14 +415,16 @@ const PAYOUT_DESTINATIONS = [
 type PayoutDestination = (typeof PAYOUT_DESTINATIONS)[number]['id'];
 
 function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, onSubmit }: NewPayoutDialogProps) {
-  const [amount, setAmount] = useState('');
+  // No amount state: the request is always the full available balance.
   const [destination, setDestination] = useState<PayoutDestination>('bank');
   const [selectedBank, setSelectedBank] = useState(bankAccounts.find((b) => b.isDefault)?.id || '');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const amountNum = parseFloat(amount) || 0;
-  const isValidAmount = amountNum > 0 && amountNum <= availableBalance;
+  const amountNum = availableBalance;
+  // There is still a validity condition — an empty escrow cannot be withdrawn —
+  // it is just no longer about what the organizer typed.
+  const isValidAmount = availableBalance > 0;
 
   const handleSubmit = async () => {
     if (!isValidAmount || !selectedBank) return;
@@ -426,7 +433,6 @@ function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, o
     try {
       await onSubmit(amountNum, selectedBank, notes);
       onOpenChange(false);
-      setAmount('');
       setNotes('');
     } finally {
       setIsSubmitting(false);
@@ -467,37 +473,34 @@ function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, o
             </Flex>
           </Box>
 
-          {/* Amount */}
+          {/* Amount — fixed, not chosen.
+              ET-FIN-003 does not support partial payouts: a request is for the
+              whole available balance or it is refused. This used to be a free
+              number field, so every amount except the exact balance produced a
+              request the server rejected — after the organizer had filled in
+              the rest of the form. Showing the figure and explaining it is
+              honest; asking for a number and ignoring the answer is not. */}
           <Box>
             <Text as="label" className="ds-label" mb="2" style={{ display: 'block' }}>
-              Amount (K)
+              Amount
             </Text>
-            <TextField.Root
+            <Box
+              p="3"
               data-testid="payout-amount"
-              size="3"
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              min={0}
-              max={availableBalance}
-              aria-invalid={Boolean(amount) && !isValidAmount}
-              className="ds-amount"
               style={{
-                border: amount && !isValidAmount ? '1px solid var(--status-danger-9)' : undefined,
+                background: 'var(--gray-a2)',
+                border: '1px solid var(--gray-a5)',
+                borderRadius: 'var(--card-radius)',
               }}
-            />
-            {amount && !isValidAmount && (
-              <Text
-                role="alert"
-                size="1"
-                style={{ color: 'var(--status-danger-11)', display: 'block', marginTop: 4 }}
-              >
-                {amountNum > availableBalance
-                  ? `That is more than your available balance of ${formatCurrency(availableBalance)}.`
-                  : 'Enter an amount greater than zero.'}
+            >
+              <Text size="5" weight="bold" className="ds-amount">
+                {formatCurrency(availableBalance)}
               </Text>
-            )}
+            </Box>
+            <Text size="1" style={{ color: 'var(--gray-10)', display: 'block', marginTop: 4 }}>
+              A payout releases the full balance for this event. Partial
+              withdrawals are not available.
+            </Text>
           </Box>
 
           {/* Destination family — mobile money is always on screen. */}
@@ -639,7 +642,7 @@ function NewPayoutDialog({ open, onOpenChange, bankAccounts, availableBalance, o
                   : 'not-allowed',
             }}
           >
-            {isSubmitting ? 'Submitting...' : `Request ${amount ? formatCurrency(amountNum) : 'Payout'}`}
+            {isSubmitting ? 'Submitting...' : `Request ${formatCurrency(amountNum)}`}
           </Button>
         </Flex>
       </Dialog.Content>
@@ -662,7 +665,28 @@ export default function PayoutsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedPayout, setSelectedPayout] = useState<PayoutRequest | null>(null);
   const [showNewPayoutDialog, setShowNewPayoutDialog] = useState(searchParams.get('action') === 'new');
-  const [payouts, setPayouts] = useState(mockPayouts);
+
+  // Idempotency key for the payout the user is currently composing.
+  //
+  // Minted ONCE when the dialog opens and reused for every submit attempt, so a
+  // double-click or a retry after a dropped connection returns the original
+  // payout instead of creating a second one. Minting it per attempt would make
+  // the server-side guarantee useless — every retry would look like a new
+  // intent. Cleared on success so the next payout gets a fresh key.
+  const [payoutKey, setPayoutKey] = useState<string>(() => crypto.randomUUID());
+
+  // Real data. `organizerId` gates the queries — the hooks skip until it is
+  // known rather than firing an unscoped request.
+  const organizerId = session?.user?.id ?? null;
+  const { payouts: payoutRows, refetch: refetchPayouts } = useMyPayouts(organizerId);
+  const { bankAccounts: bankAccountRows } = useMyBankAccounts(organizerId);
+  const { overview } = useMyFinanceOverview({ skip: !isAuthenticated });
+  const { sources: payoutSources } = useMyPayoutSources({ skip: !isAuthenticated });
+  const { createPayout } = useCreatePayoutRequest();
+
+  const payouts = useMemo(() => payoutRows.map(toPayoutRequest), [payoutRows]);
+  const bankAccounts = useMemo(() => bankAccountRows.map(toBankAccount), [bankAccountRows]);
+  const availableBalance = Number(overview?.availableBalance ?? 0);
 
   // Filter payouts
   const filteredPayouts = useMemo(() => {
@@ -685,24 +709,39 @@ export default function PayoutsPage() {
     return result;
   }, [payouts, statusFilter, searchQuery]);
 
-  const handleNewPayout = useCallback((amount: number, bankAccountId: string, notes: string) => {
-    const bank = mockBankAccounts.find((b) => b.id === bankAccountId);
-    if (!bank) return;
+  const handleNewPayout = useCallback(
+    async (amount: number, bankAccountId: string, notes: string) => {
+      if (!organizerId) return;
 
-    const newPayout: PayoutRequest = {
-      id: String(Date.now()),
-      amount,
-      status: 'pending',
-      requestedAt: new Date().toISOString(),
-      bankAccount: {
-        bankName: bank.bankName,
-        accountNumber: `****${bank.accountNumber.slice(-4)}`,
-      },
-      notes: notes || undefined,
-    };
+      // The request goes to the backend and the list is refetched. It is never
+      // optimistically prepended: a payout that the server rejected must not
+      // sit in the list looking pending.
+      // A payout is drawn against a specific escrow account. Take the oldest
+      // eligible one — myPayoutSources returns them oldest-first, so money that
+      // has been sitting longest is released first.
+      const source = payoutSources[0];
+      if (!source) return;
 
-    setPayouts((prev) => [newPayout, ...prev]);
-  }, []);
+      const result = await createPayout({
+        organizerId,
+        escrowAccountId: source.escrowAccountId,
+        bankAccountId,
+        requestedAmount: amount,
+        currency: source.currency,
+        payoutMethod: 'BANK_TRANSFER',
+        notes: notes || null,
+        idempotencyKey: payoutKey,
+      });
+
+      if (result.success) {
+        // New intent from here on, so a later payout is not deduplicated
+        // against this one.
+        setPayoutKey(crypto.randomUUID());
+        await refetchPayouts();
+      }
+    },
+    [organizerId, createPayout, payoutSources, refetchPayouts, payoutKey]
+  );
 
   // Stats
   const stats = useMemo(() => ({
@@ -903,7 +942,7 @@ export default function PayoutsPage() {
       <NewPayoutDialog
         open={showNewPayoutDialog}
         onOpenChange={setShowNewPayoutDialog}
-        bankAccounts={mockBankAccounts}
+        bankAccounts={bankAccounts}
         availableBalance={availableBalance}
         onSubmit={handleNewPayout}
       />

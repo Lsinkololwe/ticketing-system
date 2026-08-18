@@ -41,8 +41,10 @@ public interface TicketService {
 
     Mono<Ticket> validateTicket(String ticketNumber);
 
-    Mono<Ticket> useTicket(String ticketNumber);
+    /** ET-FIN-004 R3: {@code ISSUED} or {@code VALIDATED} → {@code REFUND_PENDING}. */
+    Mono<Ticket> requestRefund(String ticketNumber, String reason);
 
+    /** ET-FIN-004 R3: {@code REFUND_PENDING} → {@code REFUNDED}, once the provider confirms. */
     Mono<Ticket> refundTicket(String ticketNumber, String reason, String processedBy);
 
     Mono<Ticket> cancelTicket(String ticketNumber, String reason, String processedBy);

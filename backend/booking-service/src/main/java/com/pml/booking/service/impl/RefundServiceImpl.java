@@ -273,6 +273,16 @@ public class RefundServiceImpl implements RefundService {
     }
 
     @Override
+    public Mono<RefundRequest> findByRequestId(String requestId) {
+        return refundRequestRepository.findByRequestId(requestId);
+    }
+
+    @Override
+    public Flux<RefundRequest> findAll() {
+        return refundRequestRepository.findAll();
+    }
+
+    @Override
     public Flux<RefundRequest> findPendingRefunds() {
         return refundRequestRepository.findByStatus(RefundRequestStatus.PENDING);
     }
@@ -603,9 +613,8 @@ public class RefundServiceImpl implements RefundService {
     }
 
     private boolean isRefundable(Ticket ticket) {
-        return ticket.getStatus() == TicketStatus.PURCHASED ||
-                ticket.getStatus() == TicketStatus.CONFIRMED ||
-                ticket.getStatus() == TicketStatus.VALIDATED;
+        // ET-TKT-003 R8: a validated ticket is still refundable.
+        return ticket.getStatus().isRefundable();
     }
 
     private RefundRequest buildRefundRequest(Ticket ticket, BigDecimal amount, String reason, String requestedBy) {

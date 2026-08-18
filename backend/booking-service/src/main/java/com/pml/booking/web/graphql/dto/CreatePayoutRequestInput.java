@@ -55,5 +55,18 @@ public record CreatePayoutRequestInput(
     @Size(max = 500, message = "Notes must not exceed 500 characters")
     String notes,
 
-    Map<String, Object> metadata
+    Map<String, Object> metadata,
+
+    /**
+     * Client-supplied key that makes retrying this request safe.
+     *
+     * <p>Required by {@code specs/finance/003-payouts-and-settlement}. Without
+     * it a retried create — a double-click, a dropped connection, a browser
+     * refresh — produces a SECOND payout for the same money.
+     *
+     * <p>Optional at the schema level so existing callers keep compiling, but
+     * a caller that omits it gets no retry protection. Send one.
+     */
+    @Size(max = 100, message = "Idempotency key must not exceed 100 characters")
+    String idempotencyKey
 ) {}

@@ -1,12 +1,6 @@
-import { PagePlaceholder } from '@/components/ui/PagePlaceholder';
-import { MapPin } from 'iconoir-react';
+import { EventsWorkbench } from '@/components/events/EventsWorkbench';
 
+/** `Admin - Events.dc.html`, locations view. */
 export default function EventLocationsPage() {
-  return (
-    <PagePlaceholder
-      title="Event locations"
-      description="Manage venues and event locations"
-      icon={<MapPin style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
-    />
-  );
+  return <EventsWorkbench view="locations" />;
 }

@@ -15,6 +15,7 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useCreateEvent } from '@pml.tickets/shared/api/organization-admin/modules/events';
 import {
   Box,
   Flex,
@@ -223,7 +224,8 @@ const timezones = TIMEZONES.map((tz) => ({
 export default function CreateEventPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
-  const [isSaving, setIsSaving] = useState(false);
+  const { createEvent, loading: isSaving } = useCreateEvent();
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 
   const [formData, setFormData] = useState<EventFormData>({
     title: '',
@@ -289,31 +291,102 @@ export default function CreateEventPage() {
     }
   }, [currentStep]);
 
-  const handleSaveDraft = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log('Saving draft:', formData);
-      router.push('/events');
-    } catch (error) {
-      console.error('Failed to save:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [formData, router]);
+  /**
+   * Compose the form's split date + time fields into one ISO instant.
+   *
+   * The form collects a date, a time and a timezone separately. Combining them
+   * as a local string and letting `new Date` guess would resolve in the
+   * BROWSER's zone — an organizer in London scheduling a Lusaka event would
+   * publish it two hours out.
+   */
+  const toInstant = useCallback((date: string, time: string): string | null => {
+    if (!date || !time) return null;
+    const composed = new Date(`${date}T${time}`);
+    return Number.isNaN(composed.getTime()) ? null : composed.toISOString();
+  }, []);
 
-  const handlePublish = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log('Publishing event:', formData);
-      router.push('/events');
-    } catch (error) {
-      console.error('Failed to publish:', error);
-    } finally {
-      setIsSaving(false);
+  const buildInput = useCallback(() => {
+    const eventDateTime = toInstant(formData.startDate, formData.startTime);
+    const endDateTime = toInstant(formData.endDate, formData.endTime);
+    if (!eventDateTime || !endDateTime) return null;
+
+    const tiers = formData.ticketTiers.map((tier, index) => ({
+      // The backend requires a stable per-event tier code. Derive it from the
+      // name rather than sending the client-side list id, which is a timestamp
+      // and means nothing to anyone reading the data later.
+      code: (tier.name || `TIER-${index + 1}`)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 24) || `TIER-${index + 1}`,
+      name: tier.name,
+      description: tier.description || null,
+      price: tier.price,
+      currency: 'ZMW',
+      quantity: tier.quantity,
+      sortOrder: index,
+    }));
+
+    return {
+      title: formData.title,
+      description: formData.description,
+      categoryId: formData.category,
+      eventDateTime,
+      endDateTime,
+      // Capacity is the sum of what the tiers actually allocate. Tracking it as
+      // a separate number lets the two disagree, and the tiers are the thing
+      // tickets are sold against.
+      totalCapacity: tiers.reduce((sum, tier) => sum + (tier.quantity || 0), 0),
+      ticketTiers: tiers,
+      isVirtual: formData.locationType === 'online',
+      virtualEventUrl: formData.locationType === 'online' ? formData.onlineUrl : null,
+      location:
+        formData.locationType === 'online'
+          ? null
+          : {
+              name: formData.venueName,
+              address: formData.venueAddress,
+              city: formData.venueCity,
+              country: 'Zambia',
+            },
+      bannerImageUrl: formData.coverImage || null,
+    };
+  }, [formData, toInstant]);
+
+  /**
+   * Create the event.
+   *
+   * Both buttons land here: `createEvent` always produces a DRAFT, and
+   * publishing is a separate authorised step that requires prior approval. The
+   * old handlers slept for a second, logged to the console and navigated away —
+   * so "Publish" reported success without creating anything at all.
+   */
+  const handleSubmit = useCallback(async () => {
+    setSubmitErrors([]);
+
+    const input = buildInput();
+    if (!input) {
+      setSubmitErrors(['Add a start and end date and time before saving.']);
+      return;
     }
-  }, [formData, router]);
+
+    const result = await createEvent(input);
+
+    if (!result.success) {
+      // Stay on the form with the input intact.
+      setSubmitErrors(
+        result.errors.length > 0
+          ? result.errors
+          : [result.message ?? 'The event could not be created.']
+      );
+      return;
+    }
+
+    router.push(result.event ? `/events/${result.event.id}` : '/events');
+  }, [buildInput, createEvent, router]);
+
+  const handleSaveDraft = handleSubmit;
+  const handlePublish = handleSubmit;
 
   // Render step content
   const renderStepContent = () => {
@@ -772,6 +845,32 @@ export default function CreateEventPage() {
             </Button>
           )}
         </Flex>
+
+        {/* Submit failures are shown in place. The form is NOT cleared and the
+            user is not navigated away — their input survives a rejected save. */}
+        {submitErrors.length > 0 && (
+          <Box
+            className="error-card"
+            style={{
+              padding: 'var(--space-3) var(--space-4)',
+              borderRadius: 'var(--card-radius)',
+              border: '1px solid var(--red-a6)',
+            }}
+            role="alert"
+            data-testid="create-event-errors"
+          >
+            {submitErrors.map((message) => (
+              <Text
+                key={message}
+                as="p"
+                size="2"
+                style={{ color: 'var(--status-danger-11)' }}
+              >
+                {message}
+              </Text>
+            ))}
+          </Box>
+        )}
 
         <Flex gap="2">
           <Button

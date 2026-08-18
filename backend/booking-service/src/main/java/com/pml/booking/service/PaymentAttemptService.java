@@ -2,7 +2,7 @@ package com.pml.booking.service;
 
 import com.pml.booking.domain.enums.PaymentAttemptStatus;
 import com.pml.booking.domain.model.PaymentAttempt;
-import com.pml.booking.domain.model.Ticket;
+import com.pml.booking.domain.model.TicketReservation;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -59,7 +59,7 @@ public interface PaymentAttemptService {
      *   <li>Update status based on response (PENDING_APPROVAL or REJECTED)</li>
      * </ol>
      *
-     * @param ticket The ticket being purchased
+     * @param reservation The reservation being paid for
      * @param buyerId The ID of the user making the payment
      * @param payerPhone Phone number in E.164 format (+260...)
      * @param provider Mobile money provider code (MTN_MOMO_ZMB, AIRTEL_OAPI_ZMB)
@@ -69,7 +69,7 @@ public interface PaymentAttemptService {
      * @return The created payment attempt
      */
     Mono<PaymentAttempt> initiatePayment(
-            Ticket ticket,
+            TicketReservation reservation,
             String buyerId,
             String payerPhone,
             String provider,
@@ -248,26 +248,26 @@ public interface PaymentAttemptService {
     /**
      * Find all payment attempts for a ticket.
      *
-     * @param ticketId The ticket ID
+     * @param reservationId The ticket ID
      * @return All payment attempts, newest first
      */
-    Flux<PaymentAttempt> findByTicketId(String ticketId);
+    Flux<PaymentAttempt> findByReservationId(String reservationId);
 
     /**
      * Find the latest payment attempt for a ticket.
      *
-     * @param ticketId The ticket ID
+     * @param reservationId The ticket ID
      * @return Most recent attempt
      */
-    Mono<PaymentAttempt> findLatestByTicketId(String ticketId);
+    Mono<PaymentAttempt> findLatestByReservationId(String reservationId);
 
     /**
      * Find successful payment for a ticket.
      *
-     * @param ticketId The ticket ID
+     * @param reservationId The ticket ID
      * @return The successful payment (CONFIRMED or COMPLETED)
      */
-    Mono<PaymentAttempt> findSuccessfulByTicketId(String ticketId);
+    Mono<PaymentAttempt> findSuccessfulByReservationId(String reservationId);
 
     /**
      * Find all payment attempts by a buyer.
@@ -354,10 +354,10 @@ public interface PaymentAttemptService {
     /**
      * Check if a successful payment exists for a ticket.
      *
-     * @param ticketId The ticket ID
+     * @param reservationId The ticket ID
      * @return Whether a successful payment exists
      */
-    Mono<Boolean> hasSuccessfulPayment(String ticketId);
+    Mono<Boolean> hasSuccessfulPayment(String reservationId);
 
     // ========================================================================
     // RECONCILIATION SUPPORT

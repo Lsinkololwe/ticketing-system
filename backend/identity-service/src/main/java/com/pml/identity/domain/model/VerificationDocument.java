@@ -1,6 +1,6 @@
 package com.pml.identity.domain.model;
 
-import com.pml.identity.domain.enums.DocumentStatus;
+import com.pml.shared.constants.DocumentStatus;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

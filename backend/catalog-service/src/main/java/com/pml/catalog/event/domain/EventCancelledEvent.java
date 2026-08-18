@@ -1,6 +1,5 @@
 package com.pml.catalog.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -18,7 +17,7 @@ import java.time.LocalDateTime;
  * 3. Cancel pending commission (not earned yet)
  * 4. Process refunds via payment provider
  */
-@Externalized("event-events::EventCancelled")
+/** Cross-service wire name (ET-PLT-003 §4): event-events::EventCancelled — staged into the outbox. */
 public record EventCancelledEvent(
         String eventId,
         String organizerId,

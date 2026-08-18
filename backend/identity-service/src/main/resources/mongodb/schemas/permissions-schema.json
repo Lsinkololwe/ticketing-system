@@ -9,6 +9,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -19,11 +23,17 @@
         "description": "Unique permission name (e.g., MANAGE_EVENTS, VIEW_REPORTS)"
       },
       "description": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "category": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100,
         "description": "Permission category (e.g., EVENT_MANAGEMENT, USER_MANAGEMENT)"
       },
@@ -31,14 +41,23 @@
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "createdBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "updatedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "isActive": {

@@ -2,7 +2,7 @@ package com.pml.booking.domain.model;
 
 import com.pml.booking.domain.enums.ChargebackFundSource;
 import com.pml.booking.domain.enums.ChargebackReason;
-import com.pml.booking.domain.enums.ChargebackStatus;
+import com.pml.shared.constants.ChargebackStatus;
 import com.pml.booking.domain.enums.RecoveryStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -106,9 +106,11 @@ import java.util.List;
 @AllArgsConstructor
 @CompoundIndexes({
     @CompoundIndex(name = "status_received_idx", def = "{'status': 1, 'receivedAt': -1}"),
-    @CompoundIndex(name = "organizer_status_idx", def = "{'organizerId': 1, 'status': 1}"),
-    @CompoundIndex(name = "event_idx", def = "{'eventId': 1}"),
-    @CompoundIndex(name = "recovery_status_idx", def = "{'recoveryStatus': 1}")
+    @CompoundIndex(name = "organizer_status_idx", def = "{'organizerId': 1, 'status': 1}")
+    // recovery_status_idx removed: it was a one-key "compound" index over
+    // recoveryStatus, which already carries @Indexed. Same keys, two names —
+    // MongoDB refuses the second with error 85, and that refusal aborted the
+    // data migration runner before check-in-backfill could run.
 })
 public class ChargebackRecord {
 

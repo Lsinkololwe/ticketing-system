@@ -31,7 +31,8 @@ import {
   useEvent,
   useAuth,
   useReserveTickets,
-  useCompleteReservation,
+  usePayReservation,
+  useReservation,
   type TicketTier,
 } from '@pml.tickets/shared';
 import { ZambianMobileProvider } from '@/types/payment';
@@ -77,10 +78,10 @@ const TicketBookingPage: React.FC = () => {
   const { event, loading: eventLoading, error: eventError } = useEvent(id);
   const { reserveTickets, loading: reserving, error: reserveError } = useReserveTickets();
   const {
-    completeReservation,
+    payReservation,
     loading: completing,
     error: completeError,
-  } = useCompleteReservation();
+  } = usePayReservation();
 
   const [stage, setStage] = useState<CheckoutStage>('select');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -89,6 +90,49 @@ const TicketBookingPage: React.FC = () => {
   const [provider, setProvider] = useState<ZambianMobileProvider>(ZambianMobileProvider.MTN);
   const [phone, setPhone] = useState('');
   const [ticketCount, setTicketCount] = useState(0);
+  const [paymentFailure, setPaymentFailure] = useState<string | null>(null);
+
+  /**
+   * The idempotency key for this checkout (ET-TKT-001 R6).
+   *
+   * Generated once per attempt and held in a ref so a re-render or a retried
+   * tap reuses it. That is the whole mechanism: the retry that needs a key is
+   * the one where the response never arrived, so a key regenerated on retry
+   * would take a second block of inventory and charge the buyer twice.
+   */
+  const idempotencyKey = useRef<string>(crypto.randomUUID());
+
+  /**
+   * Watch the reservation while the prompt is out.
+   *
+   * Polling replaces the old flow's synchronous "give me my tickets" call,
+   * because there is nothing synchronous to wait for: the buyer has to approve
+   * a prompt on their handset, which takes between eight seconds and four
+   * minutes and fails about one time in six.
+   */
+  const { reservation: watched } = useReservation(
+    stage === 'prompt' ? reservationId : null,
+    stage === 'prompt' ? 2000 : 0
+  );
+
+  useEffect(() => {
+    if (stage !== 'prompt' || !watched) return;
+    if (watched.status === 'CONFIRMED') {
+      setTicketCount(totalTickets);
+      setStage('done');
+    } else if (['RELEASED', 'EXPIRED', 'FAILED'].includes(watched.status)) {
+      // The reservation resolved without becoming tickets. Say which, because
+      // "your payment failed" and "your hold ran out" need different next steps
+      // from the buyer.
+      setPaymentFailure(
+        watched.failureReason ??
+          (watched.status === 'EXPIRED'
+            ? 'The hold ran out before the payment came through.'
+            : 'The payment did not go through.')
+      );
+      setStage('pay');
+    }
+  }, [stage, watched]);
 
   const remaining = useCountdown(expiresAt);
   const holdExpired = stage !== 'select' && stage !== 'done' && expiresAt !== null && remaining === 0;
@@ -145,7 +189,12 @@ const TicketBookingPage: React.FC = () => {
 
   const handleReserve = async () => {
     if (!event || selections.length === 0) return;
-    const res = await reserveTickets({ eventId: event.id, selections, promoCode: null });
+    const res = await reserveTickets({
+      eventId: event.id,
+      selections,
+      promoCode: null,
+      idempotencyKey: idempotencyKey.current,
+    });
     const reservation = res.data?.reserveTickets;
     if (reservation) {
       setReservationId(reservation.id);
@@ -156,22 +205,22 @@ const TicketBookingPage: React.FC = () => {
 
   const handlePay = async () => {
     if (!reservationId || !phoneValid) return;
+    setPaymentFailure(null);
     setStage('prompt');
     try {
-      const res = await completeReservation({
-        reservationId,
-        paymentMethod: 'MOBILE_MONEY',
-        phoneNumber: toE164(phone),
-        promoCode: null,
-      });
-      const tickets = res.data?.completeReservation ?? [];
-      if (tickets.length > 0) {
-        setTicketCount(tickets.length);
-        setStage('done');
-      } else {
+      const res = await payReservation({ reservationId, phoneNumber: toE164(phone) });
+      const initiation = res.data?.payReservation;
+      if (!initiation?.success) {
+        // The provider would not even accept the request, so no prompt was
+        // sent and there is nothing to wait for.
+        setPaymentFailure(initiation?.message ?? 'Could not start the payment.');
         setStage('pay');
       }
+      // Otherwise stay on 'prompt'. The reservation poll above decides what
+      // happens next — this call cannot know, and pretending it does is what
+      // produced tickets for payments that never landed.
     } catch {
+      setPaymentFailure('Could not start the payment.');
       setStage('pay');
     }
   };
@@ -540,7 +589,26 @@ const TicketBookingPage: React.FC = () => {
               )}
             </Box>
 
-            {completeError && (
+            {/*
+              Two different failures, shown differently on purpose.
+
+              `paymentFailure` means the prompt WAS sent and the payment did not
+              complete — the buyer may have declined it, run out of balance, or
+              let the hold lapse. `completeError` means the request never reached
+              the provider at all. Collapsing them into one message would tell
+              someone whose payment was declined to "check the number".
+            */}
+            {paymentFailure && (
+              <Box mb="3">
+                <Toast
+                  variant="error"
+                  title="Payment didn't complete"
+                  description={paymentFailure}
+                />
+              </Box>
+            )}
+
+            {completeError && !paymentFailure && (
               <Box mb="3">
                 <Toast
                   variant="error"

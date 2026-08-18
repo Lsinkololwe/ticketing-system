@@ -629,6 +629,57 @@ export type ChartOfAccountsOffsetPage = {
   pagination: PaginationInfo;
 };
 
+export type CheckIn = {
+  __typename: 'CheckIn';
+  deviceId: Maybe<Scalars['String']['output']>;
+  eventId: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  method: ValidationMethod;
+  reason: Maybe<Scalars['String']['output']>;
+  recordedAt: Scalars['DateTime']['output'];
+  scannedAt: Maybe<Scalars['DateTime']['output']>;
+  scannedBy: Maybe<Scalars['String']['output']>;
+  ticketId: Scalars['ID']['output'];
+  ticketNumber: Maybe<Scalars['String']['output']>;
+};
+
+export type CheckInConflict = {
+  __typename: 'CheckInConflict';
+  detectedAt: Scalars['DateTime']['output'];
+  deviceId: Maybe<Scalars['String']['output']>;
+  eventId: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  method: ValidationMethod;
+  originalCheckInAt: Maybe<Scalars['DateTime']['output']>;
+  presentedCode: Maybe<Scalars['String']['output']>;
+  reviewNote: Maybe<Scalars['String']['output']>;
+  reviewedAt: Maybe<Scalars['DateTime']['output']>;
+  reviewedBy: Maybe<Scalars['String']['output']>;
+  scannedAt: Maybe<Scalars['DateTime']['output']>;
+  scannedBy: Maybe<Scalars['String']['output']>;
+  status: CheckInConflictStatus;
+  ticketId: Maybe<Scalars['ID']['output']>;
+  type: CheckInConflictType;
+};
+
+export type CheckInConflictPage = {
+  __typename: 'CheckInConflictPage';
+  content: Array<CheckInConflict>;
+  page: Scalars['Int']['output'];
+  size: Scalars['Int']['output'];
+  totalElements: Scalars['Int']['output'];
+};
+
+export type CheckInConflictStatus =
+  | 'OPEN'
+  | 'REVIEWED';
+
+export type CheckInConflictType =
+  | 'DUPLICATE_SCAN'
+  | 'INVALID_STATE'
+  | 'TICKET_NOT_FOUND'
+  | 'TICKET_NOT_VALID_FOR_EVENT';
+
 export type CheckInEvent = {
   __typename: 'CheckInEvent';
   buyerName: Maybe<Scalars['String']['output']>;
@@ -639,6 +690,25 @@ export type CheckInEvent = {
   ticketNumber: Scalars['String']['output'];
   tierName: Scalars['String']['output'];
   totalCheckedIn: Scalars['Int']['output'];
+};
+
+export type CheckInOutcome =
+  | 'ADMITTED'
+  | 'ALREADY_ADMITTED'
+  | 'ALREADY_RECORDED'
+  | 'INVALID_STATE'
+  | 'NOT_FOUND'
+  | 'WRONG_EVENT';
+
+export type CheckInSummary = {
+  __typename: 'CheckInSummary';
+  admitted: Scalars['Int']['output'];
+  conflicts: Scalars['Int']['output'];
+  eventId: Scalars['ID']['output'];
+  issued: Scalars['Int']['output'];
+  lastCheckInAt: Maybe<Scalars['DateTime']['output']>;
+  manualAdmissions: Scalars['Int']['output'];
+  openConflicts: Scalars['Int']['output'];
 };
 
 export type City = {
@@ -695,13 +765,6 @@ export type CityStats = {
   cityName: Scalars['String']['output'];
   country: Scalars['String']['output'];
   eventCount: Scalars['Int']['output'];
-};
-
-export type CompleteReservationInput = {
-  paymentMethod: PaymentMethod;
-  phoneNumber: Scalars['String']['input'];
-  promoCode: InputMaybe<Scalars['String']['input']>;
-  reservationId: Scalars['ID']['input'];
 };
 
 export type ConfirmOwnershipTransferInput = {
@@ -822,6 +885,7 @@ export type CreatePayoutRequestInput = {
   currency: Scalars['String']['input'];
   escrowAccountId: Scalars['String']['input'];
   eventId: InputMaybe<Scalars['String']['input']>;
+  idempotencyKey: InputMaybe<Scalars['String']['input']>;
   metadata: InputMaybe<Scalars['JSON']['input']>;
   notes: InputMaybe<Scalars['String']['input']>;
   organizerId: Scalars['String']['input'];
@@ -858,11 +922,25 @@ export type CreateProvinceInput = {
   name: Scalars['String']['input'];
 };
 
+export type CreateReferenceDataInput = {
+  allowedTransitions: InputMaybe<Array<Scalars['String']['input']>>;
+  code: Scalars['String']['input'];
+  description: InputMaybe<Scalars['String']['input']>;
+  displayOrder: InputMaybe<Scalars['Int']['input']>;
+  isActive: InputMaybe<Scalars['Boolean']['input']>;
+  metadata: InputMaybe<Scalars['JSON']['input']>;
+  name: Scalars['String']['input'];
+  parentCode: InputMaybe<Scalars['String']['input']>;
+  parentType: InputMaybe<ReferenceType>;
+  semantic: InputMaybe<WorkflowSemantic>;
+  type: ReferenceType;
+};
+
 export type CreateRefundRequestInput = {
   additionalNotes: InputMaybe<Scalars['String']['input']>;
   metadata: InputMaybe<Scalars['JSON']['input']>;
   reason: Scalars['String']['input'];
-  requestedBy: Scalars['String']['input'];
+  requestedById: Scalars['String']['input'];
   ticketId: Scalars['String']['input'];
 };
 
@@ -1033,12 +1111,10 @@ export type EscrowAccountOffsetPage = {
 
 export type EscrowAccountStatus =
   | 'ACTIVE'
-  | 'CANCELLED'
   | 'CLOSED'
-  | 'CREATED'
-  | 'LOCKED'
+  | 'HOLD'
   | 'PAYOUT_ELIGIBLE'
-  | 'PROCESSING_PAYOUT';
+  | 'SUSPENDED';
 
 export type EscrowJournalVerificationResponse = {
   __typename: 'EscrowJournalVerificationResponse';
@@ -1365,14 +1441,12 @@ export type EventEscrowAccount = {
   __typename: 'EventEscrowAccount';
   accountNumber: Scalars['String']['output'];
   closedAt: Maybe<Scalars['DateTime']['output']>;
-  closedReason: Maybe<Scalars['String']['output']>;
   createdAt: Maybe<Scalars['DateTime']['output']>;
   currency: Scalars['String']['output'];
   currentBalance: Scalars['BigDecimal']['output'];
   eventId: Scalars['String']['output'];
   eventTitle: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
-  lockReason: Maybe<Scalars['String']['output']>;
   lockUntil: Maybe<Scalars['DateTime']['output']>;
   organizerId: Scalars['String']['output'];
   organizerName: Maybe<Scalars['String']['output']>;
@@ -1635,10 +1709,10 @@ export type InitiatePaymentAttemptInput = {
   payerPhone: Scalars['PhoneNumber']['input'];
   /** Mobile money provider (e.g., MTN_MOMO_ZMB, AIRTEL_OAPI_ZMB) */
   provider: Scalars['String']['input'];
+  /** Reservation being paid for */
+  reservationId: Scalars['String']['input'];
   /** Session ID for tracing */
   sessionId: InputMaybe<Scalars['String']['input']>;
-  /** Ticket being purchased */
-  ticketId: Scalars['String']['input'];
 };
 
 export type InvitationMutationResponse = {
@@ -1898,7 +1972,6 @@ export type Mutation = {
   completeEvent: EventMutationResponse;
   completePayoutRequest: PayoutRequestMutationResponse;
   completeReconciliation: ReconciliationMutationResponse;
-  completeReservation: Array<Ticket>;
   createAdminRefundRequest: RefundRequestMutationResponse;
   createBankAccount: CreateBankAccountMutationResponse;
   createChartOfAccountsEntry: ChartOfAccountsMutationResponse;
@@ -1913,6 +1986,7 @@ export type Mutation = {
   createPlatformAccount: PlatformAccountMutationResponse;
   createPromoCode: PromoCode;
   createProvince: ProvinceMutationResponse;
+  createReferenceData: ReferenceDataMutationResponse;
   createTicketTier: TierMutationResponse;
   createUser: UserMutationResponse;
   createUserRefundRequest: CreateRefundRequestMutationResponse;
@@ -1933,6 +2007,7 @@ export type Mutation = {
   deletePermission: Scalars['Boolean']['output'];
   deletePromoCode: DeleteMutationResponse;
   deleteProvince: DeleteMutationResponse;
+  deleteReferenceData: DeleteMutationResponse;
   deleteTicketTier: DeleteMutationResponse;
   deleteVerificationDocument: Scalars['Boolean']['output'];
   disableTwoFactor: MutationResponse;
@@ -1940,7 +2015,6 @@ export type Mutation = {
   duplicateEvent: EventMutationResponse;
   escalatePayoutRequest: PayoutRequestMutationResponse;
   expireTimedOutPayments: Scalars['Int']['output'];
-  extendReservation: TicketReservation;
   failReconciliation: ReconciliationMutationResponse;
   featureEvent: EventMutationResponse;
   forceExpireReservation: Scalars['Boolean']['output'];
@@ -1964,13 +2038,13 @@ export type Mutation = {
   markPaymentFulfilled: PaymentAttemptMutationResponse;
   markPayoutEligible: EscrowAccountMutationResponse;
   markPayoutForReview: PayoutRequestMutationResponse;
+  payReservation: PaymentInitiationResponse;
   pollPendingPayments: Scalars['Int']['output'];
   postJournalEntry: JournalEntryMutationResponse;
   processPaymentWebhook: PaymentAttemptMutationResponse;
   processPayoutRequest: ProcessPayoutRequestMutationResponse;
   processRefundRequest: ProcessRefundRequestMutationResponse;
   publishEvent: EventMutationResponse;
-  purchaseTicket: PurchaseTicketMutationResponse;
   reactivateMember: Maybe<OrganizationMember>;
   receiveChargeback: ChargebackMutationResponse;
   recordChargebackOutcome: ChargebackMutationResponse;
@@ -2031,6 +2105,7 @@ export type Mutation = {
   retryPaymentAttempt: PaymentAttemptMutationResponse;
   retryPayoutRequest: PayoutRequestMutationResponse;
   reverseJournalEntry: JournalEntryMutationResponse;
+  reviewConflict: CheckInConflict;
   revokeEventAccess: Maybe<EventAccessGrant>;
   revokeInvitation: Maybe<TeamInvitation>;
   seedChartOfAccounts: Scalars['Boolean']['output'];
@@ -2065,6 +2140,7 @@ export type Mutation = {
    */
   setMobileMoneyAccount: Maybe<Organization>;
   setPaymentAttemptReviewStatus: PaymentAttemptMutationResponse;
+  setReferenceDataActive: ReferenceDataMutationResponse;
   /**
    * Set all roles for a user (replaces existing roles).
    * The roles set must include CUSTOMER.
@@ -2127,6 +2203,7 @@ export type Mutation = {
   updateProfile: Maybe<User>;
   updatePromoCode: PromoCode;
   updateProvince: ProvinceMutationResponse;
+  updateReferenceData: ReferenceDataMutationResponse;
   updateTicketTier: TierMutationResponse;
   updateUser: UserMutationResponse;
   /**
@@ -2134,9 +2211,9 @@ export type Mutation = {
    * Requires the organization to be owned by the current user.
    */
   upgradeToBusinessOrganization: Maybe<Organization>;
+  uploadScans: Array<ValidationResult>;
   uploadVerificationDocument: VerificationDocumentUploadResponse;
-  useTicket: UseTicketMutationResponse;
-  validateTicket: ValidateTicketMutationResponse;
+  validateTicket: ValidationResult;
   validateToken: TokenValidation;
   verifyBankAccount: VerifyBankAccountMutationResponse;
   verifyEmail: Maybe<User>;
@@ -2379,11 +2456,6 @@ export type MutationCompleteReconciliationArgs = {
 };
 
 
-export type MutationCompleteReservationArgs = {
-  input: CompleteReservationInput;
-};
-
-
 export type MutationCreateAdminRefundRequestArgs = {
   bypassApproval: InputMaybe<Scalars['Boolean']['input']>;
   reason: Scalars['String']['input'];
@@ -2458,6 +2530,11 @@ export type MutationCreatePromoCodeArgs = {
 
 export type MutationCreateProvinceArgs = {
   input: CreateProvinceInput;
+};
+
+
+export type MutationCreateReferenceDataArgs = {
+  input: CreateReferenceDataInput;
 };
 
 
@@ -2566,6 +2643,11 @@ export type MutationDeleteProvinceArgs = {
 };
 
 
+export type MutationDeleteReferenceDataArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationDeleteTicketTierArgs = {
   tierId: Scalars['ID']['input'];
 };
@@ -2596,12 +2678,6 @@ export type MutationDuplicateEventArgs = {
 export type MutationEscalatePayoutRequestArgs = {
   payoutRequestId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
-};
-
-
-export type MutationExtendReservationArgs = {
-  minutes: Scalars['Int']['input'];
-  reservationId: Scalars['ID']['input'];
 };
 
 
@@ -2702,6 +2778,11 @@ export type MutationMarkPayoutForReviewArgs = {
 };
 
 
+export type MutationPayReservationArgs = {
+  input: PayReservationInput;
+};
+
+
 export type MutationPostJournalEntryArgs = {
   id: Scalars['ID']['input'];
 };
@@ -2724,11 +2805,6 @@ export type MutationProcessRefundRequestArgs = {
 
 export type MutationPublishEventArgs = {
   id: Scalars['ID']['input'];
-};
-
-
-export type MutationPurchaseTicketArgs = {
-  input: TicketPurchaseInput;
 };
 
 
@@ -2923,6 +2999,12 @@ export type MutationReverseJournalEntryArgs = {
 };
 
 
+export type MutationReviewConflictArgs = {
+  id: Scalars['ID']['input'];
+  note: Scalars['String']['input'];
+};
+
+
 export type MutationRevokeEventAccessArgs = {
   accessId: Scalars['ID']['input'];
   reason: InputMaybe<Scalars['String']['input']>;
@@ -2983,6 +3065,12 @@ export type MutationSetPaymentAttemptReviewStatusArgs = {
   depositId: Scalars['String']['input'];
   notes: InputMaybe<Scalars['String']['input']>;
   reviewStatus: Scalars['String']['input'];
+};
+
+
+export type MutationSetReferenceDataActiveArgs = {
+  active: Scalars['Boolean']['input'];
+  id: Scalars['ID']['input'];
 };
 
 
@@ -3234,6 +3322,12 @@ export type MutationUpdateProvinceArgs = {
 };
 
 
+export type MutationUpdateReferenceDataArgs = {
+  id: Scalars['ID']['input'];
+  input: UpdateReferenceDataInput;
+};
+
+
 export type MutationUpdateTicketTierArgs = {
   input: UpdateTicketTierInput;
   tierId: Scalars['ID']['input'];
@@ -3252,18 +3346,18 @@ export type MutationUpgradeToBusinessOrganizationArgs = {
 };
 
 
+export type MutationUploadScansArgs = {
+  inputs: Array<ValidateTicketInput>;
+};
+
+
 export type MutationUploadVerificationDocumentArgs = {
   input: UploadVerificationDocumentInput;
 };
 
 
-export type MutationUseTicketArgs = {
-  ticketNumber: Scalars['String']['input'];
-};
-
-
 export type MutationValidateTicketArgs = {
-  ticketNumber: Scalars['String']['input'];
+  input: ValidateTicketInput;
 };
 
 
@@ -3536,6 +3630,8 @@ export type OrganizationApplicationInput = {
   bannerUrl: InputMaybe<Scalars['String']['input']>;
   businessEmail: InputMaybe<Scalars['String']['input']>;
   businessPhone: InputMaybe<Scalars['String']['input']>;
+  businessRegistrationNumber: InputMaybe<Scalars['String']['input']>;
+  businessType: InputMaybe<BusinessType>;
   city: InputMaybe<Scalars['String']['input']>;
   country: InputMaybe<Scalars['String']['input']>;
   description: InputMaybe<Scalars['String']['input']>;
@@ -3544,6 +3640,7 @@ export type OrganizationApplicationInput = {
   province: InputMaybe<Scalars['String']['input']>;
   socialLinks: InputMaybe<SocialLinksInput>;
   tagline: InputMaybe<Scalars['String']['input']>;
+  taxId: InputMaybe<Scalars['String']['input']>;
   type: InputMaybe<OrganizationType>;
   website: InputMaybe<Scalars['String']['input']>;
 };
@@ -3684,6 +3781,16 @@ export type OrganizerActivityType =
   | 'REFUND_PROCESSED'
   | 'TICKET_SALE';
 
+export type OrganizerCheckInRate = {
+  __typename: 'OrganizerCheckInRate';
+  eventDateTime: Maybe<Scalars['DateTime']['output']>;
+  eventId: Scalars['ID']['output'];
+  eventTitle: Scalars['String']['output'];
+  issued: Scalars['Int']['output'];
+  ratePercent: Scalars['Float']['output'];
+  scanned: Scalars['Int']['output'];
+};
+
 export type OrganizerDashboardStats = {
   __typename: 'OrganizerDashboardStats';
   activeEvents: Scalars['Int']['output'];
@@ -3728,6 +3835,43 @@ export type OrganizerFinanceOverview = {
   totalTicketRevenue: Scalars['BigDecimal']['output'];
 };
 
+export type OrganizerPayoutSource = {
+  __typename: 'OrganizerPayoutSource';
+  availableAmount: Scalars['BigDecimal']['output'];
+  currency: Scalars['String']['output'];
+  eligibleSince: Maybe<Scalars['DateTime']['output']>;
+  escrowAccountId: Scalars['ID']['output'];
+  eventId: Maybe<Scalars['String']['output']>;
+  eventTitle: Maybe<Scalars['String']['output']>;
+};
+
+export type OrganizerPayoutWindow = {
+  __typename: 'OrganizerPayoutWindow';
+  availableNow: Scalars['BigDecimal']['output'];
+  currency: Scalars['String']['output'];
+  daysElapsed: Scalars['Int']['output'];
+  daysRemaining: Scalars['Int']['output'];
+  nextReleaseAt: Maybe<Scalars['DateTime']['output']>;
+  pendingRelease: Scalars['BigDecimal']['output'];
+  windowDaysTotal: Scalars['Int']['output'];
+  windowOpenedAt: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type OrganizerRevenuePoint = {
+  __typename: 'OrganizerRevenuePoint';
+  currency: Scalars['String']['output'];
+  periodStart: Scalars['String']['output'];
+  revenue: Scalars['BigDecimal']['output'];
+  ticketsSold: Scalars['Int']['output'];
+};
+
+export type OrganizerShareRow = {
+  __typename: 'OrganizerShareRow';
+  count: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  revenue: Maybe<Scalars['BigDecimal']['output']>;
+};
+
 export type OrganizerStatistics = {
   __typename: 'OrganizerStatistics';
   activeEvents: Scalars['Int']['output'];
@@ -3743,6 +3887,14 @@ export type OrganizerStatistics = {
   totalRevenue: Scalars['BigDecimal']['output'];
   totalReviews: Scalars['Int']['output'];
   totalTicketsSold: Scalars['Int']['output'];
+};
+
+export type OrganizerTicketMix = {
+  __typename: 'OrganizerTicketMix';
+  currency: Scalars['String']['output'];
+  rows: Array<OrganizerShareRow>;
+  totalRevenue: Scalars['BigDecimal']['output'];
+  totalSold: Scalars['Int']['output'];
 };
 
 export type OrganizerTransaction = {
@@ -3870,6 +4022,11 @@ export type PaginationInfo = {
   totalPages: Scalars['Int']['output'];
 };
 
+export type PayReservationInput = {
+  phoneNumber: Scalars['String']['input'];
+  reservationId: Scalars['ID']['input'];
+};
+
 export type PaymentAttempt = {
   __typename: 'PaymentAttempt';
   amount: Scalars['BigDecimal']['output'];
@@ -3962,6 +4119,17 @@ export type PaymentInfo = {
   transactionId: Maybe<Scalars['String']['output']>;
 };
 
+export type PaymentInitiationResponse = {
+  __typename: 'PaymentInitiationResponse';
+  errors: Array<Scalars['String']['output']>;
+  message: Maybe<Scalars['String']['output']>;
+  paymentIntentId: Maybe<Scalars['ID']['output']>;
+  paymentStatus: Maybe<Scalars['String']['output']>;
+  reservationId: Maybe<Scalars['ID']['output']>;
+  success: Scalars['Boolean']['output'];
+  transactionRef: Maybe<Scalars['String']['output']>;
+};
+
 export type PaymentMethod =
   | 'BANK_TRANSFER'
   | 'CARD'
@@ -3980,6 +4148,14 @@ export type PayoutBankDetails = {
   verified: Scalars['Boolean']['output'];
 };
 
+export type PayoutBlockedReason =
+  | 'BELOW_MINIMUM'
+  | 'EVENT_NOT_COMPLETED'
+  | 'HOLD_NOT_ELAPSED'
+  | 'NO_ESCROW_ACCOUNT'
+  | 'OPEN_DISPUTES'
+  | 'PAYOUT_ALREADY_REQUESTED';
+
 export type PayoutConfig = {
   __typename: 'PayoutConfig';
   bankAccount: Maybe<PayoutBankDetails>;
@@ -3991,6 +4167,16 @@ export type PayoutConfig = {
   preferredMethod: Maybe<PayoutMethod>;
   schedule: Maybe<PayoutSchedule>;
   verified: Scalars['Boolean']['output'];
+};
+
+export type PayoutEligibility = {
+  __typename: 'PayoutEligibility';
+  availableAmount: Scalars['BigDecimal']['output'];
+  currency: Scalars['String']['output'];
+  eligible: Scalars['Boolean']['output'];
+  minimumAmount: Scalars['BigDecimal']['output'];
+  opensAt: Maybe<Scalars['DateTime']['output']>;
+  reasons: Array<PayoutBlockedReason>;
 };
 
 export type PayoutIssueType =
@@ -4054,7 +4240,6 @@ export type PayoutRequest = {
   issueType: Maybe<PayoutIssueType>;
   lastError: Maybe<Scalars['String']['output']>;
   metadata: Maybe<Scalars['JSON']['output']>;
-  netPayoutAmount: Scalars['BigDecimal']['output'];
   notes: Maybe<Scalars['String']['output']>;
   organizationId: Maybe<Scalars['String']['output']>;
   organizerId: Scalars['String']['output'];
@@ -4071,7 +4256,7 @@ export type PayoutRequest = {
   requestId: Scalars['String']['output'];
   requestedAmount: Scalars['BigDecimal']['output'];
   requestedAt: Scalars['DateTime']['output'];
-  requestedBy: Scalars['String']['output'];
+  requestedById: Scalars['String']['output'];
   resolutionNotes: Maybe<Scalars['String']['output']>;
   resolutionType: Maybe<PayoutResolutionType>;
   resolvedAt: Maybe<Scalars['DateTime']['output']>;
@@ -4081,6 +4266,7 @@ export type PayoutRequest = {
   reviewStatus: Maybe<PayoutReviewStatus>;
   reviewedAt: Maybe<Scalars['DateTime']['output']>;
   reviewedBy: Maybe<Scalars['String']['output']>;
+  settledAmount: Scalars['BigDecimal']['output'];
   status: PayoutRequestStatus;
   stuckAt: Maybe<Scalars['DateTime']['output']>;
   stuckReason: Maybe<Scalars['String']['output']>;
@@ -4406,15 +4592,6 @@ export type ProvinceOffsetPage = {
   totalPages: Scalars['Int']['output'];
 };
 
-export type PurchaseTicketMutationResponse = {
-  __typename: 'PurchaseTicketMutationResponse';
-  data: Maybe<Ticket>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type Query = {
   __typename: 'Query';
   accountBalance: Maybe<AccountBalance>;
@@ -4454,6 +4631,8 @@ export type Query = {
   chartOfAccountsByType: Array<ChartOfAccountsEntry>;
   chartOfAccountsEntry: Maybe<ChartOfAccountsEntry>;
   chartOfAccountsOffsetPagination: ChartOfAccountsOffsetPage;
+  checkInConflicts: CheckInConflictPage;
+  checkInSummary: CheckInSummary;
   citiesByCountryCursorPagination: CityConnection;
   citiesByCountryOffsetPagination: CityOffsetPage;
   citiesByProvinceCursorPagination: CityConnection;
@@ -4546,7 +4725,7 @@ export type Query = {
   journalEntriesOffsetPagination: JournalEntryOffsetPage;
   journalEntry: Maybe<JournalEntry>;
   journalEntryByNumber: Maybe<JournalEntry>;
-  latestPaymentAttemptByTicket: Maybe<PaymentAttempt>;
+  latestPaymentAttemptByReservation: Maybe<PaymentAttempt>;
   location: Maybe<Location>;
   locationsByCityCursorPagination: LocationConnection;
   locationsByCountryCursorPagination: LocationConnection;
@@ -4555,6 +4734,7 @@ export type Query = {
   me: Maybe<User>;
   myActiveReservations: Array<TicketReservation>;
   myApprovedDocumentCount: Scalars['Long']['output'];
+  myCheckInRate: Maybe<OrganizerCheckInRate>;
   myDashboardStats: OrganizerDashboardStats;
   myDevices: Array<UserDevice>;
   myDraftEventsOffsetPagination: EventOffsetPage;
@@ -4576,9 +4756,13 @@ export type Query = {
   myOrganizationRole: Maybe<OrganizationRole>;
   myOrganizations: Array<Organization>;
   myOwnedOrganization: Maybe<Organization>;
+  myPayoutSources: Array<OrganizerPayoutSource>;
+  myPayoutWindow: OrganizerPayoutWindow;
   myPendingInvitations: Array<TeamInvitation>;
   myPendingOwnershipTransfers: Array<OwnershipTransferRequest>;
   myRecentActivity: Array<OrganizerActivityItem>;
+  myRevenueSeries: Array<OrganizerRevenuePoint>;
+  myTicketMix: OrganizerTicketMix;
   myTransactionsOffsetPagination: OrganizerTransactionOffsetPage;
   myUpcomingEvents: Array<OrganizerUpcomingEvent>;
   myVerificationDocumentByType: Maybe<VerificationDocument>;
@@ -4610,8 +4794,9 @@ export type Query = {
   paymentAttemptCountByStatus: Scalars['Int']['output'];
   paymentAttemptsByBuyer: Array<PaymentAttempt>;
   paymentAttemptsByEvent: Array<PaymentAttempt>;
+  paymentAttemptsByReservation: Array<PaymentAttempt>;
   paymentAttemptsByStatus: Array<PaymentAttempt>;
-  paymentAttemptsByTicket: Array<PaymentAttempt>;
+  payoutEligibility: PayoutEligibility;
   payoutRecoverySummary: PayoutRecoverySummary;
   payoutRequest: Maybe<PayoutRequest>;
   payoutRequestByRequestId: Maybe<PayoutRequest>;
@@ -4660,12 +4845,23 @@ export type Query = {
   provincesOffsetPagination: ProvinceOffsetPage;
   publishedEventsCursorPagination: EventConnection;
   publishedEventsOffsetPagination: EventOffsetPage;
+  recentCheckIns: Array<CheckIn>;
   recentlyResolvedPayoutRequestsOffsetPagination: PayoutRequestOffsetPage;
   reconciliationRun: Maybe<ReconciliationRun>;
   reconciliationRunsByType: ReconciliationRunOffsetPage;
   reconciliationRunsOffsetPagination: ReconciliationRunOffsetPage;
   reconciliationRunsRequiringReview: Array<ReconciliationRun>;
   reconciliationSummary: ReconciliationSummary;
+  /** All rows of a type. activeOnly=true (default) is the dropdown query. */
+  referenceData: Array<ReferenceData>;
+  /** Child rows within a hierarchy (active only), e.g. genres of a category. */
+  referenceDataByParent: Array<ReferenceData>;
+  /** Admin offset table for one reference type. */
+  referenceDataOffsetPagination: ReferenceDataOffsetPage;
+  /** A single reference item by type + code. */
+  referenceItem: Maybe<ReferenceData>;
+  /** The type registry that powers the generic admin management screen. */
+  referenceTypes: Array<ReferenceTypeInfo>;
   refundRequest: Maybe<RefundRequest>;
   refundRequestByRequestId: Maybe<RefundRequest>;
   refundRequestsByBuyerCursorPagination: RefundRequestConnection;
@@ -4693,7 +4889,7 @@ export type Query = {
   searchTicketsOffsetPagination: TicketOffsetPage;
   stuckPayoutRequestsCursorPagination: PayoutRequestConnection;
   stuckPayoutRequestsOffsetPagination: PayoutRequestOffsetPage;
-  successfulPaymentAttemptByTicket: Maybe<PaymentAttempt>;
+  successfulPaymentAttemptByReservation: Maybe<PaymentAttempt>;
   teamStatistics: Maybe<TeamStatistics>;
   ticket: Maybe<Ticket>;
   ticketByNumber: Maybe<Ticket>;
@@ -4899,6 +5095,17 @@ export type QueryChartOfAccountsEntryArgs = {
 
 export type QueryChartOfAccountsOffsetPaginationArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryCheckInConflictsArgs = {
+  eventId: Scalars['ID']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryCheckInSummaryArgs = {
+  eventId: Scalars['ID']['input'];
 };
 
 
@@ -5319,7 +5526,7 @@ export type QueryHasPendingOwnershipTransferArgs = {
 
 
 export type QueryHasSuccessfulPaymentArgs = {
-  ticketId: Scalars['String']['input'];
+  reservationId: Scalars['String']['input'];
 };
 
 
@@ -5365,8 +5572,8 @@ export type QueryJournalEntryByNumberArgs = {
 };
 
 
-export type QueryLatestPaymentAttemptByTicketArgs = {
-  ticketId: Scalars['String']['input'];
+export type QueryLatestPaymentAttemptByReservationArgs = {
+  reservationId: Scalars['String']['input'];
 };
 
 
@@ -5476,6 +5683,11 @@ export type QueryMyOrganizationRoleArgs = {
 
 export type QueryMyRecentActivityArgs = {
   limit: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryMyRevenueSeriesArgs = {
+  months: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -5645,13 +5857,18 @@ export type QueryPaymentAttemptsByEventArgs = {
 };
 
 
+export type QueryPaymentAttemptsByReservationArgs = {
+  reservationId: Scalars['String']['input'];
+};
+
+
 export type QueryPaymentAttemptsByStatusArgs = {
   status: PaymentAttemptStatus;
 };
 
 
-export type QueryPaymentAttemptsByTicketArgs = {
-  ticketId: Scalars['String']['input'];
+export type QueryPayoutEligibilityArgs = {
+  eventId: Scalars['ID']['input'];
 };
 
 
@@ -5863,6 +6080,12 @@ export type QueryPublishedEventsOffsetPaginationArgs = {
 };
 
 
+export type QueryRecentCheckInsArgs = {
+  eventId: Scalars['ID']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryRecentlyResolvedPayoutRequestsOffsetPaginationArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
@@ -5889,6 +6112,30 @@ export type QueryReconciliationSummaryArgs = {
   endDate: InputMaybe<Scalars['DateTime']['input']>;
   startDate: InputMaybe<Scalars['DateTime']['input']>;
   type: InputMaybe<ReconciliationType>;
+};
+
+
+export type QueryReferenceDataArgs = {
+  activeOnly?: InputMaybe<Scalars['Boolean']['input']>;
+  type: ReferenceType;
+};
+
+
+export type QueryReferenceDataByParentArgs = {
+  parentCode: Scalars['String']['input'];
+  type: ReferenceType;
+};
+
+
+export type QueryReferenceDataOffsetPaginationArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
+  type: ReferenceType;
+};
+
+
+export type QueryReferenceItemArgs = {
+  code: Scalars['String']['input'];
+  type: ReferenceType;
 };
 
 
@@ -6046,8 +6293,8 @@ export type QueryStuckPayoutRequestsOffsetPaginationArgs = {
 };
 
 
-export type QuerySuccessfulPaymentAttemptByTicketArgs = {
-  ticketId: Scalars['String']['input'];
+export type QuerySuccessfulPaymentAttemptByReservationArgs = {
+  reservationId: Scalars['String']['input'];
 };
 
 
@@ -6357,6 +6604,91 @@ export type RecoveryStatus =
   | 'RECOVERED'
   | 'WRITTEN_OFF';
 
+/** A single reference/catalog row. */
+export type ReferenceData = {
+  __typename: 'ReferenceData';
+  allowedTransitions: Array<Scalars['String']['output']>;
+  code: Scalars['String']['output'];
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  createdBy: Maybe<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']['output']>;
+  displayOrder: Scalars['Int']['output'];
+  effectiveFrom: Maybe<Scalars['DateTime']['output']>;
+  effectiveTo: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  isActive: Scalars['Boolean']['output'];
+  isSystem: Scalars['Boolean']['output'];
+  metadata: Maybe<Scalars['JSON']['output']>;
+  name: Scalars['String']['output'];
+  parentCode: Maybe<Scalars['String']['output']>;
+  parentType: Maybe<ReferenceType>;
+  semantic: Maybe<WorkflowSemantic>;
+  type: ReferenceType;
+  updatedAt: Maybe<Scalars['DateTime']['output']>;
+  updatedBy: Maybe<Scalars['String']['output']>;
+};
+
+export type ReferenceDataMutationResponse = {
+  __typename: 'ReferenceDataMutationResponse';
+  data: Maybe<ReferenceData>;
+  errors: Array<Scalars['String']['output']>;
+  message: Maybe<Scalars['String']['output']>;
+  metadata: Maybe<Scalars['JSON']['output']>;
+  success: Scalars['Boolean']['output'];
+};
+
+export type ReferenceDataOffsetPage = {
+  __typename: 'ReferenceDataOffsetPage';
+  content: Array<ReferenceData>;
+  hasNext: Scalars['Boolean']['output'];
+  hasPrevious: Scalars['Boolean']['output'];
+  pageNumber: Scalars['Int']['output'];
+  pageSize: Scalars['Int']['output'];
+  totalElements: Scalars['Int']['output'];
+  totalPages: Scalars['Int']['output'];
+};
+
+/** Discriminator for the polymorphic reference_data collection. Adding a value is a backend change. */
+export type ReferenceType =
+  | 'AGE_RESTRICTION'
+  | 'BANK'
+  | 'CANCELLATION_REASON'
+  | 'CARD_SCHEME'
+  | 'CHARGEBACK_STATUS'
+  | 'COUNTRY'
+  | 'CURRENCY'
+  | 'ESCROW_STATUS'
+  | 'EVENT_CATEGORY'
+  | 'EVENT_STATUS'
+  | 'EVENT_TYPE'
+  | 'KYB_DOCUMENT_TYPE'
+  | 'LANGUAGE'
+  | 'MOBILE_MONEY_OPERATOR'
+  | 'MUSIC_GENRE'
+  | 'ORGANIZATION_STATUS'
+  | 'PAYMENT_STATUS'
+  | 'PAYOUT_STATUS'
+  | 'PROVINCE'
+  | 'REFUND_REASON'
+  | 'REFUND_STATUS'
+  | 'REJECTION_REASON'
+  | 'RESERVATION_STATUS'
+  | 'TAX_RATE'
+  | 'TEAM_INVITATION_STATUS'
+  | 'TICKET_STATUS'
+  | 'TIMEZONE'
+  | 'VERIFICATION_DOCUMENT_STATUS';
+
+/** Describes a ReferenceType for the admin type picker (label, group, metadata form fields). */
+export type ReferenceTypeInfo = {
+  __typename: 'ReferenceTypeInfo';
+  group: Scalars['String']['output'];
+  groupLabel: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  requiredMetadataKeys: Array<Scalars['String']['output']>;
+  type: ReferenceType;
+};
+
 export type RefundCalculation = {
   __typename: 'RefundCalculation';
   commissionRefund: Scalars['BigDecimal']['output'];
@@ -6413,7 +6745,7 @@ export type RefundRequest = {
   requestId: Scalars['String']['output'];
   requestType: RefundRequestType;
   requestedAt: Maybe<Scalars['DateTime']['output']>;
-  requestedBy: Maybe<Scalars['String']['output']>;
+  requestedById: Maybe<Scalars['String']['output']>;
   reviewComments: Maybe<Scalars['String']['output']>;
   reviewedAt: Maybe<Scalars['DateTime']['output']>;
   reviewedBy: Maybe<Scalars['String']['output']>;
@@ -6474,6 +6806,8 @@ export type RefundRequestStatus =
 export type RefundRequestType =
   | 'ADMIN_INITIATED'
   | 'EVENT_CANCELLED'
+  | 'FULL'
+  | 'PARTIAL'
   | 'SYSTEM_AUTOMATIC'
   | 'TICKET_EXPIRED'
   | 'USER_REQUESTED';
@@ -6633,13 +6967,15 @@ export type ReservationOffsetPage = {
 };
 
 export type ReservationStatus =
-  | 'ACTIVE'
-  | 'CANCELLED'
-  | 'CONVERTED'
-  | 'EXPIRED';
+  | 'CONFIRMED'
+  | 'EXPIRED'
+  | 'FAILED'
+  | 'HELD'
+  | 'RELEASED';
 
 export type ReserveTicketsInput = {
   eventId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['String']['input'];
   promoCode: InputMaybe<Scalars['String']['input']>;
   selections: Array<TicketSelectionInput>;
 };
@@ -6659,37 +6995,6 @@ export type RevokeEventAccessInput = {
   accessId: Scalars['ID']['input'];
   reason: InputMaybe<Scalars['String']['input']>;
 };
-
-/**
- * Authorization roles for GraphQL operations.
- *
- * Role Hierarchy (higher roles include lower):
- * - SUPER_ADMIN: Full system access
- * - ADMIN: Platform administration (includes ORGANIZER, CUSTOMER)
- * - FINANCE: Financial operations
- * - ORGANIZER: Event management (includes CUSTOMER)
- * - CUSTOMER: Ticket purchasing
- * - AUTHENTICATED: Any logged-in user
- * - PUBLIC: No authentication required
- * - INTERNAL: Service-to-service calls only
- */
-export type Role =
-  /** Admin role - platform administrators. */
-  | 'ADMIN'
-  /** Any authenticated user can access. Requires valid JWT token. */
-  | 'AUTHENTICATED'
-  /** Customer role - regular ticket buyers. */
-  | 'CUSTOMER'
-  /** Finance role - financial operations access. */
-  | 'FINANCE'
-  /** Internal service role - service-to-service communication only. */
-  | 'INTERNAL'
-  /** Organizer role - event creators and managers. */
-  | 'ORGANIZER'
-  /** No authentication required. Field/operation is publicly accessible. */
-  | 'PUBLIC'
-  /** Super Admin role - highest privilege level. */
-  | 'SUPER_ADMIN';
 
 export type RolePermissions = {
   __typename: 'RolePermissions';
@@ -7028,34 +7333,24 @@ export type TicketOffsetPage = {
   pagination: PaginationInfo;
 };
 
-export type TicketPurchaseInput = {
-  amount: InputMaybe<Scalars['BigDecimal']['input']>;
-  buyerEmail: Scalars['String']['input'];
-  buyerName: Scalars['String']['input'];
-  buyerPhone: InputMaybe<Scalars['String']['input']>;
-  correlationId: Scalars['String']['input'];
-  currency: InputMaybe<Scalars['String']['input']>;
-  eventId: Scalars['String']['input'];
-  metadata: InputMaybe<Scalars['JSON']['input']>;
-  paymentMethod: PaymentMethod;
-  paymentReference: InputMaybe<Scalars['String']['input']>;
-  promoCode: InputMaybe<Scalars['String']['input']>;
-  quantity: Scalars['Int']['input'];
-  ticketCategoryCode: Scalars['String']['input'];
-};
-
 export type TicketReservation = {
   __typename: 'TicketReservation';
+  confirmedAt: Maybe<Scalars['DateTime']['output']>;
   createdAt: Scalars['DateTime']['output'];
   currency: Scalars['String']['output'];
   discountAmount: Maybe<Scalars['BigDecimal']['output']>;
   eventId: Scalars['ID']['output'];
   expiresAt: Scalars['DateTime']['output'];
+  failedAt: Maybe<Scalars['DateTime']['output']>;
+  failureReason: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   items: Array<ReservationItem>;
+  paymentIntentId: Maybe<Scalars['ID']['output']>;
   promoCodeApplied: Maybe<Scalars['String']['output']>;
+  releasedAt: Maybe<Scalars['DateTime']['output']>;
   remainingSeconds: Maybe<Scalars['Int']['output']>;
   status: ReservationStatus;
+  subtotal: Maybe<Scalars['BigDecimal']['output']>;
   totalAmount: Scalars['BigDecimal']['output'];
   updatedAt: Maybe<Scalars['DateTime']['output']>;
   userId: Scalars['ID']['output'];
@@ -7070,27 +7365,23 @@ export type TicketStats = {
   __typename: 'TicketStats';
   cancelledTickets: Scalars['Int']['output'];
   expiredTickets: Scalars['Int']['output'];
-  pendingPaymentTickets: Scalars['Int']['output'];
-  purchasedTickets: Scalars['Int']['output'];
+  issuedTickets: Scalars['Int']['output'];
   recentTickets: Maybe<Array<Ticket>>;
+  refundPendingTickets: Scalars['Int']['output'];
   refundedTickets: Scalars['Int']['output'];
   ticketsByCategory: Maybe<Array<TicketCategoryStats>>;
   ticketsByStatus: Maybe<Array<TicketStatusStats>>;
   totalTickets: Scalars['Int']['output'];
-  usedTickets: Scalars['Int']['output'];
   validatedTickets: Scalars['Int']['output'];
 };
 
 export type TicketStatus =
   | 'CANCELLED'
-  | 'CONFIRMED'
   | 'EXPIRED'
-  | 'PAYMENT_FAILED'
-  | 'PENDING_PAYMENT'
-  | 'PURCHASED'
+  | 'ISSUED'
   | 'REFUNDED'
   | 'REFUND_PENDING'
-  | 'USED'
+  | 'TRANSFERRED'
   | 'VALIDATED';
 
 export type TicketStatusStats = {
@@ -7456,6 +7747,20 @@ export type UpdateProvinceInput = {
   name: InputMaybe<Scalars['String']['input']>;
 };
 
+export type UpdateReferenceDataInput = {
+  allowedTransitions: InputMaybe<Array<Scalars['String']['input']>>;
+  description: InputMaybe<Scalars['String']['input']>;
+  displayOrder: InputMaybe<Scalars['Int']['input']>;
+  effectiveFrom: InputMaybe<Scalars['DateTime']['input']>;
+  effectiveTo: InputMaybe<Scalars['DateTime']['input']>;
+  isActive: InputMaybe<Scalars['Boolean']['input']>;
+  metadata: InputMaybe<Scalars['JSON']['input']>;
+  name: InputMaybe<Scalars['String']['input']>;
+  parentCode: InputMaybe<Scalars['String']['input']>;
+  parentType: InputMaybe<ReferenceType>;
+  semantic: InputMaybe<WorkflowSemantic>;
+};
+
 export type UpdateTicketTierInput = {
   accessCode: InputMaybe<Scalars['String']['input']>;
   benefits: InputMaybe<Array<Scalars['String']['input']>>;
@@ -7488,15 +7793,6 @@ export type UploadVerificationDocumentInput = {
   fileName: Scalars['String']['input'];
   fileSize: Scalars['Long']['input'];
   mimeType: Scalars['String']['input'];
-};
-
-export type UseTicketMutationResponse = {
-  __typename: 'UseTicketMutationResponse';
-  data: Maybe<Ticket>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type User = {
@@ -7618,13 +7914,29 @@ export type UserType =
   | 'ORGANIZER'
   | 'SUPER_ADMIN';
 
-export type ValidateTicketMutationResponse = {
-  __typename: 'ValidateTicketMutationResponse';
-  data: Maybe<Ticket>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+export type ValidateTicketInput = {
+  code: Scalars['String']['input'];
+  deviceId: InputMaybe<Scalars['String']['input']>;
+  eventId: Scalars['ID']['input'];
+  method: InputMaybe<ValidationMethod>;
+  reason: InputMaybe<Scalars['String']['input']>;
+  scanId: InputMaybe<Scalars['String']['input']>;
+  scannedAt: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+export type ValidationMethod =
+  | 'MANUAL'
+  | 'QR_OFFLINE'
+  | 'QR_ONLINE';
+
+export type ValidationResult = {
+  __typename: 'ValidationResult';
+  admitted: Scalars['Boolean']['output'];
+  checkIn: Maybe<CheckIn>;
+  conflict: Maybe<CheckInConflict>;
+  message: Scalars['String']['output'];
+  outcome: CheckInOutcome;
+  ticket: Maybe<Ticket>;
 };
 
 export type VerificationDocument = {
@@ -7664,6 +7976,23 @@ export type VerifyTwoFactorInput = {
   code: Scalars['String']['input'];
   method: TwoFactorMethod;
 };
+
+/**
+ * What an administrator-defined status MEANS to the code.
+ *
+ * Statuses are fully configurable, but code cannot branch on a string somebody
+ * invented this morning — a payout in an unrecognised status never moves, and
+ * nobody finds out until an organizer asks where the money went. So the value SET
+ * is configurable and this small vocabulary of meanings is fixed. Same shape as
+ * Jira's status categories, for the same reason.
+ */
+export type WorkflowSemantic =
+  | 'CANCELLED'
+  | 'FAILED'
+  | 'INITIAL'
+  | 'IN_PROGRESS'
+  | 'PENDING'
+  | 'SUCCEEDED';
 
 export type EventCardFieldsFragment = { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null };
 

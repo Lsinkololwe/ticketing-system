@@ -1,12 +1,6 @@
-import { PagePlaceholder } from '@/components/ui/PagePlaceholder';
-import { SendDiagonal } from 'iconoir-react';
+import { FinanceWorkbench } from '@/components/finance/FinanceWorkbench';
 
+/** `Admin - Finance.dc.html`, payouts view. */
 export default function PayoutRequestsPage() {
-  return (
-    <PagePlaceholder
-      title="Payout requests"
-      description="Review and process organizer payout requests"
-      icon={<SendDiagonal style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
-    />
-  );
+  return <FinanceWorkbench view="payouts" />;
 }

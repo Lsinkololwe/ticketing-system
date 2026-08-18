@@ -12,7 +12,7 @@ tell an organizer. None of them may read another's collections
 carried by a message, and the platform's consistency is exactly as good as its message
 delivery.
 
-This spec fixes how that delivery works. It declares the two tiers — Spring Modulith
+This spec fixes how that delivery works. It declares the two tiers — in-process events
 inside a service, Azure Service Bus between services — and, more importantly, the line
 between them, because the failure this platform cannot survive is a message that was sent
 about a transaction that then rolled back. It declares the envelope every cross-service
@@ -21,12 +21,13 @@ topics and subscriptions they travel on, the deduplication every consumer perfor
 because at-least-once delivery is real, and what happens to a message that cannot be
 processed.
 
-The central decision is that **Spring Modulith's event publication registry is the
-outbox, for both tiers**. A write and its intent to publish commit together in one
-PostgreSQL transaction; the listener that actually reaches Azure Service Bus runs after
-that commit and is retried from the registry if the process dies mid-publish. That is the
-transactional outbox pattern, already implemented, already running, already recovered on
-restart — and it needs no change-data-capture pipeline to obtain.
+The central decision is that **the outbox is a MongoDB collection written by the same
+reactive transaction as the business document**. A write and its intent to publish commit
+together, in one transaction, in one store — which is the only arrangement in which the
+two cannot disagree. A scheduled drain then reaches Azure Service Bus after that commit,
+and a message the drain never managed to send is still pending when the process restarts.
+That is the transactional outbox pattern with the atomicity actually held rather than
+asserted, and it needs no change-data-capture pipeline to obtain.
 
 It delivers no domain behaviour. Its success criterion is that a service killed between
 its database commit and its bus publish republishes on restart, that the same message
@@ -39,10 +40,10 @@ processed lands somewhere an operator can see it.
 
 | | Intra-service | Cross-service |
 |---|---|---|
-| Transport | Spring Modulith over PostgreSQL | Azure Service Bus |
-| Publish | `ApplicationEventPublisher.publishEvent` | `StreamBridge.send` |
-| Consume | `@ApplicationModuleListener` | `@Bean Consumer<Message<…>>` |
-| Guarantee | recorded in the publishing transaction, retried on restart | at-least-once, dead-lettered on repeated failure |
+| Transport | in-process, after commit | Azure Service Bus |
+| Publish | `ApplicationEventPublisher.publishEvent` | stage in the outbox, drain to `StreamBridge` |
+| Consume | `@TransactionalEventListener(AFTER_COMMIT)` | `@Bean Consumer<Message<…>>` |
+| Guarantee | runs after the transaction commits; durability comes from the outbox row, not the listener | at-least-once, dead-lettered on repeated failure |
 | Ordering | per publication, in order | **none**, unless a session key is set |
 | Payload | the Java event type | the §4 envelope |
 
@@ -50,20 +51,27 @@ Use the first when publisher and consumer are in one service; the second when th
 not. A cross-service event that a module in the same service also needs is published
 once, as a module event, and the bus publication is one of that module event's listeners.
 
-**Spring Modulith's registry is the outbox, including for the bus.** The pattern is:
-write the document and publish the module event inside one transaction; an
-`@ApplicationModuleListener` — which by definition runs after that transaction commits —
-is what calls `StreamBridge`. If the process dies before the listener completes, the row
-is still `INCOMPLETE` in `event_publication` and republishes at startup. This is a
-transactional outbox with recovery, obtained from a table the platform already runs.
+**The outbox is a MongoDB collection, written by the same transaction as the document.**
+The pattern is: inside one reactive `@Transactional` method, save the business document
+and insert the outbox row through the same `ReactiveMongoTemplate` session. They commit
+together or neither commits — one store, one transaction, no window. A `@Scheduled` drain
+holding a Redis lock then reads `PENDING` rows, sends each to `StreamBridge`, and marks it
+`SENT`. If the process dies before the drain runs, or mid-send, the row is still `PENDING`
+and the next drain picks it up.
 
-**Change-data-capture is rejected.** PDI Phase 3 proposes an outbox collection in MongoDB
-drained by Debezium into Kafka Connect. It would work. It also introduces a second
-delivery pipeline, a connector to operate, a Kafka cluster the platform otherwise has no
-use for, and a MongoDB oplog dependency — to obtain a guarantee Modulith already gives
-over PostgreSQL. The cost is not the code; it is that there would then be two answers to
-"how does a message get out of this service", and the wrong one would be used by someone
-in a hurry.
+This is the only arrangement that actually delivers the guarantee. **A second store cannot
+give it.** An outbox in PostgreSQL while the business write is in reactive MongoDB is two
+transactions across two transaction managers that cannot enlist together: the document can
+commit and the outbox row fail, and the platform then has a ticket nobody was told about
+— silently, permanently, and invisibly to every passing test.
+
+**Change-data-capture is still rejected.** PDI Phase 3 proposes draining the outbox with
+Debezium into Kafka Connect. The collection is right; the drain is not. Debezium adds a
+connector to operate, a Kafka cluster the platform has no other use for, and a dependency
+on the MongoDB oplog — where a `@Scheduled` poll over an indexed `status` field needs
+none of them at this volume. The cost is not the code; it is that there would then be two
+answers to "how does a message get out of this service", and the wrong one would be used
+by someone in a hurry.
 
 **Never `StreamBridge.send` inside a transactional method.** The bus has no rollback. A
 publish that succeeds inside a transaction that then fails has told three services about a
@@ -135,22 +143,23 @@ record the intent to publish in the same transaction, and IF the process termina
 the message is delivered, THEN THE SYSTEM SHALL republish it on restart.
 
 **Acceptance**
-- [ ] `spring-modulith-starter-jdbc` is on every service classpath and the `modulith_events` schema exists
-- [ ] `spring.modulith.events.jdbc.schema-initialization.enabled` and `spring.modulith.republish-outstanding-events-on-restart=true` are set in every service
-- [ ] Every domain write publishes its module event through `ApplicationEventPublisher` inside the same `@Transactional` method
+- [ ] Each service owns a `{service}_outbox` collection, written through the **same** `ReactiveMongoTemplate` session as the business document, inside one `@Transactional` method
+- [ ] No second datastore participates: there is no JDBC datasource, no `event_publication` table and no PostgreSQL dependency in any service
+- [ ] A test rolls the transaction back and asserts **neither** the document **nor** the outbox row exists — the two cannot disagree
 - [ ] An integration test kills the service between the database commit and the bus publish, restarts it, and observes exactly one message on the topic
-- [ ] `event_publication` rows are marked complete on success, and a completed-event retention window is configured rather than left unbounded
+- [ ] A `PENDING` row that has never been sent is picked up by the next drain after restart, with no manual step
+- [ ] Rows reaching `SENT` are retained for an audit window and then removed by a TTL index, rather than growing without bound
 
 ### ET-PLT-003-R2 · The bus is never reached from inside a transaction
 
-THE SYSTEM SHALL publish to Azure Service Bus only from an `@ApplicationModuleListener` or
+THE SYSTEM SHALL publish to Azure Service Bus only from an `@TransactionalEventListener(AFTER_COMMIT)` or
 a scheduled drain, and SHALL NOT call `StreamBridge` from a transactional method.
 
 **Acceptance**
 - [ ] No method annotated `@Transactional`, and no method it calls, invokes `StreamBridge.send`
 - [ ] Every cross-service publication happens in a class whose only role is publication, listening to a module event
 - [ ] A test that forces a rollback after the module event is published observes no message on the topic
-- [ ] `./scripts/spec-lint.sh --events` exits 0
+- [ ] No `StreamBridge.send` appears inside a `@Transactional` method, no module boundary uses a bare `@EventListener`, and no `@TransactionalEventListener(AFTER_COMMIT)` rethrows a delivery failure
 
 ### ET-PLT-003-R3 · Every cross-service message carries the envelope
 
@@ -198,7 +207,7 @@ past the retry budget, THEN THE SYSTEM SHALL dead-letter the message and raise i
 an alert.
 
 **Acceptance**
-- [ ] No `@ApplicationModuleListener` or bus consumer rethrows a transient failure — a provider outage is recorded as state, never as an exception escaping the handler
+- [ ] No `@TransactionalEventListener(AFTER_COMMIT)` or bus consumer rethrows a transient failure — a provider outage is recorded as state, never as an exception escaping the handler
 - [ ] Each subscription is configured with `maxDeliveryCount`, exponential backoff and a maximum backoff, all explicit rather than defaulted
 - [ ] Dead-lettered messages carry a reason and the failing consumer's name
 - [ ] Dead-letter depth per subscription is exported as a metric and alerts above zero for longer than the configured grace
@@ -286,34 +295,41 @@ Every payload component above is a `String` identifier except `capacity`,
 ### The publication shape
 
 ```java
-// 1 · the write and the module event, in one transaction
+// 1 · the document AND the outbox row, one session, one transaction, atomic
 @Transactional
 public Mono<Ticket> issue(IssueTicket cmd) {
-    return ticketRepository.save(Ticket.from(cmd, clock.instant()))
-        .doOnSuccess(t -> publisher.publishEvent(new TicketPurchasedEvent(t)));
+    Ticket ticket = Ticket.from(cmd, clock.instant());
+    return ticketRepository.save(ticket)
+        .flatMap(t -> outbox.stage(EventEnvelopes.of(
+            "booking.TicketPurchased", 1, clock.instant(), cmd.correlationId(), t.id(),
+            "booking", Map.of("ticketId", t.id(),   "eventId", t.eventId(),
+                              "tierId",   t.tierId(), "ownerId", t.ownerId(),
+                              "quantity", t.quantity())))
+            .thenReturn(t));
 }
 
-// 2 · the bus publication, after commit, retried from event_publication on restart
+// 2 · the drain — separate, after commit, never inside a transaction
 @Component
 @RequiredArgsConstructor
-class BookingEventBridge {
+class OutboxDrain {
 
+    private final OutboxRepository outbox;
     private final StreamBridge bus;
-    private final Clock clock;
 
-    @ApplicationModuleListener
-    void onTicketPurchased(TicketPurchasedEvent e) {
-        bus.send("bookingEvents-out-0", EventEnvelopes.of(
-            "booking.TicketPurchased", 1, clock.instant(), e.correlationId(), e.eventId(),
-            "booking", Map.of("ticketId", e.ticketId(), "eventId", e.eventId(),
-                              "tierId",   e.tierId(),   "ownerId", e.ownerId(),
-                              "quantity", e.quantity())));
+    @Scheduled(fixedDelayString = "${platform.outbox.drain-interval:PT2S}")
+    void drain() {                      // held under lock:sweep:outbox
+        outbox.findPending(BATCH)
+            .concatMap(row -> Mono.fromRunnable(() -> bus.send(row.binding(), row.envelope()))
+                .then(outbox.markSent(row.id()))
+                .onErrorResume(e -> outbox.recordAttempt(row.id(), e)))  // never throws out
+            .subscribe();
     }
 }
 ```
 
-The listener returns `void` and never throws. A `StreamBridge` failure is retried by
-Modulith's registry, which still holds the row as incomplete.
+The drain never throws. A `StreamBridge` failure leaves the row `PENDING` with its attempt
+count incremented, and the next drain retries it; after the attempt ceiling the row moves
+to `FAILED` and is visible to [ET-ADM-003](../../admin/003-transaction-recovery/).
 
 ### The consumption shape
 
@@ -343,19 +359,20 @@ sighting. It never throws on a duplicate — a duplicate is a no-op, not an erro
 
 | Property | Value | Why |
 |---|---|---|
-| `spring.modulith.republish-outstanding-events-on-restart` | `true` | the crash-recovery guarantee of R1 |
-| `spring.modulith.events.completion-mode` | `ARCHIVE` | completed rows retained for audit, not deleted |
-| `spring.modulith.events.jdbc.schema-initialization.enabled` | `true` | the registry table exists before first publish |
+| `platform.outbox.drain-interval` | `PT2S` | how quickly a staged event reaches the bus |
+| `platform.outbox.batch-size` | `100` | rows per drain pass |
+| `platform.outbox.max-attempts` | `8` | then the row becomes `FAILED` rather than retrying forever |
+| `platform.outbox.sent-retention` | `P7D` | TTL on `SENT` rows, so the collection stays bounded |
 | `…servicebus.bindings.*.consumer.max-delivery-count` | `5` | then dead-letter |
 | `…servicebus.bindings.*.consumer.max-concurrent-calls` | tuned per subscription | |
 | `…servicebus.processor.retry.exponential.max-retries` | `4` | with a bounded maximum backoff |
 
 ## 5. Tasks
 
-- [ ] **T1 · Modulith registry on PostgreSQL in all three services, with republish-on-restart**
-  - requirements: R1
-  - files: `backend/*/src/main/java/com/pml/*/config/ModulithEventConfig.java`, `application.yml`
-  - verify: kill-between-commit-and-publish test yields exactly one message
+- [ ] **T1 · The `{service}_outbox` collection, staged in the business transaction, and its drain**
+  - requirements: R1, R2
+  - files: `backend/*/src/main/java/com/pml/*/outbox/`, `application.yml`
+  - verify: a rolled-back transaction leaves no document **and** no outbox row; the kill-between-commit-and-publish test yields exactly one message
   - parallel-safe: yes — one service per agent
   - depends: —
 
@@ -369,7 +386,7 @@ sighting. It never throws on a duplicate — a duplicate is a no-op, not an erro
 - [ ] **T3 · One `*EventBridge` per service; move every `StreamBridge` call into it**
   - requirements: R2, R4
   - files: `backend/*/src/main/java/com/pml/*/event/bridge/`
-  - verify: `./scripts/spec-lint.sh --events`; a rollback test observes no message
+  - verify: no `StreamBridge.send` appears inside a `@Transactional` method, no module boundary uses a bare `@EventListener`, and no `@TransactionalEventListener(AFTER_COMMIT)` rethrows a delivery failure; a rollback test observes no message
   - parallel-safe: yes — one service per agent
   - depends: T1, T2
 
@@ -413,7 +430,7 @@ sighting. It never throws on a duplicate — a duplicate is a no-op, not an erro
 | Capability | Spec |
 |---|---|
 | The `Clock`, module boundaries, dependency baseline | [ET-PLT-001](../001-runtime-baseline/) |
-| Collections, indexes, the PostgreSQL boundary, Redis registry | [ET-PLT-002](../002-persistence-baseline/) |
+| Collections, indexes, the outbox document shape, Redis registry | [ET-PLT-002](../002-persistence-baseline/) |
 | What each event's consumer actually does | the spec that introduces the consumer |
 | Error codes and how a refusal reaches a client | [ET-PLT-005](../005-error-contract/) |
 | Dead-letter inspection, replay and bulk retry as an admin capability | [ET-ADM-003](../../admin/003-transaction-recovery/) |

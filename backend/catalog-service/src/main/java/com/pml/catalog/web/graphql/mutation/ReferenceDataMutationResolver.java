@@ -32,6 +32,7 @@ public class ReferenceDataMutationResolver {
     public Mono<ReferenceDataMutationResponse> createReferenceData(
             @InputArgument CreateReferenceDataInput input) {
         log.info("Creating reference data: type={}, code={}", input.type(), input.code());
+
         return referenceDataService.create(mapCreate(input))
                 .map(created -> ReferenceDataMutationResponse.success(created, "Reference data created successfully"))
                 .onErrorResume(e -> {
@@ -54,14 +55,24 @@ public class ReferenceDataMutationResolver {
                 });
     }
 
+    /**
+     * Retires a row. It is retained, per ET-CAT-003 R7.
+     *
+     * <p>The name is kept because it is the mutation clients already call, but
+     * the message says what actually happened — a row removed from the platform
+     * would leave every document naming its code unable to render, and this
+     * service cannot see those documents to know.
+     */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<DeleteMutationResponse> deleteReferenceData(@InputArgument String id) {
-        log.info("Deleting reference data: {}", id);
+        log.info("Retiring reference data: {}", id);
         return referenceDataService.delete(id)
-                .then(Mono.just(DeleteMutationResponse.success("Reference data deleted successfully")))
+                .then(Mono.just(DeleteMutationResponse.success(
+                        "Reference data retired. It is deactivated and kept, so anything already "
+                                + "referencing it still resolves.")))
                 .onErrorResume(e -> {
-                    log.error("Delete reference data failed: {}", e.getMessage());
+                    log.error("Retire reference data failed: {}", e.getMessage());
                     return Mono.just(DeleteMutationResponse.error(e.getMessage()));
                 });
     }
@@ -95,6 +106,14 @@ public class ReferenceDataMutationResolver {
                 .isActive(input.isActive() == null || input.isActive())
                 .isSystem(false)
                 .metadata(input.metadata() != null ? new HashMap<>(input.metadata()) : new HashMap<>())
+                // A workflow row without a semantic is refused by the collection
+                // validator, so this is carried through rather than dropped —
+                // otherwise every admin-created status would fail at the write
+                // with a document-failed-validation dump and no explanation.
+                .semantic(input.semantic())
+                .allowedTransitions(input.allowedTransitions() != null
+                        ? new java.util.ArrayList<>(input.allowedTransitions())
+                        : new java.util.ArrayList<>())
                 .build();
     }
 
@@ -106,8 +125,10 @@ public class ReferenceDataMutationResolver {
                 input.parentCode(),
                 input.displayOrder(),
                 input.isActive(),
-                null,
-                null,
-                input.metadata());
+                input.effectiveFrom(),
+                input.effectiveTo(),
+                input.metadata(),
+                input.semantic(),
+                input.allowedTransitions());
     }
 }

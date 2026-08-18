@@ -59,7 +59,7 @@ public class ReservationExpirationScheduler {
             reservationService.expireReservations()
                     .timeout(EXPIRATION_TIMEOUT)
                     .doOnError(error -> log.error("Error during reservation expiration: {}", error.getMessage()))
-                    .doOnSuccess(v -> log.debug("Reservation expiration task completed successfully"))
+                    .doOnSuccess(released -> log.debug("Expiry sweep released {} reservation(s)", released))
                     .block(EXPIRATION_TIMEOUT);
         } catch (Exception e) {
             // Log but don't rethrow - scheduler should continue running

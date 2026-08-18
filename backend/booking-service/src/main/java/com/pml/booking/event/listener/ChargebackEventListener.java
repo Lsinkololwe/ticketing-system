@@ -12,7 +12,8 @@ import com.pml.shared.constants.TicketStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.stream.function.StreamBridge;
-import org.springframework.modulith.events.ApplicationModuleListener;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -20,6 +21,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import com.pml.booking.domain.TicketStateMachine;
 
 /**
  * Chargeback Event Listener
@@ -46,7 +48,7 @@ import java.util.Map;
  *   <li>SMS - Sent for CRITICAL alerts (write-offs)</li>
  * </ul>
  *
- * <p>Uses Spring Modulith's @ApplicationModuleListener for reliable event processing
+ * <p>Uses Spring Modulith's @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT) for reliable event processing
  * with automatic retry and dead-letter handling via Event Publication Registry.</p>
  *
  * @since 1.0.0
@@ -78,7 +80,7 @@ public class ChargebackEventListener {
      *
      * @param event The chargeback received event
      */
-    @ApplicationModuleListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onChargebackReceived(ChargebackReceivedEvent event) {
         log.info("Processing ChargebackReceivedEvent: chargeback={}, event={}, organizer={}, amount={}",
                 event.getChargebackId(),
@@ -162,7 +164,7 @@ public class ChargebackEventListener {
      *
      * @param event The chargeback resolved event
      */
-    @ApplicationModuleListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onChargebackResolved(ChargebackResolvedEvent event) {
         log.info("Processing ChargebackResolvedEvent: chargeback={}, status={}, disputeWon={}, recovery={}",
                 event.getChargebackId(),
@@ -177,9 +179,9 @@ public class ChargebackEventListener {
                 event.getRecoveredAmount(),
                 event.getWrittenOffAmount());
 
-        // If dispute was won, restore the ticket to valid status
+        // A won dispute re-credits the escrow; the ticket stays terminal.
         if (Boolean.TRUE.equals(event.getDisputeWon())) {
-            restoreTicketAfterDisputeWin(event);
+            recordDisputeWin(event);
         }
 
         // Determine notification message based on outcome
@@ -308,10 +310,23 @@ public class ChargebackEventListener {
      *
      * <p>Operations performed:</p>
      * <ol>
-     *   <li>Set ticket status to CHARGEDBACK</li>
+     *   <li>Move the ticket to REFUNDED</li>
      *   <li>Record cancellation reason with chargeback details</li>
      *   <li>Restore inventory to available pool</li>
      * </ol>
+     *
+     * <h2>Why REFUNDED and not a state of its own</h2>
+     * ET-FIN-004 R8 says it directly: on a chargeback "the ticket moves to
+     * {@code REFUNDED}". The ticket used to carry a {@code CHARGEDBACK} status,
+     * which stored twice what {@code booking_chargebacks} already records — the
+     * ticket's only stake in the matter is that the money is gone and it must not
+     * admit anybody. Whether it went because the buyer asked or because their
+     * bank took it is a property of the chargeback row.
+     *
+     * <p>The move runs through the request-then-settle pair rather than jumping
+     * straight to {@code REFUNDED}, because ET-TKT-002 R7 forbids introducing a
+     * transition its §4 table does not have. Both legs are legal, the resting
+     * state is the one R8 names, and the state machine stays the only authority.
      *
      * @param event Chargeback received event
      */
@@ -320,14 +335,17 @@ public class ChargebackEventListener {
             Ticket ticket = ticketRepository.findById(event.getTicketId())
                     .flatMap(t -> {
                         // Only invalidate if ticket is in a chargebackable state
-                        if (!t.getStatus().isChargebackEligible()) {
+                        if (!t.getStatus().isRefundable()) {
                             log.warn("Ticket {} is not eligible for chargeback invalidation. Current status: {}",
                                     t.getId(), t.getStatus());
                             return ticketRepository.save(t);
                         }
 
-                        // Update ticket status to CHARGEDBACK
-                        t.setStatus(TicketStatus.CHARGEDBACK);
+                        TicketStatus pending = TicketStateMachine.require(
+                                t.getStatus(), TicketStateMachine.Action.REQUEST_REFUND);
+                        t.setStatus(TicketStateMachine.require(
+                                pending, TicketStateMachine.Action.SETTLE_REFUND));
+                        t.setRefundedAt(LocalDateTime.now());
                         t.setCancellationReason(String.format("Chargeback: %s (ID: %s)",
                                 event.getReason().getDisplayName(),
                                 event.getChargebackId()));
@@ -364,62 +382,44 @@ public class ChargebackEventListener {
     }
 
     /**
-     * Restore ticket after winning a chargeback dispute.
+     * Record that a dispute was won. The ticket is <em>not</em> resurrected.
      *
-     * <p>Called when a chargeback dispute is won. The ticket is restored to PURCHASED status,
-     * but inventory is NOT restored (it was already restored when chargeback was received).</p>
+     * <h2>What changed and why</h2>
+     * This method used to move the ticket back to {@code PURCHASED} and re-commit
+     * a seat from the tier's available pool. ET-TKT-002 R7 makes {@code REFUNDED}
+     * terminal and §4's transition table has no edge leaving it, so that path is
+     * no longer a legal transition — {@code TicketStateMachine} would refuse it.
+     *
+     * <p>ET-FIN-004 R8 describes what a reversal <em>does</em> do, and it is
+     * entirely financial: a {@code REVERSED} chargeback "re-credits the escrow
+     * with a balanced entry". It says nothing about readmitting the holder, and
+     * that re-credit is the ledger path's job, not this one's.
+     *
+     * <p>The case this gives up is a dispute won <em>before</em> the event, where
+     * the holder would arguably still be entitled to attend. That gap is
+     * deliberate. Silently reopening a terminal ticket, and silently taking a seat
+     * back out of a pool it may already have been resold from, are worse failures
+     * than an operator issuing a replacement by hand — and this logs everything
+     * that decision needs.
      *
      * @param event Chargeback resolved event
      */
-    private void restoreTicketAfterDisputeWin(ChargebackResolvedEvent event) {
+    private void recordDisputeWin(ChargebackResolvedEvent event) {
         try {
-            Ticket ticket = ticketRepository.findById(event.getTicketId())
-                    .flatMap(t -> {
-                        if (t.getStatus() != TicketStatus.CHARGEDBACK) {
-                            log.warn("Ticket {} is not in CHARGEDBACK status, cannot restore. Current: {}",
-                                    t.getId(), t.getStatus());
-                            return ticketRepository.save(t);
-                        }
-
-                        // Restore ticket to PURCHASED status
-                        t.setStatus(TicketStatus.PURCHASED);
-                        t.setCancellationReason(null);
-                        t.setCancelledAt(null);
-
-                        // NOTE: We do NOT restore inventory here because:
-                        // 1. Inventory was already restored when chargeback was received
-                        // 2. To make ticket valid again, we need to DEDUCT from available (sell again)
-                        String tierId = t.getTicketTierId();
-                        String reservationId = t.getReservationId();
-                        if (tierId != null && reservationId != null) {
-                            // Re-sell the ticket by decrementing available and incrementing sold
-                            return catalogServiceClient.commitInventoryToSold(tierId, 1, reservationId)
-                                    .doOnSuccess(result -> {
-                                        if (result.success()) {
-                                            log.info("Inventory re-committed for restored ticket: tier={}", tierId);
-                                        } else {
-                                            // Log warning but don't fail - ticket restoration is more important
-                                            log.warn("Inventory re-commit failed for tier {}: {}",
-                                                    tierId, result.errorMessage());
-                                        }
-                                    })
-                                    .onErrorResume(e -> {
-                                        log.warn("Error re-committing inventory for tier {}: {}", tierId, e.getMessage());
-                                        return reactor.core.publisher.Mono.empty();
-                                    })
-                                    .then(ticketRepository.save(t));
-                        }
-                        return ticketRepository.save(t);
-                    })
+            ticketRepository.findById(event.getTicketId())
+                    .doOnNext(t -> log.warn(
+                            "Chargeback {} was REVERSED for ticket {} (status {}). The escrow is re-credited "
+                                    + "by the ledger path; the ticket stays terminal per ET-TKT-002 R7 and is not "
+                                    + "readmitted. Issue a replacement manually if the event has not yet run.",
+                            event.getChargebackId(), t.getId(), t.getStatus()))
+                    .switchIfEmpty(reactor.core.publisher.Mono.fromRunnable(() -> log.warn(
+                            "Chargeback {} reversed but ticket {} no longer exists",
+                            event.getChargebackId(), event.getTicketId())))
                     .block(BLOCK_TIMEOUT);
-
-            if (ticket != null) {
-                log.info("Ticket {} restored after dispute win. Status: {}", ticket.getId(), ticket.getStatus());
-            }
         } catch (Exception e) {
-            log.error("Failed to restore ticket {} after dispute win", event.getTicketId(), e);
-            // Don't re-throw - ticket restoration after dispute win is not as critical
-            // The financial resolution is what matters most
+            // Not re-thrown: the financial resolution is what matters, and this
+            // method now only writes a log line.
+            log.error("Failed to record dispute win for ticket {}", event.getTicketId(), e);
         }
     }
 }

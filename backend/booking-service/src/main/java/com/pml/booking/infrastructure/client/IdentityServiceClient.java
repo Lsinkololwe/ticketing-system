@@ -115,10 +115,14 @@ public class IdentityServiceClient {
                 .retrieve()
                 .bodyToMono(UserOrganizationsResponse.class)
                 .doOnSuccess(result -> log.debug("User has {} organizations", result.organizations().size()))
-                .onErrorResume(e -> {
-                    log.error("Failed to get user organizations: {}", e.getMessage());
-                    return Mono.just(new UserOrganizationsResponse(List.of()));
-                });
+                .doOnError(e -> log.error("Failed to get user organizations: {}", e.getMessage()));
+                // The error is NOT swallowed into an empty list. Doing so made an
+                // identity-service outage indistinguishable from "this user
+                // belongs to no organization" — and callers that scope money by
+                // the result would then render an empty dashboard during an
+                // outage, which reads as "you have no money" rather than as a
+                // fault. Callers decide how to fail; they cannot decide if the
+                // difference has already been erased.
     }
 
     // ─────────────────────────────────────────────────────────────────────────

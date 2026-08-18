@@ -434,7 +434,10 @@ export function Sidebar({ isOpen, isMobile, onClose }: SidebarProps) {
         role="navigation"
         aria-label="Main navigation"
         style={{
-          width: '280px',
+          // 250px, per `Admin - Dashboard.dc.html`. The app carried 280px,
+          // which is the org-admin figure; the platform admin rail is narrower
+          // because its labels are shorter and its content denser.
+          width: '250px',
           height: '100vh',
           position: 'fixed',
           left: 0,
@@ -455,7 +458,7 @@ export function Sidebar({ isOpen, isMobile, onClose }: SidebarProps) {
           p="4"
           style={{
             borderBottom: '1px solid var(--sidebar-divider)',
-            height: '64px',
+            height: '56px',
             position: 'relative',
             zIndex: 1,
             flexShrink: 0,

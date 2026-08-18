@@ -1,6 +1,5 @@
 package com.pml.booking.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -15,7 +14,7 @@ import java.time.Instant;
  * External Listeners (via Azure Service Bus):
  * - Identity Service: Updates organizer dashboard metrics
  */
-@Externalized("payment-events::CommissionEarned")
+/** Cross-service wire name (ET-PLT-003 §4): payment-events::CommissionEarned — staged into the outbox. */
 public record CommissionEarnedEvent(
         String eventId,
         String organizerId,

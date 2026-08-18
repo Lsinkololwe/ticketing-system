@@ -1,7 +1,7 @@
 # Event Ticketing · specification corpus and build order
 
 A greenfield specification of the platform on **Java 21 / Spring Boot 3.5.4 WebFlux,
-Netflix DGS 10.5 over Apollo Federation 2.9, reactive MongoDB, Spring Modulith 1.3.1,
+Netflix DGS 10.5 over Apollo Federation 2.9, reactive MongoDB,
 Azure Service Bus and Keycloak 26**, using the constructs in [CONVENTIONS.md](CONVENTIONS.md).
 
 Written 2026-07-30 against `docs/USER_STORIES.md` v3.0 (roles and hierarchy),
@@ -35,8 +35,8 @@ variation.
 | # | Question | Decision |
 |---|---|---|
 | **D-01** | MongoDB topology | **Replica set in every environment**, single-node in development. Reservations, escrow movements and journal pairs are multi-document writes; against a standalone `mongod` `@Transactional` is silently inert and the platform oversells under load |
-| **D-02** | The hybrid persistence | **PostgreSQL holds framework infrastructure only** — Spring Modulith's `event_publication` table and Keycloak's schema. No business document ever lands there. The blocking JDBC pool is the price of a durable outbox, and it is paid once, in `ModulithEventConfig` |
-| **D-03** | Eventing tiers | **Modulith inside a service, Azure Service Bus between services.** Never `StreamBridge` inside a transaction — publish from an `@ApplicationModuleListener`, which runs after commit by definition |
+| **D-02** | One datastore per service | **MongoDB only.** No service connects to PostgreSQL: Keycloak runs its own schema and nothing else relational exists. A blocking JDBC pool inside a strictly reactive stack has to earn its place, and once the outbox lives in MongoDB there is nothing left for it to do |
+| **D-03** | Eventing tiers | **In-process events inside a service, Azure Service Bus between services, and a MongoDB outbox between the two.** The outbox row is staged in the same reactive transaction as the document, so the write and the intent to publish cannot disagree; a scheduled drain reaches the bus afterwards. `StreamBridge` is never called inside a transaction |
 | **D-04** | Commission model | **Two-stage: pending at purchase, recognised at event completion.** Money owed on a ticket for an event that is later cancelled was never revenue, and a platform that books it at purchase reports a profit it must then reverse |
 | **D-05** | Escrow granularity | **One escrow account per event**, not per organizer. Cancelling one event must not reach into another event's settled funds; and a per-event balance is what makes a refund obligation computable |
 | **D-06** | Payment provider | **PawaPay only at launch, behind a `PaymentProviderPort`.** MTN, Airtel and Zamtel reach the platform through one aggregator; the port exists so the second aggregator is an adapter, not a rewrite |
@@ -49,6 +49,8 @@ variation.
 | **D-13** | Statistics | **Server-side MongoDB aggregation with `$match` first**, one pipeline per stat type, never client-side counting over a fetched page |
 | **D-14** | Currency | **ZMW only at launch**, but stored on every monetary field. Single-currency assumptions are cheap to make and expensive to remove |
 | **D-15** | Notification channels | **WhatsApp, SMS, push and email.** WhatsApp is primary in-market and carries the OTP that is the login mechanism; SMS is its fallback; email is for receipts and the invitation flow, which needs a durable addressable identity |
+| **D-17** | Permission vocabulary | **`module:action` — flat, exactly one colon, no dots — a closed catalogue declared in code, with `manage` implying CRUD and any write implying read, and no third rule.** A finer subject is its own module (`ticket_tiers`, `ticket_qr`, `bank_accounts`), never a dotted path, so `split(':')` is the whole parser. Keycloak owns roles; MongoDB owns the role→permission mapping as **one document per role** — no junction collection, no view, no `$lookup` on the authorization path. A platform administrator edits the mapping; nobody invents a permission, because a key nothing enforces is protection that does not exist |
+| **D-18** | Reference data | **One polymorphic collection, compiled types and runtime rows.** Workflow statuses are reflected out of the code's own enums rather than seeded, so the value list cannot drift; each carries a coarse `WorkflowSemantic`, and code branches on the semantic, never on the code string, so a new status needs no deployment |
 | **D-16** | Target scale | **200,000 tickets/month, with an on-sale peak of 5,000 reservations/minute against a single event.** Every capacity requirement in this corpus is sized against that second figure, because the first never breaks anything |
 
 ---
@@ -65,6 +67,7 @@ below is optional and nothing after it is safe to sequence first.
 
 | ID | Title | Conformance |
 |---|---|---|
+| [ET-PLT-012](_platform/012-build-topology/) | Build topology — the parent POM, the BOM set, the reactor, the enforcer | PDI §1 |
 | [ET-PLT-001](_platform/001-runtime-baseline/) | Runtime baseline — reactive contract, `Clock`, module boundaries, service topology | PDI §1 |
 | [ET-PLT-002](_platform/002-persistence-baseline/) | Persistence baseline — replica set, collection and index registry, money and time types | PDI §1, §4 |
 | [ET-PLT-003](_platform/003-event-contract/) | Event contract — two tiers, envelope, outbox, topics, idempotent consumers, DLQ | PDI §3, §8 |
@@ -77,9 +80,11 @@ below is optional and nothing after it is safe to sequence first.
 | ID | Title |
 |---|---|
 | [ET-PLT-007](_platform/007-security-and-authorization/) | Keycloak realm, roles, `@auth`, internal scopes, idempotency keys, tenant scoping |
+| [ET-PLT-013](_platform/013-permission-engine/) | The permission engine — flat `module:action` catalogue, role→permission mapping, evaluation |
 | [ET-IDN-001](identity/001-phone-otp-identity/) | Phone-OTP passwordless identity — the Keycloak SPI and the OTP lifecycle |
 | [ET-IDN-002](identity/002-keycloak-user-sync/) | Keycloak ↔ MongoDB user synchronisation, drift detection and recovery |
-| [ET-ORG-001](organization/001-organizer-onboarding/) | Organizer application — six states, documents, staged access, approval |
+| [ET-IDN-003](identity/003-token-revocation/) | Token revocation — `jti`/`sid`/`sub`, the fail-closed check, platform-wide propagation |
+| [ET-ORG-001](organization/001-organizer-onboarding/) | Organizer application — **nine states**, documents, staged access, approval |
 | [ET-ORG-002](organization/002-teams-and-invitations/) | Organization members, invitations, ownership transfer |
 | [ET-ORG-003](organization/003-permission-resolution/) | The three-tier permission resolver and event access grants |
 
@@ -89,6 +94,7 @@ below is optional and nothing after it is safe to sequence first.
 |---|---|
 | [ET-CAT-001](catalog/001-event-lifecycle/) | Event lifecycle — the state machine, approval, publish, reschedule, cancel |
 | [ET-CAT-002](catalog/002-ticket-tiers-and-inventory/) | Ticket tiers, capacity, sales windows, the authoritative inventory count |
+| [ET-PLT-014](_platform/014-reference-data-engine/) | The reference data engine — enum-derived, administrator-owned lookups and statuses |
 | [ET-CAT-003](catalog/003-locations-and-reference-data/) | Provinces, cities, venues, categories, discovery and search |
 
 ### Wave 3 · The purchase loop
@@ -138,8 +144,12 @@ below is optional and nothing after it is safe to sequence first.
 | [ET-PLT-010](_platform/010-schema-evolution/) | Event and GraphQL schema versioning, upcasting, deprecation windows |
 | [ET-PLT-011](_platform/011-rate-limiting-and-abuse/) | Rate limits, on-sale queueing, bot defence, OTP abuse control |
 
-**37 specs.** Waves 0 and 1 are authored; the rest are allocated numbers and titles here
-and authored in subsequent passes.
+**41 specs, all authored and `approved`.** Every one carries the six sections, 7–8 EARS requirements with
+acceptance boxes, a §4 model that names every collection, index, event, operation and
+code, and a §5 task list with `depends` and `parallel-safe` on each task.
+
+The dependency graph is a DAG — 180 edges, no cycles, and no spec is blocked by one in a
+later wave, so the wave order below is executable as written.
 
 ---
 

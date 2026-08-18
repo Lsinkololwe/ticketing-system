@@ -16,6 +16,7 @@ import { User, FloppyDisk, Camera, Key, Shield, Mail, Phone } from 'iconoir-reac
 import { PageHeader } from '@/components/ui';
 import { PhoneNumberInput } from '@pml.tickets/shared';
 import { useSession } from '@/lib/auth/client';
+import { useUpdateProfile } from '@pml.tickets/shared/api/organization-admin/modules/settings';
 
 // =============================================================================
 // TYPES
@@ -26,7 +27,6 @@ interface ProfileFormData {
   lastName: string;
   email: string;
   phone: string;
-  jobTitle: string;
 }
 
 // =============================================================================
@@ -69,14 +69,15 @@ export default function ProfileSettingsPage() {
   const { data: session } = useSession();
   // TODO: Get role from organization membership when implemented
   const role = 'OWNER';
-  const [isSaving, setIsSaving] = useState(false);
+  const { updateProfile, loading: isSaving } = useUpdateProfile();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<ProfileFormData>({
     firstName: session?.user?.name?.split(' ')[0] || '',
     lastName: session?.user?.name?.split(' ').slice(1).join(' ') || '',
     email: session?.user?.email || '',
     phone: '',
-    jobTitle: '',
   });
 
   const handleChange = useCallback((field: keyof ProfileFormData, value: string) => {
@@ -84,17 +85,23 @@ export default function ProfileSettingsPage() {
   }, []);
 
   const handleSave = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      // TODO: Save to GraphQL API
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log('Saving profile:', formData);
-    } catch (error) {
-      console.error('Failed to save:', error);
-    } finally {
-      setIsSaving(false);
+    setSaveError(null);
+
+    const result = await updateProfile({
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      // Phone is sent only when the user actually entered one — an empty
+      // string would clear a number they set elsewhere.
+      ...(formData.phone ? { phoneNumber: formData.phone } : {}),
+    });
+
+    if (!result.success) {
+      setSaveError(result.error ?? 'Your profile could not be saved.');
+      return;
     }
-  }, [formData]);
+
+    setSavedAt(new Date().toLocaleTimeString());
+  }, [formData, updateProfile]);
 
   const handleChangePassword = useCallback(() => {
     // Redirect to Keycloak account management
@@ -136,6 +143,39 @@ export default function ProfileSettingsPage() {
           },
         ]}
       />
+
+      {/* Save outcome, stated in place. A silent failure on a settings form is
+          indistinguishable from a success, and the user walks away believing
+          their details were recorded. */}
+      {saveError && (
+        <Box
+          className="error-card"
+          mb="4"
+          style={{
+            padding: 'var(--space-3) var(--space-4)',
+            borderRadius: 'var(--card-radius)',
+            border: '1px solid var(--red-a6)',
+          }}
+          role="alert"
+          data-testid="profile-save-error"
+        >
+          <Text as="p" size="2" style={{ color: 'var(--status-danger-11)' }}>
+            {saveError}
+          </Text>
+        </Box>
+      )}
+
+      {savedAt && !saveError && (
+        <Text
+          as="p"
+          size="1"
+          mb="4"
+          style={{ color: 'var(--status-success-11)' }}
+          data-testid="profile-saved"
+        >
+          Saved at {savedAt}.
+        </Text>
+      )}
 
       {/* Profile Header Card */}
       <Card
@@ -237,14 +277,10 @@ export default function ProfileSettingsPage() {
             />
           </FormField>
 
-          <FormField label="Job Title">
-            <TextField.Root
-              size="3"
-              value={formData.jobTitle}
-              onChange={(e) => handleChange('jobTitle', e.target.value)}
-              placeholder="e.g., Event Manager"
-            />
-          </FormField>
+          {/* "Job title" removed: `User` has no such field, so every value
+              typed into it was discarded on save. A control that cannot
+              persist is worse than a missing one — the user believes they
+              have recorded something. Restore it once the field exists. */}
         </Box>
       </Card>
 

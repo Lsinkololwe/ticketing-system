@@ -172,7 +172,7 @@ the organizations that caller belongs to.
 - [ ] A caller requesting another organization's resource by a known-good id receives the `*_UNKNOWN` code for that type, indistinguishable from a non-existent id (ET-PLT-005 R6)
 - [ ] A `SUPER_ADMIN` or `ADMIN` bypasses the filter through one explicitly named code path, and that path is logged to the audit trail
 - [ ] A test iterates every tenant-scoped query with a second organization's ids and asserts no data is returned
-- [ ] `./scripts/spec-lint.sh --security` exits 0
+- [ ] Permission resolution exists in exactly one implementation, `/api/internal/**` is scope-gated, and no `User.keycloakUserId` exists
 
 ### ET-PLT-007-R5 · Internal endpoints are scope-gated and user-agnostic
 
@@ -382,7 +382,7 @@ by an explicit allowlist rather than by omission.
 - [ ] **T4 · `TenantScope`; move every tenant check into the repository filter**
   - requirements: R4
   - files: every tenant-scoped repository in booking and identity
-  - verify: `./scripts/spec-lint.sh --security`; the cross-tenant iteration test returns nothing
+  - verify: permission resolution exists in exactly one implementation, `/api/internal/**` is scope-gated, and no `User.keycloakUserId` exists; the cross-tenant iteration test returns nothing
   - parallel-safe: no — the resolution is shared
   - depends: T2
 

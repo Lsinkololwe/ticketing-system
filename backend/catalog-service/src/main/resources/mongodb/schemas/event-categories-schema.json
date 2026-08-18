@@ -9,6 +9,10 @@
       "isActive"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -23,31 +27,49 @@
         "description": "OWASP A03 - URL-safe slug format"
       },
       "description": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "iconUrl": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^https?://.*",
         "maxLength": 500
       },
       "parentCategoryId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$",
         "description": "For hierarchical categories"
       },
       "sortOrder": {
-        "bsonType": ["int", "null"],
+        "bsonType": [
+          "int",
+          "null"
+        ],
         "minimum": 0
       },
       "isActive": {
         "bsonType": "bool"
       },
       "createdAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

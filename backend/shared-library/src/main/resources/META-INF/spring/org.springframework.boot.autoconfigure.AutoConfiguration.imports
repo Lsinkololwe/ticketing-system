@@ -1,3 +1,6 @@
+com.pml.shared.config.PlatformAuditingAutoConfiguration
+com.pml.shared.config.PlatformClockAutoConfiguration
+com.pml.shared.config.SharedPersistenceSupportAutoConfiguration
 com.pml.shared.security.KeycloakSecurityAutoConfiguration
 com.pml.shared.security.TokenBlacklistAutoConfiguration
 com.pml.shared.security.revocation.RevocationAutoConfiguration

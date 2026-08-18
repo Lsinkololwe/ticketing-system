@@ -1248,6 +1248,90 @@ public class SecurityConfig {
 
 ### Frontend Development
 
+#### 0. THE DESIGN AUTHORITY — read this before writing any UI
+
+**The Claude Design project is the single, final authority on the design of every
+frontend application** — admin, organization-admin and ticketing alike. It
+outranks every design document in this repository, every existing screen, and
+your own judgement about what looks reasonable.
+
+| | |
+|---|---|
+| Project | **Ticketing System Design** |
+| ID | `03cea541-469f-44d2-aa91-a5c6f5456295` |
+| URL | https://claude.ai/design/p/03cea541-469f-44d2-aa91-a5c6f5456295 |
+| Tool | `DesignSync` MCP (`api.anthropic.com/v1/design/mcp`, auth via `/design-login`) |
+| Local mirror | `frontend/web/docs/DESIGN_AUTHORITY.md` |
+
+**Mandatory workflow. Do not skip a step.**
+
+1. `DesignSync` `list_files` on the project id above.
+2. `get_file` the `.dc.html` screen for the surface you are about to touch —
+   e.g. `Admin - Dashboard.dc.html` before touching the admin dashboard. The
+   screens are the layout contract: sidebar groups, page composition, table
+   shape, panel order.
+3. `get_file` the tokens you need from
+   `_ds/myticketzm-design-system-*/tokens/` and honour
+   `_adherence.oxlintrc.json` — it is the enforceable rule set.
+4. Only then write code. If the design and the existing screen disagree, **the
+   design wins** and the existing screen is the defect.
+
+**Screen → surface map** (one `.dc.html` per surface; read the matching one):
+
+| Surface | Design file |
+|---|---|
+| Admin dashboard | `Admin - Dashboard.dc.html` |
+| Admin approvals | `Admin - Approvals Workbench.dc.html` |
+| Admin events / users / finance | `Admin - Events.dc.html`, `Admin - Users & Organizations.dc.html`, `Admin - Finance.dc.html` |
+| Admin transactions / system | `Admin - Transactions & System.dc.html` |
+| Admin ledger / reconciliation | `Admin - Ledger, Commission & Reconciliation.dc.html` |
+| Admin analytics | `Admin - Analytics & Statistics.dc.html` |
+| Admin observability | `Admin - Observability & Health.dc.html` |
+| Admin platform config | `Admin - Platform Configuration.dc.html` |
+| Admin transaction recovery | `Admin - Transaction Recovery.dc.html` |
+| Login / OTP / MFA | `Login - Phone OTP & Admin MFA.dc.html` |
+| Org admin (all) | `Org Admin - *.dc.html` |
+| Ticketing (all) | `Ticketing - *.dc.html` |
+| Spec ↔ screen coverage | `Coverage - Spec to Screen Map.dc.html` |
+
+**Hard rules from `_adherence.oxlintrc.json`** — these are lint-enforceable, so
+treat them as build errors:
+
+- **No raw hex** in app source. Only `design-tokens.css` may hold hex; everything
+  else goes through `var(--token)`.
+- **No raw `px`** literals. Use the spacing/radius tokens.
+- **Fonts are exactly three**: `Inter` (admin + org-admin, all text),
+  `Space Grotesk` (ticketing headings only), `Fira Code` (tabular/code-like —
+  ticket ids, currency in tables, order refs). Nothing else.
+- **Import design-system components from the barrel**, never from component
+  internals.
+- Component props are closed sets. `Button` takes only
+  `children|variant|color|size|disabled|icon|style|onClick`; `variant` ∈
+  `solid|soft|outline|ghost`; `color` ∈ `accent|red|green`. `Badge` colour ∈
+  `gray|accent|green|amber|red|blue`. `StyledCard` `hover` ∈
+  `default|lift|glow|none`. `StatCard` `trend` ∈ `up|down|neutral`.
+  `EmptyState`/`Toast` sizes and variants are likewise closed — see the local
+  mirror for the full table.
+
+**Brand contexts** — the accent is set per app and is not a matter of taste:
+
+| App | `data-brand` | Radix accent | Gray | Display font |
+|---|---|---|---|---|
+| `apps/admin` | `admin` | **teal** | slate | Inter |
+| `apps/organization-admin` | `org-admin` | **teal** | slate | Inter |
+| `apps/ticketing` | `ticketing` | **iris** | slate | Space Grotesk |
+
+Roles: **primary = teal** (hue 174, brand + admin identity), **secondary =
+indigo** `#5b5fc7` (customer app, links, focus), **highlight = terracotta
+copper** `#c05a2e` (promos/featured, ≤10% of any screen), **money = jade**
+(hue 146, semantic only — a "paid" chip must never read as a brand chip).
+
+**`docs/ADMIN_APP_DESIGN.md` is SUPERSEDED.** Its §1.1 visual identity
+(`#7C3AED` purple, `#F97316` orange, dark-OLED `#0F0F0F`, Fira Code headings)
+describes a theme the platform never shipped. The design system's own readme
+says so explicitly. Do not implement from it; its module/architecture sections
+are still useful, its visual identity is not.
+
 #### 1. Apollo Client Setup
 
 ```typescript

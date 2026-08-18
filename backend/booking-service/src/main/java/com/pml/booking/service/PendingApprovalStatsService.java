@@ -30,7 +30,7 @@ import static org.springframework.data.mongodb.core.aggregation.Aggregation.newA
 @RequiredArgsConstructor
 public class PendingApprovalStatsService {
 
-    private static final String PAYOUT_REQUESTS_COLLECTION = "payout_requests";
+    private static final String PAYOUT_REQUESTS_COLLECTION = "booking_payout_requests";
     private static final String REFUND_REQUESTS_COLLECTION = "refund_requests";
 
     private final ReactiveMongoTemplate mongoTemplate;

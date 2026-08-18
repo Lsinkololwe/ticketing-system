@@ -60,9 +60,10 @@ public class RefundRequestQueryResolver {
     public Mono<RefundRequest> refundRequestByRequestId(@InputArgument String requestId) {
         log.debug("GraphQL query: refundRequestByRequestId({})", requestId);
         Objects.requireNonNull(requestId, "Request ID is required");
-        return refundService.findPendingRefunds()
-                .filter(r -> requestId.equals(r.getRequestId()))
-                .next();
+        // An indexed lookup over all refunds. This used to scan findPendingRefunds()
+        // and filter in memory, which meant looking up an APPROVED or COMPLETED
+        // refund by its own request ID answered null.
+        return refundService.findByRequestId(requestId);
     }
 
     /**
@@ -94,7 +95,10 @@ public class RefundRequestQueryResolver {
         log.debug("GraphQL query: refundRequestsOffsetPagination");
         Objects.requireNonNull(filter, "Filter is required");
 
-        Flux<RefundRequest> refundFlux = applyFilters(refundService.findPendingRefunds(), filter);
+        // findAll(), not findPendingRefunds(): this is the admin table for every
+        // refund, and `filter.status` narrows it. Sourcing from the pending queue
+        // made `status: APPROVED` an empty intersection rather than a search.
+        Flux<RefundRequest> refundFlux = applyFilters(refundService.findAll(), filter);
         return buildOffsetPage(refundFlux, pagination);
     }
 
@@ -160,7 +164,8 @@ public class RefundRequestQueryResolver {
         log.debug("GraphQL query: refundRequestsCursorPagination");
         Objects.requireNonNull(filter, "Filter is required");
 
-        Flux<RefundRequest> refundFlux = applyFilters(refundService.findPendingRefunds(), filter);
+        // See refundRequestsOffsetPagination — same query, cursor-paginated.
+        Flux<RefundRequest> refundFlux = applyFilters(refundService.findAll(), filter);
         return buildCursorConnection(refundFlux, pagination);
     }
 
@@ -278,7 +283,7 @@ public class RefundRequestQueryResolver {
     // ========================================================================
 
     private Mono<RefundRequestOffsetPage> buildOffsetPage(Flux<RefundRequest> refundFlux, OffsetPaginationInput pagination) {
-        OffsetPaginationInput p = pagination != null ? pagination : new OffsetPaginationInput(1, 20);
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
         int limit = p.getLimit();
         int offset = p.getOffset();
 
@@ -443,8 +448,6 @@ public class RefundRequestQueryResolver {
     }
 
     private boolean isRefundableStatus(TicketStatus status) {
-        return status == TicketStatus.PURCHASED ||
-                status == TicketStatus.CONFIRMED ||
-                status == TicketStatus.VALIDATED;
+        return status != null && status.isRefundable();
     }
 }

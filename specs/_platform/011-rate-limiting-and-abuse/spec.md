@@ -262,7 +262,7 @@ because a buyer watching their position increase assumes they have been cheated.
 
 An operator may block a subject or an IP temporarily:
 
-`admin_temporary_blocks`
+`identity_temporary_blocks`
 
 | Field | Notes |
 |---|---|

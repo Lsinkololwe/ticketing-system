@@ -54,11 +54,6 @@ public class RevocationAutoConfiguration {
     /** Resilience4j instance name; override via {@code resilience4j.*.instances.revocationCache}. */
     public static final String CACHE_RESILIENCE_INSTANCE = "revocationCache";
 
-    @Bean
-    @ConditionalOnMissingBean(name = "revocationClock")
-    public Clock revocationClock() {
-        return Clock.systemUTC();
-    }
 
     @Bean
     @ConditionalOnMissingBean

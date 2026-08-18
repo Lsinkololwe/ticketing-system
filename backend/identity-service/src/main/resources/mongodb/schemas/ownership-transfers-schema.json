@@ -12,12 +12,19 @@
       "requestedAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
       "entityType": {
         "bsonType": "string",
-        "enum": ["EVENT", "ORGANIZATION"],
+        "enum": [
+          "EVENT",
+          "ORGANIZATION"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "entityId": {
@@ -37,24 +44,42 @@
       },
       "status": {
         "bsonType": "string",
-        "enum": ["PENDING", "ACCEPTED", "DECLINED", "CANCELLED", "COMPLETED"],
+        "enum": [
+          "PENDING",
+          "ACCEPTED",
+          "DECLINED",
+          "CANCELLED",
+          "COMPLETED"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "requestedAt": {
         "bsonType": "date"
       },
       "acceptedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "completedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "reason": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "notes": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 2000
       }
     },

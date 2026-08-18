@@ -1,39 +1,38 @@
 import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
-import { afterEach, beforeAll, afterAll, vi } from 'vitest';
-import { server } from './mocks/server';
+import { afterEach, vi } from 'vitest';
 
 /**
- * Component suites run in jsdom; container-backed integration suites opt into the node
- * environment. Only the former get the DOM helpers and the MSW interceptor — an integration
- * suite talks to a real container over real HTTP, and intercepting that traffic would break it.
+ * Test setup for the organizer portal.
+ *
+ * <h2>No request mocking, by policy</h2>
+ *
+ * There is no MSW server here and no fixture data anywhere in this app. Any
+ * test that needs a backend talks to a real one in a container — see
+ * `src/lib/auth/__tests__/revocation.integration.test.ts` for the pattern, and
+ * `backend/booking-service/.../OrganizerDashboardAnalyticsIntegrationTest.java`
+ * for the server-side equivalent.
+ *
+ * The rationale is not purity. A hand-written fixture encodes what we *believe*
+ * the backend returns, so it keeps passing after the backend changes shape —
+ * which is precisely when a test should fail. The BigDecimal-stored-as-String
+ * defect (see docs/ORG_ADMIN_REDESIGN_NOTES.md §1.1) survived in production
+ * code for exactly that reason: nothing ever ran the pipeline against a real
+ * MongoDB.
+ *
+ * What remains below are ENVIRONMENT SHIMS, not mocks: jsdom has no Next.js
+ * router, no `matchMedia` and no `IntersectionObserver`, so rendering any
+ * component would throw without them. They stand in for browser platform, not
+ * for application data.
  */
-const isBrowserLikeSuite = typeof window !== 'undefined';
 
-// Establish API mocking before all tests
-beforeAll(() => {
-  if (isBrowserLikeSuite) {
-    server.listen({ onUnhandledRequest: 'error' });
-  }
-});
-
-// Reset any request handlers that we may add during the tests,
-// so they don't affect other tests
 afterEach(() => {
-  if (isBrowserLikeSuite) {
+  if (typeof window !== 'undefined') {
     cleanup();
-    server.resetHandlers();
   }
 });
 
-// Clean up after the tests are finished
-afterAll(() => {
-  if (isBrowserLikeSuite) {
-    server.close();
-  }
-});
-
-// Mock Next.js router
+// Next.js router — jsdom provides no routing context.
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: vi.fn(),

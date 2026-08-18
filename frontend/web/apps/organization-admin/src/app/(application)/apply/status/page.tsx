@@ -7,7 +7,7 @@
  * Auto-refreshes when pending review.
  */
 
-import { useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Flex, Text, Heading, Button, Card, Avatar, Badge, Grid } from '@radix-ui/themes';
 import {
@@ -29,9 +29,9 @@ import {
 } from 'iconoir-react';
 import {
   useMyOrganization,
-  canEditApplication,
   isApproved,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import { ROUTES } from '@/lib/onboarding/state';
 import { isServerUnavailable } from '@pml.tickets/shared';
 import { StatusSkeleton } from '@/components/application';
 
@@ -330,22 +330,22 @@ function Capability({
 
 export default function StatusPage() {
   const router = useRouter();
-  const { organization, hasOrganization, status, loading, error, refetch } = useMyOrganization();
+  const { organization, status, loading, error, refetch } = useMyOrganization();
 
-  // Redirects
-  useEffect(() => {
-    if (loading) return;
-    if (!hasOrganization) {
-      router.replace('/welcome');
-    } else if (isApproved(status)) {
-      router.replace('/dashboard');
-    } else if (canEditApplication(status)) {
-      router.replace('/apply/business-info');
-    }
-  }, [loading, hasOrganization, status, router]);
+  // NOTE: no client-side redirects here.
+  //
+  // This page used to `router.replace()` out of itself based on the status the
+  // client query returned. That duplicated the server guard and disagreed with
+  // it whenever the client query failed — including bouncing an applicant to
+  // `/welcome`, the setup form, on a transient error. Routing is now decided
+  // once, server-side, in the `(application)` layout.
+  //
+  // @see lib/onboarding/state.ts
 
-  const goToDashboard = useCallback(() => router.push('/dashboard'), [router]);
-  const goToEdit = useCallback(() => router.push('/apply/business-info'), [router]);
+  const goToDashboard = useCallback(() => router.push(ROUTES.dashboard), [router]);
+  const goToEdit = useCallback(() => router.push(ROUTES.businessInfo), [router]);
+  const goToDocuments = useCallback(() => router.push(ROUTES.documents), [router]);
+  const goToNewEvent = useCallback(() => router.push('/events/new'), [router]);
 
   // Loading
   if (loading) {
@@ -382,21 +382,37 @@ export default function StatusPage() {
         <Text size="2" style={{ color: 'var(--content-tertiary)', display: 'block', marginBottom: 16 }}>
           {isOffline ? 'Check your connection and try again.' : (error.message || 'An error occurred.')}
         </Text>
+        {/* Retry only. The "Home" button here used to route to /welcome — the
+            setup form — so a transient network error invited an applicant with
+            a live application to start a second one. */}
         <Flex gap="2" justify="center">
-          <Button variant="soft" size="2" onClick={() => router.push('/welcome')}>Home</Button>
-          <Button size="2" onClick={() => refetch()} className="btn-primary">Retry</Button>
+          <Button size="2" onClick={() => refetch()} className="btn-primary" data-testid="status-retry">
+            <Refresh style={{ width: 14, height: 14 }} aria-hidden="true" /> Retry
+          </Button>
+          <Button
+            variant="soft"
+            size="2"
+            onClick={() => window.open('mailto:support@myticket.zm', '_blank')}
+            data-testid="status-support"
+          >
+            <Mail style={{ width: 14, height: 14 }} aria-hidden="true" /> Contact support
+          </Button>
         </Flex>
       </Box>
     );
   }
 
-  // No organization
+  // Organization missing from a successful response. The server guard only routes
+  // here when one exists, so this is a race with a just-completed mutation —
+  // wait it out rather than offering to start again.
   if (!organization || !status) {
     return (
-      <Box py="9" style={{ textAlign: 'center' }}>
-        <Text size="2" style={{ color: 'var(--content-tertiary)' }}>No application found.</Text>
-        <Button variant="soft" size="2" mt="3" onClick={() => router.push('/welcome')}>
-          Start Application
+      <Box py="9" style={{ textAlign: 'center' }} aria-live="polite" data-testid="status-empty">
+        <Text size="2" style={{ color: 'var(--content-tertiary)', display: 'block', marginBottom: 12 }}>
+          Loading your application…
+        </Text>
+        <Button variant="soft" size="2" onClick={() => refetch()} data-testid="status-empty-retry">
+          <Refresh style={{ width: 14, height: 14 }} aria-hidden="true" /> Refresh
         </Button>
       </Box>
     );
@@ -408,9 +424,12 @@ export default function StatusPage() {
   const needsChanges = status === 'CHANGES_REQUESTED';
   const rejected = status === 'REJECTED';
   const approved = isApproved(status);
+  // The backend stores both the rejection reason and the changes-requested
+  // reason in `rejectionReason`; only show it for the states it belongs to.
+  const reviewReason = (needsChanges || rejected) ? organization.rejectionReason : null;
 
   return (
-    <Box>
+    <Box width="100%" maxWidth="680px" mx="auto" data-testid="status-shell">
       {/* Status Banner */}
       <Card size="3" mb="4" style={{ background: config.bg }}>
           <Flex align="start" gap="3">
@@ -440,32 +459,86 @@ export default function StatusPage() {
             </Box>
           </Flex>
 
-          {/* Actions */}
+          {/* The reviewer's own words, verbatim.
+              "Your tax certificate is illegible" and "we do not believe this
+              business exists" are different messages that need different
+              responses, so the reason is shown rather than summarised into the
+              status label. */}
+          {reviewReason && (
+            <Box
+              mt="3"
+              p="3"
+              data-testid="review-reason"
+              style={{
+                borderRadius: 'var(--radius-3)',
+                background: rejected ? 'var(--red-a2)' : 'var(--amber-a2)',
+                border: `1px solid ${rejected ? 'var(--red-a5)' : 'var(--amber-a5)'}`,
+              }}
+            >
+              <Text
+                size="1"
+                weight="medium"
+                style={{ color: 'var(--content-tertiary)', display: 'block', marginBottom: 4 }}
+              >
+                {rejected ? 'Why it wasn’t approved' : 'What the reviewer needs'}
+              </Text>
+              <Text size="2" style={{ color: 'var(--content-primary)' }}>
+                {reviewReason}
+              </Text>
+            </Box>
+          )}
+
+          {/* Actions — one primary per state, per the design authority. */}
           <Flex gap="2" mt="4" wrap="wrap">
             {approved && (
-              <Button size="2" onClick={goToDashboard} className="btn-primary">
-                Go to Dashboard <ArrowRight style={{ width: 14, height: 14 }} />
+              <Button size="2" onClick={goToDashboard} className="btn-primary" data-testid="status-cta-dashboard">
+                Go to dashboard <ArrowRight style={{ width: 14, height: 14 }} aria-hidden="true" />
               </Button>
             )}
+
             {needsChanges && (
-              <Button size="2" onClick={goToEdit} style={{ background: 'var(--warning-500)', color: 'var(--content-inverse)' }}>
-                <EditPencil style={{ width: 14, height: 14 }} /> Edit Application
-              </Button>
-            )}
-            {isPending && (
               <>
-                <Button variant="outline" size="2" onClick={() => refetch()}>
-                  <Refresh style={{ width: 14, height: 14 }} /> Refresh
+                {/* Straight to the documents step when that is what was
+                    queried — the common case, and the one where sending
+                    somebody back through the whole form loses them. */}
+                <Button size="2" onClick={goToDocuments} className="btn-primary" data-testid="status-cta-resubmit">
+                  <EditPencil style={{ width: 14, height: 14 }} aria-hidden="true" /> Edit &amp; resubmit
                 </Button>
-                <Button variant="outline" size="2" onClick={goToDashboard} style={{ color: 'var(--brand-500)', borderColor: 'var(--brand-500)' }}>
-                  Explore Dashboard
+                <Button variant="outline" size="2" onClick={goToEdit} data-testid="status-cta-edit-details">
+                  Edit business details
                 </Button>
               </>
             )}
+
             {rejected && (
-              <Button variant="outline" size="2" onClick={() => window.open('mailto:support@myticket.zm', '_blank')}>
-                <Mail style={{ width: 14, height: 14 }} /> Contact Support
-              </Button>
+              <>
+                {/* Spec transition 8: REJECTED → DRAFT. A rejection is a door
+                    the applicant may walk back through. */}
+                <Button size="2" onClick={goToEdit} className="btn-primary" data-testid="status-cta-reapply">
+                  Apply again
+                </Button>
+                <Button
+                  variant="outline"
+                  size="2"
+                  onClick={() => window.open('mailto:support@myticket.zm', '_blank')}
+                  data-testid="status-cta-support"
+                >
+                  <Mail style={{ width: 14, height: 14 }} aria-hidden="true" /> Contact support
+                </Button>
+              </>
+            )}
+
+            {isPending && (
+              <>
+                {/* Staged access (spec R7): the wait is spent building
+                    something rather than watching a holding page. */}
+                <Button size="2" onClick={goToNewEvent} className="btn-primary" data-testid="status-cta-draft-event">
+                  Start a draft event <ArrowRight style={{ width: 14, height: 14 }} aria-hidden="true" />
+                </Button>
+                <Button variant="outline" size="2" onClick={() => refetch()} data-testid="status-cta-refresh">
+                  <Refresh style={{ width: 14, height: 14 }} aria-hidden="true" /> Check for updates
+                </Button>
+              </>
             )}
           </Flex>
       </Card>

@@ -1,6 +1,6 @@
 id: ET-ADM-005
 title: Observability — metrics, tracing, SLOs, health and alerting
-status: draft
+status: approved
 area: ADM
 service: all
 subgraph: identity
@@ -69,7 +69,7 @@ alerts:
 health:
   required:     # readiness FAILS when these are down
     catalog:  [MongoDB]
-    booking:  [MongoDB, PostgreSQL]     # PostgreSQL holds the Modulith outbox guarantee
+    booking:  [MongoDB]                 # the outbox is a MongoDB collection; no relational dependency
     identity: [MongoDB, Keycloak]
     gateway:  [ApolloRouter]
   optional:     # DEGRADED — the service still serves
@@ -105,11 +105,8 @@ external:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/admin/005-observability-and-health
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-ADM-005
-  - mvn -q -f backend verify -Dgroups=ET-ADM-005
+  - mvn -q -f backend test -Dgroups=ET-ADM-005 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-ADM-005 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

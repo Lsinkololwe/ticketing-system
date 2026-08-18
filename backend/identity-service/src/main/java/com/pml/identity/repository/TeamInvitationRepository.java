@@ -1,6 +1,6 @@
 package com.pml.identity.repository;
 
-import com.pml.identity.domain.enums.InvitationStatus;
+import com.pml.shared.constants.InvitationStatus;
 import com.pml.identity.domain.model.TeamInvitation;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.Query;

@@ -69,10 +69,9 @@ import java.util.Map;
 @CompoundIndexes({
     @CompoundIndex(name = "status_created_idx", def = "{'status': 1, 'createdAt': 1}"),
     @CompoundIndex(name = "status_expires_idx", def = "{'status': 1, 'expiresAt': 1}"),
-    @CompoundIndex(name = "ticket_status_idx", def = "{'ticketId': 1, 'status': 1}"),
+    @CompoundIndex(name = "reservation_status_idx", def = "{'reservationId': 1, 'status': 1}"),
     @CompoundIndex(name = "event_status_idx", def = "{'eventId': 1, 'status': 1}"),
-    @CompoundIndex(name = "buyer_created_idx", def = "{'buyerId': 1, 'createdAt': -1}"),
-    @CompoundIndex(name = "provider_txn_idx", def = "{'providerTransactionId': 1}")
+    @CompoundIndex(name = "buyer_created_idx", def = "{'buyerId': 1, 'createdAt': -1}")
 })
 public class PaymentAttempt {
 
@@ -123,7 +122,7 @@ public class PaymentAttempt {
      */
     @NotBlank(message = "Ticket ID is required")
     @Indexed
-    private String ticketId;
+    private String reservationId;
 
     /**
      * The event the ticket is for.
@@ -711,7 +710,7 @@ public class PaymentAttempt {
      */
     public static PaymentAttempt create(
             String depositId,
-            String ticketId,
+            String reservationId,
             String eventId,
             String organizerId,
             String organizationId,
@@ -724,7 +723,7 @@ public class PaymentAttempt {
         Instant now = Instant.now();
         return PaymentAttempt.builder()
                 .depositId(depositId)
-                .ticketId(ticketId)
+                .reservationId(reservationId)
                 .eventId(eventId)
                 .organizerId(organizerId)
                 .organizationId(organizationId)

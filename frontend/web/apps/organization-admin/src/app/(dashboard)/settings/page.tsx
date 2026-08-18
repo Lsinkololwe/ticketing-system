@@ -180,6 +180,14 @@ export default function OrganizationSettingsPage() {
         // unset organization type must be `null` — `undefined` does not satisfy
         // InputMaybe and broke the production typecheck.
         type: (formData.organizationType as OrganizationApplicationInput['type']) || null,
+        // KYB registration numbers are editable here; business type is not.
+        // Changing it would change which verification documents the
+        // organization was approved against, so it is fixed at application
+        // time. `null` leaves the stored value untouched — the backend's
+        // updateApplication only assigns non-null fields.
+        businessType: null,
+        businessRegistrationNumber: formData.businessRegistrationNumber || null,
+        taxId: formData.taxId || null,
         bannerUrl: null,
         logoUrl: null,
         socialLinks: null,

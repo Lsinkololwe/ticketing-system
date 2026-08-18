@@ -1,543 +1,685 @@
 'use client';
 
 /**
- * Organization Dashboard Home Page
+ * Organizer dashboard — bento overview.
  *
- * Overview dashboard for event organizers.
- * Features:
- * - Key metrics cards (sales, revenue, events, attendees)
- * - Quick actions for common tasks
- * - Recent activity feed
- * - Upcoming events list
+ * Layout follows the imported design system's `Org Admin - Dashboard` screen:
+ * an asymmetric top band (revenue trend gets twice the width of cash), then a
+ * counter row, a composition band, quick actions, and two operational panels.
  *
- * Future enhancements:
- * - Real-time data via GraphQL subscriptions
- * - Interactive charts with Recharts
- * - Customizable widget layout
+ * Every data-bearing tile is governed by
+ * `docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md`, which passed its conformance
+ * gate before this file was written. The two rules that constrain this file
+ * most:
+ *
+ *   - ONE KERNEL PER TILE. Each tile makes exactly one point, and its largest
+ *     type is the figure carrying that point — never the tile's own title.
+ *   - NO FABRICATED DATA. A tile with no data renders an empty state, never a
+ *     zero. "0% checked in" asserts that nobody showed up; "no event has run
+ *     yet" is the truth. The design's team-seats tile is deliberately absent
+ *     because the domain model has no seat limit to divide by (spec §B5).
+ *
+ * All presentation lives in `.viz-*` / `.ds-*` classes in global.css so no raw
+ * colour or spacing value appears here.
  */
 
-import { Box, Flex, Text, Heading, Button, Card, Badge, Skeleton } from '@radix-ui/themes';
+import { useMemo } from 'react';
+import Link from 'next/link';
+import { Box, Flex, Text, Skeleton } from '@radix-ui/themes';
 import {
   Calendar,
   CreditCard,
   Group,
   StatsReport,
   Plus,
-  ArrowRight,
-  NavArrowUp,
-  NavArrowDown,
-  Clock,
-  CheckCircle,
+  SendDiagonal,
 } from 'iconoir-react';
-import Link from 'next/link';
 import {
   useMyDashboardStats,
   useMyUpcomingEvents,
   useMyRecentActivity,
+  useMyRevenueSeries,
+  useMyTicketMix,
+  useMyCheckInRate,
+  useMyPayoutWindow,
 } from '@pml.tickets/shared/api/organization-admin/modules/dashboard';
+import { StatCard, QuickActionCard, Button } from '@/components/ui';
+import {
+  ColumnSeries,
+  ShareBars,
+  BulletMeter,
+  VizFigure,
+  VizTitle,
+  VizInsight,
+  VizNote,
+  type ColumnPoint,
+  type ShareRow,
+} from '@/components/charts/primitives';
+import {
+  formatMoney,
+  formatCount,
+  monthLabel,
+  monthYearLabel,
+  formatEventDate,
+  formatRelativeTime,
+  percentChange,
+  trendOf,
+  humanizeStatus,
+  EVENT_STATUS_LABELS,
+} from '@/lib/format/figure';
 
 // =============================================================================
-// TYPES
+// SMALL SHARED PIECES
 // =============================================================================
 
-interface MetricCardProps {
-  title: string;
-  value: string;
-  change?: number;
-  changeLabel?: string;
-  icon: React.ReactNode;
-  trend?: 'up' | 'down' | 'neutral';
-}
-
-interface QuickActionProps {
-  title: string;
-  description: string;
-  href: string;
-  icon: React.ReactNode;
-}
-
-interface ActivityItemProps {
-  type: 'sale' | 'checkin' | 'event' | 'payout';
-  message: string;
-  time: string;
-}
-
-interface UpcomingEventProps {
-  id: string;
-  title: string;
-  date: string;
-  ticketsSold: number;
-  ticketsTotal: number;
-  status: 'published' | 'draft' | 'ended';
-}
-
-// =============================================================================
-// COMPONENTS
-// =============================================================================
-
-function MetricCard({ title, value, change, changeLabel, icon, trend }: MetricCardProps) {
-  const trendColor = trend === 'up' ? 'var(--success-500)' : trend === 'down' ? 'var(--error-500)' : 'var(--content-muted)';
-  const TrendIcon = trend === 'up' ? NavArrowUp : trend === 'down' ? NavArrowDown : null;
-
+/** A bento tile. Flat fill, hairline border, 14px radius — no gradient. */
+function Tile({
+  children,
+  testId,
+  compact,
+}: {
+  children: React.ReactNode;
+  testId: string;
+  compact?: boolean;
+}) {
   return (
-    <Card
-      style={{
-        padding: '24px',
-        background: 'var(--surface-elevated)',
-        border: '1px solid var(--surface-border)',
-        borderRadius: 'var(--card-radius-bento)',
-      }}
+    <div
+      className="ds-card-bento"
+      data-testid={testId}
+      style={{ padding: compact ? 'var(--space-4)' : 'var(--space-5)' }}
     >
-      <Flex justify="between" align="start" mb="4">
-        <Box
-          style={{
-            padding: '12px',
-            borderRadius: 'var(--card-radius)',
-            background: 'var(--accent-a3)',
-            border: '1px solid var(--accent-a5)',
-          }}
-        >
-          {icon}
-        </Box>
-        {change !== undefined && TrendIcon && (
-          <Flex align="center" gap="1" style={{ color: trendColor }}>
-            <TrendIcon style={{ width: 14, height: 14 }} />
-            <Text size="2" weight="medium">
-              {change > 0 ? '+' : ''}{change}%
-            </Text>
-          </Flex>
-        )}
-      </Flex>
-      <Text size="2" style={{ color: 'var(--content-muted)', display: 'block', marginBottom: 4 }}>
-        {title}
-      </Text>
-      <Heading size="6" style={{ color: 'var(--content-primary)' }}>
-        {value}
-      </Heading>
-      {changeLabel && (
-        <Text size="1" style={{ color: 'var(--content-muted)', marginTop: 8, display: 'block' }}>
-          {changeLabel}
-        </Text>
-      )}
-    </Card>
+      {children}
+    </div>
   );
 }
 
-function QuickActionCard({ title, description, href, icon }: QuickActionProps) {
+/**
+ * Empty state for a single tile.
+ *
+ * Deliberately says what is missing rather than showing a zero. A zeroed chart
+ * is a claim; "nothing here yet" is a fact.
+ */
+function TileEmpty({ message, testId }: { message: string; testId: string }) {
   return (
-    <Link href={href} style={{ textDecoration: 'none' }}>
-      <Card
-        style={{
-          padding: '20px',
-          background: 'var(--surface-elevated)',
-          border: '1px solid var(--surface-border)',
-          borderRadius: 'var(--card-radius)',
-          cursor: 'pointer',
-          transition: 'all 200ms ease',
-        }}
-        className="quick-action-card"
-      >
-        <Flex align="center" gap="3">
-          <Box
-            style={{
-              padding: '10px',
-              borderRadius: 'var(--radius-3)',
-              background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
-              flexShrink: 0,
-            }}
-          >
-            {icon}
-          </Box>
-          <Box style={{ flex: 1 }}>
-            <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
-              {title}
-            </Text>
-            <Text size="1" style={{ color: 'var(--content-muted)' }}>
-              {description}
-            </Text>
-          </Box>
-          <ArrowRight style={{ width: 18, height: 18, color: 'var(--content-muted)' }} />
-        </Flex>
-      </Card>
-    </Link>
+    <Text as="p" size="2" style={{ color: 'var(--gray-11)' }} data-testid={testId}>
+      {message}
+    </Text>
   );
 }
 
-function ActivityItem({ type, message, time }: ActivityItemProps) {
-  const iconMap = {
-    sale: <CreditCard style={{ width: 14, height: 14, color: 'var(--success-500)' }} />,
-    checkin: <CheckCircle style={{ width: 14, height: 14, color: 'var(--brand-500)' }} />,
-    event: <Calendar style={{ width: 14, height: 14, color: 'var(--warning-500)' }} />,
-    payout: <NavArrowUp style={{ width: 14, height: 14, color: 'var(--info-500)' }} />,
-  };
-
+function PanelHeading({
+  label,
+  href,
+  linkLabel,
+  testId,
+}: {
+  label: string;
+  href: string;
+  linkLabel: string;
+  testId: string;
+}) {
   return (
-    <Flex align="center" gap="3" py="3" style={{ borderBottom: '1px solid var(--surface-border)' }}>
-      <Box
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 'var(--radius-4)',
-          background: 'var(--surface-subtle)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        {iconMap[type]}
-      </Box>
-      <Box style={{ flex: 1 }}>
-        <Text size="2" style={{ color: 'var(--content-primary)' }}>{message}</Text>
-      </Box>
-      <Text size="1" style={{ color: 'var(--content-muted)' }}>{time}</Text>
+    <Flex justify="between" align="center" mb="2">
+      <span className="viz-title">{label}</span>
+      <Link href={href} data-testid={testId} style={{ fontSize: 'var(--text-1-size)' }}>
+        {linkLabel}
+      </Link>
     </Flex>
   );
 }
 
-function UpcomingEventItem({ title, date, ticketsSold, ticketsTotal, status }: UpcomingEventProps) {
-  const progress = ticketsTotal > 0 ? (ticketsSold / ticketsTotal) * 100 : 0;
-  const statusColors: Record<string, { bg: string; color: string }> = {
-    published: { bg: 'var(--accent-a3)', color: 'var(--success-500)' },
-    draft: { bg: 'var(--status-warning-a3)', color: 'var(--warning-500)' },
-    ended: { bg: 'var(--gray-a5)', color: 'var(--content-muted)' },
-  };
+// =============================================================================
+// B1 — REVENUE TREND
+// =============================================================================
 
-  return (
-    <Box py="3" style={{ borderBottom: '1px solid var(--surface-border)' }}>
-      <Flex justify="between" align="start" mb="2">
-        <Box>
-          <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
-            {title}
-          </Text>
-          <Flex align="center" gap="2" mt="1">
-            <Clock style={{ width: 12, height: 12, color: 'var(--content-muted)' }} />
-            <Text size="1" style={{ color: 'var(--content-muted)' }}>{date}</Text>
-          </Flex>
-        </Box>
-        <Badge
-          style={{
-            background: statusColors[status].bg,
-            color: statusColors[status].color,
-            textTransform: 'capitalize',
-          }}
-        >
-          {status}
-        </Badge>
-      </Flex>
-      <Box mt="3">
-        <Flex justify="between" mb="1">
-          <Text size="1" style={{ color: 'var(--content-muted)' }}>Tickets Sold</Text>
-          <Text size="1" weight="medium" style={{ color: 'var(--content-primary)' }}>
-            {ticketsSold} / {ticketsTotal}
-          </Text>
-        </Flex>
-        <Box
-          style={{
-            height: 6,
-            borderRadius: 3,
-            background: 'var(--surface-subtle)',
-            overflow: 'hidden',
-          }}
-        >
-          <Box
-            style={{
-              width: `${progress}%`,
-              height: '100%',
-              borderRadius: 3,
-              background: 'var(--accent-9)',
-              transition: 'width 300ms ease',
-            }}
+function RevenueTrendTile() {
+  const { points, loading } = useMyRevenueSeries(6);
+
+  const model = useMemo(() => {
+    if (points.length === 0) return null;
+
+    const columns: ColumnPoint[] = points.map((p) => ({
+      label: monthLabel(p.periodStart),
+      value: Number(p.revenue ?? 0),
+    }));
+
+    const first = columns[0];
+    const latest = columns[columns.length - 1];
+    const growth = percentChange(first.value, latest.value);
+
+    // "Six straight monthly rises" must be TRUE before we print it. Count the
+    // actual consecutive rises ending at the latest month.
+    let consecutiveRises = 0;
+    for (let i = columns.length - 1; i > 0; i -= 1) {
+      if (columns[i].value > columns[i - 1].value) consecutiveRises += 1;
+      else break;
+    }
+
+    const previous = columns.length > 1 ? columns[columns.length - 2].value : 0;
+
+    return {
+      columns,
+      latest,
+      growth,
+      consecutiveRises,
+      monthOverMonth: percentChange(previous, latest.value),
+      currency: points[0]?.currency ?? 'ZMW',
+      rangeStart: points[0].periodStart,
+      rangeEnd: points[points.length - 1].periodStart,
+    };
+  }, [points]);
+
+  if (loading && points.length === 0) {
+    return (
+      <Tile testId="dashboard-revenue-tile">
+        <Skeleton style={{ height: 220, borderRadius: 'var(--radius-4)' }} />
+      </Tile>
+    );
+  }
+
+  if (!model) {
+    return (
+      <Tile testId="dashboard-revenue-tile">
+        <VizTitle testId="dashboard-revenue-title">Ticket revenue</VizTitle>
+        <Box mt="3">
+          <TileEmpty
+            testId="dashboard-revenue-empty"
+            message="No completed month of sales yet. Your revenue trend appears here once your first month closes."
           />
         </Box>
-      </Box>
-    </Box>
-  );
-}
-
-// =============================================================================
-// HELPERS
-// =============================================================================
-
-const QUICK_ACTIONS: QuickActionProps[] = [
-  {
-    title: 'Create Event',
-    description: 'Start a new event from scratch',
-    href: '/events/new',
-    icon: <Plus style={{ width: 18, height: 18, color: 'white' }} />,
-  },
-  {
-    title: 'View Analytics',
-    description: 'Check your performance metrics',
-    href: '/analytics',
-    icon: <StatsReport style={{ width: 18, height: 18, color: 'white' }} />,
-  },
-  {
-    title: 'Team Settings',
-    description: 'Manage team members and roles',
-    href: '/team',
-    icon: <Group style={{ width: 18, height: 18, color: 'white' }} />,
-  },
-];
-
-function trendOf(change?: number | null): 'up' | 'down' | 'neutral' {
-  if (change == null || change === 0) return 'neutral';
-  return change > 0 ? 'up' : 'down';
-}
-
-/** Format a BigDecimal string as money with a leading symbol (K for ZMW). */
-function formatMoney(amount?: string | null, currency?: string | null): string {
-  const n = Number(amount ?? 0);
-  const symbol = !currency || currency === 'ZMW' ? 'K' : currency;
-  return `${symbol} ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-}
-
-/** Map the backend activity enum to the local icon category. */
-function activityCategory(type: string): ActivityItemProps['type'] {
-  switch (type) {
-    case 'TICKET_SALE':
-      return 'sale';
-    case 'CHECK_IN':
-      return 'checkin';
-    case 'PAYOUT_COMPLETED':
-    case 'PAYOUT_REQUESTED':
-    case 'REFUND_PROCESSED':
-      return 'payout';
-    default:
-      return 'event';
+      </Tile>
+    );
   }
-}
 
-/** Coerce the backend status string to the local badge status. */
-function eventStatus(status: string): UpcomingEventProps['status'] {
-  const s = (status || '').toLowerCase();
-  if (s === 'published') return 'published';
-  if (s === 'ended') return 'ended';
-  return 'draft';
-}
+  const { columns, latest, growth, consecutiveRises, monthOverMonth, currency } = model;
 
-function formatEventDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch {
-    return '';
-  }
-}
-
-function formatRelativeTime(iso: string): string {
-  try {
-    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.round(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.round(hrs / 24)}d ago`;
-  } catch {
-    return '';
-  }
-}
-
-/** Simple inline empty state for dashboard cards. */
-function CardEmptyState({ message, cta }: { message: string; cta?: { label: string; href: string } }) {
   return (
-    <Flex direction="column" align="center" justify="center" gap="3" py="6" style={{ textAlign: 'center' }}>
-      <Text size="2" style={{ color: 'var(--content-muted)' }}>{message}</Text>
-      {cta && (
-        <Button size="1" variant="soft" asChild data-testid="dashboard-empty-cta">
-          <Link href={cta.href}>{cta.label}</Link>
-        </Button>
+    <Tile testId="dashboard-revenue-tile">
+      {/* Provenance sits in the title: what, over what range, in what units. */}
+      <VizTitle testId="dashboard-revenue-title">
+        Ticket revenue · {monthYearLabel(model.rangeStart)}–{monthYearLabel(model.rangeEnd)} ·{' '}
+        {currency}
+      </VizTitle>
+
+      <Box mt="2">
+        <VizFigure
+          testId="dashboard-revenue-figure"
+          value={formatMoney(latest.value, currency)}
+          delta={monthOverMonth}
+          trend={trendOf(monthOverMonth)}
+        />
+      </Box>
+
+      <ColumnSeries points={columns} testId="dashboard-revenue-columns" />
+
+      {/* The finding, in words, at the evidence — and only when it is true. */}
+      {consecutiveRises >= 2 ? (
+        <VizInsight
+          testId="dashboard-revenue-insight"
+          lead={`${consecutiveRises} straight monthly rises`}
+        >
+          {growth !== null
+            ? `revenue is up ${growth}% since ${monthLabel(model.rangeStart)}.`
+            : `${monthLabel(model.rangeStart)} had no sales to compare against.`}
+        </VizInsight>
+      ) : (
+        <VizInsight
+          testId="dashboard-revenue-insight"
+          lead={`${latest.label} closed at ${formatMoney(latest.value, currency)}`}
+        >
+          {monthOverMonth !== null
+            ? `${monthOverMonth >= 0 ? 'up' : 'down'} ${Math.abs(monthOverMonth)}% on the month before.`
+            : ''}
+        </VizInsight>
       )}
-    </Flex>
+    </Tile>
   );
 }
 
 // =============================================================================
-// MAIN COMPONENT
+// B2 — CASH AVAILABLE
+// =============================================================================
+
+function CashAvailableTile() {
+  const { window: payout, loading } = useMyPayoutWindow();
+
+  if (loading && !payout) {
+    return (
+      <Tile testId="dashboard-cash-tile">
+        <Skeleton style={{ height: 220, borderRadius: 'var(--radius-4)' }} />
+      </Tile>
+    );
+  }
+
+  const available = Number(payout?.availableNow ?? 0);
+  const pending = Number(payout?.pendingRelease ?? 0);
+  const currency = payout?.currency ?? 'ZMW';
+  const hasWindow = (payout?.windowDaysTotal ?? 0) > 0;
+
+  return (
+    <Tile testId="dashboard-cash-tile">
+      <VizTitle testId="dashboard-cash-title">Ready to withdraw · {currency}</VizTitle>
+
+      <Box mt="2" mb="3">
+        <VizFigure testId="dashboard-cash-figure" value={formatMoney(available, currency)} />
+      </Box>
+
+      {/* The caveat, not buried: "available" is not "everything I earned". */}
+      {pending > 0 && (
+        <VizNote testId="dashboard-cash-pending">
+          A further {formatMoney(pending, currency)} is still held in escrow until those
+          events clear.
+        </VizNote>
+      )}
+
+      {/* No window means nothing is locked. Rendering a meter at 100% would
+          claim a countdown that is not running. */}
+      {hasWindow && (
+        <Box mt="3" mb="3">
+          <BulletMeter
+            testId="dashboard-cash-meter"
+            elapsed={payout?.daysElapsed ?? 0}
+            total={payout?.windowDaysTotal ?? 0}
+            elapsedLabel={`${payout?.daysElapsed ?? 0}d`}
+            remainingLabel={`${payout?.daysRemaining ?? 0}d left`}
+          />
+        </Box>
+      )}
+
+      <Box mt="3">
+        <Button
+          variant="soft"
+          size="2"
+          disabled={available <= 0}
+          data-testid="dashboard-request-payout"
+        >
+          Request payout
+        </Button>
+      </Box>
+
+      <VizNote testId="dashboard-cash-note">
+        Payouts land on MTN MoMo, Airtel Money or Zamtel Kwacha within minutes of approval.
+      </VizNote>
+    </Tile>
+  );
+}
+
+// =============================================================================
+// COUNTER ROW
+// =============================================================================
+
+function CounterRow() {
+  const { stats, loading } = useMyDashboardStats();
+
+  if (loading && !stats) {
+    return (
+      <>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Skeleton key={index} style={{ height: 150, borderRadius: 'var(--card-radius-bento)' }} />
+        ))}
+      </>
+    );
+  }
+
+  if (!stats) return null;
+
+  return (
+    <>
+      <StatCard
+        title="Total revenue"
+        value={formatMoney(stats.totalRevenue, stats.revenueCurrency)}
+        change={stats.revenueChange ?? undefined}
+        trend={trendOf(stats.revenueChange)}
+        changeLabel="vs last month"
+        icon={<CreditCard width={20} height={20} />}
+      />
+      <StatCard
+        title="Tickets sold"
+        value={formatCount(stats.totalTicketsSold)}
+        change={stats.ticketsSoldChange ?? undefined}
+        trend={trendOf(stats.ticketsSoldChange)}
+        changeLabel="vs last month"
+        icon={<StatsReport width={20} height={20} />}
+      />
+      <StatCard
+        title="Active events"
+        value={formatCount(stats.activeEvents)}
+        changeLabel={`${formatCount(stats.eventsEndingThisWeek)} ending this week`}
+        icon={<Calendar width={20} height={20} />}
+      />
+      <StatCard
+        title="Attendees"
+        value={formatCount(stats.totalAttendees)}
+        change={stats.attendeesChange ?? undefined}
+        trend={trendOf(stats.attendeesChange)}
+        changeLabel="vs last month"
+        icon={<Group width={20} height={20} />}
+      />
+    </>
+  );
+}
+
+// =============================================================================
+// B3 — TICKET MIX
+// =============================================================================
+
+function TicketMixTile() {
+  const { mix, loading } = useMyTicketMix();
+
+  const insight = useMemo(() => {
+    if (!mix || mix.rows.length === 0) return null;
+    const totalRevenue = Number(mix.totalRevenue ?? 0);
+    if (totalRevenue <= 0 || !mix.totalSold) return null;
+
+    // Look for a tier whose revenue share materially outruns its volume share
+    // — the one genuinely interesting thing a ticket mix can tell you.
+    const candidates = mix.rows
+      .map((row) => ({
+        name: row.name,
+        volumeShare: (row.count / mix.totalSold) * 100,
+        revenueShare: (Number(row.revenue ?? 0) / totalRevenue) * 100,
+      }))
+      .filter((row) => row.revenueShare - row.volumeShare >= 5)
+      .sort((a, b) => b.revenueShare - b.volumeShare - (a.revenueShare - a.volumeShare));
+
+    return candidates[0] ?? null;
+  }, [mix]);
+
+  if (loading && !mix) {
+    return (
+      <Tile testId="dashboard-mix-tile" compact>
+        <Skeleton style={{ height: 140, borderRadius: 'var(--radius-4)' }} />
+      </Tile>
+    );
+  }
+
+  if (!mix || mix.totalSold === 0 || mix.rows.length === 0) {
+    return (
+      <Tile testId="dashboard-mix-tile" compact>
+        <VizTitle testId="dashboard-mix-title">Ticket mix</VizTitle>
+        <Box mt="3">
+          <TileEmpty
+            testId="dashboard-mix-empty"
+            message="No tickets sold yet. Your tier breakdown appears here after the first sale."
+          />
+        </Box>
+      </Tile>
+    );
+  }
+
+  const rows: ShareRow[] = mix.rows.map((row) => ({
+    name: row.name,
+    value: row.count,
+  }));
+
+  return (
+    <Tile testId="dashboard-mix-tile" compact>
+      {/* The denominator is in the title, so every percentage below is checkable. */}
+      <VizTitle testId="dashboard-mix-title">
+        Ticket mix · share of {formatCount(mix.totalSold)} sold
+      </VizTitle>
+      <Box mt="3">
+        <ShareBars rows={rows} total={mix.totalSold} testId="dashboard-mix-bars" />
+      </Box>
+      {insight && (
+        <VizNote testId="dashboard-mix-note">
+          {insight.name} is {Math.round(insight.volumeShare)}% of volume but{' '}
+          {Math.round(insight.revenueShare)}% of revenue.
+        </VizNote>
+      )}
+    </Tile>
+  );
+}
+
+// =============================================================================
+// B4 — CHECK-IN RATE
+// =============================================================================
+
+function CheckInTile() {
+  const { rate, loading } = useMyCheckInRate();
+
+  if (loading && !rate) {
+    return (
+      <Tile testId="dashboard-checkin-tile" compact>
+        <Skeleton style={{ height: 140, borderRadius: 'var(--radius-4)' }} />
+      </Tile>
+    );
+  }
+
+  // No event has run yet. A 0% rate here would assert that nobody arrived.
+  if (!rate || rate.issued === 0) {
+    return (
+      <Tile testId="dashboard-checkin-tile" compact>
+        <VizTitle testId="dashboard-checkin-title">Check-in rate</VizTitle>
+        <Box mt="3">
+          <TileEmpty
+            testId="dashboard-checkin-empty"
+            message="No event has run yet. Gate attendance appears here after your first event."
+          />
+        </Box>
+      </Tile>
+    );
+  }
+
+  const noShow = Math.max(0, rate.issued - rate.scanned);
+
+  return (
+    <Tile testId="dashboard-checkin-tile" compact>
+      <VizTitle testId="dashboard-checkin-title">
+        Check-in rate · {rate.eventTitle}
+      </VizTitle>
+
+      <Box mt="2" mb="3">
+        <VizFigure testId="dashboard-checkin-figure" value={`${rate.ratePercent}%`} />
+      </Box>
+
+      <ShareBars
+        testId="dashboard-checkin-bars"
+        total={rate.issued}
+        rows={[
+          { name: 'Scanned', value: rate.scanned },
+          // Not a reference series and not red: a no-show is not an error
+          // state, and colouring it as one asserts a judgement the data does
+          // not support.
+          { name: 'No-show', value: noShow },
+        ]}
+      />
+
+      {/* The rate always ships with its denominator. */}
+      <VizNote testId="dashboard-checkin-note">
+        {formatCount(rate.scanned)} of {formatCount(rate.issued)} ticket holders arrived at
+        the gate{rate.eventDateTime ? ` on ${formatEventDate(rate.eventDateTime)}` : ''}.
+      </VizNote>
+    </Tile>
+  );
+}
+
+// =============================================================================
+// OPERATIONAL PANELS
+// =============================================================================
+
+function ActivityPanel() {
+  const { activity, loading } = useMyRecentActivity(6);
+
+  return (
+    <Tile testId="dashboard-activity-panel" compact>
+      <PanelHeading
+        label="Recent activity"
+        href="/events"
+        linkLabel="View all"
+        testId="dashboard-activity-view-all"
+      />
+
+      {loading && activity.length === 0 ? (
+        <Skeleton style={{ height: 140, borderRadius: 'var(--radius-4)' }} />
+      ) : activity.length === 0 ? (
+        <TileEmpty
+          testId="dashboard-activity-empty"
+          message="Nothing yet. Sales, check-ins and payouts show up here as they happen."
+        />
+      ) : (
+        <Box role="list">
+          {activity.map((item) => (
+            <Flex
+              key={item.id}
+              role="listitem"
+              gap="3"
+              justify="between"
+              align="center"
+              py="2"
+              style={{ borderBottom: '1px solid var(--gray-a4)' }}
+            >
+              <Text size="2" style={{ color: 'var(--gray-12)' }}>
+                {item.message}
+              </Text>
+              <Text
+                size="1"
+                className="ds-amount"
+                style={{ color: 'var(--gray-11)', whiteSpace: 'nowrap' }}
+              >
+                {formatRelativeTime(item.timestamp)}
+              </Text>
+            </Flex>
+          ))}
+        </Box>
+      )}
+    </Tile>
+  );
+}
+
+function UpcomingPanel() {
+  const { events, loading } = useMyUpcomingEvents(5);
+
+  return (
+    <Tile testId="dashboard-upcoming-panel" compact>
+      <PanelHeading
+        label="Upcoming events"
+        href="/events"
+        linkLabel="View all"
+        testId="dashboard-events-view-all"
+      />
+
+      {loading && events.length === 0 ? (
+        <Skeleton style={{ height: 140, borderRadius: 'var(--radius-4)' }} />
+      ) : events.length === 0 ? (
+        <Flex direction="column" gap="3" align="start">
+          <TileEmpty
+            testId="dashboard-upcoming-empty"
+            message="No events yet. Create your first draft to get started."
+          />
+          <Button variant="soft" size="1" data-testid="dashboard-empty-cta">
+            <Link href="/events/new" style={{ color: 'inherit', textDecoration: 'none' }}>
+              Create event
+            </Link>
+          </Button>
+        </Flex>
+      ) : (
+        <Box role="list">
+          {events.map((event) => {
+            const sold = event.ticketsSold ?? 0;
+            const capacity = event.totalCapacity ?? 0;
+            return (
+              <Box
+                key={event.id}
+                role="listitem"
+                py="2"
+                style={{ borderBottom: '1px solid var(--gray-a4)' }}
+              >
+                <Flex justify="between" align="center" gap="3">
+                  <Text size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
+                    {event.title}
+                  </Text>
+                  <span
+                    className={
+                      (event.status ?? '').toUpperCase() === 'PUBLISHED'
+                        ? 'badge badge-success'
+                        : 'badge badge-neutral'
+                    }
+                  >
+                    {humanizeStatus(event.status, EVENT_STATUS_LABELS)}
+                  </span>
+                </Flex>
+
+                <Box mt="2">
+                  {/* Sold against capacity — the denominator is printed, so the
+                      percentage is checkable rather than asserted. */}
+                  <ShareBars
+                    testId={`dashboard-upcoming-progress-${event.id}`}
+                    total={capacity}
+                    rows={[
+                      {
+                        name: formatEventDate(event.eventDateTime),
+                        value: sold,
+                        display: `${formatCount(sold)}/${formatCount(capacity)}`,
+                      },
+                    ]}
+                  />
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+    </Tile>
+  );
+}
+
+// =============================================================================
+// PAGE
 // =============================================================================
 
 export default function DashboardPage() {
-  const { stats, loading: statsLoading } = useMyDashboardStats();
-  const { events, loading: eventsLoading } = useMyUpcomingEvents(5);
-  const { activity, loading: activityLoading } = useMyRecentActivity(5);
-
-  const metrics: MetricCardProps[] = stats
-    ? [
-        {
-          title: 'Total Revenue',
-          value: formatMoney(stats.totalRevenue, stats.revenueCurrency),
-          change: stats.revenueChange ?? undefined,
-          changeLabel: 'vs last month',
-          icon: <CreditCard style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
-          trend: trendOf(stats.revenueChange),
-        },
-        {
-          title: 'Tickets Sold',
-          value: (stats.totalTicketsSold ?? 0).toLocaleString(),
-          change: stats.ticketsSoldChange ?? undefined,
-          changeLabel: 'vs last month',
-          icon: <StatsReport style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
-          trend: trendOf(stats.ticketsSoldChange),
-        },
-        {
-          title: 'Active Events',
-          value: String(stats.activeEvents ?? 0),
-          change: stats.eventsChange ?? undefined,
-          changeLabel: `${stats.eventsEndingThisWeek ?? 0} ending this week`,
-          icon: <Calendar style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
-          trend: trendOf(stats.eventsChange),
-        },
-        {
-          title: 'Total Attendees',
-          value: (stats.totalAttendees ?? 0).toLocaleString(),
-          change: stats.attendeesChange ?? undefined,
-          changeLabel: 'vs last month',
-          icon: <Group style={{ width: 20, height: 20, color: 'var(--brand-500)' }} />,
-          trend: trendOf(stats.attendeesChange),
-        },
-      ]
-    : [];
-
-  const metricsLoading = statsLoading && !stats;
-
   return (
-    <Box>
-      {/* Page Header */}
-      <Box mb="6">
-        <Heading size="6" mb="1" style={{ color: 'var(--content-primary)' }}>
-          Dashboard
-        </Heading>
-        <Text size="2" style={{ color: 'var(--content-muted)' }}>
-          Welcome back! Here&apos;s an overview of your organization.
-        </Text>
-      </Box>
+    <Box data-testid="dashboard-page">
+      {/* Band 1 — asymmetric on purpose. The trend is the page's lead, so it
+          gets twice the width of the cash tile beside it. */}
+      <div className="viz-band viz-band-split">
+        <RevenueTrendTile />
+        <CashAvailableTile />
+      </div>
 
-      {/* Metrics Grid */}
-      <Box
-        mb="6"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: '16px',
-        }}
-      >
-        {metricsLoading
-          ? Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} style={{ height: 148, borderRadius: 16 }} />
-            ))
-          : metrics.map((metric, index) => <MetricCard key={index} {...metric} />)}
-      </Box>
+      {/* Band 2 — counters. Supporting, not focal: each is one number with one
+          comparison anchor. */}
+      <div className="viz-band viz-band-metrics">
+        <CounterRow />
+      </div>
 
-      {/* Quick Actions */}
-      <Box mb="6">
-        <Heading size="4" mb="4" style={{ color: 'var(--content-primary)' }}>
-          Quick Actions
-        </Heading>
-        <Box
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: '12px',
-          }}
-        >
-          {QUICK_ACTIONS.map((action, index) => (
-            <QuickActionCard key={index} {...action} />
-          ))}
-        </Box>
-      </Box>
+      {/* Band 3 — composition. Two tiles, not the design's three: the
+          team-seats tile is deliberately absent because there is no seat limit
+          in the domain model to divide by (spec §B5). */}
+      <div className="viz-band viz-band-actions">
+        <TicketMixTile />
+        <CheckInTile />
+      </div>
 
-      {/* Two-Column Layout */}
-      <Box
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-          gap: '24px',
-        }}
-      >
-        {/* Recent Activity */}
-        <Card
-          style={{
-            padding: '24px',
-            background: 'var(--surface-elevated)',
-            border: '1px solid var(--surface-border)',
-            borderRadius: 'var(--card-radius-bento)',
-          }}
-        >
-          <Flex justify="between" align="center" mb="4">
-            <Heading size="4" style={{ color: 'var(--content-primary)' }}>
-              Recent Activity
-            </Heading>
-            <Button variant="ghost" size="1" asChild data-testid="dashboard-activity-view-all">
-              <Link href="/activity">View All</Link>
-            </Button>
-          </Flex>
-          <Box>
-            {activityLoading && activity.length === 0 ? (
-              <Skeleton style={{ height: 120, borderRadius: 8 }} />
-            ) : activity.length === 0 ? (
-              <CardEmptyState message="No recent activity yet. Sales and check-ins will appear here." />
-            ) : (
-              activity.map((item) => (
-                <ActivityItem
-                  key={item.id}
-                  type={activityCategory(item.type)}
-                  message={item.message}
-                  time={formatRelativeTime(item.timestamp)}
-                />
-              ))
-            )}
-          </Box>
-        </Card>
+      <span className="viz-title" style={{ marginBottom: 'var(--space-2)' }}>
+        Quick actions
+      </span>
+      <div className="viz-band viz-band-actions">
+        <QuickActionCard
+          title="Create event"
+          description="Start a new event from scratch"
+          href="/events/new"
+          icon={<Plus width={18} height={18} />}
+        />
+        <QuickActionCard
+          title="View analytics"
+          description="Check your performance metrics"
+          href="/analytics"
+          icon={<StatsReport width={18} height={18} />}
+        />
+        <QuickActionCard
+          title="Request payout"
+          description="Move your balance to mobile money"
+          href="/finance/payouts"
+          icon={<SendDiagonal width={18} height={18} />}
+        />
+      </div>
 
-        {/* Upcoming Events */}
-        <Card
-          style={{
-            padding: '24px',
-            background: 'var(--surface-elevated)',
-            border: '1px solid var(--surface-border)',
-            borderRadius: 'var(--card-radius-bento)',
-          }}
-        >
-          <Flex justify="between" align="center" mb="4">
-            <Heading size="4" style={{ color: 'var(--content-primary)' }}>
-              Upcoming Events
-            </Heading>
-            <Button variant="ghost" size="1" asChild data-testid="dashboard-events-view-all">
-              <Link href="/events">View All</Link>
-            </Button>
-          </Flex>
-          <Box>
-            {eventsLoading && events.length === 0 ? (
-              <Skeleton style={{ height: 120, borderRadius: 8 }} />
-            ) : events.length === 0 ? (
-              <CardEmptyState
-                message="No events yet. Create your first draft to get started."
-                cta={{ label: 'Create event', href: '/events/new' }}
-              />
-            ) : (
-              events.map((event) => (
-                <UpcomingEventItem
-                  key={event.id}
-                  id={event.id}
-                  title={event.title}
-                  date={formatEventDate(event.eventDateTime)}
-                  ticketsSold={event.ticketsSold}
-                  ticketsTotal={event.totalCapacity}
-                  status={eventStatus(event.status)}
-                />
-              ))
-            )}
-          </Box>
-        </Card>
-      </Box>
-
-      {/* Styles */}
-      <style jsx global>{`
-        .quick-action-card:hover {
-          border-color: var(--brand-400);
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px var(--accent-a3);
-        }
-      `}</style>
+      <div className="viz-band viz-band-panels">
+        <ActivityPanel />
+        <UpcomingPanel />
+      </div>
     </Box>
   );
 }

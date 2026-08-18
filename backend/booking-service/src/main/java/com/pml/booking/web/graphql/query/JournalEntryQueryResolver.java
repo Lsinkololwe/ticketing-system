@@ -180,7 +180,7 @@ public class JournalEntryQueryResolver {
             List<JournalEntry> allEntries,
             OffsetPaginationInput pagination
     ) {
-        OffsetPaginationInput p = pagination != null ? pagination : new OffsetPaginationInput(1, 20);
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
         int limit = p.getLimit();
         int offset = p.getOffset();
 

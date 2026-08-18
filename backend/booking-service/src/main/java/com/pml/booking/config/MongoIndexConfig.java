@@ -17,6 +17,12 @@ import reactor.core.publisher.Mono;
  * These indexes are essential for the aggregation queries in PlatformSummaryRepository.
  * Without them, MongoDB would perform full collection scans on billions of records.
  *
+ * What is deliberately NOT here: single-field indexes over a field already
+ * carrying @Indexed. The mapping creates those under the field's own name, and
+ * MongoDB rejects a second index over identical keys under a different name
+ * with error 85 — which aborted the data migration runner on startup. Only
+ * compound indexes the annotations do not express belong in this class.
+ *
  * Index Strategy:
  * 1. Status field indexes - Used by $group and $match in aggregation pipelines
  * 2. Compound indexes - For filtered aggregations (e.g., status + date)
@@ -39,10 +45,7 @@ public class MongoIndexConfig {
 
         Mono.when(
                 // Event Escrow Accounts
-                createIndex("event_escrow_accounts", "status", "idx_escrow_status"),
-                createIndex("event_escrow_accounts", "organizerId", "idx_escrow_organizer"),
-                createCompoundIndex("event_escrow_accounts", "status", "organizerId", "idx_escrow_status_organizer"),
-                createIndex("event_escrow_accounts", "eventId", "idx_escrow_event"),
+                createCompoundIndex("booking_escrow_accounts", "status", "organizerId", "idx_escrow_status_organizer"),
 
                 // Financial Transactions
                 createIndex("financial_transactions", "status", "idx_txn_status"),
@@ -52,14 +55,11 @@ public class MongoIndexConfig {
                 createCompoundIndex("financial_transactions", "status", "transactionDate", "idx_txn_status_date"),
 
                 // Payout Requests
-                createIndex("payout_requests", "status", "idx_payout_status"),
-                createIndex("payout_requests", "organizerId", "idx_payout_organizer"),
-                createCompoundIndex("payout_requests", "status", "organizerId", "idx_payout_status_organizer"),
+                createIndex("booking_payout_requests", "status", "idx_payout_status"),
+                createCompoundIndex("booking_payout_requests", "status", "organizerId", "idx_payout_status_organizer"),
 
                 // Tickets
                 createIndex("tickets", "status", "idx_ticket_status"),
-                createIndex("tickets", "eventId", "idx_ticket_event"),
-                createIndex("tickets", "buyerId", "idx_ticket_buyer"),
                 createCompoundIndex("tickets", "eventId", "status", "idx_ticket_event_status")
         ).subscribe(
                 null,

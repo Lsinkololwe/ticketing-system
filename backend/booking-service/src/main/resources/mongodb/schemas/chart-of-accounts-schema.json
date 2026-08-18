@@ -12,6 +12,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -27,38 +31,69 @@
       },
       "accountType": {
         "bsonType": "string",
-        "enum": ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"],
+        "enum": [
+          "ASSET",
+          "LIABILITY",
+          "EQUITY",
+          "REVENUE",
+          "EXPENSE"
+        ],
         "description": "OWASP A04 - Enum constraint for account type"
       },
       "subType": {
-        "bsonType": ["string", "null"],
-        "enum": ["BANK_ACCOUNT", "RECEIVABLE", "ESCROW_PAYABLE", "COMMISSION_REVENUE", "GATEWAY_FEE", null]
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "BANK_ACCOUNT",
+          "RECEIVABLE",
+          "ESCROW_PAYABLE",
+          "COMMISSION_REVENUE",
+          "GATEWAY_FEE",
+          null
+        ]
       },
       "parentAccountCode": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^\\d{4}$",
         "description": "Parent account for hierarchical structure"
       },
       "currency": {
         "bsonType": "string",
-        "enum": ["ZMW", "USD"],
+        "enum": [
+          "ZMW",
+          "USD"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "isActive": {
         "bsonType": "bool"
       },
       "description": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 1000
       },
       "createdAt": {
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "version": {
-        "bsonType": ["long", "null"]
+        "bsonType": [
+          "long",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

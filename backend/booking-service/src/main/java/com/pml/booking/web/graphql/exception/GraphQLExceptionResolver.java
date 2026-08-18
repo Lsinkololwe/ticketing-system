@@ -41,7 +41,7 @@ public class GraphQLExceptionResolver extends DataFetcherExceptionResolverAdapte
 
         if (ex instanceof TicketAlreadyUsedException e) {
             log.warn("Ticket already used at {}: {}", fieldPath, e.getMessage());
-            return buildError(ex, ErrorType.BAD_REQUEST, "TICKET_ALREADY_USED", env);
+            return buildError(ex, ErrorType.BAD_REQUEST, "TICKET_ALREADY_VALIDATED", env);
         }
 
         if (ex instanceof RefundNotAllowedException e) {

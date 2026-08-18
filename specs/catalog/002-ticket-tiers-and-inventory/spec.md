@@ -101,9 +101,9 @@ THE SYSTEM SHALL hold each tier's definition in `catalog_ticket_tiers` and its c
 - [ ] `catalog_ticket_tiers` carries name, description, `price`, `currency`, `capacity`, `salesStartAt`, `salesEndAt`, `maxPerOrder`, `maxPerBuyer`, `status`, `displayOrder`
 - [ ] `booking_tier_inventory` carries `tierId`, `eventId`, `capacity`, `availableQuantity`, `reservedQuantity`, `soldQuantity`, `status`, `@Version`
 - [ ] Booking creates exactly one inventory document per tier on `catalog.TicketTierPublished`, idempotent on `tierId`
-- [ ] catalog-service never writes `booking_tier_inventory`; booking-service never writes `catalog_ticket_tiers`
+- [ ] Catalog-service never writes `booking_tier_inventory`; booking-service never writes `catalog_ticket_tiers`
 - [ ] `TicketTier.availableQuantity` and `soldQuantity` are contributed to the graph by **booking**, as an `extend type` ([ET-PLT-004 §4](../../_platform/004-federation-contract/))
-- [ ] `./scripts/spec-lint.sh --persistence` exits 0
+- [ ] Every `@Document` names a row of the ET-PLT-002 §4 registry and carries `@TypeAlias`; no document field is `LocalDateTime` or `java.util.Date`; every balance-bearing document declares `@Version`
 
 ### ET-CAT-002-R2 · Conservation holds under any concurrency
 

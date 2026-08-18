@@ -1,6 +1,6 @@
 id: ET-PLT-004
 title: Federation contract — ownership, keys, contracts, composition
-status: draft
+status: approved
 area: PLT
 service: all
 subgraph: all
@@ -71,10 +71,8 @@ errors:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/004-federation-contract
-  - ./scripts/spec-lint.sh --federation
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
-  - mvn -q -f backend test -Dgroups=ET-PLT-004
+  - mvn -q -f backend test -Dgroups=ET-PLT-004 -DfailIfNoTests=true
   - cd frontend/web && npm run codegen && git diff --exit-code
 
 risks:

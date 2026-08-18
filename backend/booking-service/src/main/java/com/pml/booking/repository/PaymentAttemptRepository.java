@@ -71,27 +71,27 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
     /**
      * Find all payment attempts for a ticket.
      *
-     * @param ticketId The ticket ID
+     * @param reservationId The ticket ID
      * @return Payment attempts for this ticket
      */
-    Flux<PaymentAttempt> findByTicketId(String ticketId);
+    Flux<PaymentAttempt> findByReservationId(String reservationId);
 
     /**
      * Find the latest payment attempt for a ticket.
      *
-     * @param ticketId The ticket ID
+     * @param reservationId The ticket ID
      * @return Most recent payment attempt
      */
-    Mono<PaymentAttempt> findFirstByTicketIdOrderByCreatedAtDesc(String ticketId);
+    Mono<PaymentAttempt> findFirstByReservationIdOrderByCreatedAtDesc(String reservationId);
 
     /**
      * Find successful payment attempt for a ticket.
      *
-     * @param ticketId The ticket ID
+     * @param reservationId The ticket ID
      * @param statuses Successful statuses (CONFIRMED, COMPLETED)
      * @return The successful payment attempt
      */
-    Mono<PaymentAttempt> findByTicketIdAndStatusIn(String ticketId, Collection<PaymentAttemptStatus> statuses);
+    Mono<PaymentAttempt> findByReservationIdAndStatusIn(String reservationId, Collection<PaymentAttemptStatus> statuses);
 
     /**
      * Find all payment attempts for an event.
@@ -324,11 +324,11 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
     /**
      * Check if buyer has any successful payment for a ticket.
      *
-     * @param ticketId The ticket ID
+     * @param reservationId The ticket ID
      * @param buyerId The buyer ID
      * @param statuses Successful statuses
      * @return Whether a successful payment exists
      */
-    Mono<Boolean> existsByTicketIdAndBuyerIdAndStatusIn(
-            String ticketId, String buyerId, Collection<PaymentAttemptStatus> statuses);
+    Mono<Boolean> existsByReservationIdAndBuyerIdAndStatusIn(
+            String reservationId, String buyerId, Collection<PaymentAttemptStatus> statuses);
 }

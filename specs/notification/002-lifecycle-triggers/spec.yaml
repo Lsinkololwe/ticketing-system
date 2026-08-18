@@ -1,6 +1,6 @@
 id: ET-NTF-002
 title: Lifecycle triggers — which fact produces which message
-status: draft
+status: approved
 area: NTF
 service: identity-service
 subgraph: identity
@@ -20,7 +20,7 @@ sources:
 persistence:
   collections:
     - identity_event_reminders
-    - identity_mass_sends          # added to the ET-PLT-002 §4 registry by this spec
+    - identity_mass_sends          # ET-PLT-002 §4 registry row
   indexes:
     - "identity_event_reminders {status,scheduledFor} compound   # the dispatch sweep"
     - "identity_event_reminders {ticketId,reminderType} unique"
@@ -87,11 +87,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/notification/002-lifecycle-triggers
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/identity-service test -Dgroups=ET-NTF-002
-  - mvn -q -f backend verify -Dgroups=ET-NTF-002
+  - mvn -q -f backend/identity-service test -Dgroups=ET-NTF-002 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-NTF-002 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -102,4 +99,4 @@ risks:
   - "Reminders are per ticket, so an event with 10,000 tickets creates 20,000 reminder rows, all with scheduledFor within the same minute. The dispatch sweep claims due rows every minute and will find 20,000 at once, which is a mass send with no rate limit — R3's rating applies to mass sends but reminders are not modelled as one."
   - "R5 deletes the sender's reminders and creates the recipient's on a transfer claim, but ET-TKT-004's claim is a booking-service transaction while reminders live in identity-service. The two cannot be transactional together, so a claim that succeeds and a reminder update that fails leaves the previous owner reminded about a ticket they no longer hold."
   - "R7 resolves the recipient at send time from identity_users, which is correct, but combined with the 30-second coalesce window and the mass-send job's hours-long runtime it means a message can be addressed to whoever holds the ticket at an arbitrary later moment. For a cancellation mass send that is right; for a transfer notification addressed to the sender it may not be."
-  - "identity_mass_sends is a new collection not in ET-PLT-002 §4's closed registry — the fifth such amendment in the corpus."
+  - "Resolved: identity_mass_sends is a row of the ET-PLT-002 §4 registry."

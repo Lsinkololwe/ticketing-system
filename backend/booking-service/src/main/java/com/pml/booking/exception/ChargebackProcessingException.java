@@ -1,6 +1,6 @@
 package com.pml.booking.exception;
 
-import com.pml.booking.domain.enums.ChargebackStatus;
+import com.pml.shared.constants.ChargebackStatus;
 
 /**
  * Exception thrown when chargeback processing fails.

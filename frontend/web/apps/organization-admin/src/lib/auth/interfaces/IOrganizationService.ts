@@ -1,5 +1,6 @@
 import 'server-only';
 import type { OrganizationStatus } from './types';
+import type { OnboardingState } from '../../onboarding/state';
 
 /**
  * Organization service interface for managing organization application state.
@@ -33,6 +34,29 @@ export interface IOrganizationService {
    * ```
    */
   getStatus(): Promise<OrganizationStatus>;
+
+  /**
+   * Resolves the caller's onboarding state for routing.
+   *
+   * Unlike {@link getStatus}, this NEVER collapses a failed lookup into "no
+   * organization". A backend outage, a token-refresh failure or an unrecognised
+   * status value all produce `{ kind: 'unknown' }`, which routes to a retry
+   * screen rather than to the empty setup form.
+   *
+   * This distinction is the fix for the defect where a user whose application
+   * was submitted and awaiting review was returned to the application form on
+   * every login.
+   *
+   * @returns Promise resolving to a three-valued onboarding state
+   *
+   * @example
+   * ```typescript
+   * const state = await orgService.getOnboardingState();
+   * const target = redirectFor(state, '/welcome');
+   * if (target) redirect(target);
+   * ```
+   */
+  getOnboardingState(): Promise<OnboardingState>;
 
   /**
    * Determines the appropriate route path based on organization status.

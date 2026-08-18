@@ -10,7 +10,8 @@ import com.pml.shared.constants.RefundRequestStatus;
 import com.pml.shared.constants.TicketStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.modulith.events.ApplicationModuleListener;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -84,7 +85,7 @@ public class CatalogEventListener {
     public Mono<Long> onEventCancelled(String eventId, String reason) {
         log.info("Processing EventCancelled for event: {}", eventId);
 
-        return ticketRepository.findByEventIdAndStatus(eventId, TicketStatus.PURCHASED)
+        return ticketRepository.findByEventIdAndStatus(eventId, TicketStatus.ISSUED)
                 .flatMap(ticket -> initiateAutomaticRefund(ticket, reason))
                 .count()
                 .doOnSuccess(count -> log.info("Initiated {} automatic refunds for event: {}", count, eventId))
@@ -104,7 +105,7 @@ public class CatalogEventListener {
                 eventId, originalDate, newDate);
 
         // Mark tickets as eligible for refund due to rescheduling
-        return ticketRepository.findByEventIdAndStatus(eventId, TicketStatus.PURCHASED)
+        return ticketRepository.findByEventIdAndStatus(eventId, TicketStatus.ISSUED)
                 .flatMap(ticket -> {
                     if (ticket.getMetadata() == null) {
                         ticket.setMetadata(new java.util.HashMap<>());

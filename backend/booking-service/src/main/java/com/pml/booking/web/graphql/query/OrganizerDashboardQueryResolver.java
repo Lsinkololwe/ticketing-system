@@ -4,6 +4,8 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.service.OrganizerDashboardService;
+import com.pml.booking.service.PayoutEligibilityService;
+import com.pml.booking.web.graphql.dto.organizer.PayoutEligibilityResult;
 import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
 import com.pml.booking.web.graphql.dto.organizer.*;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +38,7 @@ import reactor.core.publisher.Mono;
 public class OrganizerDashboardQueryResolver {
 
     private final OrganizerDashboardService organizerDashboardService;
+    private final PayoutEligibilityService payoutEligibilityService;
 
     /**
      * Get main dashboard statistics for the current organizer.
@@ -121,6 +124,107 @@ public class OrganizerDashboardQueryResolver {
                             pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC)
                     );
                 });
+    }
+
+    // ========================================================================
+    // DASHBOARD ANALYTICS
+    //
+    // Back the dashboard's data-viz tiles. Contract:
+    // frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md
+    // ========================================================================
+
+    /**
+     * Revenue per complete calendar month, oldest first.
+     *
+     * @param months Complete months to return (default 6, max 24)
+     * @return Monthly revenue points, ascending by period
+     */
+    @DgsQuery
+    @PreAuthorize("hasRole('ORGANIZER')")
+    public Flux<OrganizerRevenuePoint> myRevenueSeries(@InputArgument Integer months) {
+        return getCurrentUserId()
+                .flatMapMany(organizerId -> {
+                    log.debug("GraphQL query: myRevenueSeries for organizer {}, months {}", organizerId, months);
+                    return organizerDashboardService.getRevenueSeries(organizerId, months);
+                });
+    }
+
+    /**
+     * Sold-ticket breakdown by tier, with the denominator the shares are
+     * computed against.
+     */
+    @DgsQuery
+    @PreAuthorize("hasRole('ORGANIZER')")
+    public Mono<OrganizerTicketMix> myTicketMix() {
+        return getCurrentUserId()
+                .flatMap(organizerId -> {
+                    log.debug("GraphQL query: myTicketMix for organizer {}", organizerId);
+                    return organizerDashboardService.getTicketMix(organizerId);
+                });
+    }
+
+    /**
+     * Gate attendance for the organizer's most recent event that has run.
+     * Resolves to null when no event has run yet — the client renders an empty
+     * state rather than a 0% rate, which would be a false finding.
+     */
+    @DgsQuery
+    @PreAuthorize("hasRole('ORGANIZER')")
+    public Mono<OrganizerCheckInRate> myCheckInRate() {
+        return getCurrentUserId()
+                .flatMap(organizerId -> {
+                    log.debug("GraphQL query: myCheckInRate for organizer {}", organizerId);
+                    return organizerDashboardService.getCheckInRate(organizerId);
+                });
+    }
+
+    /**
+     * Withdrawable balance plus the escrow hold on the next tranche.
+     */
+    @DgsQuery
+    @PreAuthorize("hasRole('ORGANIZER')")
+    public Mono<OrganizerPayoutWindow> myPayoutWindow() {
+        return getCurrentUserId()
+                .flatMap(organizerId -> {
+                    log.debug("GraphQL query: myPayoutWindow for organizer {}", organizerId);
+                    return organizerDashboardService.getPayoutWindow(organizerId);
+                });
+    }
+
+    /**
+     * Escrow accounts this organizer can draw a payout from right now.
+     *
+     * <p>Every other escrow query is admin-scoped, so without this an organizer
+     * has no way to obtain the {@code escrowAccountId} that
+     * {@code createPayoutRequest} requires.
+     */
+    @DgsQuery
+    @PreAuthorize("hasRole('ORGANIZER')")
+    public Flux<OrganizerPayoutSource> myPayoutSources() {
+        return getCurrentUserId()
+                .flatMapMany(organizerId -> {
+                    log.debug("GraphQL query: myPayoutSources for organizer {}", organizerId);
+                    return organizerDashboardService.getPayoutSources(organizerId);
+                });
+    }
+
+    /**
+     * Whether a payout can be requested for one event, and if not, why.
+     *
+     * <p>Complements {@code myPayoutSources}: that lists what is already
+     * drawable, this answers for an event that is <em>not</em>, which is the
+     * case an organizer actually asks about. "Why can't I withdraw yet" is not
+     * answerable from a list that omits the event by construction.
+     *
+     * <p>The same evaluation runs again inside {@code createPayoutRequest}. This
+     * one shapes the button; that one guards the money.
+     */
+    @DgsQuery
+    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    public Mono<PayoutEligibilityResult> payoutEligibility(@InputArgument String eventId) {
+        return getCurrentUserId()
+                .flatMap(organizerId -> payoutEligibilityService.evaluate(eventId, organizerId))
+                .map(PayoutEligibilityResult::from);
     }
 
     // ========================================================================

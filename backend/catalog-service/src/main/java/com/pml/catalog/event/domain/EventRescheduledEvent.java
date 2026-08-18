@@ -1,6 +1,5 @@
 package com.pml.catalog.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -15,7 +14,7 @@ import java.time.LocalDateTime;
  * Reschedule opens a 7-day refund window where ticket holders can request
  * full refunds regardless of normal refund policy.
  */
-@Externalized("event-events::EventRescheduled")
+/** Cross-service wire name (ET-PLT-003 §4): event-events::EventRescheduled — staged into the outbox. */
 public record EventRescheduledEvent(
         String eventId,
         String organizerId,

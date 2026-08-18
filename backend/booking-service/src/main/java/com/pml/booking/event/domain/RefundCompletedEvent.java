@@ -1,6 +1,5 @@
 package com.pml.booking.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -20,7 +19,7 @@ import java.time.Instant;
  * - If refund BEFORE event: Commission status → CANCELLED (no money moved, just cancelled)
  * - If refund AFTER event: Commission status → CLAWED_BACK (money moved back from earned)
  */
-@Externalized("payment-events::RefundCompleted")
+/** Cross-service wire name (ET-PLT-003 §4): payment-events::RefundCompleted — staged into the outbox. */
 public record RefundCompletedEvent(
         String refundRequestId,
         String ticketId,

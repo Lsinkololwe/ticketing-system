@@ -1,6 +1,5 @@
 package com.pml.booking.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -11,10 +10,10 @@ import java.time.Instant;
  * External Listeners (via Azure Service Bus):
  * - Identity Service: Updates user payment history
  */
-@Externalized("payment-events::PaymentCompleted")
+/** Cross-service wire name (ET-PLT-003 §4): payment-events::PaymentCompleted — staged into the outbox. */
 public record PaymentCompletedEvent(
         String paymentIntentId,
-        String ticketId,
+        String reservationId,
         String eventId,
         String buyerId,
         BigDecimal amount,
@@ -28,7 +27,7 @@ public record PaymentCompletedEvent(
 ) {
     public PaymentCompletedEvent(
             String paymentIntentId,
-            String ticketId,
+            String reservationId,
             String eventId,
             String buyerId,
             BigDecimal amount,
@@ -39,7 +38,7 @@ public record PaymentCompletedEvent(
             String phoneNumber,
             Instant processedAt
     ) {
-        this(paymentIntentId, ticketId, eventId, buyerId, amount, currency,
+        this(paymentIntentId, reservationId, eventId, buyerId, amount, currency,
                 paymentProvider, correspondent, providerTransactionId, phoneNumber,
                 processedAt, Instant.now());
     }

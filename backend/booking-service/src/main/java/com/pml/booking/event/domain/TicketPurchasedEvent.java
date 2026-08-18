@@ -1,6 +1,5 @@
 package com.pml.booking.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -8,7 +7,7 @@ import java.time.Instant;
 /**
  * Domain event published after successful payment confirmation.
  *
- * Internal Listeners (@ApplicationModuleListener):
+ * Internal Listeners (@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)):
  * - EscrowEventListener: Credits escrow account with net amount
  * - CommissionEventListener: Records pending commission (not earned yet!)
  * - QRCodeEventListener: Generates QR code for ticket
@@ -22,7 +21,7 @@ import java.time.Instant;
  * - Commission becomes EARNED only after event + 7-day hold
  * - If refunded before event, commission is simply CANCELLED (no clawback needed)
  */
-@Externalized("ticket-events::TicketPurchased")
+/** Cross-service wire name (ET-PLT-003 §4): ticket-events::TicketPurchased — staged into the outbox. */
 public record TicketPurchasedEvent(
         String ticketId,
         String ticketNumber,

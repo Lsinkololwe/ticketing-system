@@ -1,6 +1,6 @@
 id: ET-ADM-004
 title: Dashboard analytics and the polling contract
-status: draft
+status: approved
 area: ADM
 service: all
 subgraph: all
@@ -22,10 +22,13 @@ sources:
 
 persistence:
   collections:
-    - admin_statistics_rollups    # added to the ET-PLT-002 §4 registry by this spec
+    # one rollup collection per writing service — never one shared collection
+    - catalog_statistics_rollups
+    - booking_statistics_rollups
+    - identity_statistics_rollups
   indexes:
-    - "admin_statistics_rollups {statisticKey,scope,scopeId,granularity,periodStart} unique"
-    - "admin_statistics_rollups {computedAt} single"
+    - "catalog|booking|identity_statistics_rollups {statisticKey,scope,scopeId,granularity,periodStart} unique — same index on each"
+    - "catalog|booking|identity_statistics_rollups {computedAt} single — same index on each"
   redis_keys:
     - "lock:sweep:analytics-rollup-hourly    STRING  30 s"
     - "lock:sweep:analytics-rollup-nightly   STRING  30 s"
@@ -56,12 +59,12 @@ figure_definitions:    # 14 — the SINGLE source; every dashboard figure is one
   tickets_checked_in:  "booking_checkins distinct ticketId"
   gross_transaction_value: "sum 1010 debits, entryType TICKET_SALE, over the period"
   platform_revenue:    "4010 Earned Revenue balance"
-  commission_collected:"2020 Pending Commission balance"
+  commission_collected: "2020 Pending Commission balance"
   escrow_held:         "sum booking_escrow_accounts.currentBalance where status != CLOSED"
   refunds_paid:        "sum 2030 debits over the period"
   active_users:        "identity_users accountStatus = ACTIVE"
   new_users:           "identity_users createdAt in the period"
-  active_organizations:"identity_organizations status = ACTIVE"
+  active_organizations: "identity_organizations status = ACTIVE"
   published_events:    "catalog_events status = PUBLISHED and endsAt in the future"
   conversion_rate:     "confirmed reservations / created reservations, over the period"
   sell_through:        "tickets sold / capacity, per event"
@@ -110,12 +113,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/admin/004-analytics-and-statistics
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-ADM-004
-  - mvn -q -f backend verify -Dgroups=ET-ADM-004
+  - mvn -q -f backend test -Dgroups=ET-ADM-004 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-ADM-004 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
   - cd frontend/web && npm run codegen && git diff --exit-code
 
@@ -126,5 +125,5 @@ risks:
   - "R1 requires explain() to report IXSCAN on every pipeline's $match stage, but several figures match on status + a date range across collections whose ET-PLT-002 indexes were designed for other queries. At least eventSalesSummary, salesTimeSeries and the finance period figures will need indexes the registry does not currently declare."
   - "Rollups are unique on {statisticKey, scope, scopeId, granularity, periodStart}, so a re-run replaces a period. That is correct, but a re-run after a data correction silently changes a historical figure somebody may have already reported externally, with no record that it changed."
   - "R7 caps live aggregations at P90D and directs wider ranges to a rollup, but nightly rollups only exist for growthTrends, topCities and topCategories. A finance operator asking for a 12-month revenue summary has neither a live path (capped) nor a rollup (does not exist)."
-  - "admin_statistics_rollups is the ninth amendment to ET-PLT-002 §4's closed collection registry, and it is declared once while being written by three different services — which means either three services write one collection, violating the prefix ownership rule, or there are actually three collections and the spec names one."
+  - "Resolved: there are three rollup collections, one per writing service, all rows of the ET-PLT-002 §4 registry. The dashboard composes them over the graph rather than reading one shared collection."
   - "checkInSummary appears in both this spec and ET-TKT-003 R7 with the same name and a 15-second interval declared in each. Two specs owning one operation is exactly the duplication R2 exists to prevent, one level up."

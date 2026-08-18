@@ -265,7 +265,8 @@ public Document migrate(Document d) {
 A lazy migration failure logs, alerts and returns the document unmigrated — a read must not
 fail because a migration is wrong.
 
-`admin_migration_runs`
+`catalog_migration_runs`, `booking_migration_runs`, `identity_migration_runs`
+— identical shape, one per service. Each service backfills only the collections it owns.
 
 | Field | Notes |
 |---|---|
@@ -309,7 +310,7 @@ None introduced. `UNSUPPORTED_SCHEMA_VERSION` is
 
 - [ ] **T1 · The compatibility table as a CI check**
   - requirements: R1
-  - files: `.github/workflows/`, `scripts/schema-compat.sh`
+  - files: `.github/workflows/` — the classification runs as a workflow step, not a repo script
   - verify: one change of each kind is classified correctly; a `FORBIDDEN` change fails CI
   - parallel-safe: no
   - depends: —
@@ -358,7 +359,7 @@ None introduced. `UNSUPPORTED_SCHEMA_VERSION` is
 
 - [ ] **T8 · The coordinated-type CI check**
   - requirements: R7
-  - files: `scripts/schema-compat.sh`
+  - files: `.github/workflows/`
   - verify: a removed error-code constant fails without a plan reference
   - parallel-safe: yes
   - depends: T1

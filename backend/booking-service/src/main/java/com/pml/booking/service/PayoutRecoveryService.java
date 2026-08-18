@@ -245,7 +245,7 @@ public class PayoutRecoveryService {
                 project("total")
         );
 
-        return mongoTemplate.aggregate(aggregation, "payout_requests", AmountResult.class)
+        return mongoTemplate.aggregate(aggregation, "booking_payout_requests", AmountResult.class)
                 .next()
                 .map(result -> result.getTotal() != null ? result.getTotal() : BigDecimal.ZERO)
                 .defaultIfEmpty(BigDecimal.ZERO);
@@ -260,7 +260,7 @@ public class PayoutRecoveryService {
                 project("count", "totalAmount").and("_id").as("issueType")
         );
 
-        return mongoTemplate.aggregate(aggregation, "payout_requests", IssueTypeCount.class)
+        return mongoTemplate.aggregate(aggregation, "booking_payout_requests", IssueTypeCount.class)
                 .collectList()
                 .flatMap(counts -> {
                     int total = counts.stream().mapToInt(IssueTypeCount::getCount).sum();

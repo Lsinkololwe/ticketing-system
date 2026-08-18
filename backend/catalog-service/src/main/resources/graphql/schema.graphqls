@@ -1912,6 +1912,39 @@ enum ReferenceType {
     REJECTION_REASON
     TAX_RATE
     CARD_SCHEME
+    # Workflow statuses. Configurable exactly like everything above — an admin
+    # adds "AWAITING_COMPLIANCE_REVIEW" to PAYOUT_STATUS with no deployment.
+    # The difference is that these DRIVE BEHAVIOUR, so every row must declare a
+    # semantic and code branches on that, never on the code string.
+    TICKET_STATUS
+    PAYMENT_STATUS
+    PAYOUT_STATUS
+    REFUND_STATUS
+    CHARGEBACK_STATUS
+    ESCROW_STATUS
+    EVENT_STATUS
+    ORGANIZATION_STATUS
+    VERIFICATION_DOCUMENT_STATUS
+    TEAM_INVITATION_STATUS
+    RESERVATION_STATUS
+}
+
+"""
+What an administrator-defined status MEANS to the code.
+
+Statuses are fully configurable, but code cannot branch on a string somebody
+invented this morning — a payout in an unrecognised status never moves, and
+nobody finds out until an organizer asks where the money went. So the value SET
+is configurable and this small vocabulary of meanings is fixed. Same shape as
+Jira's status categories, for the same reason.
+"""
+enum WorkflowSemantic {
+    INITIAL
+    PENDING
+    IN_PROGRESS
+    SUCCEEDED
+    FAILED
+    CANCELLED
 }
 
 """A single reference/catalog row."""
@@ -1921,6 +1954,12 @@ type ReferenceData {
     code: String!
     name: String!
     description: String
+    # Required for workflow types, null for taxonomy. Branches read THIS, never
+    # `code`, which is what lets an administrator add a status without a deploy.
+    semantic: WorkflowSemantic
+    # Codes this value may move to. Empty means unconstrained — populating it
+    # makes the workflow itself configurable, not just its vocabulary.
+    allowedTransitions: [String!]!
     parentType: ReferenceType
     parentCode: String
     displayOrder: Int!
@@ -1963,6 +2002,9 @@ type ReferenceDataMutationResponse {
 }
 
 input CreateReferenceDataInput {
+    # Required when type is a workflow type; meaningless otherwise.
+    semantic: WorkflowSemantic
+    allowedTransitions: [String!]
     type: ReferenceType!
     code: String!
     name: String!
@@ -1975,6 +2017,12 @@ input CreateReferenceDataInput {
 }
 
 input UpdateReferenceDataInput {
+    # Required when type is a workflow type; meaningless otherwise.
+    semantic: WorkflowSemantic
+    # Refused for types whose transitions are owned by a state machine in code
+    # (TICKET_STATUS, RESERVATION_STATUS, EVENT_STATUS) — editing them there
+    # would appear to work and change nothing.
+    allowedTransitions: [String!]
     name: String
     description: String
     parentType: ReferenceType
@@ -1982,6 +2030,8 @@ input UpdateReferenceDataInput {
     displayOrder: Int
     isActive: Boolean
     metadata: JSON
+    effectiveFrom: DateTime
+    effectiveTo: DateTime
 }
 
 extend type Query {

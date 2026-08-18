@@ -1,7 +1,7 @@
 package com.pml.identity.service;
 
-import com.pml.identity.domain.enums.DocumentStatus;
-import com.pml.identity.domain.enums.OrganizationStatus;
+import com.pml.shared.constants.DocumentStatus;
+import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.web.graphql.dto.stats.IdentityPendingCounts;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -96,7 +96,14 @@ export function DashboardShell({ children }: DashboardShellProps) {
             className="dashboard-main"
             style={{
               flex: 1,
-              marginLeft: isMobile ? 0 : '280px',
+              // A flex item defaults to min-width:auto, which refuses to shrink
+              // below its content's intrinsic width. Without this the main
+              // column measured 695px inside a 390px viewport and the whole
+              // dashboard — every page, not just this one — scrolled sideways
+              // on a phone. Wide content is meant to scroll inside its own
+              // container; this is what lets it.
+              minWidth: 0,
+              marginLeft: isMobile ? 0 : '250px',
               minHeight: '100vh',
               transition: 'margin-left 200ms ease',
               position: 'relative',
@@ -111,7 +118,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
               px={{ initial: '4', sm: '6' }}
               py="5"
               style={{
-                minHeight: 'calc(100vh - 64px)',
+                minHeight: 'calc(100vh - 56px)',
               }}
             >
               <main>{children}</main>

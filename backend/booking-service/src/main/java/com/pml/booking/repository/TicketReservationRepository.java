@@ -1,6 +1,6 @@
 package com.pml.booking.repository;
 
-import com.pml.booking.domain.enums.ReservationStatus;
+import com.pml.shared.constants.ReservationStatus;
 import com.pml.booking.domain.model.TicketReservation;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
@@ -50,17 +50,36 @@ public interface TicketReservationRepository extends ReactiveMongoRepository<Tic
     Flux<TicketReservation> findByEventIdAndStatusAndExpiresAtBefore(
             String eventId, ReservationStatus status, LocalDateTime time);
 
+    /** Every reservation in a given state — the recovery sweep's input (R8). */
+    Flux<TicketReservation> findByStatus(ReservationStatus status);
+
+    /**
+     * The reservation a given purchase attempt produced (ET-TKT-001 R6).
+     *
+     * <p>The lookup that makes a retry safe: a client re-sending a request whose
+     * response it never received gets the hold it already has, rather than a
+     * second block of inventory.
+     */
+    Mono<TicketReservation> findByIdempotencyKey(String idempotencyKey);
+
+    /**
+     * Reservations still held past a cutoff — the expiry sweep's claim query
+     * (R4), served by the compound {@code {status, expiresAt}} index.
+     */
+    Flux<TicketReservation> findByStatusAndExpiresAtBeforeOrderById(
+            ReservationStatus status, LocalDateTime cutoff);
+
     /**
      * Find all active reservations for a user.
      */
     default Flux<TicketReservation> findActiveByUserId(String userId) {
-        return findByUserIdAndStatus(userId, ReservationStatus.ACTIVE);
+        return findByUserIdAndStatus(userId, ReservationStatus.HELD);
     }
 
     /**
      * Find expired active reservations.
      */
     default Flux<TicketReservation> findExpiredReservations() {
-        return findByStatusAndExpiresAtBefore(ReservationStatus.ACTIVE, LocalDateTime.now());
+        return findByStatusAndExpiresAtBefore(ReservationStatus.HELD, LocalDateTime.now());
     }
 }

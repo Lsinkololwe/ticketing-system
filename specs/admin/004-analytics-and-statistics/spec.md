@@ -136,7 +136,8 @@ SHALL report when.
 
 **Acceptance**
 - [ ] The §4 table marks each statistic `live` or `rollup`
-- [ ] Rollups are computed by a scheduled job under `lock:sweep:analytics-rollup` and stored in `admin_statistics_rollups`
+- [ ] Rollups are computed by a scheduled job under `lock:sweep:analytics-rollup` and stored by each service in its own `{catalog,booking,identity}_statistics_rollups`
+- [ ] No service writes a rollup row into another service's collection; the dashboard composes the three over the graph
 - [ ] Every response carries `computedAt`, for live and rollup figures alike
 - [ ] A rollup older than twice its interval is flagged stale in the response
 - [ ] A rollup job failure alerts and leaves the previous rollup in place rather than clearing it
@@ -212,7 +213,7 @@ Fourteen definitions. Every dashboard figure is one of these or is composed from
 | `eventStats` | rollup, hourly | `PT5M` | `catalog_events` |
 | `ticketStats` | rollup, hourly | `PT5M` | `booking_tickets` |
 | `platformSummary` | rollup, hourly | `PT5M` | composed |
-| `growthTrends(from, to, granularity)` | rollup, nightly | `PT30M` | `admin_statistics_rollups` |
+| `growthTrends(from, to, granularity)` | rollup, nightly | `PT30M` | `catalog_statistics_rollups` |
 | `topCities(limit)` | rollup, nightly | `PT30M` | events by city |
 | `topCategories(limit)` | rollup, nightly | `PT30M` | events by category |
 
@@ -231,7 +232,10 @@ Every finance figure is reconcilable to `trialBalance`
 
 ### The rollup
 
-`admin_statistics_rollups`
+`catalog_statistics_rollups`, `booking_statistics_rollups`, `identity_statistics_rollups`
+— identical shape, one per writing service. A service rolls up only the domain it owns,
+and the dashboard composes the three across the graph. There is no shared rollup
+collection, because a collection with three writers has no owner.
 
 | Field | Notes |
 |---|---|

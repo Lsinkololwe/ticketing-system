@@ -3,7 +3,7 @@ package com.pml.booking.web.graphql.query;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.booking.domain.enums.ChargebackStatus;
+import com.pml.shared.constants.ChargebackStatus;
 import com.pml.booking.domain.enums.RecoveryStatus;
 import com.pml.booking.domain.model.ChargebackRecord;
 import com.pml.booking.service.ChargebackService;
@@ -224,7 +224,7 @@ public class ChargebackQueryResolver {
             List<ChargebackRecord> allChargebacks,
             OffsetPaginationInput pagination
     ) {
-        OffsetPaginationInput p = pagination != null ? pagination : new OffsetPaginationInput(1, 20);
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
         int limit = p.getLimit();
         int offset = p.getOffset();
 

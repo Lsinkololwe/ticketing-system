@@ -10,8 +10,24 @@
 
 import { useQuery, useMutation } from '@apollo/client/react';
 import type { FetchPolicy } from '@apollo/client';
-import { MY_EVENTS, PUBLISH_EVENT, UNPUBLISH_EVENT } from './events.queries';
-import type { EventStatus } from '../../../../types/graphql';
+import { MY_EVENTS, MY_EVENT_DETAIL, CREATE_EVENT, PUBLISH_EVENT, UNPUBLISH_EVENT } from './events.queries';
+import type { EventStatus, Event as CatalogEvent, TicketTier } from '../../../../types/graphql';
+
+/**
+ * The subset of Event this app selects. Derived from the generated type rather
+ * than hand-written, so a schema change surfaces here as a compile error.
+ */
+export type EventDetailVM = Pick<
+  CatalogEvent,
+  | 'id' | 'title' | 'description' | 'status' | 'eventDateTime' | 'endDateTime'
+  | 'locationName' | 'locationAddress' | 'cityName' | 'bannerImageUrl'
+  | 'totalCapacity' | 'soldTickets' | 'availableTickets' | 'revenue'
+  | 'currency' | 'rejectionReason'
+> & {
+  ticketTiers: Array<
+    Pick<TicketTier, 'id' | 'name' | 'price' | 'currency' | 'quantity' | 'soldQuantity' | 'isActive'>
+  > | null;
+};
 
 /** The subset of Event fields the organizer events list renders. */
 export interface MyEventRow {
@@ -104,4 +120,98 @@ export function useUnpublishEvent() {
     );
   };
   return { unpublish, loading };
+}
+
+/**
+ * A single event owned by the signed-in organizer.
+ *
+ * `event` stays null until resolved, and stays null for an id the organizer
+ * does not own — the screen must render "not found" rather than an empty shell
+ * that looks like a real but blank event.
+ */
+export function useMyEventDetail(id: string | null | undefined, options?: {
+  fetchPolicy?: FetchPolicy;
+}) {
+  const { data, loading, error, refetch } = useQuery<{ event: EventDetailVM | null }>(
+    MY_EVENT_DETAIL,
+    {
+      variables: { id },
+      fetchPolicy: options?.fetchPolicy ?? 'cache-and-network',
+      errorPolicy: 'all',
+      skip: !id,
+    }
+  );
+
+  return { event: data?.event ?? null, loading, error, refetch };
+}
+
+export interface CreateEventTierInput {
+  code: string;
+  name: string;
+  description?: string | null;
+  price: number | string;
+  currency: string;
+  quantity: number;
+  sortOrder?: number;
+}
+
+export interface CreateEventArgs {
+  title: string;
+  description: string;
+  categoryId: string;
+  /** ISO-8601 instants. The caller composes these from its date + time fields. */
+  eventDateTime: string;
+  endDateTime: string;
+  totalCapacity: number;
+  ticketTiers: CreateEventTierInput[];
+  location?: {
+    name: string;
+    address: string;
+    city: string;
+    province?: string | null;
+    country: string;
+  } | null;
+  isVirtual?: boolean;
+  virtualEventUrl?: string | null;
+  bannerImageUrl?: string | null;
+}
+
+/**
+ * Create an event.
+ *
+ * Returns the mutation envelope rather than throwing, so the form can surface
+ * `errors` in place. A failed create must leave the user on the form with their
+ * input intact — the previous implementation navigated away regardless.
+ */
+export function useCreateEvent() {
+  const [mutate, { loading }] = useMutation<{
+    createEvent: {
+      success: boolean;
+      message: string | null;
+      errors: string[];
+      data: { id: string; title: string; status: EventStatus } | null;
+    };
+  }>(CREATE_EVENT, { refetchQueries: [MY_EVENTS] });
+
+  const createEvent = async (input: CreateEventArgs) => {
+    try {
+      const result = await mutate({ variables: { input } });
+      const payload = result.data?.createEvent;
+      return {
+        success: payload?.success ?? false,
+        message: payload?.message ?? null,
+        errors: payload?.errors ?? [],
+        event: payload?.data ?? null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Could not reach the server. The event was not created.',
+        errors: [error instanceof Error ? error.message : String(error)],
+        event: null,
+      };
+    }
+  };
+
+  return { createEvent, loading };
 }

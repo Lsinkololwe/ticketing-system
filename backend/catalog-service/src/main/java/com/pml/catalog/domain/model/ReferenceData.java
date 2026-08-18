@@ -74,6 +74,31 @@ public class ReferenceData {
 
     private String description;
 
+    /**
+     * What this value MEANS to the code. Required for workflow types.
+     *
+     * <p>This single field is what makes statuses safely configurable. Branches
+     * read the semantic, never the {@code code}, so an administrator can add
+     * {@code AWAITING_COMPLIANCE_REVIEW} marked
+     * {@link com.pml.shared.constants.WorkflowSemantic#PENDING} and every
+     * existing "is this pending" test is immediately correct about it, with no
+     * deployment.
+     *
+     * <p>Null for taxonomy types, where there is nothing to mean. Enforced at
+     * the database by the reference_data validator, not only here.
+     */
+    private com.pml.shared.constants.WorkflowSemantic semantic;
+
+    /**
+     * Codes this value may move to. Empty means unconstrained.
+     *
+     * <p>Populating this makes the workflow itself configurable rather than only
+     * its vocabulary — the difference between renaming the states and redrawing
+     * the state machine.
+     */
+    @lombok.Builder.Default
+    private java.util.List<String> allowedTransitions = new java.util.ArrayList<>();
+
     // ── Hierarchy (optional) ──────────────────────────────────────────────────
 
     /**

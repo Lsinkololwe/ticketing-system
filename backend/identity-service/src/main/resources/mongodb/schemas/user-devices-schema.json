@@ -11,6 +11,10 @@
       "registeredAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -27,19 +31,32 @@
       },
       "platform": {
         "bsonType": "string",
-        "enum": ["IOS", "ANDROID", "WEB"],
+        "enum": [
+          "IOS",
+          "ANDROID",
+          "WEB"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "deviceModel": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "osVersion": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 50
       },
       "appVersion": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 20
       },
       "isActive": {
@@ -49,7 +66,10 @@
         "bsonType": "date"
       },
       "lastActiveAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

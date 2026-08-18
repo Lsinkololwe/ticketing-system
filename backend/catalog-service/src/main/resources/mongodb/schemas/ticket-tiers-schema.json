@@ -10,8 +10,15 @@
       "availableQuantity"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "id": {
-        "bsonType": ["string", "null"]
+        "bsonType": [
+          "string",
+          "null"
+        ]
       },
       "name": {
         "bsonType": "string",
@@ -20,7 +27,10 @@
         "description": "Tier name (e.g., VIP, General Admission, Early Bird)"
       },
       "description": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "price": {
@@ -39,20 +49,32 @@
         "description": "Remaining tickets available"
       },
       "maxPerOrder": {
-        "bsonType": ["int", "null"],
+        "bsonType": [
+          "int",
+          "null"
+        ],
         "minimum": 1,
         "description": "Maximum tickets per order"
       },
       "saleStartDate": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "When sales open for this tier"
       },
       "saleEndDate": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "When sales close for this tier"
       },
       "isActive": {
-        "bsonType": ["bool", "null"]
+        "bsonType": [
+          "bool",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

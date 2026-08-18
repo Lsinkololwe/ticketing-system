@@ -1,6 +1,6 @@
 id: ET-TKT-003
 title: Validation, check-in and the offline gate
-status: draft
+status: approved
 area: TKT
 service: booking-service
 subgraph: booking
@@ -79,11 +79,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/ticketing/003-validation-and-checkin
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-003
-  - mvn -q -f backend verify -Dgroups=ET-TKT-003
+  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-003 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-TKT-003 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

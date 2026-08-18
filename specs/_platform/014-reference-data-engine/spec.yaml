@@ -1,0 +1,64 @@
+id: ET-PLT-014
+title: The reference data engine — enum-derived, administrator-owned lookups and statuses
+status: approved            # draft | approved | in-progress | implemented | verified | deferred | withdrawn
+area: PLT
+service: catalog-service
+subgraph: catalog
+owner: lazarous
+created: 2026-08-18
+priority: must
+wave: 2
+blocked_by: [ET-PLT-002, ET-PLT-004, ET-PLT-005]
+conformance: "V3 §7 · US Part V §23–25"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/_platform/002-persistence-baseline/spec.md
+
+# ---- the contract, mirrored from spec.md §4 ----
+persistence:
+  collections:
+    - catalog_reference_data
+  indexes:
+    - "catalog_reference_data { type: 1, code: 1 } unique"
+    - "catalog_reference_data { type: 1, active: 1, displayOrder: 1 }"
+    - "catalog_reference_data { type: 1, parentCode: 1 }"
+  redis_keys:
+    - "ref:{type}   STRING  ttl 1 h  — authority catalog_reference_data"
+
+events:
+  module:
+    - ReferenceDataChangedEvent
+  bus:
+    - catalog.ReferenceDataChanged
+  consumes: []
+  topics:
+    - catalog-events
+
+graphql:
+  schema: backend/catalog-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - referenceTypes
+    - referenceData
+    - referenceDataAll
+  mutations:
+    - createReferenceRow
+    - updateReferenceRow
+    - reorderReferenceRows
+    - setReferenceRowActive
+
+errors:
+  - REFERENCE_TYPE_UNKNOWN
+  - REFERENCE_CODE_DUPLICATE
+  - REFERENCE_SEMANTIC_REQUIRED
+  - REFERENCE_MACHINE_CODE_OWNED
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - mvn -q -f backend/catalog-service test -Dgroups=ET-PLT-014 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-014 -DfailIfNoTests=true
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "A workflow row filed under the wrong semantic looks correct on the admin screen and routes behaviour down the wrong branch; R4's abort-on-missing is the guard, and R5's source scan keeps branching off the code string."
+  - "The collection must be named catalog_reference_data to satisfy the ET-PLT-002 §4 prefixed-collection registry; an unprefixed name is a registry violation, not a preference."
+  - "Types are compiled. Any runtime type-creation path makes lists that nothing reads."

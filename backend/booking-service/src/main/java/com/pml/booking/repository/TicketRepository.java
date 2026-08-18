@@ -45,6 +45,16 @@ public interface TicketRepository extends ReactiveMongoRepository<Ticket, String
 
     Flux<Ticket> findByCorrelationId(String correlationId);
 
+    /**
+     * The tickets issued by a reservation's confirmation.
+     *
+     * <p>ET-TKT-001 R7 requires that confirming an already-{@code CONFIRMED}
+     * reservation be a no-op <em>returning the existing tickets</em>. A duplicate
+     * provider callback is routine, so the second confirmation has to find what
+     * the first one wrote rather than issue a second set.
+     */
+    Flux<Ticket> findByReservationId(String reservationId);
+
     Mono<Boolean> existsByTicketNumber(String ticketNumber);
 
     // ========================================================================
@@ -81,6 +91,16 @@ public interface TicketRepository extends ReactiveMongoRepository<Ticket, String
 
     Mono<Long> countByEventId(String eventId);
 
+    /**
+     * Tickets issued for one event, scoped to its organizer.
+     *
+     * <p>The organizer scope is not decoration: it is what makes the check-in
+     * summary safe to expose. An organizer asking about an event they do not
+     * own gets zero rather than a real figure, so the query cannot be used to
+     * read a competitor's sales.
+     */
+    Mono<Long> countByEventIdAndOrganizerId(String eventId, String organizerId);
+
     Mono<Long> countByBuyerId(String buyerId);
 
     Mono<Long> countByEventIdAndStatus(String eventId, TicketStatus status);
@@ -109,14 +129,14 @@ public interface TicketRepository extends ReactiveMongoRepository<Ticket, String
      *
      * This aggregation:
      * 1. Matches tickets for the given event ID
-     * 2. Filters to only sold statuses (PURCHASED, CONFIRMED, VALIDATED, USED)
+     * 2. Filters to only sold statuses (ET-TKT-002 R7: ISSUED, VALIDATED, REFUND_PENDING)
      * 3. Sums the price field
      *
      * NOTE: Returns a wrapper DTO (RevenueResult) instead of raw BigDecimal
      * to avoid Java 21+ module encapsulation issues with BigDecimal reflection.
      */
     @Aggregation(pipeline = {
-            "{ $match: { eventId: ?0, status: { $in: ['PURCHASED', 'CONFIRMED', 'VALIDATED', 'USED'] } } }",
+            "{ $match: { eventId: ?0, status: { $in: ['ISSUED', 'VALIDATED', 'REFUND_PENDING'] } } }",
             "{ $group: { _id: null, totalRevenue: { $sum: { $toDecimal: '$price' } } } }",
             "{ $project: { _id: 0, totalRevenue: 1 } }"
     })
@@ -132,7 +152,7 @@ public interface TicketRepository extends ReactiveMongoRepository<Ticket, String
      * to avoid Java 21+ module encapsulation issues with BigDecimal reflection.
      */
     @Aggregation(pipeline = {
-            "{ $match: { buyerId: ?0, status: { $in: ['PURCHASED', 'CONFIRMED', 'VALIDATED', 'USED'] } } }",
+            "{ $match: { buyerId: ?0, status: { $in: ['ISSUED', 'VALIDATED', 'REFUND_PENDING'] } } }",
             "{ $group: { _id: null, totalSpent: { $sum: { $toDecimal: '$price' } } } }",
             "{ $project: { _id: 0, totalSpent: 1 } }"
     })

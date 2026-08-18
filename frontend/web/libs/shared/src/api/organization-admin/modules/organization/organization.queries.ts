@@ -95,6 +95,10 @@ export const ORGANIZATION_STATUS_FIELDS = gql`
     id
     name
     status
+    # Drives the required-document set on the documents step (spec §4), so the
+    # status query carries it too — otherwise a resume-mid-wizard renders an
+    # empty document list.
+    businessType
     rejectionReason
     documentsVerified
     submittedAt

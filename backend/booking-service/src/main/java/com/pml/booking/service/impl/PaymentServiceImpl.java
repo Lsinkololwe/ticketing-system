@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
@@ -67,17 +68,23 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public Mono<PaymentIntent> createPaymentIntent(
-            String ticketId,
+            String reservationId,
             String eventId,
             String userId,
             BigDecimal amount,
             String currency,
             String phoneNumber
     ) {
-        log.info("Creating payment intent for ticket: {}, amount: {} {}", ticketId, amount, currency);
+        log.info("Creating payment intent for reservation: {}, amount: {} {}", reservationId, amount, currency);
 
-        // Generate idempotency key to prevent duplicate payments
-        String idempotencyKey = String.format("%s_%s_%d", userId, ticketId, System.currentTimeMillis());
+        // Keyed on the reservation alone, with no timestamp.
+        //
+        // The old key mixed in System.currentTimeMillis(), which made every
+        // retry unique and so guaranteed the uniqueness constraint could never
+        // fire — an idempotency key that changes on retry defeats the one thing
+        // it exists for. A buyer whose first request timed out got a second
+        // charge. One reservation may be charged once (ET-TKT-001 R6).
+        String idempotencyKey = String.format("%s_%s", userId, reservationId);
         String transactionRef = PaymentIntent.generateTransactionRef();
 
         // Detect network from phone number using provider-agnostic enum
@@ -88,7 +95,7 @@ public class PaymentServiceImpl implements PaymentService {
         PaymentIntent paymentIntent = PaymentIntent.builder()
                 .idempotencyKey(idempotencyKey)
                 .transactionRef(transactionRef)
-                .ticketId(ticketId)
+                .reservationId(reservationId)
                 .eventId(eventId)
                 .userId(userId)
                 .amount(amount)
@@ -100,8 +107,24 @@ public class PaymentServiceImpl implements PaymentService {
                 .expiresAt(Instant.now().plus(Duration.ofMinutes(paymentTimeoutMinutes)))
                 .build();
 
-        return paymentIntentRepository.save(paymentIntent)
-                .doOnSuccess(pi -> log.info("Payment intent created: {}", pi.getTransactionRef()));
+        // Return the existing intent rather than writing a second one.
+        //
+        // Making the key deterministic is only half of idempotency; without
+        // this half it is strictly worse than the timestamped key it replaced.
+        // A buyer tapping "pay" twice would hit the unique index and be shown a
+        // failure for a payment that is, at that moment, in flight — so they
+        // would try again, or complain, while their handset was ringing.
+        return paymentIntentRepository.findByReservationId(reservationId)
+                .doOnNext(existing -> log.info(
+                        "Reservation {} already has payment intent {} ({}) — reusing it",
+                        reservationId, existing.getTransactionRef(), existing.getStatus()))
+                .switchIfEmpty(Mono.defer(() -> paymentIntentRepository.save(paymentIntent)
+                        .doOnSuccess(pi -> log.info("Payment intent created: {}", pi.getTransactionRef()))
+                        // Two concurrent taps can both reach the save. The index
+                        // refuses the second, and losing that race means the
+                        // intent exists — which is what the caller asked for.
+                        .onErrorResume(DuplicateKeyException.class,
+                                e -> paymentIntentRepository.findByReservationId(reservationId))));
     }
 
     @Override
@@ -130,7 +153,7 @@ public class PaymentServiceImpl implements PaymentService {
                             .phoneNumber(paymentIntent.getPhoneNumber())
                             .amount(paymentIntent.getAmount())
                             .currency(paymentIntent.getCurrency())
-                            .description("Ticket Purchase: " + paymentIntent.getTicketId())
+                            .description("Ticket Purchase: " + paymentIntent.getReservationId())
                             .build();
 
                     // Use gateway factory to select appropriate provider
@@ -188,7 +211,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         // Try to find PaymentIntent via PaymentAttempt first (new model), then fall back to direct lookup
         return paymentAttemptRepository.findByDepositId(depositId)
-                .flatMap(attempt -> paymentIntentRepository.findByTicketId(attempt.getTicketId()))
+                .flatMap(attempt -> paymentIntentRepository.findByReservationId(attempt.getReservationId()))
                 .switchIfEmpty(paymentIntentRepository.findByProviderTransactionId(depositId))
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Payment intent not found for deposit: " + depositId)))
                 .flatMap(paymentIntent -> processPaymentCallback(paymentIntent, status, failureCode, failureMessage));
@@ -295,8 +318,8 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    public Mono<PaymentIntent> findByTicketId(String ticketId) {
-        return paymentIntentRepository.findByTicketId(ticketId);
+    public Mono<PaymentIntent> findByReservationId(String reservationId) {
+        return paymentIntentRepository.findByReservationId(reservationId);
     }
 
     @Override
@@ -340,7 +363,7 @@ public class PaymentServiceImpl implements PaymentService {
     private void publishPaymentCompleted(PaymentIntent paymentIntent) {
         PaymentCompletedEvent event = new PaymentCompletedEvent(
                 paymentIntent.getId(),
-                paymentIntent.getTicketId(),
+                paymentIntent.getReservationId(),
                 paymentIntent.getEventId(),
                 paymentIntent.getUserId(),
                 paymentIntent.getAmount(),
@@ -352,13 +375,13 @@ public class PaymentServiceImpl implements PaymentService {
                 Instant.now()
         );
         eventPublisher.publishEvent(event);
-        log.info("Published PaymentCompletedEvent for ticket: {}", paymentIntent.getTicketId());
+        log.info("Published PaymentCompletedEvent for reservation: {}", paymentIntent.getReservationId());
     }
 
     private void publishPaymentFailed(PaymentIntent paymentIntent) {
         PaymentFailedEvent event = new PaymentFailedEvent(
                 paymentIntent.getId(),
-                paymentIntent.getTicketId(),
+                paymentIntent.getReservationId(),
                 paymentIntent.getEventId(),
                 paymentIntent.getUserId(),
                 paymentIntent.getAmount(),
@@ -368,7 +391,7 @@ public class PaymentServiceImpl implements PaymentService {
                 paymentIntent.getFailureCode()
         );
         eventPublisher.publishEvent(event);
-        log.info("Published PaymentFailedEvent for ticket: {}", paymentIntent.getTicketId());
+        log.info("Published PaymentFailedEvent for reservation: {}", paymentIntent.getReservationId());
     }
 
     /**

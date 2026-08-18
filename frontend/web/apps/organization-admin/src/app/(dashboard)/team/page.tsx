@@ -22,6 +22,7 @@ import {
   Avatar,
   DropdownMenu,
   Dialog,
+  Skeleton,
 } from '@radix-ui/themes';
 import {
   Plus,
@@ -40,6 +41,12 @@ import {
   useMyOrganization,
   canManageTeam,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import {
+  useMyTeamMembers,
+  useUpdateMemberRole,
+  useRemoveMember,
+} from '@pml.tickets/shared/api/organization-admin/modules/team';
+import type { OrganizationMember as OrganizationMemberVM } from '@pml.tickets/shared/types/graphql';
 import type { OrganizationRole } from '@/config/navigation';
 
 // =============================================================================
@@ -58,55 +65,34 @@ interface TeamMember {
 }
 
 // =============================================================================
-// MOCK DATA
+// ADAPTER — OrganizationMember → this page's presentation shape
+//
+// No fixture data lives in this app. This maps the real member payload from
+// identity-service onto the rows the roster renders.
 // =============================================================================
 
-const mockMembers: TeamMember[] = [
-  {
-    id: '1',
-    name: 'John Mwanza',
-    email: 'john@organization.com',
-    role: 'OWNER',
-    joinedAt: '2024-01-15',
-    lastActive: '2025-05-19',
-    status: 'active',
-  },
-  {
-    id: '2',
-    name: 'Mary Banda',
-    email: 'mary@organization.com',
-    role: 'ADMIN',
-    joinedAt: '2024-03-20',
-    lastActive: '2025-05-18',
-    status: 'active',
-  },
-  {
-    id: '3',
-    name: 'Peter Tembo',
-    email: 'peter@organization.com',
-    role: 'MANAGER',
-    joinedAt: '2024-06-10',
-    lastActive: '2025-05-17',
-    status: 'active',
-  },
-  {
-    id: '4',
-    name: 'Grace Phiri',
-    email: 'grace@organization.com',
-    role: 'MARKETER',
-    joinedAt: '2024-09-05',
-    lastActive: '2025-05-15',
-    status: 'active',
-  },
-  {
-    id: '5',
-    name: 'David Lungu',
-    email: 'david@organization.com',
-    role: 'CONTRIBUTOR',
-    joinedAt: '2025-01-20',
-    status: 'pending',
-  },
-];
+/** Backend MemberStatus → the three states this screen renders. */
+const MEMBER_STATUS: Record<string, TeamMember['status']> = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  SUSPENDED: 'inactive',
+  REMOVED: 'inactive',
+};
+
+function toTeamMember(member: OrganizationMemberVM): TeamMember {
+  return {
+    id: member.id,
+    // fullName is the shareable, non-PII display name. Email and phone are
+    // admin-tagged in the schema and are deliberately not fetched — a roster
+    // needs a name and a role, not contact details.
+    name: member.user?.fullName || member.user?.username || 'Unknown member',
+    email: member.user?.username ?? '',
+    role: member.role,
+    joinedAt: member.joinedAt,
+    lastActive: member.lastActiveAt ?? undefined,
+    status: MEMBER_STATUS[member.status] ?? 'pending',
+  };
+}
 
 // =============================================================================
 // ROLE CONFIG
@@ -263,7 +249,12 @@ export default function TeamPage() {
   const { status } = useMyOrganization({ skip: !isAuthenticated });
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [members, setMembers] = useState<TeamMember[]>(mockMembers);
+  const { members: memberRows, loading, refetch } = useMyTeamMembers({ skip: !isAuthenticated });
+  const { updateRole } = useUpdateMemberRole();
+  const { removeMember } = useRemoveMember();
+
+  const members = useMemo(() => memberRows.map(toTeamMember), [memberRows]);
+
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
 
@@ -302,11 +293,13 @@ export default function TeamPage() {
     return groups;
   }, [filteredMembers]);
 
-  const handleRoleChange = useCallback((memberId: string, newRole: OrganizationRole) => {
-    setMembers((prev) =>
-      prev.map((m) => (m.id === memberId ? { ...m, role: newRole } : m))
-    );
-  }, []);
+  // Refetch rather than patch local state. A role is an authorisation
+  // decision — showing someone as an Admin before the server agreed would
+  // misrepresent what they can actually do.
+  const handleRoleChange = useCallback(async (memberId: string, newRole: OrganizationRole) => {
+    const updated = await updateRole(memberId, newRole);
+    if (updated) await refetch();
+  }, [updateRole, refetch]);
 
   const handleRemoveClick = useCallback((memberId: string) => {
     const member = members.find((m) => m.id === memberId);
@@ -316,13 +309,13 @@ export default function TeamPage() {
     }
   }, [members]);
 
-  const handleRemoveConfirm = useCallback(() => {
-    if (memberToRemove) {
-      setMembers((prev) => prev.filter((m) => m.id !== memberToRemove.id));
-      setRemoveDialogOpen(false);
-      setMemberToRemove(null);
-    }
-  }, [memberToRemove]);
+  const handleRemoveConfirm = useCallback(async () => {
+    if (!memberToRemove) return;
+    const removed = await removeMember(memberToRemove.id);
+    if (removed) await refetch();
+    setRemoveDialogOpen(false);
+    setMemberToRemove(null);
+  }, [memberToRemove, removeMember, refetch]);
 
   return (
     <Box>
@@ -374,8 +367,17 @@ export default function TeamPage() {
         </Flex>
       </Card>
 
-      {/* Members List */}
-      {filteredMembers.length === 0 ? (
+      {/* Members List.
+          Loading is distinguished from empty on purpose: an organization always
+          has at least its owner, so "no members" while a fetch is in flight is
+          a wrong statement, not a slow one. */}
+      {loading && members.length === 0 ? (
+        <Flex direction="column" gap="3" data-testid="team-loading">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} style={{ height: 76, borderRadius: 'var(--card-radius-bento)' }} />
+          ))}
+        </Flex>
+      ) : filteredMembers.length === 0 ? (
         <Card
           style={{
             padding: '60px 24px',

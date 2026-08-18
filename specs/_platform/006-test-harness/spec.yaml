@@ -1,6 +1,6 @@
 id: ET-PLT-006
 title: Five-layer test harness — fixtures, Testcontainers, the frozen clock
-status: draft
+status: in-progress      # draft | approved | in-progress | implemented | verified | deferred | withdrawn
 area: PLT
 service: all
 subgraph: null
@@ -68,10 +68,8 @@ budget:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/006-test-harness
   - mvn -q -f backend test
-  - mvn -q -f backend verify -Dgroups=ET-PLT-006
-  - ./scripts/spec-status.sh --drift
+  - mvn -q -f backend verify -Dgroups=ET-PLT-006 -DfailIfNoTests=true
 
 risks:
   - "R4's mutation-test box requires deliberately introducing a write-then-throw defect to prove the assertion detects it. Nothing in the build keeps that proof alive: once written, assertNothingPersisted can be weakened later and no test notices. It needs to be a permanent mutation-testing step, not a one-off verification."

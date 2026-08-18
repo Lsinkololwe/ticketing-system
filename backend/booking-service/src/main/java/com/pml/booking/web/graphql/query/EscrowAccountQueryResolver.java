@@ -205,7 +205,7 @@ public class EscrowAccountQueryResolver {
      * Build EscrowAccountOffsetPage from a Flux of accounts.
      */
     private Mono<EscrowAccountOffsetPage> buildOffsetPage(Flux<EventEscrowAccount> accountFlux, OffsetPaginationInput pagination) {
-        OffsetPaginationInput p = pagination != null ? pagination : new OffsetPaginationInput(1, 20);
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
         int limit = p.getLimit();
         int offset = p.getOffset();
 
@@ -312,9 +312,9 @@ public class EscrowAccountQueryResolver {
                 account.getOrganizerId(),
                 account.getOrganizerName() != null ? account.getOrganizerName() : "",
                 account.getCurrentBalance(),
-                account.getTotalDeposits(),
-                account.getTotalWithdrawals(),
-                account.getTotalRefunds(),
+                account.getTotalCredited(),
+                account.getTotalDebited(),
+                account.getTotalRefunded(),
                 account.getTotalCommissions(),
                 account.getAvailableForPayout(),
                 account.getStatus().name(),

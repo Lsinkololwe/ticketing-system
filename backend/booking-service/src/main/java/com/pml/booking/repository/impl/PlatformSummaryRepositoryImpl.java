@@ -4,6 +4,7 @@ import com.pml.booking.repository.PlatformSummaryRepository;
 import com.pml.booking.repository.dto.EscrowSummaryResult;
 import com.pml.booking.repository.dto.PayoutSummaryResult;
 import com.pml.booking.repository.dto.TicketSummaryResult;
+import com.pml.shared.constants.TicketStatus;
 import com.pml.booking.repository.dto.TransactionSummaryResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,15 +32,15 @@ import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
  * - Supports billions of records efficiently
  *
  * INDEXING REQUIREMENTS:
- * - event_escrow_accounts: index on "status"
+ * - booking_escrow_accounts: index on "status"
  * - financial_transactions: compound index on "status", index on "transactionType"
- * - payout_requests: index on "status"
+ * - booking_payout_requests: index on "status"
  * - tickets: index on "status"
  *
  * Example MongoDB command to create indexes:
- * db.event_escrow_accounts.createIndex({ "status": 1 })
+ * db.booking_escrow_accounts.createIndex({ "status": 1 })
  * db.financial_transactions.createIndex({ "status": 1 })
- * db.payout_requests.createIndex({ "status": 1 })
+ * db.booking_payout_requests.createIndex({ "status": 1 })
  * db.tickets.createIndex({ "status": 1 })
  */
 @Slf4j
@@ -49,9 +50,9 @@ public class PlatformSummaryRepositoryImpl implements PlatformSummaryRepository 
 
     private final ReactiveMongoTemplate mongoTemplate;
 
-    private static final String ESCROW_COLLECTION = "event_escrow_accounts";
+    private static final String ESCROW_COLLECTION = "booking_escrow_accounts";
     private static final String TRANSACTION_COLLECTION = "financial_transactions";
-    private static final String PAYOUT_COLLECTION = "payout_requests";
+    private static final String PAYOUT_COLLECTION = "booking_payout_requests";
     private static final String TICKET_COLLECTION = "tickets";
 
     @Override
@@ -164,7 +165,7 @@ public class PlatformSummaryRepositoryImpl implements PlatformSummaryRepository 
                 new Document("status", "COMPLETED"));
         AggregationOperation completedSum = context -> new Document("$group",
                 new Document("_id", null)
-                        .append("totalAmount", new Document("$sum", new Document("$toDecimal", "$netPayoutAmount"))));
+                        .append("totalAmount", new Document("$sum", new Document("$toDecimal", "$settledAmount"))));
 
         FacetOperation facet = facet()
                 .and(statusGroup).as("statusCounts")
@@ -191,7 +192,7 @@ public class PlatformSummaryRepositoryImpl implements PlatformSummaryRepository 
         // Revenue total sub-pipeline (only sold statuses)
         AggregationOperation revenueMatch = context -> new Document("$match",
                 new Document("status", new Document("$in",
-                        List.of("PURCHASED", "CONFIRMED", "VALIDATED", "USED"))));
+                        List.of("ISSUED", "VALIDATED", "REFUND_PENDING"))));
         AggregationOperation revenueSum = context -> new Document("$group",
                 new Document("_id", null)
                         .append("totalRevenue", new Document("$sum", new Document("$toDecimal", "$price"))));
@@ -355,14 +356,12 @@ public class PlatformSummaryRepositoryImpl implements PlatformSummaryRepository 
 
         return new TicketSummaryResult(
                 total,
-                countsByStatus.getOrDefault("PENDING_PAYMENT", 0L),
-                countsByStatus.getOrDefault("PURCHASED", 0L),
-                countsByStatus.getOrDefault("CONFIRMED", 0L),
-                countsByStatus.getOrDefault("VALIDATED", 0L),
-                countsByStatus.getOrDefault("USED", 0L),
-                countsByStatus.getOrDefault("EXPIRED", 0L),
-                countsByStatus.getOrDefault("CANCELLED", 0L),
-                countsByStatus.getOrDefault("REFUNDED", 0L),
+                countsByStatus.getOrDefault(TicketStatus.ISSUED.name(), 0L),
+                countsByStatus.getOrDefault(TicketStatus.VALIDATED.name(), 0L),
+                countsByStatus.getOrDefault(TicketStatus.REFUND_PENDING.name(), 0L),
+                countsByStatus.getOrDefault(TicketStatus.REFUNDED.name(), 0L),
+                countsByStatus.getOrDefault(TicketStatus.CANCELLED.name(), 0L),
+                countsByStatus.getOrDefault(TicketStatus.EXPIRED.name(), 0L),
                 totalRevenue
         );
     }

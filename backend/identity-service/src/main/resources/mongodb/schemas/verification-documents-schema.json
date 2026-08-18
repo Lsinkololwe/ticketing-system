@@ -25,8 +25,20 @@
       },
       "documentType": {
         "bsonType": "string",
-        "enum": ["ID_DOCUMENT", "BUSINESS_LICENSE", "TAX_CERTIFICATE", "BANK_STATEMENT", "PROOF_OF_ADDRESS", "OTHER"],
-        "description": "OWASP A04 - Enum constraint"
+        "enum": [
+          "NATIONAL_ID",
+          "TAX_CERTIFICATE",
+          "CERTIFICATE_OF_INCORPORATION",
+          "PARTNERSHIP_AGREEMENT",
+          "NGO_REGISTRATION",
+          "AUTHORISATION_LETTER",
+          "PROOF_OF_ADDRESS",
+          "BANK_STATEMENT",
+          "ID_DOCUMENT",
+          "BUSINESS_LICENSE",
+          "OTHER"
+        ],
+        "description": "OWASP A04 - Enum constraint. The first eight are the spec ET-ORG-001 §4 vocabulary that RequiredDocuments keys off; a validator that omits them rejects every document the onboarding wizard uploads. ID_DOCUMENT and BUSINESS_LICENSE are the superseded generic names, retained so existing rows stay valid — the generic pair cannot distinguish a certificate of incorporation from an NGO registration, which is a distinction the required-document table depends on."
       },
       "documentUrl": {
         "bsonType": "string",

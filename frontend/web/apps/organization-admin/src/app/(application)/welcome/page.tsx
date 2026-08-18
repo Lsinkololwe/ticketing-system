@@ -35,11 +35,6 @@ import {
 } from '@radix-ui/themes';
 import { Building, ArrowRight, Clock, ShieldCheck, Rocket } from 'iconoir-react';
 import { useSession } from '@/lib/auth/client';
-import {
-  useMyOrganization,
-  isApproved,
-  canEditApplication,
-} from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // TYPES
@@ -103,27 +98,23 @@ export default function WelcomePage() {
   const { data: session, isPending } = useSession();
   const ctaButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Organization status drives where the user belongs. Welcome is only the right
-  // place when there is no application yet, or it is still editable (not submitted).
-  const { hasOrganization, status, loading: orgLoading } = useMyOrganization({
-    fetchPolicy: 'cache-first',
-  });
-
   // Extract first name from session
   const firstName = session?.user?.name?.split(' ')[0] || 'there';
 
-  // Route the user to the page that matches their application status:
-  //   - APPROVED / ACTIVE        → dashboard
-  //   - PENDING_REVIEW / REJECTED / SUSPENDED (submitted) → status page
-  //   - DRAFT / CHANGES_REQUESTED (editable) or none      → stay on welcome
-  useEffect(() => {
-    if (orgLoading || !hasOrganization || !status) return;
-    if (isApproved(status)) {
-      router.replace('/dashboard');
-    } else if (!canEditApplication(status)) {
-      router.replace('/apply/status');
-    }
-  }, [orgLoading, hasOrganization, status, router]);
+  // NOTE: this page performs NO routing of its own.
+  //
+  // It used to query organization status on the client and `router.replace()`
+  // into the right screen from a `useEffect`. That ran after paint, so an
+  // applicant already under review saw this setup screen flash on every login —
+  // and if the query errored (Apollo's `errorPolicy: 'all'` yields a null
+  // organization rather than throwing) the redirect never fired at all and they
+  // were parked here, invited to apply a second time.
+  //
+  // The `(application)` server layout now resolves the destination before this
+  // component renders, so reaching this page at all means the server has already
+  // established that no organization exists.
+  //
+  // @see lib/onboarding/state.ts
 
   // Handle CTA click
   const handleGetStarted = useCallback(() => {

@@ -1,12 +1,14 @@
-import { PagePlaceholder } from '@/components/ui/PagePlaceholder';
-import { Community } from 'iconoir-react';
+/**
+ * organizations — one of the three views of `Admin - Users & Organizations.dc.html`.
+ *
+ * The design is a single surface whose rail switches between All users,
+ * Organizers and Organizations; the navigation it declares has three separate
+ * entries. Rendering the same workbench at each route satisfies both, and makes
+ * the rail real navigation rather than local state.
+ */
 
-export default function OrganizationsPage() {
-  return (
-    <PagePlaceholder
-      title="Organizations"
-      description="Manage registered organizations and their profiles"
-      icon={<Community style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
-    />
-  );
+import { PeopleWorkbench } from '@/components/people/PeopleWorkbench';
+
+export default function Page() {
+  return <PeopleWorkbench view="organizations" />;
 }

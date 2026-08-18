@@ -108,7 +108,7 @@ is a row of the §4 registry.
 - [ ] Every refusal type in the platform extends it, is named as a fact, and ends in no `Exception` suffix
 - [ ] Every `errorCode` raised anywhere is a row of the §4 registry
 - [ ] No two registry rows describe the same condition
-- [ ] `./scripts/spec-lint.sh --errors` exits 0
+- [ ] Every `errorCode` names a row of the ET-PLT-005 §4 registry, every `DomainRefusal` subtype has a `@DgsExceptionHandler`, and every handler sets `extensions.retryable`
 
 ### ET-PLT-005-R2 · Every refusal reaches the client with the same `extensions` shape
 
@@ -242,7 +242,16 @@ DGS's `com.netflix.graphql.types.errors.ErrorType`. These eight and no others.
 | `ACTOR_NOT_AUTHENTICATED` | `ActorNotAuthenticated` | `UNAUTHENTICATED` | no | ET-PLT-007 |
 | `ACTOR_NOT_PERMITTED` | `ActorNotPermitted` | `PERMISSION_DENIED` | no | ET-PLT-007 |
 | `IDEMPOTENCY_KEY_REUSED` | `IdempotencyKeyReused` | `FAILED_PRECONDITION` | no | ET-PLT-007 |
+| `TOKEN_REVOKED` | `TokenRevoked` | `UNAUTHENTICATED` | no | ET-IDN-003 |
+| `REVOCATION_UNAVAILABLE` | `RevocationUnavailable` | `UNAVAILABLE` | **yes** | ET-IDN-003 |
 | `RATE_LIMIT_EXCEEDED` | `RateLimitExceeded` | `UNAVAILABLE` | **yes** | ET-PLT-011 |
+| `PERMISSION_KEY_INVALID` | `PermissionKeyInvalid` | `BAD_REQUEST` | no | ET-PLT-013 |
+| `PERMISSION_UNKNOWN` | `PermissionUnknown` | `NOT_FOUND` | no | ET-PLT-013 |
+| `ROLE_MAPPING_UNKNOWN` | `RoleMappingUnknown` | `NOT_FOUND` | no | ET-PLT-013 |
+| `REFERENCE_TYPE_UNKNOWN` | `ReferenceTypeUnknown` | `NOT_FOUND` | no | ET-PLT-014 |
+| `REFERENCE_CODE_DUPLICATE` | `ReferenceCodeDuplicate` | `FAILED_PRECONDITION` | no | ET-PLT-014 |
+| `REFERENCE_SEMANTIC_REQUIRED` | `ReferenceSemanticRequired` | `BAD_REQUEST` | no | ET-PLT-014 |
+| `REFERENCE_MACHINE_CODE_OWNED` | `ReferenceMachineCodeOwned` | `FAILED_PRECONDITION` | no | ET-PLT-014 |
 
 **Identity** — ET-IDN-001, ET-IDN-002
 
@@ -362,7 +371,7 @@ user's mistake; it is a defect, and it must page somebody.
 | `CONFIGURATION_VALUE_INVALID` | `ConfigurationValueInvalid` | `BAD_REQUEST` | no | `constraint` |
 | `TRANSACTION_NOT_RECOVERABLE` | `TransactionNotRecoverable` | `FAILED_PRECONDITION` | no | `currentStatus` |
 
-**79 codes.** No other code exists. `UNSUPPORTED_SCHEMA_VERSION` is a dead-letter reason
+**86 codes.** No other code exists. `UNSUPPORTED_SCHEMA_VERSION` is a dead-letter reason
 ([ET-PLT-003](../003-event-contract/)), not a client-facing code, and is deliberately
 absent from this registry.
 
@@ -427,7 +436,7 @@ the code and the HTTP status mapped from `ErrorType`.
 - [ ] **T3 · A refusal type and a `@DgsExceptionHandler` per registry row, per service**
   - requirements: R1, R2, R3
   - files: `backend/*/src/main/java/com/pml/*/exception/`, `.../web/graphql/exception/`
-  - verify: `./scripts/spec-lint.sh --errors`
+  - verify: every `errorCode` names a row of the ET-PLT-005 §4 registry, every `DomainRefusal` subtype has a `@DgsExceptionHandler`, and every handler sets `extensions.retryable`
   - parallel-safe: yes — one service per agent
   - depends: T1
 

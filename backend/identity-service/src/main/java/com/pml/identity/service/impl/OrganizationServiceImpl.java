@@ -1,7 +1,7 @@
 package com.pml.identity.service.impl;
 
 import com.pml.identity.domain.enums.MemberStatus;
-import com.pml.identity.domain.enums.OrganizationStatus;
+import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.OrganizationRole;

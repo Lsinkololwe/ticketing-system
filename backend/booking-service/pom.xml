@@ -6,68 +6,22 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.4</version>
-        <relativePath/>
+        <groupId>com.pml</groupId>
+        <artifactId>backend</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>com.pml</groupId>
     <artifactId>booking-service</artifactId>
-    <version>1.0.0</version>
     <name>Booking and Ticketing Service</name>
     <description>Ticket Inventory and Orders Microservice</description>
-
-    <properties>
-        <java.version>21</java.version>
-        <mongodb.driver.version>5.5.1</mongodb.driver.version>
-        <zxing.version>3.5.2</zxing.version>
-        <spring-modulith.version>1.3.1</spring-modulith.version>
-        <spring-cloud-azure.version>5.19.0</spring-cloud-azure.version>
-        <dgs.version>10.5.0</dgs.version>
-    </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <!-- Netflix DGS BOM - Apollo Federation support for Spring Boot -->
-            <dependency>
-                <groupId>com.netflix.graphql.dgs</groupId>
-                <artifactId>graphql-dgs-platform-dependencies</artifactId>
-                <version>${dgs.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <!-- Override java-dataloader to match Spring for GraphQL 1.4.x requirements -->
-            <dependency>
-                <groupId>com.graphql-java</groupId>
-                <artifactId>java-dataloader</artifactId>
-                <version>5.0.1</version>
-            </dependency>
-            <!-- Spring Modulith BOM -->
-            <dependency>
-                <groupId>org.springframework.modulith</groupId>
-                <artifactId>spring-modulith-bom</artifactId>
-                <version>${spring-modulith.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <!-- Spring Cloud Azure BOM -->
-            <dependency>
-                <groupId>com.azure.spring</groupId>
-                <artifactId>spring-cloud-azure-dependencies</artifactId>
-                <version>${spring-cloud-azure.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <!-- Shared Library -->
         <dependency>
             <groupId>com.pml</groupId>
             <artifactId>shared-library</artifactId>
-            <version>1.0.0</version>
+            <version>${project.version}</version>
         </dependency>
 
         <!-- Spring Boot Starters -->
@@ -122,7 +76,6 @@
             <artifactId>spring-boot-starter-oauth2-client</artifactId>
         </dependency>
 
-
         <!-- QR Code Generation -->
         <dependency>
             <groupId>com.google.zxing</groupId>
@@ -153,39 +106,13 @@
         </dependency>
 
         <!-- Spring Modulith -->
-        <dependency>
-            <groupId>org.springframework.modulith</groupId>
-            <artifactId>spring-modulith-starter-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.modulith</groupId>
-            <artifactId>spring-modulith-events-api</artifactId>
-        </dependency>
         <!-- JDBC Event Publication Registry Starter (for guaranteed event delivery)
              Uses PostgreSQL as a separate database for event tracking.
              This works with WebFlux because event publication uses blocking JDBC
              while business data stays in reactive MongoDB.
              The starter auto-configures EventSerializer and all required beans. -->
-        <dependency>
-            <groupId>org.springframework.modulith</groupId>
-            <artifactId>spring-modulith-starter-jdbc</artifactId>
-        </dependency>
 
         <!-- JDBC and PostgreSQL for Event Publication Registry -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jdbc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <!-- HikariCP connection pool (included in starter-jdbc, explicit for clarity) -->
-        <dependency>
-            <groupId>com.zaxxer</groupId>
-            <artifactId>HikariCP</artifactId>
-        </dependency>
 
         <!-- Azure Service Bus for cross-service events -->
         <dependency>
@@ -209,12 +136,10 @@
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot3</artifactId>
-            <version>2.2.0</version>
         </dependency>
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-reactor</artifactId>
-            <version>2.2.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -225,7 +150,7 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
-            <version>2.8.4</version>
+            <version>${springdoc.version}</version>
         </dependency>
 
         <!-- Testing -->
@@ -266,6 +191,25 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!--
+                        Pin the Docker API version the Testcontainers client
+                        negotiates. Without this, docker-java falls back to 1.32,
+                        which Docker Engine 23+ rejects outright (minimum 1.40).
+                        The failure surfaces as "Could not find a valid Docker
+                        environment", which reads like Docker is not running and
+                        sends you looking in the wrong place.
+
+                        1.44 is Engine 25.0 (Jan 2024) and is accepted by every
+                        engine since 19.03. Override with -Ddocker.api.version=
+                        if a newer feature is ever needed.
+                    -->
+                    <argLine>-Dapi.version=${docker.api.version}</argLine>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
@@ -281,15 +225,6 @@
                         --add-opens java.base/java.lang=ALL-UNNAMED
                         --add-opens java.base/java.util=ALL-UNNAMED
                     </jvmArguments>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.14.0</version>
-                <configuration>
-                    <source>21</source>
-                    <target>21</target>
                 </configuration>
             </plugin>
         </plugins>

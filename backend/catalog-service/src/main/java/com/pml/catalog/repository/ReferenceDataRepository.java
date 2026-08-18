@@ -3,7 +3,9 @@ package com.pml.catalog.repository;
 import com.pml.catalog.domain.enums.ReferenceType;
 import com.pml.catalog.domain.model.ReferenceData;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
+import org.springframework.data.mongodb.repository.Update;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -37,4 +39,17 @@ public interface ReferenceDataRepository extends ReactiveMongoRepository<Referen
     // ── Seeding support ───────────────────────────────────────────────────────
 
     Mono<Boolean> existsByTypeAndCode(ReferenceType type, String code);
+
+    /**
+     * Give every row lacking {@code allowedTransitions} an empty array.
+     *
+     * <p>{@code $exists: false} rather than a null check: a row that already has
+     * the field — empty or populated with an administrator's configured routes —
+     * must not be touched.
+     *
+     * @return how many rows were normalised
+     */
+    @Update("{ '$set': { 'allowedTransitions': [] } }")
+    @Query("{ 'allowedTransitions': { '$exists': false } }")
+    Mono<Long> normaliseMissingTransitions();
 }

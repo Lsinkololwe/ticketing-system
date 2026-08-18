@@ -105,7 +105,7 @@ public class EscrowTransactionMigrationService {
         }
 
         log.info("Migrating {} transactions for account: {}",
-                account.getTransactions().size(), account.getAccountNumber());
+                account.getTransactions().size(), account.getEventId());
 
         BigDecimal runningBalance = BigDecimal.ZERO;
 

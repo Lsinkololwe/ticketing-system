@@ -13,6 +13,7 @@ import com.pml.booking.web.graphql.dto.RejectPayoutRequestMutationResponse;
 import com.pml.booking.domain.model.PayoutRequest;
 import com.pml.booking.infrastructure.client.IdentityServiceClient;
 import com.pml.booking.service.BankAccountService;
+import com.pml.booking.service.PayoutEligibilityService;
 import com.pml.booking.service.PayoutRecoveryService;
 import com.pml.booking.service.PayoutRequestService;
 import com.pml.shared.constants.PayoutRequestStatus;
@@ -20,6 +21,7 @@ import com.pml.shared.dto.authorization.AuthorizationRequest;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
@@ -49,6 +51,7 @@ public class PayoutRequestMutationResolver {
     private final BankAccountService bankAccountService;
     private final PayoutRecoveryService payoutRecoveryService;
     private final IdentityServiceClient identityServiceClient;
+    private final PayoutEligibilityService payoutEligibilityService;
 
     /**
      * Create a payout request (organizer).
@@ -100,18 +103,94 @@ public class PayoutRequestMutationResolver {
      */
     private Mono<CreatePayoutRequestMutationResponse> createPayoutRequestForAuthorized(
             CreatePayoutRequestInput input, String userId) {
+        // Idempotency check FIRST.
+        //
+        // A retried create — double-click, dropped connection, browser refresh —
+        // must return the payout that already exists, not a second one for the
+        // same money. The unique sparse index on idempotencyKey is the real
+        // guarantee; this lookup exists so the caller gets their original
+        // request back rather than a duplicate-key error to interpret.
+        //
+        // Required by specs/finance/003-payouts-and-settlement.
+        if (input.idempotencyKey() != null && !input.idempotencyKey().isBlank()) {
+            return payoutRequestService.findByIdempotencyKey(input.idempotencyKey())
+                    .map(existing -> {
+                        log.info("Idempotent replay of payout request {} for key {}",
+                                existing.getRequestId(), input.idempotencyKey());
+                        return new CreatePayoutRequestMutationResponse(
+                                true, "Payout request already created", existing, List.of(), null);
+                    })
+                    .switchIfEmpty(Mono.defer(() -> checkEligibilityThenSave(input, userId)));
+        }
+
+        return checkEligibilityThenSave(input, userId);
+    }
+
+    /**
+     * Re-evaluate eligibility at the moment of the write.
+     *
+     * <p>The organizer's screen already evaluated it, but that was a screen and
+     * this is the money. Minutes pass between the two, and in that window a
+     * chargeback can arrive or a concurrent request can take the balance — so
+     * the UI's answer is a courtesy and this one is the control.
+     *
+     * <p>Ordered AFTER the idempotency check on purpose: a replay of a payout
+     * that was legitimately created must return the original, not be refused
+     * because the balance it already claimed is now gone.
+     *
+     * <p>Required by ET-FIN-003 R1, which specifies the same evaluation at
+     * request and again at approval.
+     */
+    private Mono<CreatePayoutRequestMutationResponse> checkEligibilityThenSave(
+            CreatePayoutRequestInput input, String userId) {
+        return payoutEligibilityService
+                .evaluateForEscrow(input.escrowAccountId(), input.organizerId())
+                .flatMap(eligibility -> {
+                    if (!eligibility.eligible()) {
+                        log.warn("Payout refused for organizer {} on escrow {}: {}",
+                                input.organizerId(), input.escrowAccountId(), eligibility.reasons());
+                        return Mono.just(new CreatePayoutRequestMutationResponse(
+                                false,
+                                eligibility.describeFirstFailure(),
+                                null,
+                                eligibility.reasons().stream().map(Enum::name).toList(),
+                                null));
+                    }
+
+                    // A partial withdrawal is refused rather than silently
+                    // scaled. ET-FIN-003 takes the whole balance or none: a
+                    // partial invites a fee structure and an argument about
+                    // which tickets' money was withdrawn.
+                    if (input.requestedAmount() != null
+                            && input.requestedAmount().compareTo(eligibility.availableAmount()) != 0) {
+                        return Mono.just(new CreatePayoutRequestMutationResponse(
+                                false,
+                                "A payout must be for the full available balance of "
+                                        + eligibility.availableAmount() + " " + eligibility.currency() + ".",
+                                null,
+                                List.of("PARTIAL_PAYOUT_NOT_SUPPORTED"),
+                                null));
+                    }
+
+                    return buildAndSavePayout(input, userId);
+                });
+    }
+
+    private Mono<CreatePayoutRequestMutationResponse> buildAndSavePayout(
+            CreatePayoutRequestInput input, String userId) {
         return bankAccountService.findById(input.bankAccountId())
                         .flatMap(bankAccount -> {
                             // Calculate fees (platform takes 5% + ZMW 10 processing fee)
                             BigDecimal platformFee = input.requestedAmount()
                                     .multiply(new BigDecimal("0.05"));
                             BigDecimal processingFee = new BigDecimal("10.00");
-                            BigDecimal netPayoutAmount = input.requestedAmount()
+                            BigDecimal settledAmount = input.requestedAmount()
                                     .subtract(platformFee)
                                     .subtract(processingFee);
 
                             PayoutRequest payoutRequest = PayoutRequest.builder()
                                     .requestId("PAY-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                                    .idempotencyKey(input.idempotencyKey())
                                     .organizerId(input.organizerId())
                                     .eventId(input.eventId())
                                     .escrowAccountId(input.escrowAccountId())
@@ -122,16 +201,21 @@ public class PayoutRequestMutationResolver {
                                     .requestedAmount(input.requestedAmount())
                                     .platformFee(platformFee)
                                     .processingFee(processingFee)
-                                    .netPayoutAmount(netPayoutAmount)
+                                    .settledAmount(settledAmount)
                                     .currency(input.currency() != null ? input.currency() : "ZMW")
                                     .status(PayoutRequestStatus.PENDING)
                                     .payoutMethod(input.payoutMethod())
                                     .requestedAt(LocalDateTime.now())
-                                    .requestedBy(userId)
+                                    .requestedById(userId)
                                     .notes(input.notes())
                                     .metadata(input.metadata())
                                     .build();
 
+                            // statusSemantic is stamped on the write path by
+                            // StatusSemanticStamper, not here. Doing it at the
+                            // creation site covered only the first status and
+                            // left every later transition carrying the meaning
+                            // the row was born with.
                             return payoutRequestService.save(payoutRequest);
                         })
                         .map(request -> new CreatePayoutRequestMutationResponse(
@@ -139,7 +223,20 @@ public class PayoutRequestMutationResolver {
                         ))
                         .switchIfEmpty(Mono.just(new CreatePayoutRequestMutationResponse(
                                 false, "Bank account not found", null, List.of("Bank account not found"), null
-                        )));
+                        )))
+                        // Two concurrent requests carrying the same key: one
+                        // wins the unique index, the other lands here. Return
+                        // the winner rather than surfacing a database error.
+                        .onErrorResume(DuplicateKeyException.class, error -> {
+                            if (input.idempotencyKey() == null || input.idempotencyKey().isBlank()) {
+                                return Mono.error(error);
+                            }
+                            log.info("Concurrent duplicate for idempotency key {} — returning the winner",
+                                    input.idempotencyKey());
+                            return payoutRequestService.findByIdempotencyKey(input.idempotencyKey())
+                                    .map(existing -> new CreatePayoutRequestMutationResponse(
+                                            true, "Payout request already created", existing, List.of(), null));
+                        });
     }
 
     /**

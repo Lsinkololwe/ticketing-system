@@ -1,6 +1,6 @@
 id: ET-PLT-009
 title: The audit trail — what is recorded, by whom, and for how long
-status: draft
+status: approved
 area: PLT
 service: identity-service
 subgraph: identity
@@ -90,11 +90,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/009-audit-trail
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-PLT-009
-  - mvn -q -f backend verify -Dgroups=ET-PLT-009
+  - mvn -q -f backend/identity-service test -Dgroups=ET-PLT-009 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-009 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

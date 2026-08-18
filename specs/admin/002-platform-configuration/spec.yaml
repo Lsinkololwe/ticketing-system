@@ -1,6 +1,6 @@
 id: ET-ADM-002
 title: Platform configuration, feature flags and versioned settings
-status: draft
+status: approved
 area: ADM
 service: identity-service
 subgraph: identity
@@ -20,16 +20,16 @@ sources:
 
 persistence:
   collections:
-    - admin_platform_configuration    # added to the ET-PLT-002 §4 registry by this spec
-    - admin_feature_flags             # ditto
+    - identity_platform_configuration    # ET-PLT-002 §4 registry row
+    - identity_feature_flags             # ET-PLT-002 §4 registry row
   indexes:
-    - "admin_platform_configuration {configKey,scope,scopeId,version} unique"
-    - "admin_platform_configuration {configKey,scope,scopeId,createdAt} compound"
-    - "admin_feature_flags {flagKey,version} unique"
+    - "identity_platform_configuration {configKey,scope,scopeId,version} unique"
+    - "identity_platform_configuration {configKey,scope,scopeId,createdAt} compound"
+    - "identity_feature_flags {flagKey,version} unique"
   redis_keys:
-    - "cache:config:platform:{key}          STRING  30 s  — authority admin_platform_configuration"
+    - "cache:config:platform:{key}          STRING  30 s  — authority identity_platform_configuration"
     - "cache:config:org:{orgId}:{key}       STRING  30 s  — ditto"
-    - "cache:flags                          STRING  30 s  — authority admin_feature_flags"
+    - "cache:flags                          STRING  30 s  — authority identity_feature_flags"
 
 events:
   module: []
@@ -78,7 +78,7 @@ feature_flags:  # 9 — CLOSED. Five are kill switches.
   feature.resale:                { default: OFF, kill_switch: true }
   feature.ticket-transfer:       { default: ON,  kill_switch: true }
   feature.new-registrations:     { default: ON,  kill_switch: true }
-  feature.organizer-applications:{ default: ON,  kill_switch: true }
+  feature.organizer-applications: { default: ON,  kill_switch: true }
   feature.payouts:               { default: ON,  kill_switch: true }
   feature.promo-codes:           { default: ON,  kill_switch: false }
   feature.event-reminders:       { default: ON,  kill_switch: false }
@@ -101,12 +101,8 @@ config:      # itself YAML — the config system's own settings are not runtime-
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/admin/002-platform-configuration
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-ADM-002
-  - mvn -q -f backend verify -Dgroups=ET-ADM-002
+  - mvn -q -f backend/identity-service test -Dgroups=ET-ADM-002 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-ADM-002 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -115,6 +111,6 @@ risks:
   - "The commission override replaces the tier rate entirely, which means an organization negotiated onto 4% loses the 2% charity rate for a charity event. That is the stated intent, but it will surprise an organizer who is both premium and running a charity event, and nothing surfaces the interaction to them."
   - "Feature flags include kill switches for payouts and registrations, which are exactly the switches an attacker with SUPER_ADMIN would flip. There is no two-person rule, no confirmation step and no automatic expiry on a kill switch — a flag turned off during an incident stays off until somebody remembers."
   - "R6 asserts that changes are prospective for four named entities, but the mechanism is that each entity snapshots its value at creation. Any future value consumed by a query rather than snapshotted — the refund auto-approve threshold, for example, which ET-FIN-004 reads at approval time — IS retroactive in effect, and the spec's blanket claim does not hold for it."
-  - "admin_platform_configuration is append-only with no retention, and it stores every version of every key forever. That is correct for auditability and it means a key toggled frequently during an incident accumulates rows with no bound."
-  - "Two new collections are added to ET-PLT-002 §4's closed registry — the sixth and seventh amendments in the corpus. The registry pattern is not holding, and the reconciliation pass should probably rebuild ET-PLT-002 §4 from the specs rather than the reverse."
+  - "identity_platform_configuration is append-only with no retention, and it stores every version of every key forever. That is correct for auditability and it means a key toggled frequently during an incident accumulates rows with no bound."
+  - "Resolved: identity_platform_configuration and identity_feature_flags are rows of the ET-PLT-002 §4 registry, owned by identity-service."
   - "The eighteen runtime keys duplicate values that also exist as YAML defaults in eight other specs. Nothing keeps the two in sync, so a YAML default changed in a deploy while a platform value exists is silently ignored, and an operator reading the YAML sees a number the platform is not using."

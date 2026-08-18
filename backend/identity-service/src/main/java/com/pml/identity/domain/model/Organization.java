@@ -2,7 +2,8 @@ package com.pml.identity.domain.model;
 
 import com.pml.identity.domain.enums.BusinessType;
 import com.pml.identity.domain.enums.KybStatus;
-import com.pml.identity.domain.enums.OrganizationStatus;
+import com.pml.shared.constants.OrganizationStatus;
+import com.pml.shared.constants.WorkflowSemantic;
 import com.pml.identity.domain.enums.OrganizationType;
 import com.pml.identity.domain.valueobject.BusinessAddress;
 import com.pml.identity.domain.valueobject.OrganizationSettings;
@@ -147,7 +148,25 @@ public class Organization {
      * New organizations start as DRAFT and must be approved before publishing events.
      */
     @Builder.Default
+    @Indexed
     private OrganizationStatus status = OrganizationStatus.DRAFT;
+
+    /**
+     * What {@link #status} MEANS, denormalised from administrator-owned
+     * reference data in catalog-service.
+     *
+     * <p>The status code set is editable by platform administrators, so no code
+     * may branch on the string. The trap here is sharper than elsewhere: this
+     * enum contains {@code PENDING_REVIEW}, {@code CHANGES_REQUESTED} and
+     * {@code PENDING_DELETION}, and only the first two are a queue waiting on a
+     * person. A name-pattern guess gets the third wrong and puts an organization
+     * on its way out of the platform into the admin review inbox.
+     *
+     * <p>Stamped on write by {@code OrganizationStatusSemanticStamper} and
+     * backfilled by {@code OrganizationStatusSemanticMigrationService}.
+     */
+    @Indexed
+    private WorkflowSemantic statusSemantic;
 
     // ─────────────────────────────────────────────────────────────────────
     // Know Your Business (KYB) - Business Registration

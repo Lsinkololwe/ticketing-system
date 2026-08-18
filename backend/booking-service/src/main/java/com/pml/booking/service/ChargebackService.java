@@ -2,7 +2,7 @@ package com.pml.booking.service;
 
 import com.pml.booking.domain.enums.ChargebackFundSource;
 import com.pml.booking.domain.enums.ChargebackReason;
-import com.pml.booking.domain.enums.ChargebackStatus;
+import com.pml.shared.constants.ChargebackStatus;
 import com.pml.booking.domain.enums.RecoveryStatus;
 import com.pml.booking.domain.model.ChargebackRecord;
 import reactor.core.publisher.Flux;

@@ -1,6 +1,5 @@
 package com.pml.identity.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 import java.util.Set;
@@ -20,7 +19,7 @@ import java.util.Set;
  * - A09:2021 - Security Logging: All role changes are logged with who/what/when
  * - A01:2021 - Broken Access Control: Role changes require admin authority
  */
-@Externalized("user-events::UserRoleChanged")
+/** Cross-service wire name (ET-PLT-003 §4): user-events::UserRoleChanged — staged into the outbox. */
 public record UserRoleChangedEvent(
         String userId,
         String email,

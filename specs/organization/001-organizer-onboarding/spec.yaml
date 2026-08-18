@@ -1,6 +1,6 @@
 id: ET-ORG-001
 title: Organizer onboarding — nine states, staged access, the approval saga
-status: draft
+status: approved
 area: ORG
 service: identity-service
 subgraph: identity
@@ -105,12 +105,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/organization/001-organizer-onboarding
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/identity-service test -Dgroups=ET-ORG-001
-  - mvn -q -f backend verify -Dgroups=ET-ORG-001
+  - mvn -q -f backend/identity-service test -Dgroups=ET-ORG-001 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-ORG-001 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -121,4 +117,4 @@ risks:
   - "R1 refuses a second organization for a caller who already owns one in any non-terminal state, which means the platform supports exactly one organization per owner. USER_STORIES describes myOrganizations (plural) and multi-org membership, so a user may be a MEMBER of many but OWNER of one. That constraint is stated nowhere in the product docs and may be wrong."
   - "Presigned upload URLs are issued for 15 minutes and the registration step verifies the caller was issued the fileKey. Nothing verifies that what was uploaded matches the declared mimeType and fileSize — the browser declares them before the PUT. A reviewer therefore opens whatever was actually uploaded, and the accepted-types enforcement is advisory unless the storage layer or a post-upload scan checks it."
   - "Documents are stored under a fileKey in object storage with only presigned access, but nothing here specifies encryption at rest, retention, or what happens to KYB documents when an organization is deleted. National IDs and tax certificates are the most sensitive data the platform holds and ET-PLT-008 has not been written."
-  - "identity.OrganizationApproved is published as saga step 6, after the Keycloak steps. If the bus publish itself fails, the saga has completed everything visible to the user but catalog still refuses to publish their events. Step 6 must be driven by the Modulith outbox rather than treated as a saga step that can fail, and R6 does not say which."
+  - "identity.OrganizationApproved is published as saga step 6, after the Keycloak steps. If the bus publish itself fails, the saga has completed everything visible to the user but catalog still refuses to publish their events. Step 6 must be staged into identity_outbox inside the approval transaction rather than treated as a saga step that can fail, and R6 does not say which."

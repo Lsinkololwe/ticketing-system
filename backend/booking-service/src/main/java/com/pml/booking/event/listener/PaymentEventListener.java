@@ -1,273 +1,147 @@
 package com.pml.booking.event.listener;
 
+import com.pml.booking.domain.ReservationStateMachine;
 import com.pml.booking.event.domain.PaymentCompletedEvent;
 import com.pml.booking.event.domain.PaymentFailedEvent;
-import com.pml.booking.event.domain.TicketPurchasedEvent;
-import com.pml.booking.domain.model.Ticket;
-import com.pml.booking.infrastructure.client.CatalogServiceClient;
-import com.pml.booking.repository.TicketRepository;
-import com.pml.booking.service.AccountingService;
-import com.pml.booking.service.CommissionService;
-import com.pml.booking.service.EscrowService;
-import com.pml.shared.constants.TicketStatus;
+import com.pml.booking.exception.ReservationExpiredException;
+import com.pml.booking.service.PurchaseService;
+import com.pml.booking.domain.model.PurchaseEscalation;
+import com.pml.booking.service.PurchaseEscalationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.modulith.events.ApplicationModuleListener;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 
 /**
- * Payment Event Listener
+ * Turns a payment outcome into a saga step.
  *
- * Handles payment domain events and orchestrates the financial operations:
- * 1. PaymentCompleted → Credit escrow, create commission, update ticket, publish TicketPurchased
- * 2. PaymentFailed → Update ticket status to payment failed
+ * <h2>Why there is almost nothing here any more</h2>
+ * This class used to hold the confirmation itself — five sequential steps
+ * crediting escrow, recording commission, posting journal entries, committing
+ * inventory and flipping a ticket's status, each one saved on its own. Nothing
+ * bound them together, so a failure at step four left steps one to three
+ * applied: escrow credited for a ticket that stayed {@code PENDING_PAYMENT},
+ * against inventory that was never committed.
  *
- * Uses Spring Modulith's @ApplicationModuleListener for reliable event processing
- * with automatic retry and dead-letter handling via Event Publication Registry.
+ * <p>That work now lives in {@link PurchaseService}, inside a transaction, where
+ * ET-TKT-001 R7 requires it — and, just as importantly, where the R8 recovery
+ * sweep can call exactly the same code after a crash. What remains here is the
+ * mapping from "the provider said yes" to "confirm the reservation", which is
+ * all a listener should be.
+ *
+ * <h2>Why it still blocks</h2>
+ * Spring Modulith marks the publication complete when this method returns, and
+ * retries it if it throws. A fire-and-forget {@code subscribe()} would return
+ * immediately, so the event would be marked done before the work finished and a
+ * failure would never be retried.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class PaymentEventListener {
 
-    private final TicketRepository ticketRepository;
-    private final EscrowService escrowService;
-    private final CommissionService commissionService;
-    private final AccountingService accountingService;
-    private final ApplicationEventPublisher eventPublisher;
-    private final CatalogServiceClient catalogServiceClient;
+    private final PurchaseService purchaseService;
+    private final PurchaseEscalationService escalationService;
 
     private static final Duration BLOCK_TIMEOUT = Duration.ofSeconds(30);
 
     /**
-     * Handle successful payment completion.
+     * The payment succeeded, so the reservation becomes tickets.
      *
-     * <p>This is the critical financial flow. Uses blocking pattern with Modulith
-     * to ensure atomic execution - if any step fails, the event will be retried
-     * via the Event Publication Registry.</p>
-     *
-     * <h2>Steps</h2>
-     * <ol>
-     *   <li>Create pending commission record (Two-Stage Model)</li>
-     *   <li>Credit net amount to event's escrow account</li>
-     *   <li>Record accounting journal entries (double-entry)</li>
-     *   <li>Commit reserved inventory to sold (atomic)</li>
-     *   <li>Update ticket status to PURCHASED</li>
-     *   <li>Publish TicketPurchasedEvent for external systems</li>
-     * </ol>
-     *
-     * <p><b>CRITICAL</b>: Uses blocking .block() with timeout to ensure Modulith
-     * can track event completion and retry on failure. Fire-and-forget .subscribe()
-     * would leave the event marked as incomplete, causing retries.</p>
+     * <p>The one case that is not simply "confirm" is a payment that landed after
+     * the hold expired. The platform has the buyer's money and no longer has the
+     * seats, so it escalates rather than overselling — and the reservation is
+     * recorded as {@code FAILED}, not {@code EXPIRED}, because somebody was
+     * charged and that needs to be visible.
      */
-    @ApplicationModuleListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPaymentCompleted(PaymentCompletedEvent event) {
-        log.info("Processing PaymentCompletedEvent for ticket: {}", event.ticketId());
+        log.info("Payment completed for reservation {}", event.reservationId());
 
         try {
-            Ticket ticket = processPaymentCompletion(event)
+            purchaseService.confirm(
+                            event.reservationId(),
+                            event.paymentIntentId(),
+                            event.providerTransactionId())
+                    .doOnNext(tickets -> log.info("Reservation {} confirmed: {} ticket(s) issued",
+                            event.reservationId(), tickets.size()))
+                    .onErrorResume(ReservationExpiredException.class, e -> escalateLateArrival(event).then(Mono.empty()))
                     .block(BLOCK_TIMEOUT);
-
-            if (ticket != null) {
-                // Publish TicketPurchasedEvent (after successful processing)
-                publishTicketPurchasedEvent(ticket, event);
-                log.info("Payment processing completed for ticket: {}", ticket.getTicketNumber());
-            }
         } catch (Exception e) {
-            log.error("Failed to process payment completion for ticket: {}", event.ticketId(), e);
-            // Re-throw to trigger Modulith retry via Event Publication Registry
-            throw new RuntimeException("Payment completion processing failed: " + e.getMessage(), e);
+            log.error("Confirmation failed for reservation {}", event.reservationId(), e);
+            // Rethrow so Modulith leaves the publication incomplete and retries
+            // it. Swallowing here would strand a paid-for reservation in HELD
+            // with nothing scheduled to look at it again.
+            throw new IllegalStateException(
+                    "Confirmation failed for reservation " + event.reservationId(), e);
         }
     }
 
     /**
-     * Process payment completion atomically.
+     * A hold that lapsed while the buyer was on the payment prompt.
      *
-     * @param event Payment completed event
-     * @return Updated ticket
+     * <p>ET-TKT-001 R7 says this capture is refunded. It is not refunded
+     * automatically here, and that is a stated gap rather than an oversight:
+     * every path in {@code RefundService} is keyed on a ticket, and the whole
+     * point of this case is that no ticket was ever issued. A ticketless refund
+     * belongs to ET-FIN-004, which owns the provider's refund API and the
+     * ledger entries that go with it.
+     *
+     * <p>So it escalates instead. That is the difference between money an
+     * operator can see in a queue and money that exists only in a log line —
+     * and it is what R8 already requires for the neighbouring case.
+     *
+     * <p>Escalate first, then fail the reservation. In that order because if the
+     * process dies between them the escalation exists and the reservation is
+     * still {@code HELD}, which the recovery sweep will find; the other order
+     * leaves a reservation marked resolved and a charge nobody knows about.
      */
-    private Mono<Ticket> processPaymentCompletion(PaymentCompletedEvent event) {
-        return ticketRepository.findById(event.ticketId())
-                .switchIfEmpty(Mono.error(new IllegalStateException(
-                        "Ticket not found: " + event.ticketId())))
-                .flatMap(ticket -> {
-                    // Step 1: Create pending commission
-                    return commissionService.createPendingCommission(
-                                    ticket.getId(),
-                                    ticket.getEventId(),
-                                    getOrganizerId(ticket),
-                                    ticket.getOrganizationId(),
-                                    ticket.getPrice()
-                            ).flatMap(commission -> {
-                                // Step 2: Credit escrow with net amount
-                                BigDecimal netAmount = commissionService.calculateNetAmount(ticket.getPrice());
-                                return escrowService.creditEscrow(
-                                        ticket.getEventId(),
-                                        netAmount,
-                                        ticket.getId(),
-                                        event.paymentIntentId(),
-                                        "Ticket sale: " + ticket.getTicketNumber()
-                                );
-                            }).flatMap(escrow -> {
-                                // Step 3: Record accounting entries
-                                BigDecimal commission = commissionService.calculateCommission(ticket.getPrice());
-                                BigDecimal net = commissionService.calculateNetAmount(ticket.getPrice());
-                                return accountingService.recordTicketSale(
-                                        event.paymentIntentId(),
-                                        ticket.getId(),
-                                        ticket.getEventId(),
-                                        ticket.getPrice(),
-                                        net,
-                                        commission,
-                                        null,
-                                        ticket.getCurrency()
-                                ).thenReturn(escrow);
-                            }).flatMap(escrow -> {
-                                // Step 4: Commit reserved inventory to sold
-                                String tierId = ticket.getTicketTierId();
-                                String reservationId = ticket.getReservationId();
-                                if (tierId != null && reservationId != null) {
-                                    return catalogServiceClient.commitInventoryToSold(tierId, 1, reservationId)
-                                            .doOnSuccess(result -> {
-                                                if (result.success()) {
-                                                    log.debug("Inventory committed to sold for tier {}", tierId);
-                                                } else {
-                                                    log.warn("Inventory commit failed for tier {}: {}",
-                                                            tierId, result.errorMessage());
-                                                }
-                                            })
-                                            .thenReturn(escrow);
-                                }
-                                return Mono.just(escrow);
-                            })
-                            .flatMap(escrow -> {
-                                // Step 5: Update ticket status
-                                ticket.setStatus(TicketStatus.PURCHASED);
-                                ticket.setPaymentReference(event.providerTransactionId());
-                                ticket.setCommissionRate(commissionService.getCommissionRate());
-                                ticket.setCommissionAmount(commissionService.calculateCommission(ticket.getPrice()));
-                                ticket.setNetAmount(commissionService.calculateNetAmount(ticket.getPrice()));
-                                ticket.setPurchaseDate(java.time.LocalDateTime.now());
+    private Mono<Void> escalateLateArrival(PaymentCompletedEvent event) {
+        log.warn("Payment for reservation {} arrived after the hold expired — {} {} needs returning",
+                event.reservationId(), event.amount(), event.currency());
 
-                                Ticket.PaymentInfo paymentInfo = Ticket.PaymentInfo.builder()
-                                        .paymentId(event.paymentIntentId())
-                                        .transactionId(event.providerTransactionId())
-                                        .paymentMethod(event.paymentProvider())
-                                        .amount(event.amount())
-                                        .currency(event.currency())
-                                        .status(com.pml.shared.constants.TicketPaymentStatus.COMPLETED)
-                                        .paymentDate(java.time.LocalDateTime.now())
-                                        .build();
-                                ticket.setPaymentInfo(paymentInfo);
-
-                                return ticketRepository.save(ticket);
-                            });
-                });
+        return escalationService.raise(
+                        event.reservationId(),
+                        event.eventId(),
+                        event.buyerId(),
+                        event.paymentIntentId(),
+                        PurchaseEscalation.Reason.PAID_AFTER_EXPIRY,
+                        "Buyer was charged after the hold lapsed. No tickets were issued and the "
+                                + "inventory was returned to the pool. The capture must be refunded.",
+                        event.amount(),
+                        event.currency())
+                .then(purchaseService.release(
+                        event.reservationId(),
+                        ReservationStateMachine.Action.FAIL,
+                        "Payment captured after the hold expired; refund owed"))
+                .then();
     }
 
     /**
-     * Publish TicketPurchasedEvent for external systems.
-     */
-    private void publishTicketPurchasedEvent(Ticket ticket, PaymentCompletedEvent event) {
-        TicketPurchasedEvent ticketEvent = new TicketPurchasedEvent(
-                ticket.getId(),
-                ticket.getTicketNumber(),
-                ticket.getEventId(),
-                ticket.getEventTitle(),
-                ticket.getBuyerId(),
-                ticket.getBuyerName() != null ? ticket.getBuyerName() : "Unknown",
-                ticket.getBuyerEmail(),
-                ticket.getBuyerPhone() != null ? ticket.getBuyerPhone() : "",
-                getOrganizerId(ticket),
-                ticket.getTicketCategoryCode(),
-                ticket.getTicketCategoryName(),
-                1,
-                ticket.getPrice(),
-                ticket.getPrice(),
-                ticket.getCommissionAmount() != null ? ticket.getCommissionAmount() : commissionService.calculateCommission(ticket.getPrice()),
-                ticket.getCommissionRate() != null ? ticket.getCommissionRate() : commissionService.getCommissionRate(),
-                ticket.getNetAmount() != null ? ticket.getNetAmount() : commissionService.calculateNetAmount(ticket.getPrice()),
-                ticket.getCurrency(),
-                event.paymentProvider(),
-                event.providerTransactionId(),
-                event.paymentIntentId()
-        );
-        eventPublisher.publishEvent(ticketEvent);
-    }
-
-    /**
-     * Handle payment failure.
+     * The payment failed, so the seats go back.
      *
-     * <p>Updates ticket status to PAYMENT_FAILED and releases reserved inventory.
-     * Uses blocking pattern for Modulith event tracking.</p>
+     * <p>{@code RELEASE} rather than {@code EXPIRE}: ET-TKT-001 §4 keeps those
+     * states apart precisely so a payments outage is distinguishable from a slow
+     * checkout, and recording a declined card as "expired" erases that signal.
      */
-    @ApplicationModuleListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPaymentFailed(PaymentFailedEvent event) {
-        log.info("Processing PaymentFailedEvent for ticket: {}", event.ticketId());
+        log.info("Payment failed for reservation {}: {}", event.reservationId(), event.failureReason());
 
         try {
-            Ticket ticket = ticketRepository.findById(event.ticketId())
-                    .flatMap(t -> {
-                        // Release reserved inventory
-                        String tierId = t.getTicketTierId();
-                        String reservationId = t.getReservationId();
-                        Mono<Void> releaseInventory = Mono.empty();
-
-                        if (tierId != null && reservationId != null) {
-                            releaseInventory = catalogServiceClient.releaseInventory(tierId, 1, reservationId)
-                                    .doOnSuccess(result -> {
-                                        if (result.success()) {
-                                            log.debug("Released inventory for failed payment: tier={}", tierId);
-                                        } else {
-                                            log.warn("Inventory release failed for tier {}: {}",
-                                                    tierId, result.errorMessage());
-                                        }
-                                    })
-                                    .then();
-                        }
-
-                        return releaseInventory.then(Mono.defer(() -> {
-                            // Update ticket status
-                            t.setStatus(TicketStatus.PAYMENT_FAILED);
-                            t.setPaymentReference(event.paymentIntentId());
-
-                            Ticket.PaymentInfo paymentInfo = Ticket.PaymentInfo.builder()
-                                    .paymentId(event.paymentIntentId())
-                                    .paymentMethod(event.paymentProvider())
-                                    .amount(event.amount())
-                                    .status(com.pml.shared.constants.TicketPaymentStatus.FAILED)
-                                    .build();
-                            t.setPaymentInfo(paymentInfo);
-
-                            return ticketRepository.save(t);
-                        }));
-                    })
+            purchaseService.release(
+                            event.reservationId(),
+                            ReservationStateMachine.Action.RELEASE,
+                            event.failureReason())
                     .block(BLOCK_TIMEOUT);
-
-            if (ticket != null) {
-                log.info("Ticket marked as payment failed: {}", ticket.getTicketNumber());
-            }
         } catch (Exception e) {
-            log.error("Failed to process payment failure for ticket: {}", event.ticketId(), e);
-            throw new RuntimeException("Payment failure processing failed: " + e.getMessage(), e);
+            log.error("Release failed for reservation {}", event.reservationId(), e);
+            throw new IllegalStateException(
+                    "Release failed for reservation " + event.reservationId(), e);
         }
-    }
-
-    /**
-     * Get organizer ID from ticket.
-     * In a full implementation, this would come from the event/catalog service.
-     */
-    private String getOrganizerId(Ticket ticket) {
-        // This should be populated when the ticket is created
-        // For now, use metadata or a default
-        if (ticket.getMetadata() != null && ticket.getMetadata().containsKey("organizerId")) {
-            return ticket.getMetadata().get("organizerId").toString();
-        }
-        return "UNKNOWN";
     }
 }

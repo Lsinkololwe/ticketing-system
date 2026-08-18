@@ -19,6 +19,13 @@ import type {
   OrganizationStatus,
   RouteValidationResult,
 } from '../interfaces';
+import {
+  NO_ORGANIZATION,
+  parseStatus,
+  routeForStatus,
+  unknownState,
+  type OnboardingState,
+} from '../../onboarding/state';
 
 // =============================================================================
 // GRAPHQL TYPES
@@ -36,6 +43,11 @@ interface GraphQLResponse {
     } | null;
   };
   errors?: Array<{ message: string }>;
+}
+
+/** Render an unknown thrown value as a short log-safe string. */
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 // =============================================================================
@@ -106,44 +118,59 @@ export class OrganizationService implements IOrganizationService {
     isDraft: false,
   };
 
-  getStatus = cache(async (): Promise<OrganizationStatus> => {
+  /**
+   * Resolve the caller's onboarding state.
+   *
+   * Every failure path returns `unknown`, never `none`. That asymmetry is the
+   * whole point: "we could not reach the backend" and "this person has not
+   * applied yet" are different facts, and conflating them sent applicants whose
+   * submission was already under review back to an empty form.
+   *
+   * Cached per request via React `cache()` so the layout, the page and any
+   * nested guard share one round-trip.
+   */
+  getOnboardingState = cache(async (): Promise<OnboardingState> => {
+    // A missing session is genuinely "not authenticated" rather than a failure
+    // to determine status — the caller's session guard redirects to /login
+    // before this matters.
+    let session: Awaited<ReturnType<ISessionService['getSession']>>;
     try {
-      // First verify we have a valid session
-      const session = await this.sessionService.getSession();
-      if (!session) {
-        return this.noOrganization;
-      }
+      session = await this.sessionService.getSession();
+    } catch (error) {
+      return unknownState(`session lookup failed: ${describe(error)}`);
+    }
+    if (!session) {
+      return unknownState('no session');
+    }
 
-      // Get request headers for Better Auth API
+    // The Keycloak access token is REQUIRED. `myOwnedOrganization` is guarded by
+    // hasRole('ORGANIZER'), so an unauthenticated query does not return "no
+    // organization" — it returns an authorization error. Previously this call
+    // logged a warning and carried on tokenless, turning a token-refresh blip
+    // into a bogus "you have no application".
+    let accessToken: string | null = null;
+    try {
       const requestHeaders = await headers();
+      const tokenResponse = await auth.api.getAccessToken({
+        body: { providerId: 'keycloak' },
+        headers: requestHeaders,
+      });
+      accessToken = tokenResponse?.accessToken ?? null;
+    } catch (error) {
+      return unknownState(`access token unavailable: ${describe(error)}`);
+    }
+    if (!accessToken) {
+      return unknownState('access token unavailable');
+    }
 
-      // Get access token from Better Auth using server-side API
-      // This retrieves the Keycloak access token stored in the accounts collection
-      let accessToken: string | null = null;
-      try {
-        const tokenResponse = await auth.api.getAccessToken({
-          body: { providerId: 'keycloak' },
-          headers: requestHeaders,
-        });
-        accessToken = tokenResponse?.accessToken ?? null;
-      } catch (tokenError) {
-        console.warn('[OrganizationService] Failed to get access token:', tokenError);
-        // Continue without token - may still work for public queries
-      }
-
-      // Build request headers with Authorization if token available
-      const graphqlHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-
-      if (accessToken) {
-        graphqlHeaders['Authorization'] = `Bearer ${accessToken}`;
-      }
-
-      // Query organization status via GraphQL
+    let payload: GraphQLResponse;
+    try {
       const response = await fetch(this.config.graphqlEndpoint, {
         method: 'POST',
-        headers: graphqlHeaders,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           query: `
             query MyOrganizationStatus {
@@ -159,50 +186,71 @@ export class OrganizationService implements IOrganizationService {
       });
 
       if (!response.ok) {
-        console.error(
-          '[OrganizationService] GraphQL request failed:',
-          response.status
-        );
-        return this.noOrganization;
+        return unknownState(`graphql http ${response.status}`);
       }
 
-      const data: GraphQLResponse = await response.json();
-
-      // Handle GraphQL errors
-      if (data.errors) {
-        console.error('[OrganizationService] GraphQL errors:', data.errors);
-        return this.noOrganization;
-      }
-
-      const org = data.data?.myOwnedOrganization;
-
-      if (!org) {
-        return this.noOrganization;
-      }
-
-      const status = org.status;
-
-      // Return OrganizationStatus with lifecycle booleans derived from the
-      // backend-provided status. These describe business state (approved / under
-      // review / draft); routing decisions compose them in the presentation layer.
-      return {
-        hasOrganization: true,
-        id: org.id,
-        name: org.name,
-        status,
-        isApproved: status === 'APPROVED' || status === 'ACTIVE',
-        isPendingReview: status === 'PENDING_REVIEW',
-        needsChanges: status === 'CHANGES_REQUESTED',
-        isRejected: status === 'REJECTED',
-        isDraft: status === 'DRAFT',
-      };
+      payload = (await response.json()) as GraphQLResponse;
     } catch (error) {
-      console.error(
-        '[OrganizationService] Failed to get organization status:',
-        error
+      return unknownState(`graphql request failed: ${describe(error)}`);
+    }
+
+    if (payload.errors?.length) {
+      return unknownState(
+        `graphql errors: ${payload.errors.map((e) => e.message).join('; ')}`
       );
+    }
+
+    const org = payload.data?.myOwnedOrganization;
+
+    // `data.myOwnedOrganization === null` with no errors is the one genuine
+    // "this user has not applied yet". Note we require the `data` key to be
+    // present — a malformed body without it is a failure, not an absence.
+    if (!('data' in payload) || payload.data === undefined) {
+      return unknownState('graphql response had no data key');
+    }
+    if (!org) {
+      return NO_ORGANIZATION;
+    }
+
+    const status = parseStatus(org.status);
+    if (!status) {
+      // A status we do not know how to route. Refusing to guess is safer than
+      // defaulting to the form.
+      return unknownState(`unrecognised status: ${org.status}`);
+    }
+
+    return { kind: 'org', status, id: org.id, name: org.name ?? null };
+  });
+
+  /**
+   * Legacy status shape, derived from {@link getOnboardingState}.
+   *
+   * Retained for callers that only need the lifecycle booleans. Note that an
+   * `unknown` state still reports `hasOrganization: false` here — which is why
+   * routing decisions must use `getOnboardingState()` and not this method.
+   */
+  getStatus = cache(async (): Promise<OrganizationStatus> => {
+    const state = await this.getOnboardingState();
+
+    if (state.kind !== 'org') {
+      if (state.kind === 'unknown') {
+        console.error('[OrganizationService] status unresolved:', state.reason);
+      }
       return this.noOrganization;
     }
+
+    const { status } = state;
+    return {
+      hasOrganization: true,
+      id: state.id,
+      name: state.name,
+      status,
+      isApproved: status === 'APPROVED' || status === 'ACTIVE',
+      isPendingReview: status === 'PENDING_REVIEW',
+      needsChanges: status === 'CHANGES_REQUESTED',
+      isRejected: status === 'REJECTED',
+      isDraft: status === 'DRAFT',
+    };
   });
 
   /**
@@ -223,22 +271,13 @@ export class OrganizationService implements IOrganizationService {
    * ```
    */
   getRouteForStatus(status: string | null): string {
-    if (!status) return '/welcome';
-
-    switch (status) {
-      case 'DRAFT':
-      case 'CHANGES_REQUESTED':
-        return '/apply/business-info';
-      case 'PENDING_REVIEW':
-      case 'REJECTED':
-      case 'SUSPENDED':
-        return '/apply/status';
-      case 'APPROVED':
-      case 'ACTIVE':
-        return '/dashboard';
-      default:
-        return '/welcome';
-    }
+    // Delegates to the canonical map so this app has exactly one status → route
+    // table. The previous inline `switch` had no case for PENDING_DOCUMENTS,
+    // INACTIVE or PENDING_DELETION and fell through to '/welcome' — the setup
+    // screen — for all three.
+    const parsed = parseStatus(status);
+    if (!parsed) return '/welcome';
+    return routeForStatus(parsed);
   }
 
   /**

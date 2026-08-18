@@ -14,6 +14,7 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Set;
+import java.util.Arrays;
 
 /**
  * ============================================================================
@@ -56,12 +57,9 @@ public class EventExtensionResolver {
      * Set of ticket statuses that count as "sold" for reporting.
      * Excludes cancelled, refunded, and failed payment tickets.
      */
-    private static final Set<TicketStatus> SOLD_STATUSES = Set.of(
-            TicketStatus.PURCHASED,
-            TicketStatus.CONFIRMED,
-            TicketStatus.VALIDATED,
-            TicketStatus.USED
-    );
+    private static final Set<TicketStatus> SOLD_STATUSES =
+            Arrays.stream(TicketStatus.values()).filter(TicketStatus::isSold)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     /**
      * ========================================================================

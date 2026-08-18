@@ -118,6 +118,25 @@ public class Ticket {
     @NotNull(message = "Ticket status is required")
     private TicketStatus status;
 
+    /**
+     * What {@link #status} MEANS, denormalised from reference data.
+     *
+     * <p>Same reasoning as {@link PayoutRequest#getStatusSemantic()}: ticket
+     * statuses are administrator-configurable, so the code set is open and a
+     * fixed enum constraint can no longer hold. Branches and reports read this
+     * field, which the collection validator keeps enum-constrained.
+     *
+     * <p>It is what makes "how many tickets are actually good" answerable for
+     * an event once an administrator has added statuses the platform shipped
+     * without — the alternative is a hard-coded list that silently omits every
+     * status added after it was written.
+     *
+     * <p>Deliberately not refreshed on read: a ticket refunded last month keeps
+     * the meaning that was true when it was refunded.
+     */
+    @Indexed
+    private com.pml.shared.constants.WorkflowSemantic statusSemantic;
+
     private String qrCode;
     private String barcode;
 
@@ -183,7 +202,7 @@ public class Ticket {
 
     public boolean isValid() {
         LocalDateTime now = LocalDateTime.now();
-        return (status == TicketStatus.PURCHASED || status == TicketStatus.VALIDATED) &&
+        return status != null && status.isSold() &&
                (validFrom == null || now.isAfter(validFrom)) &&
                (validUntil == null || now.isBefore(validUntil));
     }

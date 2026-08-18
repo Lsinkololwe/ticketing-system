@@ -1,10 +1,10 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.shared.constants.EscrowStatus;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.EventEscrowAccount;
-import com.pml.booking.domain.model.EventEscrowAccount.EscrowStatus;
 import com.pml.booking.service.EscrowService;
 import com.pml.booking.web.graphql.dto.CreateEscrowAccountInput;
 import com.pml.booking.web.graphql.dto.EscrowAccountMutationResponse;

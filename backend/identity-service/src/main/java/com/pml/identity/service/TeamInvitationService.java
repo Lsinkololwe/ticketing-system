@@ -1,6 +1,6 @@
 package com.pml.identity.service;
 
-import com.pml.identity.domain.enums.InvitationStatus;
+import com.pml.shared.constants.InvitationStatus;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.domain.model.TeamInvitation;

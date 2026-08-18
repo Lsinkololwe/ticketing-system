@@ -11,6 +11,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -29,40 +33,79 @@
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "address": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "coordinates": {
-        "bsonType": ["object", "null"],
+        "bsonType": [
+          "object",
+          "null"
+        ],
         "properties": {
-          "latitude": {"bsonType": "double"},
-          "longitude": {"bsonType": "double"}
+          "latitude": {
+            "bsonType": "double"
+          },
+          "longitude": {
+            "bsonType": "double"
+          }
         }
       },
       "capacity": {
-        "bsonType": ["int", "null"],
+        "bsonType": [
+          "int",
+          "null"
+        ],
         "minimum": 0
       },
       "type": {
-        "bsonType": ["string", "null"],
-        "enum": ["STADIUM", "ARENA", "THEATER", "CLUB", "OUTDOOR", "CONFERENCE_CENTER", "OTHER", null]
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "STADIUM",
+          "ARENA",
+          "THEATER",
+          "CLUB",
+          "OUTDOOR",
+          "CONFERENCE_CENTER",
+          "OTHER",
+          null
+        ]
       },
       "facilities": {
-        "bsonType": ["array", "null"],
-        "items": {"bsonType": "string"}
+        "bsonType": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "bsonType": "string"
+        }
       },
       "contactEmail": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
         "description": "OWASP A03 - Email validation"
       },
       "contactPhone": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^\\+[1-9]\\d{1,14}$",
         "description": "OWASP A03 - E.164 phone format"
       },
       "imageUrl": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^https?://.*",
         "maxLength": 500
       },
@@ -73,7 +116,10 @@
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

@@ -1,6 +1,5 @@
 package com.pml.catalog.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -17,7 +16,7 @@ import java.time.LocalDateTime;
  * - Pending commission becomes EARNED
  * - Organizer can request payout
  */
-@Externalized("event-events::EventCompleted")
+/** Cross-service wire name (ET-PLT-003 §4): event-events::EventCompleted — staged into the outbox. */
 public record EventCompletedEvent(
         String eventId,
         String organizerId,

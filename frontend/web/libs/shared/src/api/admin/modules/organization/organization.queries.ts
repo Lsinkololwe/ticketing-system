@@ -95,8 +95,14 @@ export const ORGANIZATION_LIST_FIELDS = gql`
     logoUrl
     businessEmail
     businessPhone
-    city
-    province
+    # city/province are not fields on Organization — they live under
+    # businessAddress. Asking for them flat made every query using this
+    # fragment fail validation with a 400, which nothing noticed because no
+    # screen had been wired to it yet.
+    businessAddress {
+      city
+      province
+    }
     verified
     documentsVerified
     submittedAt
@@ -133,21 +139,33 @@ export const ORGANIZATIONS_LIST = gql`
 `;
 
 /**
- * Get organizations pending review (admin view)
+ * Organizations awaiting review — the approvals workbench queue.
+ *
+ * <h2>This used to query a field that does not exist</h2>
+ * It asked for `pendingOrganizations(pagination: PaginationInput)`. No subgraph
+ * declares that field and it is absent from the composed supergraph, so every
+ * call failed validation with "Cannot query field". Nothing noticed because no
+ * screen called the hook — the approvals pages were all placeholders.
+ *
+ * <p>The real query is `organizationsOffsetPagination`, filtered by status.
  */
 export const PENDING_ORGANIZATIONS = gql`
   ${ORGANIZATION_LIST_FIELDS}
-  query PendingOrganizations($pagination: PaginationInput) {
-    pendingOrganizations(pagination: $pagination) {
+  query PendingOrganizations($pagination: OffsetPaginationInput) {
+    organizationsOffsetPagination(
+      status: PENDING_REVIEW
+      pagination: $pagination
+    ) {
       content {
         ...OrganizationListFields
       }
-      totalElements
-      totalPages
-      page
-      size
-      hasNext
-      hasPrevious
+      pageInfo {
+        currentPage
+        pageSize
+        totalCount
+        hasNext
+        hasPrevious
+      }
     }
   }
 `;

@@ -1,6 +1,6 @@
 package com.pml.booking.web.graphql.dto;
 
-import com.pml.booking.domain.enums.ChargebackStatus;
+import com.pml.shared.constants.ChargebackStatus;
 import com.pml.booking.domain.enums.RecoveryStatus;
 
 import java.time.LocalDateTime;

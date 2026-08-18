@@ -9,6 +9,10 @@
       "isActive"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -23,12 +27,18 @@
         "description": "OWASP A03 - ObjectId pattern validation"
       },
       "code": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 10,
         "description": "City code or abbreviation"
       },
       "timezone": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 50,
         "description": "IANA timezone (e.g., Africa/Lusaka)"
       },

@@ -1,6 +1,5 @@
 package com.pml.catalog.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 
@@ -11,7 +10,7 @@ import java.time.Instant;
  * - Booking Service: Clean up escrow account, handle any pending tickets
  * - Identity Service: Update organizer statistics
  */
-@Externalized("event-events::EventDeleted")
+/** Cross-service wire name (ET-PLT-003 §4): event-events::EventDeleted — staged into the outbox. */
 public record EventDeletedEvent(
         String eventId,
         String organizerId,

@@ -1,6 +1,6 @@
 package com.pml.identity.service;
 
-import com.pml.identity.domain.enums.DocumentStatus;
+import com.pml.shared.constants.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

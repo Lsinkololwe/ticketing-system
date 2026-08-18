@@ -1,6 +1,6 @@
 package com.pml.identity.service.impl;
 
-import com.pml.identity.domain.enums.DocumentStatus;
+import com.pml.shared.constants.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.repository.OrganizationRepository;
 import com.pml.identity.repository.VerificationDocumentRepository;
@@ -92,6 +92,22 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
             Long fileSize,
             String mimeType) {
         log.info("Uploading document type: {} for organization: {}", documentType, organizationId);
+
+        // Guard the arguments BEFORE touching the repository, and signal the
+        // failure through the Mono.
+        //
+        // findById(null) throws IllegalArgumentException eagerly, at assembly
+        // time — before any subscription. An eager throw from a method that
+        // returns Mono escapes the caller's .onErrorResume entirely, so a
+        // null organizationId surfaced as an unhandled exception rather than
+        // as this service's error contract. Every reactive caller was written
+        // on the assumption that it could not do that.
+        if (organizationId == null || organizationId.isBlank()) {
+            return Mono.error(new IllegalArgumentException("Organization ID is required"));
+        }
+        if (documentType == null || documentType.isBlank()) {
+            return Mono.error(new IllegalArgumentException("Document type is required"));
+        }
 
         // Validate organization exists
         return organizationRepository.findById(organizationId)

@@ -118,7 +118,7 @@ booking SHALL obtain decisions from it rather than computing them.
 - [ ] Neither catalog-service nor booking-service contains a role comparison, a membership lookup or a permission set
 - [ ] `POST /api/internal/permissions/resolve` and `/resolve-many` are scope-gated per [ET-PLT-007](../../_platform/007-security-and-authorization/) R5
 - [ ] The endpoint returns a decision — `allowed`, plus the deciding step for diagnostics — and never the membership or grant documents
-- [ ] `./scripts/spec-lint.sh --security` reports permission resolution in exactly one implementation
+- [ ] Permission resolution exists in exactly one implementation, `/api/internal/**` is scope-gated, and no `User.keycloakUserId` exists reports permission resolution in exactly one implementation
 - [ ] A calling service that cannot reach the resolver **denies**; it does not fall back to a local guess
 
 ### ET-ORG-003-R2 · The six steps run in order, and the order is testable
@@ -444,7 +444,7 @@ All four cache-invalidating events of R7 are these two plus
 - [ ] **T5 · Remove every permission decision from catalog and booking**
   - requirements: R1
   - files: `backend/catalog-service/`, `backend/booking-service/`
-  - verify: `./scripts/spec-lint.sh --security`; an unreachable resolver denies rather than guesses
+  - verify: permission resolution exists in exactly one implementation, `/api/internal/**` is scope-gated, and no `User.keycloakUserId` exists; an unreachable resolver denies rather than guesses
   - parallel-safe: yes — one service per agent
   - depends: T4
 

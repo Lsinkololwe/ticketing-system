@@ -69,18 +69,4 @@ public class ReservationFieldResolver {
         return reservation.getPromoCode();
     }
 
-    /**
-     * Resolve TicketReservation.updatedAt - audit field.
-     * Maps to convertedAt for converted reservations or createdAt otherwise.
-     *
-     * @param dfe DataFetchingEnvironment containing the parent TicketReservation
-     * @return Updated timestamp
-     */
-    @DgsData(parentType = "TicketReservation", field = "updatedAt")
-    public LocalDateTime updatedAt(DgsDataFetchingEnvironment dfe) {
-        TicketReservation reservation = dfe.getSource();
-        return reservation.getConvertedAt() != null
-                ? reservation.getConvertedAt()
-                : reservation.getCreatedAt();
-    }
 }

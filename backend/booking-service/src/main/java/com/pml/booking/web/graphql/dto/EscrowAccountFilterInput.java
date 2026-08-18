@@ -1,6 +1,7 @@
 package com.pml.booking.web.graphql.dto;
 
-import com.pml.booking.domain.model.EventEscrowAccount.EscrowStatus;
+import com.pml.shared.constants.EscrowStatus;
+
 
 /**
  * Filter input for escrow account queries.

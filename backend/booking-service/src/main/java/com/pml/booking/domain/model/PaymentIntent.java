@@ -64,9 +64,25 @@ public class PaymentIntent {
     private String providerTransactionId;
 
     // References
-    @NotBlank(message = "Ticket ID is required")
-    @Indexed
-    private String ticketId;
+
+    /**
+     * The reservation this intent is paying for.
+     *
+     * <p>Was {@code ticketId}, and the change is the point of ET-TKT-001 R7. A
+     * ticket cannot be the subject of a payment because, under this spec, no
+     * ticket exists yet — tickets are written inside the confirmation
+     * transaction, after the money has arrived. Pointing an intent at a ticket
+     * forced the old code to create one in {@code PENDING_PAYMENT} first, which
+     * is a ticket the platform has not been paid for and cannot account for.
+     *
+     * <p>Unique, not merely indexed: a reservation has at most one intent, and
+     * ET-TKT-001 R6 requires that a retried purchase produce one charge rather
+     * than a second. Enforcing that here means a duplicate cannot be written
+     * even if the application-level guard is bypassed.
+     */
+    @NotBlank(message = "Reservation ID is required")
+    @Indexed(unique = true)
+    private String reservationId;
 
     @NotBlank(message = "Event ID is required")
     @Indexed

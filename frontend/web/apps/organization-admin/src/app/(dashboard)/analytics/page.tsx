@@ -26,6 +26,7 @@ import {
   Eye,
   Dollar,
   ArrowUp,
+  ArrowDown,
 } from 'iconoir-react';
 import { PageHeader, StatCard } from '@/components/ui';
 import { useSession } from '@/lib/auth/client';
@@ -33,6 +34,8 @@ import {
   useMyOrganization,
   canViewAnalytics,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import { useMyRevenueSeries } from '@pml.tickets/shared/api/organization-admin/modules/dashboard';
+import { useMyEvents } from '@pml.tickets/shared/api/organization-admin/modules/events';
 
 // =============================================================================
 // TYPES
@@ -54,80 +57,48 @@ interface DailyMetric {
   tickets: number;
 }
 
-interface AudienceSegment {
-  label: string;
-  count: number;
-  percentage: number;
-  color: string;
+// =============================================================================
+// ADAPTERS
+//
+// No fixture data lives in this app. Two of this screen's original datasets —
+// audience segments and top locations — had no backend source at all and were
+// invented; they now render an explicit "not tracked yet" panel instead of a
+// convincing-looking chart. See docs/ORG_ADMIN_REDESIGN_NOTES.md.
+// =============================================================================
+
+function toDailyMetric(point: { periodStart: string; revenue: string; ticketsSold: number }): DailyMetric {
+  return {
+    date: point.periodStart,
+    revenue: Number(point.revenue ?? 0),
+    tickets: point.ticketsSold ?? 0,
+  };
 }
 
-// =============================================================================
-// MOCK DATA
-// =============================================================================
+/**
+ * Event rows for the performance table.
+ *
+ * `views` and `conversionRate` are NOT populated: nothing in this platform
+ * tracks event page views, so a conversion rate cannot be computed. Both stay
+ * at zero and the columns are hidden rather than showing an invented number.
+ */
+function toEventPerformance(event: {
+  id: string;
+  title: string;
+  soldTickets: number;
+  totalCapacity: number;
+  revenue: string;
+}): EventPerformance {
+  return {
+    id: event.id,
+    name: event.title,
+    ticketsSold: event.soldTickets ?? 0,
+    totalTickets: event.totalCapacity ?? 0,
+    revenue: Number(event.revenue ?? 0),
+    views: 0,
+    conversionRate: 0,
+  };
+}
 
-const mockDailyMetrics: DailyMetric[] = [
-  { date: '2025-05-13', revenue: 1200, tickets: 12 },
-  { date: '2025-05-14', revenue: 1850, tickets: 18 },
-  { date: '2025-05-15', revenue: 2100, tickets: 21 },
-  { date: '2025-05-16', revenue: 1650, tickets: 16 },
-  { date: '2025-05-17', revenue: 2800, tickets: 28 },
-  { date: '2025-05-18', revenue: 3200, tickets: 32 },
-  { date: '2025-05-19', revenue: 2450, tickets: 24 },
-];
-
-const mockEventPerformance: EventPerformance[] = [
-  {
-    id: '1',
-    name: 'Summer Music Festival',
-    ticketsSold: 342,
-    totalTickets: 500,
-    revenue: 45600,
-    views: 2840,
-    conversionRate: 12.0,
-  },
-  {
-    id: '2',
-    name: 'Tech Conference 2025',
-    ticketsSold: 156,
-    totalTickets: 200,
-    revenue: 23400,
-    views: 1520,
-    conversionRate: 10.3,
-  },
-  {
-    id: '3',
-    name: 'Food & Wine Expo',
-    ticketsSold: 89,
-    totalTickets: 300,
-    revenue: 8900,
-    views: 980,
-    conversionRate: 9.1,
-  },
-  {
-    id: '4',
-    name: 'Art Gallery Opening',
-    ticketsSold: 45,
-    totalTickets: 100,
-    revenue: 2250,
-    views: 560,
-    conversionRate: 8.0,
-  },
-];
-
-const mockAudienceSegments: AudienceSegment[] = [
-  { label: 'Returning Customers', count: 234, percentage: 45, color: 'var(--brand-500)' },
-  { label: 'New Customers', count: 187, percentage: 36, color: 'var(--status-info-9)' },
-  { label: 'VIP Members', count: 56, percentage: 11, color: 'var(--accent-9)' },
-  { label: 'Early Bird Buyers', count: 42, percentage: 8, color: 'var(--status-warning-9)' },
-];
-
-const mockTopCities = [
-  { city: 'Lusaka', tickets: 289, percentage: 55 },
-  { city: 'Kitwe', tickets: 98, percentage: 19 },
-  { city: 'Ndola', tickets: 67, percentage: 13 },
-  { city: 'Livingstone', tickets: 45, percentage: 9 },
-  { city: 'Other', tickets: 21, percentage: 4 },
-];
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -257,27 +228,40 @@ export default function AnalyticsPage() {
 
   const [dateRange, setDateRange] = useState('7days');
 
-  // Calculate summary stats
-  const summaryStats = useMemo(() => {
-    const totalRevenue = mockDailyMetrics.reduce((sum, d) => sum + d.revenue, 0);
-    const totalTickets = mockDailyMetrics.reduce((sum, d) => sum + d.tickets, 0);
-    const avgRevenue = totalRevenue / mockDailyMetrics.length;
-    const totalViews = mockEventPerformance.reduce((sum, e) => sum + e.views, 0);
+  // The series is MONTHLY, not daily: myRevenueSeries returns complete calendar
+  // months. The labels below say "monthly" for that reason — the original
+  // screen said "daily" over data that was never daily.
+  const { points } = useMyRevenueSeries(6, { skip: !isAuthenticated });
+  const { events } = useMyEvents({ skip: !isAuthenticated });
 
-    // Mock previous period for comparison
-    const prevRevenue = totalRevenue * 0.85;
-    const prevTickets = totalTickets * 0.9;
+  const dailyMetrics = useMemo(() => points.map(toDailyMetric), [points]);
+  const eventPerformance = useMemo(() => events.map(toEventPerformance), [events]);
+
+  const summaryStats = useMemo(() => {
+    const totalRevenue = dailyMetrics.reduce((sum, d) => sum + d.revenue, 0);
+    const totalTickets = dailyMetrics.reduce((sum, d) => sum + d.tickets, 0);
+    const avgRevenue = dailyMetrics.length > 0 ? totalRevenue / dailyMetrics.length : 0;
+
+    // Growth compares the latest complete month against the one before it —
+    // real periods. The previous version multiplied the total by 0.85 and
+    // presented the result as a period-over-period change.
+    const latest = dailyMetrics[dailyMetrics.length - 1];
+    const previous = dailyMetrics[dailyMetrics.length - 2];
+    const pctChange = (before: number, after: number) =>
+      before > 0 ? ((after - before) / before) * 100 : null;
 
     return {
       totalRevenue,
       totalTickets,
       avgRevenue,
-      totalViews,
-      revenueGrowth: ((totalRevenue - prevRevenue) / prevRevenue) * 100,
-      ticketsGrowth: ((totalTickets - prevTickets) / prevTickets) * 100,
-      conversionRate: (totalTickets / totalViews) * 100,
+      revenueGrowth: latest && previous ? pctChange(previous.revenue, latest.revenue) : null,
+      ticketsGrowth: latest && previous ? pctChange(previous.tickets, latest.tickets) : null,
+      // Views are not tracked anywhere, so a conversion rate cannot be derived.
+      totalViews: null as number | null,
+      conversionRate: null as number | null,
     };
-  }, []);
+  }, [dailyMetrics]);
+
 
   if (!canView) {
     return (
@@ -336,30 +320,20 @@ export default function AnalyticsPage() {
           title="Total revenue"
           value={formatCurrency(summaryStats.totalRevenue)}
           icon={<Dollar style={{ width: 20, height: 20 }} />}
-          change={summaryStats.revenueGrowth}
+          change={summaryStats.revenueGrowth ?? undefined}
           changeLabel="vs previous period"
         />
         <StatCard
           title="Tickets sold"
           value={formatNumber(summaryStats.totalTickets)}
           icon={<Label style={{ width: 20, height: 20 }} />}
-          change={summaryStats.ticketsGrowth}
+          change={summaryStats.ticketsGrowth ?? undefined}
           changeLabel="vs previous period"
         />
-        <StatCard
-          title="Page views"
-          value={formatNumber(summaryStats.totalViews)}
-          icon={<Eye style={{ width: 20, height: 20 }} />}
-          change={12}
-          changeLabel="Unique visitors"
-        />
-        <StatCard
-          title="Conversion rate"
-          value={`${summaryStats.conversionRate.toFixed(1)}%`}
-          icon={<GraphUp style={{ width: 20, height: 20 }} />}
-          change={0.5}
-          changeLabel="Views to purchases"
-        />
+        {/* "Page views" and "Conversion rate" were removed, not restyled.
+            Nothing tracks event page views, so both cards were displaying a
+            fabricated figure with a hardcoded delta (change={12}, change={0.5}).
+            A metric with no source does not belong on a dashboard. */}
       </Box>
 
       {/* Charts Row */}
@@ -383,14 +357,24 @@ export default function AnalyticsPage() {
                 Daily revenue over time
               </Text>
             </Box>
-            <Badge color="green" variant="soft">
-              <Flex align="center" gap="1">
-                <ArrowUp style={{ width: 12, height: 12 }} />
-                {summaryStats.revenueGrowth.toFixed(1)}%
-              </Flex>
-            </Badge>
+            {/* Omitted when there is no prior month to compare against — an
+                absent baseline is not "0% change". Arrow and colour follow the
+                actual direction; this was hardcoded up-and-green regardless of the
+                number inside it. */}
+            {summaryStats.revenueGrowth !== null && (
+              <Badge color={summaryStats.revenueGrowth >= 0 ? 'green' : 'red'} variant="soft">
+                <Flex align="center" gap="1">
+                  {summaryStats.revenueGrowth >= 0 ? (
+                    <ArrowUp style={{ width: 12, height: 12 }} />
+                  ) : (
+                    <ArrowDown style={{ width: 12, height: 12 }} />
+                  )}
+                  {Math.abs(summaryStats.revenueGrowth).toFixed(1)}%
+                </Flex>
+              </Badge>
+            )}
           </Flex>
-          <MiniChart data={mockDailyMetrics} dataKey="revenue" color="var(--brand-500)" />
+          <MiniChart data={dailyMetrics} dataKey="revenue" color="var(--brand-500)" />
         </Card>
 
         {/* Tickets Chart */}
@@ -412,14 +396,24 @@ export default function AnalyticsPage() {
                 Daily tickets sold
               </Text>
             </Box>
-            <Badge color="blue" variant="soft">
-              <Flex align="center" gap="1">
-                <ArrowUp style={{ width: 12, height: 12 }} />
-                {summaryStats.ticketsGrowth.toFixed(1)}%
-              </Flex>
-            </Badge>
+            {/* Omitted when there is no prior month to compare against — an
+                absent baseline is not "0% change". Arrow and colour follow the
+                actual direction; this was hardcoded up-and-blue regardless of the
+                number inside it. */}
+            {summaryStats.ticketsGrowth !== null && (
+              <Badge color={summaryStats.ticketsGrowth >= 0 ? 'green' : 'red'} variant="soft">
+                <Flex align="center" gap="1">
+                  {summaryStats.ticketsGrowth >= 0 ? (
+                    <ArrowUp style={{ width: 12, height: 12 }} />
+                  ) : (
+                    <ArrowDown style={{ width: 12, height: 12 }} />
+                  )}
+                  {Math.abs(summaryStats.ticketsGrowth).toFixed(1)}%
+                </Flex>
+              </Badge>
+            )}
           </Flex>
-          <MiniChart data={mockDailyMetrics} dataKey="tickets" color="var(--status-info-9)" />
+          <MiniChart data={dailyMetrics} dataKey="tickets" color="var(--status-info-9)" />
         </Card>
       </Flex>
 
@@ -440,12 +434,12 @@ export default function AnalyticsPage() {
               Event Performance
             </Text>
             <Badge variant="soft" color="gray">
-              {mockEventPerformance.length} events
+              {eventPerformance.length} events
             </Badge>
           </Flex>
 
           <Flex direction="column">
-            {mockEventPerformance.map((event) => (
+            {eventPerformance.map((event) => (
               <EventPerformanceRow key={event.id} event={event} />
             ))}
           </Flex>
@@ -453,7 +447,13 @@ export default function AnalyticsPage() {
 
         {/* Sidebar */}
         <Flex direction="column" gap="6" style={{ flex: 1 }}>
-          {/* Audience Segments */}
+          {/* Audience insight — NOT AVAILABLE.
+              This panel previously rendered invented audience segments and a
+              top-locations league table. Nothing in the platform captures buyer
+              demographics or buyer location: Ticket carries the EVENT's city,
+              not the purchaser's. Rather than keep a convincing chart built on
+              nothing, the panel states what is missing and what it would take.
+              See docs/ORG_ADMIN_REDESIGN_NOTES.md. */}
           <Card
             style={{
               padding: '24px',
@@ -461,118 +461,19 @@ export default function AnalyticsPage() {
               border: '1px solid var(--surface-border)',
               borderRadius: 'var(--card-radius-bento)',
             }}
+            data-testid="analytics-audience-unavailable"
           >
-            <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
-              Audience Segments
+            <Text size="3" weight="medium" mb="2" style={{ color: 'var(--content-primary)', display: 'block' }}>
+              Audience insight
             </Text>
-
-            <Flex direction="column" gap="3">
-              {mockAudienceSegments.map((segment) => (
-                <Box key={segment.label}>
-                  <Flex justify="between" mb="1">
-                    <Flex align="center" gap="2">
-                      <Box
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: segment.color,
-                        }}
-                      />
-                      <Text size="2" style={{ color: 'var(--content-secondary)' }}>
-                        {segment.label}
-                      </Text>
-                    </Flex>
-                    <Text size="2" weight="medium" style={{ color: 'var(--content-primary)' }}>
-                      {segment.count}
-                    </Text>
-                  </Flex>
-                  <Progress
-                    value={segment.percentage}
-                    max={100}
-                    size="1"
-                    style={{
-                      '--progress-indicator-color': segment.color,
-                    } as any}
-                  />
-                </Box>
-              ))}
-            </Flex>
-          </Card>
-
-          {/* Top Cities */}
-          <Card
-            style={{
-              padding: '24px',
-              background: 'var(--surface-elevated)',
-              border: '1px solid var(--surface-border)',
-              borderRadius: 'var(--card-radius-bento)',
-            }}
-          >
-            <Text size="3" weight="medium" mb="4" style={{ color: 'var(--content-primary)', display: 'block' }}>
-              Top Locations
-            </Text>
-
-            <Flex direction="column" gap="3">
-              {mockTopCities.map((city, index) => (
-                <Flex key={city.city} justify="between" align="center">
-                  <Flex align="center" gap="2">
-                    <Box
-                      style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: 'var(--radius-3)',
-                        background: index === 0 ? 'var(--brand-500)' : 'var(--surface-subtle)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Text
-                        size="1"
-                        weight="medium"
-                        style={{ color: index === 0 ? 'white' : 'var(--content-muted)' }}
-                      >
-                        {index + 1}
-                      </Text>
-                    </Box>
-                    <Text size="2" style={{ color: 'var(--content-secondary)' }}>
-                      {city.city}
-                    </Text>
-                  </Flex>
-                  <Flex align="center" gap="2">
-                    <Text size="2" weight="medium" style={{ color: 'var(--content-primary)' }}>
-                      {city.tickets}
-                    </Text>
-                    <Text size="1" style={{ color: 'var(--content-muted)' }}>
-                      ({city.percentage}%)
-                    </Text>
-                  </Flex>
-                </Flex>
-              ))}
-            </Flex>
-          </Card>
-
-          {/* Quick Stats */}
-          <Card
-            style={{
-              padding: '20px',
-              background: 'linear-gradient(135deg, var(--accent-a3) 0%, var(--accent-a3) 100%)',
-              border: '1px solid var(--accent-a5)',
-              borderRadius: 'var(--card-radius-bento)',
-            }}
-          >
-            <Flex align="center" gap="3" mb="3">
-              <GraphUp style={{ width: 24, height: 24, color: 'var(--brand-500)' }} />
-              <Text size="3" weight="medium" style={{ color: 'var(--content-primary)' }}>
-                Performance Insight
-              </Text>
-            </Flex>
-            <Text size="2" style={{ color: 'var(--content-secondary)', lineHeight: 1.5 }}>
-              Your events have a <strong style={{ color: 'var(--brand-500)' }}>12% higher</strong> conversion rate
-              than the platform average. Keep up the great work!
+            <Text size="2" style={{ color: 'var(--content-muted)', display: 'block', lineHeight: 1.55 }}>
+              Not tracked yet. Buyer demographics and location are not captured
+              at checkout, so audience segments and top locations cannot be
+              reported. They will appear here once the checkout flow collects
+              them.
             </Text>
           </Card>
+
         </Flex>
       </Flex>
     </Box>

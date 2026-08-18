@@ -228,13 +228,37 @@ export const businessInfoFormSchema = z.object({
   type: z.enum(ORGANIZATION_TYPES, {
     message: 'Organization type is required',
   }),
+
+  /**
+   * Legal business type — REQUIRED at step 1.
+   *
+   * This is not cosmetic: it is the sole input to the required-document set
+   * (spec ET-ORG-001 §4), so the documents step cannot render without it and
+   * `submitForReview` refuses without it. Asking for it first is what lets a
+   * sole proprietor never be shown a certificate-of-incorporation slot.
+   */
+  businessType: z.enum(BUSINESS_TYPES, {
+    message: 'Business type is required — it determines which documents we need',
+  }),
   tagline: optionalTextField(50),
-  description: optionalTextField(50),
+  // 2000, matching the organizations collection's $jsonSchema.
+  //
+  // This was 50 — the tagline's limit, copied — while the field it validates is
+  // a four-row textarea labelled "About your organization" whose own
+  // placeholder runs to 74 characters. The question asked could not be answered
+  // within the limit imposed for answering it.
+  description: optionalTextField(2000),
 
   // Contact information
   businessEmail: emailFieldSchema,
   businessPhone: zambianPhoneFieldSchema,
   website: optionalUrlFieldSchema,
+
+  // Know-your-business registration details. Optional at step 1 — a reviewer
+  // asks for whichever is missing via requestOrganizationChanges rather than
+  // blocking the applicant here.
+  businessRegistrationNumber: optionalTextField(50),
+  taxId: optionalTextField(20),
 
   // Location
   city: requiredTextField('City', 50),
@@ -264,7 +288,10 @@ export const organizationSettingsFormSchema = z.object({
   // Basic Information
   companyName: requiredTextField('Company name', 100),
   tagline: optionalTextField(50),
-  companyDescription: optionalTextField(50),
+  // Same field, same collection, same limit as businessInfoFormSchema above.
+  // Two different caps on one stored value means whichever screen was edited
+  // last silently truncates what the other one accepted.
+  companyDescription: optionalTextField(2000),
   businessType: z.enum(BUSINESS_TYPES).optional(),
 
   // Contact Information

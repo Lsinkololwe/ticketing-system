@@ -11,6 +11,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -25,27 +29,52 @@
       },
       "notificationType": {
         "bsonType": "string",
-        "enum": ["SUBMITTED", "APPROVED", "REJECTED", "REVISION_REQUESTED", "ESCALATED"],
+        "enum": [
+          "SUBMITTED",
+          "APPROVED",
+          "REJECTED",
+          "REVISION_REQUESTED",
+          "ESCALATED"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "channel": {
         "bsonType": "string",
-        "enum": ["EMAIL", "SMS", "PUSH", "IN_APP"],
+        "enum": [
+          "EMAIL",
+          "SMS",
+          "PUSH",
+          "IN_APP"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "status": {
         "bsonType": "string",
-        "enum": ["PENDING", "SENT", "DELIVERED", "FAILED"],
+        "enum": [
+          "PENDING",
+          "SENT",
+          "DELIVERED",
+          "FAILED"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "sentAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "deliveredAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "errorMessage": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "createdAt": {

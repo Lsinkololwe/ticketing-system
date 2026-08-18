@@ -107,7 +107,7 @@ Keycloak user ID.
 - [ ] Every write is an upsert keyed on that id — no code path inserts unconditionally
 - [ ] Two concurrent syncs for one user produce one document
 - [ ] `email` and `phoneNumber` carry unique sparse indexes ([ET-PLT-002](../../_platform/002-persistence-baseline/) §4)
-- [ ] `./scripts/spec-lint.sh --security` finds no `keycloakUserId` in the tree
+- [ ] Permission resolution exists in exactly one implementation, `/api/internal/**` is scope-gated, and no `User.keycloakUserId` exists finds no `keycloakUserId` in the tree
 
 ### ET-IDN-002-R2 · Keycloak changes propagate, and never block Keycloak
 

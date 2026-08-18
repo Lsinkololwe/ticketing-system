@@ -1,0 +1,405 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Payout Requests Schema - OWASP Compliant",
+    "description": "Organizer payout requests with approval workflow",
+    "required": [
+      "requestId",
+      "organizerId",
+      "organizationId",
+      "escrowAccountId",
+      "bankAccountId",
+      "requestedAmount",
+      "settledAmount",
+      "currency",
+      "status",
+      "requestedAt",
+      "requestedById",
+      "createdAt"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "requestId": {
+        "bsonType": "string",
+        "pattern": "^PAY-[A-Z0-9]{8}$",
+        "description": "PAY-XXXXXXXX, the format PayoutRequestServiceImpl generates. Was ^OUT-\\d{8}-[A-Z0-9]{8}$, which nothing has ever produced."
+      },
+      "organizerId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A03 - ObjectId pattern validation"
+      },
+      "organizerName": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 200
+      },
+      "organizationId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$",
+        "description": "OWASP A01 - Tenant isolation for payout tracking"
+      },
+      "eventId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "eventTitle": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 300
+      },
+      "escrowAccountId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "bankAccountId": {
+        "bsonType": "string",
+        "pattern": "^[a-fA-F0-9]{24}$"
+      },
+      "bankAccountName": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 200
+      },
+      "bankName": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 200
+      },
+      "accountNumber": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[0-9]{10,20}$"
+      },
+      "requestedAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "platformFee": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "processingFee": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "taxAmount": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "settledAmount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "currency": {
+        "bsonType": "string",
+        "enum": [
+          "ZMW",
+          "USD"
+        ],
+        "description": "OWASP A04 - Enum constraint"
+      },
+      "status": {
+        "bsonType": "string",
+        "pattern": "^[A-Z][A-Z0-9_]{1,49}$",
+        "description": "The payout's status code. Deliberately NOT a closed enum: platform administrators own this value set through reference data, so an enum here rejects every status they add \u2014 the database would veto the feature. The pattern still holds the shape (OWASP A03: no injection payload survives it), and the closed set moved to statusSemantic, which is the part code actually branches on."
+      },
+      "statusSemantic": {
+        "enum": [
+          "INITIAL",
+          "PENDING",
+          "IN_PROGRESS",
+          "SUCCEEDED",
+          "FAILED",
+          "CANCELLED",
+          null
+        ],
+        "description": "What status MEANS, denormalised from reference data. THIS is the closed set (OWASP A04) \u2014 the vocabulary is fixed in code while the codes above are not. null is allowed on purpose: a code with no reference-data row is left unclassified, which is findable, rather than guessed, which is not."
+      },
+      "payoutMethod": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "BANK_TRANSFER",
+          "MOBILE_MONEY",
+          null
+        ]
+      },
+      "requestedAt": {
+        "bsonType": "date"
+      },
+      "requestedById": {
+        "bsonType": "string",
+        "maxLength": 100
+      },
+      "approvedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "approvedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "rejectedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "rejectedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "rejectionReason": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 500
+      },
+      "processedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "processedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "expectedPayoutDate": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "actualPayoutDate": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "paymentReference": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "transactionId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "externalTransactionId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "pawaPayPayoutId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "notes": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 2000
+      },
+      "metadata": {
+        "bsonType": [
+          "object",
+          "null"
+        ]
+      },
+      "history": {
+        "bsonType": [
+          "array",
+          "null"
+        ]
+      },
+      "issueType": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "resolutionType": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "reviewStatus": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 50
+      },
+      "isStuck": {
+        "bsonType": [
+          "bool",
+          "null"
+        ]
+      },
+      "stuckReason": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 500
+      },
+      "stuckAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "reviewedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "reviewedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "reviewNotes": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 2000
+      },
+      "resolvedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "resolvedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "resolutionNotes": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 2000
+      },
+      "retryCount": {
+        "bsonType": "int",
+        "minimum": 0
+      },
+      "lastRetryAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "lastError": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 1000
+      },
+      "nextRetryAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "updatedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "createdBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "updatedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "version": {
+        "bsonType": [
+          "long",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -38,6 +38,12 @@ import { getSessionCookie } from 'better-auth/cookies';
  */
 const COOKIE_PREFIX = 'pml_org';
 
+/**
+ * Request header carrying the resolved pathname into Server Components.
+ * Read by `(application)/layout.tsx` to run the onboarding guard.
+ */
+export const PATHNAME_HEADER = 'x-pathname';
+
 // =============================================================================
 // ROUTE CONFIGURATION
 // =============================================================================
@@ -64,6 +70,16 @@ const PROTECTED_ROUTES = [
  * Includes landing page and public marketing pages
  */
 const PUBLIC_ROUTES = ['/login', '/register', '/api/auth', '/features'];
+
+/**
+ * Where an authenticated user is sent when the proxy has no better idea.
+ *
+ * This is `/welcome` only because it sits inside the `(application)` route
+ * group, whose server layout immediately re-resolves the destination from
+ * organization status. It is an entry point, not a decision — the proxy sees a
+ * cookie, never a status.
+ */
+const ENTRY_ROUTE = '/welcome';
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -104,6 +120,18 @@ export default async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  /**
+   * Forward the resolved pathname so Server Components can see it.
+   *
+   * Layouts do not receive the request path in the App Router, and the
+   * onboarding guard in `(application)/layout.tsx` must know where the user is
+   * headed in order to decide whether they belong there. Without this the guard
+   * could only redirect unconditionally, which loops.
+   */
+  const forwarded = new Headers(request.headers);
+  forwarded.set(PATHNAME_HEADER, pathname);
+  const pass = () => NextResponse.next({ request: { headers: forwarded } });
+
   // Get session cookie (optimistic check - NOT SECURE)
   // This just checks if the cookie exists, not if it's valid
   // IMPORTANT: Must pass cookiePrefix to match the Better Auth configuration
@@ -117,10 +145,12 @@ export default async function proxy(request: NextRequest) {
   // -----------------------------------------------------------------------------
   if (pathStartsWith(pathname, PUBLIC_ROUTES)) {
     if (hasSessionCookie && pathname === '/login') {
-      // Has session cookie - redirect to welcome for server-side org check
-      return NextResponse.redirect(new URL('/welcome', request.url));
+      // Hand off to the application group, which resolves the real destination
+      // from organization status server-side. The proxy cannot make that call
+      // itself — it only knows a cookie exists, not what state it represents.
+      return NextResponse.redirect(new URL(ENTRY_ROUTE, request.url));
     }
-    return NextResponse.next();
+    return pass();
   }
 
   // -----------------------------------------------------------------------------
@@ -135,7 +165,7 @@ export default async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL('/logout', request.url));
     }
     // Has session cookie - let through, server component will validate
-    return NextResponse.next();
+    return pass();
   }
 
   // -----------------------------------------------------------------------------
@@ -143,14 +173,14 @@ export default async function proxy(request: NextRequest) {
   // -----------------------------------------------------------------------------
   if (pathname === '/') {
     if (hasSessionCookie) {
-      // Has session - redirect to welcome for server-side org check
-      return NextResponse.redirect(new URL('/welcome', request.url));
+      // Same as above: the application group resolves the real destination.
+      return NextResponse.redirect(new URL(ENTRY_ROUTE, request.url));
     }
     // No session - show public landing page
-    return NextResponse.next();
+    return pass();
   }
 
-  return NextResponse.next();
+  return pass();
 }
 
 // =============================================================================

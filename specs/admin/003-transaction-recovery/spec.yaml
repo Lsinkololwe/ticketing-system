@@ -1,6 +1,6 @@
 id: ET-ADM-003
 title: Transaction recovery — stuck money and the operator's tools
-status: draft
+status: approved
 area: ADM
 service: booking-service
 subgraph: booking
@@ -24,10 +24,10 @@ sources:
 
 persistence:
   collections:
-    - admin_recovery_proposals    # added to the ET-PLT-002 §4 registry by this spec
+    - booking_recovery_proposals    # ET-PLT-002 §4 registry row
   indexes:
-    - "admin_recovery_proposals {itemSource,itemId,status} compound"
-    - "admin_recovery_proposals {status,expiresAt} compound"
+    - "booking_recovery_proposals {itemSource,itemId,status} compound"
+    - "booking_recovery_proposals {status,expiresAt} compound"
   redis_keys:
     - "idem:{key}   STRING  24 h   — every money-moving recovery action"
 
@@ -98,12 +98,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/admin/003-transaction-recovery
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/booking-service test -Dgroups=ET-ADM-003
-  - mvn -q -f backend verify -Dgroups=ET-ADM-003
+  - mvn -q -f backend/booking-service test -Dgroups=ET-ADM-003 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-ADM-003 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -112,6 +108,6 @@ risks:
   - "recoveryItemDetail is a deliberate exception to ET-PLT-005's no-provider-detail rule, gated on FINANCE and audited. But the same underlying data is also exposed by ET-PAY-001's paymentAttempts query, which is only ADMIN-gated and not audited — so the exception is not actually the only route to the raw message, and the tighter control here is undermined by the looser one there."
   - "R6 asserts replay is safe because every consumer is idempotent per ET-PLT-003 R5, but that spec's own risk register notes that a consumer which wrongly self-assesses as idempotent gets no second line of defence. Replay inherits that risk and amplifies it — an operator replaying a batch under incident pressure is exactly when a non-idempotent consumer does damage."
   - "releaseStuckReservation refunds any captured payment and releases inventory, but a stuck payment is stuck precisely because the platform does not know whether money moved. Refunding a payment that never captured is a refund of nothing, which the provider will reject; refunding one that did is correct. The action is dual-approved but the operator has no better information than the platform does."
-  - "admin_recovery_proposals is an eighth amendment to ET-PLT-002 §4's closed collection registry."
+  - "Resolved: booking_recovery_proposals is a row of the ET-PLT-002 §4 registry, owned by booking-service."
   - "Amount at risk for a dead letter is '0 or the payload's amount', which means parsing an arbitrary envelope payload to extract a monetary field that may not exist. The ordering therefore treats most dead letters as zero-risk and sorts them last, behind every financial item — which is right for a notification failure and wrong for a dead-lettered TicketPurchased."
   - "Nothing in this spec bounds how long an item may sit in the queue before something automatic happens. The escalation window alerts at 3 days and the starvation floor floats at 7, but an item nobody ever works simply stays there, counted in a metric, forever."

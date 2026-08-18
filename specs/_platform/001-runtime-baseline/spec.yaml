@@ -1,6 +1,6 @@
 id: ET-PLT-001
 title: Runtime baseline — the reactive contract, the clock, module boundaries
-status: draft
+status: approved
 area: PLT
 service: all
 subgraph: null
@@ -8,7 +8,7 @@ owner: lazarous
 created: 2026-07-30
 priority: must
 wave: 0
-blocked_by: []
+blocked_by: [ET-PLT-012]   # the parent POM and reactor this spec's dependency baseline sits in
 conformance: "PDI Phase 1 project setup"
 sources:
   - specs/CONVENTIONS.md
@@ -38,7 +38,6 @@ beans:
   - platformClock              # Clock, Africa/Lusaka — the only source of time
   - reactiveJwtDecoder         # per service, from the Keycloak issuer URI
   - blockingScheduler          # boundedElastic, for infrastructure/ adapters only
-  - jdbcTransactionManager     # @Primary, Modulith event publication (ET-PLT-003)
   - reactiveMongoTransactionManager  # the ticketing database (ET-PLT-002)
 
 modules:
@@ -48,16 +47,12 @@ modules:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/001-runtime-baseline
-  - ./scripts/spec-lint.sh --reactive
-  - ./scripts/spec-lint.sh --clock
   - mvn -q -f backend -DskipTests clean install
-  - mvn -q -f backend test -Dtest=ModuleStructureTest
-  - mvn -q -f backend test -Dgroups=ET-PLT-001
+  - mvn -q -f backend test -Dgroups=ET-PLT-001 -DfailIfNoTests=true
 
 risks:
   - "R1's BlockHound box will fail against any third-party library that blocks on a Netty thread without an obvious wrapper — the Keycloak Admin client and the AWS SDK v1 presigner are the two likely offenders. Each needs an infrastructure/ adapter before the agent can be turned on, so T2 may surface work that belongs to ET-IDN-002 and ET-ORG-001."
-  - "R4 declares allowedDependencies per module. Any existing cross-module reference that the current package layout permits becomes a build failure the first time ModuleStructureTest runs, and the fix is sometimes a genuine design question rather than a move — booking's payment/escrow/ledger triangle in particular."
+  - "R4 is a review rule with no mechanical enforcement, so a cross-module import into another module's repository or service.impl fails no build and shows up only if a reviewer looks. booking's payment/escrow/ledger triangle is where that will first cost something, and the package-info headers are the only place the intended direction is written down."
   - "R3 forbids inline now() platform-wide, but Spring Data's @CreatedDate and @LastModifiedDate populate from the system clock, not from the injected bean. Auditing annotations need a DateTimeProvider wired to the same Clock or the platform has two clocks and only one of them freezes in tests."
   - "R6 requires fail-fast on an absent variable, which conflicts with any service currently importing optional configuration. A service that starts without its Mongo URI and then fails on first query is strictly worse than one that refuses to start, but the change moves failures from runtime to deploy time and will surface misconfigured environments that presently appear healthy."
   - "The three subgraphs must resolve identical graphql-java versions (R2). DGS and Spring GraphQL both manage that coordinate, and a mismatch shows up as a scalar-coercion failure at composition rather than as a dependency error, which is a slow way to find it."

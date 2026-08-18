@@ -107,6 +107,25 @@ public interface RefundService {
     Mono<RefundRequest> findById(String id);
 
     /**
+     * Find refund request by its externally-visible request ID.
+     */
+    Mono<RefundRequest> findByRequestId(String requestId);
+
+    /**
+     * Every refund request, in any status.
+     *
+     * <p>This is the source for the platform-wide admin views. It exists because
+     * the three admin queries that need it previously read
+     * {@link #findPendingRefunds()} and then filtered — so a search for an
+     * APPROVED refund intersected PENDING with APPROVED and returned nothing,
+     * whatever the database actually held.
+     *
+     * <p>Callers that want only the approval queue should keep using
+     * {@link #findPendingRefunds()}; the distinction is the point.
+     */
+    Flux<RefundRequest> findAll();
+
+    /**
      * Find refund request by ticket ID.
      */
     Mono<RefundRequest> findByTicketId(String ticketId);

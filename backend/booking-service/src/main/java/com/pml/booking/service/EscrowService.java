@@ -1,5 +1,6 @@
 package com.pml.booking.service;
 
+import com.pml.shared.constants.EscrowStatus;
 import com.pml.booking.domain.model.EventEscrowAccount;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -126,7 +127,7 @@ public interface EscrowService {
      * @param reason    Reason for the change
      * @return Updated escrow account
      */
-    Mono<EventEscrowAccount> updateEscrowAccountStatus(String accountId, EventEscrowAccount.EscrowStatus status, String reason);
+    Mono<EventEscrowAccount> updateEscrowAccountStatus(String accountId, EscrowStatus status, String reason);
 
     /**
      * Lock escrow account until a specific date (admin operation).
@@ -174,11 +175,27 @@ public interface EscrowService {
     /**
      * Find all escrow accounts for an organizer.
      */
+    /**
+     * Escrow accounts for an organization, after confirming the actor may act
+     * for it (ET-FIN-001; OWASP A01:2021).
+     *
+     * @param actorUserId    from the JWT, never from request input
+     * @param organizationId the tenant being reached for
+     */
+    Flux<EventEscrowAccount> findByOrganizationId(String actorUserId, String organizationId);
+
+    /** @deprecated scope by organization; see {@link #findByOrganizationId}. */
+    @Deprecated
     Flux<EventEscrowAccount> findByOrganizerId(String organizerId);
 
     /**
      * Find payout-eligible accounts for an organizer.
      */
+    /** Payout-eligible escrow for an organization, actor-checked. */
+    Flux<EventEscrowAccount> findPayoutEligibleByOrganizationId(String actorUserId, String organizationId);
+
+    /** @deprecated scope by organization. */
+    @Deprecated
     Flux<EventEscrowAccount> findPayoutEligibleByOrganizerId(String organizerId);
 
     /**
@@ -247,7 +264,7 @@ public interface EscrowService {
     /**
      * Count escrow accounts by status.
      */
-    Mono<Long> countByStatus(EventEscrowAccount.EscrowStatus status);
+    Mono<Long> countByStatus(EscrowStatus status);
 
     /**
      * Get total balance across all escrow accounts.
@@ -257,15 +274,15 @@ public interface EscrowService {
     /**
      * Get total deposits across all escrow accounts.
      */
-    Mono<BigDecimal> getTotalDeposits();
+    Mono<BigDecimal> getTotalCredited();
 
     /**
      * Get total withdrawals across all escrow accounts.
      */
-    Mono<BigDecimal> getTotalWithdrawals();
+    Mono<BigDecimal> getTotalDebited();
 
     /**
      * Get total refunds across all escrow accounts.
      */
-    Mono<BigDecimal> getTotalRefunds();
+    Mono<BigDecimal> getTotalRefunded();
 }

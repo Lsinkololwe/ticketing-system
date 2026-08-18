@@ -34,9 +34,14 @@ public interface PaymentIntentRepository extends ReactiveMongoRepository<Payment
     Mono<PaymentIntent> findByProviderTransactionId(String providerTransactionId);
 
     /**
-     * Find by ticket ID.
+     * Find the intent paying for a reservation.
+     *
+     * <p>ET-TKT-001 R8's recovery sweep reads this: the saga's whole state is the
+     * reservation's status plus this intent's, and a reservation still
+     * {@code HELD} whose intent is terminal is precisely the case a crash leaves
+     * behind.
      */
-    Mono<PaymentIntent> findByTicketId(String ticketId);
+    Mono<PaymentIntent> findByReservationId(String reservationId);
 
     /**
      * Find all payment intents for an event.

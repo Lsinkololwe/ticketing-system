@@ -58,6 +58,7 @@ import {
   type OrganizationRole,
 } from '@/config/navigation';
 import { useSession } from '@/lib/auth/client';
+import { useMyOrganization } from '@pml.tickets/shared/api/organization-admin/modules/organization';
 
 // =============================================================================
 // ICON MAP — fixed set, no dynamic component resolution.
@@ -289,6 +290,23 @@ function CollapsibleSection({
 // SIDEBAR
 // =============================================================================
 
+/**
+ * Organization status → the word and colour shown under the org name.
+ *
+ * Enums are humanised, never shown raw. Colour is paired with the word so the
+ * state is still readable in grayscale and to a colour-blind reader.
+ */
+const ORG_STATUS: Record<string, { label: string; color: string }> = {
+  APPROVED: { label: 'Active', color: 'var(--status-success-11)' },
+  PENDING_REVIEW: { label: 'In review', color: 'var(--status-warning-11)' },
+  CHANGES_REQUESTED: { label: 'Changes requested', color: 'var(--status-warning-11)' },
+  DRAFT: { label: 'Draft', color: 'var(--gray-11)' },
+  REJECTED: { label: 'Rejected', color: 'var(--status-danger-11)' },
+  SUSPENDED: { label: 'Suspended', color: 'var(--status-danger-11)' },
+};
+
+const UNKNOWN_ORG_STATUS = { label: 'Setting up', color: 'var(--gray-11)' };
+
 export function Sidebar({
   collapsed,
   onToggle,
@@ -298,6 +316,13 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { organization, status: organizationStatus } = useMyOrganization({
+    skip: !session?.user,
+  });
+
+  const orgName = organization?.name || 'Your organization';
+  const orgInitial = orgName.charAt(0).toUpperCase();
+  const orgStatus = ORG_STATUS[organizationStatus ?? ''] ?? UNKNOWN_ORG_STATUS;
 
   // TODO: read the real role from organization membership once it is exposed.
   const userRole: OrganizationRole = 'OWNER';
@@ -322,10 +347,15 @@ export function Sidebar({
       role="navigation"
       aria-label="Main navigation"
     >
-      {/* Brand — plain wordmark. No logo file exists; never invent a mark. */}
+      {/* Organization identity, per the design's sidebar header: a small accent
+          chip carrying the org initial, the org name, and its live status.
+          The chip is one of the two gradients this system sanctions — it is
+          40px, carries no data, and stands in for a logo file that does not
+          exist. Never invent a mark. */}
       <Flex
         align="center"
         justify="between"
+        gap="3"
         px="4"
         style={{
           height: 'var(--header-height)',
@@ -333,19 +363,63 @@ export function Sidebar({
           borderBottom: '1px solid var(--gray-a5)',
         }}
       >
-        <Box>
-          <Text as="p" className="ds-label" style={{ color: 'var(--accent-11)' }}>
-            Organizer portal
-          </Text>
-          <Text
-            as="p"
-            size="3"
-            weight="bold"
-            style={{ color: 'var(--gray-12)', lineHeight: 1.2, letterSpacing: '-0.01em' }}
+        <Flex align="center" gap="3" style={{ minWidth: 0 }}>
+          <Box
+            aria-hidden="true"
+            className="ds-accent-chip"
+            style={{
+              width: 28,
+              height: 28,
+              flexShrink: 0,
+              borderRadius: 'var(--radius-3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 'var(--text-2-size)',
+              fontWeight: 'var(--weight-bold)',
+            }}
           >
-            MyTicket <span style={{ color: 'var(--accent-11)' }}>Zambia</span>
-          </Text>
-        </Box>
+            {orgInitial}
+          </Box>
+
+          <Box style={{ minWidth: 0 }}>
+            <Text
+              as="p"
+              size="2"
+              weight="bold"
+              style={{
+                color: 'var(--gray-12)',
+                lineHeight: 1.2,
+                letterSpacing: '-0.01em',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {orgName}
+            </Text>
+            {/* Status dot + word. The dot is decorative; the word carries the
+                meaning, so the state survives grayscale. */}
+            <Text
+              as="p"
+              className="ds-label"
+              style={{ color: orgStatus.color, display: 'flex', alignItems: 'center', gap: 4 }}
+              data-testid="sidebar-org-status"
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 'var(--radius-full)',
+                  background: 'currentColor',
+                  flexShrink: 0,
+                }}
+              />
+              {orgStatus.label}
+            </Text>
+          </Box>
+        </Flex>
 
         {isMobile && (
           <button

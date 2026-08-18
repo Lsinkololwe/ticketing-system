@@ -22,6 +22,7 @@ import { Box, Flex, Text, Avatar, Link as RadixLink, DropdownMenu } from '@radix
 import { Calendar, LogOut, HelpCircle, User, NavArrowDown } from 'iconoir-react';
 import Link from 'next/link';
 import { useSession, signOut } from '@/lib/auth/client';
+import type { OrganizationStatus } from '@/lib/onboarding/state';
 
 // =============================================================================
 // TYPES
@@ -29,14 +30,57 @@ import { useSession, signOut } from '@/lib/auth/client';
 
 interface ApplicationLayoutContentProps {
   children: ReactNode;
+  /** Current organization status, or null when no application exists yet. */
+  status?: OrganizationStatus | null;
+}
+
+// =============================================================================
+// STATUS PILL
+// =============================================================================
+
+/**
+ * The persistent state line under the wordmark.
+ *
+ * Design authority shows "● Application in progress" in amber beneath
+ * "MyTicketZM for Organizers". It is the one piece of chrome that tells an
+ * applicant where they stand without navigating anywhere — which matters most
+ * for `PENDING_REVIEW`, where there is otherwise nothing to do.
+ */
+function statusLine(status: OrganizationStatus | null | undefined): {
+  label: string;
+  color: 'amber' | 'teal' | 'red' | 'gray';
+} {
+  switch (status) {
+    case 'PENDING_REVIEW':
+      return { label: 'Under review', color: 'amber' };
+    case 'CHANGES_REQUESTED':
+      return { label: 'Changes requested', color: 'amber' };
+    case 'REJECTED':
+      return { label: 'Not approved', color: 'red' };
+    case 'SUSPENDED':
+      return { label: 'Suspended', color: 'red' };
+    case 'APPROVED':
+    case 'ACTIVE':
+      return { label: 'Approved', color: 'teal' };
+    case 'INACTIVE':
+      return { label: 'Deactivated', color: 'gray' };
+    case 'PENDING_DELETION':
+      return { label: 'Deletion requested', color: 'gray' };
+    case 'DRAFT':
+    case 'PENDING_DOCUMENTS':
+      return { label: 'Application in progress', color: 'amber' };
+    default:
+      return { label: 'Organizer application', color: 'gray' };
+  }
 }
 
 // =============================================================================
 // HEADER COMPONENT
 // =============================================================================
 
-function ApplicationHeader() {
+function ApplicationHeader({ status }: { status?: OrganizationStatus | null }) {
   const { data: session } = useSession();
+  const line = statusLine(status);
 
   const handleLogout = async () => {
     try {
@@ -78,8 +122,14 @@ function ApplicationHeader() {
                 <Text size="3" weight="bold" highContrast>
                   MyTicket Zambia
                 </Text>
-                <Text as="p" size="1" color="gray">
-                  Organizer Application
+                <Text
+                  as="p"
+                  size="1"
+                  weight="medium"
+                  color={line.color}
+                  data-testid="application-status-pill"
+                >
+                  <span aria-hidden="true">●</span> {line.label}
                 </Text>
               </Box>
             </Flex>
@@ -212,14 +262,14 @@ function ApplicationFooter() {
 // MAIN COMPONENT
 // =============================================================================
 
-export function ApplicationLayoutContent({ children }: ApplicationLayoutContentProps) {
+export function ApplicationLayoutContent({ children, status }: ApplicationLayoutContentProps) {
   return (
     <Flex
       direction="column"
       minHeight="100vh"
       className="application-layout"
     >
-      <ApplicationHeader />
+      <ApplicationHeader status={status} />
 
       {/* Main Content */}
       <Box

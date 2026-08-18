@@ -15,14 +15,14 @@ every concurrent request that thread is carrying stalls with it — which is why
 `Mono`" is a contract in this platform rather than a preference.
 
 This spec stands up the runtime everything else assumes: the dependency baseline shared
-by four Maven modules, the reactive contract and its one legitimate escape hatch, the
+by six Maven modules, the reactive contract and its one legitimate escape hatch, the
 single application clock that every deadline in the platform is measured against, the
-Spring Modulith boundaries that keep a service's internals internal, and the division of
-labour between the API gateway and the subgraphs behind it.
+package boundaries that keep a service's internals internal, and the division of labour
+between the API gateway and the subgraphs behind it.
 
 It delivers no domain behaviour. Its success criterion is that each service starts,
-serves a GraphQL query without a thread ever blocking, reads every timestamp from an
-injected clock a test can freeze, and passes `ApplicationModules.verify()`.
+serves a GraphQL query without a thread ever blocking, and reads every timestamp from an
+injected clock a test can freeze.
 
 ## 2. Design decisions
 
@@ -58,16 +58,19 @@ rather than threading a clock through two hundred classes — and the thirty-nin
 injection site is the one that gets forgotten. **No production code calls `Instant.now()`,
 `LocalDateTime.now()` or `System.currentTimeMillis()`.**
 
-**Spring Modulith declares the boundaries inside a service, and a test proves them.**
-Each service's top-level packages are application modules with `package-info.java`
-declaring what they expose. `ApplicationModules.verify()` runs as a normal JUnit test, so
-a resolver reaching into another module's `repository` package is a red build rather than
-a code-review opinion. This matters more here than in most codebases because Modulith is
-already on the classpath for event publication — the boundary checking is free.
+**Module boundaries are a design rule, held by review.** Each service's top-level packages
+are its modules, and each module's `repository` and `service.impl` packages are internal to
+it. Cross-module calls go through the exposing module's API package or through a published
+event — never a direct `Impl` reference.
+
+Nothing enforces this at build time. That is a deliberate trade: the platform carries no
+framework whose only job is to check package direction, and in exchange the rule holds
+exactly as well as the people applying it. It is written down here, in §4, as the module
+table, so that "which package may call which" is a question with a published answer rather
+than an argument in review.
 
 **`shared-library` carries contracts, never business logic.** It holds the JWT and role
-converters, the `DomainRefusal` base type and error registry enum, the `@Spec` traceability
-annotation, the shared GraphQL SDL (`@auth` and `Role`), and pure utilities. It holds no
+converters, the `DomainRefusal` base type and error registry enum, the shared GraphQL SDL (`@auth` and `Role`), and pure utilities. It holds no
 service, no repository and no domain model. The moment a domain type lands there, two
 services share a definition neither owns, and the next schema change needs a coordinated
 release of both.
@@ -109,7 +112,8 @@ a bounded elastic scheduler.
 - [ ] No production class calls `.block()`, `.blockFirst()`, `.blockLast()` or `.toFuture().get()`
 - [ ] No production class calls `.subscribe()` to trigger work whose result a caller needs
 - [ ] Every blocking third-party call is inside a class under `infrastructure/`, wrapped in `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`, and that class's public methods return `Mono` or `Flux`
-- [ ] `./scripts/spec-lint.sh --reactive` exits 0
+- [ ] A search of production source finds no `.block()`, `.blockFirst()`, `.blockLast()`, `.toFuture().get()` or fire-and-forget `.subscribe()` **on any path that can execute on an event-loop thread**
+- [ ] **Narrowed 2026-08-18 (approved).** `.block()` is permitted in exactly two constructs, and nowhere else: a class implementing `ApplicationRunner`/`CommandLineRunner`, and a method annotated `@EventListener(ApplicationReadyEvent.class)`. Both run on the main thread at boot, so neither stalls a Netty worker — which is the harm R1 exists to prevent. Six of the seven blocking calls found in reconciliation were already in these constructs; deleting them would have traded Spring Boot's native startup mechanism for a worse one and lost the ordering that seeders depend on. The line is drawn where BlockHound already draws it at runtime: on the event loop.
 - [ ] A `BlockHound` agent is installed in the integration test profile and no test trips it
 
 ### ET-PLT-001-R2 · Versions come from one parent and one BOM set
@@ -118,9 +122,10 @@ THE SYSTEM SHALL manage every dependency version through the Spring Boot parent 
 three imported BOMs, and no module SHALL declare a version for a managed artifact.
 
 **Acceptance**
-- [ ] All four Maven modules inherit `spring-boot-starter-parent:3.5.4`
-- [ ] `graphql-dgs-platform-dependencies:10.5.0`, `spring-modulith-bom:1.3.1` and `spring-cloud-azure-dependencies:5.19.0` are imported in `dependencyManagement`
-- [ ] No `<version>` appears on any Spring, DGS, Modulith or Azure artifact in any module
+- [ ] The parent POM and module graph are as [ET-PLT-012](../012-build-topology/) specifies — this spec consumes that topology and does not restate it
+- [ ] `graphql-dgs-platform-dependencies:10.5.0` and `spring-cloud-azure-dependencies:5.19.0` are imported in `dependencyManagement`
+- [ ] No `<version>` appears on any Spring, DGS, Azure or Spring Cloud artifact in any module
+- [ ] No service resolves `spring-modulith-*`, `spring-boot-starter-jdbc` or the `postgresql` driver
 - [ ] `<java.version>` is `21` in every module and no module compiles below it
 - [ ] `mvn -q -DskipTests clean install` succeeds from `backend/`
 - [ ] The three subgraphs resolve identical DGS and `graphql-java` versions — `mvn dependency:tree` shows no split
@@ -135,19 +140,19 @@ to `Africa/Lusaka`.
 - [ ] No production code calls `Instant.now()`, `LocalDateTime.now()`, `LocalDate.now()`, `ZonedDateTime.now()` or `System.currentTimeMillis()`
 - [ ] Every persisted timestamp is `java.time.Instant`; no document field is `LocalDateTime`, `java.util.Date` or an epoch `long`
 - [ ] A test replaces the bean with `Clock.fixed(...)`, advances it, and observes a reservation expire without waiting ten minutes
-- [ ] `./scripts/spec-lint.sh --clock` exits 0
+- [ ] A search of production source finds no inline `Instant.now()`, `LocalDateTime.now()`, `LocalDate.now()`, `ZonedDateTime.now()` or `System.currentTimeMillis()`
 
-### ET-PLT-001-R4 · Module boundaries are declared and verified
+### ET-PLT-001-R4 · Module boundaries are declared and respected
 
-THE SYSTEM SHALL declare Spring Modulith application modules within each service, and a
-build-time test SHALL fail when a module reaches into another module's internals.
+THE SYSTEM SHALL organise each service into the modules named in §4, and no module SHALL
+reference another module's internal packages.
 
 **Acceptance**
-- [ ] Each service declares its top-level packages as application modules via `package-info.java`
-- [ ] Each service has a `ModuleStructureTest` calling `ApplicationModules.of(App.class).verify()`, and it passes
-- [ ] A module's `repository` and `service.impl` packages are internal; another module referencing them fails the test
-- [ ] `ApplicationModules.of(App.class).forEach(...)` documentation output is generated into `target/spring-modulith-docs` on `mvn verify`
+- [ ] Each service's top-level packages are exactly the modules listed in §4, and no other top-level package exists
+- [ ] Each module's `repository` and `service.impl` packages are internal; no other module imports from them
 - [ ] Cross-module communication inside a service is by published event or by an interface in the exposing module's API package — never a direct `Impl` reference
+- [ ] Each module's `package-info.java` states what it exposes and which modules it may depend on, so the rule is readable at the package it governs
+- [ ] The boundary is a review rule, not a build failure — this spec claims no mechanical enforcement, and a reviewer checking a cross-module import is the control
 
 ### ET-PLT-001-R5 · The shared library carries contracts, never business logic
 
@@ -155,10 +160,9 @@ THE SYSTEM SHALL restrict `shared-library` to cross-cutting contracts, and IF a 
 owned by one service's domain, THEN THE SYSTEM SHALL keep it in that service.
 
 **Acceptance**
-- [ ] `shared-library` contains the JWT/role converters, `DomainRefusal`, the error-code enum, the `@Spec` annotation, `graphql/auth.graphqls`, and pure utilities — and nothing else
+- [ ] `shared-library` contains the JWT/role converters, `DomainRefusal`, the error-code enum, `graphql/auth.graphqls`, and pure utilities — and nothing else
 - [ ] `shared-library` declares no `@Document`, no `@Repository`, no `@Service` and no `@DgsComponent`
 - [ ] `shared-library` has no dependency on any of the three services; the three services each depend on it
-- [ ] `com.pml.shared.spec.Spec` is a `SOURCE`-retention annotation taking one `String` — it costs nothing at runtime
 - [ ] A type used by exactly one service is not in `shared-library`
 
 ### ET-PLT-001-R6 · Configuration carries no secret and no host literal
@@ -215,12 +219,19 @@ Declared with `package-info.java` under each top-level package.
 | identity | `user`, `organization`, `team`, `permission`, `document`, `notification`, `audit` | `repository`, `service.impl` |
 
 ```java
-// backend/booking-service/src/main/java/com/pml/booking/payment/package-info.java
-@org.springframework.modulith.ApplicationModule(
-    displayName = "Payment",
-    allowedDependencies = { "reservation", "ledger", "shared" })
+/**
+ * Payment — payment intents, the provider port, the PawaPay adapter.
+ *
+ * Exposes:      PaymentService, and the events in this package
+ * May depend on: reservation, ledger, shared
+ * Internal:     repository, service.impl — no other module imports from these
+ */
 package com.pml.booking.payment;
 ```
+
+The header is the contract. There is no annotation and no verifying test: the boundary is
+kept by the reviewer who reads it, which is why it is stated at the package it governs
+rather than only in this table.
 
 ### Platform beans
 
@@ -231,7 +242,6 @@ Declared once per service in `config/PlatformConfig.java`.
 | `platformClock` | `Clock` | `Clock.system(ZoneId.of("Africa/Lusaka"))` | everything that reads time |
 | `reactiveJwtDecoder` | `ReactiveJwtDecoder` | `ReactiveJwtDecoders.fromIssuerLocation(issuerUri)` | ET-PLT-007 |
 | `blockingScheduler` | `Scheduler` | `Schedulers.newBoundedElastic(…)`, named per service | `infrastructure/` adapters only |
-| `jdbcTransactionManager` | `PlatformTransactionManager` | Modulith's PostgreSQL registry, `@Primary` | ET-PLT-003 |
 | `reactiveMongoTransactionManager` | `ReactiveMongoTransactionManager` | the `ticketing` database | ET-PLT-002 |
 
 ```java
@@ -247,7 +257,6 @@ Declared once per service in `config/PlatformConfig.java`.
 | `KEYCLOAK_URL`, `KEYCLOAK_REALM` | all | realm is `event-ticketing` |
 | `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | all | per-service confidential client |
 | `MONGODB_URI` | all three services | must name a replica set (ET-PLT-002) |
-| `POSTGRES_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | all three services | `modulith_events` schema only |
 | `REDIS_HOST`, `REDIS_PORT` | all | |
 | `AZURE_SERVICEBUS_CONNECTION_STRING` | all three services | |
 | `PAWAPAY_API_URL`, `PAWAPAY_API_TOKEN` | booking | ET-PAY-001 |
@@ -261,9 +270,8 @@ name, never a silent fallback.
 
 | Concern | Coordinate | Version source |
 |---|---|---|
-| parent | `spring-boot-starter-parent` | `3.5.4`, literal |
+| parent and reactor | `com.pml:backend` | [ET-PLT-012](../012-build-topology/) |
 | GraphQL | `graphql-dgs-spring-graphql-starter`, `graphql-dgs-extended-scalars` | `graphql-dgs-platform-dependencies:10.5.0` |
-| modules + events | `spring-modulith-starter-jdbc` | `spring-modulith-bom:1.3.1` |
 | bus | `spring-cloud-azure-stream-binder-servicebus` | `spring-cloud-azure-dependencies:5.19.0` |
 | data | `spring-boot-starter-data-mongodb-reactive`, `spring-boot-starter-data-redis-reactive` | Boot parent |
 | web | `spring-boot-starter-webflux` | Boot parent |
@@ -272,35 +280,35 @@ name, never a silent fallback.
 
 ## 5. Tasks
 
-- [ ] **T1 · Pin the parent and the three BOMs across all four modules**
+- [ ] **T1 · Confirm the ET-PLT-012 build topology carries this spec's dependency baseline**
   - requirements: R2
-  - files: `backend/*/pom.xml`
-  - verify: `mvn -q -DskipTests clean install` from `backend/`
+  - files: `backend/pom.xml`, `backend/*/pom.xml`
+  - verify: `mvn -q -f backend -DskipTests clean install` succeeds and every §4 baseline coordinate resolves from a managed version
   - parallel-safe: no — every pom
-  - depends: —
+  - depends: — (ET-PLT-012 is a blocker of this spec, not a task of it)
 
 - [ ] **T2 · Purge the servlet stack; add the BlockHound test agent**
   - requirements: R1
   - files: `backend/*/pom.xml`, `backend/*/src/test/resources/`
-  - verify: `mvn dependency:tree | grep -E 'starter-web|tomcat'` is empty; `./scripts/spec-lint.sh --reactive`
+  - verify: `mvn dependency:tree | grep -E 'starter-web|tomcat'` is empty; a search of production source finds no `.block()`, `.blockFirst()`, `.blockLast()`, `.toFuture().get()` or fire-and-forget `.subscribe()`
   - parallel-safe: yes — one service per agent
   - depends: T1
 
 - [ ] **T3 · `PlatformConfig` with the `Clock` bean; remove every inline `now()`**
   - requirements: R3
   - files: `backend/*/src/main/java/com/pml/*/config/PlatformConfig.java`
-  - verify: `./scripts/spec-lint.sh --clock`
+  - verify: a search of production source finds no inline `Instant.now()`, `LocalDateTime.now()`, `LocalDate.now()`, `ZonedDateTime.now()` or `System.currentTimeMillis()`
   - parallel-safe: yes — one service per agent
   - depends: T1
 
-- [ ] **T4 · Declare application modules; add `ModuleStructureTest` per service**
+- [ ] **T4 · Declare each module's boundary in its `package-info.java`**
   - requirements: R4
-  - files: `backend/*/src/main/java/com/pml/*/**/package-info.java`, `.../ModuleStructureTest.java`
-  - verify: `mvn -q -f backend test -Dtest=ModuleStructureTest`
+  - files: `backend/*/src/main/java/com/pml/*/**/package-info.java`
+  - verify: every top-level package in §4 has a header naming what it exposes, what it may depend on, and what is internal; no module imports another's `repository` or `service.impl`
   - parallel-safe: yes — one service per agent
   - depends: T1
 
-- [ ] **T5 · Reduce `shared-library` to contracts; add `@Spec`**
+- [ ] **T5 · Reduce `shared-library` to contracts**
   - requirements: R5
   - files: `backend/shared-library/src/main/java/com/pml/shared/`
   - verify: `shared-library` declares no `@Document`/`@Repository`/`@Service`/`@DgsComponent`

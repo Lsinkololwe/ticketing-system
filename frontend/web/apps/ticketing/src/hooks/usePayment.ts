@@ -8,7 +8,7 @@ import { ZambianMobileProvider, MobileProviderInfo } from '@/types/payment';
  * Pure client-side utilities for the checkout: provider metadata, phone-number
  * validation and E.164 formatting, and prefix-based provider detection. The
  * actual payment is driven by the backend reservation pipeline
- * (`useReserveTickets` / `useCompleteReservation`) — this hook never touches
+ * (`useReserveTickets` / `usePayReservation`) — this hook never touches
  * card data or logs payment details.
  */
 export const MOBILE_PROVIDERS: Record<ZambianMobileProvider, MobileProviderInfo> = {

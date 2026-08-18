@@ -115,7 +115,7 @@ THE SYSTEM SHALL update balances only as a consequence of journal lines, and eve
 balance SHALL be reconcilable to the journal.
 
 **Acceptance**
-- [ ] No code outside `LedgerService` writes a balance field — `./scripts/spec-lint.sh --money` exits 0
+- [ ] No code outside `LedgerService` writes a balance field — no production field typed `double` or `float` names an amount, balance, price, fee, total or commission; every rounding is `HALF_UP`; no balance is assigned outside the ledger
 - [ ] The cached balance is updated in the same transaction as the lines that changed it
 - [ ] `recomputeBalance(accountId)` sums the journal and returns the authoritative figure
 - [ ] A test writes 1,000 random movements and asserts the cached balance equals the recomputed one exactly
@@ -396,7 +396,7 @@ Subgraph `booking`. Every field carries `@auth`; every finance field carries
 - [ ] **T3 · Balances as projections; `recomputeBalance`; the 1,000-movement test**
   - requirements: R3
   - files: `backend/booking-service/.../service/impl/LedgerServiceImpl.java`
-  - verify: `./scripts/spec-lint.sh --money`; cached equals recomputed exactly
+  - verify: no production field typed `double` or `float` names an amount, balance, price, fee, total or commission; every rounding is `HALF_UP`; no balance is assigned outside the ledger; cached equals recomputed exactly
   - parallel-safe: no
   - depends: T2
 

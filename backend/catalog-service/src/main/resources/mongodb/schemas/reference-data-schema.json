@@ -11,7 +11,9 @@
       "isSystem"
     ],
     "properties": {
-      "_id": { "bsonType": "objectId" },
+      "_id": {
+        "bsonType": "objectId"
+      },
       "_class": {
         "bsonType": "string",
         "description": "Spring Data type alias / discriminator"
@@ -19,12 +21,34 @@
       "type": {
         "bsonType": "string",
         "enum": [
-          "COUNTRY", "CURRENCY", "LANGUAGE", "TIMEZONE", "PROVINCE",
-          "MOBILE_MONEY_OPERATOR", "BANK",
-          "EVENT_TYPE", "EVENT_CATEGORY", "MUSIC_GENRE", "AGE_RESTRICTION",
+          "COUNTRY",
+          "CURRENCY",
+          "LANGUAGE",
+          "TIMEZONE",
+          "PROVINCE",
+          "MOBILE_MONEY_OPERATOR",
+          "BANK",
+          "EVENT_TYPE",
+          "EVENT_CATEGORY",
+          "MUSIC_GENRE",
+          "AGE_RESTRICTION",
           "KYB_DOCUMENT_TYPE",
-          "CANCELLATION_REASON", "REFUND_REASON", "REJECTION_REASON",
-          "TAX_RATE", "CARD_SCHEME"
+          "CANCELLATION_REASON",
+          "REFUND_REASON",
+          "REJECTION_REASON",
+          "TAX_RATE",
+          "CARD_SCHEME",
+          "TICKET_STATUS",
+          "PAYMENT_STATUS",
+          "PAYOUT_STATUS",
+          "REFUND_STATUS",
+          "CHARGEBACK_STATUS",
+          "ESCROW_STATUS",
+          "EVENT_STATUS",
+          "ORGANIZATION_STATUS",
+          "VERIFICATION_DOCUMENT_STATUS",
+          "TEAM_INVITATION_STATUS",
+          "RESERVATION_STATUS"
         ],
         "description": "OWASP A04 - reference type discriminator, bounded to the compiled enum"
       },
@@ -39,22 +63,43 @@
         "maxLength": 150
       },
       "description": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 1000
       },
       "parentType": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "enum": [
-          "COUNTRY", "CURRENCY", "LANGUAGE", "TIMEZONE", "PROVINCE",
-          "MOBILE_MONEY_OPERATOR", "BANK",
-          "EVENT_TYPE", "EVENT_CATEGORY", "MUSIC_GENRE", "AGE_RESTRICTION",
+          "COUNTRY",
+          "CURRENCY",
+          "LANGUAGE",
+          "TIMEZONE",
+          "PROVINCE",
+          "MOBILE_MONEY_OPERATOR",
+          "BANK",
+          "EVENT_TYPE",
+          "EVENT_CATEGORY",
+          "MUSIC_GENRE",
+          "AGE_RESTRICTION",
           "KYB_DOCUMENT_TYPE",
-          "CANCELLATION_REASON", "REFUND_REASON", "REJECTION_REASON",
-          "TAX_RATE", "CARD_SCHEME", null
+          "CANCELLATION_REASON",
+          "REFUND_REASON",
+          "REJECTION_REASON",
+          "TAX_RATE",
+          "CARD_SCHEME",
+          null
         ]
       },
       "parentCode": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 60
       },
       "displayOrder": {
@@ -62,19 +107,152 @@
         "minimum": 0,
         "maximum": 100000
       },
-      "isActive": { "bsonType": "bool" },
-      "isSystem": { "bsonType": "bool" },
-      "effectiveFrom": { "bsonType": ["date", "null"] },
-      "effectiveTo": { "bsonType": ["date", "null"] },
+      "isActive": {
+        "bsonType": "bool"
+      },
+      "isSystem": {
+        "bsonType": "bool"
+      },
+      "effectiveFrom": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "effectiveTo": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
       "metadata": {
-        "bsonType": ["object", "null"],
+        "bsonType": [
+          "object",
+          "null"
+        ],
         "description": "Per-type payload, shape enforced at the service layer (ReferenceMetadataValidator)"
       },
-      "createdAt": { "bsonType": ["date", "null"] },
-      "updatedAt": { "bsonType": ["date", "null"] },
-      "createdBy": { "bsonType": ["string", "null"], "maxLength": 100 },
-      "updatedBy": { "bsonType": ["string", "null"], "maxLength": 100 }
+      "createdAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "updatedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "createdBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "updatedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "semantic": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "OWASP A04 - What this value MEANS to the code. Enum-constrained so an administrator cannot invent a meaning no branch handles. Required for workflow types - see the anyOf rule below.",
+        "enum": [
+          "INITIAL",
+          "PENDING",
+          "IN_PROGRESS",
+          "SUCCEEDED",
+          "FAILED",
+          "CANCELLED",
+          null
+        ]
+      },
+      "allowedTransitions": {
+        "bsonType": "array",
+        "description": "Codes this value may move to. Empty means unconstrained.",
+        "items": {
+          "bsonType": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+        }
+      }
     },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "anyOf": [
+      {
+        "description": "Taxonomy types carry no semantic, because nothing branches on them.",
+        "properties": {
+          "type": {
+            "enum": [
+              "COUNTRY",
+              "CURRENCY",
+              "LANGUAGE",
+              "TIMEZONE",
+              "PROVINCE",
+              "MOBILE_MONEY_OPERATOR",
+              "BANK",
+              "EVENT_TYPE",
+              "EVENT_CATEGORY",
+              "MUSIC_GENRE",
+              "AGE_RESTRICTION",
+              "KYB_DOCUMENT_TYPE",
+              "CANCELLATION_REASON",
+              "REFUND_REASON",
+              "REJECTION_REASON",
+              "TAX_RATE",
+              "CARD_SCHEME"
+            ]
+          }
+        }
+      },
+      {
+        "description": "A workflow value MUST declare a semantic. Without one a record can reach a status no branch recognises - a payout that never moves, found when an organizer asks where the money went. Expressed here rather than only in Java so it survives a direct mongosh write, a migration script, or any future service.",
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "TICKET_STATUS",
+                  "PAYMENT_STATUS",
+                  "PAYOUT_STATUS",
+                  "REFUND_STATUS",
+                  "CHARGEBACK_STATUS",
+                  "ESCROW_STATUS",
+                  "EVENT_STATUS",
+                  "ORGANIZATION_STATUS",
+                  "VERIFICATION_DOCUMENT_STATUS",
+                  "TEAM_INVITATION_STATUS",
+                  "RESERVATION_STATUS"
+                ]
+              }
+            }
+          },
+          {
+            "required": [
+              "semantic"
+            ],
+            "properties": {
+              "semantic": {
+                "bsonType": "string",
+                "enum": [
+                  "INITIAL",
+                  "PENDING",
+                  "IN_PROGRESS",
+                  "SUCCEEDED",
+                  "FAILED",
+                  "CANCELLED"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
   }
 }

@@ -87,9 +87,10 @@ stuck money.
 from on-disk SDL, so composition is provable in CI without a database, a broker and three
 JVMs. Live introspection composition is a developer convenience, not the gate.
 
-**Every test carries its spec ID.** `@Tag("ET-FIN-002")` on the class and
-`@Spec("ET-FIN-002-R3")` on the method, which makes `mvn test -Dgroups=ET-FIN-002` the
-answer to *what verifies this* and makes `spec-status.sh` a grep rather than a judgement.
+**Every test carries its spec ID.** `@Tag("ET-FIN-002")` on the class, and each method's
+display name naming the requirement it proves — `ET-FIN-002-R3`. That makes
+`mvn test -Dgroups=ET-FIN-002` the answer to *what verifies this*, using nothing but
+JUnit's own tagging.
 
 **The suite is fast enough to run.** Layers 1–3 complete in under a minute and run on
 every save; layers 4–5 run in CI and complete the whole suite in under ten minutes. A
@@ -186,10 +187,13 @@ THE SYSTEM SHALL tag every test with the spec it verifies, and the roll-up SHALL
 untested and drifting specs.
 
 **Acceptance**
-- [ ] Every test class carries `@Tag("ET-<AREA>-<NNN>")`; every test method carries `@Spec("ET-<AREA>-<NNN>-R<n>")`
+- [ ] Every test class carries `@Tag("ET-<AREA>-<NNN>")`, and every test method's display name names the requirement it verifies — `ET-<AREA>-<NNN>-R<n>`
 - [ ] `mvn -f backend test -Dgroups=ET-FIN-002` runs exactly that spec's tests
-- [ ] `./scripts/spec-status.sh` reports `UNTESTED` for a spec with implementing code and no tagged test
-- [ ] `./scripts/spec-status.sh --drift` exits non-zero when a spec claims `verified` with unchecked boxes
+- [ ] A `-Dgroups` selection that matches **no test anywhere in the reactor fails**. This is the single most important box in this spec: without it every spec's `verify:` block passes green having executed zero tests, and `verified` becomes a status the corpus can award itself by accident
+- [ ] The guard is `-DfailIfNoTests=true` on a **module-scoped** run. A spec's tests live in exactly one service, so `mvn -f backend/<module> test -Dgroups=<ID> -DfailIfNoTests=true` fails when the tag matches nothing — whereas the same flag across the whole reactor would fail the five modules that correctly have nothing to run
+- [ ] Every spec's `verify:` block uses the module-scoped form, so no spec can verify green having executed zero tests
+- [ ] A cross-cutting spec whose tests span services runs the reactor form and names, in its own `verify:` block, the modules that must contribute tests
+- [ ] Running a tag no test carries fails, and the failure names the tag
 - [ ] Coverage is not the gate; the gate is that every acceptance box names a test that asserts it
 
 ## 4. Model
@@ -229,7 +233,6 @@ Declared once, in `TestContainers`, matching what is deployed.
 | Image | Version | Notes |
 |---|---|---|
 | `mongo` | 8.x | **`--replSet rs0`**, initiated in a `@BeforeAll`; a standalone container must fail R2 |
-| `postgres` | 16 | `modulith_events` schema created on start |
 | `redis` | 7.x | |
 | Service Bus | — | Spring Cloud Stream **test binder**; no Azure dependency |
 
@@ -239,7 +242,7 @@ Declared once, in `TestContainers`, matching what is deployed.
 @Tag("ET-TKT-001")
 class ReserveTicketsRefusalTest extends IntegrationTest {
 
-    @Test @Spec("ET-TKT-001-R2")
+    @Test @DisplayName("ET-TKT-001-R2")
     void refusesWhenSoldOut() {
         clock.set(SALE_OPEN);
         var inventory = given.inventory(tierId).capacity(50).available(0);
@@ -260,7 +263,7 @@ second proves the platform did not quietly take the ticket anyway.
 ### The concurrency-test shape
 
 ```java
-@Test @Spec("ET-PLT-002-R6")
+@Test @DisplayName("ET-PLT-002-R6")
 void sellsExactlyTheAvailableQuantity() {
     given.inventory(tierId).capacity(50).available(50);
 
@@ -285,35 +288,35 @@ pipeline gets long — it is the stage that proves the platform does not oversel
 
 ## 5. Tasks
 
-- [ ] **T1 · `shared-library` test-jar; `TestContainers` singleton with a real replica set**
+- [x] **T1 · `shared-library` test-jar; `TestContainers` singleton with a real replica set** — *done 2026-08-18. `MongoReplicaSet` (mongo:8.0, `--replSet`, reused) + `MongoStandalone` (plain `mongod`). `TransactionRealityTest` proves both halves: the two-document rollback leaves nothing on `REPLICA_SET_PRIMARY`, and on `STANDALONE` the transaction is refused outright while the un-transacted write survives its failure. Test-jar verified to ship the harness. `-Dapi.version=${docker.api.version}` pinned in surefire — without it Testcontainers dies on Docker Engine 29 with a misleading "no valid Docker environment".*
   - requirements: R2
   - files: `backend/shared-library/src/test/java/com/pml/shared/testing/`, `pom.xml`
   - verify: a transaction test passes on the container and fails against a standalone `mongod`
   - parallel-safe: no — every service depends on it
   - depends: —
 
-- [ ] **T2 · `TestClock`, the test context override, and the auditing provider**
+- [~] **T2 · `TestClock`, the test context override, and the auditing provider** — *partial, 2026-08-18. `TestClock` built and proven (frozen, `advance`, `justBefore`/`justAfter`, refuses to rewind). The stated acceptance — advancing across a sales-window close to observe `TIER_NOT_ON_SALE` — **cannot be proven until [ET-CAT-002](../../catalog/002-ticket-tiers-and-inventory/) exists**, and is deferred to that slice. The test-context override and auditing provider await ET-PLT-001's `Clock` bean.*
   - requirements: R3
   - files: `.../testing/TestClock.java`, per-service test configuration
   - verify: a test advances across a sales-window close and observes `TIER_NOT_ON_SALE`
   - parallel-safe: no
   - depends: T1
 
-- [ ] **T3 · `Refusals`, `Persistence`, `Ledger`, `Inventory` assertions**
+- [~] **T3 · `Refusals`, `Persistence`, `Ledger`, `Inventory` assertions** — *3 of 4 done, 2026-08-18. `Persistence`, `Inventory` and `Ledger` are built and **each has been watched failing** against a seeded defect: write-then-throw, a leaked hold (drift −1), a negative counter, an unbalanced entry, a single-line entry, a negative amount, and money stored as a `double`. `Refusals` waits on [ET-PLT-005](../005-error-contract/)'s `ErrorCode`/`DomainRefusal`, which do not exist yet.*
   - requirements: R4
   - files: `.../testing/`
   - verify: a deliberately write-then-throw service fails the assertion
   - parallel-safe: yes
   - depends: T1
 
-- [ ] **T4 · `Concurrency.inParallel` and the four contention tests**
+- [~] **T4 · `Concurrency.inParallel` and the four contention tests** — *primitive done, 2026-08-18. Virtual threads released together on one start gate (submitting to a pool does not contend — the first finishes before the last begins). `repeat()` for R5's "meaningful rather than lucky". Proven both ways on a real replica set: the conditional `findAndModify` yields **exactly 50 of 200** over 5 runs with conservation intact, and the forbidden read-modify-write **oversells** — same workload, opposite outcomes, which is what proves the contention is real. The other three scenarios (idempotency key, payout approval, escrow debit) wait on ET-PAY-001, ET-FIN-003 and ET-FIN-001.*
   - requirements: R5
   - files: `.../testing/Concurrency.java`, `backend/booking-service/src/test/.../it/`
   - verify: 200-against-50 yields exactly 50; repeated runs are stable
   - parallel-safe: no — depends on T1's replica set
   - depends: T1, T3
 
-- [ ] **T5 · `Providers` WireMock stubs, failure-first**
+- [~] **T5 · `Providers` WireMock stubs, failure-first** — *stubs done, fixtures not. 2026-08-18. All six R6 failure modes have a named stub and a test: 503, connection reset, read timeout, duplicate callback, callback-overtakes-response, and stuck `PENDING`. WireMock 3.13.1 `standalone` (shaded, so it cannot collide with Spring's Jetty/Jackson), managed in the parent. **The remaining acceptance box — fixtures recorded from real sandbox responses — is NOT met**: the bodies are structurally-shaped placeholders, and that box must not be ticked until someone records against the PawaPay sandbox.*
   - requirements: R6
   - files: `.../testing/Providers.java`, recorded sandbox fixtures
   - verify: the six failure modes of R6 each have a named stub and a test
@@ -337,9 +340,16 @@ pipeline gets long — it is the stage that proves the platform does not oversel
 - [ ] **T8 · Tag every test; wire the three-stage CI split**
   - requirements: R1, R7
   - files: every test class, `.github/workflows/`
-  - verify: `./scripts/spec-status.sh`; fast stage under 60 s; full suite under 10 min
+  - verify: fast stage under 60 s; full suite under 10 min
   - parallel-safe: no — one workflow
   - depends: T2, T3, T4, T5, T6, T7
+
+- [x] **T9 · `-DfailIfNoTests=true` on every module-scoped verify command** — *done 2026-08-18; 47 commands across 37 spec.yaml files. Proven: a bogus tag exits 0 without the flag and 1 with it.*
+  - requirements: R7
+  - files: every `spec.yaml` `verify:` block
+  - verify: `mvn -f backend/<module> test -Dgroups=ET-XXX-999 -DfailIfNoTests=true` exits non-zero rather than reporting success on an empty selection
+  - parallel-safe: yes — one spec per agent
+  - depends: —
 
 ## 6. Out of scope
 

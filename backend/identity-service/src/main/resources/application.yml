@@ -15,34 +15,6 @@ spring:
   reactor:
     context-propagation: auto
 
-  modulith:
-    events:
-      jdbc:
-        enabled: true
-        schema: dev_ticketing_modulith
-        schema-initialization:
-          enabled: true
-      externalization:
-        enabled: false
-      republish-outstanding-events-on-restart: true
-      completion-mode: delete
-    async-termination:
-      enabled: true
-      timeout: 30s
-
-  datasource:
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/shared_db?currentSchema=dev_ticketing_modulith}
-    username: ${POSTGRES_USER:app_user}
-    password: ${POSTGRES_PASSWORD:app_password}
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      pool-name: ModulithEventsPool
-      minimum-idle: 2
-      maximum-pool-size: 5
-      idle-timeout: 30000
-      connection-timeout: 20000
-      max-lifetime: 1800000
-
   cloud:
     azure:
       servicebus:
@@ -93,8 +65,10 @@ spring:
       client:
         registration:
           identity-service:
-            client-id: identity-service
-            client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+            client-id: ${IDENTITY_SERVICE_CLIENT_ID:myticketzm-identity-service}
+            # ET-PLT-001 R6 · no default. Unset in prod must FAIL naming the variable,
+            # not start against Keycloak with a credential anyone can read in git.
+            client-secret: ${IDENTITY_SERVICE_SECRET}
             authorization-grant-type: client_credentials
             scope: internal-read,internal-write
         provider:
@@ -123,10 +97,11 @@ keycloak:
   server-url: ${KEYCLOAK_URL:http://localhost:8084}
   realm: ${KEYCLOAK_REALM:myticketzm}
   admin-username: ${KEYCLOAK_ADMIN_USER:admin}
-  admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
+  # ET-PLT-001 R6 · no default. This previously fell back to "admin".
+  admin-password: ${KEYCLOAK_ADMIN_PASSWORD}
   admin-realm: master
-  client-id: identity-service
-  client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
+  client-id: ${IDENTITY_SERVICE_CLIENT_ID:myticketzm-identity-service}
+  client-secret: ${IDENTITY_SERVICE_SECRET}
   # Platform-admin realm split (OFF by default). Add the admin realm issuer to enable
   # validating tokens from BOTH realms, selected by the token's `iss` claim, e.g.:
   #   KEYCLOAK_TRUSTED_ISSUERS=http://localhost:8084/realms/myticketzm-admin
@@ -171,8 +146,6 @@ logging:
   level:
     root: INFO
     com.pml.identity: DEBUG
-    org.springframework.modulith: DEBUG
-    org.springframework.modulith.events: DEBUG
     # Spring Security debugging - set to INFO to disable
     # Core security
     org.springframework.security: TRACE
@@ -238,6 +211,9 @@ identity:
     push:
       enabled: false
       provider: fcm
+  migrations:
+    enabled: ${IDENTITY_MIGRATIONS_ENABLED:true}
+    fail-fast: ${IDENTITY_MIGRATIONS_FAIL_FAST:true}
 
 messaging:
   provider: ${MESSAGING_PROVIDER:whatsapp}

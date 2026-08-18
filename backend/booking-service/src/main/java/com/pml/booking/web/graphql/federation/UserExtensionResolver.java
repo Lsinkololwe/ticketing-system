@@ -14,6 +14,7 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Set;
+import java.util.Arrays;
 
 /**
  * ============================================================================
@@ -50,11 +51,9 @@ public class UserExtensionResolver {
     /**
      * Statuses that represent active tickets (not cancelled/refunded).
      */
-    private static final Set<TicketStatus> ACTIVE_STATUSES = Set.of(
-            TicketStatus.PURCHASED,
-            TicketStatus.CONFIRMED,
-            TicketStatus.VALIDATED
-    );
+    private static final Set<TicketStatus> ACTIVE_STATUSES =
+            Arrays.stream(TicketStatus.values()).filter(TicketStatus::isSold)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     /**
      * ========================================================================

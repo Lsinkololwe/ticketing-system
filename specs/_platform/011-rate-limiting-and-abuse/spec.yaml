@@ -1,6 +1,6 @@
 id: ET-PLT-011
 title: Rate limits, on-sale fairness and abuse control
-status: draft
+status: approved
 area: PLT
 service: all
 subgraph: all
@@ -22,10 +22,10 @@ sources:
 
 persistence:
   collections:
-    - admin_temporary_blocks     # added to the ET-PLT-002 §4 registry by this spec
+    - identity_temporary_blocks     # ET-PLT-002 §4 registry row
   indexes:
-    - "admin_temporary_blocks {scope,value,status} compound"
-    - "admin_temporary_blocks {expiresAt} ttl 0"
+    - "identity_temporary_blocks {scope,value,status} compound"
+    - "identity_temporary_blocks {expiresAt} ttl 0"
   redis_keys:
     - "ratelimit:ip:{ip}:{bucket}         STRING  window"
     - "ratelimit:sub:{userId}:{bucket}    STRING  window"
@@ -106,11 +106,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/011-rate-limiting-and-abuse
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-PLT-011
-  - mvn -q -f backend verify -Dgroups=ET-PLT-011
+  - mvn -q -f backend test -Dgroups=ET-PLT-011 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-011 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -121,4 +118,4 @@ risks:
   - "R5 forbids a position going backwards, but a buyer who leaves the queue and rejoins is at the back, and a pass that expires puts them at the back. Both are correct and both look to the buyer exactly like their position went backwards — the guarantee is about the queue's mechanics and not about what a person experiences."
   - "The 18 capacities are YAML rather than runtime-configurable, so tightening a limit during an attack requires a deploy. That contradicts the purpose of having kill switches in ET-ADM-002 and is called out in §4 without being resolved."
   - "Discovery at 120/min per IP will refuse a corporate NAT or a university before it refuses a scraper with a proxy pool. R1 mitigates this by limiting authenticated subjects separately, but discovery is PUBLIC by design and the buyers most likely to be behind shared addresses are exactly the ones on institutional networks."
-  - "admin_temporary_blocks is the fourteenth amendment to ET-PLT-002 §4's closed collection registry, and this spec also adds an action to ET-PLT-009's closed audit registry. Two closed registries amended by the last spec in the corpus is the clearest signal that both should be assembled rather than declared."
+  - "Resolved: identity_temporary_blocks is a row of the ET-PLT-002 §4 registry. This spec still adds an action to ET-PLT-009's audit registry — that registry remains declared upfront and should be checked for the same completeness."

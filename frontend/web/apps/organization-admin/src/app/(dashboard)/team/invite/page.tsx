@@ -12,6 +12,11 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  useMyTeamMembers,
+  useInviteTeamMembers,
+  type InviteResult,
+} from '@pml.tickets/shared/api/organization-admin/modules/team';
+import {
   Box,
   Flex,
   Text,
@@ -152,7 +157,9 @@ export default function InviteMemberPage() {
     { id: '1', email: '', role: 'CONTRIBUTOR' },
   ]);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isSending, setIsSending] = useState(false);
+  const { organizationId } = useMyTeamMembers();
+  const { inviteMembers, loading: isSending } = useInviteTeamMembers();
+  const [sendFailures, setSendFailures] = useState<InviteResult[]>([]);
   const [message, setMessage] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -212,22 +219,43 @@ export default function InviteMemberPage() {
 
   const handleSend = useCallback(async () => {
     if (!validateInvites()) return;
-
-    setIsSending(true);
-    try {
-      // TODO: Send invites via GraphQL API
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      console.log('Sending invites:', invites, 'Message:', message);
-      setShowSuccess(true);
-      setTimeout(() => {
-        router.push('/team');
-      }, 2000);
-    } catch (error) {
-      console.error('Failed to send invites:', error);
-    } finally {
-      setIsSending(false);
+    if (!organizationId) {
+      setSendFailures([
+        { email: '', success: false, error: 'Your organization is still loading. Try again in a moment.' },
+      ]);
+      return;
     }
-  }, [invites, message, validateInvites, router]);
+
+    setSendFailures([]);
+
+    const results = await inviteMembers(
+      organizationId,
+      invites.map((invite) => ({
+        email: invite.email,
+        role: invite.role,
+        message: message || null,
+      }))
+    );
+
+    const failed = results.filter((result) => !result.success);
+
+    // Per-address outcomes, not a single pass/fail. If three of five invites
+    // were rejected, the user must be able to see WHICH three — otherwise the
+    // only safe recovery is to send all five again and double-invite two people.
+    if (failed.length > 0) {
+      setSendFailures(failed);
+      // Keep only the rows that failed, so pressing send again retries exactly
+      // those and cannot re-invite anyone who already received one.
+      const failedEmails = new Set(failed.map((result) => result.email));
+      setInvites((prev) => prev.filter((invite) => failedEmails.has(invite.email)));
+      return;
+    }
+
+    setShowSuccess(true);
+    setTimeout(() => {
+      router.push('/team');
+    }, 2000);
+  }, [invites, message, validateInvites, router, organizationId, inviteMembers]);
 
   if (showSuccess) {
     return (
@@ -406,6 +434,43 @@ export default function InviteMemberPage() {
           </Text>
         </Box>
       </Card>
+
+      {/* Per-address failures.
+          Listed individually so the user can see exactly which invitations did
+          not go out. The rows that succeeded have already been cleared from the
+          form, so pressing Send again retries only these and cannot
+          double-invite anyone. */}
+      {sendFailures.length > 0 && (
+        <Box
+          className="error-card"
+          mb="4"
+          style={{
+            padding: 'var(--space-4)',
+            borderRadius: 'var(--card-radius)',
+            border: '1px solid var(--red-a6)',
+          }}
+          role="alert"
+          data-testid="invite-failures"
+        >
+          <Text as="p" size="2" weight="medium" style={{ color: 'var(--status-danger-11)' }}>
+            {sendFailures.length === 1
+              ? 'One invitation could not be sent.'
+              : `${sendFailures.length} invitations could not be sent.`}
+          </Text>
+          {sendFailures.map((failure) => (
+            <Text
+              key={failure.email || 'unknown'}
+              as="p"
+              size="1"
+              mt="1"
+              style={{ color: 'var(--status-danger-11)' }}
+            >
+              {failure.email ? `${failure.email} — ` : ''}
+              {failure.error ?? 'Rejected by the server.'}
+            </Text>
+          ))}
+        </Box>
+      )}
 
       {/* Actions */}
       <Flex justify="between">

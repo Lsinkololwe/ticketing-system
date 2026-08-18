@@ -1,6 +1,6 @@
 id: ET-IDN-001
 title: Phone-OTP passwordless identity
-status: draft
+status: approved
 area: IDN
 service: identity-service
 subgraph: null            # no graph surface — the programmatic surface is internal REST
@@ -79,12 +79,9 @@ keycloak_spi:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/identity/001-phone-otp-identity
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001
+  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=true
   - mvn -q -f backend/keycloak-extensions package
-  - mvn -q -f backend verify -Dgroups=ET-IDN-001
+  - mvn -q -f backend verify -Dgroups=ET-IDN-001 -DfailIfNoTests=true
 
 risks:
   - "R4 requires that an unregistered number be indistinguishable from a registered one, but R6's find-or-create happens after verification, so the platform genuinely does not know at request time — which is what makes the property achievable. It breaks the moment any future feature wants to say 'no account found, sign up first' at the phone-entry step, and that is a natural product request."

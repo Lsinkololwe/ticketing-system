@@ -1,7 +1,12 @@
 package com.pml.identity.service.impl;
 
+import com.pml.identity.domain.RequiredDocuments;
 import com.pml.identity.domain.enums.MemberStatus;
-import com.pml.identity.domain.enums.OrganizationStatus;
+import com.pml.identity.domain.model.VerificationDocument;
+import com.pml.identity.exception.MissingRequiredDocumentsException;
+import com.pml.identity.repository.VerificationDocumentRepository;
+import com.pml.shared.constants.DocumentStatus;
+import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.domain.enums.OrganizationType;
 import com.pml.identity.domain.event.OrganizationApprovedEvent;
 import com.pml.identity.domain.model.Organization;
@@ -30,6 +35,7 @@ import reactor.core.publisher.Mono;
 
 import java.text.Normalizer;
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -52,6 +58,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     private static final Pattern WHITESPACE = Pattern.compile("[\\s]");
 
     private final OrganizationRepository organizationRepository;
+    private final VerificationDocumentRepository verificationDocumentRepository;
     private final OrganizationMemberRepository organizationMemberRepository;
     private final UserRepository userRepository;
     private final RoleSyncService roleSyncService;
@@ -113,6 +120,18 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                     if (input.type() != null) {
                         org.setType(input.type());
                     }
+                    // KYB. businessType in particular must round-trip: it is what
+                    // RequiredDocuments keys off, so an application that cannot
+                    // persist it can never satisfy submitForReview.
+                    if (input.businessType() != null) {
+                        org.setBusinessType(input.businessType());
+                    }
+                    if (input.taxId() != null) {
+                        org.setTaxId(input.taxId());
+                    }
+                    if (input.businessRegistrationNumber() != null) {
+                        org.setBusinessRegistrationNumber(input.businessRegistrationNumber());
+                    }
                     if (input.businessPhone() != null) {
                         org.setBusinessPhone(input.businessPhone());
                     }
@@ -169,7 +188,17 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                     if (org.getBusinessEmail() == null || org.getBusinessEmail().isBlank()) {
                         return Mono.error(new IllegalStateException("Business email is required"));
                     }
+                    if (org.getBusinessType() == null) {
+                        return Mono.error(new IllegalStateException(
+                                "Business type is required — it determines which documents must be supplied"));
+                    }
 
+                    // Spec ET-ORG-001 R3: verify the document set required for THIS
+                    // business type, and name exactly what is missing. A generic
+                    // "application incomplete" is how an applicant gives up.
+                    return verifyRequiredDocuments(org).thenReturn(org);
+                })
+                .flatMap(org -> {
                     org.setStatus(OrganizationStatus.PENDING_REVIEW);
                     org.setSubmittedAt(Instant.now());
                     org.setRejectionReason(null); // Clear any previous rejection reason
@@ -184,6 +213,38 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                     return organizationRepository.save(org);
                 })
                 .doOnSuccess(org -> log.info("Organization {} submitted for review", org.getId()));
+    }
+
+    /**
+     * Refuse the submit if any document required by this business type is absent.
+     *
+     * <p>Spec ET-ORG-001 R3: "Missing documents are refused with
+     * {@code DOCUMENT_REQUIRED} carrying {@code missingDocumentTypes}" — the
+     * refusal names exactly what is missing rather than a generic
+     * "incomplete", because a generic refusal gives the applicant nothing to
+     * act on.</p>
+     *
+     * <p>A document in {@code REJECTED} does not satisfy its requirement: a
+     * reviewer who rejected the tax certificate as illegible has not been given
+     * a tax certificate. Re-uploading supersedes it and returns it to
+     * {@code PENDING}, which does count.</p>
+     *
+     * @return an empty Mono when the set is satisfied, otherwise an error Mono
+     */
+    private Mono<Void> verifyRequiredDocuments(Organization org) {
+        return verificationDocumentRepository.findByOrganizationId(org.getId())
+                .filter(doc -> doc.getStatus() != DocumentStatus.REJECTED)
+                .map(VerificationDocument::getDocumentType)
+                .collectList()
+                .flatMap(supplied -> {
+                    List<String> missing = RequiredDocuments.missingFor(org.getBusinessType(), supplied);
+                    if (missing.isEmpty()) {
+                        return Mono.empty();
+                    }
+                    log.info("Organization {} submit refused — missing documents {} for business type {}",
+                            org.getId(), missing, org.getBusinessType());
+                    return Mono.error(new MissingRequiredDocumentsException(org.getBusinessType(), missing));
+                });
     }
 
     @Override
@@ -440,6 +501,18 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                     }
                     if (input.website() != null) {
                         builder.website(input.website());
+                    }
+                    // KYB — same reasoning as updateApplication: businessType has
+                    // to survive the very first write, because the documents step
+                    // renders from it.
+                    if (input.businessType() != null) {
+                        builder.businessType(input.businessType());
+                    }
+                    if (input.taxId() != null) {
+                        builder.taxId(input.taxId());
+                    }
+                    if (input.businessRegistrationNumber() != null) {
+                        builder.businessRegistrationNumber(input.businessRegistrationNumber());
                     }
 
                     // Set business address

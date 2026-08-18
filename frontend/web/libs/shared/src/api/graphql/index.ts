@@ -56,8 +56,10 @@ export {
 // Pending-queue counts for the admin action-center sidebar badges.
 export {
   usePendingCounts,
+  usePlatformSummary,
   type PendingCounts,
   type PendingCountKey,
   type UsePendingCountsResult,
+  type UsePlatformSummaryResult,
   PENDING_COUNTS,
 } from './analytics';

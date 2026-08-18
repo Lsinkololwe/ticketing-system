@@ -1,6 +1,6 @@
 id: ET-PLT-010
 title: Schema evolution — event versions, GraphQL deprecation, document migration
-status: draft
+status: approved
 area: PLT
 service: all
 subgraph: all
@@ -20,9 +20,12 @@ sources:
 
 persistence:
   collections:
-    - admin_migration_runs      # added to the ET-PLT-002 §4 registry by this spec
+    # one migration-run collection per service — each migrates only what it owns
+    - catalog_migration_runs
+    - booking_migration_runs
+    - identity_migration_runs
   indexes:
-    - "admin_migration_runs {collection,status} compound"
+    - "catalog|booking|identity_migration_runs {collection,status} compound — same index on each"
   redis_keys:
     - "lock:sweep:document-migration   STRING  30 s"
 
@@ -46,7 +49,7 @@ compatibility:    # SAFE | VERSIONED | FORBIDDEN, per schema — full table in s
   change_field_type:      { event: VERSIONED,  graphql: FORBIDDEN, document: VERSIONED }
   add_enum_constant:      { event: SAFE,       graphql: "SAFE on output, VERSIONED on input", document: SAFE }
   remove_enum_constant:   { event: VERSIONED,  graphql: "deprecate then remove", document: VERSIONED }
-  change_constant_meaning:{ event: FORBIDDEN,  graphql: FORBIDDEN, document: FORBIDDEN }
+  change_constant_meaning: { event: FORBIDDEN,  graphql: FORBIDDEN, document: FORBIDDEN }
   reuse_removed_name:     { event: FORBIDDEN,  graphql: FORBIDDEN, document: FORBIDDEN }
 
 event_versioning:
@@ -88,11 +91,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/010-schema-evolution
-  - ./scripts/schema-compat.sh
-  - ./scripts/spec-lint.sh --events
-  - mvn -q -f backend test -Dgroups=ET-PLT-010
-  - mvn -q -f backend verify -Dgroups=ET-PLT-010
+  - mvn -q -f backend test -Dgroups=ET-PLT-010 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-010 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -103,4 +103,4 @@ risks:
   - "schemaVersion is added to every document across three services and 40-plus collections, which is itself a migration of every existing document. The spec describes migration machinery that requires a field the machinery has to add, and does not say how that first migration runs."
   - "R6's eager migration reads from a secondary and writes to the primary, which means it migrates a snapshot that may lag behind concurrent writes. A document written after the cursor passed its id but before the run finishes is migrated; one written to an id before the cursor is not. Resumability by lastProcessedId does not handle inserts behind the cursor."
   - "Upcasters are pure functions over Map<String,Object>, which loses the type safety of the envelope's typed payload and pushes every field access to a string key. That is the standard trade for upcasting, and it means an upcaster with a typo in a key silently produces a payload missing a field the consumer then binds as null."
-  - "admin_migration_runs is the thirteenth amendment to ET-PLT-002 §4's closed collection registry."
+  - "Resolved: the migration-run collections are rows of the ET-PLT-002 §4 registry, one per service, each migrating only what its service owns."

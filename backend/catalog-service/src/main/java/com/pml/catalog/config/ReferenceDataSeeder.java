@@ -15,6 +15,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+import com.pml.catalog.service.referencedata.ReferenceDataBootstrapper;
 import reactor.core.publisher.Mono;
 
 import java.io.InputStream;
@@ -46,6 +47,7 @@ public class ReferenceDataSeeder implements ApplicationRunner {
 
     private final ReactiveMongoTemplate mongoTemplate;
     private final ObjectMapper objectMapper;
+    private final ReferenceDataBootstrapper bootstrapper;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -65,6 +67,37 @@ public class ReferenceDataSeeder implements ApplicationRunner {
                 .block();
 
         log.info("Reference data seed complete: {} system rows ensured across the catalog", upserted);
+
+        bootstrapStatusEnums();
+    }
+
+    /**
+     * Materialise the status enums as reference data.
+     *
+     * <h2>Why this call is here and not in the bootstrapper</h2>
+     * {@link ReferenceDataBootstrapper} was written to run "on every start",
+     * documented itself as idempotent and safe to do so, and had no caller
+     * anywhere in production — only tests, which invoked it directly and passed.
+     * The consequence was invisible: every workflow status type
+     * ({@code TICKET_STATUS}, {@code PAYOUT_STATUS}, {@code PAYMENT_STATUS} …)
+     * was simply absent from {@code reference_data}, so the semantic resolver had
+     * nothing to resolve against and the admin screens had nothing to configure.
+     *
+     * <p>It runs after the file seed rather than before it because the
+     * bootstrapper's whole "already exists" contract rests on the unique
+     * {@code (type, code)} index, and {@link #ensureIndexes()} above is what
+     * creates it — catalog-service has no auto-index-creation.
+     *
+     * <p>A failure here aborts startup. The bootstrapper refuses to guess at a
+     * missing {@code WorkflowSemantic}, and a service that starts without one is
+     * a service routing a status to the wrong branch.
+     */
+    private void bootstrapStatusEnums() {
+        ReferenceDataBootstrapper.Result result = bootstrapper.bootstrap().block();
+        if (result != null) {
+            log.info("Reference data bootstrap: {} status rows inserted, {} already configured",
+                    result.inserted(), result.retained());
+        }
     }
 
     /**

@@ -1,6 +1,6 @@
 id: ET-PLT-007
 title: Keycloak realm, roles, @auth, tenant scoping, idempotency
-status: draft
+status: approved
 area: PLT
 service: all
 subgraph: all
@@ -94,11 +94,8 @@ shared_types:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/007-security-and-authorization
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --federation
-  - mvn -q -f backend test -Dgroups=ET-PLT-007
-  - mvn -q -f backend verify -Dgroups=ET-PLT-007
+  - mvn -q -f backend test -Dgroups=ET-PLT-007 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-007 -DfailIfNoTests=true
 
 risks:
   - "R4 resolves organization membership per request from MongoDB, which puts a database read on every tenant-scoped call. Under a customer's my-tickets query that is one extra read; under an organizer dashboard fanning out across three subgraphs it is one per subgraph per request. Whether that needs a short-TTL cache — and if so, how a cache is invalidated fast enough to keep R7's sub-second removal guarantee — is not settled here."

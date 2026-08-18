@@ -1,6 +1,7 @@
 package com.pml.catalog.web.graphql.dto;
 
 import com.pml.catalog.domain.enums.ReferenceType;
+import com.pml.shared.constants.WorkflowSemantic;
 
 import java.util.Map;
 
@@ -17,5 +18,18 @@ public record CreateReferenceDataInput(
         String parentCode,
         Integer displayOrder,
         Boolean isActive,
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+
+        /**
+         * What this value MEANS to the code.
+         *
+         * <p>Required when {@code type} is a workflow type. Branches read the
+         * semantic and never the {@code code}, which is what lets an
+         * administrator add a status without a deployment — and what stops them
+         * adding one no branch recognises.
+         */
+        WorkflowSemantic semantic,
+
+        /** Codes this value may move to. Empty means unconstrained. */
+        java.util.List<String> allowedTransitions
 ) {}

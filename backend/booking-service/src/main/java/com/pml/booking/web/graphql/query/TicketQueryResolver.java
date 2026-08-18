@@ -279,7 +279,7 @@ public class TicketQueryResolver {
      * Build TicketOffsetPage from a Flux of tickets.
      */
     private Mono<TicketOffsetPage> buildOffsetPage(Flux<Ticket> ticketFlux, OffsetPaginationInput pagination) {
-        OffsetPaginationInput p = pagination != null ? pagination : new OffsetPaginationInput(1, 20);
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
         int limit = p.getLimit();
         int offset = p.getOffset();
 

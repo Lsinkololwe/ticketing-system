@@ -298,11 +298,17 @@ public class PayoutRequestQueryResolver {
             @InputArgument OffsetPaginationInput pagination
     ) {
         log.debug("GraphQL query: payoutRequestsForReviewOffsetPagination(reviewStatus={})", reviewStatus);
-        int page = pagination != null ? pagination.page() : 1;
+        // 0-based, like OffsetPaginationInput documents ("page 0, 1, 2, 3..."),
+        // like its own getOffset(), and like every sibling resolver that goes
+        // through buildOffsetPage. This block used to read `: 1` and
+        // `(page - 1) * size`, so the input type's own default of page=0 gave
+        // offset -20 and the query answered
+        // "Page index must not be less than zero" — it could only be called by
+        // a client that ignored the schema's contract.
         int size = pagination != null ? pagination.getLimit() : 20;
-        int offset = (page - 1) * size;
+        int pageIndex = pagination != null ? pagination.page() : 0;
 
-        Flux<PayoutRequest> payoutFlux = payoutRecoveryService.getPayoutRequestsForReview(reviewStatus, offset / size, size);
+        Flux<PayoutRequest> payoutFlux = payoutRecoveryService.getPayoutRequestsForReview(reviewStatus, pageIndex, size);
         return buildOffsetPageWithTotal(payoutFlux, pagination,
                 payoutRecoveryService.countPayoutRequestsForReview(reviewStatus));
     }
@@ -317,11 +323,17 @@ public class PayoutRequestQueryResolver {
             @InputArgument OffsetPaginationInput pagination
     ) {
         log.debug("GraphQL query: stuckPayoutRequestsOffsetPagination");
-        int page = pagination != null ? pagination.page() : 1;
+        // 0-based, like OffsetPaginationInput documents ("page 0, 1, 2, 3..."),
+        // like its own getOffset(), and like every sibling resolver that goes
+        // through buildOffsetPage. This block used to read `: 1` and
+        // `(page - 1) * size`, so the input type's own default of page=0 gave
+        // offset -20 and the query answered
+        // "Page index must not be less than zero" — it could only be called by
+        // a client that ignored the schema's contract.
         int size = pagination != null ? pagination.getLimit() : 20;
-        int offset = (page - 1) * size;
+        int pageIndex = pagination != null ? pagination.page() : 0;
 
-        Flux<PayoutRequest> payoutFlux = payoutRecoveryService.getStuckPayoutRequests(offset / size, size);
+        Flux<PayoutRequest> payoutFlux = payoutRecoveryService.getStuckPayoutRequests(pageIndex, size);
         return buildOffsetPageWithTotal(payoutFlux, pagination,
                 payoutRecoveryService.countStuckPayoutRequests());
     }
@@ -369,11 +381,17 @@ public class PayoutRequestQueryResolver {
     ) {
         log.debug("GraphQL query: payoutRequestsByIssueTypeOffsetPagination(issueType={})", issueType);
         Objects.requireNonNull(issueType, "Issue type is required");
-        int page = pagination != null ? pagination.page() : 1;
+        // 0-based, like OffsetPaginationInput documents ("page 0, 1, 2, 3..."),
+        // like its own getOffset(), and like every sibling resolver that goes
+        // through buildOffsetPage. This block used to read `: 1` and
+        // `(page - 1) * size`, so the input type's own default of page=0 gave
+        // offset -20 and the query answered
+        // "Page index must not be less than zero" — it could only be called by
+        // a client that ignored the schema's contract.
         int size = pagination != null ? pagination.getLimit() : 20;
-        int offset = (page - 1) * size;
+        int pageIndex = pagination != null ? pagination.page() : 0;
 
-        Flux<PayoutRequest> payoutFlux = payoutRecoveryService.getPayoutRequestsByIssueType(issueType, offset / size, size);
+        Flux<PayoutRequest> payoutFlux = payoutRecoveryService.getPayoutRequestsByIssueType(issueType, pageIndex, size);
         return buildOffsetPageWithTotal(payoutFlux, pagination,
                 payoutRequestService.countByIssueType(issueType));
     }
@@ -431,7 +449,7 @@ public class PayoutRequestQueryResolver {
             OffsetPaginationInput pagination,
             Mono<Long> totalCountMono
     ) {
-        OffsetPaginationInput p = pagination != null ? pagination : new OffsetPaginationInput(1, 20);
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
         int limit = p.getLimit();
 
         return Mono.zip(payoutFlux.collectList(), totalCountMono)
@@ -451,7 +469,7 @@ public class PayoutRequestQueryResolver {
     }
 
     private Mono<PayoutRequestOffsetPage> buildOffsetPage(Flux<PayoutRequest> payoutFlux, OffsetPaginationInput pagination) {
-        OffsetPaginationInput p = pagination != null ? pagination : new OffsetPaginationInput(1, 20);
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
         int limit = p.getLimit();
         int offset = p.getOffset();
 

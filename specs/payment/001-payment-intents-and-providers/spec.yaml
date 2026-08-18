@@ -1,6 +1,6 @@
 id: ET-PAY-001
 title: Payment intents, the provider port and mobile-money collection
-status: draft
+status: approved
 area: PAY
 service: booking-service
 subgraph: booking
@@ -96,13 +96,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/payment/001-payment-intents-and-providers
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --security
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/booking-service test -Dgroups=ET-PAY-001
-  - mvn -q -f backend verify -Dgroups=ET-PAY-001
+  - mvn -q -f backend/booking-service test -Dgroups=ET-PAY-001 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PAY-001 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

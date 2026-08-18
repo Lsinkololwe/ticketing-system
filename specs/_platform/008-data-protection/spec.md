@@ -58,7 +58,7 @@ download with a short-lived link. Doing it synchronously means a GraphQL query t
 eight collections.
 
 **Consent is recorded where it is required, with when and how.** Marketing is opt-in
-([ET-NTF-001](../001-notification-transport/) §4) and the record of that opt-in — the
+([ET-NTF-001](../../notification/001-notification-transport/) §4) and the record of that opt-in — the
 timestamp, the mechanism and the version of the terms — is itself retained.
 
 **Rejected alternatives**
@@ -134,7 +134,7 @@ THE SYSTEM SHALL remove PII with no downstream reference at the end of its reten
 - [ ] Notification bodies and parameters are removed at `data.retention.notifications` (P180D) by TTL
 - [ ] Webhook raw payloads are removed at 90 days by TTL ([ET-PLT-002](../002-persistence-baseline/) §4)
 - [ ] OTP values are removed at 5 minutes by TTL ([ET-IDN-001](../../identity/001-phone-otp-identity/) §4)
-- [ ] Device tokens are deactivated at 90 days of inactivity ([ET-NTF-001](../001-notification-transport/) R8)
+- [ ] Device tokens are deactivated at 90 days of inactivity ([ET-NTF-001](../../notification/001-notification-transport/) R8)
 - [ ] Audit rows follow [ET-PLT-009](../009-audit-trail/)'s retention, which this spec does not override
 - [ ] Every TTL in the platform corresponds to an inventory row stating why that window
 - [ ] A test asserts each TTL is configured and fires
@@ -162,7 +162,7 @@ WHERE consent is required, THE SYSTEM SHALL record when and how it was given.
 - [ ] Withdrawal is recorded the same way and takes effect immediately
 - [ ] The consent record is retained for `data.retention.consent` (P7Y) — proving consent existed outlives the consent
 - [ ] Consent records survive erasure, anonymised of the identifier
-- [ ] No optional message is sent without a consent record ([ET-NTF-001](../001-notification-transport/) R3)
+- [ ] No optional message is sent without a consent record ([ET-NTF-001](../../notification/001-notification-transport/) R3)
 - [ ] A test asserts a marketing send with no consent record is suppressed
 
 ## 4. Model
@@ -401,7 +401,7 @@ None introduced. A deferred erasure is a status, not an error.
 | The audit trail's own retention and immutability | [ET-PLT-009](../009-audit-trail/) |
 | The financial records erasure must not touch | [ET-FIN-001](../../finance/001-escrow-and-ledger/) |
 | Keycloak deletion mechanics | [ET-IDN-002](../../identity/002-keycloak-user-sync/) |
-| Notification retention windows | [ET-NTF-001](../001-notification-transport/) |
+| Notification retention windows | [ET-NTF-001](../../notification/001-notification-transport/) |
 | Document storage and presigned URLs | [ET-ORG-001](../../organization/001-organizer-onboarding/) |
 | Encryption at rest for bank accounts | [ET-FIN-003](../../finance/003-payouts-and-settlement/) |
 | Access control over PII | [ET-PLT-007](../007-security-and-authorization/) |

@@ -12,3 +12,8 @@ export {
   type UsePendingCountsResult,
 } from './pending-counts.hooks';
 export { PENDING_COUNTS } from './pending-counts.queries';
+export {
+  usePlatformSummary,
+  type UsePlatformSummaryResult,
+} from './platform-summary.hooks';
+export { PLATFORM_SUMMARY } from './platform-summary.queries';

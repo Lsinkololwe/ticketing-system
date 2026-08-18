@@ -33,32 +33,23 @@ public class TicketMutationResolver {
 
     private final TicketService ticketService;
 
-    @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SCANNER')")
-    public Mono<ValidateTicketMutationResponse> validateTicket(@InputArgument String ticketNumber) {
-        log.info("Validating ticket: {}", ticketNumber);
-        return ticketService.validateTicket(ticketNumber)
-                .map(ticket -> new ValidateTicketMutationResponse(true, "Ticket validated successfully", ticket, List.of(), null))
-                .onErrorResume(e -> {
-                    log.error("Ticket validation failed: {}", e.getMessage());
-                    return Mono.just(new ValidateTicketMutationResponse(false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
-    }
+    // validateTicket lives in CheckInMutationResolver now.
+    //
+    // The version that stood here was a read-modify-write on the ticket: load
+    // it, see PURCHASED, set VALIDATED, save. Two stewards scanning the same
+    // ticket a moment apart both read PURCHASED before either wrote, so both
+    // were told the ticket was good and the ticket admitted twice. It also had
+    // no event id, so a valid ticket for a different show passed at this gate.
+    // See ET-TKT-003 and booking_checkins.
 
-    @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SCANNER')")
-    public Mono<UseTicketMutationResponse> useTicket(
-            @InputArgument String ticketNumber
-    ) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(scannerId -> log.info("Marking ticket as used: {} by scanner: {}", ticketNumber, scannerId))
-                .flatMap(scannerId -> ticketService.useTicket(ticketNumber)
-                        .map(ticket -> new UseTicketMutationResponse(true, "Ticket marked as used", ticket, List.of(), null)))
-                .onErrorResume(e -> {
-                    log.error("Use ticket failed: {}", e.getMessage());
-                    return Mono.just(new UseTicketMutationResponse(false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
-    }
+    // useTicket is gone with the USED state.
+    //
+    // It marked a VALIDATED ticket as USED, which described a two-phase gate the
+    // platform never had: nothing called it during a scan, and CheckInServiceImpl
+    // treated VALIDATED and USED identically as "already admitted". ET-TKT-002 R7
+    // declares seven states and USED is not one of them, so the mutation had no
+    // reachable target. Admission is CheckInMutationResolver's scan; there is no
+    // second phase.
 
     /**
      * Refund a ticket.

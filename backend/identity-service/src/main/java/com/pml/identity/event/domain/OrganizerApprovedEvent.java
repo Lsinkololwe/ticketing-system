@@ -1,6 +1,5 @@
 package com.pml.identity.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 
@@ -14,7 +13,7 @@ import java.time.Instant;
  * - Notification Service: Send approval confirmation
  * - Catalog Service: Enable event creation for this organizer
  */
-@Externalized("user-events::OrganizerApproved")
+/** Cross-service wire name (ET-PLT-003 §4): user-events::OrganizerApproved — staged into the outbox. */
 public record OrganizerApprovedEvent(
         String organizerId,
         String userId,

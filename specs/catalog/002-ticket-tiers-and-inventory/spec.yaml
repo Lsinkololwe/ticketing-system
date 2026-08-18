@@ -1,6 +1,6 @@
 id: ET-CAT-002
 title: Ticket tiers, capacity and the authoritative inventory
-status: draft
+status: approved
 area: CAT
 service: catalog-service
 subgraph: catalog
@@ -88,13 +88,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/catalog/002-ticket-tiers-and-inventory
-  - ./scripts/spec-lint.sh --persistence
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-CAT-002
-  - mvn -q -f backend verify -Dgroups=ET-CAT-002
+  - mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-002 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-CAT-002 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

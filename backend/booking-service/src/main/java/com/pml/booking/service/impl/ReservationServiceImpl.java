@@ -1,38 +1,48 @@
 package com.pml.booking.service.impl;
 
-import com.pml.booking.web.graphql.dto.CompleteReservationInput;
-import com.pml.booking.web.graphql.dto.ReserveTicketsInput;
-import com.pml.booking.web.graphql.dto.TicketSelectionInput;
-import com.pml.booking.domain.enums.ReservationStatus;
-import com.pml.booking.domain.model.Ticket;
+import com.pml.booking.domain.ReservationStateMachine;
 import com.pml.booking.domain.model.TicketReservation;
 import com.pml.booking.infrastructure.client.CatalogServiceClient;
-import com.pml.booking.infrastructure.client.dto.InventoryReservationResult;
 import com.pml.booking.repository.TicketReservationRepository;
-import com.pml.booking.service.PaymentService;
-import com.pml.booking.service.PromoCodeService;
+import com.pml.booking.service.PurchaseService;
 import com.pml.booking.service.ReservationService;
-import com.pml.booking.service.TicketService;
+import com.pml.booking.web.graphql.dto.ReserveTicketsInput;
+import com.pml.booking.web.graphql.dto.TicketSelectionInput;
+import com.pml.shared.constants.ReservationStatus;
+import com.pml.shared.dto.EventSummaryDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.Duration;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
- * Reservation Service Implementation
+ * Takes the inventory out of circulation, and gives it back.
  *
- * Business Intent: Manages temporary ticket reservations with TTL-based expiration.
- * Prevents inventory blocking from cart abandonment.
+ * <h2>Reserve first, pay second</h2>
+ * The hold costs ten minutes of inventory and buys certainty about what is being
+ * sold. The alternative — charge, then look for a seat — is how a platform ends
+ * up owing refunds for tickets it never had.
+ *
+ * <h2>The quote does not move under the buyer</h2>
+ * Unit price and total are computed here, once, from the event's mirrored tier
+ * prices, and written onto the reservation. A tier price change during those ten
+ * minutes does not change what this buyer pays: the number they agreed to is the
+ * number the payment intent charges and the number the ticket records. Re-reading
+ * the price at confirmation would be simpler and would silently overcharge
+ * anyone who was mid-checkout when an organiser edited a tier.
+ *
+ * @see <a href="file:../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001</a>
  */
 @Slf4j
 @Service
@@ -40,227 +50,222 @@ import java.util.stream.Collectors;
 public class ReservationServiceImpl implements ReservationService {
 
     private final TicketReservationRepository reservationRepository;
-    private final PromoCodeService promoCodeService;
-    private final TicketService ticketService;
-    private final PaymentService paymentService;
     private final CatalogServiceClient catalogServiceClient;
+    private final PurchaseService purchaseService;
 
-    @Value("${reservation.ttl.minutes:10}")
+    @Value("${booking.reservation.ttl-minutes:10}")
     private int reservationTtlMinutes;
 
-    private static final Duration ROLLBACK_TIMEOUT = Duration.ofSeconds(30);
+    /** ET-PLT-002's money scale. Applied once, to the total. */
+    private static final int MONEY_SCALE = 2;
 
     @Override
     public Mono<TicketReservation> createReservation(String userId, ReserveTicketsInput input) {
-        log.info("Creating reservation for user {} on event {}", userId, input.eventId());
+        String idempotencyKey = input.idempotencyKey();
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return Mono.error(new IllegalArgumentException(
+                    "IDEMPOTENCY_KEY_REQUIRED: reserveTickets needs a client-supplied key"));
+        }
 
-        // Generate a unique reservation ID for inventory tracking
+        // Checked before anything moves. A repeat of a request whose response
+        // the client never saw must not take a second block of inventory —
+        // that is the entire failure mode the key exists to prevent.
+        return reservationRepository.findByIdempotencyKey(idempotencyKey)
+                .doOnNext(existing -> log.info(
+                        "Idempotency key {} already produced reservation {} — returning it unchanged",
+                        idempotencyKey, existing.getId()))
+                .switchIfEmpty(Mono.defer(() -> existingHoldFor(userId, input)
+                        .switchIfEmpty(Mono.defer(() -> reserveAfresh(userId, input, idempotencyKey)))));
+    }
+
+    /**
+     * A live hold this buyer already has on one of the requested tiers (R5).
+     *
+     * <p>Returned unchanged rather than added to. A buyer on a flaky connection
+     * who taps <em>reserve</em> four times would otherwise accumulate four holds
+     * and lock out four other buyers while paying for one.
+     */
+    private Mono<TicketReservation> existingHoldFor(String userId, ReserveTicketsInput input) {
+        List<String> requestedTiers = input.selections().stream()
+                .map(TicketSelectionInput::ticketTierId)
+                .toList();
+
+        return reservationRepository.findByUserIdAndStatus(userId, ReservationStatus.HELD)
+                .filter(held -> !held.isExpired())
+                .filter(held -> held.getItems() != null && held.getItems().stream()
+                        .anyMatch(item -> requestedTiers.contains(item.getTicketTierId())))
+                .next()
+                .doOnNext(held -> log.info(
+                        "Buyer {} already holds reservation {} on a requested tier — returning it "
+                                + "rather than stacking a second hold",
+                        userId, held.getId()));
+    }
+
+    private Mono<TicketReservation> reserveAfresh(String userId,
+                                                  ReserveTicketsInput input,
+                                                  String idempotencyKey) {
+        // Generated up front because the catalog needs it as the hold's owner
+        // before the reservation document exists. If the save then fails, this
+        // is the handle the rollback uses to find what to give back.
         String reservationId = UUID.randomUUID().toString();
 
-        // Step 1: Reserve inventory FIRST (atomic operation)
-        // This prevents overselling by holding inventory before creating the reservation
-        return reserveInventoryForSelections(input.selections(), reservationId)
-                .flatMap(reserveResult -> {
-                    if (!reserveResult) {
-                        return Mono.error(new IllegalStateException(
-                                "Insufficient inventory for one or more ticket tiers"));
-                    }
-
-                    // Step 2: Build and save the reservation (inventory is now held)
-                    return buildReservation(userId, input, reservationId)
-                            .flatMap(reservationRepository::save)
-                            .doOnSuccess(reservation ->
-                                    log.info("Reservation created with inventory held: {}", reservation.getId()))
-                            .onErrorResume(error -> {
-                                // CRITICAL: Rollback inventory on reservation save failure
-                                // Using blocking call to ensure rollback completes before returning error
-                                log.error("Reservation save failed, rolling back inventory: {}", error.getMessage());
-                                return rollbackInventoryBlocking(input.selections(), reservationId)
-                                        .then(Mono.error(error));
-                            });
-                });
+        return catalogServiceClient.getEventById(input.eventId())
+                .switchIfEmpty(Mono.error(new IllegalStateException(
+                        "EVENT_UNKNOWN: " + input.eventId())))
+                .flatMap(event -> takeInventory(input.selections(), reservationId)
+                        .then(Mono.defer(() -> reservationRepository.save(
+                                        quote(userId, input, event, reservationId, idempotencyKey)))
+                                .onErrorResume(error -> giveBack(input.selections(), reservationId)
+                                        .then(Mono.error(translate(error, idempotencyKey))))))
+                .doOnSuccess(saved -> log.info("Reservation {} held for buyer {} until {}",
+                        saved.getId(), userId, saved.getExpiresAt()));
     }
 
     /**
-     * Rollback inventory with blocking semantics.
+     * A duplicate key here means one of R5's or R6's unique indexes refused the
+     * write — a second buyer request that raced past the read-side checks above.
      *
-     * <p><b>CRITICAL</b>: This method uses blocking to ensure inventory is released
-     * before the error is propagated. This prevents inventory leaks when reservation
-     * save fails.</p>
-     *
-     * @param selections List of ticket selections to release
-     * @param reservationId Reservation ID for tracking
-     * @return Mono that completes after rollback
+     * <p>Translated rather than propagated because a raw
+     * {@code DuplicateKeyException} reaching the resolver tells the buyer nothing
+     * and looks like a server fault, when in fact the platform did exactly what
+     * it should: refused to create a second hold.
      */
-    private Mono<Void> rollbackInventoryBlocking(List<TicketSelectionInput> selections, String reservationId) {
-        return Mono.fromRunnable(() -> {
-            try {
-                log.info("Starting blocking inventory rollback for reservation: {}", reservationId);
-                releaseInventoryForSelections(selections, reservationId)
-                        .block(ROLLBACK_TIMEOUT);
-                log.info("Inventory rollback completed successfully for reservation: {}", reservationId);
-            } catch (Exception e) {
-                // Log but don't fail - the original error should propagate
-                log.error("CRITICAL: Inventory rollback failed for reservation {}: {}. " +
-                          "Manual intervention may be required.", reservationId, e.getMessage(), e);
-            }
-        });
+    private Throwable translate(Throwable error, String idempotencyKey) {
+        if (error instanceof DuplicateKeyException) {
+            return new IllegalStateException(
+                    "RESERVATION_ALREADY_EXISTS: a concurrent request already created a hold "
+                            + "for this buyer and tier (key " + idempotencyKey + ")", error);
+        }
+        return error;
     }
 
     /**
-     * Reserve inventory for all selections atomically.
-     * If any reservation fails, releases all previously reserved inventory.
+     * Takes every tier's inventory, giving back what was already taken if any
+     * one of them refuses.
      *
-     * @param selections List of ticket selections
-     * @param reservationId Unique reservation identifier
-     * @return Mono<Boolean> true if all reservations succeeded
+     * <p>Sequential, not parallel: a partial failure has to know exactly which
+     * tiers succeeded so it can return precisely those. Fanning out and
+     * collecting would be faster and would make the rollback set ambiguous
+     * whenever two tiers failed at once.
      */
-    private Mono<Boolean> reserveInventoryForSelections(List<TicketSelectionInput> selections, String reservationId) {
-        List<String> successfullyReserved = new ArrayList<>();
+    private Mono<Void> takeInventory(List<TicketSelectionInput> selections, String reservationId) {
+        List<TicketSelectionInput> taken = new ArrayList<>();
 
         return Flux.fromIterable(selections)
                 .concatMap(selection -> catalogServiceClient.reserveInventory(
-                                selection.ticketTierId(),
-                                selection.quantity(),
-                                reservationId)
+                                selection.ticketTierId(), selection.quantity(), reservationId)
                         .flatMap(result -> {
                             if (result.success()) {
-                                successfullyReserved.add(selection.ticketTierId());
-                                return Mono.just(true);
-                            } else {
-                                log.warn("Inventory reservation failed for tier {}: {}",
-                                        selection.ticketTierId(), result.errorMessage());
-                                // Release all previously reserved
-                                return releasePartialReservations(successfullyReserved, selections, reservationId)
-                                        .then(Mono.just(false));
+                                taken.add(selection);
+                                return Mono.just(result);
+                            }
+                            String message = result.errorMessage() == null
+                                    ? "TIER_SOLD_OUT: " + selection.ticketTierId()
+                                    : result.errorMessage();
+                            return giveBack(taken, reservationId)
+                                    .then(Mono.error(new IllegalStateException(message)));
+                        }))
+                .then();
+    }
+
+    private Mono<Void> giveBack(List<TicketSelectionInput> selections, String reservationId) {
+        return Flux.fromIterable(selections)
+                .concatMap(selection -> catalogServiceClient.releaseInventory(
+                                selection.ticketTierId(), selection.quantity(), reservationId)
+                        .doOnNext(result -> {
+                            if (!result.success()) {
+                                log.error("INVENTORY LEAK: could not return {} seats of tier {} "
+                                                + "after reservation {} failed: {}",
+                                        selection.quantity(), selection.ticketTierId(),
+                                        reservationId, result.errorMessage());
                             }
                         }))
-                .all(success -> success);
-    }
-
-    /**
-     * Release inventory for all selections.
-     */
-    private Mono<Void> releaseInventoryForSelections(List<TicketSelectionInput> selections, String reservationId) {
-        return Flux.fromIterable(selections)
-                .flatMap(selection -> catalogServiceClient.releaseInventory(
-                        selection.ticketTierId(),
-                        selection.quantity(),
-                        reservationId))
                 .then();
     }
 
     /**
-     * Release partially reserved inventory on failure.
+     * Prices the reservation from the event's mirrored tier prices.
+     *
+     * <p>Rounding is applied once, to the total, at scale 2. Rounding each line
+     * and then summing produces a different number for the same basket — a
+     * discrepancy of a few ngwee that reconciliation will chase for hours.
      */
-    private Mono<Void> releasePartialReservations(List<String> reservedTierIds,
-                                                   List<TicketSelectionInput> selections,
-                                                   String reservationId) {
-        return Flux.fromIterable(selections)
-                .filter(s -> reservedTierIds.contains(s.ticketTierId()))
-                .flatMap(selection -> catalogServiceClient.releaseInventory(
-                        selection.ticketTierId(),
-                        selection.quantity(),
-                        reservationId))
-                .then();
+    private TicketReservation quote(String userId,
+                                    ReserveTicketsInput input,
+                                    EventSummaryDto event,
+                                    String reservationId,
+                                    String idempotencyKey) {
+        List<TicketReservation.ReservationItem> items = input.selections().stream()
+                .map(selection -> line(selection, event))
+                .toList();
+
+        BigDecimal subtotal = items.stream()
+                .map(TicketReservation.ReservationItem::getSubtotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return TicketReservation.builder()
+                .id(reservationId)
+                .eventId(input.eventId())
+                .userId(userId)
+                .organizerId(event.getOrganizerId())
+                .organizationId(event.getOrganizationId())
+                .items(items)
+                .status(ReservationStatus.HELD)
+                .idempotencyKey(idempotencyKey)
+                .promoCode(input.promoCode())
+                .subtotal(subtotal)
+                .discountAmount(BigDecimal.ZERO)
+                .totalAmount(subtotal.setScale(MONEY_SCALE, RoundingMode.HALF_UP))
+                .currency("ZMW")
+                .expiresAt(LocalDateTime.now().plusMinutes(reservationTtlMinutes))
+                .build();
     }
 
-    @Override
-    public Mono<List<Ticket>> completeReservation(String reservationId, CompleteReservationInput input) {
-        log.info("Completing reservation: {}", reservationId);
+    private TicketReservation.ReservationItem line(TicketSelectionInput selection, EventSummaryDto event) {
+        EventSummaryDto.TicketCategoryDto tier = tierOf(event, selection.ticketTierId());
+        BigDecimal unitPrice = tier.getPrice();
+        return TicketReservation.ReservationItem.builder()
+                .ticketTierId(selection.ticketTierId())
+                .tierName(tier.getName())
+                .quantity(selection.quantity())
+                .unitPrice(unitPrice)
+                .subtotal(unitPrice.multiply(BigDecimal.valueOf(selection.quantity())))
+                .build();
+    }
 
-        return reservationRepository.findById(reservationId)
-            .switchIfEmpty(Mono.error(new IllegalArgumentException("Reservation not found")))
-            .flatMap(reservation -> {
-                // Validate reservation is active and not expired
-                if (reservation.getStatus() != ReservationStatus.ACTIVE) {
-                    return Mono.error(new IllegalStateException("Reservation is not active"));
+    /**
+     * The tier's mirrored definition, or a refusal.
+     *
+     * <p>Refusing is the point. The code this replaced defaulted to a hard-coded
+     * {@code new BigDecimal("100.00")} when it could not find a price, so an
+     * unknown tier produced a reservation quoting a number nobody had ever set —
+     * and the buyer was charged it.
+     */
+    private EventSummaryDto.TicketCategoryDto tierOf(EventSummaryDto event, String tierId) {
+        List<EventSummaryDto.TicketCategoryDto> tiers = event.getTicketCategories();
+        if (tiers != null) {
+            for (EventSummaryDto.TicketCategoryDto tier : tiers) {
+                if (Objects.equals(tier.getCode(), tierId)) {
+                    if (tier.getPrice() == null) {
+                        throw new IllegalStateException(
+                                "TIER_PRICE_UNAVAILABLE: tier " + tierId + " has no price");
+                    }
+                    return tier;
                 }
-                if (reservation.isExpired()) {
-                    return Mono.error(new IllegalStateException("Reservation has expired"));
-                }
-
-                // Apply promo code if provided
-                Mono<BigDecimal> discountMono = input.promoCode() != null ?
-                    applyPromoCode(input.promoCode(), reservation) :
-                    Mono.just(BigDecimal.ZERO);
-
-                return discountMono.flatMap(discount -> {
-                    BigDecimal finalAmount = reservation.getTotalAmount().subtract(discount);
-
-                    // Process payment
-                    // TODO: Integrate with PaymentService to create payment intent
-
-                    // Create tickets
-                    return createTicketsFromReservation(reservation)
-                        .collectList()
-                        .flatMap(tickets -> {
-                            // Update reservation status
-                            reservation.setStatus(ReservationStatus.CONVERTED);
-                            reservation.setConvertedAt(LocalDateTime.now());
-                            reservation.setDiscountAmount(discount);
-
-                            return reservationRepository.save(reservation)
-                                .thenReturn(tickets);
-                        });
-                });
-            });
+            }
+        }
+        throw new IllegalStateException("TIER_UNKNOWN: " + tierId + " is not a tier of event " + event.getId());
     }
 
     @Override
     public Mono<Boolean> cancelReservation(String reservationId) {
-        log.info("Cancelling reservation: {}", reservationId);
-
-        return reservationRepository.findById(reservationId)
-                .filter(reservation -> reservation.getStatus() == ReservationStatus.ACTIVE)
-                .flatMap(reservation -> {
-                    // Release inventory FIRST before marking cancelled
-                    return releaseInventoryForReservation(reservation)
-                            .then(Mono.defer(() -> {
-                                reservation.setStatus(ReservationStatus.CANCELLED);
-                                return reservationRepository.save(reservation);
-                            }));
-                })
-                .map(reservation -> true)
-                .defaultIfEmpty(false);
-    }
-
-    /**
-     * Release all reserved inventory for a reservation.
-     */
-    private Mono<Void> releaseInventoryForReservation(TicketReservation reservation) {
-        return Flux.fromIterable(reservation.getItems())
-                .flatMap(item -> catalogServiceClient.releaseInventory(
-                        item.getTicketTierId(),
-                        item.getQuantity(),
-                        reservation.getId())
-                        .doOnSuccess(result -> {
-                            if (result.success()) {
-                                log.debug("Released {} tickets for tier {} (reservation: {})",
-                                        item.getQuantity(), item.getTicketTierId(), reservation.getId());
-                            } else {
-                                log.warn("Failed to release inventory for tier {}: {}",
-                                        item.getTicketTierId(), result.errorMessage());
-                            }
-                        }))
-                .then();
-    }
-
-    @Override
-    public Mono<TicketReservation> extendReservation(String reservationId, int minutes) {
-        log.info("Extending reservation {} by {} minutes", reservationId, minutes);
-
-        return reservationRepository.findById(reservationId)
-            .flatMap(reservation -> {
-                if (reservation.getStatus() != ReservationStatus.ACTIVE) {
-                    return Mono.error(new IllegalStateException("Only active reservations can be extended"));
-                }
-
-                LocalDateTime newExpiry = reservation.getExpiresAt().plusMinutes(minutes);
-                reservation.setExpiresAt(newExpiry);
-
-                return reservationRepository.save(reservation);
-            });
+        return purchaseService.release(
+                        reservationId, ReservationStateMachine.Action.CANCEL, null)
+                .map(reservation -> reservation.getStatus() == ReservationStatus.RELEASED)
+                .onErrorResume(error -> {
+                    log.warn("Cancel refused for reservation {}: {}", reservationId, error.getMessage());
+                    return Mono.just(false);
+                });
     }
 
     @Override
@@ -290,131 +295,24 @@ public class ReservationServiceImpl implements ReservationService {
     }
 
     @Override
-    public Mono<Void> expireReservations() {
-        log.debug("Running reservation expiration task");
-
+    public Mono<Long> expireReservations() {
         return reservationRepository.findExpiredReservations()
-                .flatMap(reservation -> {
-                    log.info("Expiring reservation: {} - releasing inventory", reservation.getId());
-
-                    // CRITICAL: Release inventory BEFORE marking as expired
-                    // This restores inventory to the available pool
-                    return releaseInventoryForReservation(reservation)
-                            .then(Mono.defer(() -> {
-                                reservation.setStatus(ReservationStatus.EXPIRED);
-                                return reservationRepository.save(reservation);
-                            }))
-                            .doOnSuccess(r -> log.info("Reservation {} expired, inventory released", r.getId()))
-                            .doOnError(e -> log.error("Failed to expire reservation {}", reservation.getId(), e));
-                })
-                .then()
-                .doOnSuccess(v -> log.debug("Reservation expiration task completed"));
-    }
-
-    // ========================================================================
-    // PRIVATE HELPER METHODS
-    // ========================================================================
-
-    private Mono<TicketReservation> buildReservation(String userId, ReserveTicketsInput input, String reservationId) {
-        // Fetch event data from catalog-service for organizer information
-        return catalogServiceClient.getEventById(input.eventId())
-                .flatMap(eventSummary -> {
-                    // TODO: Fetch actual tier prices from eventSummary.ticketCategories
-                    List<TicketReservation.ReservationItem> items = input.selections().stream()
-                            .map(this::buildReservationItem)
-                            .collect(Collectors.toList());
-
-                    BigDecimal totalAmount = items.stream()
-                            .map(TicketReservation.ReservationItem::getSubtotal)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-                    LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(reservationTtlMinutes);
-
-                    return Mono.just(TicketReservation.builder()
-                            .id(reservationId)  // Use the same ID that was used for inventory reservation
-                            .eventId(input.eventId())
-                            .userId(userId)
-                            .organizerId(eventSummary.getOrganizerId())
-                            .organizationId(eventSummary.getOrganizationId())
-                            .items(items)
-                            .status(ReservationStatus.ACTIVE)
-                            .expiresAt(expiresAt)
-                            .createdAt(LocalDateTime.now())
-                            .totalAmount(totalAmount)
-                            .build());
-                })
-                .switchIfEmpty(Mono.error(new IllegalStateException(
-                        "Event not found: " + input.eventId())));
-    }
-
-    private TicketReservation.ReservationItem buildReservationItem(TicketSelectionInput selection) {
-        // TODO: Fetch actual tier details and price from catalog-service
-        BigDecimal unitPrice = new BigDecimal("100.00"); // Placeholder
-        String tierName = "Standard"; // Placeholder
-
-        return TicketReservation.ReservationItem.builder()
-            .ticketTierId(selection.ticketTierId())
-            .tierName(tierName)
-            .quantity(selection.quantity())
-            .unitPrice(unitPrice)
-            .subtotal(unitPrice.multiply(new BigDecimal(selection.quantity())))
-            .build();
-    }
-
-    private Mono<BigDecimal> applyPromoCode(String code, TicketReservation reservation) {
-        List<String> tierIds = reservation.getItems().stream()
-            .map(TicketReservation.ReservationItem::getTicketTierId)
-            .collect(Collectors.toList());
-
-        return promoCodeService.validatePromoCode(
-                code,
-                reservation.getEventId(),
-                reservation.getTotalAmount(),
-                tierIds
-            )
-            .flatMap(promoCode -> {
-                BigDecimal discount = promoCode.calculateDiscount(reservation.getTotalAmount());
-
-                // Increment usage count
-                return promoCodeService.incrementUsage(promoCode.getId())
-                    .thenReturn(discount);
-            })
-            .onErrorResume(e -> {
-                log.warn("Promo code validation failed: {}", e.getMessage());
-                return Mono.just(BigDecimal.ZERO);
-            });
-    }
-
-    private Flux<Ticket> createTicketsFromReservation(TicketReservation reservation) {
-        List<Mono<Ticket>> ticketMonos = new ArrayList<>();
-
-        for (TicketReservation.ReservationItem item : reservation.getItems()) {
-            for (int i = 0; i < item.getQuantity(); i++) {
-                Mono<Ticket> ticketMono = createSingleTicket(reservation, item);
-                ticketMonos.add(ticketMono);
-            }
-        }
-
-        return Flux.concat(ticketMonos);
-    }
-
-    private Mono<Ticket> createSingleTicket(TicketReservation reservation, TicketReservation.ReservationItem item) {
-        // TODO: Fetch event details from catalog-service
-
-        Ticket ticket = Ticket.builder()
-                .eventId(reservation.getEventId())
-                .reservationId(reservation.getId())        // Link to reservation for inventory tracking
-                .ticketTierId(item.getTicketTierId())      // Link to tier for inventory operations
-                .buyerId(reservation.getUserId())
-                .eventTitle("Event Title") // Placeholder - should come from catalog-service
-                .eventDate("2024-12-31") // Placeholder - should come from catalog-service
-                .ticketCategoryCode(item.getTicketTierId())
-                .ticketCategoryName(item.getTierName())
-                .price(item.getUnitPrice())
-                .currency("ZMW")
-                .purchaseDate(LocalDateTime.now())
-                .build();
-
-        return ticketService.createTicket(ticket);
+                .concatMap(reservation -> purchaseService.release(
+                                reservation.getId(), ReservationStateMachine.Action.EXPIRE, null)
+                        // One reservation that cannot be released must not stop
+                        // the sweep: the rest of the batch is holding inventory
+                        // that other buyers are waiting for.
+                        .onErrorResume(error -> {
+                            log.error("Could not expire reservation {}: {}",
+                                    reservation.getId(), error.getMessage());
+                            return Mono.empty();
+                        })
+                        .filter(released -> released.getStatus() == ReservationStatus.EXPIRED))
+                .count()
+                .doOnSuccess(count -> {
+                    if (count > 0) {
+                        log.info("Expiry sweep released {} reservation(s)", count);
+                    }
+                });
     }
 }

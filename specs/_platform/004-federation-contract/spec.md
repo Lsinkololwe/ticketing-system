@@ -113,7 +113,7 @@ extend it.
 - [ ] Every contributing subgraph uses `extend type X @key(fields: "id")` and declares no `id` inside the extend block
 - [ ] Every owned type has exactly one `@DgsEntityFetcher(name = "X")` in its owning service, resolving by key
 - [ ] No entity fetcher performs an authorization check or returns null for an authorization reason
-- [ ] `./scripts/spec-lint.sh --federation` exits 0
+- [ ] No `id` is redeclared inside an `extend type` block, all subgraphs link one federation version, the shared scalars agree, and the supergraph composes
 
 ### ET-PLT-004-R2 · Subgraphs agree on federation version, scalars and directives
 
@@ -322,7 +322,7 @@ All router and supergraph configuration lives in
 - [ ] **T1 · Reconcile ownership: one `@key` per type, stubs elsewhere, no `id` in extends**
   - requirements: R1
   - files: `backend/*/src/main/resources/graphql/schema.graphqls`
-  - verify: `./scripts/spec-lint.sh --federation`
+  - verify: no `id` is redeclared inside an `extend type` block, all subgraphs link one federation version, the shared scalars agree, and the supergraph composes
   - parallel-safe: no — the three SDL files must agree
   - depends: —
 

@@ -1,7 +1,7 @@
 package com.pml.booking.repository;
 
+import com.pml.shared.constants.EscrowStatus;
 import com.pml.booking.domain.model.EventEscrowAccount;
-import com.pml.booking.domain.model.EventEscrowAccount.EscrowStatus;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
@@ -30,13 +30,35 @@ public interface EventEscrowAccountRepository extends ReactiveMongoRepository<Ev
     Mono<EventEscrowAccount> findByEventId(String eventId);
 
     /**
-     * Find all escrow accounts for an organizer.
+     * Every escrow account belonging to an organization.
+     *
+     * <p>ET-FIN-001 §Documents makes {@code organizationId} the tenant key, not
+     * {@code organizerId}. The difference is not cosmetic: an organizer is a
+     * person and an organization is the account. Scoping money by the person who
+     * happened to create the escrow means a finance colleague added to the team
+     * ({@code specs/organization/002-teams-and-invitations}) sees an empty
+     * dashboard and cannot be told why.
+     *
+     * <p>Filtering here is tenant SCOPING and is not, by itself, authorization.
+     * Whether the caller may act for this organization is a separate question,
+     * answered by {@code TenantAccessGuard} — a query filter cannot tell you
+     * whether the person asking belongs to the tenant they named.
      */
-    Flux<EventEscrowAccount> findByOrganizerId(String organizerId);
+    Flux<EventEscrowAccount> findByOrganizationId(String organizationId);
+
+    /** Escrow accounts for an organization in a given state. */
+    Flux<EventEscrowAccount> findByOrganizationIdAndStatus(String organizationId, EscrowStatus status);
 
     /**
-     * Find escrow accounts by organizer and status.
+     * @deprecated ET-FIN-001 scopes escrow by organization. Retained only for
+     *     reporting paths that genuinely mean "what did this PERSON create",
+     *     never for access decisions.
      */
+    @Deprecated
+    Flux<EventEscrowAccount> findByOrganizerId(String organizerId);
+
+    /** @deprecated see {@link #findByOrganizerId(String)}. */
+    @Deprecated
     Flux<EventEscrowAccount> findByOrganizerIdAndStatus(String organizerId, EscrowStatus status);
 
     /**
@@ -48,7 +70,7 @@ public interface EventEscrowAccountRepository extends ReactiveMongoRepository<Ev
      * Find locked escrow accounts where hold period has passed.
      * Used by scheduled job to transition to PAYOUT_ELIGIBLE.
      */
-    Flux<EventEscrowAccount> findByStatusAndLockUntilBefore(EscrowStatus status, LocalDateTime lockUntil);
+    Flux<EventEscrowAccount> findByStatusAndHoldUntilBefore(EscrowStatus status, LocalDateTime holdUntil);
 
     /**
      * Find payout-eligible accounts for an organizer.

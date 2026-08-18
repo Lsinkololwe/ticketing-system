@@ -1,3 +1,8 @@
+> **Note.** This file agrees with the design authority on tokens, but predates the
+> `.dc.html` screens and therefore cannot settle layout or page-composition
+> questions. For anything structural, read the screen in the Claude Design
+> project — see [`DESIGN_AUTHORITY.md`](./DESIGN_AUTHORITY.md).
+
 # MyTicketZM Design System — Implementation Spec
 
 Canonical source: Claude Design project **MyTicketZM Design System**

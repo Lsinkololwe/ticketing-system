@@ -1,12 +1,6 @@
-import { PagePlaceholder } from '@/components/ui/PagePlaceholder';
-import { Folder } from 'iconoir-react';
+import { EventsWorkbench } from '@/components/events/EventsWorkbench';
 
+/** `Admin - Events.dc.html`, categories view. */
 export default function EventCategoriesPage() {
-  return (
-    <PagePlaceholder
-      title="Event categories"
-      description="Manage event categories and classifications"
-      icon={<Folder style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
-    />
-  );
+  return <EventsWorkbench view="categories" />;
 }

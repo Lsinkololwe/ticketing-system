@@ -52,6 +52,11 @@ public class PayoutRequestServiceImpl implements PayoutRequestService {
     }
 
     @Override
+    public Mono<PayoutRequest> findByIdempotencyKey(String idempotencyKey) {
+        return payoutRequestRepository.findByIdempotencyKey(idempotencyKey);
+    }
+
+    @Override
     public Flux<PayoutRequest> findByOrganizerId(String organizerId) {
         log.debug("Finding payout requests for organizer: {}", organizerId);
         return payoutRequestRepository.findByOrganizerId(organizerId);
@@ -108,7 +113,7 @@ public class PayoutRequestServiceImpl implements PayoutRequestService {
                     BigDecimal platformFee = input.requestedAmount()
                             .multiply(new BigDecimal("0.05"));
                     BigDecimal processingFee = new BigDecimal("10.00");
-                    BigDecimal netPayoutAmount = input.requestedAmount()
+                    BigDecimal settledAmount = input.requestedAmount()
                             .subtract(platformFee)
                             .subtract(processingFee);
 
@@ -124,12 +129,12 @@ public class PayoutRequestServiceImpl implements PayoutRequestService {
                             .requestedAmount(input.requestedAmount())
                             .platformFee(platformFee)
                             .processingFee(processingFee)
-                            .netPayoutAmount(netPayoutAmount)
+                            .settledAmount(settledAmount)
                             .currency(input.currency() != null ? input.currency() : "ZMW")
                             .status(PayoutRequestStatus.PENDING)
                             .payoutMethod(input.payoutMethod())
                             .requestedAt(LocalDateTime.now())
-                            .requestedBy(requestedBy)
+                            .requestedById(requestedBy)
                             .notes(input.notes())
                             .metadata(input.metadata())
                             .build();
@@ -262,14 +267,14 @@ public class PayoutRequestServiceImpl implements PayoutRequestService {
                             request.getRequestId(),
                             request.getEventId(),
                             request.getOrganizerId(),
-                            request.getNetPayoutAmount(),
+                            request.getSettledAmount(),
                             totalFee,
                             request.getCurrency()
                     ).flatMap(journalEntry -> {
                         // Record the disbursement (debit payables, credit bank)
                         return accountingService.recordPayoutDisbursement(
                                 request.getRequestId(),
-                                request.getNetPayoutAmount(),
+                                request.getSettledAmount(),
                                 bankReference,
                                 request.getCurrency()
                         );

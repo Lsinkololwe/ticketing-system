@@ -22,6 +22,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -36,7 +40,10 @@
         "maxLength": 100
       },
       "ticketId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "eventId": {
@@ -70,21 +77,41 @@
       },
       "currency": {
         "bsonType": "string",
-        "enum": ["ZMW", "USD"],
+        "enum": [
+          "ZMW",
+          "USD"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "reason": {
         "bsonType": "string",
-        "enum": ["FRAUD", "DUPLICATE", "NOT_RECEIVED", "CANCELED", "CREDIT_NOT_PROCESSED", "GENERAL"],
+        "enum": [
+          "FRAUD",
+          "DUPLICATE",
+          "NOT_RECEIVED",
+          "CANCELED",
+          "CREDIT_NOT_PROCESSED",
+          "GENERAL"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "reasonDetails": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 1000
       },
       "status": {
         "bsonType": "string",
-        "enum": ["RECEIVED", "UNDER_REVIEW", "ACCEPTED", "DISPUTED", "WON", "LOST"],
+        "enum": [
+          "RECEIVED",
+          "UNDER_REVIEW",
+          "ACCEPTED",
+          "DISPUTED",
+          "WON",
+          "LOST"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "receivedAt": {
@@ -94,28 +121,46 @@
         "bsonType": "date"
       },
       "resolvedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "evidenceSubmitted": {
         "bsonType": "bool"
       },
       "evidenceSubmittedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "evidenceDocuments": {
-        "bsonType": ["array", "null"],
+        "bsonType": [
+          "array",
+          "null"
+        ],
         "items": {
           "bsonType": "string",
           "maxLength": 500
         }
       },
       "disputeNotes": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 2000
       },
       "recoveryStatus": {
         "bsonType": "string",
-        "enum": ["NOT_STARTED", "IN_PROGRESS", "RECOVERED", "PARTIALLY_RECOVERED", "WRITTEN_OFF"],
+        "enum": [
+          "NOT_STARTED",
+          "IN_PROGRESS",
+          "RECOVERED",
+          "PARTIALLY_RECOVERED",
+          "WRITTEN_OFF"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "recoveredAmount": {
@@ -123,56 +168,98 @@
         "minimum": 0
       },
       "fundSources": {
-        "bsonType": ["array", "null"]
+        "bsonType": [
+          "array",
+          "null"
+        ]
       },
       "primaryFundSource": {
-        "bsonType": ["string", "null"],
-        "enum": ["ORGANIZER_ESCROW", "FUTURE_PAYOUTS", "PLATFORM_RESERVE", "WRITE_OFF", null]
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "ORGANIZER_ESCROW",
+          "FUTURE_PAYOUTS",
+          "PLATFORM_RESERVE",
+          "WRITE_OFF",
+          null
+        ]
       },
       "writtenOffAmount": {
         "bsonType": "decimal",
         "minimum": 0
       },
       "commissionClawbackId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "commissionClawbackAmount": {
-        "bsonType": ["decimal", "null"],
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
         "minimum": 0
       },
       "journalEntryId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "recoveryJournalEntryId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "processedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "disputedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "recoveredBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "internalNotes": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 2000
       },
       "createdAt": {
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "version": {
-        "bsonType": ["long", "null"]
+        "bsonType": [
+          "long",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

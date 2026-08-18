@@ -1,6 +1,5 @@
 package com.pml.catalog.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -12,7 +11,7 @@ import java.time.LocalDateTime;
  * - Booking Service: Pre-create escrow account setup
  * - Identity Service: Track organizer activity
  */
-@Externalized("event-events::EventCreated")
+/** Cross-service wire name (ET-PLT-003 §4): event-events::EventCreated — staged into the outbox. */
 public record EventCreatedEvent(
         String eventId,
         String organizerId,

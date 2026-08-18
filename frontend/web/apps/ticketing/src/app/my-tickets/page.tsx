@@ -58,16 +58,17 @@ function FakeQr({ seed }: { seed: string }) {
 type BadgeColor = 'green' | 'amber' | 'red' | 'gray';
 
 function statusMeta(status: string): { color: BadgeColor; label: string } {
+  // ET-TKT-002 R7's seven. The old PURCHASED/CONFIRMED/PENDING_PAYMENT/USED
+  // branches are gone with the states themselves — a ticket cannot exist before
+  // payment, and there is no phase after being admitted.
   switch (status) {
-    case 'VALID':
-    case 'CONFIRMED':
-    case 'PURCHASED':
+    case 'ISSUED':
       // Status green, not money jade — jade stays reserved for amounts.
       return { color: 'green', label: 'Valid' };
-    case 'PENDING_PAYMENT':
-      return { color: 'amber', label: 'Pending' };
-    case 'USED':
-      return { color: 'gray', label: 'Used' };
+    case 'VALIDATED':
+      return { color: 'gray', label: 'Admitted' };
+    case 'REFUND_PENDING':
+      return { color: 'amber', label: 'Refund pending' };
     case 'CANCELLED':
       return { color: 'red', label: 'Cancelled' };
     case 'REFUNDED':

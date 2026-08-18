@@ -42,7 +42,7 @@ import java.util.Map;
  * 7. REJECTED - Request rejected (manual review)
  * 8. CANCELLED - Request cancelled by organizer
  */
-@Document(collection = "payout_requests")
+@Document(collection = "booking_payout_requests")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -59,6 +59,19 @@ public class PayoutRequest {
     @NotBlank(message = "Request ID is required")
     @Indexed(unique = true)
     private String requestId;
+
+    /**
+     * Client-supplied idempotency key.
+     *
+     * <p>UNIQUE and SPARSE: unique so a duplicate create is rejected by the
+     * database rather than by application logic that a concurrent request can
+     * race past; sparse so the historical rows that predate this field — all of
+     * which have a null key — do not collide with each other.
+     *
+     * <p>Required by specs/finance/003-payouts-and-settlement.
+     */
+    @Indexed(unique = true, sparse = true)
+    private String idempotencyKey;
 
     @NotBlank(message = "Organizer ID is required")
     @Indexed
@@ -104,7 +117,15 @@ public class PayoutRequest {
     private BigDecimal taxAmount;
 
     @NotNull(message = "Net payout amount is required")
-    private BigDecimal netPayoutAmount;
+    /**
+     * The amount actually settled, recomputed at approval (ET-FIN-003 §4).
+     *
+     * <p>Named {@code settledAmount} until now. The spec's name is better than
+     * a rename usually is: "net" invites the reading "gross minus fees, computed
+     * at request time", and the whole point of R2 is that this figure is
+     * RECOMPUTED at approval, because a credit or debit can land in between.
+     */
+    private BigDecimal settledAmount;
 
     @NotBlank(message = "Currency is required")
     @Builder.Default
@@ -114,6 +135,37 @@ public class PayoutRequest {
     @Builder.Default
     private PayoutRequestStatus status = PayoutRequestStatus.PENDING;
 
+    /**
+     * What {@link #status} MEANS, denormalised from reference data.
+     *
+     * <h2>Why the meaning is stored and not looked up</h2>
+     * Statuses are administrator-configurable, so the set of codes is open and
+     * a fixed {@code enum} constraint on {@code status} can no longer hold.
+     * MongoDB has no foreign keys, so without this field the database would
+     * have nothing at all to say about a payout's state — any string would do.
+     *
+     * <p>Storing the semantic alongside the code puts the integrity back where
+     * it matters: {@code status} is free-form and administrator-owned, while
+     * this field is enum-constrained by the collection validator. Code branches
+     * on the semantic, so the part that drives behaviour is still guaranteed by
+     * the database rather than by convention.
+     *
+     * <p>It is also the only way a query like "every payout still in flight"
+     * can be written at all once the codes are open — you cannot enumerate a
+     * set the administrator controls.
+     *
+     * <h2>The trade this accepts</h2>
+     * Denormalised data can go stale: an administrator re-classifying a status
+     * changes the meaning for future writes, not for rows already stored. That
+     * is deliberate. A payout recorded as terminal should not silently become
+     * in-flight because somebody edited a dropdown months later — the record of
+     * what was true at the time is the point.
+     *
+     * @see specs/finance/003-payouts-and-settlement
+     */
+    @Indexed
+    private com.pml.shared.constants.WorkflowSemantic statusSemantic;
+
     private PayoutMethod payoutMethod;
 
     // Request details
@@ -121,7 +173,13 @@ public class PayoutRequest {
     private LocalDateTime requestedAt;
 
     @NotBlank(message = "Requested by is required")
-    private String requestedBy;
+    /**
+     * Who requested it. ET-FIN-003 R3 compares this against {@code approvedById}
+     * to enforce that the approver is not the requester, so the {@code ...ById}
+     * suffix is load-bearing: it is an identifier being compared, never a
+     * display name.
+     */
+    private String requestedById;
 
     // Approval details
     private LocalDateTime approvedAt;

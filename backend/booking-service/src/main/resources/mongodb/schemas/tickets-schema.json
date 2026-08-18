@@ -15,9 +15,16 @@
       "createdAt"
     ],
     "properties": {
-      "_id": {
+      "_class": {
         "bsonType": "string",
-        "description": "MongoDB document ID"
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
+      "_id": {
+        "bsonType": [
+          "objectId",
+          "string"
+        ],
+        "description": "Spring Data generates an ObjectId when @Id String id is null, which is the normal path for an issued ticket; reservations set a UUID string explicitly. Declaring string-only rejected every ticket the platform issues."
       },
       "version": {
         "bsonType": "long",
@@ -86,23 +93,20 @@
       },
       "ticketCategory": {
         "enum": [
-          "GENERAL_ADMISSION",
+          "GENERAL",
+          "PRE_SALE",
           "VIP",
+          "VVIP",
           "PREMIUM",
           "EARLY_BIRD",
-          "GROUP",
           "STUDENT",
           "SENIOR",
-          "CHILD",
-          "STANDING",
-          "SEATED",
-          "MEET_AND_GREET",
-          "BACKSTAGE_PASS",
-          "PRESALE",
-          "REGULAR",
-          "LAST_MINUTE"
+          "GROUP",
+          "CORPORATE",
+          "SPONSOR",
+          "FREE"
         ],
-        "description": "Ticket category enum value"
+        "description": "Exactly com.pml.shared.constants.TicketCategory"
       },
       "ticketCategoryCode": {
         "bsonType": "string",
@@ -121,24 +125,27 @@
       },
       "currency": {
         "bsonType": "string",
-        "enum": ["ZMW"],
+        "enum": [
+          "ZMW"
+        ],
         "description": "Currency code (default: ZMW)"
       },
       "status": {
+        "bsonType": "string",
+        "pattern": "^[A-Z][A-Z0-9_]{1,49}$",
+        "description": "The ticket's status code. Deliberately NOT a closed enum: platform administrators own this value set through reference data, so an enum here rejects every status they add \u2014 the database would veto the feature. The pattern still holds the shape (OWASP A03: no injection payload survives it), and the closed set moved to statusSemantic, which is the part code actually branches on."
+      },
+      "statusSemantic": {
         "enum": [
-          "PENDING_PAYMENT",
-          "PENDING_VERIFICATION",
-          "PURCHASED",
-          "CONFIRMED",
-          "VALIDATED",
-          "USED",
-          "EXPIRED",
+          "INITIAL",
+          "PENDING",
+          "IN_PROGRESS",
+          "SUCCEEDED",
+          "FAILED",
           "CANCELLED",
-          "REFUNDED",
-          "CHARGEDBACK",
-          "PAYMENT_FAILED"
+          null
         ],
-        "description": "Ticket status - enforced enum constraint"
+        "description": "What status MEANS, denormalised from reference data. THIS is the closed set (OWASP A04) \u2014 the vocabulary is fixed in code while the codes above are not. null is allowed on purpose: a code with no reference-data row is left unclassified, which is findable, rather than guessed, which is not."
       },
       "qrCode": {
         "bsonType": "string",
@@ -287,10 +294,17 @@
           },
           "currency": {
             "bsonType": "string",
-            "enum": ["ZMW"]
+            "enum": [
+              "ZMW"
+            ]
           },
           "status": {
-            "enum": ["PENDING", "COMPLETED", "FAILED", "REFUNDED"]
+            "enum": [
+              "PENDING",
+              "COMPLETED",
+              "FAILED",
+              "REFUNDED"
+            ]
           },
           "paymentDate": {
             "bsonType": "date"
@@ -317,7 +331,14 @@
             "maxLength": 1000
           },
           "status": {
-            "enum": ["PENDING", "APPROVED", "REJECTED", "PROCESSING", "COMPLETED", "FAILED"]
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED",
+              "PROCESSING",
+              "COMPLETED",
+              "FAILED"
+            ]
           },
           "refundDate": {
             "bsonType": "date"

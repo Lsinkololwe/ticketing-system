@@ -18,11 +18,11 @@ runs, the three types that are not negotiable — `BigDecimal`/`Decimal128` for 
 `Instant` for time, `@Version` for anything carrying a balance or a count — and the one
 write shape that stops an event overselling.
 
-It also draws the line the platform's hybrid persistence depends on. PostgreSQL exists
-here for exactly two reasons: Keycloak's own schema, and Spring Modulith's event
-publication registry. **No business document is ever written to it.** Redis exists for
-exactly four: OTP codes, idempotency guards, distributed locks, and caches — every key
-with a TTL, and never a fact the platform cannot recompute.
+It also draws the line the platform's storage depends on. **One store holds business
+state, and it is MongoDB.** No service connects to PostgreSQL at all — Keycloak runs its
+own schema, on its own instance, and no service reaches it. Redis exists for exactly four
+things: OTP codes, idempotency guards, distributed locks, and caches — every key with a
+TTL, and never a fact the platform cannot recompute.
 
 It delivers no domain behaviour. Its success criterion is that a multi-document
 transaction commits and rolls back correctly, that every collection the platform will
@@ -101,24 +101,43 @@ deletion is a status transition plus, where the law requires it, anonymisation
 ([ET-PLT-008](../008-data-protection/)). Reference data and expired invitations may be
 removed, and TTL indexes do it.
 
-**PostgreSQL is framework infrastructure and nothing else.** The `modulith_events` schema
-holds Spring Modulith's `event_publication` table; Keycloak holds its own schema. No JPA
-entity exists in any service, and the blocking JDBC pool is sized for the outbox drain,
-not for request traffic.
+**No service touches PostgreSQL at all.** Keycloak runs its own schema on its own
+instance, and that is the whole of PostgreSQL's role in this platform. No service declares
+a datasource, a JDBC driver, a connection pool or a JPA entity. A blocking pool inside a
+strictly reactive stack is a liability that has to earn its place, and once the outbox
+lives in MongoDB ([ET-PLT-003](../003-event-contract/)) nothing is left for it to do.
 
 **Redis holds four things, each with a TTL.** OTP codes, idempotency guards, distributed
 locks, and read-through caches. It holds **no business state**: a TTL expiry must never
 be able to destroy a fact, and Redis cannot participate in a Mongo transaction, so a
 write that lands in one and not the other is a write nobody can reconcile.
 
+**The stored type discriminator is an alias, never a class name.** Spring Data MongoDB
+writes the fully-qualified class name into a `_class` field on every document by default.
+That silently makes the Java package structure part of the persisted schema: renaming a
+package, moving a document class, or promoting it to `shared-library` rewrites data that
+was never meant to change, and the documents already written no longer deserialise into
+the class that now owns them. Every `@Document` therefore carries `@TypeAlias` with a
+short, stable name that is chosen once and never changed. The alias is a storage
+identifier that happens to start life matching a class, not a pointer to one.
+
+```java
+@Document(collection = "booking_escrow_accounts")
+@TypeAlias("escrowAccount")          // stable; survives every package move
+public class EscrowAccount { … }
+```
+
 **Rejected alternatives**
 
 - *A database per service.* Three connection strings, three backup policies and three replica sets, to enforce a boundary a collection prefix and a lint rule already enforce.
+- *Removing the type discriminator entirely, with a `DefaultMongoTypeMapper(null)`.* Tempting for single-type collections and genuinely smaller on disk, but it removes the platform's only defence against a collection ever holding a second shape, and it fails silently rather than loudly the day one does. The alias costs a dozen bytes and keeps the option.
+- *Leaving `_class` at its default and rewriting it in a migration when a class moves.* A data migration triggered by a refactor is a refactor nobody performs, so the packages ossify instead.
 - *A standalone `mongod` in development, replica set only in production.* Guarantees that the class of bug transactions exist to prevent is invisible until staging.
 - *`long` minor units (ngwee) instead of `BigDecimal`.* Correct, and it makes every commission percentage a rounding argument at the call site instead of once at persistence.
 - *Pessimistic locking on ticket tiers.* Serialises the on-sale minute — the one minute that must not serialise.
 - *An application-level sequence for ticket numbers.* A second document to contend on, and a single point of contention per event; ticket identity is the `ObjectId` and the human-facing reference is derived from it.
-- *Storing the outbox in MongoDB and draining it with Debezium.* Adds Kafka Connect, a Debezium connector and a second delivery pipeline to obtain a guarantee Spring Modulith already provides over a table the platform already runs — see [ET-PLT-003](../003-event-contract/).
+- *An outbox in PostgreSQL, alongside the reactive MongoDB write.* Two transaction managers that cannot enlist together, so the document and the event row are not atomic — which is the entire guarantee an outbox exists to provide. It also puts a blocking JDBC pool inside a reactive stack. See [ET-PLT-003](../003-event-contract/).
+- *Draining the MongoDB outbox with Debezium.* Kafka Connect, a connector and an oplog dependency, where an indexed `@Scheduled` poll suffices at this volume.
 - *Soft-delete flags (`deleted: true`) alongside a status enum.* Two fields answering one question, and every query then needs both predicates or it is wrong.
 
 ## 3. Requirements
@@ -135,7 +154,7 @@ writes in one transaction.
 - [ ] An integration test writes two documents in one `@Transactional` method, forces a failure after the first, and observes neither present
 - [ ] The same test against a standalone `mongod` fails — the suite proves the topology, not just the annotation
 - [ ] A reservation and its payment intent are written in one transaction; a ticket and its escrow credit are written in one transaction
-- [ ] No `@Transactional` method spans MongoDB and PostgreSQL
+- [ ] No `@Transactional` method spans two datastores — there is only one, so the dual-write window does not exist to be reasoned about
 
 ### ET-PLT-002-R2 · Every collection is a row of the registry, owned by exactly one service
 
@@ -147,7 +166,7 @@ service reads a collection it does not own, THEN the build SHALL fail.
 - [ ] Every collection name is prefixed `catalog_`, `booking_` or `identity_` and the prefix matches the declaring service
 - [ ] No service declares a `@Document` or repository for a collection whose registry row names another service
 - [ ] No service holds a `MongoTemplate` call naming another service's collection as a string
-- [ ] `./scripts/spec-lint.sh --persistence` exits 0
+- [ ] Every `@Document` names a row of the ET-PLT-002 §4 registry and carries `@TypeAlias`; no document field is `LocalDateTime` or `java.util.Date`; every balance-bearing document declares `@Version`
 - [ ] Adding a collection changes this spec's §4 in the same commit as the `@Document`
 
 ### ET-PLT-002-R3 · Every index the platform runs is declared, and none is created by hand
@@ -173,7 +192,7 @@ in MongoDB, and SHALL store the currency alongside it.
 - [ ] Every monetary field persists as `Decimal128` — a `BigDecimal`-to-`Decimal128` converter is registered and a round-trip test proves `K1234.56` survives unchanged
 - [ ] Every document carrying a monetary field also carries a `currency` field, defaulting to `ZMW`
 - [ ] Rounding is `RoundingMode.HALF_UP` at scale 2, applied at persistence and nowhere else — no intermediate calculation rounds
-- [ ] `./scripts/spec-lint.sh --money` exits 0
+- [ ] No production field typed `double` or `float` names an amount, balance, price, fee, total or commission; every rounding is `HALF_UP`; no balance is assigned outside the ledger
 
 ### ET-PLT-002-R5 · Time is `Instant`, from the clock, in UTC
 
@@ -185,7 +204,7 @@ THE SYSTEM SHALL persist every timestamp as `Instant` sourced from the applicati
 - [ ] Spring Data auditing (`@CreatedDate`, `@LastModifiedDate`) is backed by a `DateTimeProvider` reading the same `Clock` bean, so a frozen test clock freezes audit fields too
 - [ ] Action timestamps follow the `{pastTense}At` convention of §4 — `submittedAt`, `approvedAt`, `expiresAt`, `settledAt`
 - [ ] A document written under a frozen clock carries exactly the frozen instant in `createdAt`
-- [ ] `./scripts/spec-lint.sh --clock` exits 0
+- [ ] A search of production source finds no inline `Instant.now()`, `LocalDateTime.now()`, `LocalDate.now()`, `ZonedDateTime.now()` or `System.currentTimeMillis()`
 
 ### ET-PLT-002-R6 · Contended documents are version-locked, and inventory moves atomically
 
@@ -202,18 +221,32 @@ conditional atomic update.
 - [ ] A load test issuing 200 concurrent reservations against an inventory document with 50 available yields exactly 50 successes and 150 `TierSoldOut` refusals, and `available + reserved + sold` equals capacity throughout
 - [ ] Retry on optimistic failure is bounded and explicit, never an unbounded loop
 
-### ET-PLT-002-R7 · PostgreSQL and Redis stay in their lanes
+### ET-PLT-002-R7 · MongoDB is the only datastore a service connects to
 
-THE SYSTEM SHALL restrict PostgreSQL to framework infrastructure and Redis to expiring
-operational data, and SHALL NOT store business state in either.
+THE SYSTEM SHALL restrict every service to MongoDB and Redis, and SHALL NOT open a
+connection to any relational database.
 
 **Acceptance**
 - [ ] No service declares a JPA `@Entity` or `@Table`
-- [ ] The only PostgreSQL schema any service touches is `modulith_events`; Keycloak's schema is Keycloak's alone
-- [ ] The JDBC pool is sized for the outbox drain and is configured with a maximum well below the MongoDB connection budget
+- [ ] No service declares a `DataSource`, a JDBC driver dependency, a connection pool or a `PlatformTransactionManager`
+- [ ] No service has a `spring.datasource.*` block in any profile; PostgreSQL appears in no service's configuration
+- [ ] Keycloak's schema is Keycloak's alone, and no service holds credentials for it
 - [ ] Every Redis key the platform writes is a row of the §4 Redis registry and carries a TTL
 - [ ] No fact is readable only from Redis — for each registry row, §4 names where the authority lives
 - [ ] Flushing Redis loses no business data; an integration test asserts this by flushing mid-suite
+
+### ET-PLT-002-R8 · No stored document names a Java class
+
+THE SYSTEM SHALL write a stable, package-independent type alias as the document type
+discriminator, and no persisted document SHALL contain a fully-qualified Java class name.
+
+**Acceptance**
+- [ ] Every `@Document` class carries `@TypeAlias("…")` whose value is a short, stable, lower-camel name — never a package, never a class literal
+- [ ] No document written by any service contains a `_class` value matching `com.pml.*`
+- [ ] A type alias is never changed once written; renaming or moving the Java class leaves the alias untouched
+- [ ] Moving a `@Document` class between packages, or promoting it to `shared-library`, changes no stored value and requires no backfill — a test asserts a document written before the move still deserialises after it
+- [ ] Two services mapping the same collection agree on the alias, and a test asserts both read a document written by the other
+- [ ] Every `@Document` names a row of the ET-PLT-002 §4 registry and carries `@TypeAlias`; no document field is `LocalDateTime` or `java.util.Date`; every balance-bearing document declares `@Version` fails on a `@Document` with no `@TypeAlias`
 
 ## 4. Model
 
@@ -227,6 +260,7 @@ operational data, and SHALL NOT store business state in either.
 | Version | `Long` | `Long` | `@Version`, on versioned documents only |
 | Enum | Java enum | `String` | UPPER_SNAKE_CASE |
 | Foreign key | `String` | `String` | `{entity}Id`; user references are always `userId` |
+| Type discriminator | `@TypeAlias("…")` | `_class` | a short stable alias — **never** a package or class name |
 
 ### Collection registry — closed
 
@@ -240,9 +274,12 @@ operational data, and SHALL NOT store business state in either.
 | `catalog_cities` | no | reference | ET-CAT-003 |
 | `catalog_provinces` | no | reference | ET-CAT-003 |
 | `catalog_categories` | no | event categories | ET-CAT-003 |
-| `catalog_reference_data` | no | typed lookup lists | ET-CAT-003 |
+| `catalog_reference_data` | no | typed lookup lists and workflow statuses, one row per `(type, code)` | ET-PLT-014 |
 | `catalog_approval_timelines` | no | the audit of an event's approval steps | ET-ADM-001 |
 | `catalog_approval_escalations` | no | SLA escalation state | ET-ADM-001 |
+| `catalog_statistics_rollups` | no | precomputed catalog statistics — events by city, by category, growth | ET-ADM-004 |
+| `catalog_migration_runs` | no | this service's document-version backfills | ET-PLT-010 |
+| `catalog_outbox` | no | staged cross-service events, written in the business transaction | ET-PLT-003 |
 
 **booking-service**
 
@@ -268,6 +305,13 @@ operational data, and SHALL NOT store business state in either.
 | `booking_reconciliation_runs` | no | one per reconciliation execution | ET-FIN-005 |
 | `booking_reconciliation_items` | no | per-transaction match state | ET-FIN-005 |
 | `booking_promo_codes` | **yes** | code, budget, redemption counter | ET-CAT-002 |
+| `booking_checkins` | no | one row per admitted ticket, with the gate and the scanner | ET-TKT-003 |
+| `booking_checkin_conflicts` | no | duplicate and offline-collision scans, for adjudication | ET-TKT-003 |
+| `booking_ticket_transfers` | **yes** | transfer and resale lifecycle between users | ET-TKT-004 |
+| `booking_recovery_proposals` | no | proposed dual-control recovery actions on stuck money | ET-ADM-003 |
+| `booking_statistics_rollups` | no | precomputed finance and sales statistics | ET-ADM-004 |
+| `booking_migration_runs` | no | this service's document-version backfills | ET-PLT-010 |
+| `booking_outbox` | no | staged cross-service events, written in the business transaction | ET-PLT-003 |
 
 **identity-service**
 
@@ -279,16 +323,39 @@ operational data, and SHALL NOT store business state in either.
 | `identity_team_invitations` | no | pending invitations and their tokens | ET-ORG-002 |
 | `identity_ownership_transfers` | no | pending ownership transfers | ET-ORG-002 |
 | `identity_event_access_grants` | no | event-level role overrides | ET-ORG-003 |
-| `identity_permissions` | no | the permission catalogue | ET-ORG-003 |
-| `identity_role_permissions` | no | role → permission mapping | ET-ORG-003 |
+| `identity_permissions` | no | the permission catalogue, bootstrapped from the code registry | ET-PLT-013 |
+| `identity_role_permissions` | no | role → permission mapping, **one document per role**; Keycloak owns the roles themselves | ET-PLT-013 |
+| `identity_role_permission_changes` | no | append-only log of every mapping change | ET-PLT-013 |
 | `identity_verification_documents` | no | KYB document metadata and review state | ET-ORG-001 |
 | `identity_notifications` | no | delivered and pending notifications | ET-NTF-001 |
 | `identity_notification_preferences` | no | per-user channel preferences | ET-NTF-001 |
 | `identity_user_devices` | no | push tokens | ET-NTF-001 |
 | `identity_event_reminders` | no | scheduled reminder state | ET-NTF-002 |
 | `identity_audit_logs` | no | the immutable audit trail | ET-PLT-009 |
+| `identity_notification_templates` | **yes** | versioned message bodies per channel and locale | ET-NTF-001 |
+| `identity_mass_sends` | no | bulk-send batches and their per-recipient outcome | ET-NTF-002 |
+| `identity_review_claims` | no | one claim per review subject — organizer, document or event | ET-ADM-001 |
+| `identity_platform_configuration` | no | append-only, versioned platform settings | ET-ADM-002 |
+| `identity_feature_flags` | no | flag state and its organization overrides | ET-ADM-002 |
+| `identity_temporary_blocks` | no | time-limited subject and IP blocks | ET-PLT-011 |
+| `identity_consent_records` | no | consent given and withdrawn, per purpose | ET-PLT-008 |
+| `identity_erasure_requests` | no | erasure lifecycle and the 30-day grace period | ET-PLT-008 |
+| `identity_data_exports` | no | subject-access export requests and their artefacts | ET-PLT-008 |
+| `identity_statistics_rollups` | no | precomputed identity and organization statistics | ET-ADM-004 |
+| `identity_migration_runs` | no | this service's document-version backfills | ET-PLT-010 |
+| `identity_token_revocations` | no | revoked tokens, sessions and subjects — the system of record | ET-IDN-003 |
+| `identity_outbox` | no | staged cross-service events, written in the business transaction | ET-PLT-003 |
 
-**38 collections.** No other collection exists.
+**66 collections.** No other collection exists.
+
+**There is no `admin_` prefix.** `admin` is a persona, not a service. A collection is
+prefixed by the service that **writes** it, because that prefix is the only place
+write-ownership is recorded; prefixing by audience produces a name that lies the moment a
+second surface reads the data, and — worse — invites three services to write one
+collection. Administrative data therefore lives with its owning service: platform
+configuration, flags, blocks and review claims in `identity_`, recovery proposals in
+`booking_`. The two genuinely per-service concerns — statistics rollups and migration runs
+— are **one collection per service**, never one shared collection with three writers.
 
 ### Index registry
 
@@ -368,10 +435,12 @@ decision reads it; the decision is the conditional update against the document (
 
 | Schema | Owner | Contents |
 |---|---|---|
-| `modulith_events` | the three services | `event_publication` — Spring Modulith's registry |
-| Keycloak's schema | Keycloak | its own; no service connects to it |
+| Keycloak's schema | Keycloak | its own; **no service connects to it** |
 
-No business document, ever. No JPA entity in any service.
+That is the entire relational footprint. No service declares a datasource, and there is no
+relational schema of its own — the outbox is `{service}_outbox` in MongoDB
+([ET-PLT-003](../003-event-contract/)), staged in the same transaction as the write it
+describes, which is the only way the two are ever actually atomic.
 
 ### The atomic inventory write
 
@@ -413,8 +482,8 @@ refusal, not an error, and it appends nothing.
 
 - [ ] **T3 · Rename every collection to its registry name; add the lint check**
   - requirements: R2
-  - files: every `@Document`, `scripts/spec-lint.sh`
-  - verify: `./scripts/spec-lint.sh --persistence`
+  - files: every `@Document` class in all three services
+  - verify: every `@Document` names a row of the ET-PLT-002 §4 registry and carries `@TypeAlias`; no document field is `LocalDateTime` or `java.util.Date`; every balance-bearing document declares `@Version`
   - parallel-safe: yes — one service per agent
   - depends: T2
 
@@ -428,14 +497,14 @@ refusal, not an error, and it appends nothing.
 - [ ] **T5 · Money: purge floating point, add `currency`, pin `HALF_UP` at scale 2**
   - requirements: R4
   - files: `backend/booking-service/src/main/java/com/pml/booking/`
-  - verify: `./scripts/spec-lint.sh --money`
+  - verify: no production field typed `double` or `float` names an amount, balance, price, fee, total or commission; every rounding is `HALF_UP`; no balance is assigned outside the ledger
   - parallel-safe: no — booking only, but it is most of booking
   - depends: T2
 
 - [ ] **T6 · Time: `Instant` everywhere; `DateTimeProvider` on the platform `Clock`**
   - requirements: R5
   - files: `backend/*/src/main/java/com/pml/*/config/`
-  - verify: `./scripts/spec-lint.sh --clock`; a frozen-clock audit-field test
+  - verify: a search of production source finds no inline `Instant.now()`, `LocalDateTime.now()`, `LocalDate.now()`, `ZonedDateTime.now()` or `System.currentTimeMillis()`; a frozen-clock audit-field test
   - parallel-safe: yes — one service per agent
   - depends: T2
 
@@ -453,12 +522,19 @@ refusal, not an error, and it appends nothing.
   - parallel-safe: no — the single most important write in the platform
   - depends: T7
 
-- [ ] **T9 · Confine PostgreSQL and Redis; size the JDBC pool; the flush test**
+- [ ] **T9 · Remove every relational dependency; confine Redis; the flush test**
   - requirements: R7
-  - files: `backend/*/src/main/resources/application.yml`
-  - verify: a mid-suite `FLUSHALL` loses no business data
-  - parallel-safe: yes
+  - files: `backend/*/pom.xml`, `backend/*/src/main/resources/application.yml`
+  - verify: no service resolves a JDBC driver or declares a datasource; a mid-suite `FLUSHALL` loses no business data
+  - parallel-safe: yes — one service per agent
   - depends: T2
+
+- [ ] **T10 · `@TypeAlias` on every document; assert no `com.pml.*` reaches storage**
+  - requirements: R8
+  - files: every `@Document` class in all three services
+  - verify: a document written before its class is moved between packages still deserialises after the move; no stored `_class` matches `com.pml.*`
+  - parallel-safe: yes — one service per agent
+  - depends: T3
 
 ## 6. Out of scope
 

@@ -89,17 +89,17 @@ scalar PhoneNumber
 # ============================================================================
 
 # Ticket lifecycle status
+# ET-TKT-002 R7's seven, and nothing else. The four pre-payment states this
+# once declared became unreachable when ET-TKT-001 R7 moved issuance inside the
+# confirmation transaction.
 enum TicketStatus {
-    PENDING_PAYMENT    # Ticket reserved, awaiting payment
-    PURCHASED          # Payment received
-    CONFIRMED          # Ticket confirmed and issued
-    VALIDATED          # Scanned/checked at venue
-    USED               # Fully used (for multi-entry tickets)
-    EXPIRED            # Past event date, never used
-    CANCELLED          # Cancelled before event
-    REFUNDED           # Refund processed
-    PAYMENT_FAILED     # Payment attempt failed
-    REFUND_PENDING     # Queued for refund (e.g., event cancelled)
+    ISSUED             # Issued at confirmation; the only state a gate admits from
+    VALIDATED          # Admitted at the gate; still refundable (ET-TKT-003 R8)
+    TRANSFERRED        # A marker on the source ticket's history, not a resting state
+    REFUND_PENDING     # Refund requested, not yet settled
+    REFUNDED           # Terminal — refund settled, or a chargeback landed
+    CANCELLED          # Terminal — event cancelled, or cancelled by an operator
+    EXPIRED            # Terminal — event completed, never scanned
 }
 
 # Ticket category (shared value type with Catalog Service)
@@ -193,17 +193,33 @@ enum RefundRequestType {
     SYSTEM_AUTOMATIC
     EVENT_CANCELLED
     TICKET_EXPIRED
+    # RefundServiceImpl persists these two, so any query returning such a refund
+    # request failed to serialise until they were declared here. They describe
+    # the AMOUNT rather than the reason, which sits awkwardly beside the five
+    # above — worth revisiting in ET-FIN-004, but declaring them is not optional
+    # while the server writes them.
+    FULL
+    PARTIAL
 }
 
-# Escrow account status
+# Escrow account status — ET-FIN-001 R4's five, and only those.
+#
+# CREATED, LOCKED, PROCESSING_PAYOUT and CANCELLED were removed. A client that
+# still sends one gets a validation error at the gateway rather than a silent
+# mismatch deeper in, which is the reason this enum stays closed here even though
+# the stored status code is administrator-configurable: the API contract is a
+# different thing from the value set.
 enum EscrowAccountStatus {
-    CREATED
+    # Open and receiving ticket revenue.
     ACTIVE
-    LOCKED
+    # Event ended; the hold period is counting down.
+    HOLD
+    # Hold elapsed, no open disputes — the organizer may request a payout.
     PAYOUT_ELIGIBLE
-    PROCESSING_PAYOUT
+    # Stopped by the platform. Ends when a person lifts it, not on a date.
+    SUSPENDED
+    # Terminal: fully paid out, or fully refunded after a cancellation.
     CLOSED
-    CANCELLED
 }
 
 # Payout request status
@@ -260,11 +276,21 @@ enum PayoutReviewStatus @tag(name: "admin") {
 }
 
 # Reservation status
+# ET-TKT-001 R6's five, and exactly these.
+#
+# The Java enum moved to these values; this declaration did not, so the schema
+# still promised ACTIVE/CONVERTED and the server was serialising HELD/CONFIRMED.
+# Every query returning a live reservation would have failed on the wire.
+#
+# EXPIRED and RELEASED are separate on purpose: "nobody paid in time" and "the
+# payment failed" are different problems, and a platform that records both the
+# same way cannot tell a payments outage from a slow checkout.
 enum ReservationStatus {
-    ACTIVE
-    CONVERTED
+    HELD
+    CONFIRMED
     EXPIRED
-    CANCELLED
+    RELEASED
+    FAILED
 }
 
 # Promo code discount type
@@ -709,10 +735,8 @@ type EventEscrowAccount @tag(name: "admin") {
     currency: String!
     status: EscrowAccountStatus!
     lockUntil: DateTime
-    lockReason: String
     payoutEligibleAt: DateTime
     closedAt: DateTime
-    closedReason: String
     createdAt: DateTime
     updatedAt: DateTime
 }
@@ -764,12 +788,12 @@ type PayoutRequest @tag(name: "organizer") @tag(name: "admin") {
     platformFee: BigDecimal
     processingFee: BigDecimal
     taxAmount: BigDecimal
-    netPayoutAmount: BigDecimal!
+    settledAmount: BigDecimal!
     currency: String!
     status: PayoutRequestStatus!
     payoutMethod: PayoutMethod
     requestedAt: DateTime!
-    requestedBy: String!
+    requestedById: String!
     approvedAt: DateTime
     approvedBy: String
     rejectedAt: DateTime
@@ -833,7 +857,7 @@ type RefundRequest @tag(name: "organizer") @tag(name: "admin") {
     requestType: RefundRequestType!
     reason: String!
     additionalNotes: String
-    requestedBy: String
+    requestedById: String
     requestedAt: DateTime
     reviewedBy: String
     reviewedAt: DateTime
@@ -871,7 +895,18 @@ type TicketReservation @tag(name: "mobile") {
     expiresAt: DateTime!
     remainingSeconds: Int
     promoCodeApplied: String
+    subtotal: BigDecimal
     discountAmount: BigDecimal
+    # The intent paying for this hold. Null until payReservation is called.
+    paymentIntentId: ID
+    # Terminal timestamps. Kept apart rather than merged into one `resolvedAt`
+    # because "nobody paid in time" and "the payment failed" are different
+    # problems, and a platform that records both the same way cannot tell a
+    # payments outage from a slow checkout (ET-TKT-001 §4).
+    confirmedAt: DateTime
+    releasedAt: DateTime
+    failedAt: DateTime
+    failureReason: String
     createdAt: DateTime!
     updatedAt: DateTime
 }
@@ -970,13 +1005,14 @@ type RefundInfo @tag(name: "organizer") @tag(name: "admin") {
 # ADMIN - Platform-wide ticket statistics
 type TicketStats @tag(name: "admin") {
     totalTickets: Int!
-    purchasedTickets: Int!
+    # One counter per resting state of ET-TKT-002 R7. TRANSFERRED has none:
+    # a transferred ticket returns to ISSUED under its new owner.
+    issuedTickets: Int!
     validatedTickets: Int!
-    usedTickets: Int!
+    refundPendingTickets: Int!
     refundedTickets: Int!
-    expiredTickets: Int!
     cancelledTickets: Int!
-    pendingPaymentTickets: Int!
+    expiredTickets: Int!
     ticketsByStatus: [TicketStatusStats!]
     ticketsByCategory: [TicketCategoryStats!]
     recentTickets: [Ticket!]
@@ -1161,6 +1197,118 @@ enum OrganizerActivityType {
     PAYOUT_REQUESTED
     REFUND_PROCESSED
     EVENT_CREATED
+}
+
+# ==========================================================================
+# ORGANIZER - Dashboard analytics
+#
+# Back the organizer dashboard's data-viz tiles. Every one of these returns
+# raw counts and the denominator they were computed against, never a bare
+# percentage — the dashboard prints the denominator beside each rate so the
+# figure is checkable.
+#
+# Chart contract: frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md
+# ==========================================================================
+
+# ORGANIZER - One month of the revenue trend
+type OrganizerRevenuePoint @tag(name: "organizer") {
+    # First day of the month, ISO-8601 date (e.g. "2026-03-01").
+    # A month is a date, not an instant: sending it as a DateTime lets the
+    # axis label slip a month across a timezone boundary.
+    periodStart: String!
+    revenue: BigDecimal!
+    ticketsSold: Int!
+    currency: String!
+}
+
+# ORGANIZER - One labelled part of a composition breakdown
+type OrganizerShareRow @tag(name: "organizer") {
+    name: String!
+    count: Int!
+    # Null for non-monetary breakdowns such as check-in outcome.
+    revenue: BigDecimal
+}
+
+# ORGANIZER - Sold tickets broken down by tier
+type OrganizerTicketMix @tag(name: "organizer") {
+    # The denominator every row's share is computed against.
+    totalSold: Int!
+    totalRevenue: BigDecimal!
+    currency: String!
+    # Sorted by count descending; tiers under 1% folded into an "Other" row.
+    rows: [OrganizerShareRow!]!
+}
+
+# ORGANIZER - Gate attendance for the most recent event that has run
+type OrganizerCheckInRate @tag(name: "organizer") {
+    eventId: ID!
+    eventTitle: String!
+    eventDateTime: DateTime
+    # Denominator: valid tickets issued. Cancelled/refunded excluded.
+    issued: Int!
+    # Numerator: distinct tickets scanned. Re-scans are deduplicated.
+    scanned: Int!
+    ratePercent: Float!
+}
+
+# ORGANIZER - Withdrawable balance and the hold on the next tranche
+type OrganizerPayoutWindow @tag(name: "organizer") {
+    availableNow: BigDecimal!
+    # Still held in escrow for events that have not cleared.
+    pendingRelease: BigDecimal!
+    currency: String!
+    # Null when nothing is locked — the client then renders the figure with
+    # no meter rather than a meter pinned at 100%.
+    windowOpenedAt: DateTime
+    nextReleaseAt: DateTime
+    windowDaysTotal: Int!
+    daysElapsed: Int!
+    daysRemaining: Int!
+}
+
+# ORGANIZER - An escrow account the organizer can draw a payout from now
+#
+# Exists because createPayoutRequest requires an escrowAccountId and every
+# other escrow query is admin-scoped — an organizer previously had no way to
+# discover their own account id, so the payout flow could not be completed.
+type OrganizerPayoutSource @tag(name: "organizer") {
+    escrowAccountId: ID!
+    eventId: String
+    eventTitle: String
+    # Withdrawable balance on this account — the cap for a request against it.
+    availableAmount: BigDecimal!
+    currency: String!
+    eligibleSince: DateTime
+}
+
+# Why a payout cannot be requested.
+#
+# A list rather than a single reason: an organizer who fixes the first blocker
+# should not discover the second one only after waiting for it.
+enum PayoutBlockedReason {
+    NO_ESCROW_ACCOUNT
+    EVENT_NOT_COMPLETED
+    HOLD_NOT_ELAPSED
+    OPEN_DISPUTES
+    BELOW_MINIMUM
+    # A request for this escrow is already open. Not one of ET-FIN-003's four
+    # money conditions, but a real reason the button cannot be pressed — and a
+    # disabled button that says why beats an enabled one the server rejects.
+    PAYOUT_ALREADY_REQUESTED
+}
+
+type PayoutEligibility @tag(name: "organizer") {
+    eligible: Boolean!
+    # Empty when eligible.
+    reasons: [PayoutBlockedReason!]!
+    # The withdrawable balance. A payout is all of it or none — ET-FIN-003 does
+    # not support partial withdrawals, so this is the amount to request.
+    availableAmount: BigDecimal!
+    currency: String!
+    # When the hold elapses. Null once it has.
+    opensAt: DateTime
+    # The platform floor, so the client can say how far short a balance is.
+    minimumAmount: BigDecimal!
 }
 
 # ORGANIZER - Upcoming event summary for dashboard
@@ -1704,22 +1852,6 @@ input CursorPaginationInput {
     before: String
 }
 
-input TicketPurchaseInput {
-    eventId: String!
-    ticketCategoryCode: String!
-    quantity: Int!
-    buyerName: String!
-    buyerEmail: String!
-    buyerPhone: String
-    paymentMethod: PaymentMethod!
-    paymentReference: String
-    correlationId: String!
-    amount: BigDecimal
-    currency: String
-    promoCode: String
-    metadata: JSON
-}
-
 input TicketFilterInput {
     eventId: String
     buyerId: String
@@ -1779,7 +1911,7 @@ input CreateRefundRequestInput {
     ticketId: String!
     reason: String!
     additionalNotes: String
-    requestedBy: String!
+    requestedById: String!
     metadata: JSON
 }
 
@@ -1803,6 +1935,17 @@ input CreatePayoutRequestInput {
     payoutMethod: PayoutMethod!
     notes: String
     metadata: JSON
+
+    # Client-supplied key that makes retrying this request safe.
+    #
+    # Sending the same key twice returns the ORIGINAL payout rather than
+    # creating a second one for the same money. Backed by a unique sparse
+    # index, so the guarantee holds under concurrent retries too.
+    #
+    # Optional so existing callers keep working, but a caller that omits it
+    # gets no retry protection — send one.
+    # Required by specs/finance/003-payouts-and-settlement.
+    idempotencyKey: String
 }
 
 input CreateBankAccountInput {
@@ -1835,6 +1978,10 @@ input ReserveTicketsInput {
     eventId: ID!
     selections: [TicketSelectionInput!]!
     promoCode: String
+    # ET-TKT-001 R6. Client-supplied, because the retry that needs it is the one
+    # where the client never saw a response — a server-generated key travelled
+    # back in the reply that never arrived.
+    idempotencyKey: String!
 }
 
 input TicketSelectionInput {
@@ -1842,11 +1989,14 @@ input TicketSelectionInput {
     quantity: Int!
 }
 
-input CompleteReservationInput {
+# Asks for the mobile-money prompt on a held reservation.
+#
+# Notably absent: an amount. The reservation already carries the quote it was
+# created with; taking a number from the request would let the caller choose
+# their own price.
+input PayReservationInput {
     reservationId: ID!
-    paymentMethod: PaymentMethod!
     phoneNumber: String!
-    promoCode: String
 }
 
 input CreatePromoCodeInput {
@@ -2048,8 +2198,8 @@ Input for initiating a payment attempt with PawaPay.
 Called during ticket checkout to start mobile money payment.
 """
 input InitiatePaymentAttemptInput @tag(name: "internal") {
-    "Ticket being purchased"
-    ticketId: String!
+    "Reservation being paid for"
+    reservationId: String!
     "Event the ticket is for"
     eventId: String!
     "User making the payment"
@@ -2118,23 +2268,131 @@ type TicketMutationResponse {
     metadata: JSON
 }
 
+# ============================================================================
+# GATE CHECK-IN (ET-TKT-003)
+# ============================================================================
+
+# How a ticket was presented at the gate.
+#
+# The three carry very different assurance and are kept distinct because of it:
+# only QR_ONLINE can have a duplicate refused at scan time, and a gate with a
+# high MANUAL share is either broken or being worked around.
+enum ValidationMethod {
+    QR_ONLINE
+    QR_OFFLINE
+    MANUAL
+}
+
+# What happened to a scan.
+#
+# Deliberately not a boolean. A steward needs to tell "this ticket is fake"
+# apart from "this was used twenty minutes ago" — one is a refusal, the other
+# is a conversation.
+enum CheckInOutcome {
+    ADMITTED
+    ALREADY_RECORDED    # same scanId — an upload retry, not a second person
+    ALREADY_ADMITTED
+    WRONG_EVENT
+    INVALID_STATE
+    NOT_FOUND
+}
+
+enum CheckInConflictType {
+    DUPLICATE_SCAN
+    TICKET_NOT_VALID_FOR_EVENT
+    INVALID_STATE
+    TICKET_NOT_FOUND
+}
+
+enum CheckInConflictStatus {
+    OPEN
+    REVIEWED
+}
+
+# One accepted admission. There is at most one per ticket, enforced by a unique
+# index on booking_checkins.ticketId.
+type CheckIn @tag(name: "organizer") {
+    id: ID!
+    ticketId: ID!
+    ticketNumber: String
+    eventId: ID!
+    method: ValidationMethod!
+    scannedBy: String
+    deviceId: String
+    # Device clock. For an offline scan this is the only ordering information
+    # available, and it is the conflict tie-breaker.
+    scannedAt: DateTime
+    # Server clock. Never client-supplied.
+    recordedAt: DateTime!
+    reason: String
+}
+
+type CheckInConflict @tag(name: "organizer") {
+    id: ID!
+    eventId: ID!
+    ticketId: ID
+    presentedCode: String
+    type: CheckInConflictType!
+    method: ValidationMethod!
+    scannedBy: String
+    deviceId: String
+    scannedAt: DateTime
+    detectedAt: DateTime!
+    # When the winning admission happened, for a duplicate. Ten seconds apart is
+    # a steward double-tapping; two hours apart is two people.
+    originalCheckInAt: DateTime
+    status: CheckInConflictStatus!
+    reviewNote: String
+    reviewedBy: String
+    reviewedAt: DateTime
+}
+
+type CheckInConflictPage @tag(name: "organizer") {
+    content: [CheckInConflict!]!
+    totalElements: Int!
+    page: Int!
+    size: Int!
+}
+
+type CheckInSummary @tag(name: "organizer") {
+    eventId: ID!
+    issued: Int!
+    admitted: Int!
+    conflicts: Int!
+    openConflicts: Int!
+    manualAdmissions: Int!
+    lastCheckInAt: DateTime
+}
+
+input ValidateTicketInput {
+    eventId: ID!
+    # The ticket number scanned or typed.
+    code: String!
+    method: ValidationMethod = QR_ONLINE
+    # Client-generated id for one physical scan. Supply it for offline scans so
+    # a retried upload does not admit the same person twice; a unique sparse
+    # index on scanId is what makes that safe.
+    scanId: String
+    deviceId: String
+    # Device clock, for offline scans. Ignored for online ones.
+    scannedAt: DateTime
+    # Required for MANUAL.
+    reason: String
+}
+
+type ValidationResult @tag(name: "organizer") {
+    outcome: CheckInOutcome!
+    # True for ADMITTED and ALREADY_RECORDED — the two cases where the person
+    # in front of the steward goes in.
+    admitted: Boolean!
+    # A sentence a steward can read straight off the screen.
+    message: String!
+    checkIn: CheckIn
+    conflict: CheckInConflict
+    ticket: Ticket
+}
+
 # Specific ticket mutation response types matching resolver return types
-type ValidateTicketMutationResponse @tag(name: "organizer") {
-    success: Boolean!
-    message: String
-    data: Ticket
-    errors: [String!]!
-    metadata: JSON
-}
-
-type UseTicketMutationResponse @tag(name: "organizer") {
-    success: Boolean!
-    message: String
-    data: Ticket
-    errors: [String!]!
-    metadata: JSON
-}
-
 type RefundTicketMutationResponse @tag(name: "organizer") @tag(name: "admin") {
     success: Boolean!
     message: String
@@ -2151,12 +2409,20 @@ type CancelTicketMutationResponse @tag(name: "organizer") @tag(name: "admin") {
     metadata: JSON
 }
 
-type PurchaseTicketMutationResponse @tag(name: "mobile") {
+# MOBILE - The outcome of ASKING for a payment prompt, not of the payment.
+#
+# `success` means the provider accepted the request and the buyer's handset
+# should be ringing. It does not mean money moved: mobile-money confirmation
+# takes between eight seconds and four minutes and fails about one time in six.
+# Poll `reservation(id)` for the actual outcome (ET-TKT-001 R7).
+type PaymentInitiationResponse @tag(name: "mobile") {
     success: Boolean!
     message: String
-    data: Ticket
+    paymentIntentId: ID
+    transactionRef: String
+    paymentStatus: String
+    reservationId: ID
     errors: [String!]!
-    metadata: JSON
 }
 
 type RefundRequestMutationResponse {
@@ -2458,9 +2724,9 @@ type Query {
     paymentAttemptByAttemptNumber(attemptNumber: String!): PaymentAttempt @tag(name: "admin")
 
     # ADMIN - Payment attempts by ticket (all attempts for a purchase)
-    paymentAttemptsByTicket(ticketId: String!): [PaymentAttempt!]! @tag(name: "admin")
-    latestPaymentAttemptByTicket(ticketId: String!): PaymentAttempt @tag(name: "admin")
-    successfulPaymentAttemptByTicket(ticketId: String!): PaymentAttempt @tag(name: "admin")
+    paymentAttemptsByReservation(reservationId: String!): [PaymentAttempt!]! @tag(name: "admin")
+    latestPaymentAttemptByReservation(reservationId: String!): PaymentAttempt @tag(name: "admin")
+    successfulPaymentAttemptByReservation(reservationId: String!): PaymentAttempt @tag(name: "admin")
 
     # ADMIN - Payment attempts by status (for monitoring/recovery)
     paymentAttemptsByStatus(status: PaymentAttemptStatus!): [PaymentAttempt!]! @tag(name: "admin")
@@ -2473,7 +2739,7 @@ type Query {
 
     # ADMIN - Statistics
     paymentAttemptCountByStatus(status: PaymentAttemptStatus!): Int! @tag(name: "admin")
-    hasSuccessfulPayment(ticketId: String!): Boolean! @tag(name: "admin")
+    hasSuccessfulPayment(reservationId: String!): Boolean! @tag(name: "admin")
 
     # ========================================================================
     # ESCROW ACCOUNT QUERIES
@@ -2666,6 +2932,64 @@ type Query {
     # organizerId extracted from JWT - OWASP A01:2021 compliance
     myUpcomingEvents(limit: Int): [OrganizerUpcomingEvent!]! @tag(name: "organizer")
 
+    # ORGANIZER - Dashboard analytics for the data-viz tiles
+    # organizerId extracted from JWT - OWASP A01:2021 compliance
+
+    # Revenue per COMPLETE calendar month, oldest first. The partial current
+    # month is excluded: a part-month column reads as a revenue collapse.
+    myRevenueSeries(months: Int): [OrganizerRevenuePoint!]! @tag(name: "organizer")
+
+    # Sold-ticket breakdown by tier, with its denominator.
+    myTicketMix: OrganizerTicketMix! @tag(name: "organizer")
+
+    # Gate attendance for the most recent event that has run.
+    # Null when no event has run yet — the client shows an empty state rather
+    # than a 0% rate, which would assert a finding the data does not support.
+    myCheckInRate: OrganizerCheckInRate @tag(name: "organizer")
+
+    # Withdrawable balance plus the escrow hold on the next tranche.
+    myPayoutWindow: OrganizerPayoutWindow! @tag(name: "organizer")
+
+    # Escrow accounts this organizer can draw a payout from right now.
+    # Only PAYOUT_ELIGIBLE accounts with a positive balance, oldest first.
+    #
+    # This is the LIST. For one specific event, and for the reasons a payout is
+    # blocked, use payoutEligibility(eventId) — it answers for events that are
+    # not yet eligible, which this query by definition cannot.
+    myPayoutSources: [OrganizerPayoutSource!]! @tag(name: "organizer")
+
+    # Whether a payout can be requested for one event, and if not, why.
+    #
+    # The same evaluation runs again when the request is actually made — minutes
+    # pass between the two and a chargeback can arrive in the window, so this
+    # answer is a courtesy and the one at request time is the control.
+    #
+    # An event belonging to another organizer answers NO_ESCROW_ACCOUNT rather
+    # than refusing, so the query cannot be used to discover whose events exist
+    # or what they are holding.
+    payoutEligibility(eventId: ID!): PayoutEligibility! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+    # ========================================================================
+    # GATE CHECK-IN (ET-TKT-003)
+    # ========================================================================
+
+    # Attendance for one event's gate.
+    #
+    # `admitted` counts rows in booking_checkins, not tickets marked VALIDATED.
+    # Those two can disagree: a duplicate admitted offline by a second device
+    # gets no check-in row, so the physical admission count is higher than this
+    # by exactly `conflicts` of type DUPLICATE_SCAN. That gap is the finding,
+    # not an error to be reconciled away.
+    checkInSummary(eventId: ID!): CheckInSummary! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+    # Most recent admissions, newest first. Bounded at 100 server-side — a gate
+    # runs on a venue connection and must never be asked for the whole log.
+    recentCheckIns(eventId: ID!, limit: Int = 25): [CheckIn!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+    # Scans that were refused. For an offline duplicate this is the ONLY record
+    # that a second person was admitted.
+    checkInConflicts(eventId: ID!, pagination: OffsetPaginationInput): CheckInConflictPage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
     # ORGANIZER - Transaction history with pagination
     # organizerId extracted from JWT - OWASP A01:2021 compliance
     myTransactionsOffsetPagination(filter: OrganizerTransactionFilterInput, pagination: OffsetPaginationInput): OrganizerTransactionOffsetPage! @tag(name: "organizer")
@@ -2762,10 +3086,28 @@ type Mutation {
 
     # MOBILE - Customer ticket purchase
     # NOTE: buyerId extracted from JWT authentication - not passed as parameter (OWASP A01:2021)
-    purchaseTicket(input: TicketPurchaseInput!): PurchaseTicketMutationResponse! @auth(requires: CUSTOMER) @tag(name: "mobile")
     # ORGANIZER - Ticket validation at venue (scanner app)
-    validateTicket(ticketNumber: String!): ValidateTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    useTicket(ticketNumber: String!): UseTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    #
+    # Takes an eventId because a gate admits to ONE event: a ticket that is
+    # perfectly valid for tomorrow's show must be refused at tonight's, and the
+    # old signature had no way to know which gate was asking.
+    #
+    # Never errors on a refusal. "Already admitted" happens several times a
+    # night and the steward needs to know which refusal it was; the error
+    # channel collapses them all into one red box.
+    validateTicket(input: ValidateTicketInput!): ValidationResult! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+    # Reconcile a batch of offline scans.
+    #
+    # Resolved by earliest scannedAt, ties broken by scanId, so the same batch
+    # uploaded twice — or split across two uploads — always picks the same
+    # winner. Duplicates across two offline devices cannot be PREVENTED, only
+    # detected here.
+    uploadScans(inputs: [ValidateTicketInput!]!): [ValidationResult!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
+
+    # Annotate a conflict. Never deletes it — the count of duplicate
+    # presentations is itself the finding.
+    reviewConflict(id: ID!, note: String!): CheckInConflict! @auth(requires: ORGANIZER) @tag(name: "organizer")
     # ORGANIZER/ADMIN - Cancel and refund tickets
     # NOTE: processedBy extracted from JWT authentication (OWASP A01:2021 compliance)
     cancelTicket(ticketNumber: String!, reason: String!): CancelTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
@@ -2894,10 +3236,12 @@ type Mutation {
     # ========================================================================
 
     # MOBILE - Customer checkout flow (userId extracted from JWT for security)
-    reserveTickets(input: ReserveTicketsInput!): TicketReservation! @tag(name: "mobile")
-    completeReservation(input: CompleteReservationInput!): [Ticket!]! @tag(name: "mobile")
-    cancelReservation(reservationId: ID!): Boolean! @tag(name: "mobile")
-    extendReservation(reservationId: ID!, minutes: Int!): TicketReservation! @tag(name: "mobile")
+    reserveTickets(input: ReserveTicketsInput!): TicketReservation! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    # Starts the mobile-money prompt. Does NOT issue tickets — confirmation
+    # follows the provider callback, never a client asserting that it paid
+    # (ET-TKT-001 §4). Poll `reservation(id)` until it reads CONFIRMED.
+    payReservation(input: PayReservationInput!): PaymentInitiationResponse! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    cancelReservation(reservationId: ID!): Boolean! @auth(requires: CUSTOMER) @tag(name: "mobile")
     # ADMIN - Force expire stuck reservations
     forceExpireReservation(reservationId: ID!): Boolean! @tag(name: "admin")
 

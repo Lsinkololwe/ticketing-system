@@ -1,3 +1,18 @@
+> ## ⛔ SUPERSEDED — DO NOT IMPLEMENT THE VISUAL IDENTITY FROM THIS FILE
+>
+> **§1.1 Visual Identity is wrong and was never shipped.** It specifies `#7C3AED`
+> purple, `#F97316` orange CTA, dark-OLED `#0F0F0F`, Fira Code headings and Fira
+> Sans body. The live platform is **teal accent, slate gray, Inter**, light+dark.
+> The design system's own readme names this document as stale.
+>
+> **The authority is the Claude Design project** — see
+> [`DESIGN_AUTHORITY.md`](./DESIGN_AUTHORITY.md) and the root `CLAUDE.md`
+> §"Frontend Development → 0. THE DESIGN AUTHORITY". Read the `.dc.html` screen
+> for the surface you are touching before writing any UI.
+>
+> §2 (architecture), §4 (domain modules), §6 (data flow) and §7 (OWASP) below are
+> still useful. §1 and §3 are not.
+
 # Admin Portal - Production-Grade Design Document
 
 ## Executive Summary

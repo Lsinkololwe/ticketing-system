@@ -39,14 +39,100 @@ public enum ReferenceType {
 
     // ── Finance ───────────────────────────────────────────────────────────────
     TAX_RATE("Tax Rates", ReferenceGroup.FINANCE),
-    CARD_SCHEME("Card Schemes", ReferenceGroup.FINANCE);
+    CARD_SCHEME("Card Schemes", ReferenceGroup.FINANCE),
+
+    // ── Workflow statuses ─────────────────────────────────────────────────────
+    //
+    // Configurable in exactly the same way as everything above: an administrator
+    // adds "AWAITING_COMPLIANCE_REVIEW" to PAYOUT_STATUS whenever they need it,
+    // with no deployment.
+    //
+    // The one difference is that these DRIVE BEHAVIOUR, so every row must
+    // declare a WorkflowSemantic. Code branches on that semantic, never on the
+    // code string — because a payout sitting in a status no branch recognises
+    // never moves, and nobody finds out until an organizer asks where their
+    // money went. Same shape as Jira's status categories: unlimited statuses, a
+    // handful of meanings.
+    //
+    // Three of them carry `codeOwnedMachine`. Their transitions are not the
+    // administrator's to redraw — see isCodeOwnedMachine().
+    TICKET_STATUS("Ticket Statuses", ReferenceGroup.WORKFLOW, true, true),
+    PAYMENT_STATUS("Payment Statuses", ReferenceGroup.WORKFLOW, true),
+    PAYOUT_STATUS("Payout Statuses", ReferenceGroup.WORKFLOW, true),
+    REFUND_STATUS("Refund Statuses", ReferenceGroup.WORKFLOW, true),
+    CHARGEBACK_STATUS("Chargeback Statuses", ReferenceGroup.WORKFLOW, true),
+    ESCROW_STATUS("Escrow Statuses", ReferenceGroup.WORKFLOW, true),
+    EVENT_STATUS("Event Statuses", ReferenceGroup.WORKFLOW, true, true),
+    ORGANIZATION_STATUS("Organization Statuses", ReferenceGroup.WORKFLOW, true),
+    VERIFICATION_DOCUMENT_STATUS("Document Statuses", ReferenceGroup.WORKFLOW, true),
+    TEAM_INVITATION_STATUS("Invitation Statuses", ReferenceGroup.WORKFLOW, true),
+    RESERVATION_STATUS("Reservation Statuses", ReferenceGroup.WORKFLOW, true, true);
 
     private final String label;
     private final ReferenceGroup group;
+    private final boolean workflow;
+    private final boolean codeOwnedMachine;
 
     ReferenceType(String label, ReferenceGroup group) {
+        this(label, group, false, false);
+    }
+
+    ReferenceType(String label, ReferenceGroup group, boolean workflow) {
+        this(label, group, workflow, false);
+    }
+
+    ReferenceType(String label, ReferenceGroup group, boolean workflow, boolean codeOwnedMachine) {
         this.label = label;
         this.group = group;
+        this.workflow = workflow;
+        this.codeOwnedMachine = codeOwnedMachine;
+    }
+
+    /**
+     * Whether this type's transitions belong to a state machine in code, and so
+     * cannot be redrawn by an administrator.
+     *
+     * <h2>Why some workflows are configurable and some are not</h2>
+     * The <em>vocabulary</em> of every workflow type is configurable: an
+     * administrator adds a status, gives it a meaning, and code recognises it
+     * immediately. The <em>graph</em> is a different question. Three types have
+     * their transitions fixed by a specification and enforced by a table in
+     * Java:
+     *
+     * <ul>
+     *   <li>{@code TICKET_STATUS} — {@code TicketStateMachine}, ET-TKT-002 §4,
+     *       whose R7 states that no spec may introduce a transition its table
+     *       does not have</li>
+     *   <li>{@code RESERVATION_STATUS} — {@code ReservationStateMachine},
+     *       ET-TKT-001 R6</li>
+     *   <li>{@code EVENT_STATUS} — {@code EventLifecycleServiceImpl}'s table,
+     *       ET-CAT-001</li>
+     * </ul>
+     *
+     * <p>Letting {@code allowedTransitions} be edited for these would create two
+     * disagreeing authorities over the same question, and the database one would
+     * lose silently — the Java table is what actually refuses a write. Worse, it
+     * would look like it worked: an administrator adds
+     * {@code REFUNDED → ISSUED}, sees it saved, and discovers at a gate that
+     * refunded tickets still do not scan.
+     *
+     * <p>So for these three the field is refused at the write, with a sentence
+     * naming the class that owns the answer.
+     */
+    public boolean isCodeOwnedMachine() {
+        return codeOwnedMachine;
+    }
+
+    /**
+     * Whether rows of this type drive behaviour and must therefore declare a
+     * {@link WorkflowSemantic}.
+     *
+     * <p>This is the line between a value that is merely descriptive and one the
+     * code resolves behaviour through. Taxonomy can be anything an administrator
+     * likes; a status has to mean something.
+     */
+    public boolean isWorkflow() {
+        return workflow;
     }
 
     public String getLabel() {
@@ -66,7 +152,8 @@ public enum ReferenceType {
         EVENTS("Events"),
         KYB("KYB & Onboarding"),
         OPERATIONS("Operations"),
-        FINANCE("Finance");
+        FINANCE("Finance"),
+        WORKFLOW("Workflow & Statuses");
 
         private final String label;
 

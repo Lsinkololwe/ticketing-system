@@ -116,7 +116,6 @@ import java.util.Map;
 @CompoundIndexes({
     @CompoundIndex(name = "date_status_idx", def = "{'entryDate': 1, 'status': 1}"),
     @CompoundIndex(name = "type_status_idx", def = "{'type': 1, 'status': 1}"),
-    @CompoundIndex(name = "correlation_idx", def = "{'correlationId': 1}"),
     @CompoundIndex(name = "account_code_idx", def = "{'lines.accountCode': 1, 'status': 1}")
 })
 public class JournalEntry {

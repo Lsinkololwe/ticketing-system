@@ -1,8 +1,10 @@
 package com.pml.catalog.dto;
 
 import com.pml.catalog.domain.enums.ReferenceType;
+import com.pml.shared.constants.WorkflowSemantic;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -19,5 +21,18 @@ public record ReferenceDataPatch(
         Boolean isActive,
         LocalDateTime effectiveFrom,
         LocalDateTime effectiveTo,
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+
+        /**
+         * What this value MEANS to the code.
+         *
+         * <p>This record used to omit it, and the resolver mapped it to nothing.
+         * An administrator correcting a wrong semantic — the field that decides
+         * whether a record moves at all — received "updated successfully" and
+         * changed nothing.
+         */
+        WorkflowSemantic semantic,
+
+        /** Codes this value may move to. Empty means unconstrained. */
+        List<String> allowedTransitions
 ) {}

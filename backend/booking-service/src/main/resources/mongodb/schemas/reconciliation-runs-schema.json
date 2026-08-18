@@ -12,6 +12,10 @@
       "createdAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -26,16 +30,28 @@
       },
       "type": {
         "bsonType": "string",
-        "enum": ["GATEWAY", "BANK", "ESCROW"],
+        "enum": [
+          "GATEWAY",
+          "BANK",
+          "ESCROW"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "status": {
         "bsonType": "string",
-        "enum": ["RUNNING", "COMPLETED", "REQUIRES_REVIEW", "FAILED"],
+        "enum": [
+          "RUNNING",
+          "COMPLETED",
+          "REQUIRES_REVIEW",
+          "FAILED"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "dataSource": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       },
       "expectedTotal": {
@@ -51,7 +67,10 @@
       },
       "currency": {
         "bsonType": "string",
-        "enum": ["ZMW", "USD"],
+        "enum": [
+          "ZMW",
+          "USD"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "totalRecords": {
@@ -71,35 +90,56 @@
         "minimum": 0
       },
       "items": {
-        "bsonType": ["array", "null"],
+        "bsonType": [
+          "array",
+          "null"
+        ],
         "description": "Embedded reconciliation items"
       },
       "runBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       },
       "startedAt": {
         "bsonType": "date"
       },
       "completedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "notes": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 2000
       },
       "errorMessage": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 2000
       },
       "createdAt": {
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "version": {
-        "bsonType": ["long", "null"]
+        "bsonType": [
+          "long",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

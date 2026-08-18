@@ -1,12 +1,6 @@
-import { PagePlaceholder } from '@/components/ui/PagePlaceholder';
-import { Calendar } from 'iconoir-react';
+import { EventsWorkbench } from '@/components/events/EventsWorkbench';
 
+/** `Admin - Events.dc.html`, all-events view. */
 export default function EventsPage() {
-  return (
-    <PagePlaceholder
-      title="All events"
-      description="Browse and manage all events on the platform"
-      icon={<Calendar style={{ width: 48, height: 48, color: 'var(--accent-11)' }} />}
-    />
-  );
+  return <EventsWorkbench view="all" />;
 }

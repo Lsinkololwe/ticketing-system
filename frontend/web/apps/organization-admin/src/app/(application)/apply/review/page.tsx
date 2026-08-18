@@ -7,10 +7,10 @@
  * Design: Data-dense layout, clear hierarchy, single CTA focus.
  */
 
-import { useCallback, useState, useTransition } from 'react';
+import { useCallback, useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Box, Flex, Text, Heading, Button, Card, Checkbox, Spinner, Separator } from '@radix-ui/themes';
-import { ArrowLeft, SendDiagonal, Building, Phone, Globe, Link as LinkIcon, Shield, WarningTriangle, EditPencil } from 'iconoir-react';
+import { Box, Flex, Text, Button, Card, Checkbox, Separator } from '@radix-ui/themes';
+import { Building, Page, Phone, Globe, Link as LinkIcon, SendDiagonal, Shield, WarningTriangle, EditPencil } from 'iconoir-react';
 import {
   ReviewSkeleton,
   ORGANIZATION_TYPE_LABELS,
@@ -22,9 +22,17 @@ import { useToast } from '@/components/ui';
 import {
   useMyOrganization,
   useSubmitOrganizationForReview,
+  useDocumentUpload,
   applicationReviewSchema,
   type ApplicationReviewFormData,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import {
+  missingDocuments,
+  requiredDocuments,
+  type BusinessType,
+} from '@/lib/onboarding/documents';
+import { ROUTES } from '@/lib/onboarding/state';
+import { WizardShell } from '@/components/application/WizardShell';
 
 // =============================================================================
 // CONSTANTS
@@ -127,6 +135,13 @@ export default function ReviewPage() {
 
   const { organization, loading: orgLoading } = useMyOrganization({ fetchPolicy: 'cache-first' });
   const { submit } = useSubmitOrganizationForReview();
+  const { documents, refresh: refreshDocuments } = useDocumentUpload(organization?.id ?? '');
+
+  // The document set is the one part of the application not held in the
+  // organization document, so the review summary has to fetch it separately.
+  useEffect(() => {
+    if (organization?.id) void refreshDocuments();
+  }, [organization?.id, refreshDocuments]);
 
   const { watch, setValue, handleSubmit, formState: { errors, isSubmitting } } = useForm<ApplicationReviewFormData>({
     resolver: zodResolver(applicationReviewSchema),
@@ -166,40 +181,74 @@ export default function ReviewPage() {
   const invalidFields = Object.entries(validation).filter(([, v]) => !v).map(([k]) => k);
   const allFieldsValid = invalidFields.length === 0;
 
-  const isFormSubmitting = isSubmitting || isPending;
-  const canSubmit = allFieldsValid && agreedToTerms && agreedToPrivacy && !isFormSubmitting;
+  // Documents. The backend refuses submitForReview with DOCUMENT_REQUIRED when
+  // the set for this business type is incomplete — mirroring the check here
+  // means the applicant is told before they press the button rather than after.
+  const businessType = (organization?.businessType ?? null) as BusinessType | null;
+  const requiredDocs = requiredDocuments(businessType);
+  const missingDocs = missingDocuments(businessType, documents);
+  const documentsComplete = missingDocs.length === 0;
 
-  const goToEdit = useCallback(() => router.push('/apply/business-info'), [router]);
+  const isFormSubmitting = isSubmitting || isPending;
+  const canSubmit =
+    allFieldsValid && documentsComplete && agreedToTerms && agreedToPrivacy && !isFormSubmitting;
+
+  const goToEdit = useCallback(() => router.push(ROUTES.businessInfo), [router]);
+  const goToDocuments = useCallback(() => router.push(ROUTES.documents), [router]);
 
   // Loading state
   if (orgLoading) {
     return <ReviewSkeleton />;
   }
 
-  // No organization
+  // Organization not readable yet.
+  //
+  // Rendered inside the shell rather than instead of it: the server guard only
+  // routes here when an application exists, so this is a slow or failed client
+  // read, not an absent application. Replacing the whole page drops the step
+  // context and reads as "your application is gone" — the exact wrong message
+  // for somebody mid-way through one.
   if (!organization) {
     return (
-      <Flex justify="center" py="9">
-        <Text size="2" color="gray">
-          No application found. Redirecting...
-        </Text>
-      </Flex>
+      <WizardShell
+        currentStep={2}
+        title="Review & submit"
+        subtitle="Fetching the details you entered."
+        onBack={goToDocuments}
+      >
+        <Flex justify="center" py="8" aria-live="polite" data-testid="review-loading">
+          <Text size="2" color="gray">
+            Loading your application…
+          </Text>
+        </Flex>
+      </WizardShell>
     );
   }
 
+  // What is stopping submission, in the applicant's words rather than ours.
+  const blockedReason = !documentsComplete
+    ? `Still needed: ${missingDocs.map((d) => d.name).join(', ')}`
+    : !allFieldsValid
+      ? `Incomplete: ${invalidFields.join(', ')}`
+      : !agreedToTerms || !agreedToPrivacy
+        ? 'Accept the Terms of Service and Privacy Policy to continue'
+        : undefined;
+
   return (
     <Box>
-      {/* Header */}
-      <Flex justify="between" align="start" mb="5">
-        <Box>
-          <Heading size="5" mb="1" highContrast>
-            Review Application
-          </Heading>
-          <Text size="2" color="gray">
-            Verify your information before submitting.
-          </Text>
-        </Box>
-        <Button variant="soft" size="2" onClick={goToEdit}>
+      <WizardShell
+        currentStep={2}
+        title="Review & submit"
+        subtitle="A reviewer typically responds within 48 hours. You can start drafting an event while you wait."
+        onBack={goToDocuments}
+        onNext={handleSubmit(onSubmit)}
+        nextLabel="Submit for review"
+        nextDisabled={!canSubmit}
+        nextLoading={isFormSubmitting}
+        blockedReason={blockedReason}
+      >
+      <Flex justify="end" mb="2">
+        <Button variant="soft" size="2" onClick={goToEdit} data-testid="review-edit">
           <EditPencil width={14} height={14} aria-hidden="true" />
           Edit
         </Button>
@@ -255,6 +304,25 @@ export default function ReviewPage() {
             <Field label="Facebook" value={organization.socialLinks?.facebook} />
             <Field label="Instagram" value={organization.socialLinks?.instagram} />
             <Field label="Twitter / X" value={organization.socialLinks?.twitter} />
+          </Section>
+
+          <Separator size="4" my="4" />
+
+          {/* Documents. Edit routes to step 2, not step 1 — sending someone
+              back to the business-details form to fix a missing upload is the
+              kind of misdirection that ends an application. */}
+          <Section title="Documents" icon={Page} onEdit={goToDocuments}>
+            <Field
+              label="Uploaded"
+              value={`${requiredDocs.length - missingDocs.length} of ${requiredDocs.length}`}
+            />
+            {missingDocs.length > 0 && (
+              <Box gridColumn="1 / -1" data-testid="review-missing-documents">
+                <Text as="p" size="1" style={{ color: 'var(--amber-11)' }}>
+                  Still needed: {missingDocs.map((d) => d.name).join(', ')}
+                </Text>
+              </Box>
+            )}
           </Section>
       </Card>
 
@@ -341,48 +409,7 @@ export default function ReviewPage() {
         </Card>
       )}
 
-      {/* ════════════════ STICKY FOOTER ════════════════ */}
-      <Box
-        mt="6"
-        py="3"
-        style={{
-          position: 'sticky',
-          bottom: 0,
-          background: 'var(--color-background)',
-          borderTop: '1px solid var(--gray-a5)',
-          zIndex: 10,
-        }}
-      >
-        <Flex justify="between" align="center" gap="3">
-          <Button variant="soft" color="gray" size="3" onClick={goToEdit} disabled={isFormSubmitting}>
-            <ArrowLeft width={16} height={16} aria-hidden="true" />
-            Back
-          </Button>
-
-          <Box display={{ initial: 'none', sm: 'block' }}>
-            <Text size="2" color="gray" weight="medium">Step 2 of 2</Text>
-          </Box>
-
-          <Button
-            size="3"
-            color="teal"
-            onClick={handleSubmit(onSubmit)}
-            disabled={!canSubmit}
-          >
-            {isFormSubmitting ? (
-              <>
-                <Spinner size="1" />
-                Submitting...
-              </>
-            ) : (
-              <>
-                Submit Application
-                <SendDiagonal width={16} height={16} aria-hidden="true" />
-              </>
-            )}
-          </Button>
-        </Flex>
-      </Box>
+      </WizardShell>
 
       {/* Styles for field rows */}
       <style jsx global>{`

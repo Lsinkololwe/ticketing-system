@@ -3,7 +3,7 @@ package com.pml.identity.web.graphql.query;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.identity.domain.enums.OrganizationStatus;
+import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationService;

@@ -1,5 +1,7 @@
 package com.pml.booking.service.impl;
 
+import com.pml.booking.domain.TicketStateMachine;
+import com.pml.booking.domain.TicketStateMachine.Action;
 import com.pml.booking.domain.model.Ticket;
 import com.pml.booking.repository.TicketRepository;
 import com.pml.booking.repository.dto.RevenueResult;
@@ -82,7 +84,10 @@ public class TicketServiceImpl implements TicketService {
         if (ticket.getTicketNumber() == null) {
             ticket.setTicketNumber(Ticket.generateTicketNumber());
         }
-        ticket.setStatus(TicketStatus.PENDING_PAYMENT);
+        // ISSUED, not a pre-payment state: ET-TKT-001 R7 moved issuance inside
+        // the confirmation transaction, so a ticket document only ever exists
+        // for money that has already arrived.
+        ticket.setStatus(TicketStatus.ISSUED);
         ticket.setCreatedAt(LocalDateTime.now());
         ticket.setUpdatedAt(LocalDateTime.now());
         return ticketRepository.save(ticket)
@@ -109,92 +114,77 @@ public class TicketServiceImpl implements TicketService {
     @Override
     public Mono<Ticket> validateTicket(String ticketNumber) {
         return ticketRepository.findByTicketNumber(ticketNumber)
-                .flatMap(ticket -> {
-                    if (ticket.getStatus() == TicketStatus.PURCHASED ||
-                        ticket.getStatus() == TicketStatus.CONFIRMED) {
-                        ticket.setStatus(TicketStatus.VALIDATED);
-                        ticket.setValidatedAt(LocalDateTime.now());
-                        ticket.setUpdatedAt(LocalDateTime.now());
-                        return ticketRepository.save(ticket);
-                    }
-                    return Mono.error(new IllegalStateException(
-                            "Ticket cannot be validated. Current status: " + ticket.getStatus()));
-                })
+                .flatMap(ticket -> transition(ticket, Action.VALIDATE, t -> {
+                    t.setValidatedAt(LocalDateTime.now());
+                }))
                 .doOnSuccess(t -> log.info("Ticket validated: {}", ticketNumber));
-    }
-
-    @Override
-    public Mono<Ticket> useTicket(String ticketNumber) {
-        return ticketRepository.findByTicketNumber(ticketNumber)
-                .flatMap(ticket -> {
-                    if (ticket.getStatus() == TicketStatus.VALIDATED) {
-                        ticket.setStatus(TicketStatus.USED);
-                        ticket.setUsedAt(LocalDateTime.now());
-                        ticket.setUpdatedAt(LocalDateTime.now());
-                        return ticketRepository.save(ticket);
-                    }
-                    return Mono.error(new IllegalStateException(
-                            "Ticket cannot be used. Current status: " + ticket.getStatus()));
-                })
-                .doOnSuccess(t -> log.info("Ticket used: {}", ticketNumber));
     }
 
     @Override
     public Mono<Ticket> refundTicket(String ticketNumber, String reason, String processedBy) {
         return ticketRepository.findByTicketNumber(ticketNumber)
-                .flatMap(ticket -> {
-                    if (ticket.getStatus() == TicketStatus.PURCHASED ||
-                        ticket.getStatus() == TicketStatus.CONFIRMED ||
-                        ticket.getStatus() == TicketStatus.VALIDATED) {
-                        ticket.setStatus(TicketStatus.REFUNDED);
-                        ticket.setRefundedAt(LocalDateTime.now());
-                        ticket.setRefundReason(reason);
-                        ticket.setUpdatedAt(LocalDateTime.now());
-                        return ticketRepository.save(ticket);
-                    }
-                    return Mono.error(new IllegalStateException(
-                            "Ticket cannot be refunded. Current status: " + ticket.getStatus()));
-                })
+                .flatMap(ticket -> transition(ticket, Action.SETTLE_REFUND, t -> {
+                    t.setRefundedAt(LocalDateTime.now());
+                    t.setRefundReason(reason);
+                }))
                 .doOnSuccess(t -> log.info("Ticket refunded: {}", ticketNumber));
+    }
+
+    @Override
+    public Mono<Ticket> requestRefund(String ticketNumber, String reason) {
+        return ticketRepository.findByTicketNumber(ticketNumber)
+                .flatMap(ticket -> transition(ticket, Action.REQUEST_REFUND, t ->
+                        t.setRefundReason(reason)))
+                .doOnSuccess(t -> log.info("Refund requested for ticket: {}", ticketNumber));
     }
 
     @Override
     public Mono<Ticket> cancelTicket(String ticketNumber, String reason, String processedBy) {
         return ticketRepository.findByTicketNumber(ticketNumber)
-                .flatMap(ticket -> {
-                    if (ticket.getStatus() != TicketStatus.USED &&
-                        ticket.getStatus() != TicketStatus.REFUNDED &&
-                        ticket.getStatus() != TicketStatus.CANCELLED) {
-                        ticket.setStatus(TicketStatus.CANCELLED);
-                        ticket.setCancelledAt(LocalDateTime.now());
-                        ticket.setCancellationReason(reason);
-                        ticket.setUpdatedAt(LocalDateTime.now());
-                        return ticketRepository.save(ticket);
-                    }
-                    return Mono.error(new IllegalStateException(
-                            "Ticket cannot be cancelled. Current status: " + ticket.getStatus()));
-                })
+                .flatMap(ticket -> transition(ticket, Action.CANCEL, t -> {
+                    t.setCancelledAt(LocalDateTime.now());
+                    t.setCancellationReason(reason);
+                }))
                 .doOnSuccess(t -> log.info("Ticket cancelled: {}", ticketNumber));
     }
 
     @Override
     public Mono<Ticket> transferTicket(String ticketId, String newBuyerId, String reason) {
         return ticketRepository.findById(ticketId)
-                .flatMap(ticket -> {
-                    if (ticket.getStatus() == TicketStatus.PURCHASED ||
-                        ticket.getStatus() == TicketStatus.CONFIRMED) {
-                        ticket.setOriginalBuyerId(ticket.getBuyerId());
-                        ticket.setTransferredToId(newBuyerId);
-                        ticket.setBuyerId(newBuyerId);
-                        ticket.setTransferredAt(LocalDateTime.now());
-                        ticket.setTransferReason(reason);
-                        ticket.setUpdatedAt(LocalDateTime.now());
-                        return ticketRepository.save(ticket);
-                    }
-                    return Mono.error(new IllegalStateException(
-                            "Ticket cannot be transferred. Current status: " + ticket.getStatus()));
-                })
+                // TRANSFER resolves back to ISSUED, not to TRANSFERRED: ET-TKT-002
+                // §4 keeps the ticket scannable under its new owner, and a ticket
+                // parked in TRANSFERRED would refuse at the gate.
+                .flatMap(ticket -> transition(ticket, Action.TRANSFER, t -> {
+                    t.setOriginalBuyerId(t.getBuyerId());
+                    t.setTransferredToId(newBuyerId);
+                    t.setBuyerId(newBuyerId);
+                    t.setTransferredAt(LocalDateTime.now());
+                    t.setTransferReason(reason);
+                }))
                 .doOnSuccess(t -> log.info("Ticket transferred: {} to {}", ticketId, newBuyerId));
+    }
+
+    /**
+     * Apply one of ET-TKT-002 §4's transitions, or refuse.
+     *
+     * <p>Every status write on this class goes through here. Before, each method
+     * carried its own {@code if} chain and they disagreed: {@code cancelTicket}
+     * refused only three states by name and so would happily cancel an already
+     * expired ticket, while {@code transferTicket} listed two states and so
+     * refused a transfer that {@code refundTicket} would have allowed. The table
+     * is now the only opinion.
+     */
+    private Mono<Ticket> transition(Ticket ticket, Action action, java.util.function.Consumer<Ticket> stamp) {
+        TicketStatus to;
+        try {
+            to = TicketStateMachine.require(ticket.getStatus(), action);
+        } catch (TicketStateMachine.IllegalTransitionException e) {
+            return Mono.error(e);
+        }
+        ticket.setStatus(to);
+        stamp.accept(ticket);
+        ticket.setUpdatedAt(LocalDateTime.now());
+        return ticketRepository.save(ticket);
     }
 
     @Override
@@ -287,12 +277,11 @@ public class TicketServiceImpl implements TicketService {
         return ticketRepository.findById(ticketId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + ticketId)))
                 .flatMap(ticket -> {
-                    // Only allow QR regeneration for active tickets
-                    if (ticket.getStatus() == TicketStatus.CANCELLED ||
-                        ticket.getStatus() == TicketStatus.REFUNDED ||
-                        ticket.getStatus() == TicketStatus.USED) {
-                        return Mono.error(new IllegalStateException(
-                                "Cannot regenerate QR code for ticket with status: " + ticket.getStatus()));
+                    // ET-TKT-002 R5: a validated ticket cannot be re-issued — it
+                    // has already been used — and neither can a terminal one.
+                    if (!ticket.getStatus().isAdmissible()) {
+                        return Mono.error(new TicketStateMachine.IllegalTransitionException(
+                                ticket.getStatus(), Action.ISSUE));
                     }
 
                     // Generate new QR code (simplified - in production this would call a QR service)
@@ -328,10 +317,9 @@ public class TicketServiceImpl implements TicketService {
                 .flatMap(ticketId ->
                     ticketRepository.findById(ticketId)
                         .flatMap(ticket -> {
-                            // Check if ticket can be cancelled
-                            if (ticket.getStatus() == TicketStatus.USED ||
-                                ticket.getStatus() == TicketStatus.REFUNDED ||
-                                ticket.getStatus() == TicketStatus.CANCELLED) {
+                            // The same table the single-ticket path uses, so a
+                            // bulk cancel cannot admit what a single one refuses.
+                            if (TicketStateMachine.next(ticket.getStatus(), Action.CANCEL).isEmpty()) {
                                 errors.add("Ticket " + ticketId + " cannot be cancelled (status: " + ticket.getStatus() + ")");
                                 return Mono.just(false);
                             }

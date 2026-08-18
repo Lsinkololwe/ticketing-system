@@ -101,4 +101,60 @@ public interface OrganizerDashboardService {
             OrganizerTransactionFilterInput filter,
             OffsetPaginationInput pagination
     );
+
+    // ========================================================================
+    // DASHBOARD ANALYTICS
+    //
+    // These four back the dashboard's data-viz tiles. Each returns raw counts
+    // and denominators rather than pre-computed percentages, so the client can
+    // print the denominator beside every rate. The chart contract they satisfy
+    // is frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md.
+    // ========================================================================
+
+    /**
+     * Revenue per complete calendar month, oldest first.
+     *
+     * <p>The current, partial month is deliberately excluded: a part-month
+     * column reads as a revenue collapse next to full months.
+     *
+     * @param organizerId The organizer's user ID
+     * @param months How many complete months to return (default 6, max 24)
+     * @return Flux of monthly revenue points, ascending by period
+     */
+    Flux<OrganizerRevenuePoint> getRevenueSeries(String organizerId, Integer months);
+
+    /**
+     * Sold-ticket breakdown by tier, sorted by volume descending.
+     *
+     * @param organizerId The organizer's user ID
+     * @return Mono containing the tier mix and its denominator
+     */
+    Mono<OrganizerTicketMix> getTicketMix(String organizerId);
+
+    /**
+     * Gate attendance for the organizer's most recent event that has run.
+     *
+     * @param organizerId The organizer's user ID
+     * @return Mono containing the rate, or empty when no event has run yet
+     */
+    Mono<OrganizerCheckInRate> getCheckInRate(String organizerId);
+
+    /**
+     * Withdrawable balance and the escrow hold on the next tranche.
+     *
+     * @param organizerId The organizer's user ID
+     * @return Mono containing the payout window
+     */
+    Mono<OrganizerPayoutWindow> getPayoutWindow(String organizerId);
+
+    /**
+     * Escrow accounts the organizer can draw a payout from right now.
+     *
+     * <p>Needed because {@code createPayoutRequest} takes an
+     * {@code escrowAccountId} and every other escrow query is admin-only.
+     *
+     * @param organizerId The organizer's user ID
+     * @return Flux of payout-eligible accounts with a positive balance
+     */
+    Flux<OrganizerPayoutSource> getPayoutSources(String organizerId);
 }

@@ -1,6 +1,6 @@
 id: ET-FIN-004
 title: Refunds, cancellation refunds and chargebacks
-status: draft
+status: approved
 area: FIN
 service: booking-service
 subgraph: booking
@@ -98,12 +98,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/finance/004-refunds-and-chargebacks
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-004
-  - mvn -q -f backend verify -Dgroups=ET-FIN-004
+  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-004 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-FIN-004 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

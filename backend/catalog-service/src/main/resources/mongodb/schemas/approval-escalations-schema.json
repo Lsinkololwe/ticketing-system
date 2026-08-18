@@ -12,6 +12,10 @@
       "escalatedAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -22,7 +26,13 @@
       },
       "reason": {
         "bsonType": "string",
-        "enum": ["DELAYED_REVIEW", "COMPLEX_CASE", "POLICY_VIOLATION", "HIGH_PRIORITY", "OTHER"],
+        "enum": [
+          "DELAYED_REVIEW",
+          "COMPLEX_CASE",
+          "POLICY_VIOLATION",
+          "HIGH_PRIORITY",
+          "OTHER"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "escalatedBy": {
@@ -35,17 +45,28 @@
       },
       "status": {
         "bsonType": "string",
-        "enum": ["PENDING", "IN_REVIEW", "RESOLVED", "CLOSED"],
+        "enum": [
+          "PENDING",
+          "IN_REVIEW",
+          "RESOLVED",
+          "CLOSED"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "escalatedAt": {
         "bsonType": "date"
       },
       "resolvedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "notes": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 1000
       }
     },

@@ -15,8 +15,9 @@
  * - ARIA labels and roles
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useTheme } from 'next-themes';
+import { usePathname } from 'next/navigation';
 import {
   Box,
   Flex,
@@ -24,6 +25,7 @@ import {
   IconButton,
   DropdownMenu,
   Avatar,
+  Button,
 } from '@radix-ui/themes';
 import {
   Menu,
@@ -33,6 +35,7 @@ import {
   User,
   Building,
   Bell,
+  Plus,
 } from 'iconoir-react';
 import Link from 'next/link';
 import { useSession, signOut } from '@/lib/auth/client';
@@ -46,8 +49,45 @@ interface HeaderProps {
   showMenuButton: boolean;
 }
 
+/**
+ * First path segment → the breadcrumb's second crumb.
+ *
+ * A fixed map rather than a title-cased path segment: routes are slugs, and
+ * "bank-accounts" title-cased reads as "Bank Accounts", which breaks the
+ * sentence-case rule the rest of the product follows.
+ */
+const SECTION_LABELS: Record<string, string> = {
+  dashboard: 'Overview',
+  events: 'Events',
+  finance: 'Finance',
+  team: 'Team',
+  analytics: 'Analytics',
+  settings: 'Settings',
+};
+
+/**
+ * Time-of-day greeting.
+ *
+ * `hour` is injectable so tests do not depend on when they run.
+ */
+export function greetingFor(name: string | null | undefined, hour: number): string {
+  const partOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+  const firstName = (name ?? '').trim().split(/\s+/)[0];
+  return firstName ? `Good ${partOfDay}, ${firstName}` : `Good ${partOfDay}`;
+}
+
 export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
   const { data: session } = useSession();
+  const pathname = usePathname();
+
+  const sectionLabel = useMemo(() => {
+    const segment = (pathname ?? '').split('/').filter(Boolean)[0];
+    return segment ? SECTION_LABELS[segment] ?? '' : '';
+  }, [pathname]);
+
+  // Recomputed per render rather than memoised on [] — a session that stays
+  // open across noon should not keep saying "Good morning".
+  const greeting = greetingFor(session?.user?.name, new Date().getHours());
   const isAuthenticated = !!session?.user;
   const { organization, status } = useMyOrganization({ skip: !isAuthenticated });
   const { theme, setTheme } = useTheme();
@@ -110,33 +150,61 @@ export function Header({ onMenuClick, showMenuButton }: HeaderProps) {
               </IconButton>
             )}
 
-            {/* Organization context. The chip is one of the two sanctioned
-                gradients in this system (.ds-accent-chip). */}
-            <Flex align="center" gap="2">
-              <Box
-                aria-hidden="true"
-                className="ds-accent-chip"
+            {/* Location + greeting, per the design's dashboard header.
+                The breadcrumb is the reference tier (11px, muted); the greeting
+                is the supporting tier. Neither competes with the page's own
+                focal figure, which lives in the content below. */}
+            <Box style={{ minWidth: 0 }}>
+              <Text
+                as="p"
+                size="1"
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 'var(--radius-3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  color: 'var(--gray-11)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}
+                data-testid="header-breadcrumb"
               >
-                <Building width={16} height={16} />
-              </Box>
-              <Box className="hidden-mobile">
-                <Text size="2" weight="medium" style={{ color: 'var(--gray-12)' }}>
-                  {organization?.name || 'Your organization'}
-                </Text>
-              </Box>
-            </Flex>
+                {organization?.name || 'Your organization'}
+                {sectionLabel ? ` › ${sectionLabel}` : ''}
+              </Text>
+              <Text
+                as="p"
+                size="3"
+                weight="bold"
+                style={{
+                  color: 'var(--gray-12)',
+                  lineHeight: 1.2,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                data-testid="header-greeting"
+              >
+                {greeting}
+              </Text>
+            </Box>
           </Flex>
 
           {/* Right Side - Actions */}
           <Flex align="center" gap="2">
+            {/* Primary action. Present on every dashboard screen because
+                creating an event is the organizer's single most common task —
+                the design puts it in the header rather than one level down. */}
+            <Button
+              variant="solid"
+              size="2"
+              asChild
+              className="hidden-mobile"
+              data-testid="header-create-event"
+            >
+              <Link href="/events/new">
+                <Plus width={14} height={14} />
+                Create event
+              </Link>
+            </Button>
+
             {/* Theme Toggle */}
             <IconButton
               variant="ghost"

@@ -204,7 +204,7 @@ Both ordered `submittedAt` ascending, with breached items floated and marked.
 | `status` | `OPEN`, `RESOLVED` |
 | `resolvedAt` | set by the decision |
 
-`admin_review_claims`
+`identity_review_claims`
 
 | Field | Notes |
 |---|---|

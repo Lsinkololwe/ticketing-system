@@ -17,7 +17,7 @@ public interface PaymentService {
     /**
      * Create a new payment intent for a ticket purchase.
      *
-     * @param ticketId     The ticket being purchased
+     * @param reservationId     The reservation being paid for
      * @param eventId      The event ID
      * @param userId       The user making the purchase
      * @param amount       The payment amount
@@ -26,7 +26,7 @@ public interface PaymentService {
      * @return Created payment intent
      */
     Mono<PaymentIntent> createPaymentIntent(
-            String ticketId,
+            String reservationId,
             String eventId,
             String userId,
             BigDecimal amount,
@@ -87,7 +87,7 @@ public interface PaymentService {
     /**
      * Find payment intent by ticket ID.
      */
-    Mono<PaymentIntent> findByTicketId(String ticketId);
+    Mono<PaymentIntent> findByReservationId(String reservationId);
 
     /**
      * Find payment intent by idempotency key.

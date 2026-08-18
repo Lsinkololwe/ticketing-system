@@ -67,7 +67,7 @@ export const PAYOUTS_BY_ORGANIZER = gql`
         eventId
         eventTitle
         requestedAmount
-        netPayoutAmount
+        settledAmount
         currency
         status
         payoutMethod

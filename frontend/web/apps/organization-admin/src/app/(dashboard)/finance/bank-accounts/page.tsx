@@ -9,7 +9,7 @@
  * - Remove accounts
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   Box,
   Flex,
@@ -38,6 +38,14 @@ import {
   useMyOrganization,
   canRequestPayouts,
 } from '@pml.tickets/shared/api/organization-admin/modules/organization';
+import {
+  useMyBankAccounts,
+  useCreateBankAccount,
+  useUpdateBankAccount,
+  useDeleteBankAccount,
+  useSetDefaultBankAccount,
+  type BankAccountVM,
+} from '@pml.tickets/shared/api/organization-admin/modules/finance';
 
 // =============================================================================
 // TYPES
@@ -57,35 +65,29 @@ interface BankAccount {
 }
 
 // =============================================================================
-// MOCK DATA
+// ADAPTER — backend view model → this page's presentation shape
+//
+// No fixture data lives in this app. This maps the real BankAccountVM from
+// booking-service onto the shape the cards render.
 // =============================================================================
 
-const mockBankAccounts: BankAccount[] = [
-  {
-    id: '1',
-    bankName: 'Stanbic Bank Zambia',
-    bankCode: 'SBICZMLX',
-    branchCode: 'LSK001',
-    accountNumber: '1234567890004521',
-    accountHolder: 'Event Organizers Ltd',
-    accountType: 'current',
-    isDefault: true,
-    isVerified: true,
-    createdAt: '2024-06-15T10:00:00',
-  },
-  {
-    id: '2',
-    bankName: 'Zanaco',
-    bankCode: 'ZNCOZMLU',
-    branchCode: 'NDL002',
-    accountNumber: '9876543210007832',
-    accountHolder: 'Event Organizers Ltd',
-    accountType: 'current',
-    isDefault: false,
-    isVerified: true,
-    createdAt: '2024-09-20T14:30:00',
-  },
-];
+function toBankAccount(row: BankAccountVM): BankAccount {
+  return {
+    id: row.id,
+    bankName: row.bankName,
+    bankCode: row.bankCode ?? '',
+    branchCode: row.branchCode ?? '',
+    accountNumber: row.accountNumber,
+    accountHolder: row.accountHolderName,
+    // The backend stores free-text account type; the UI offers two. Anything
+    // it does not recognise falls back to "current" rather than crashing a
+    // select, and the raw value is preserved on the server either way.
+    accountType: (row.accountType ?? '').toLowerCase() === 'savings' ? 'savings' : 'current',
+    isDefault: row.isDefault,
+    isVerified: row.isVerified,
+    createdAt: row.createdAt,
+  };
+}
 
 const zambianBanks = [
   { code: 'SBICZMLX', name: 'Stanbic Bank Zambia' },
@@ -474,48 +476,69 @@ export default function BankAccountsPage() {
   const { status } = useMyOrganization({ skip: !isAuthenticated });
   const canPayout = canRequestPayouts(status);
 
-  const [accounts, setAccounts] = useState<BankAccount[]>(mockBankAccounts);
+  const organizerId = session?.user?.id ?? null;
+  const { bankAccounts: rows, refetch } = useMyBankAccounts(organizerId);
+  const { createBankAccount } = useCreateBankAccount();
+  const { updateBankAccount } = useUpdateBankAccount();
+  const { deleteBankAccount } = useDeleteBankAccount();
+  const { setDefaultBankAccount } = useSetDefaultBankAccount();
+
+  const accounts = useMemo(() => rows.map(toBankAccount), [rows]);
+
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editAccount, setEditAccount] = useState<BankAccount | null>(null);
   const [deleteAccount, setDeleteAccount] = useState<BankAccount | null>(null);
 
-  const handleSetDefault = useCallback((id: string) => {
-    setAccounts((prev) =>
-      prev.map((acc) => ({
-        ...acc,
-        isDefault: acc.id === id,
-      }))
-    );
-  }, []);
+  // Every handler refetches rather than mutating local state optimistically.
+  // A bank account that the server rejected must not sit in the list looking
+  // saved — this screen decides where an organizer's money is sent.
+  const handleSetDefault = useCallback(async (id: string) => {
+    const result = await setDefaultBankAccount(id);
+    if (result.success) await refetch();
+  }, [setDefaultBankAccount, refetch]);
 
-  const handleAddAccount = useCallback((data: Omit<BankAccount, 'id' | 'isDefault' | 'isVerified' | 'createdAt'>) => {
-    const newAccount: BankAccount = {
-      ...data,
-      id: String(Date.now()),
+  const handleAddAccount = useCallback(async (
+    data: Omit<BankAccount, 'id' | 'isDefault' | 'isVerified' | 'createdAt'>
+  ) => {
+    if (!organizerId) return;
+    const result = await createBankAccount({
+      organizerId,
+      accountHolderName: data.accountHolder,
+      bankName: data.bankName,
+      bankCode: data.bankCode || null,
+      branchCode: data.branchCode || null,
+      accountNumber: data.accountNumber,
+      accountType: data.accountType,
+      currency: 'ZMW',
+      // First account added becomes the default — otherwise a payout has no
+      // destination until the organizer explicitly picks one.
       isDefault: accounts.length === 0,
-      isVerified: false,
-      createdAt: new Date().toISOString(),
-    };
-    setAccounts((prev) => [...prev, newAccount]);
-  }, [accounts.length]);
+    });
+    if (result.success) await refetch();
+  }, [organizerId, createBankAccount, refetch, accounts.length]);
 
-  const handleEditAccount = useCallback((data: Omit<BankAccount, 'id' | 'isDefault' | 'isVerified' | 'createdAt'>) => {
+  const handleEditAccount = useCallback(async (
+    data: Omit<BankAccount, 'id' | 'isDefault' | 'isVerified' | 'createdAt'>
+  ) => {
     if (!editAccount) return;
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === editAccount.id
-          ? { ...acc, ...data }
-          : acc
-      )
-    );
+    const result = await updateBankAccount(editAccount.id, {
+      accountHolderName: data.accountHolder,
+      bankName: data.bankName,
+      bankCode: data.bankCode || null,
+      branchCode: data.branchCode || null,
+      accountNumber: data.accountNumber,
+      accountType: data.accountType,
+    });
+    if (result.success) await refetch();
     setEditAccount(null);
-  }, [editAccount]);
+  }, [editAccount, updateBankAccount, refetch]);
 
-  const handleDeleteAccount = useCallback(() => {
+  const handleDeleteAccount = useCallback(async () => {
     if (!deleteAccount) return;
-    setAccounts((prev) => prev.filter((acc) => acc.id !== deleteAccount.id));
+    const result = await deleteBankAccount(deleteAccount.id);
+    if (result.success) await refetch();
     setDeleteAccount(null);
-  }, [deleteAccount]);
+  }, [deleteAccount, deleteBankAccount, refetch]);
 
   return (
     <Box>

@@ -11,6 +11,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.ConvertOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -69,23 +70,14 @@ public class TicketStatsService {
                                           List<Ticket> recentTickets) {
         // Calculate totals from status stats
         int totalTickets = statusStats.stream().mapToInt(TicketStatusStats::getCount).sum();
-        int purchasedTickets = getCountForStatus(statusStats, TicketStatus.PURCHASED);
-        int validatedTickets = getCountForStatus(statusStats, TicketStatus.VALIDATED);
-        int usedTickets = getCountForStatus(statusStats, TicketStatus.USED);
-        int refundedTickets = getCountForStatus(statusStats, TicketStatus.REFUNDED);
-        int expiredTickets = getCountForStatus(statusStats, TicketStatus.EXPIRED);
-        int cancelledTickets = getCountForStatus(statusStats, TicketStatus.CANCELLED);
-        int pendingPaymentTickets = getCountForStatus(statusStats, TicketStatus.PENDING_PAYMENT);
-
         return TicketStats.builder()
                 .totalTickets(totalTickets)
-                .purchasedTickets(purchasedTickets)
-                .validatedTickets(validatedTickets)
-                .usedTickets(usedTickets)
-                .refundedTickets(refundedTickets)
-                .expiredTickets(expiredTickets)
-                .cancelledTickets(cancelledTickets)
-                .pendingPaymentTickets(pendingPaymentTickets)
+                .issuedTickets(getCountForStatus(statusStats, TicketStatus.ISSUED))
+                .validatedTickets(getCountForStatus(statusStats, TicketStatus.VALIDATED))
+                .refundPendingTickets(getCountForStatus(statusStats, TicketStatus.REFUND_PENDING))
+                .refundedTickets(getCountForStatus(statusStats, TicketStatus.REFUNDED))
+                .cancelledTickets(getCountForStatus(statusStats, TicketStatus.CANCELLED))
+                .expiredTickets(getCountForStatus(statusStats, TicketStatus.EXPIRED))
                 .ticketsByStatus(statusStats)
                 .ticketsByCategory(categoryStats)
                 .recentTickets(recentTickets)
@@ -158,7 +150,14 @@ public class TicketStatsService {
                 match(criteria),
                 group("ticketCategoryName")
                         .count().as("count")
-                        .sum("price").as("totalRevenue")
+                        // $convert, not a bare $sum: Spring Data MongoDB stores
+                        // BigDecimal as a BSON String, and $sum silently ignores
+                        // non-numeric values — so summing "price" directly
+                        // returns 0 for every category regardless of sales.
+                        // See OrganizerDashboardServiceImpl#asDecimal.
+                        .sum(ConvertOperators.Convert.convertValueOf("price")
+                                .to("decimal").onErrorReturn(0).onNullReturn(0))
+                        .as("totalRevenue")
                         .first("ticketCategoryName").as("categoryName"),
                 sort(Sort.Direction.DESC, "count")
         );

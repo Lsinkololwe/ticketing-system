@@ -64,7 +64,7 @@ export interface PayoutRowVM {
   eventId: string | null;
   eventTitle: string | null;
   requestedAmount: string;
-  netPayoutAmount: string;
+  settledAmount: string;
   currency: string;
   status: string;
   payoutMethod: string | null;
@@ -201,6 +201,20 @@ export interface CreatePayoutInput {
   currency: string;
   payoutMethod: string;
   notes?: string | null;
+  /**
+   * Client-supplied key that makes retrying this request safe.
+   *
+   * Sending the same key twice returns the ORIGINAL payout rather than
+   * creating a second one for the same money. Backed by a unique index
+   * server-side, so it holds under concurrent retries too.
+   *
+   * The key must be stable across retries of the same user intent — generate
+   * it once when the user opens the payout dialog, NOT per submit attempt, or
+   * every retry carries a fresh key and the protection does nothing.
+   *
+   * Required by specs/finance/003-payouts-and-settlement.
+   */
+  idempotencyKey?: string;
 }
 
 export function useCreatePayoutRequest() {

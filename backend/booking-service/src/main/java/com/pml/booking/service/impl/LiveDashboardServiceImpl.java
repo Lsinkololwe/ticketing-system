@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.Arrays;
 
 /**
  * Live Dashboard Service Implementation
@@ -42,18 +43,12 @@ public class LiveDashboardServiceImpl implements LiveDashboardService {
     private final ReactiveMongoTemplate mongoTemplate;
 
     // Statuses that count as "sold" tickets
-    private static final Set<TicketStatus> SOLD_STATUSES = Set.of(
-            TicketStatus.PURCHASED,
-            TicketStatus.CONFIRMED,
-            TicketStatus.VALIDATED,
-            TicketStatus.USED
-    );
+    private static final Set<TicketStatus> SOLD_STATUSES =
+            Arrays.stream(TicketStatus.values()).filter(TicketStatus::isSold)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     // Status for checked-in tickets
-    private static final Set<TicketStatus> CHECKED_IN_STATUSES = Set.of(
-            TicketStatus.VALIDATED,
-            TicketStatus.USED
-    );
+    private static final Set<TicketStatus> CHECKED_IN_STATUSES = Set.of(TicketStatus.VALIDATED);
 
     @Override
     public Mono<LiveDashboard> getEventLiveDashboard(String eventId) {

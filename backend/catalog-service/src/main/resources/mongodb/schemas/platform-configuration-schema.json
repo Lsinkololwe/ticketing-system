@@ -29,7 +29,9 @@
         "minimum": 0,
         "maximum": 8760
       },
-      "autoEscalationEnabled": { "bsonType": "bool" },
+      "autoEscalationEnabled": {
+        "bsonType": "bool"
+      },
       "escalationDelayHours": {
         "bsonType": "int",
         "minimum": 0,
@@ -52,17 +54,35 @@
       },
       "organizerNotificationChannel": {
         "bsonType": "string",
-        "enum": ["EMAIL", "IN_APP", "BOTH"]
+        "enum": [
+          "EMAIL",
+          "IN_APP",
+          "BOTH"
+        ]
       },
       "adminNotificationChannel": {
         "bsonType": "string",
-        "enum": ["EMAIL", "IN_APP", "BOTH"]
+        "enum": [
+          "EMAIL",
+          "IN_APP",
+          "BOTH"
+        ]
       },
-      "sendSlaWarningNotifications": { "bsonType": "bool" },
-      "sendEscalationNotifications": { "bsonType": "bool" },
-      "requireCommentsOnRejection": { "bsonType": "bool" },
-      "requireCommentsOnChangesRequested": { "bsonType": "bool" },
-      "allowSelfApproval": { "bsonType": "bool" },
+      "sendSlaWarningNotifications": {
+        "bsonType": "bool"
+      },
+      "sendEscalationNotifications": {
+        "bsonType": "bool"
+      },
+      "requireCommentsOnRejection": {
+        "bsonType": "bool"
+      },
+      "requireCommentsOnChangesRequested": {
+        "bsonType": "bool"
+      },
+      "allowSelfApproval": {
+        "bsonType": "bool"
+      },
       "payment": {
         "bsonType": "object",
         "description": "Payment/payout/commission defaults applied to new organizations",
@@ -73,6 +93,10 @@
           "minimumPayoutAmount"
         ],
         "properties": {
+          "_class": {
+            "bsonType": "string",
+            "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+          },
           "commissionRate": {
             "bsonType": "double",
             "minimum": 0,
@@ -81,12 +105,22 @@
           },
           "payoutMethod": {
             "bsonType": "string",
-            "enum": ["BANK_TRANSFER", "MOBILE_MONEY", "CHEQUE"],
+            "enum": [
+              "BANK_TRANSFER",
+              "MOBILE_MONEY",
+              "CHEQUE"
+            ],
             "description": "OWASP A04 - enum constraint"
           },
           "payoutSchedule": {
             "bsonType": "string",
-            "enum": ["DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY", "MANUAL"],
+            "enum": [
+              "DAILY",
+              "WEEKLY",
+              "BIWEEKLY",
+              "MONTHLY",
+              "MANUAL"
+            ],
             "description": "OWASP A04 - enum constraint"
           },
           "minimumPayoutAmount": {
@@ -97,9 +131,17 @@
         },
         "additionalProperties": false
       },
-      "updatedAt": { "bsonType": ["date", "null"] },
+      "updatedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
       "updatedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 100
       }
     },

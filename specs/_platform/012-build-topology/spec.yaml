@@ -1,0 +1,67 @@
+id: ET-PLT-012
+title: Backend build topology — one parent, one BOM set, one reactor
+status: in-progress      # draft | approved | in-progress | implemented | verified | deferred | withdrawn
+area: PLT
+service: all
+subgraph: null
+owner: lazarous
+created: 2026-08-17
+priority: must
+wave: 0
+blocked_by: []
+conformance: "PDI Phase 1 project setup"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/001-runtime-baseline/spec.md
+
+# ---- the contract, mirrored from spec.md §4 so scripts need not parse markdown ----
+persistence:
+  collections: []
+  indexes: []
+  redis_keys: []
+
+events:
+  module: []
+  bus: []
+  consumes: []
+  topics: []
+
+graphql:
+  schema: null
+  queries: []
+  mutations: []
+
+errors: []
+
+modules:
+  parent: "com.pml:backend:1.0.0, packaging pom, parent spring-boot-starter-parent:3.5.4"
+  children: [shared-library, catalog-service, booking-service, identity-service, api-gateway]
+  parentless: [keycloak-extensions]     # Keycloak 26 SPI JAR — must carry no Spring runtime
+  leaf: shared-library                  # depends on nothing in the reactor
+
+boms:
+  - graphql-dgs-platform-dependencies:10.5.0
+  - spring-cloud-azure-dependencies:5.19.0
+  - spring-cloud-dependencies:2025.0.0
+  - testcontainers-bom:1.21.4
+
+enforcer:
+  - requireMavenVersion
+  - requireJavaVersion
+  - banDuplicatePomDependencyVersions
+  - requireUpperBoundDeps
+  - bannedDependencies    # spring-boot-starter-web, spring-cloud-starter-gateway, servlet containers
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - mvn -q -f backend validate
+  - mvn -q -f backend -DskipTests clean install
+  - mvn -q -f backend dependency:tree
+
+risks:
+  - "Repointing five module POMs at a new parent is one commit that either resolves or does not; there is no partial state to test. The reactor must be re-validated after every individual POM edit, not once at the end."
+  - "keycloak-extensions being in the reactor but not of the parent is correct and looks like an oversight. Without the comment in the parent POM saying why, the next person to tidy the build will give it the Boot parent and ship a Spring runtime inside Keycloak."
+  - "requireUpperBoundDeps frequently fails on first introduction against an existing dependency tree, because transitive downgrades are common and previously invisible. Expect the rule to surface real conflicts that must be pinned rather than suppressed."
+  - "The Testcontainers version is pinned to work around a Docker Engine API floor rather than for a feature. A future upgrade that looks routine can reintroduce the incompatibility, and the failure appears as an unrelated container startup error."
+  - "This spec claims plugin versions are managed centrally, but the Boot parent manages most of them and the boundary between what Boot pins and what this parent pins is not enumerated anywhere. A plugin that neither manages resolves to newest and the build stops being reproducible without any file changing."

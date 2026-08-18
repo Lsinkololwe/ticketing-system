@@ -1,5 +1,6 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.constants.EscrowStatus;
 import com.pml.booking.domain.enums.AlertPriority;
 import com.pml.booking.domain.enums.JournalEntryType;
 import com.pml.booking.domain.enums.NotificationType;
@@ -12,7 +13,6 @@ import com.pml.booking.domain.model.ReconciliationItem;
 import com.pml.booking.domain.model.ReconciliationRun;
 import com.pml.booking.exception.ReconciliationDiscrepancyException;
 import com.pml.booking.domain.model.EventEscrowAccount;
-import com.pml.booking.domain.model.EventEscrowAccount.EscrowStatus;
 import com.pml.booking.repository.EventEscrowAccountRepository;
 import com.pml.booking.repository.PaymentIntentRepository;
 import com.pml.booking.repository.ReconciliationRunRepository;
@@ -691,7 +691,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
         // By default, exclude CLOSED and CANCELLED accounts for performance
         // These accounts have zero balance and are immutable
-        List<EscrowStatus> excludedStatuses = List.of(EscrowStatus.CLOSED, EscrowStatus.CANCELLED);
+        List<EscrowStatus> excludedStatuses = List.of(EscrowStatus.CLOSED, EscrowStatus.CLOSED);
 
         return escrowAccountRepository.findByStatusNotIn(excludedStatuses)
                 .flatMap(escrow -> verifyEscrowJournalConsistency(escrow.getEventId(), runBy))

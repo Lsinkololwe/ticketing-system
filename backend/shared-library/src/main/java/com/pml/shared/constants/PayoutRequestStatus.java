@@ -1,14 +1,23 @@
 package com.pml.shared.constants;
 
 /**
- * Payout Request Status Enum
+ * Payout request lifecycle, per ET-FIN-003 R7.
  *
- * Defines the different statuses of payout requests in the system.
+ * <p>Exactly the seven the spec declares. {@code PENDING_FINANCE_APPROVAL} was
+ * an eighth, and it described the same fact as {@link #PENDING}: a request
+ * sitting in the finance queue waiting on a human. Two codes for one state means
+ * every query has to remember both, and the one that forgets under-reports the
+ * approval backlog — the queue looks shorter than it is, which is the direction
+ * nobody investigates.
+ *
+ * <p>{@link #COMPLETED}, {@link #REJECTED} and {@link #CANCELLED} are terminal.
+ * {@link #FAILED} is not: ET-FIN-003 R7 permits retry and re-request from it.
+ *
+ * @see <a href="file:../../../../../../../../specs/finance/003-payouts-and-settlement/spec.md">ET-FIN-003</a>
  */
 public enum PayoutRequestStatus {
 
     PENDING("PENDING", "Pending", "Payout request is pending review"),
-    PENDING_FINANCE_APPROVAL("PENDING_FINANCE_APPROVAL", "Pending Finance Approval", "Awaiting finance team approval"),
     APPROVED("APPROVED", "Approved", "Payout request has been approved"),
     PROCESSING("PROCESSING", "Processing", "Payout is being processed"),
     COMPLETED("COMPLETED", "Completed", "Payout has been completed"),
@@ -51,7 +60,7 @@ public enum PayoutRequestStatus {
     }
 
     public boolean isPending() {
-        return this == PENDING || this == PENDING_FINANCE_APPROVAL;
+        return this == PENDING;
     }
 
     public boolean isCompleted() {
@@ -62,7 +71,8 @@ public enum PayoutRequestStatus {
         return this == COMPLETED || this == REJECTED || this == FAILED || this == CANCELLED;
     }
 
+    /** ET-FIN-003 R7: an organizer may cancel only while PENDING. */
     public boolean canBeCancelled() {
-        return this == PENDING || this == PENDING_FINANCE_APPROVAL;
+        return this == PENDING;
     }
 }

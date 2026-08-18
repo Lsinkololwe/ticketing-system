@@ -204,15 +204,33 @@ public class PawaPayWebhookController {
                                 log.error("WEBHOOK: Failed to process deposit callback: depositId={}",
                                         payload.depositId(), error);
                                 paymentMetrics.stopWebhookTimer(webhookTimer, "deposit", "error");
-                                // Clear deduplication marker on error so webhook can be retried
-                                webhookDeduplicationService.clearProcessingMarker("deposit", payload.depositId(), payload.status())
-                                        .subscribe();
-                                // Return 200 to prevent PawaPay from retrying excessively
-                                // The error is logged for manual investigation
-                                return Mono.just(ResponseEntity.ok(Map.of(
-                                        "message", "Callback received",
-                                        "warning", "Processing error occurred"
-                                )));
+                                // Clear the deduplication marker so a retry of this callback is
+                                // not suppressed as a duplicate.
+                                //
+                                // ET-PLT-001 R1 / ET-PAY-002 R2. This was previously fire-and-forget
+                                // — `.subscribe()` followed by an immediate 200. Three things went
+                                // wrong at once: the response was returned before the clear had run,
+                                // a failure to clear went nowhere, and PawaPay was told "success" and
+                                // stopped retrying. A marker left set then suppresses the genuine
+                                // retry, so the callback is never processed and the money is in
+                                // flight with nobody looking for it.
+                                //
+                                // Composed instead: the clear is awaited, and its own failure is
+                                // logged rather than swallowed. The 200 still returns either way,
+                                // deliberately — PawaPay must not retry excessively, and the error
+                                // is already recorded for manual investigation.
+                                return webhookDeduplicationService
+                                        .clearProcessingMarker("deposit", payload.depositId(), payload.status())
+                                        .onErrorResume(clearError -> {
+                                            log.error("WEBHOOK: failed to clear deduplication marker; "
+                                                            + "a retry of this callback may be suppressed: depositId={}",
+                                                    payload.depositId(), clearError);
+                                            return Mono.empty();
+                                        })
+                                        .then(Mono.just(ResponseEntity.ok(Map.of(
+                                                "message", "Callback received",
+                                                "warning", "Processing error occurred"
+                                        ))));
                             });
                 });
     }

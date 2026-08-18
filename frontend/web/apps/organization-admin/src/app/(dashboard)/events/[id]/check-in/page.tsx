@@ -13,6 +13,15 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import {
+  useEventTicketHolders,
+  useValidateTicket,
+  useCheckInSummary,
+  useGateDeviceId,
+  type TicketHolderVM,
+  type ValidateTicketResult,
+} from '@pml.tickets/shared/api/organization-admin/modules/checkin';
+import { useMyEventDetail } from '@pml.tickets/shared/api/organization-admin/modules/events';
+import {
   Box,
   Flex,
   Text,
@@ -51,101 +60,55 @@ interface Attendee {
   purchasedAt: string;
 }
 
-interface CheckInResult {
-  success: boolean;
-  message: string;
-  attendee?: Attendee;
+/**
+ * How the result dialog should read.
+ *
+ * Three states, not two. A dropped connection is NOT a refusal — the ticket may
+ * be perfectly good, and turning someone away on the strength of a lost signal
+ * is a worse outcome than letting a steward retry.
+ */
+type ResultTone = 'admitted' | 'refused' | 'unreachable';
+
+function toneOf(result: ValidateTicketResult): ResultTone {
+  if (result.outcome === 'UNREACHABLE') return 'unreachable';
+  return result.admitted ? 'admitted' : 'refused';
 }
 
-// =============================================================================
-// MOCK DATA
-// =============================================================================
-
-const mockEvent = {
-  id: '1',
-  title: 'Summer Music Festival',
-  date: '2025-06-15',
-  venue: 'Lusaka National Park',
+/** The headline for each outcome. The steward reads this and nothing else. */
+const OUTCOME_HEADLINE: Record<string, string> = {
+  ADMITTED: 'Admitted',
+  ALREADY_RECORDED: 'Already recorded',
+  ALREADY_ADMITTED: 'Already admitted',
+  WRONG_EVENT: 'Wrong event',
+  INVALID_STATE: 'Not admissible',
+  NOT_FOUND: 'Not found',
+  UNREACHABLE: 'Could not verify',
 };
 
-const mockAttendees: Attendee[] = [
-  {
-    id: '1',
-    ticketId: 'TKT-001-2025',
-    name: 'John Mwanza',
-    email: 'john@example.com',
-    ticketType: 'VIP',
-    checkedIn: true,
-    checkedInAt: '2025-05-19T14:30:00',
-    purchasedAt: '2025-05-10T09:00:00',
-  },
-  {
-    id: '2',
-    ticketId: 'TKT-002-2025',
-    name: 'Mary Banda',
-    email: 'mary@example.com',
-    ticketType: 'Early Bird',
-    checkedIn: true,
-    checkedInAt: '2025-05-19T14:45:00',
-    purchasedAt: '2025-05-11T11:30:00',
-  },
-  {
-    id: '3',
-    ticketId: 'TKT-003-2025',
-    name: 'Peter Tembo',
-    email: 'peter@example.com',
-    ticketType: 'Regular',
-    checkedIn: false,
-    purchasedAt: '2025-05-12T16:00:00',
-  },
-  {
-    id: '4',
-    ticketId: 'TKT-004-2025',
-    name: 'Grace Phiri',
-    email: 'grace@example.com',
-    ticketType: 'VIP',
-    checkedIn: false,
-    purchasedAt: '2025-05-13T08:45:00',
-  },
-  {
-    id: '5',
-    ticketId: 'TKT-005-2025',
-    name: 'David Lungu',
-    email: 'david@example.com',
-    ticketType: 'Regular',
-    checkedIn: true,
-    checkedInAt: '2025-05-19T15:00:00',
-    purchasedAt: '2025-05-14T10:20:00',
-  },
-  {
-    id: '6',
-    ticketId: 'TKT-006-2025',
-    name: 'Sarah Mulenga',
-    email: 'sarah@example.com',
-    ticketType: 'Early Bird',
-    checkedIn: false,
-    purchasedAt: '2025-05-15T13:15:00',
-  },
-  {
-    id: '7',
-    ticketId: 'TKT-007-2025',
-    name: 'Michael Chanda',
-    email: 'michael@example.com',
-    ticketType: 'Regular',
-    checkedIn: false,
-    purchasedAt: '2025-05-16T09:30:00',
-  },
-  {
-    id: '8',
-    ticketId: 'TKT-008-2025',
-    name: 'Linda Zulu',
-    email: 'linda@example.com',
-    ticketType: 'VIP',
-    checkedIn: true,
-    checkedInAt: '2025-05-19T15:15:00',
-    purchasedAt: '2025-05-17T14:00:00',
-  },
-];
+// =============================================================================
+// ADAPTER — Ticket → the gate roster's row shape
+//
+// No fixture data lives in this app.
+// =============================================================================
+
+/** Ticket states that mean the holder has already passed the gate. */
+const SCANNED_STATES = new Set(['VALIDATED']);
+
+function toAttendee(ticket: TicketHolderVM): Attendee {
+  return {
+    id: ticket.id,
+    ticketId: ticket.ticketNumber,
+    name: ticket.buyerName ?? 'Guest',
+    email: ticket.buyerEmail ?? '',
+    ticketType: ticket.ticketCategoryName ?? 'General admission',
+    // Derived from validatedAt AND status: a ticket refunded after being
+    // scanned still carries a validatedAt, and must not read as admitted.
+    checkedIn: !!ticket.validatedAt && SCANNED_STATES.has(String(ticket.status)),
+    checkedInAt: ticket.validatedAt ?? undefined,
+    purchasedAt: ticket.purchaseDate ?? '',
+  };
+}
+
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -164,18 +127,37 @@ function formatTime(dateString: string): string {
 // =============================================================================
 
 interface ScannerProps {
-  onScan: (ticketId: string) => void;
+  onScan: (code: string, options?: { manual?: boolean; reason?: string }) => void;
   isScanning: boolean;
+  /**
+   * Controlled, so a roster row can load a ticket number into it.
+   *
+   * The row's button used to admit directly, which meant a one-click manual
+   * admission with no reason attached — the one thing a manual admission must
+   * always carry. It now fills this field instead and the steward completes it.
+   */
+  code: string;
+  onCodeChange: (code: string) => void;
 }
 
-function Scanner({ onScan, isScanning }: ScannerProps) {
-  const [manualInput, setManualInput] = useState('');
+/** The spec requires a substantive reason for a manual admission. */
+const MIN_REASON_LENGTH = 10;
+
+function Scanner({ onScan, isScanning, code, onCodeChange }: ScannerProps) {
+  const manualInput = code;
+  const setManualInput = onCodeChange;
+  const [reason, setReason] = useState('');
+
+  const reasonIsSufficient = reason.trim().length >= MIN_REASON_LENGTH;
+  const canSubmit = manualInput.trim().length > 0 && reasonIsSufficient;
 
   const handleManualSubmit = () => {
-    if (manualInput.trim()) {
-      onScan(manualInput.trim());
-      setManualInput('');
-    }
+    if (!canSubmit) return;
+    onScan(manualInput.trim(), { manual: true, reason: reason.trim() });
+    setManualInput('');
+    // The reason is kept. A steward working a broken scanner types the same
+    // reason for a queue of people, and clearing it every time is friction that
+    // encourages a single character instead.
   };
 
   return (
@@ -252,30 +234,52 @@ function Scanner({ onScan, isScanning }: ScannerProps) {
           mb="2"
           style={{ color: 'var(--content-secondary)', display: 'block', textAlign: 'center' }}
         >
-          Or enter ticket ID manually
+          Or admit manually
         </Text>
-        <Flex gap="2">
+
+        <Flex direction="column" gap="2">
           <TextField.Root
             size="3"
-            placeholder="e.g., TKT-001-2025"
+            data-testid="checkin-manual-code"
+            placeholder="Ticket number, e.g. TKT-001-2025"
             value={manualInput}
             onChange={(e) => setManualInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
-            style={{ flex: 1 }}
           >
             <TextField.Slot>
               <Label style={{ width: 18, height: 18, color: 'var(--content-muted)' }} />
             </TextField.Slot>
           </TextField.Root>
+
+          {/* A manual admission bypasses the QR entirely, so the record of WHY
+              is the only thing that makes it reviewable afterwards. */}
+          <TextField.Root
+            size="2"
+            data-testid="checkin-manual-reason"
+            placeholder="Reason — e.g. QR damaged, ID checked"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
+          />
+
+          {manualInput.trim() && !reasonIsSufficient && (
+            <Text size="1" style={{ color: 'var(--content-muted)' }}>
+              A reason of at least {MIN_REASON_LENGTH} characters is required.
+            </Text>
+          )}
+
           <Button
             size="3"
+            data-testid="checkin-manual-submit"
             onClick={handleManualSubmit}
-            disabled={!manualInput.trim()}
+            disabled={!canSubmit}
             style={{
-              background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
+              background: canSubmit
+                ? 'linear-gradient(135deg, var(--accent-9), var(--accent-11))'
+                : undefined,
             }}
           >
-            Check In
+            Admit
           </Button>
         </Flex>
       </Box>
@@ -296,48 +300,81 @@ function Scanner({ onScan, isScanning }: ScannerProps) {
 // =============================================================================
 
 interface CheckInResultDialogProps {
-  result: CheckInResult | null;
+  result: ValidateTicketResult | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+/**
+ * The gate's answer, in three tones.
+ *
+ * Colour never carries the meaning alone — the headline word does. A steward
+ * squinting at a phone in a dark venue reads "Already admitted" faster than
+ * they read a shade of red, and the screen still works if the display is washed
+ * out by stage lighting.
+ */
 function CheckInResultDialog({ result, open, onOpenChange }: CheckInResultDialogProps) {
   if (!result) return null;
 
+  const tone = toneOf(result);
+  const attendee = result.ticket ? toAttendee(result.ticket) : null;
+
+  const ring =
+    tone === 'admitted'
+      ? { bg: 'var(--accent-a3)', border: 'var(--status-success-9)' }
+      : tone === 'unreachable'
+      ? { bg: 'var(--gray-a3)', border: 'var(--status-warning-9)' }
+      : { bg: 'var(--status-danger-a3)', border: 'var(--status-danger-9)' };
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content style={{ maxWidth: 400, textAlign: 'center' }}>
+      <Dialog.Content style={{ maxWidth: 400, textAlign: 'center' }} data-testid="checkin-result">
         <Box
           style={{
             width: 80,
             height: 80,
             borderRadius: '50%',
-            background: result.success
-              ? 'var(--accent-a3)'
-              : 'var(--status-danger-a3)',
-            border: `2px solid ${result.success ? 'var(--status-success-9)' : 'var(--status-danger-9)'}`,
+            background: ring.bg,
+            border: `2px solid ${ring.border}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 20px',
           }}
         >
-          {result.success ? (
+          {tone === 'admitted' ? (
             <Check style={{ width: 40, height: 40, color: 'var(--brand-500)' }} />
           ) : (
-            <Xmark style={{ width: 40, height: 40, color: 'var(--status-danger-9)' }} />
+            <Xmark
+              style={{
+                width: 40,
+                height: 40,
+                color:
+                  tone === 'unreachable'
+                    ? 'var(--status-warning-11)'
+                    : 'var(--status-danger-9)',
+              }}
+            />
           )}
         </Box>
 
-        <Dialog.Title style={{ marginBottom: 8 }}>
-          {result.success ? 'Check-In Successful!' : 'Check-In Failed'}
+        <Dialog.Title style={{ marginBottom: 8 }} data-testid="checkin-outcome">
+          {OUTCOME_HEADLINE[result.outcome] ?? 'Check-in'}
         </Dialog.Title>
 
         <Text size="2" style={{ color: 'var(--content-muted)', display: 'block', marginBottom: 16 }}>
           {result.message}
         </Text>
 
-        {result.attendee && (
+        {/* When this ticket was first admitted. Ten seconds ago is a steward
+            double-tapping; two hours ago is two people. */}
+        {result.conflict?.originalCheckInAt && (
+          <Text size="2" style={{ color: 'var(--content-secondary)', display: 'block', marginBottom: 16 }}>
+            First admitted at {formatTime(result.conflict.originalCheckInAt)}
+          </Text>
+        )}
+
+        {attendee && (
           <Card
             style={{
               padding: '16px',
@@ -347,29 +384,31 @@ function CheckInResultDialog({ result, open, onOpenChange }: CheckInResultDialog
             }}
           >
             <Text size="3" weight="medium" style={{ color: 'var(--content-primary)', display: 'block' }}>
-              {result.attendee.name}
+              {attendee.name}
             </Text>
             <Text size="2" style={{ color: 'var(--content-muted)', display: 'block' }}>
-              {result.attendee.email}
+              {attendee.email}
             </Text>
-            <Badge color="green" variant="soft" mt="2">
-              {result.attendee.ticketType}
+            <Badge color="gray" variant="soft" mt="2">
+              {attendee.ticketType}
             </Badge>
           </Card>
         )}
 
         <Button
           size="3"
+          data-testid="checkin-result-dismiss"
           onClick={() => onOpenChange(false)}
           style={{
             width: '100%',
-            background: result.success
-              ? 'linear-gradient(135deg, var(--accent-9), var(--accent-11))'
-              : 'var(--surface-subtle)',
-            color: result.success ? 'white' : 'var(--content-primary)',
+            background:
+              tone === 'admitted'
+                ? 'linear-gradient(135deg, var(--accent-9), var(--accent-11))'
+                : 'var(--surface-subtle)',
+            color: tone === 'admitted' ? 'white' : 'var(--content-primary)',
           }}
         >
-          Continue Scanning
+          Next
         </Button>
       </Dialog.Content>
     </Dialog.Root>
@@ -382,10 +421,11 @@ function CheckInResultDialog({ result, open, onOpenChange }: CheckInResultDialog
 
 interface AttendeeRowProps {
   attendee: Attendee;
-  onCheckIn: (id: string) => void;
+  /** Loads this attendee's ticket number into the manual field. */
+  onSelect: (ticketNumber: string) => void;
 }
 
-function AttendeeRow({ attendee, onCheckIn }: AttendeeRowProps) {
+function AttendeeRow({ attendee, onSelect }: AttendeeRowProps) {
   return (
     <Flex
       justify="between"
@@ -440,10 +480,14 @@ function AttendeeRow({ attendee, onCheckIn }: AttendeeRowProps) {
         <Button
           size="1"
           variant="soft"
-          onClick={() => onCheckIn(attendee.id)}
+          data-testid={`checkin-select-${attendee.ticketId}`}
+          // The TICKET NUMBER, not the internal id. The id matches no ticket
+          // server-side, so this button used to report every attendee as not
+          // found.
+          onClick={() => onSelect(attendee.ticketId)}
           style={{ background: 'var(--accent-a4)', color: 'var(--brand-500)' }}
         >
-          Check In
+          Admit manually
         </Button>
       )}
     </Flex>
@@ -458,22 +502,37 @@ export default function CheckInPage() {
   const params = useParams();
   const eventId = params.id as string;
 
-  const [attendees, setAttendees] = useState<Attendee[]>(mockAttendees);
+  const { holders, loading, refetch } = useEventTicketHolders(eventId);
+  const { event } = useMyEventDetail(eventId);
+  const deviceId = useGateDeviceId();
+  const { validateTicket } = useValidateTicket(eventId);
+  const { summary, refetch: refetchSummary } = useCheckInSummary(eventId);
+
+  const attendees = useMemo(() => holders.map(toAttendee), [holders]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'checked-in' | 'not-checked-in'>('all');
   const [isScanning, setIsScanning] = useState(false);
-  const [checkInResult, setCheckInResult] = useState<CheckInResult | null>(null);
+  const [manualCode, setManualCode] = useState('');
+  const [checkInResult, setCheckInResult] = useState<ValidateTicketResult | null>(null);
   const [showResultDialog, setShowResultDialog] = useState(false);
 
-  // Stats
+  // Stats.
+  //
+  // Counted by the SERVER over booking_checkins, not derived from the roster
+  // page the browser happens to hold. The roster is one page of a possibly
+  // thousands-long list, so counting it locally reported the check-ins visible
+  // on screen and called it attendance.
   const stats = useMemo(() => {
-    const total = attendees.length;
-    const checkedIn = attendees.filter((a) => a.checkedIn).length;
-    const remaining = total - checkedIn;
-    const percentage = total > 0 ? (checkedIn / total) * 100 : 0;
+    const total = summary?.issued ?? attendees.length;
+    const checkedIn = summary?.admitted ?? 0;
+    const remaining = Math.max(total - checkedIn, 0);
+    // Null, not 0, when nothing is issued: a rate with an empty denominator is
+    // undefined, and 0% asserts a finding the data does not support.
+    const percentage = total > 0 ? (checkedIn / total) * 100 : null;
 
     return { total, checkedIn, remaining, percentage };
-  }, [attendees]);
+  }, [summary, attendees.length]);
 
   // Filtered attendees
   const filteredAttendees = useMemo(() => {
@@ -498,42 +557,39 @@ export default function CheckInPage() {
     return result;
   }, [attendees, filter, searchQuery]);
 
-  // Handle check-in
-  const handleCheckIn = useCallback((identifier: string) => {
-    // Find attendee by ID or ticket ID
-    const attendee = attendees.find(
-      (a) => a.id === identifier || a.ticketId.toLowerCase() === identifier.toLowerCase()
-    );
+  // Handle check-in.
+  //
+  // The SERVER decides admissibility. This used to search the local roster and
+  // decide itself, which admits a refunded or transferred ticket whenever the
+  // list the browser loaded is a few minutes stale — and at a gate it always is.
+  //
+  // `code` is the ticket NUMBER, which is what a QR carries and what a steward
+  // can read off a phone. Passing the internal id — as the roster button used
+  // to — matches no ticket at all and reports every attendee as not found.
+  const handleCheckIn = useCallback(
+    async (code: string, options?: { manual?: boolean; reason?: string }) => {
+      const result = await validateTicket(code.trim(), {
+        // Typing a number or pressing the roster button IS a manual admission:
+        // no QR was read. Recording it as a scan would hide it from the
+        // manual-ratio alert, which exists precisely to catch a gate where the
+        // scanning has stopped working.
+        method: options?.manual ? 'MANUAL' : 'QR_ONLINE',
+        reason: options?.reason,
+        deviceId,
+      });
 
-    if (!attendee) {
-      setCheckInResult({
-        success: false,
-        message: 'Ticket not found. Please verify the ticket ID.',
-      });
-    } else if (attendee.checkedIn) {
-      setCheckInResult({
-        success: false,
-        message: 'This ticket has already been checked in.',
-        attendee,
-      });
-    } else {
-      // Perform check-in
-      setAttendees((prev) =>
-        prev.map((a) =>
-          a.id === attendee.id
-            ? { ...a, checkedIn: true, checkedInAt: new Date().toISOString() }
-            : a
-        )
-      );
-      setCheckInResult({
-        success: true,
-        message: 'Welcome to the event!',
-        attendee: { ...attendee, checkedIn: true },
-      });
-    }
+      setCheckInResult(result);
+      setShowResultDialog(true);
 
-    setShowResultDialog(true);
-  }, [attendees]);
+      // Refresh both: the roster so the row flips, the summary so the counters
+      // move. Refetch rather than patch the cache — a hand-written optimistic
+      // update at a gate is a way to show an admission that did not happen.
+      if (result.admitted) {
+        await Promise.all([refetch(), refetchSummary()]);
+      }
+    },
+    [validateTicket, refetch, refetchSummary, deviceId]
+  );
 
   // Simulate scanner
   useEffect(() => {
@@ -550,10 +606,10 @@ export default function CheckInPage() {
     <Box>
       <PageHeader
         title="Check-In"
-        description={mockEvent.title}
+        description={event?.title ?? 'Loading event…'}
         breadcrumbs={[
           { label: 'Events', href: '/events' },
-          { label: mockEvent.title, href: `/events/${eventId}` },
+          { label: event?.title ?? 'Event', href: `/events/${eventId}` },
           { label: 'Check-In' },
         ]}
       />
@@ -588,18 +644,54 @@ export default function CheckInPage() {
             </Box>
             <Box>
               <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
-                Total
+                Issued
               </Text>
               <Text size="6" weight="bold" style={{ color: 'var(--content-secondary)' }}>
                 {stats.total}
               </Text>
             </Box>
+
+            {/* Refused scans. Shown next to the attendance figures rather than
+                buried, because for an offline duplicate this count is the only
+                record that a second person walked in — the two numbers are
+                meant to be read together. */}
+            {summary && summary.conflicts > 0 && (
+              <Box>
+                <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
+                  Conflicts
+                </Text>
+                <Text
+                  size="6"
+                  weight="bold"
+                  data-testid="checkin-conflicts"
+                  style={{ color: 'var(--status-warning-11)' }}
+                >
+                  {summary.conflicts}
+                </Text>
+              </Box>
+            )}
+
+            {/* A gate running mostly on manual admissions is a broken scanner,
+                and it is worth saying so while the event is still running. */}
+            {summary && summary.manualAdmissions > 0 && (
+              <Box>
+                <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
+                  Manual
+                </Text>
+                <Text size="6" weight="bold" style={{ color: 'var(--content-secondary)' }}>
+                  {summary.manualAdmissions}
+                </Text>
+              </Box>
+            )}
           </Flex>
+
           <Box style={{ minWidth: 200 }}>
             <Flex justify="between" mb="1">
               <Text size="1" style={{ color: 'var(--content-muted)' }}>Progress</Text>
               <Text size="1" weight="medium" style={{ color: 'var(--brand-500)' }}>
-                {stats.percentage.toFixed(0)}%
+                {/* An em dash, not "0%". No tickets issued means the rate is
+                    undefined, and 0% would read as "nobody has arrived". */}
+                {stats.percentage === null ? '—' : `${stats.percentage.toFixed(0)}%`}
               </Text>
             </Flex>
             <Box
@@ -613,7 +705,7 @@ export default function CheckInPage() {
               <Box
                 style={{
                   height: '100%',
-                  width: `${stats.percentage}%`,
+                  width: `${stats.percentage ?? 0}%`,
                   background: 'var(--brand-500)',
                   borderRadius: 4,
                   transition: 'width 0.3s ease',
@@ -628,7 +720,12 @@ export default function CheckInPage() {
       <Flex gap="6" direction={{ initial: 'column', lg: 'row' }}>
         {/* Scanner Section */}
         <Box style={{ flex: 1, maxWidth: 400 }}>
-          <Scanner onScan={handleCheckIn} isScanning={isScanning} />
+          <Scanner
+            onScan={handleCheckIn}
+            isScanning={isScanning}
+            code={manualCode}
+            onCodeChange={setManualCode}
+          />
         </Box>
 
         {/* Attendee List */}
@@ -702,8 +799,17 @@ export default function CheckInPage() {
               </Flex>
             </Flex>
 
-            {/* Attendee List */}
-            {filteredAttendees.length === 0 ? (
+            {/* Attendee List.
+                Loading is distinguished from empty: at a gate, "no attendees"
+                while the roster is still arriving would send a steward to turn
+                people away. */}
+            {loading && attendees.length === 0 ? (
+              <Box py="8" style={{ textAlign: 'center' }} data-testid="checkin-roster-loading">
+                <Text size="2" style={{ color: 'var(--content-muted)' }}>
+                  Loading the gate list…
+                </Text>
+              </Box>
+            ) : filteredAttendees.length === 0 ? (
               <Box py="8" style={{ textAlign: 'center' }}>
                 <User style={{ width: 32, height: 32, color: 'var(--content-muted)', margin: '0 auto 12px' }} />
                 <Text size="2" style={{ color: 'var(--content-muted)' }}>
@@ -717,7 +823,7 @@ export default function CheckInPage() {
                     <AttendeeRow
                       key={attendee.id}
                       attendee={attendee}
-                      onCheckIn={handleCheckIn}
+                      onSelect={setManualCode}
                     />
                   ))}
                 </Flex>

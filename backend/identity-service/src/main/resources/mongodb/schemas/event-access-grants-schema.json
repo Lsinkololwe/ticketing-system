@@ -12,6 +12,10 @@
       "grantedAt"
     ],
     "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+      },
       "_id": {
         "bsonType": "objectId"
       },
@@ -30,7 +34,11 @@
       },
       "accessLevel": {
         "bsonType": "string",
-        "enum": ["READ", "WRITE", "ADMIN"],
+        "enum": [
+          "READ",
+          "WRITE",
+          "ADMIN"
+        ],
         "description": "OWASP A04 - Enum constraint"
       },
       "isActive": {
@@ -40,17 +48,29 @@
         "bsonType": "date"
       },
       "expiresAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "revokedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "revokedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$"
       },
       "reason": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500
       }
     },

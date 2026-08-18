@@ -1,6 +1,5 @@
 package com.pml.identity.event.domain;
 
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 import java.util.Set;
@@ -19,7 +18,7 @@ import java.util.Set;
  * <p>The {@code roles} field contains all user roles. Users always have at least
  * the CUSTOMER role.</p>
  */
-@Externalized("user-events::UserRegistered")
+/** Cross-service wire name (ET-PLT-003 §4): user-events::UserRegistered — staged into the outbox. */
 public record UserRegisteredEvent(
         String userId,
         String email,

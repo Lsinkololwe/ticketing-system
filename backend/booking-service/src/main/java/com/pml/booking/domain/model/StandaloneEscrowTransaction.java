@@ -103,9 +103,7 @@ import java.time.Instant;
 @CompoundIndexes({
     @CompoundIndex(name = "escrow_type_idx", def = "{'escrowAccountId': 1, 'type': 1}"),
     @CompoundIndex(name = "escrow_category_idx", def = "{'escrowAccountId': 1, 'category': 1}"),
-    @CompoundIndex(name = "escrow_timestamp_idx", def = "{'escrowAccountId': 1, 'timestamp': -1}"),
-    @CompoundIndex(name = "ticket_idx", def = "{'ticketId': 1}"),
-    @CompoundIndex(name = "payment_idx", def = "{'paymentIntentId': 1}")
+    @CompoundIndex(name = "escrow_timestamp_idx", def = "{'escrowAccountId': 1, 'timestamp': -1}")
 })
 public class StandaloneEscrowTransaction {
 

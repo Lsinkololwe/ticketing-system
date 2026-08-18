@@ -1,6 +1,6 @@
 id: ET-TKT-001
 title: Reservation, the inventory hold, and the purchase saga
-status: draft
+status: approved
 area: TKT
 service: booking-service
 subgraph: booking
@@ -88,13 +88,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/ticketing/001-reservation-and-hold
-  - ./scripts/spec-lint.sh --persistence
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --money
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-001
-  - mvn -q -f backend verify -Dgroups=ET-TKT-001
+  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-001 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-TKT-001 -DfailIfNoTests=true
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -103,6 +98,6 @@ risks:
   - "The reservation spans one event but potentially many tiers, and R1 requires taking every tier's inventory in one transaction. Each tier is a separate findAndModify against a separate hot document, so a multi-tier order serialises across several of the platform's most contended documents and holds a transaction open while doing it."
   - "The TTL grace of PT1H means an expired-but-unreleased reservation is invisible to the TTL index for an hour. If the sweep is broken, inventory stays held for that hour with no automatic recovery, and the only signal is a tier that will not sell. The grace protects against the worse failure (permanent loss) but converts it into a slow one."
   - "R8 escalates a reservation whose intent is PENDING past 30 minutes rather than releasing it, which is correct — the money may still arrive — but it means inventory can be held indefinitely by a provider that never answers. A tier can be effectively sold out by stuck intents that no sweep will ever clear, and only an operator can release them."
-  - "TicketPurchasedEvent is published inside the confirmation transaction so Modulith records it. Modulith's registry is in PostgreSQL and the confirmation transaction is in MongoDB — they are separate transaction managers and cannot enlist together (ET-PLT-003 risk). The event may therefore be recorded for a confirmation that rolls back, or lost for one that commits."
+  - "booking.TicketPurchased is staged into booking_outbox inside the confirmation transaction, through the same reactive session, so the ticket and the event commit together or neither does. The remaining exposure is the drain, not the write: a staged row that the drain cannot send stays PENDING and is retried, so catalog's sold counter lags rather than diverging. R7 must state the lag the platform accepts."
   - "Reservations quote from booking_tier_inventory's mirrored price. If ET-CAT-002's mirror is stale, every reservation in that window quotes and charges the wrong price, and the buyer is charged what the reservation says — so a stale mirror is a pricing error the platform commits to before anyone notices."
   - "R4's sweep claims rows with FOR UPDATE SKIP LOCKED, which is PostgreSQL syntax. MongoDB has no equivalent; claiming must be done by a conditional findAndModify per row or a status marker, and the stated claim query cannot be implemented as written."

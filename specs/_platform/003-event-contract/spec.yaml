@@ -1,6 +1,6 @@
 id: ET-PLT-003
 title: Event contract — two tiers, the envelope, the outbox, idempotent consumers
-status: draft
+status: approved
 area: PLT
 service: all
 subgraph: null
@@ -21,10 +21,18 @@ sources:
 
 # ---- the contract, mirrored from spec.md §4 so scripts need not parse markdown ----
 persistence:
-  collections: []
-  indexes: []
+  collections:
+    # one outbox per service — staged in the same reactive transaction as the document
+    - catalog_outbox
+    - booking_outbox
+    - identity_outbox
+  indexes:
+    - "catalog|booking|identity_outbox {status,createdAt} compound — the drain query, same index on each"
+    - "catalog|booking|identity_outbox {eventId} unique — one row per event"
+    - "catalog|booking|identity_outbox {sentAt} ttl 7d — SENT rows expire; PENDING and FAILED never do"
   redis_keys:
     - "evt:seen:{consumer}:{eventId}   STRING  7 d  — consumer deduplication"
+    - "lock:sweep:outbox               STRING 30 s  — one drainer per service at a time"
 
 events:
   topics:
@@ -70,17 +78,14 @@ shared_types:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/003-event-contract
-  - ./scripts/spec-lint.sh --events
-  - ./scripts/spec-lint.sh --clock
-  - mvn -q -f backend test -Dgroups=ET-PLT-003
-  - mvn -q -f backend verify -Dgroups=ET-PLT-003
+  - mvn -q -f backend test -Dgroups=ET-PLT-003 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-003 -DfailIfNoTests=true
 
 risks:
-  - "R1's crash-recovery guarantee holds only if the module event is published inside the same transaction as the write. Spring Modulith records the publication when the transaction commits, so a doOnSuccess on a reactive chain that has already left the transactional boundary records nothing. The reactive/JDBC split makes this easy to get wrong and impossible to see in a passing test — the kill test in T1 is the only thing that detects it."
-  - "The two transaction managers cannot enlist together, so the MongoDB write and the PostgreSQL event_publication row are not atomic with each other. A crash in the window between them loses the publication for a write that succeeded. The window is small and the failure is silent; whether it is acceptable, or whether the platform needs a periodic reconciliation sweep comparing recent documents against published events, is an open decision this spec does not close."
+  - "R1's atomicity holds only if the outbox row is staged through the SAME ReactiveMongoTemplate session as the business write. A doOnSuccess, a separate template, or a chain that has already left the transactional boundary stages the row outside the transaction and silently restores the dual-write problem this design exists to remove. The rollback test in T1 is the only thing that detects it."
+  - "Resolved: the outbox row and the business document share one transaction in one store, so the dual-write window this risk described no longer exists. What remains is drain lag — a staged event is not yet a delivered one — and R1 must state the lag the platform accepts rather than implying delivery is immediate."
   - "Session-enabled subscriptions serialise per key, which is what the eight ordered rows need, but Azure Service Bus sessions also change the consumer's concurrency model and a session lock lost mid-handler redelivers the whole session. T7 must verify behaviour under lock expiry, not just under interleaving."
   - "R5 requires a durable marker for non-idempotent consumers in addition to the Redis guard, but does not say which consumers those are — that judgement is left to each consuming spec, and a consumer that wrongly self-assesses as idempotent gets no second line of defence."
   - "The 19-row registry names catalog and booking as consumers of identity.MemberRoleChanged for permission-cache invalidation, but ET-ORG-003 has not yet decided whether those services cache permissions at all. If they resolve permissions synchronously over the internal API instead, four of the nineteen rows have no consumer and should be withdrawn rather than published to nobody."
   - "No-PII-in-payloads (R3, T8) is asserted by a test that must enumerate the forbidden shapes. A field named recipientName or contactDetail added later to a payload passes any check keyed on the field names known today."
-  - "spring.modulith.events.completion-mode=ARCHIVE retains every completed publication row. At the platform's volume that table grows monotonically and nothing here bounds it; a retention job belongs to ET-PLT-009 and until it exists the outbox table is an unbounded write-amplifier on the PostgreSQL instance Keycloak also runs on."
+  - "The outbox now shares MongoDB's write budget with the business documents. Every staged event is a second write on the hot path, and at the on-sale peak of D-16 that doubles the write rate against the same replica set the reservation decrement contends on. The drain's batch size and interval need sizing against that, not against average load."

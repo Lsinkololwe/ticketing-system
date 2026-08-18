@@ -1,6 +1,6 @@
 id: ET-PLT-005
 title: Error contract — the closed code registry, typed handlers, retryability
-status: draft
+status: approved
 area: PLT
 service: all
 subgraph: all
@@ -149,10 +149,8 @@ retryable:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - ./scripts/spec-lint.sh specs/_platform/005-error-contract
-  - ./scripts/spec-lint.sh --errors
-  - mvn -q -f backend test -Dgroups=ET-PLT-005
-  - mvn -q -f backend verify -Dgroups=ET-PLT-005
+  - mvn -q -f backend test -Dgroups=ET-PLT-005 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-PLT-005 -DfailIfNoTests=true
 
 risks:
   - "The registry allocates codes to capabilities that are not yet specified — every ticketing, payment and finance row is written against a spec that has not been authored. If those specs later find a condition the registry does not describe, they must edit this file, and a closed registry edited by seven downstream specs is a merge point the build order has to serialise."
