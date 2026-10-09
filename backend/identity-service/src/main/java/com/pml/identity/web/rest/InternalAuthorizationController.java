@@ -72,29 +72,6 @@ public class InternalAuthorizationController {
     }
 
     /**
-     * Check if user can perform an action on events within an organization.
-     *
-     * @param userId User ID (from JWT)
-     * @param organizationId Organization ID
-     * @param permission Required permission
-     * @return Authorization result
-     */
-    @GetMapping("/event-permission")
-    public Mono<ResponseEntity<AuthorizationResult>> checkEventPermission(
-            @RequestParam String userId,
-            @RequestParam String organizationId,
-            @RequestParam String permission) {
-
-        log.debug("Event permission check: userId={}, orgId={}, permission={}",
-                userId, organizationId, permission);
-
-        return authorizationService.checkEventPermission(userId, organizationId, permission)
-                .map(result -> result.isAuthorized()
-                        ? ResponseEntity.ok(result)
-                        : ResponseEntity.status(403).body(result));
-    }
-
-    /**
      * Check if user has access to a specific event.
      *
      * @param userId User ID (from JWT)
@@ -117,119 +94,6 @@ public class InternalAuthorizationController {
                 .map(result -> result.isAuthorized()
                         ? ResponseEntity.ok(result)
                         : ResponseEntity.status(403).body(result));
-    }
-
-    /**
-     * Check if user is a member of an organization with at least the specified role.
-     *
-     * @param userId User ID (from JWT)
-     * @param organizationId Organization ID
-     * @param minimumRole Minimum role required
-     * @return Authorization result
-     */
-    @GetMapping("/membership")
-    public Mono<ResponseEntity<AuthorizationResult>> checkMembership(
-            @RequestParam String userId,
-            @RequestParam String organizationId,
-            @RequestParam String minimumRole) {
-
-        log.debug("Membership check: userId={}, orgId={}, minimumRole={}",
-                userId, organizationId, minimumRole);
-
-        return authorizationService.checkMembership(userId, organizationId, minimumRole)
-                .map(result -> result.isAuthorized()
-                        ? ResponseEntity.ok(result)
-                        : ResponseEntity.status(403).body(result));
-    }
-
-    /**
-     * Check if user is the owner of an organization.
-     *
-     * @param userId User ID (from JWT)
-     * @param organizationId Organization ID
-     * @return Authorization result
-     */
-    @GetMapping("/ownership")
-    public Mono<ResponseEntity<AuthorizationResult>> checkOwnership(
-            @RequestParam String userId,
-            @RequestParam String organizationId) {
-
-        log.debug("Ownership check: userId={}, orgId={}", userId, organizationId);
-
-        return authorizationService.checkOwnership(userId, organizationId)
-                .map(result -> result.isAuthorized()
-                        ? ResponseEntity.ok(result)
-                        : ResponseEntity.status(403).body(result));
-    }
-
-    /**
-     * Get the default organization for a user.
-     *
-     * <p>Returns the organization where the user is owner, or where they can create events.</p>
-     *
-     * @param userId User ID (from JWT)
-     * @return Organization ID or 404 if none found
-     */
-    @GetMapping("/default-organization")
-    public Mono<ResponseEntity<OrganizationResponse>> getDefaultOrganization(
-            @RequestParam String userId) {
-
-        log.debug("Get default organization: userId={}", userId);
-
-        return authorizationService.getDefaultOrganizationForUser(userId)
-                .map(orgId -> ResponseEntity.ok(new OrganizationResponse(orgId)))
-                .switchIfEmpty(Mono.just(ResponseEntity.notFound().build()));
-    }
-
-    /**
-     * Find organization by owner ID.
-     *
-     * <p>Used when we have organizerId but need organizationId.</p>
-     *
-     * @param ownerId Owner user ID
-     * @return Organization ID or 404 if none found
-     */
-    @GetMapping("/organization-by-owner")
-    public Mono<ResponseEntity<OrganizationResponse>> findOrganizationByOwner(
-            @RequestParam String ownerId) {
-
-        log.debug("Find organization by owner: ownerId={}", ownerId);
-
-        return authorizationService.findOrganizationByOwnerId(ownerId)
-                .map(orgId -> ResponseEntity.ok(new OrganizationResponse(orgId)))
-                .switchIfEmpty(Mono.just(ResponseEntity.notFound().build()));
-    }
-
-    /**
-     * Simple response containing organization ID.
-     */
-    public record OrganizationResponse(String organizationId) {}
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // ORGANIZATION MEMBERSHIP ENDPOINTS (for query resolver authorization)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Check if a user is an active member of an organization.
-     *
-     * <p>Used by other services to validate organization membership before
-     * returning organization-scoped data. This is a critical OWASP A01:2021
-     * control for multi-tenant data isolation.</p>
-     *
-     * @param userId User ID (from JWT)
-     * @param organizationId Organization ID to check membership for
-     * @return MembershipCheckResponse with membership status and role
-     */
-    @GetMapping("/check-organization-membership")
-    public Mono<ResponseEntity<MembershipCheckResponse>> checkOrganizationMembership(
-            @RequestParam String userId,
-            @RequestParam String organizationId) {
-
-        log.debug("Organization membership check: userId={}, orgId={}", userId, organizationId);
-
-        return authorizationService.checkOrganizationMembership(userId, organizationId)
-                .map(result -> ResponseEntity.ok(result))
-                .defaultIfEmpty(ResponseEntity.ok(MembershipCheckResponse.notMember()));
     }
 
     /**
@@ -275,30 +139,14 @@ public class InternalAuthorizationController {
     }
 
     /**
-     * Response for organization membership check.
-     */
-    public record MembershipCheckResponse(
-            boolean isMember,
-            boolean isActive,
-            String role,
-            String organizationId
-    ) {
-        public static MembershipCheckResponse notMember() {
-            return new MembershipCheckResponse(false, false, null, null);
-        }
-    }
-
-    /**
      * Response for same organization check.
      */
     public record SharedOrganizationResponse(
             boolean sharesOrganization,
-            String sharedOrganizationId,
-            String requestingUserRole,
-            String targetUserRole
+            String sharedOrganizationId
     ) {
         public static SharedOrganizationResponse noSharedOrganization() {
-            return new SharedOrganizationResponse(false, null, null, null);
+            return new SharedOrganizationResponse(false, null);
         }
     }
 
@@ -314,9 +162,7 @@ public class InternalAuthorizationController {
      */
     public record OrganizationMembershipInfo(
             String organizationId,
-            String organizationName,
             String role,
-            boolean isOwner,
             boolean isActive
     ) {}
 }

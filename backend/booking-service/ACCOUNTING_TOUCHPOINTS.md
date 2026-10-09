@@ -1,5 +1,7 @@
 # Accounting Touchpoints Analysis
 
+> **Process mechanics (ROADMAP D-21).** The journal entries below are written by workflow activities (payout, refund, chargeback, event finance), each in one transaction with its outbox row. Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 ## Complete List of Financial Operations
 
 This document catalogs **every touchpoint** in the booking-service that results in accounting journal entries (debits/credits), categorized by whether they are **USER-initiated** or **SYSTEM-initiated**.

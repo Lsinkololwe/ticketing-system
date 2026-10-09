@@ -1,11 +1,14 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.shared.constants.RefundRequestStatus;
 import com.pml.shared.constants.RefundRequestType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
@@ -13,7 +16,6 @@ import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -21,7 +23,6 @@ import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -39,7 +40,8 @@ import java.util.Map;
  * 5. FAILED - Refund failed (retryable)
  * 6. REJECTED - Request rejected (manual review)
  */
-@Document(collection = "refund_requests")
+@Document(collection = BookingCollections.REFUND_REQUESTS)
+@TypeAlias("refund_requests")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -50,19 +52,15 @@ public class RefundRequest {
     private String id;
 
     @NotBlank(message = "Ticket ID is required")
-    @Indexed
     private String ticketId;
 
     @NotBlank(message = "Ticket number is required")
-    @Indexed
     private String ticketNumber;
 
     @NotBlank(message = "Event ID is required")
-    @Indexed
     private String eventId;
 
     @NotBlank(message = "Organizer ID is required")
-    @Indexed
     private String organizerId;
 
     /**
@@ -74,15 +72,12 @@ public class RefundRequest {
      *
      * OWASP A01:2021 Compliance: Used for tenant isolation in authorization.
      */
-    @Indexed
     private String organizationId;
 
     @NotBlank(message = "Buyer ID is required")
-    @Indexed
     private String buyerId;
 
     @NotBlank(message = "Request ID is required")
-    @Indexed(unique = true)
     private String requestId;
 
     @NotNull(message = "Refund amount is required")
@@ -105,7 +100,6 @@ public class RefundRequest {
     private String supportingDocuments;
 
     // pawaPay refund integration
-    @Indexed
     private String pawaPayRefundId;
     private String pawaPayDepositId;
     private String providerTransactionId;
@@ -118,18 +112,27 @@ public class RefundRequest {
     private String requestedBy;
     private Instant requestedAt;
     private String reviewedBy;
-    private LocalDateTime reviewedAt;
+    private Instant reviewedAt;
     private String reviewComments;
     private String rejectionReason;
 
     // Processing details
     private String paymentReference;
     private String refundTransactionId;
-    private LocalDateTime processedAt;
+    private Instant processedAt;
     private String processedBy;
 
     // Financial details
     private BigDecimal originalTicketPrice;
+
+    /**
+     * How the refund divides between the platform's commission and the organizer's escrow, fixed the
+     * first time the refund is processed and reused by every retry, so a retried activity cannot
+     * recompute it against a commission record the first attempt already adjusted.
+     */
+    private BigDecimal commissionShare;
+    private BigDecimal escrowDebit;
+
     private BigDecimal processingFee;
     private BigDecimal netRefundAmount;
     private String originalPaymentMethod;
@@ -138,10 +141,10 @@ public class RefundRequest {
     private List<RefundRequestHistory> history;
 
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @CreatedBy
     private String createdBy;
@@ -169,7 +172,7 @@ public class RefundRequest {
     public static class RefundRequestHistory {
         private String action;
         private String performedBy;
-        private LocalDateTime performedAt;
+        private Instant performedAt;
         private String comments;
         private String previousStatus;
         private String newStatus;

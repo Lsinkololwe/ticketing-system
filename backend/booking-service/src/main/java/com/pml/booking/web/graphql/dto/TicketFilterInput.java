@@ -6,10 +6,11 @@ import java.time.Instant;
 public record TicketFilterInput(
         String eventId,
         String buyerId,
+        String organizerId,
         TicketStatus status,
+        java.util.List<TicketStatus> statuses,
         String category,
         Instant purchaseDateAfter,
         Instant purchaseDateBefore,
-        Integer limit,
-        Integer offset
+        @jakarta.validation.constraints.Size(max = 100) String searchQuery
 ) {}

@@ -1,5 +1,6 @@
 package com.pml.booking.repository;
 
+import java.util.Collection;
 import com.pml.booking.domain.model.BankAccount;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
@@ -20,7 +21,5 @@ public interface BankAccountRepository extends ReactiveMongoRepository<BankAccou
 
     Flux<BankAccount> findByOrganizerIdAndStatus(String organizerId, String status);
 
-    Mono<Boolean> existsByAccountNumber(String accountNumber);
-
-    Mono<Long> countByOrganizerId(String organizerId);
+    Mono<BankAccount> findByIdAndOrganizationIdIn(String id, Collection<String> organizationIds);
 }

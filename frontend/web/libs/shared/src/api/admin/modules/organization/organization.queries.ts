@@ -16,7 +16,7 @@ import { gql } from '@apollo/client';
  * Full organization fields for detail views and application flow
  */
 export const ORGANIZATION_FIELDS = gql`
-  fragment OrganizationFields on Organization {
+  fragment AdminOrganizationFields on Organization {
     id
     name
     slug
@@ -43,7 +43,7 @@ export const ORGANIZATION_FIELDS = gql`
     businessEmail
     businessPhone
     businessAddress {
-      street
+      addressLine1
       city
       province
       country
@@ -116,43 +116,16 @@ export const ORGANIZATION_LIST_FIELDS = gql`
 // ==========================================
 
 /**
- * Get all organizations with pagination (admin view)
- */
-export const ORGANIZATIONS_LIST = gql`
-  ${ORGANIZATION_LIST_FIELDS}
-  query OrganizationsList(
-    $filter: OrganizationFilterInput
-    $pagination: PaginationInput
-  ) {
-    organizationsOffsetPagination(filter: $filter, pagination: $pagination) {
-      content {
-        ...OrganizationListFields
-      }
-      totalElements
-      totalPages
-      page
-      size
-      hasNext
-      hasPrevious
-    }
-  }
-`;
-
-/**
  * Organizations awaiting review — the approvals workbench queue.
  *
- * <h2>This used to query a field that does not exist</h2>
- * It asked for `pendingOrganizations(pagination: PaginationInput)`. No subgraph
- * declares that field and it is absent from the composed supergraph, so every
- * call failed validation with "Cannot query field". Nothing noticed because no
- * screen called the hook — the approvals pages were all placeholders.
- *
- * <p>The real query is `organizationsOffsetPagination`, filtered by status.
+ * There is no dedicated `pendingOrganizations` field on the schema, so this
+ * filters the general `organizations` query by `PENDING_REVIEW` status
+ * instead.
  */
 export const PENDING_ORGANIZATIONS = gql`
   ${ORGANIZATION_LIST_FIELDS}
   query PendingOrganizations($pagination: OffsetPaginationInput) {
-    organizationsOffsetPagination(
+    organizations(
       status: PENDING_REVIEW
       pagination: $pagination
     ) {
@@ -177,23 +150,7 @@ export const GET_ORGANIZATION = gql`
   ${ORGANIZATION_FIELDS}
   query GetOrganization($id: ID!) {
     organization(id: $id) {
-      ...OrganizationFields
-    }
-  }
-`;
-
-/**
- * Get organization statistics for admin dashboard
- */
-export const ORGANIZATION_STATISTICS = gql`
-  query OrganizationStatistics {
-    organizationStatistics {
-      totalCount
-      pendingReviewCount
-      approvedCount
-      activeCount
-      rejectedCount
-      suspendedCount
+      ...AdminOrganizationFields
     }
   }
 `;

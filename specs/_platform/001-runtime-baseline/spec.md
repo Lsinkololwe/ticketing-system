@@ -110,6 +110,26 @@ a bounded elastic scheduler.
 - [ ] No module's dependency tree contains `spring-boot-starter-web`, Tomcat, Jetty or Undertow — `mvn dependency:tree | grep -E 'starter-web|tomcat|jetty|undertow'` is empty
 - [ ] Every service starts on Netty; the startup log line names `Netty` and never `Tomcat`
 - [ ] No production class calls `.block()`, `.blockFirst()`, `.blockLast()` or `.toFuture().get()`
+      **on a thread that can be an event loop.** Exempt, by name and for one reason — the call
+      cannot reach a Netty worker:
+  - a class implementing `ApplicationRunner` or `CommandLineRunner`, and
+    `@EventListener(ApplicationReadyEvent.class)` — boot-time, on the main thread;
+  - **a `@Scheduled` method** — runs on the `TaskScheduler` pool, which is not the event loop;
+  - **an `@ActivityImpl` class** — a Temporal activity runs on the worker's activity executor, never
+    a Netty worker, and its method is synchronous by contract. *Ruled 2026-09-13 with D-21*
+    ([ET-PLT-015](../015-durable-execution/) R5).
+
+  *Ruled 2026-09-02.* R1's own justification is "one stalled worker stalls every concurrent request
+  it is carrying". That is a statement about Netty workers, and it does not reach a scheduler
+  thread. What a blocking scheduled task *does* cost is the pool: Spring's default is **one**
+  thread, so one slow task delays every other. The platform keeps exactly one scheduled task per
+  service — the outbox drain, which subscribes rather than blocks. Timeouts, polls and recurring
+  jobs are Temporal workflow timers and Schedules ([ET-PLT-015](../015-durable-execution/)), which
+  run on the worker's executors and need no scheduler pool at all.
+
+  **BlockHound remains the arbiter and is unchanged**, which is what keeps this exemption honest —
+  it only ever fires on an event-loop thread, so it draws exactly this line at runtime rather than
+  by pattern. A `@Scheduled` method that somehow executes on a worker still fails.
 - [ ] No production class calls `.subscribe()` to trigger work whose result a caller needs
 - [ ] Every blocking third-party call is inside a class under `infrastructure/`, wrapped in `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`, and that class's public methods return `Mono` or `Flux`
 - [ ] A search of production source finds no `.block()`, `.blockFirst()`, `.blockLast()`, `.toFuture().get()` or fire-and-forget `.subscribe()` **on any path that can execute on an event-loop thread**
@@ -151,7 +171,7 @@ reference another module's internal packages.
 - [ ] Each service's top-level packages are exactly the modules listed in §4, and no other top-level package exists
 - [ ] Each module's `repository` and `service.impl` packages are internal; no other module imports from them
 - [ ] Cross-module communication inside a service is by published event or by an interface in the exposing module's API package — never a direct `Impl` reference
-- [ ] Each module's `package-info.java` states what it exposes and which modules it may depend on, so the rule is readable at the package it governs
+- [ ] ~~Each module's `package-info.java` states what it exposes and which modules it may depend on~~ — **withdrawn 2026-09-19** (F-038): the per-package headers were a Spring Modulith convention that outlived Modulith and drifted from the code; the boundary is enforced by `ModuleBoundaryLintTest` (no import of another service's `repository` or `service.impl`, shared-library a leaf), not by documentation
 - [ ] The boundary is a review rule, not a build failure — this spec claims no mechanical enforcement, and a reviewer checking a cross-module import is the control
 
 ### ET-PLT-001-R5 · The shared library carries contracts, never business logic
@@ -210,7 +230,7 @@ configuration.
 
 ### Application modules per service
 
-Declared with `package-info.java` under each top-level package.
+Boundaries are enforced by `ModuleBoundaryLintTest`; no `package-info.java` is kept (withdrawn 2026-09-19, F-038).
 
 | Service | Modules | Internal to every module |
 |---|---|---|
@@ -262,6 +282,8 @@ Declared once per service in `config/PlatformConfig.java`.
 | `PAWAPAY_API_URL`, `PAWAPAY_API_TOKEN` | booking | ET-PAY-001 |
 | `OTP_SERVICE_URL`, `OTP_CLIENT_ID`, `OTP_CLIENT_SECRET` | keycloak-extensions | ET-IDN-001 |
 | `APOLLO_ROUTER_URL` | gateway | |
+| `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE` | all three services | [ET-PLT-015](../015-durable-execution/); development defaults `127.0.0.1:7233`, `ticketing` |
+| `TEMPORAL_TLS_ENABLED` | all three services, `prod` profile | `true` when the self-hosted Temporal frontend terminates TLS (ROADMAP D-28) |
 
 Absence of any variable with no dev default is a startup failure carrying the variable's
 name, never a silent fallback.
@@ -277,6 +299,7 @@ name, never a silent fallback.
 | web | `spring-boot-starter-webflux` | Boot parent |
 | security | `spring-boot-starter-oauth2-resource-server` | Boot parent |
 | gateway | `spring-cloud-starter-gateway-server-webflux` | Spring Cloud BOM |
+| durable execution | `temporal-spring-boot-starter`; `temporal-testing` at test scope | `temporal-bom:1.38.0` |
 
 ## 5. Tasks
 
@@ -301,7 +324,7 @@ name, never a silent fallback.
   - parallel-safe: yes — one service per agent
   - depends: T1
 
-- [ ] **T4 · Declare each module's boundary in its `package-info.java`**
+- [ ] **T4 · Declare each module's boundary in its `package-info.java`** — withdrawn 2026-09-19 (F-038); boundaries are checked by `ModuleBoundaryLintTest`
   - requirements: R4
   - files: `backend/*/src/main/java/com/pml/*/**/package-info.java`
   - verify: every top-level package in §4 has a header naming what it exposes, what it may depend on, and what is internal; no module imports another's `repository` or `service.impl`

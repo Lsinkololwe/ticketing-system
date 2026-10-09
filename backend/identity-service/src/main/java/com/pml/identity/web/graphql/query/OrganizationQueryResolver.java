@@ -7,7 +7,6 @@ import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationService;
-import com.pml.identity.service.PermissionResolutionService;
 import com.pml.identity.web.graphql.dto.pagination.*;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +20,7 @@ import java.util.Objects;
 
 /**
  * GraphQL Query Resolver for Organization operations.
- * Handles organization-related queries with both offset and cursor pagination.
+ * Handles organization-related queries with offset pagination.
  */
 @Slf4j
 @DgsComponent
@@ -30,7 +29,6 @@ public class OrganizationQueryResolver {
 
     private final OrganizationService organizationService;
     private final OrganizationMemberService memberService;
-    private final PermissionResolutionService permissionService;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
@@ -90,7 +88,7 @@ public class OrganizationQueryResolver {
      * Schema: myOwnedOrganization: Organization
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<Organization> myOwnedOrganization() {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.debug("GraphQL query: myOwnedOrganization (userId={})", userId))
@@ -104,15 +102,15 @@ public class OrganizationQueryResolver {
     /**
      * Get organization applications with offset pagination (admin only).
      * For the organization approval queue - filters organizations in approval workflow statuses.
-     * Schema: organizationApplicationsOffsetPagination(status: OrganizationStatus, pagination: OffsetPaginationInput): OrganizationApplicationOffsetPage!
+     * Schema: organizationApplications(status: OrganizationStatus, pagination: OffsetPaginationInput): OrganizationApplicationOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<OrganizationApplicationOffsetPage> organizationApplicationsOffsetPagination(
+    public Mono<OrganizationApplicationOffsetPage> organizationApplications(
             @InputArgument OrganizationStatus status,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: organizationApplicationsOffsetPagination(status={})", status);
+        log.debug("GraphQL query: organizationApplications(status={})", status);
 
         // Get organizations in approval workflow
         Flux<Organization> orgFlux = status != null
@@ -122,82 +120,34 @@ public class OrganizationQueryResolver {
         return buildApplicationOffsetPage(orgFlux, pagination);
     }
 
-    /**
-     * Get organization applications with cursor pagination (admin only).
-     * For mobile/infinite scroll in the approval queue.
-     * Schema: organizationApplicationsCursorPagination(status: OrganizationStatus, pagination: CursorPaginationInput): OrganizationApplicationConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<OrganizationApplicationConnection> organizationApplicationsCursorPagination(
-            @InputArgument OrganizationStatus status,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: organizationApplicationsCursorPagination(status={})", status);
-
-        // Get organizations in approval workflow
-        Flux<Organization> orgFlux = status != null
-                ? organizationService.findByStatus(status)
-                : organizationService.findInApprovalWorkflow();
-
-        return buildApplicationCursorConnection(orgFlux, pagination);
-    }
-
     // ========================================================================
     // OFFSET PAGINATION QUERIES (Admin Tables)
     // ========================================================================
 
     /**
      * Search organizations with offset pagination (admin only).
-     * Schema: organizationsOffsetPagination(search: String, status: OrganizationStatus, verified: Boolean, pagination: OffsetPaginationInput): OrganizationOffsetPage!
+     * Schema: organizations(search: String, status: OrganizationStatus, verified: Boolean, pagination: OffsetPaginationInput): OrganizationOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<OrganizationOffsetPage> organizationsOffsetPagination(
+    public Mono<OrganizationOffsetPage> organizations(
             @InputArgument String search,
             @InputArgument OrganizationStatus status,
             @InputArgument Boolean verified,
+            @InputArgument com.pml.identity.domain.enums.KybStatus kybStatus,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: organizationsOffsetPagination(search={}, status={}, verified={})",
-                search, status, verified);
+        log.debug("GraphQL query: organizations(search={}, status={}, verified={}, kybStatus={})",
+                search, status, verified, kybStatus);
 
-        Flux<Organization> orgFlux = applyFilters(organizationService.findAll(), search, status, verified);
+        Flux<Organization> orgFlux = applyFilters(organizationService.findAll(), search, status, verified)
+                .filter(org -> kybStatus == null || org.getKybStatus() == kybStatus);
         return buildOffsetPage(orgFlux, pagination);
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Search organizations with cursor pagination (admin only, mobile/infinite scroll).
-     * Schema: organizationsCursorPagination(search: String, status: OrganizationStatus, verified: Boolean, pagination: CursorPaginationInput): OrganizationConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<OrganizationConnection> organizationsCursorPagination(
-            @InputArgument String search,
-            @InputArgument OrganizationStatus status,
-            @InputArgument Boolean verified,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: organizationsCursorPagination(search={}, status={}, verified={})",
-                search, status, verified);
-
-        Flux<Organization> orgFlux = applyFilters(organizationService.findAll(), search, status, verified);
-        return buildCursorConnection(orgFlux, pagination);
     }
 
     // ========================================================================
     // PERMISSION QUERIES
     // ========================================================================
-
-    /**
-     * Get current user's effective permissions for an organization.
-     * Schema: myOrganizationPermissions(organizationId: ID!, eventId: ID): EffectivePermissions!
-     * Note: This is now in PermissionQueryResolver
-     */
 
     /**
      * Check if slug is available.
@@ -290,55 +240,6 @@ public class OrganizationQueryResolver {
     }
 
     /**
-     * Build OrganizationConnection from a Flux of organizations.
-     */
-    private Mono<OrganizationConnection> buildCursorConnection(Flux<Organization> orgFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : CursorPaginationInput.defaults();
-        int limit = p.getLimit();
-
-        return orgFlux.collectList()
-                .map(allOrgs -> {
-                    int totalCount = allOrgs.size();
-
-                    // Find starting position based on cursor
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allOrgs.size(); i++) {
-                            if (allOrgs.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Get the page of organizations
-                    List<Organization> pageOrgs = allOrgs.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageOrgs.isEmpty()) {
-                        return OrganizationConnection.empty();
-                    }
-
-                    // Build edges
-                    List<OrganizationEdge> edges = pageOrgs.stream()
-                            .map(OrganizationEdge::of)
-                            .toList();
-
-                    // Build page info
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.forCursor(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new OrganizationConnection(edges, pageInfo, totalCount);
-                });
-    }
-
-    /**
      * Build OrganizationApplicationOffsetPage from a Flux of organizations.
      */
     private Mono<OrganizationApplicationOffsetPage> buildApplicationOffsetPage(Flux<Organization> orgFlux, OffsetPaginationInput pagination) {
@@ -371,52 +272,4 @@ public class OrganizationQueryResolver {
                 });
     }
 
-    /**
-     * Build OrganizationApplicationConnection from a Flux of organizations.
-     */
-    private Mono<OrganizationApplicationConnection> buildApplicationCursorConnection(Flux<Organization> orgFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : CursorPaginationInput.defaults();
-        int limit = p.getLimit();
-
-        return orgFlux.collectList()
-                .map(allOrgs -> {
-                    int totalCount = allOrgs.size();
-
-                    // Find starting position based on cursor
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allOrgs.size(); i++) {
-                            if (allOrgs.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Get the page of organizations
-                    List<Organization> pageOrgs = allOrgs.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageOrgs.isEmpty()) {
-                        return OrganizationApplicationConnection.empty();
-                    }
-
-                    // Build edges
-                    List<OrganizationApplicationEdge> edges = pageOrgs.stream()
-                            .map(OrganizationApplicationEdge::of)
-                            .toList();
-
-                    // Build page info
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.forCursor(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new OrganizationApplicationConnection(edges, pageInfo, totalCount);
-                });
-    }
 }

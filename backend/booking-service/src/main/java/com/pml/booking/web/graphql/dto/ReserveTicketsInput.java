@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 /**
- * Input for creating a ticket reservation (ET-TKT-001 R6).
+ * Input for creating a ticket reservation.
  */
 public record ReserveTicketsInput(
     @NotBlank(message = "Event ID is required")
@@ -28,9 +28,20 @@ public record ReserveTicketsInput(
      * the reply the buyer's phone never received, so it cannot help them ask
      * "did that go through?" — only a key they chose before sending can.
      *
-     * <p>Required by R6. Nullable in the record so a malformed request produces
+     * <p>Required. Nullable in the record so a malformed request produces
      * a validation message rather than a deserialisation failure, but a blank
      * one is refused before any inventory moves.
      */
-    String idempotencyKey
+    String idempotencyKey,
+
+    /** Who the order is for. The platform needs a name for the gate and the receipt; the email is optional. */
+    @Size(max = 120, message = "Name must be at most 120 characters")
+    String contactName,
+
+    @jakarta.validation.constraints.Email(message = "Email must be valid")
+    @Size(max = 254, message = "Email must be at most 254 characters")
+    String contactEmail,
+
+    @Size(max = 20, message = "Phone must be at most 20 characters")
+    String contactPhone
 ) {}

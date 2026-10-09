@@ -2,6 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "preserve",
+    "composite": false,
+    "rootDir": "../..",
+    "declaration": false,
+    "declarationMap": false,
     "noEmit": true,
     "emitDeclarationOnly": false,
     "esModuleInterop": true,

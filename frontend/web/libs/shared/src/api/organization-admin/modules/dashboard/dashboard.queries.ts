@@ -54,8 +54,6 @@ export const MY_UPCOMING_EVENTS = gql`
  *
  * The partial current month is excluded server-side — a part-month column
  * next to full months reads as a revenue collapse.
- *
- * @see frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md §B1
  */
 export const MY_REVENUE_SERIES = gql`
   query MyRevenueSeries($months: Int) {
@@ -73,8 +71,6 @@ export const MY_REVENUE_SERIES = gql`
  *
  * `totalSold` is the denominator every row's share is computed against, and is
  * printed on the tile — a rate without its denominator is not checkable.
- *
- * @see frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md §B3
  */
 export const MY_TICKET_MIX = gql`
   query MyTicketMix {
@@ -93,8 +89,6 @@ export const MY_TICKET_MIX = gql`
 
 /**
  * Gate attendance for the most recent event that has run. Null when none has.
- *
- * @see frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md §B4
  */
 export const MY_CHECK_IN_RATE = gql`
   query MyCheckInRate {
@@ -111,8 +105,6 @@ export const MY_CHECK_IN_RATE = gql`
 
 /**
  * Withdrawable balance plus the escrow hold on the next tranche.
- *
- * @see frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md §B2
  */
 export const MY_PAYOUT_WINDOW = gql`
   query MyPayoutWindow {
@@ -144,32 +136,6 @@ export const MY_PAYOUT_SOURCES = gql`
       availableAmount
       currency
       eligibleSince
-    }
-  }
-`;
-
-/**
- * Whether a payout can be requested for one event, and if not, why.
- *
- * Complements MY_PAYOUT_SOURCES rather than duplicating it: that query lists
- * what is already drawable and so omits, by construction, every event an
- * organizer actually asks about. "Why can't I withdraw yet" is not answerable
- * from a list the event is missing from.
- *
- * The same evaluation runs again server-side when the request is made — this
- * one shapes the button, that one guards the money.
- *
- * @see specs/finance/003-payouts-and-settlement/spec.md
- */
-export const PAYOUT_ELIGIBILITY = gql`
-  query PayoutEligibility($eventId: ID!) {
-    payoutEligibility(eventId: $eventId) {
-      eligible
-      reasons
-      availableAmount
-      currency
-      opensAt
-      minimumAmount
     }
   }
 `;

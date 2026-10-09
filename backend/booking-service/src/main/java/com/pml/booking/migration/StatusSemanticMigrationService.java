@@ -33,8 +33,6 @@ import org.springframework.stereotype.Service;
  * A status code with no reference-data row cannot be classified. Those are
  * counted and logged rather than defaulted — a payout stamped with a plausible
  * but wrong semantic is invisible, while one left null is findable.
- *
- * @see specs/finance/003-payouts-and-settlement
  */
 @Slf4j
 @Service

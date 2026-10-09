@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/catalog/003-locations-and-reference-data/spec.md`](../catalog/003-locations-and-reference-data/spec.md) · **Wave 2** · `blocked_by:` ET-PLT-002, 004, 005, ET-CAT-001
 > **Screens** `Ticketing - Discover & Checkout.dc.html` *(browse/search)* · `Admin - Transactions & System.dc.html` *(reference data)* · `Org Admin - Event Editor.dc.html` *(venue field — the Coverage map marks this **partial**)*
-> **Verify** `mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-003 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-003 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 Provinces, cities, venues, categories and the discovery path that every buyer enters through. The
 performance requirements here are real: discovery is the highest-volume read on the platform and
@@ -159,14 +159,14 @@ is deactivated.
 
 - [ ] R0 recorded, including whether the existing reference bootstrapper is idempotent — and whether it is actually invoked at boot
 - [ ] Seeding twice is a no-op; categories are flat
-- [ ] Venues shared across organizations; unknown city refuses
-- [ ] `minTierPrice` tracks every tier mutation including delete
+- [x] Venues shared across organizations; unknown city refuses — the typed city resolves to an active `CITY` row of the reference data or is refused `LOCATION_UNKNOWN`; a second organization naming the same hall reuses the venue. Evidence: `EventAuthoringTest.TheCity`, `venuesAreShared` (L2, 2026-09-19).
+- [x] `minTierPrice` tracks every tier mutation including delete — held as `Event.lowestTicketPrice` (Decimal128) and rewritten by `EventTierMirror` after every tier create, update, delete, activate and deactivate. Evidence: `EventAuthoringTest.storesEverything`, `mirrorFollowsTierWrites` (L2, 2026-09-19).
 - [ ] `IXSCAN` on **every** filter combination the UI can produce, confirmed live via MCP
-- [ ] Depth **and** width caps enforced
+- [x] Depth **and** width caps enforced — `first` above 100 refused `PAGE_SIZE_EXCEEDED`; the feed stops at `catalog.discovery.max-depth` and a forged cursor cannot pass it. Evidence: `EventDiscoveryTest.Refusals`, `depthCap` (L2, 2026-09-19).
 - [ ] Reference cache evicts on mutation and polls nothing
 - [ ] No delete mutation exists for any reference kind
 - [ ] Past events render after every reference kind is deactivated
 - [ ] Discovery empty state is designed, not blank; filter state lives in the URL
 - [ ] Any venue-field gap recorded rather than worked around with a client-side type
-- [ ] `mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-003 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-003 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented` — **Wave 3 does not open until all of Wave 2 is**

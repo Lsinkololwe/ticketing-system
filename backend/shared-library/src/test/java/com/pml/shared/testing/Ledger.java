@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * Asserts the corpus-wide property: <strong>no balance is written except as a double-entry pair.</strong>
  *
- * <p>Over {@code booking_journal_lines} (ET-FIN-001 §4), for every {@code journalEntryId}:
+ * <p>Over {@code booking_journal_lines}, for every {@code journalEntryId}:
  *
  * <ul>
  *   <li>at least two lines — a single-line entry is not double entry</li>
@@ -25,7 +25,7 @@ import java.util.Map;
  * <h2>Exactly, not within a tolerance</h2>
  * A tolerance is how a ledger drifts. A ngwee per entry over a season is kwacha, and there
  * is no point at which anyone notices, because every individual entry looked fine. Money is
- * {@code BigDecimal} at scale 2 with {@code HALF_UP} applied once (ET-PLT-002 R4), so equality
+ * {@code BigDecimal} at scale 2 with {@code HALF_UP} applied once, so equality
  * is the correct comparison — and {@code compareTo} rather than {@code equals}, since
  * {@code 10.00} and {@code 10.0} are the same amount and different {@code BigDecimal}s.
  */
@@ -36,7 +36,7 @@ public final class Ledger {
     private Ledger() {
     }
 
-    /** Short form, as written in the specs' acceptance boxes. */
+    /** Short form, reading through the template bound by {@link Harness#bind}. */
     public static void assertBalanced() {
         assertBalanced(Harness.template());
     }
@@ -103,7 +103,7 @@ public final class Ledger {
         if (raw == null) {
             throw new AssertionError("a %s row has no amount".formatted(LINES));
         }
-        // Decimal128 is what ET-PLT-002 R4 stores; the others appear only when a
+        // Decimal128 is what the platform stores for money; the others appear only when a
         // test seeds by hand, and are worth accepting so a seeding slip reads as
         // a seeding slip rather than a ledger failure.
         if (raw instanceof Decimal128 decimal128) {

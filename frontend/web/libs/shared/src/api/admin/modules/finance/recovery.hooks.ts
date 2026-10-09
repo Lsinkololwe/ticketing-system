@@ -5,20 +5,17 @@
  * rather than the design's eight sources.
  */
 
-import { useCallback } from 'react';
-import { useMutation, useQuery } from '@apollo/client/react';
+import { useQuery } from '@apollo/client/react';
 import type {
-  PayoutIssueType,
-  PayoutRecoverySummary,
-  PayoutRequest,
+  PayoutRecoverySummaryQuery,
+  StuckPayoutRequestsQuery,
+  StuckPayoutRequestsQueryVariables,
 } from '../../../../types/graphql';
-import type { FinancePageInfo, UseFinancePageOptions, DecisionResult } from './finance.hooks';
+import type { FinancePageInfo, UseFinancePageOptions } from './finance.hooks';
 import {
-  MARK_PAYOUT_FOR_REVIEW,
   PAYOUTS_FOR_REVIEW,
   PAYOUT_RECOVERY_SUMMARY,
   RETRYABLE_PAYOUT_REQUESTS,
-  RETRY_PAYOUT_REQUEST,
   STUCK_PAYOUT_REQUESTS,
 } from './recovery.queries';
 
@@ -32,13 +29,23 @@ const QUERY_FOR: Record<RecoveryBucket, typeof STUCK_PAYOUT_REQUESTS> = {
 };
 
 const FIELD_FOR: Record<RecoveryBucket, string> = {
-  stuck: 'stuckPayoutRequestsOffsetPagination',
-  retryable: 'retryablePayoutRequestsOffsetPagination',
-  review: 'payoutRequestsForReviewOffsetPagination',
+  stuck: 'stuckPayoutRequests',
+  retryable: 'retryablePayoutRequests',
+  review: 'payoutRequestsForReview',
 };
 
+/**
+ * The row shape all three recovery queries select — `STUCK_PAYOUT_REQUESTS`,
+ * `RETRYABLE_PAYOUT_REQUESTS` and `PAYOUTS_FOR_REVIEW` share the same two
+ * fragments, so `StuckPayoutRequestsQuery`'s row type describes all three.
+ */
+export type RecoveryPayoutRow = StuckPayoutRequestsQuery['stuckPayoutRequests']['data'][number];
+
+/** The `{ data, pagination }` page shape every recovery query returns, by field name. */
+type RecoveryPage = { data: RecoveryPayoutRow[]; pagination: Partial<FinancePageInfo> | null };
+
 export interface UseRecoveryQueueResult {
-  items: PayoutRequest[];
+  items: RecoveryPayoutRow[];
   pageInfo: FinancePageInfo;
   loading: boolean;
   error?: Error;
@@ -50,10 +57,10 @@ export function useRecoveryQueue(
   options: UseFinancePageOptions = {}
 ): UseRecoveryQueueResult {
   const size = options.size ?? 20;
-  const { data, loading, error, refetch } = useQuery<Record<string, {
-    data: PayoutRequest[];
-    pagination: Partial<FinancePageInfo> | null;
-  }>>(QUERY_FOR[bucket], {
+  const { data, loading, error, refetch } = useQuery<
+    Record<string, RecoveryPage>,
+    StuckPayoutRequestsQueryVariables & { reviewStatus?: null }
+  >(QUERY_FOR[bucket], {
     variables: {
       pagination: { page: options.page ?? 0, size, sortBy: 'requestedAt', sortDirection: 'DESC' },
       // Only the review query declares this argument; the other two ignore an
@@ -85,17 +92,20 @@ export function useRecoveryQueue(
   };
 }
 
+/** The summary shape this screen actually selects — see `PAYOUT_RECOVERY_SUMMARY`. */
+export type PayoutRecoverySummaryVM = PayoutRecoverySummaryQuery['payoutRecoverySummary'];
+
 export interface UseRecoverySummaryResult {
-  summary: PayoutRecoverySummary | null;
+  summary: PayoutRecoverySummaryVM | null;
   loading: boolean;
   error?: Error;
   refetch: () => void;
 }
 
 export function usePayoutRecoverySummary(): UseRecoverySummaryResult {
-  const { data, loading, error, refetch } = useQuery<{
-    payoutRecoverySummary: PayoutRecoverySummary;
-  }>(PAYOUT_RECOVERY_SUMMARY, {
+  const { data, loading, error, refetch } = useQuery<PayoutRecoverySummaryQuery>(
+    PAYOUT_RECOVERY_SUMMARY,
+    {
     fetchPolicy: 'cache-and-network',
     errorPolicy: 'all',
   });
@@ -110,64 +120,3 @@ export function usePayoutRecoverySummary(): UseRecoverySummaryResult {
   };
 }
 
-interface Envelope {
-  success: boolean;
-  message: string | null;
-  errors: string[];
-}
-
-function envelopeOf(payload: Envelope | undefined, fallback: string): DecisionResult {
-  if (!payload) return { success: false, message: fallback, errors: [fallback] };
-  return {
-    success: payload.success,
-    message: payload.message ?? null,
-    errors: payload.errors ?? [],
-  };
-}
-
-export interface UseRecoveryActionsResult {
-  retry: (id: string) => Promise<DecisionResult>;
-  markForReview: (
-    id: string,
-    issueType: PayoutIssueType,
-    notes?: string
-  ) => Promise<DecisionResult>;
-  submitting: boolean;
-}
-
-export function useRecoveryActions(): UseRecoveryActionsResult {
-  const [retryMutation, retryState] = useMutation(RETRY_PAYOUT_REQUEST, {
-    refetchQueries: [{ query: PAYOUT_RECOVERY_SUMMARY }],
-    awaitRefetchQueries: true,
-  });
-  const [markMutation, markState] = useMutation(MARK_PAYOUT_FOR_REVIEW, {
-    refetchQueries: [{ query: PAYOUT_RECOVERY_SUMMARY }],
-    awaitRefetchQueries: true,
-  });
-
-  const retry = useCallback(
-    async (id: string) => {
-      const { data } = await retryMutation({ variables: { payoutRequestId: id } });
-      return envelopeOf(
-        (data as { retryPayoutRequest?: Envelope } | undefined)?.retryPayoutRequest,
-        'The server did not confirm the retry.'
-      );
-    },
-    [retryMutation]
-  );
-
-  const markForReview = useCallback(
-    async (id: string, issueType: PayoutIssueType, notes?: string) => {
-      const { data } = await markMutation({
-        variables: { payoutRequestId: id, issueType, notes: notes ?? null },
-      });
-      return envelopeOf(
-        (data as { markPayoutForReview?: Envelope } | undefined)?.markPayoutForReview,
-        'The server did not confirm the flag.'
-      );
-    },
-    [markMutation]
-  );
-
-  return { retry, markForReview, submitting: retryState.loading || markState.loading };
-}

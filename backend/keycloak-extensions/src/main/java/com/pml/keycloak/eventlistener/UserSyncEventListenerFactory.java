@@ -1,106 +1,72 @@
 package com.pml.keycloak.eventlistener;
 
-import com.pml.keycloak.client.IdentityServiceClient;
+import com.pml.keycloak.identity.ContactOtpClient;
+import com.pml.keycloak.identity.IdentityHttp;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
+import org.keycloak.events.Event;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventListenerProviderFactory;
+import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 
 /**
- * Factory for creating UserSyncEventListener instances.
- *
- * This factory is registered as a Keycloak SPI via:
- * META-INF/services/org.keycloak.events.EventListenerProviderFactory
- *
- * Configuration:
- * Environment variables required:
- * - IDENTITY_SERVICE_URL (or OTP_SERVICE_URL): URL to Identity Service
- * - OTP_CLIENT_ID: OAuth2 client ID for authentication
- * - OTP_CLIENT_SECRET: OAuth2 client secret
- * - KEYCLOAK_TOKEN_URL: Token endpoint URL
- *
- * Optional:
- * - USER_SYNC_REALM: Specific realm to process (empty = all realms)
- *
- * To enable in Keycloak:
- * 1. Add JAR to providers/ directory
- * 2. Go to Realm Settings > Events > Event Listeners
- * 3. Add "user-sync" listener
+ * Provider id {@code user-sync}. Fail closed: without IDENTITY_BASE_URL, IDENTITY_CLIENT_ID,
+ * IDENTITY_CLIENT_SECRET and KEYCLOAK_TOKEN_URL the listener is a no-op and an ERROR is logged.
  */
 public class UserSyncEventListenerFactory implements EventListenerProviderFactory {
 
     private static final Logger LOG = Logger.getLogger(UserSyncEventListenerFactory.class);
-
     public static final String PROVIDER_ID = "user-sync";
 
-    private IdentityServiceClient identityServiceClient;
-    private String realmName;
-    private boolean enabled;
+    private ContactOtpClient client;
+    private ThreadPoolExecutor executor;
 
     @Override
     public EventListenerProvider create(KeycloakSession session) {
-        if (!enabled) {
-            LOG.debug("UserSyncEventListener is disabled, returning no-op provider");
-            return new NoOpEventListener();
+        if (client == null || executor == null) {
+            return new NoOp();
         }
-
-        // Pass KeycloakSession to EventListener for direct user data access
-        // This follows Keycloak best practices - no admin credentials needed
-        return new UserSyncEventListener(session, identityServiceClient, realmName);
+        return new UserSyncEventListener(session, client, executor, 5, Duration.ofMillis(500),
+                d -> Thread.sleep(d.toMillis()));
     }
 
     @Override
     public void init(Config.Scope config) {
-        LOG.info("Initializing UserSyncEventListenerFactory");
-
-        // Read configuration from environment variables
-        // Support both IDENTITY_SERVICE_URL and OTP_SERVICE_URL for backward compatibility
-        String serviceUrl = System.getenv("IDENTITY_SERVICE_URL");
-        if (serviceUrl == null || serviceUrl.isEmpty()) {
-            serviceUrl = System.getenv("OTP_SERVICE_URL");
-        }
-
-        // Read optional realm filter
-        this.realmName = System.getenv("USER_SYNC_REALM");
-        if (this.realmName == null || this.realmName.isEmpty()) {
-            // Default to myticketzm realm if not specified
-            this.realmName = "myticketzm";
-        }
-
-        // Validate configuration
-        if (serviceUrl == null || serviceUrl.isEmpty()) {
-            LOG.warn("IDENTITY_SERVICE_URL/OTP_SERVICE_URL not configured. UserSyncEventListener will be disabled.");
-            this.enabled = false;
+        Map<String, String> env = System.getenv();
+        List<String> missing = IdentityHttp.missing(env);
+        IdentityHttp http = IdentityHttp.fromEnvironment(env, Clock.systemUTC());
+        if (http == null) {
+            LOG.errorf("user-sync DISABLED (fail closed): missing environment %s", missing);
             return;
         }
-
-        // Validate OAuth2 configuration
-        String clientId = System.getenv("OTP_CLIENT_ID");
-        String clientSecret = System.getenv("OTP_CLIENT_SECRET");
-        String tokenUrl = System.getenv("KEYCLOAK_TOKEN_URL");
-
-        if (clientId == null || clientSecret == null || tokenUrl == null) {
-            LOG.warn("OAuth2 credentials not fully configured. UserSyncEventListener will attempt requests without authentication.");
-        }
-
-        // Initialize client
-        this.identityServiceClient = new IdentityServiceClient(serviceUrl);
-        this.enabled = true;
-
-        LOG.infof("UserSyncEventListenerFactory initialized - Service URL: %s, Realm: %s",
-                serviceUrl, realmName);
+        this.client = new ContactOtpClient(http);
+        this.executor = new ThreadPoolExecutor(1, 2, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(500),
+                r -> {
+                    Thread t = new Thread(r, "user-sync");
+                    t.setDaemon(true);
+                    return t;
+                }, new ThreadPoolExecutor.AbortPolicy());
     }
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
-        LOG.debug("UserSyncEventListenerFactory postInit completed");
+        // nothing
     }
 
     @Override
     public void close() {
-        LOG.debug("UserSyncEventListenerFactory closed");
+        if (executor != null) {
+            executor.shutdownNow();
+        }
     }
 
     @Override
@@ -108,23 +74,20 @@ public class UserSyncEventListenerFactory implements EventListenerProviderFactor
         return PROVIDER_ID;
     }
 
-    /**
-     * No-op event listener used when the factory is disabled.
-     */
-    private static class NoOpEventListener implements EventListenerProvider {
+    private static final class NoOp implements EventListenerProvider {
         @Override
-        public void onEvent(org.keycloak.events.Event event) {
-            // No-op
+        public void onEvent(Event event) {
+            // disabled
         }
 
         @Override
-        public void onEvent(org.keycloak.events.admin.AdminEvent event, boolean includeRepresentation) {
-            // No-op
+        public void onEvent(AdminEvent event, boolean includeRepresentation) {
+            // disabled
         }
 
         @Override
         public void close() {
-            // No-op
+            // disabled
         }
     }
 }

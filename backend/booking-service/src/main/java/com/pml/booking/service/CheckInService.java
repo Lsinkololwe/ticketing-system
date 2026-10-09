@@ -7,14 +7,13 @@ import com.pml.booking.domain.model.Ticket;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
  * Gate admission: turning a scan into an admission, exactly once.
  *
  * @see com.pml.booking.domain.model.CheckIn
- * @see <a href="file:../../../../../../../specs/ticketing/003-validation-and-checkin/spec.md">ET-TKT-003</a>
  */
 public interface CheckInService {
 
@@ -68,7 +67,7 @@ public interface CheckInService {
             ValidationMethod method,
             String scanId,
             String deviceId,
-            LocalDateTime scannedAt,
+            Instant scannedAt,
             String reason,
             String scannedBy,
             String organizerId
@@ -103,7 +102,7 @@ public interface CheckInService {
             long conflicts,
             long openConflicts,
             long manualAdmissions,
-            LocalDateTime lastCheckInAt
+            Instant lastCheckInAt
     ) {}
 
     /**
@@ -133,12 +132,15 @@ public interface CheckInService {
      */
     Mono<Summary> summary(String eventId, String organizerId, long issuedTickets);
 
-    /** Bounded by the caller; the spec caps it at 100. */
+    /** Bounded by the caller, and capped at 100. */
     Flux<CheckIn> recentCheckIns(String eventId, String organizerId, int limit);
 
     Flux<CheckInConflict> conflicts(String eventId, String organizerId, int page, int size);
 
     Mono<Long> countConflicts(String eventId, String organizerId);
+
+    /** One scan conflict by id, or empty when there is none. */
+    Mono<CheckInConflict> findConflict(String conflictId);
 
     /**
      * Annotates a conflict. Never deletes it — the count is the finding.

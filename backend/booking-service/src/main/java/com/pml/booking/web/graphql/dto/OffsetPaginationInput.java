@@ -16,7 +16,15 @@ public record OffsetPaginationInput(
 
     public OffsetPaginationInput {
         if (page == null) page = 0;
-        if (size == null) size = 20;
+        // Refuse, do not clamp. 81 paged fields across the three subgraphs take this input,
+        // and an unchecked `size: 1000000` becomes a query with `limit(1000000)`, on admin
+        // finance tables included.
+        //
+        // PageSize.require refuses above the ceiling rather than reducing to it: a caller
+        // silently handed 100 of the 1000 rows it asked for believes it has read everything,
+        // which is worse than an error because it is invisible on both sides.
+
+        size = com.pml.shared.graphql.PageSize.require(size);
         if (sortBy == null) sortBy = "createdAt";
         if (sortDirection == null) sortDirection = SortDirection.DESC;
     }

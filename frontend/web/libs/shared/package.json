@@ -9,9 +9,19 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./auth/bff": {
+      "types": "./src/auth/bff/index.ts",
+      "import": "./src/auth/bff/index.ts",
+      "default": "./src/auth/bff/index.ts"
+    },
+    "./auth/bff/testing": {
+      "types": "./src/auth/bff/testing.ts",
+      "import": "./src/auth/bff/testing.ts",
+      "default": "./src/auth/bff/testing.ts"
+    },
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@heroicons/react": "^2.2.0"
+    "libphonenumber-js": "^1.13.7"
   }
 }

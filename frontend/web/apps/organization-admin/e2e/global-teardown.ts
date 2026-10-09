@@ -1,18 +1,13 @@
 /**
- * Playwright global teardown: stop the Microcks container.
+ * Playwright global teardown for org-admin.
  *
- * Testcontainers' Ryuk reaper would eventually collect it anyway, but stopping
- * explicitly frees the pinned host port immediately — otherwise a second run
- * started too soon fails to bind and looks like a broken harness.
+ * Delegates to the shared harness so the pinned port is released the same way
+ * for every app — a port left bound makes the next run look like a broken
+ * harness rather than a busy socket.
  */
 
+import { stopMicrocks } from '../../../e2e-harness/microcks-container';
+
 export default async function globalTeardown() {
-  const container = global.__microcks;
-  if (!container) return;
-
-  await container.stop();
-  global.__microcks = undefined;
-
-  // eslint-disable-next-line no-console
-  console.log('[microcks] stopped');
+  await stopMicrocks();
 }

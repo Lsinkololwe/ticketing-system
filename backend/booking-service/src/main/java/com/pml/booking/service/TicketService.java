@@ -35,27 +35,28 @@ public interface TicketService {
 
     Flux<Ticket> findByOrganizerId(String organizerId);
 
-    Mono<Ticket> createTicket(Ticket ticket);
-
-    Mono<Ticket> updateTicket(String id, Ticket ticket);
-
     Mono<Ticket> validateTicket(String ticketNumber);
 
-    /** ET-FIN-004 R3: {@code ISSUED} or {@code VALIDATED} → {@code REFUND_PENDING}. */
+    /** {@code ISSUED} or {@code VALIDATED} → {@code REFUND_PENDING}. */
     Mono<Ticket> requestRefund(String ticketNumber, String reason);
 
-    /** ET-FIN-004 R3: {@code REFUND_PENDING} → {@code REFUNDED}, once the provider confirms. */
+    /** {@code REFUND_PENDING} → {@code REFUNDED}, once the provider confirms. */
     Mono<Ticket> refundTicket(String ticketNumber, String reason, String processedBy);
 
     Mono<Ticket> cancelTicket(String ticketNumber, String reason, String processedBy);
 
-    Mono<Ticket> transferTicket(String ticketId, String newBuyerId, String reason);
-
-    Mono<Void> deleteTicket(String id);
-
     Mono<Long> countByEventId(String eventId);
 
     Mono<Long> countByBuyerId(String buyerId);
+
+    /**
+     * The authority behind {@code unpublishEvent}'s sold-ticket check —
+     * {@link TicketStatus#isSold()}'s states, not catalog's denormalised counter.
+     *
+     * @param eventId the event
+     * @return the count of tickets in a non-refunded, sold state for this event
+     */
+    Mono<Long> countSoldByEventId(String eventId);
 
     // ========================================================================
     // FEDERATION EXTENSION METHODS

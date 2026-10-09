@@ -1,0 +1,153 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Ticket Transfers Schema",
+    "description": "One offer of one ticket from its holder to another registered user. Holds a masked rendering of the recipient's contact, never the contact. At most one open offer per ticket (see the index registry).",
+    "required": [
+      "ticketId",
+      "fromUserId",
+      "toUserId",
+      "status",
+      "expiresAt"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data's type hint, written on every document by the mapping converter"
+      },
+      "_id": {
+        "bsonType": [
+          "string",
+          "objectId"
+        ],
+        "description": "A transfer is keyed by the id its workflow was started under, a UUID"
+      },
+      "version": {
+        "bsonType": [
+          "long",
+          "int",
+          "null"
+        ]
+      },
+      "ticketId": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "ticketNumber": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "bookingId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "bookingNumber": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "eventId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "eventTitle": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "organizationId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "fromUserId": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "fromDisplayName": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "toUserId": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "toDisplayName": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "recipientChannel": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "WHATSAPP",
+          "EMAIL",
+          null
+        ]
+      },
+      "recipientMasked": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "note": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 200
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": [
+          "PENDING",
+          "ACCEPTED",
+          "DECLINED",
+          "CANCELLED",
+          "EXPIRED"
+        ]
+      },
+      "expiresAt": {
+        "bsonType": "date"
+      },
+      "resolvedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "resolvedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "createdAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  }
+}

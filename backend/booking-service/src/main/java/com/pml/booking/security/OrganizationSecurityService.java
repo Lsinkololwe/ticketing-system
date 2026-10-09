@@ -1,6 +1,10 @@
 package com.pml.booking.security;
 
+import com.pml.shared.dto.authorization.AuthorizationRequest;
+import com.pml.shared.dto.authorization.AuthorizationResult;
+import com.pml.shared.security.Permission;
 import com.pml.booking.infrastructure.client.IdentityServiceClient;
+import com.pml.booking.infrastructure.client.IdentityServiceClient.SharedOrganizationResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
@@ -18,7 +22,7 @@ import reactor.core.publisher.Mono;
  * <h2>Usage in @PreAuthorize</h2>
  * <pre>
  * // Check if user is the organizer OR belongs to the same organization
- * &#64;PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
+ * &#64;PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN,FINANCE', #organizerId)")
  * public Flux&lt;Ticket&gt; ticketsByOrganizer(@InputArgument String organizerId)
  * </pre>
  *
@@ -90,80 +94,6 @@ public class OrganizationSecurityService {
     }
 
     /**
-     * Check if the authenticated user is an active member of the specified organization.
-     *
-     * <p>Use this for queries that accept organizationId directly (not organizerId).</p>
-     *
-     * @param organizationId The organization to check membership for
-     * @param authentication Spring Security authentication object
-     * @return Mono&lt;Boolean&gt; true if the user is a member
-     */
-    public Mono<Boolean> isMemberOfOrganization(String organizationId, Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            log.debug("Not authenticated - denying organization access");
-            return Mono.just(false);
-        }
-
-        String userId = extractUserId(authentication);
-        if (userId == null) {
-            log.debug("Could not extract user ID from authentication");
-            return Mono.just(false);
-        }
-
-        return identityServiceClient.checkOrganizationMembership(userId, organizationId)
-                .map(result -> {
-                    boolean allowed = result.isMember() && result.isActive();
-                    if (allowed) {
-                        log.debug("Organization membership confirmed: userId={}, orgId={}, role={}",
-                                userId, organizationId, result.role());
-                    } else {
-                        log.debug("Organization membership denied: userId={}, orgId={}, isMember={}, isActive={}",
-                                userId, organizationId, result.isMember(), result.isActive());
-                    }
-                    return allowed;
-                })
-                .onErrorResume(e -> {
-                    log.error("Error checking organization membership: {}", e.getMessage());
-                    return Mono.just(false);
-                });
-    }
-
-    /**
-     * Check if the authenticated user has a specific role in the organization.
-     *
-     * <p>Use this for role-based access control within an organization.</p>
-     *
-     * @param organizationId The organization to check
-     * @param requiredRole The minimum role required (e.g., "OWNER", "ADMIN", "MANAGER")
-     * @param authentication Spring Security authentication object
-     * @return Mono&lt;Boolean&gt; true if the user has the required role
-     */
-    public Mono<Boolean> hasOrganizationRole(String organizationId, String requiredRole, Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return Mono.just(false);
-        }
-
-        String userId = extractUserId(authentication);
-        if (userId == null) {
-            return Mono.just(false);
-        }
-
-        return identityServiceClient.checkOrganizationMembership(userId, organizationId)
-                .map(result -> {
-                    if (!result.isMember() || !result.isActive()) {
-                        return false;
-                    }
-
-                    // Check role hierarchy
-                    return isRoleAtLeast(result.role(), requiredRole);
-                })
-                .onErrorResume(e -> {
-                    log.error("Error checking organization role: {}", e.getMessage());
-                    return Mono.just(false);
-                });
-    }
-
-    /**
      * Check if the authenticated user can view financial data for the organizer.
      *
      * <p>Financial data access requires either:</p>
@@ -191,16 +121,17 @@ public class OrganizationSecurityService {
             return Mono.just(true);
         }
 
-        // Check if user is a team member with financial view permission
+        // A team member sees the figures when identity grants them financial:view in the shared
+        // organization — which, for a manager, depends on the owner's switch, not on the role alone.
         return identityServiceClient.checkSameOrganization(requestingUserId, organizerId)
-                .map(result -> {
-                    if (!result.sharesOrganization()) {
-                        return false;
-                    }
-                    // Only OWNER, ADMIN, and MANAGER can view financial data
-                    String role = result.requestingUserRole();
-                    return "OWNER".equals(role) || "ADMIN".equals(role) || "MANAGER".equals(role);
-                })
+                .filter(SharedOrganizationResponse::sharesOrganization)
+                .flatMap(shared -> identityServiceClient.checkAuthorization(AuthorizationRequest.builder()
+                        .userId(requestingUserId)
+                        .organizationId(shared.sharedOrganizationId())
+                        .requiredPermission(Permission.FINANCIAL_VIEW.code())
+                        .build()))
+                .map(AuthorizationResult::isAuthorized)
+                .defaultIfEmpty(false)
                 .onErrorResume(e -> {
                     log.error("Error checking financial data access: {}", e.getMessage());
                     return Mono.just(false);
@@ -217,38 +148,45 @@ public class OrganizationSecurityService {
     private String extractUserId(Authentication authentication) {
         Object principal = authentication.getPrincipal();
         if (principal instanceof Jwt jwt) {
-            return jwt.getSubject();
+            return com.pml.shared.security.AccountIdentity.userIdOf(jwt);
         }
         return null;
     }
 
+
     /**
-     * Check if a role is at least as privileged as the required role.
+     * One expression for "holds one of these roles, or is the organizer or on their team".
      *
-     * <p>Role hierarchy: OWNER > ADMIN > MANAGER > MARKETER > CONTRIBUTOR</p>
+     * <p>A {@code @PreAuthorize} expression that joins a role test to a bean call with {@code or}
+     * cannot be used when the check returns a {@code Mono}: the {@code or} yields a Mono that is not unwrapped, and the call
+     * fails with a ConverterNotFoundException (MonoJust to Boolean). A single reactive expression can.</p>
      */
-    private boolean isRoleAtLeast(String actualRole, String requiredRole) {
-        if (actualRole == null || requiredRole == null) {
-            return false;
+    public Mono<Boolean> rolesOrTeamMember(Authentication authentication, String rolesCsv, String organizerId) {
+        if (holdsAnyRole(authentication, rolesCsv)) {
+            return Mono.just(true);
         }
-
-        int actualLevel = getRoleLevel(actualRole);
-        int requiredLevel = getRoleLevel(requiredRole);
-
-        return actualLevel >= requiredLevel;
+        return isOrganizerOrTeamMember(organizerId, authentication);
     }
 
-    /**
-     * Get numeric level for role comparison.
-     */
-    private int getRoleLevel(String role) {
-        return switch (role.toUpperCase()) {
-            case "OWNER" -> 5;
-            case "ADMIN" -> 4;
-            case "MANAGER" -> 3;
-            case "MARKETER" -> 2;
-            case "CONTRIBUTOR" -> 1;
-            default -> 0;
-        };
+    private static boolean holdsAnyRole(Authentication authentication, String rolesCsv) {
+        if (authentication == null || authentication.getAuthorities() == null) {
+            return false;
+        }
+        java.util.Set<String> wanted = new java.util.HashSet<>();
+        for (String role : rolesCsv.split(",")) {
+            wanted.add("ROLE_" + role.trim());
+        }
+        return authentication.getAuthorities().stream().anyMatch(a -> wanted.contains(a.getAuthority()));
+    }
+
+    /** Like {@link #rolesOrTeamMember} for the financial-view check. */
+    public Mono<Boolean> rolesOrFinancialView(Authentication authentication, String rolesCsv, String organizerId) {
+        if (holdsAnyRole(authentication, rolesCsv)) {
+            return Mono.just(true);
+        }
+        if (organizerId == null) {
+            return Mono.just(false);
+        }
+        return canViewFinancialData(organizerId, authentication);
     }
 }

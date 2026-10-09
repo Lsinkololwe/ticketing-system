@@ -10,30 +10,24 @@ import {
 import { HttpLink } from '@apollo/client/link/http';
 import { ErrorLink } from '@apollo/client/link/error';
 import { RetryLink } from '@apollo/client/link/retry';
-import { setContext } from '@apollo/client/link/context';
 import { getMainDefinition } from '@apollo/client/utilities';
 import type { GraphQLError } from 'graphql';
+
+import { sessionAction, type GraphQLLikeError } from '../../lib/errors';
 
 // ============================================
 // Apollo Federation Endpoint Configuration
 // ============================================
 // Single unified endpoint: Apollo Router (via API Gateway)
 // This endpoint provides access to all services through federation
-const GRAPHQL_URI = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:8080/graphql';
-
-// Token getter function type - must be provided by the app
-export type TokenGetter = () => Promise<string | null>;
 
 // Client configuration interface
 export interface GraphQLClientConfig {
   uri?: string;
   headers?: Record<string, string>;
-  /** Required: Function to get the access token (e.g., from Keycloak) */
-  tokenGetter: TokenGetter;
   /**
-   * Called once when an operation fails with an authentication error
-   * (GraphQL `UNAUTHENTICATED` or network 401), i.e. the session is expired or
-   * invalid. Apps with a dedicated logout route should navigate there (to also
+   * Called once when an operation fails an authentication check —
+   * `ACTOR_NOT_AUTHENTICATED`, `TOKEN_REVOKED`, or a network 401. Apps with a dedicated logout route should navigate there (to also
    * clear the Keycloak SSO session). If omitted, the client falls back to a
    * safe `/login` redirect so apps without a `/logout` route never 404.
    */
@@ -58,6 +52,29 @@ const handleAuthError = (onAuthError?: () => void) => {
     onAuthError();
   } else {
     window.location.href = '/login';
+  }
+};
+
+/**
+ * Drops locally-held session state after a revocation.
+ *
+ * <p>Redirecting to sign-in without this leaves the revoked token in storage, so
+ * anything reading it directly — a cached header, a second tab, a background
+ * refresh — keeps presenting a credential the server has already rejected. The
+ * user appears signed in until something happens to ask the server again.</p>
+ *
+ * <p>Best-effort by design: storage access throws in private browsing modes and
+ * inside some embedded webviews, and failing to sign out is a worse outcome than
+ * failing to tidy up, so the redirect must still happen.</p>
+ */
+const clearSessionState = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem('access_token');
+    window.localStorage.removeItem('refresh_token');
+    window.sessionStorage.clear();
+  } catch {
+    // Ignored — see above.
   }
 };
 
@@ -105,10 +122,21 @@ const createErrorLink = (onAuthError?: () => void) =>
   new ErrorLink(({ error, operation }) => {
     if (CombinedGraphQLErrors.is(error)) {
       for (const err of error.errors) {
-        const errorCode = err.extensions?.code;
+        // The decision itself lives in `sessionAction`, where it is unit-tested
+        // against realistic error objects — including the extensions key, which
+        // is the part that silently disables this whole branch when wrong.
+        const action = sessionAction(err as GraphQLLikeError);
+        const errorCode = err.extensions?.errorCode;
 
-        // Session expired/invalid → run the app's auth-error handler (once).
-        if (errorCode === 'UNAUTHENTICATED') {
+        if (action === 'end-session') {
+          // Drop the credential before redirecting, or the revoked token stays
+          // in storage and anything reading it directly keeps presenting it.
+          clearSessionState();
+          handleAuthError(onAuthError);
+          return;
+        }
+
+        if (action === 'reauthenticate') {
           handleAuthError(onAuthError);
           return;
         }
@@ -143,87 +171,61 @@ const createErrorLink = (onAuthError?: () => void) =>
   });
 
 /**
- * Create authentication link
- */
-const createAuthLink = (tokenGetter: TokenGetter) =>
-  setContext(async (_, { headers }) => {
-    const token = await tokenGetter();
-    return {
-      headers: {
-        ...headers,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    };
-  });
-
-/**
- * Create Apollo Client for Apollo Federation
- * Single client connects to Apollo Router which handles all federation
+ * Apollo Client for the same-origin BFF (`/api/graphql`).
  *
- * @param config - Configuration including required tokenGetter
- * @throws Error if tokenGetter is not provided
+ * The browser never holds a bearer token: the BFF route attaches it server-side and refreshes
+ * it single-flight. Requests carry the session cookie (same origin only) and the constant
+ * `x-pml-csrf` header the BFF requires on unsafe methods. A 401 `SESSION_ENDED` from the BFF
+ * triggers `onAuthError` once (default: redirect to `/login`).
  */
-export const createGraphQLClient = (config: GraphQLClientConfig) => {
-  if (!config.tokenGetter) {
-    throw new Error('tokenGetter is required for createGraphQLClient');
-  }
-
-  const httpUri = config.uri || GRAPHQL_URI;
-  const tokenGetter = config.tokenGetter;
-
+export const createBffGraphQLClient = (config: Omit<GraphQLClientConfig, 'uri'> & { uri?: string } = {}) => {
   const httpLink = new HttpLink({
-    uri: httpUri,
-    credentials: 'omit', // backend auth is Bearer-token only — never send cookies to the API
+    uri: config.uri ?? '/api/graphql',
+    credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      'apollographql-client-name': 'myticketzm-admin',
-      'apollographql-client-version': '1.0.0',
-      ...(config?.headers || {}),
+      'x-pml-csrf': '1',
+      ...(config.headers || {}),
     },
   });
 
-  const isClientSide = typeof window !== 'undefined';
-  const authLink = isClientSide ? createAuthLink(tokenGetter) : null;
-
-  // Build link chain with retry support
-  // Order: Retry -> Error -> Auth -> HTTP
-  // Retry wraps everything so it can retry the full chain on failure
-  const link = authLink
-    ? ApolloLink.from([createRetryLink(), createErrorLink(config.onAuthError), authLink, httpLink])
-    : ApolloLink.from([createRetryLink(), createErrorLink(config.onAuthError), httpLink]);
-
   return new ApolloClient({
-    link,
+    link: ApolloLink.from([createRetryLink(), createErrorLink(config.onAuthError), httpLink]),
     cache: new InMemoryCache({
-      typePolicies: {
-        Event: { keyFields: ['id'] },
-        Ticket: { keyFields: ['id'] },
-        User: { keyFields: ['id'] },
-        Location: { keyFields: ['id'] },
-        EventCategory: { keyFields: ['id'] },
-      },
+      typePolicies: CACHE_TYPE_POLICIES,
     }),
     defaultOptions: {
       watchQuery: { errorPolicy: 'all', fetchPolicy: 'cache-and-network' },
       query: { errorPolicy: 'all', fetchPolicy: 'cache-first' },
-      mutate: { errorPolicy: 'all' },
+      // 'none': a failed mutation must reject. With 'all' the promise resolves with `error` set and every
+      // caller's try/catch (and its success toast) treats a refused mutation as a success.
+      mutate: { errorPolicy: 'none' },
     },
   });
 };
-
-// ============================================
-// No default client - must be created with tokenGetter
-// ============================================
-// Use createGraphQLClient({ tokenGetter }) in your app's Providers component
-// Example:
-// const { getToken } = useKeycloak();
-// const client = createGraphQLClient({ tokenGetter: getToken });
 
 // ============================================
 // Error Utilities
 // ============================================
 
 export type ApolloErrorType = 'CORS' | 'NETWORK' | 'AUTHENTICATION' | 'AUTHORIZATION' | 'VALIDATION' | 'NOT_FOUND' | 'SERVER' | 'GRAPHQL' | 'UNKNOWN';
+
+/**
+ * Normalise by id when the selection carries one. A selection without `id` (a Location read as
+ * `{ name address city }`, a User as `{ fullName }`) is stored inside its parent instead: a plain
+ * `keyFields: ['id']` throws "Missing field 'id' while extracting keyFields" and blanks the page.
+ */
+const byIdWhenPresent = (typename: string) => ({
+  keyFields: (object: Readonly<Record<string, unknown>>) => (object.id != null ? `${typename}:${String(object.id)}` : false),
+});
+
+export const CACHE_TYPE_POLICIES = {
+  Event: byIdWhenPresent('Event'),
+  Ticket: byIdWhenPresent('Ticket'),
+  User: byIdWhenPresent('User'),
+  Location: byIdWhenPresent('Location'),
+  EventCategory: byIdWhenPresent('EventCategory'),
+} as const;
 
 export function categorizeApolloError(error: Error | unknown): ApolloErrorType {
   if (!(error instanceof Error)) return 'UNKNOWN';

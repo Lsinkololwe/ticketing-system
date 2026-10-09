@@ -7,7 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -35,13 +35,11 @@ public class EventSummaryDto {
     private String organizationId;
 
     private EventStatus status;
-    private LocalDateTime startDate;
-    private LocalDateTime endDate;
+    private Instant startDate;
+    private Instant endDate;
     private String locationId;
     private String locationName;
     private String cityName;
-    private BigDecimal minimumPrice;
-    private BigDecimal maximumPrice;
     private Integer totalCapacity;
     private Integer ticketsSold;
     private List<TicketCategoryDto> ticketCategories;
@@ -49,27 +47,25 @@ public class EventSummaryDto {
     private boolean featured;
     private boolean soldOut;
 
-    /**
-     * Check if the event is currently active (published and not past)
-     */
-    public boolean isActive() {
-        return status == EventStatus.PUBLISHED &&
-               (endDate == null || endDate.isAfter(LocalDateTime.now()));
-    }
+    /** The organizer's own cap on tickets per order, below the platform's; null when the organizer set none. */
+    private Integer maxTicketsPerOrder;
 
-    /**
-     * Check if the event has started
-     */
-    public boolean hasStarted() {
-        return startDate != null && startDate.isBefore(LocalDateTime.now());
-    }
+    /** Whether the buyer names each ticket holder at checkout. */
+    private boolean collectHolderNames;
 
-    /**
-     * Check if the event has ended
+    /** The one extra question the organizer puts to the buyer at checkout, or null. */
+    private String extraQuestion;
+
+    /*
+     * This DTO carries no time-dependent bean getters such as "isActive". It is a
+     * cross-service payload — catalog's InternalEventController sends it, booking's
+     * CatalogServiceClient reads it — and any getter Jackson serialised would be decided by the
+     * sender's clock at serialisation time, with nothing in the payload saying when, so a consumer
+     * caching the response would hold a value that silently goes stale.
+     *
+     * Callers evaluate "active", "started" or "ended" at the point of use, against their own
+     * injected Clock, from startDate/endDate/status, all of which are on the wire.
      */
-    public boolean hasEnded() {
-        return endDate != null && endDate.isBefore(LocalDateTime.now());
-    }
 
     /**
      * Get remaining capacity
@@ -90,12 +86,40 @@ public class EventSummaryDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class TicketCategoryDto {
+        /** Catalog's tier id: what a buyer selects, and what booking reserves against. */
+        private String id;
         private String code;
         private String name;
         private BigDecimal price;
         private Integer capacity;
         private Integer sold;
         private boolean active;
+
+        /** A hidden tier is reserved only with its access code; booking asks catalog to verify it. */
+        private boolean hidden;
+
+        /** Discounted unit price while the early-bird window is open; null when the tier has none. */
+        private BigDecimal earlyBirdPrice;
+
+        /** Exclusive end of the early-bird window; null when the tier has none. */
+        private Instant earlyBirdEndsAt;
+
+        /**
+         * The unit price a buyer pays at {@code now}: the early-bird price strictly before
+         * {@link #earlyBirdEndsAt}, the full price from that instant on. The boundary matches
+         * catalog's {@code TicketTier.getCurrentPrice}, so the advertised and charged prices agree.
+         *
+         * <p>Not a bean getter, so it never reaches the wire.
+         *
+         * @param now the instant to price at, from the caller's injected clock
+         * @return the unit price in force at {@code now}
+         */
+        public BigDecimal priceAt(Instant now) {
+            if (earlyBirdPrice != null && earlyBirdEndsAt != null && now.isBefore(earlyBirdEndsAt)) {
+                return earlyBirdPrice;
+            }
+            return price;
+        }
 
         public Integer getAvailable() {
             if (capacity == null) {

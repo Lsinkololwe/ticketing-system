@@ -1,5 +1,7 @@
 # Role Synchronization Implementation Summary
 
+> **Process mechanics (ROADMAP D-21).** Keycloak role and group writes run as activities of `OrganizerOnboardingWorkflow` and `OwnershipTransferWorkflow`, with drift repaired by the `identity-group-mirror-repair` Schedule. Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 ## Overview
 
 Automatic Keycloak role synchronization has been implemented with OWASP security best practices. When an organization is approved, the owner is automatically granted the ORGANIZER role in both MongoDB and Keycloak, with comprehensive audit logging and resilience patterns.

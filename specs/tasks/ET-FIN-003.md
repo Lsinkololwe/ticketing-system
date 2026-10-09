@@ -1,10 +1,10 @@
-# ET-FIN-003 · Payout eligibility, bank accounts and the settlement saga — tasks
+# ET-FIN-003 · Payout eligibility, bank accounts and the payout workflow — tasks
 
 > **Spec** [`specs/finance/003-payouts-and-settlement/spec.md`](../finance/003-payouts-and-settlement/spec.md) · **Wave 4** · `blocked_by:` ET-PLT-005, 007, ET-FIN-001, ET-FIN-002, ET-PAY-001, ET-ORG-003
 > **Screens** `Admin - Finance.dc.html` *(approve/reject queue)* · `Org Admin - Events & Finance.dc.html` *(request, bank accounts, escrow balance)*
 > **Routes** admin `(dashboard)/finance/payouts` · org-admin `(dashboard)/finance/{page,payouts,bank-accounts}`
 > **Authority** `docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md` §10, §12
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003 -DfailIfNoTests=false`
 
 6 queries, 11 mutations. **BE-6 is the highest-risk write in the platform** — it moves real money
 out of the system, and the failure mode is money that has left escrow but never arrived.
@@ -36,7 +36,7 @@ The decisive checks:
 
 ### BE-3 · Micro-deposit verification, its lockout and its journal entry
 - **Spec** R4 · **§5** T3 · **depends** BE-2 · **parallel-safe** yes
-- **Acceptance** three mismatches lock for 24 h; **the deposit is expensed to `5040`**.
+- **Acceptance** three mismatches lock for 24 h; **the deposit is expensed to `5050`**.
 - The micro-deposit is real money leaving the platform, so it is a ledger entry like any other.
   Verification that is not booked is a slow leak nobody reconciles.
 
@@ -52,7 +52,7 @@ The decisive checks:
   be cancelled, or a dispute can open — approving on stale eligibility pays out money that is owed
   to a buyer.
 
-### BE-6 · The settlement saga — debit-then-transfer, with compensation
+### BE-6 · The payout workflow — debit-then-transfer, with compensation
 - **Spec** R6 · **§5** T6 · **depends** BE-5 · **parallel-safe** **no — the highest-risk write in the platform**
 - **Acceptance** a forced failure **restores the escrow exactly**; a **kill between debit and
   transfer resolves either way** — completing the transfer or restoring the escrow, never leaving
@@ -130,7 +130,7 @@ The decisive checks:
 
 ### FE-7 · Settlement monitor
 - **depends** BE-6, BE-7 · **parallel-safe** yes
-- In-flight settlements and their saga state. A settlement stuck between debit and transfer is the
+- In-flight settlements and their workflow state. A settlement stuck between debit and transfer is the
   most urgent thing on the platform — it must be **visible and unmissable**, and it links to
   [`ET-ADM-003`](ET-ADM-003.md).
 - **testids** `settlement-row`, `settlement-state`, `settlement-stuck-alert`
@@ -141,7 +141,7 @@ The decisive checks:
 
 ### TS-2 · Bank accounts *(L3)*
 Encrypted at rest; **no full number in any output**, asserted across GraphQL, REST and logs; one
-default per organization (index live via MCP); three mismatches lock 24 h; the deposit hits `5040`.
+default per organization (index live via MCP); three mismatches lock 24 h; the deposit hits `5050`.
 
 ### TS-3 · Request lifecycle *(L3)*
 All `(status, action)` pairs; a second `PENDING` request refuses under `Concurrency.inParallel`.
@@ -150,11 +150,11 @@ All `(status, action)` pairs; a second `PENDING` request refuses under `Concurre
 Self-approval refused even holding both roles; a dispute opened after the request refuses at
 approval; amounts recomputed, not trusted from the request.
 
-### TS-5 · Settlement saga *(L3 — the most important test in Wave 4)*
+### TS-5 · Payout workflow *(L3 — the most important test in Wave 4)*
 - Forced failure **restores the escrow exactly** — assert the balance, not just the status.
 - **Kill between debit and transfer** resolves either way; money is never nowhere.
 - `Ledger.assertBalanced()` after every outcome.
-- Repeat the kill test at each saga step.
+- Repeat the failure at each workflow step; replay the recorded history.
 
 ### TS-6 · Retry *(L3, WireMock)*
 Bad details fail immediately **without retry** and mark the account; transient failures do retry.
@@ -174,14 +174,14 @@ Bad details fail immediately **without retry** and mark the account; transient f
 - [ ] Every eligibility condition fails independently and names itself
 - [ ] Account numbers encrypted; **absent from every schema**; never in output or logs
 - [ ] One default account per organization, index live
-- [ ] Micro-deposit lockout after three attempts; deposit expensed to `5040`
-- [ ] One open request at a time
-- [ ] Eligibility re-checked and amounts recomputed at approval
-- [ ] Requester cannot approve their own request
-- [ ] Forced failure restores escrow **exactly**; kill between debit and transfer resolves either way
-- [ ] Bad details fail fast, mark the account, and do not retry
+- [ ] Micro-deposit lockout after three attempts; deposit expensed to `5050`
+- [x] One open request at a time — `payout/{escrowAccountId}` under conflict policy FAIL; `PayoutWorkflowTest.oneOpenRequestPerEscrow`
+- [x] Eligibility re-checked and amounts recomputed at approval — `PayoutSettlementServiceTest.anOpenDisputeRefusesApproval`, `PayoutWorkflowTest.anIneligibleApprovalLeavesTheRequestOpen`
+- [x] Requester cannot approve their own request — update validator, refusal absent from history (`PayoutWorkflowTest.theRequesterCannotApprove`) and again in the activity (`PayoutSettlementServiceTest.theRequesterCannotApprove`); mutation-verified 2026-09-13
+- [x] Forced failure restores escrow **exactly**; kill between debit and transfer resolves either way — `PayoutSettlementServiceTest.aFailureRestoresTheEscrowExactly` (mutation-verified), `PayoutWorkflowTest.aLostWorkerDoesNotDebitTwice`
+- [x] Bad details fail fast, mark the account, and do not retry — `PayoutWorkflowTest.badDetailsFailFast`
 - [ ] Organizer sees available vs held with an unlock date, per event
 - [ ] Blocked payouts always state the failing condition
 - [ ] Stuck settlements are visible and linked to transaction recovery
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

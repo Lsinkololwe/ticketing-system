@@ -13,11 +13,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The clock that makes every boundary in the corpus assertable on both sides.
  *
- * <p>ET-PLT-006 R3. The corpus specifies its time boundaries in pairs — live at 9:59 and
- * expired at 10:01 (ET-TKT-001 R4), 4:59/5:01 and 59s/61s and 14:59/15:01 (ET-IDN-001 R2),
- * refuse at {@code salesStartAt − 1s} and succeed at {@code salesStartAt} (ET-CAT-002 R3) —
- * because a one-sided test passes on an implementation with the wrong window entirely.
+ * <p>Time boundaries are tested in pairs — a reservation live at 9:59 and expired at 10:01,
+ * OTP windows at 4:59/5:01, 59s/61s and 14:59/15:01, a sale refused at
+ * {@code salesStartAt − 1s} and accepted at {@code salesStartAt} — because a one-sided test
+ * passes on an implementation with the wrong window entirely.
  */
+@Tag("L1")
 @Tag("ET-PLT-006")
 @DisplayName("ET-PLT-006-R3 · a frozen clock, movable only by the test")
 class TestClockTest {

@@ -1,5 +1,7 @@
 package com.pml.booking.config;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ResourceLoader;
@@ -65,39 +67,41 @@ public class MongoSchemaValidationConfig extends com.pml.shared.config.MongoSche
         // =========================================================================
         // CORE TICKETING COLLECTIONS
         // =========================================================================
-        schemas.put("tickets", "tickets-schema.json");
-        schemas.put("booking_reservations", "booking-reservations-schema.json");
+        schemas.put(BookingCollections.TICKETS, "tickets-schema.json");
+        schemas.put(BookingCollections.RESERVATIONS, "booking-reservations-schema.json");
+        schemas.put(BookingCollections.BOOKINGS, "bookings-schema.json");
+        schemas.put(BookingCollections.TICKET_TRANSFERS, "ticket-transfers-schema.json");
+        schemas.put(BookingCollections.RECOVERY_PROPOSALS, "recovery-proposals-schema.json");
 
         // =========================================================================
         // PAYMENT COLLECTIONS
         // =========================================================================
-        schemas.put("payment_intents", "payment-intents-schema.json");
-        schemas.put("payment_attempts", "payment-attempts-schema.json");
-        schemas.put("chargebacks", "chargebacks-schema.json");
-        schemas.put("refund_requests", "refund-requests-schema.json");
+        schemas.put(BookingCollections.PAYMENT_INTENTS, "payment-intents-schema.json");
+        schemas.put(BookingCollections.PAYMENT_ATTEMPTS, "payment-attempts-schema.json");
+        schemas.put(BookingCollections.CHARGEBACKS, "chargebacks-schema.json");
+        schemas.put(BookingCollections.REFUND_REQUESTS, "refund-requests-schema.json");
 
         // =========================================================================
         // ESCROW & FINANCIAL COLLECTIONS
         // =========================================================================
-        schemas.put("escrow_accounts", "escrow-accounts-schema.json");
-        schemas.put("escrow_transactions", "escrow-transactions-schema.json");
-        schemas.put("booking_escrow_accounts", "booking-escrow-accounts-schema.json");
-        schemas.put("booking_payout_requests", "booking-payout-requests-schema.json");
-        schemas.put("commission_records", "commission-records-schema.json");
+        schemas.put(BookingCollections.ESCROW_TRANSACTIONS, "escrow-transactions-schema.json");
+        schemas.put(BookingCollections.ESCROW_ACCOUNTS, "booking-escrow-accounts-schema.json");
+        schemas.put(BookingCollections.PAYOUT_REQUESTS, "booking-payout-requests-schema.json");
+        schemas.put(BookingCollections.COMMISSION_RECORDS, "commission-records-schema.json");
 
         // =========================================================================
         // ACCOUNTING COLLECTIONS
         // =========================================================================
-        schemas.put("journal_entries", "journal-entries-schema.json");
-        schemas.put("chart_of_accounts", "chart-of-accounts-schema.json");
-        schemas.put("platform_accounts", "platform-accounts-schema.json");
-        schemas.put("reconciliation_runs", "reconciliation-runs-schema.json");
-        schemas.put("bank_accounts", "bank-accounts-schema.json");
+        schemas.put(BookingCollections.JOURNAL_ENTRIES, "journal-entries-schema.json");
+        schemas.put(BookingCollections.CHART_OF_ACCOUNTS, "chart-of-accounts-schema.json");
+        schemas.put(BookingCollections.PLATFORM_ACCOUNTS, "platform-accounts-schema.json");
+        schemas.put(BookingCollections.RECONCILIATION_RUNS, "reconciliation-runs-schema.json");
+        schemas.put(BookingCollections.BANK_ACCOUNTS, "bank-accounts-schema.json");
 
         // =========================================================================
         // PROMOTIONAL COLLECTIONS
         // =========================================================================
-        schemas.put("promo_codes", "promo-codes-schema.json");
+        schemas.put(BookingCollections.PROMO_CODES, "promo-codes-schema.json");
 
         log.info("Booking Service: Configured {} collection schemas for validation", schemas.size());
         return schemas;

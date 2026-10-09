@@ -28,15 +28,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Every assertion in the harness, watched failing.
  *
- * <p>ET-PLT-006 T3's acceptance is <em>"a deliberately write-then-throw service fails the
- * assertion"</em>, and that phrasing is the point. An assertion nobody has seen fail is an
- * assumption. These helpers are cited by name in acceptance boxes across all 41 specs, so if
+ * <p>A deliberately write-then-throw service must fail the assertion, and that is the point.
+ * An assertion nobody has seen fail is an assumption. These helpers are used across the whole
+ * corpus, so if
  * one of them silently passes on everything, the corpus verifies green on a broken platform —
  * which is worse than having no assertion at all, because it looks like proof.
  *
  * <p>So each case here seeds a specific defect and requires the assertion to catch it, then
  * seeds the correct state and requires it to pass.
  */
+@Tag("L2")
 @Tag("ET-PLT-006")
 @DisplayName("ET-PLT-006-R4 · the harness assertions catch what they claim to catch")
 class AssertionsProveThemselvesTest {

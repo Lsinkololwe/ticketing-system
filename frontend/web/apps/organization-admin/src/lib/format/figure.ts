@@ -1,3 +1,4 @@
+import type { EventStatus } from '@pml.tickets/shared/types/graphql';
 /**
  * Figure formatting for the organizer portal.
  *
@@ -42,7 +43,7 @@ export function formatMoney(
   const symbol = CURRENCY_SYMBOLS[code] ?? code;
   const decimals = options?.decimals;
 
-  const digits = safe.toLocaleString(undefined, {
+  const digits = safe.toLocaleString('en-GB', {
     minimumFractionDigits: decimals ?? 0,
     maximumFractionDigits: decimals ?? 2,
   });
@@ -53,7 +54,7 @@ export function formatMoney(
 /** Whole-number count with thousands separators. */
 export function formatCount(value?: number | string | null): string {
   const n = Number(value ?? 0);
-  return (Number.isFinite(n) ? n : 0).toLocaleString();
+  return (Number.isFinite(n) ? n : 0).toLocaleString('en-GB');
 }
 
 /**
@@ -88,14 +89,14 @@ export function splitFigure(value: string | number): {
 export function monthLabel(isoDate: string): string {
   const [year, month] = isoDate.split('-').map(Number);
   if (!year || !month) return isoDate;
-  return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: 'short' });
+  return new Date(year, month - 1, 1).toLocaleDateString('en-GB', { month: 'short' });
 }
 
 /** "Mar 2026" — used where a bare month would be ambiguous across a year edge. */
 export function monthYearLabel(isoDate: string): string {
   const [year, month] = isoDate.split('-').map(Number);
   if (!year || !month) return isoDate;
-  return new Date(year, month - 1, 1).toLocaleDateString(undefined, {
+  return new Date(year, month - 1, 1).toLocaleDateString('en-GB', {
     month: 'short',
     year: 'numeric',
   });
@@ -106,7 +107,7 @@ export function formatEventDate(iso?: string | null): string {
   if (!iso) return '';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 /**
@@ -165,7 +166,7 @@ export function humanizeStatus(
 }
 
 /** Event status wording used across the organizer portal. */
-export const EVENT_STATUS_LABELS: Record<string, string> = {
+export const EVENT_STATUS_LABELS: Partial<Record<EventStatus | 'PENDING_REVIEW', string>> = {
   PUBLISHED: 'Live',
   DRAFT: 'Draft',
   PENDING_REVIEW: 'Pending review',

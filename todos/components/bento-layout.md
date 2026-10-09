@@ -1,5 +1,7 @@
 # Bento Layout Design System
 
+> **HISTORICAL — superseded by `specs/tasks` FE-* items; kept for reference. Role names in this file are pre-spec** (see `specs/` for the current role and permission vocabulary). Unticked boxes here are not a backlog.
+
 ## Overview
 
 The bento layout is a modern grid-based design pattern inspired by Apple's design language, creating visually interesting dashboard layouts with cards of varying sizes.

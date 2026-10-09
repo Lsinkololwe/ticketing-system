@@ -1,6 +1,7 @@
 package com.pml.booking.web.graphql.dto;
 
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * Report Export DTO
@@ -8,41 +9,30 @@ import java.time.LocalDateTime;
  * Business Intent: Response for report export operations with download URL.
  */
 public record ReportExport(
-        boolean success,
         String downloadUrl,
-        LocalDateTime expiresAt,
+        Instant expiresAt,
         ExportFormat format,
-        LocalDateTime generatedAt,
-        String fileName,
-        String errorMessage
+        Instant generatedAt,
+        String fileName
 ) {
     /**
-     * Factory method for successful export.
+     * The export that was produced.
+     *
+     * <p>There is no failed counterpart: an export that could not be produced
+     * raises a refusal, so every instance of this record describes a file that
+     * exists. A {@code success: false} variant would have made the download URL
+     * nullable on a type whose only purpose is to carry one.</p>
      */
-    public static ReportExport success(String downloadUrl, ExportFormat format, String fileName) {
+    public static ReportExport of(String downloadUrl, ExportFormat format, String fileName, Instant now) {
         return new ReportExport(
-                true,
                 downloadUrl,
-                LocalDateTime.now().plusHours(24), // URL expires in 24 hours
+                now.plus(Duration.ofHours(24)), // URL expires in 24 hours
                 format,
-                LocalDateTime.now(),
-                fileName,
-                null
-        );
+                now,
+                fileName);
     }
 
     /**
      * Factory method for failed export.
      */
-    public static ReportExport error(String errorMessage, ExportFormat format) {
-        return new ReportExport(
-                false,
-                null,
-                null,
-                format,
-                LocalDateTime.now(),
-                null,
-                errorMessage
-        );
-    }
 }

@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * Asserts the corpus-wide property: <strong>an event can never be sold beyond its capacity.</strong>
  *
- * <p>The invariant over {@code booking_tier_inventory} (ET-CAT-002 §4):
+ * <p>The invariant over {@code booking_tier_inventory}:
  *
  * <pre>availableQuantity + reservedQuantity + soldQuantity == capacity</pre>
  *
@@ -20,10 +20,10 @@ import java.util.List;
  * counter was written by something other than the conditional atomic update.
  *
  * <h2>Assert it throughout, not at the end</h2>
- * ET-CAT-002 T3 and ET-TKT-001 R1 both require conservation after <em>every</em> attempt,
+ * Conservation must hold after <em>every</em> attempt,
  * successful or refused. An end-state check passes on an implementation that dips negative
  * in the middle — which under the 5,000-reservations-per-minute peak this platform is sized
- * for (D-16) is exactly when it will.
+ * for is exactly when it will.
  */
 public final class Inventory {
 
@@ -32,7 +32,7 @@ public final class Inventory {
     private Inventory() {
     }
 
-    /** Short form, as written in the specs' acceptance boxes. */
+    /** Short form, reading through the template bound by {@link Harness#bind}. */
     public static void assertConserved(String tierId) {
         assertConserved(Harness.template(), tierId);
     }

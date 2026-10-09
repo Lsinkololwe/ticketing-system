@@ -94,16 +94,6 @@ public interface ChartOfAccountsRepository extends ReactiveMongoRepository<Chart
     Flux<ChartOfAccountsEntry> findByAccountType(AccountType accountType);
 
     /**
-     * Find active accounts of a specific type.
-     *
-     * <p>For UI dropdowns and entry forms, show only active accounts.</p>
-     *
-     * @param accountType The account type to filter by
-     * @return Flux of active accounts of this type
-     */
-    Flux<ChartOfAccountsEntry> findByAccountTypeAndIsActiveTrue(AccountType accountType);
-
-    /**
      * Find accounts by sub-type.
      *
      * <p>For more granular filtering in reports:</p>
@@ -117,14 +107,6 @@ public interface ChartOfAccountsRepository extends ReactiveMongoRepository<Chart
      * @return Flux of matching accounts
      */
     Flux<ChartOfAccountsEntry> findBySubType(AccountSubType subType);
-
-    /**
-     * Find active accounts by sub-type.
-     *
-     * @param subType The sub-type to filter by
-     * @return Flux of active accounts with this sub-type
-     */
-    Flux<ChartOfAccountsEntry> findBySubTypeAndIsActiveTrue(AccountSubType subType);
 
     // ========================================================================
     // HIERARCHY QUERIES (Parent-Child Navigation)
@@ -145,25 +127,6 @@ public interface ChartOfAccountsRepository extends ReactiveMongoRepository<Chart
      */
     Flux<ChartOfAccountsEntry> findByParentAccountCode(String parentAccountCode);
 
-    /**
-     * Find active child accounts of a parent.
-     *
-     * @param parentAccountCode The parent account code
-     * @return Flux of active child accounts
-     */
-    Flux<ChartOfAccountsEntry> findByParentAccountCodeAndIsActiveTrue(String parentAccountCode);
-
-    /**
-     * Count child accounts under a parent.
-     *
-     * <p>Useful for UI display (show count badge) or validation
-     * (prevent deactivation if has active children).</p>
-     *
-     * @param parentAccountCode The parent account code
-     * @return Mono<Long> count of child accounts
-     */
-    Mono<Long> countByParentAccountCode(String parentAccountCode);
-
     // ========================================================================
     // ACTIVE/INACTIVE QUERIES
     // ========================================================================
@@ -176,91 +139,4 @@ public interface ChartOfAccountsRepository extends ReactiveMongoRepository<Chart
      * @return Flux of all active accounts
      */
     Flux<ChartOfAccountsEntry> findByIsActiveTrue();
-
-    /**
-     * Find all inactive accounts.
-     *
-     * <p>For admin view to see deactivated accounts.</p>
-     *
-     * @return Flux of inactive accounts
-     */
-    Flux<ChartOfAccountsEntry> findByIsActiveFalse();
-
-    /**
-     * Count active accounts.
-     *
-     * @return Mono<Long> count of active accounts
-     */
-    Mono<Long> countByIsActiveTrue();
-
-    /**
-     * Count inactive accounts.
-     *
-     * @return Mono<Long> count of inactive accounts
-     */
-    Mono<Long> countByIsActiveFalse();
-
-    // ========================================================================
-    // COMBINED QUERIES
-    // ========================================================================
-
-    /**
-     * Find active accounts by type and sub-type.
-     *
-     * <p>For precise filtering in specialized reports or forms.</p>
-     *
-     * @param accountType The account type
-     * @param subType The sub-type
-     * @return Flux of matching active accounts
-     */
-    Flux<ChartOfAccountsEntry> findByAccountTypeAndSubTypeAndIsActiveTrue(
-            AccountType accountType,
-            AccountSubType subType
-    );
-
-    // ========================================================================
-    // SEARCH QUERIES
-    // ========================================================================
-
-    /**
-     * Find accounts with name containing search term (case-insensitive).
-     *
-     * <p>For account search functionality in admin UI.</p>
-     *
-     * @param searchTerm The search term
-     * @return Flux of accounts with matching names
-     */
-    Flux<ChartOfAccountsEntry> findByAccountNameContainingIgnoreCase(String searchTerm);
-
-    /**
-     * Find accounts where code starts with a prefix.
-     *
-     * <p>Useful for finding accounts in a range (e.g., all 1000-series accounts).</p>
-     *
-     * @param prefix The account code prefix
-     * @return Flux of accounts with matching code prefix
-     */
-    Flux<ChartOfAccountsEntry> findByAccountCodeStartingWith(String prefix);
-
-    // ========================================================================
-    // CURRENCY QUERIES
-    // ========================================================================
-
-    /**
-     * Find accounts by currency.
-     *
-     * <p>For multi-currency reporting or currency-specific operations.</p>
-     *
-     * @param currency The currency code (e.g., "ZMW", "USD")
-     * @return Flux of accounts in that currency
-     */
-    Flux<ChartOfAccountsEntry> findByCurrency(String currency);
-
-    /**
-     * Find active accounts by currency.
-     *
-     * @param currency The currency code
-     * @return Flux of active accounts in that currency
-     */
-    Flux<ChartOfAccountsEntry> findByCurrencyAndIsActiveTrue(String currency);
 }

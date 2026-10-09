@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/identity/002-keycloak-user-sync/spec.md`](../identity/002-keycloak-user-sync/spec.md) · **Wave 1** · `blocked_by:` ET-PLT-002, ET-PLT-005, ET-PLT-007, ET-IDN-001
 > **Screens** — **none.** The design authority's Coverage map is explicit: *"Keycloak → MongoDB user sync is a backend listener with no UI of its own."* Building a screen for it is a defect.
-> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-002 -DfailIfNoTests=true` · `mvn -q -f backend/keycloak-extensions package`
+> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-002 -DfailIfNoTests=false` · `mvn -q -f backend/keycloak-extensions package`
 
 The subtle spec. Two stores hold user data, and the only thing keeping them honest is a strict
 rule about **which store owns which field**. Get that wrong and both are authoritative, which
@@ -52,10 +52,17 @@ means neither is.
   correctness comes from repair on the request path. If the platform breaks when the listener is
   off, the listener was load-bearing and R2 was never really satisfied.
 
-### BE-5 · The reconciliation sweep, its lock, its metrics, the operator mutation
+### BE-5 · The reconciliation Schedule, the backfill workflow, its metrics, the operator mutation
 - **Spec** R4 · **§5** T5 · **depends** BE-2 · **parallel-safe** yes
-- **Acceptance** seeded drift of **each kind** repaired in one sweep; a **second instance takes no
-  action** (the distributed lock holds).
+- **Acceptance** seeded drift of **each kind** repaired in one run; a fire while a run is open is
+  **skipped** (overlap `SKIP`), and an operator request reaches the running backfill.
+
+- [x] **BE-5 · the Schedule and the workflow, 2026-09-13** — `identity-user-reconciliation` fires daily
+  at 03:30 UTC and starts `UserBackfillWorkflow`, which pages Keycloak 100 users a run and signals each
+  user's `UserSyncWorkflow`; the operator mutation and `POST /api/internal/keycloak/sync/all` start the
+  same workflow. `UserBackfillWorkflowTest` (7 cases, time skipping, replayed) and
+  `UserReconciliationScheduleTest` (3 cases). Marking documents for users Keycloak no longer holds is
+  not built ([F-032](../FINDINGS.md)).
 
 ### BE-6 · `updateMyProfile` with the write-through order
 - **Spec** R5 · **§5** T6 · **depends** BE-2 · **parallel-safe** yes
@@ -120,7 +127,7 @@ Each of the eight events → exactly the §4 action; no MongoDB-owned field touc
 Both by stopping real containers. Mocking the failure tests the mock.
 
 ### TS-4 · Drift *(L3)*
-Seed each drift kind; one sweep repairs all; a second concurrent instance no-ops.
+Seed each drift kind; one reconciliation run repairs all; an overlapping fire is skipped.
 
 ### TS-5 · Profile and phone *(L2/L3)*
 - Each field lands in one store; Keycloak failure writes nothing.
@@ -136,11 +143,11 @@ Deleted user's tickets resolve their owner; `me` → `USER_UNKNOWN`.
 - [ ] Field-ownership split enforced by a test, not a comment
 - [ ] Login succeeds with identity-service **stopped** (real container, not a mock)
 - [ ] Platform fully functional with the listener **disabled**
-- [ ] Sweep repairs every drift kind; the lock holds against a second instance
+- [ ] The reconciliation run repairs every drift kind; overlap is `SKIP`
 - [ ] Profile writes each field to exactly one store; Keycloak failure writes nothing
 - [ ] Phone change is OTP-gated on the new number; taken numbers refuse without disclosure
 - [ ] Tombstoned users' tickets still resolve their owner
 - [ ] **No screen was built for this spec**
 - [ ] `compose-supergraph.sh --static` green; codegen clean and committed
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-002 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-002 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

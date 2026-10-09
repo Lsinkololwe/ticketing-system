@@ -4,7 +4,7 @@ import com.pml.booking.domain.enums.ValidationMethod;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * One scan presented at a gate.
@@ -40,7 +40,7 @@ public record ValidateTicketInput(
         @Size(max = 128)
         String deviceId,
 
-        LocalDateTime scannedAt,
+        Instant scannedAt,
 
         @Size(max = 500)
         String reason

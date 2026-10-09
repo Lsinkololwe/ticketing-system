@@ -11,55 +11,41 @@
 import { useQuery, useMutation } from '@apollo/client/react';
 import type { FetchPolicy } from '@apollo/client';
 import { MY_EVENTS, MY_EVENT_DETAIL, CREATE_EVENT, PUBLISH_EVENT, UNPUBLISH_EVENT } from './events.queries';
-import type { EventStatus, Event as CatalogEvent, TicketTier } from '../../../../types/graphql';
+import type {
+  MyEventsQuery,
+  MyEventsQueryVariables,
+  MyEventDetailQuery,
+  MyEventDetailQueryVariables,
+  CreateEventMutation,
+  CreateEventMutationVariables,
+  PublishEventMutation,
+  PublishEventMutationVariables,
+  UnpublishEventMutation,
+  UnpublishEventMutationVariables,
+} from '../../../../types/graphql';
 
 /**
- * The subset of Event this app selects. Derived from the generated type rather
- * than hand-written, so a schema change surfaces here as a compile error.
+ * The subset of Event this app selects, taken from the generated query type
+ * rather than hand-written, so a schema change surfaces here as a compile error.
  */
-export type EventDetailVM = Pick<
-  CatalogEvent,
-  | 'id' | 'title' | 'description' | 'status' | 'eventDateTime' | 'endDateTime'
-  | 'locationName' | 'locationAddress' | 'cityName' | 'bannerImageUrl'
-  | 'totalCapacity' | 'soldTickets' | 'availableTickets' | 'revenue'
-  | 'currency' | 'rejectionReason'
-> & {
-  ticketTiers: Array<
-    Pick<TicketTier, 'id' | 'name' | 'price' | 'currency' | 'quantity' | 'soldQuantity' | 'isActive'>
-  > | null;
-};
+export type EventDetailVM = NonNullable<MyEventDetailQuery['event']>;
 
 /** The subset of Event fields the organizer events list renders. */
-export interface MyEventRow {
-  id: string;
-  title: string;
-  status: EventStatus;
-  eventDateTime: string;
-  endDateTime: string;
-  locationName: string | null;
-  cityName: string | null;
-  bannerImageUrl: string | null;
-  totalCapacity: number;
-  soldTickets: number;
-  revenue: string;
-  currency: string | null;
-}
+export type MyEventRow = MyEventsQuery['myEvents']['content'][number];
 
-interface MyEventsData {
-  myEventsOffsetPagination: {
-    content: MyEventRow[];
-    totalElements: number;
-    totalPages: number;
-    hasNext: boolean;
-  };
-}
-
-/** Backend mutation envelope shared by publish/unpublish. */
-interface EventMutationResult {
+/**
+ * Outcome of publish or unpublish.
+ *
+ * `publishEvent`/`unpublishEvent` return the entity directly (`{id, status}`),
+ * not an envelope with a `success` field, so `success` is derived from
+ * whether the mutation resolved with a payload rather than read off a field
+ * the wire never sends.
+ */
+interface EventStatusActionResult {
   success: boolean;
   message: string | null;
   errors: string[];
-  data: { id: string; status: EventStatus } | null;
+  data: PublishEventMutation['publishEvent'] | null;
 }
 
 /**
@@ -71,53 +57,85 @@ export function useMyEvents(options?: {
   fetchPolicy?: FetchPolicy;
   skip?: boolean;
 }) {
-  const { data, loading, error, refetch } = useQuery<MyEventsData>(MY_EVENTS, {
-    variables: { pagination: { page: 0, size: options?.size ?? 50 } },
-    fetchPolicy: options?.fetchPolicy ?? 'cache-and-network',
-    errorPolicy: 'all',
-    notifyOnNetworkStatusChange: true,
-    skip: options?.skip ?? false,
-  });
+  const { data, loading, error, refetch } = useQuery<MyEventsQuery, MyEventsQueryVariables>(
+    MY_EVENTS,
+    {
+      variables: {
+        pagination: { page: 0, size: options?.size ?? 50, sortBy: null, sortDirection: null },
+      },
+      fetchPolicy: options?.fetchPolicy ?? 'cache-and-network',
+      errorPolicy: 'all',
+      notifyOnNetworkStatusChange: true,
+      skip: options?.skip ?? false,
+    }
+  );
+
+  // `errorPolicy: 'all'` makes Apollo type `data` as deeply partial, since a
+  // partial GraphQL response is possible alongside errors. Absent an error,
+  // the response matches the query exactly, so the read site trusts that.
+  const page = data?.myEvents as MyEventsQuery['myEvents'] | undefined;
 
   return {
-    events: data?.myEventsOffsetPagination.content ?? [],
-    totalElements: data?.myEventsOffsetPagination.totalElements ?? 0,
+    events: page?.content ?? [],
+    totalElements: page?.totalElements ?? 0,
     loading,
     error,
     refetch,
   };
 }
 
-/** Publish an event; resolves to the backend envelope (success/message/errors). */
+/**
+ * Publish an event.
+ *
+ * `publishEvent` returns the updated `{id, status}` directly — there is no
+ * `success` field on the wire. A GraphQL error throws out of `mutate` and is
+ * caught here; anything else that resolves is a success, since the server
+ * would have returned a GraphQL error rather than a partial entity for a
+ * refused publish.
+ */
 export function usePublishEvent() {
-  const [mutate, { loading }] = useMutation<{ publishEvent: EventMutationResult }>(PUBLISH_EVENT);
-  const publish = async (id: string): Promise<EventMutationResult> => {
-    const res = await mutate({ variables: { id } });
-    return (
-      res.data?.publishEvent ?? {
-        success: false,
-        message: 'Publish failed',
-        errors: ['Publish failed'],
-        data: null,
+  const [mutate, { loading }] = useMutation<PublishEventMutation, PublishEventMutationVariables>(
+    PUBLISH_EVENT
+  );
+  const publish = async (id: string): Promise<EventStatusActionResult> => {
+    try {
+      const res = await mutate({ variables: { id } });
+      const payload = res.data?.publishEvent;
+      if (!payload) {
+        return { success: false, message: 'Publish failed', errors: ['Publish failed'], data: null };
       }
-    );
+      return { success: true, message: null, errors: [], data: payload };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Publish failed';
+      return { success: false, message, errors: [message], data: null };
+    }
   };
   return { publish, loading };
 }
 
-/** Unpublish an event; resolves to the backend envelope (success/message/errors). */
+/**
+ * Unpublish an event.
+ *
+ * Same shape as `usePublishEvent`: `unpublishEvent` returns `{id, status}`
+ * directly, so success is whether the mutation resolved, not a field that
+ * does not exist on the response.
+ */
 export function useUnpublishEvent() {
-  const [mutate, { loading }] = useMutation<{ unpublishEvent: EventMutationResult }>(UNPUBLISH_EVENT);
-  const unpublish = async (id: string): Promise<EventMutationResult> => {
-    const res = await mutate({ variables: { id } });
-    return (
-      res.data?.unpublishEvent ?? {
-        success: false,
-        message: 'Unpublish failed',
-        errors: ['Unpublish failed'],
-        data: null,
+  const [mutate, { loading }] = useMutation<UnpublishEventMutation, UnpublishEventMutationVariables>(
+    UNPUBLISH_EVENT
+  );
+  const unpublish = async (id: string): Promise<EventStatusActionResult> => {
+    try {
+      const res = await mutate({ variables: { id } });
+      const payload = res.data?.unpublishEvent;
+      if (!payload) {
+        return { success: false, message: 'Unpublish failed', errors: ['Unpublish failed'], data: null };
       }
-    );
+      return { success: true, message: null, errors: [], data: payload };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unpublish failed';
+      return { success: false, message, errors: [message], data: null };
+    }
   };
   return { unpublish, loading };
 }
@@ -132,10 +150,10 @@ export function useUnpublishEvent() {
 export function useMyEventDetail(id: string | null | undefined, options?: {
   fetchPolicy?: FetchPolicy;
 }) {
-  const { data, loading, error, refetch } = useQuery<{ event: EventDetailVM | null }>(
+  const { data, loading, error, refetch } = useQuery<MyEventDetailQuery, MyEventDetailQueryVariables>(
     MY_EVENT_DETAIL,
     {
-      variables: { id },
+      variables: { id: id ?? '' },
       fetchPolicy: options?.fetchPolicy ?? 'cache-and-network',
       errorPolicy: 'all',
       skip: !id,
@@ -179,30 +197,88 @@ export interface CreateEventArgs {
 /**
  * Create an event.
  *
- * Returns the mutation envelope rather than throwing, so the form can surface
- * `errors` in place. A failed create must leave the user on the form with their
- * input intact — the previous implementation navigated away regardless.
+ * Resolves to a result object rather than throwing, so the form can surface
+ * `errors` in place and keep the user's input intact on a failed create
+ * instead of navigating away from a form the caller has no way to restore.
+ *
+ * `createEvent` returns the created `{id, title, status}` directly, with no
+ * `success` field — success is whether the mutation resolved with a payload,
+ * not a fabricated field that is always absent from the response.
  */
 export function useCreateEvent() {
-  const [mutate, { loading }] = useMutation<{
-    createEvent: {
-      success: boolean;
-      message: string | null;
-      errors: string[];
-      data: { id: string; title: string; status: EventStatus } | null;
-    };
-  }>(CREATE_EVENT, { refetchQueries: [MY_EVENTS] });
+  const [mutate, { loading }] = useMutation<CreateEventMutation, CreateEventMutationVariables>(
+    CREATE_EVENT,
+    { refetchQueries: [MY_EVENTS] }
+  );
 
   const createEvent = async (input: CreateEventArgs) => {
     try {
-      const result = await mutate({ variables: { input } });
+      const result = await mutate({
+        variables: {
+          input: {
+            title: input.title,
+            description: input.description,
+            categoryId: input.categoryId,
+            eventDateTime: input.eventDateTime,
+            endDateTime: input.endDateTime,
+            totalCapacity: input.totalCapacity,
+            ticketTiers: input.ticketTiers.map((tier) => ({
+              code: tier.code,
+              name: tier.name,
+              description: tier.description ?? null,
+              price: String(tier.price),
+              currency: tier.currency,
+              quantity: tier.quantity,
+              sortOrder: tier.sortOrder ?? null,
+              accessCode: null,
+              category: null,
+              benefits: null,
+              earlyBirdEndsAt: null,
+              earlyBirdPrice: null,
+              isHidden: null,
+              maxPerOrder: null,
+              minPerOrder: null,
+              salesEndAt: null,
+              salesStartAt: null,
+            })),
+            location: input.location
+              ? {
+                  name: input.location.name,
+                  address: input.location.address,
+                  city: input.location.city,
+                  province: input.location.province ?? null,
+                  country: input.location.country,
+                  coordinates: null,
+                  description: null,
+                  postalCode: null,
+                }
+              : null,
+            isVirtual: input.isVirtual ?? null,
+            virtualEventUrl: input.virtualEventUrl ?? null,
+            bannerImageUrl: input.bannerImageUrl ?? null,
+            // This form collects none of these; the event is created without
+            // them and an organizer can add them later through event settings.
+            accessibility: null,
+            additionalInfo: null,
+            cancellationPolicy: null,
+            enableWaitlist: null,
+            isFreeEvent: null,
+            refundPolicy: null,
+            termsAndConditions: null,
+            waitlistCapacity: null,
+          },
+        },
+      });
       const payload = result.data?.createEvent;
-      return {
-        success: payload?.success ?? false,
-        message: payload?.message ?? null,
-        errors: payload?.errors ?? [],
-        event: payload?.data ?? null,
-      };
+      if (!payload) {
+        return {
+          success: false,
+          message: 'The event could not be created.',
+          errors: ['The event could not be created.'],
+          event: null,
+        };
+      }
+      return { success: true, message: null, errors: [], event: payload };
     } catch (error) {
       return {
         success: false,

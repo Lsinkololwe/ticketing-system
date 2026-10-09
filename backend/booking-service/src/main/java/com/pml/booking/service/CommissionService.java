@@ -65,15 +65,6 @@ public interface CommissionService {
     );
 
     /**
-     * Mark commission as earned.
-     * Called 7 days after event completion.
-     *
-     * @param ticketId The ticket ID
-     * @return Updated commission record
-     */
-    Mono<CommissionRecord> markCommissionEarned(String ticketId);
-
-    /**
      * Mark all pending commissions for an event as earned.
      * Called by batch job after hold period.
      *
@@ -113,6 +104,27 @@ public interface CommissionService {
     );
 
     /**
+     * Reverses {@link #cancelPendingCommission}: the refund that cancelled the commission failed
+     * at the provider, so the sale still owes it. Idempotent — a commission already {@code PENDING}
+     * is returned unchanged, and a commission this refund did not cancel is left alone.
+     *
+     * @param ticketId        The ticket ID
+     * @param refundRequestId The refund request whose cancellation is being reversed
+     * @return The commission record, reinstated or unchanged
+     */
+    Mono<CommissionRecord> reinstatePendingCommission(
+            String ticketId,
+            String refundRequestId
+    );
+
+    /**
+     * Takes the commission share of a partial refund off the ticket's commission record, once per
+     * refund request: a repeat for the same refund changes nothing.
+     */
+    Mono<CommissionRecord> reduceForPartialRefund(String ticketId, String refundRequestId,
+                                                  BigDecimal refundAmount, BigDecimal commissionShare);
+
+    /**
      * Find commission record by ticket ID.
      */
     Mono<CommissionRecord> findByTicketId(String ticketId);
@@ -134,16 +146,6 @@ public interface CommissionService {
      * Find all commission records for an organizer.
      */
     Flux<CommissionRecord> findByOrganizerId(String organizerId);
-
-    /**
-     * Get total pending commission for an event.
-     */
-    Mono<BigDecimal> getTotalPendingCommission(String eventId);
-
-    /**
-     * Get total earned commission for an event.
-     */
-    Mono<BigDecimal> getTotalEarnedCommission(String eventId);
 
     /**
      * Get total platform earned commission (all events).

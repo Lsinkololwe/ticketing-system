@@ -52,8 +52,20 @@ IF <condition>, THEN THE SYSTEM SHALL <observable behaviour>.
 
 | Tier | Java type | Wire name | Topic | Consumers |
 |---|---|---|---|---|
-| module | `TicketPurchasedEvent` | — | — | in-service listeners |
 | bus | `TicketPurchasedEvent` | `booking.TicketPurchased` v`1` | `booking-events` | catalog, identity |
+
+Only cross-service facts appear here, each staged in the outbox by the transaction that makes it
+true. A step within a service is a workflow activity, declared below, never an in-memory event.
+
+### Workflows and Schedules
+
+| Workflow | Id | Task queue | Start and conflict | Updates · signals | Timers |
+|---|---|---|---|---|---|
+| `PurchaseWorkflow` | `purchase/{reservationId}` | `booking-checkout` | Update-with-Start, `USE_EXISTING` | `pay`, `cancel` · `paymentCallback` | expiry at `expiresAt` |
+
+Every row is a row of the [ET-PLT-015](../_platform/015-durable-execution/) §4 registry. Timers are
+workflow timers; a recurring job is a Temporal Schedule with overlap policy `SKIP` — never a
+`@Scheduled` sweep or a Redis lock.
 
 ### GraphQL
 

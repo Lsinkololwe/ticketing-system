@@ -4,8 +4,6 @@ import com.pml.shared.config.MongoSchemaValidationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.data.mongodb.config.EnableReactiveMongoAuditing;
 
 /**
  * Identity and Platform Service Application
@@ -25,14 +23,13 @@ import org.springframework.data.mongodb.config.EnableReactiveMongoAuditing;
  * Port: 8083
  *
  * Event Integration:
- * - Spring Modulith for domain event publication
+ * - A transactional outbox in MongoDB for domain event publication
+ *   (com.pml.shared.event.Outbox — there is no Spring Modulith here)
  * - MongoDB Event Publication Registry for transactional outbox
  * - Azure Service Bus for cross-service messaging
  */
-@SpringBootApplication
-@EnableReactiveMongoAuditing
+@SpringBootApplication(scanBasePackages = {"com.pml.identity", "com.pml.shared"})
 @EnableConfigurationProperties(MongoSchemaValidationProperties.class)
-@ComponentScan(basePackages = {"com.pml.identity", "com.pml.shared"})
 public class IdentityServiceApplication {
 
     public static void main(String[] args) {

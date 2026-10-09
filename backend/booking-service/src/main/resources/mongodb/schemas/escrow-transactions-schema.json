@@ -2,42 +2,36 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Escrow Transactions Schema - OWASP Compliant",
-    "description": "Embedded transaction records within EventEscrowAccount",
+    "description": "An auditable record of one money movement in an escrow account, one document per transaction (com.pml.booking.domain.model.StandaloneEscrowTransaction)",
     "required": [
+      "escrowAccountId",
       "type",
       "category",
       "amount",
       "balanceAfter",
-      "description",
       "timestamp"
     ],
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
-      "id": {
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "escrowAccountId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$|^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
-        "maxLength": 100,
-        "description": "OWASP A03 - Transaction ID pattern (ObjectId or UUID)"
+        "description": "The parent EventEscrowAccount this transaction belongs to"
       },
       "type": {
         "bsonType": "string",
-        "enum": [
-          "CREDIT",
-          "DEBIT"
-        ],
-        "description": "OWASP A04 - Enum constraint"
+        "enum": ["CREDIT", "DEBIT"],
+        "description": "OWASP A04 - StandaloneEscrowTransaction.TransactionType"
       },
       "category": {
         "bsonType": "string",
-        "enum": [
-          "TICKET_SALE",
-          "REFUND",
-          "PAYOUT"
-        ],
-        "description": "OWASP A04 - Enum constraint"
+        "enum": ["TICKET_SALE", "REFUND", "PAYOUT", "ADJUSTMENT", "CHARGEBACK", "FEE"],
+        "description": "OWASP A04 - the CATEGORY_* constants on StandaloneEscrowTransaction"
       },
       "amount": {
         "bsonType": "decimal",
@@ -45,44 +39,42 @@
         "description": "OWASP A04 - Positive amount"
       },
       "balanceAfter": {
-        "bsonType": "decimal",
-        "minimum": 0
+        "bsonType": "decimal"
+      },
+      "currency": {
+        "bsonType": ["string", "null"]
       },
       "ticketId": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "bsonType": ["string", "null"]
       },
       "paymentIntentId": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "bsonType": ["string", "null"]
       },
       "refundRequestId": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "bsonType": ["string", "null"]
       },
       "payoutRequestId": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "bsonType": ["string", "null"]
+      },
+      "chargebackId": {
+        "bsonType": ["string", "null"]
+      },
+      "journalEntryId": {
+        "bsonType": ["string", "null"],
+        "description": "Links to the double-entry ledger record in journal_entries"
       },
       "description": {
-        "bsonType": "string",
-        "minLength": 1,
+        "bsonType": ["string", "null"],
         "maxLength": 500
       },
       "timestamp": {
         "bsonType": "date"
+      },
+      "createdAt": {
+        "bsonType": ["date", "null"]
+      },
+      "version": {
+        "bsonType": ["long", "null"]
       }
     },
     "additionalProperties": false

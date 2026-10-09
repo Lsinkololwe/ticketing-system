@@ -55,18 +55,3 @@ export const SUBMIT_ORGANIZATION_FOR_REVIEW = gql`
     }
   }
 `;
-
-/**
- * Update organization settings (for approved organizations)
- */
-export const UPDATE_ORGANIZATION_SETTINGS = gql`
-  ${ORGANIZATION_FIELDS}
-  mutation UpdateOrganizationSettings(
-    $id: ID!
-    $input: OrganizationSettingsInput!
-  ) {
-    updateOrganizationSettings(id: $id, input: $input) {
-      ...OrganizationFields
-    }
-  }
-`;

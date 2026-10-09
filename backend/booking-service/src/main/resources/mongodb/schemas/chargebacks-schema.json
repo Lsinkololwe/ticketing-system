@@ -52,7 +52,7 @@
       },
       "organizerId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$"
       },
       "organizationId": {
         "bsonType": "string",
@@ -61,7 +61,7 @@
       },
       "customerId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$"
       },
       "originalAmount": {
         "bsonType": "decimal",
@@ -91,7 +91,9 @@
           "NOT_RECEIVED",
           "CANCELED",
           "CREDIT_NOT_PROCESSED",
-          "GENERAL"
+          "GENERAL",
+          "NOT_AS_DESCRIBED",
+          "OTHER"
         ],
         "description": "OWASP A04 - Enum constraint"
       },
@@ -152,6 +154,12 @@
         ],
         "maxLength": 2000
       },
+      "disputeOpen": {
+        "bsonType": [
+          "bool",
+          "null"
+        ]
+      },
       "recoveryStatus": {
         "bsonType": "string",
         "enum": [
@@ -183,6 +191,7 @@
           "FUTURE_PAYOUTS",
           "PLATFORM_RESERVE",
           "WRITE_OFF",
+          "ORGANIZER_FUTURE",
           null
         ]
       },
@@ -238,6 +247,12 @@
           "null"
         ],
         "maxLength": 100
+      },
+      "escalatedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "internalNotes": {
         "bsonType": [

@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'node:path';
+
+import { MICROCKS_URL } from '../../e2e-harness/microcks-container';
 
 /**
  * Playwright E2E configuration for the platform admin app.
@@ -49,6 +52,8 @@ export default defineConfig({
   //
   // Raising this makes first-touch compilation survivable without hiding real
   // hangs: a page that genuinely never loads still fails, just a minute later.
+  globalSetup: path.join(__dirname, 'e2e', 'global-setup.ts'),
+  globalTeardown: path.join(__dirname, 'e2e', 'global-teardown.ts'),
   timeout: 60_000,
 
   use: {
@@ -59,9 +64,13 @@ export default defineConfig({
   },
 
   projects: [
+    // Signed out: the brand contract is read off the login page, which needs no session —
+    // so it runs even where no Keycloak is up.
+    { name: 'public', testMatch: /brand\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
     {
       name: 'chromium',
+      testIgnore: /brand\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         // One real Keycloak login per run, reused by every spec. Logging in per
@@ -73,9 +82,19 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'pnpm nx dev admin',
+    // Next directly, as the other two apps start: the Nx target cannot resolve its own
+    // dependencies on this workspace (its lockfile parse yields no external nodes).
+    command: 'npx next dev --port 3030',
+    cwd: __dirname,
     url: 'http://localhost:3030',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
+    // Point the console at the shared Microcks container, never at a real backend. No admin
+    // artifact is imported yet: the first spec that needs data imports its own, as org-admin's do.
+    env: {
+      ...(process.env as Record<string, string>),
+      GRAPHQL_ENDPOINT: `${MICROCKS_URL}/graphql/admin/1.0`,
+      NEXT_PUBLIC_GRAPHQL_ENDPOINT: `${MICROCKS_URL}/graphql/admin/1.0`,
+    },
   },
 });

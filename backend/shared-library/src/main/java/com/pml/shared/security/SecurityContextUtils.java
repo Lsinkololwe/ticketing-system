@@ -56,7 +56,8 @@ public final class SecurityContextUtils {
     // ========================================================================
 
     /**
-     * Get the current authenticated user's ID from the JWT 'sub' claim.
+     * Get the current authenticated user's ID from the JWT: the {@code accountId} claim when
+     * present (buyer accounts), else the 'sub' claim (staff and legacy users).
      *
      * <p>Uses the OIDC standard 'sub' (subject) claim which is the unique,
      * immutable identifier for the user. This is the industry-standard
@@ -66,8 +67,7 @@ public final class SecurityContextUtils {
      */
     public static Mono<String> getCurrentUserId() {
         return getJwt()
-                .mapNotNull(Jwt::getSubject)
-                .filter(subject -> !subject.isBlank());
+                .mapNotNull(AccountIdentity::userIdOf);
     }
 
     /**
@@ -174,12 +174,11 @@ public final class SecurityContextUtils {
                             }
 
                             return AuthenticationContext.builder()
-                                    .userId(jwt.getSubject())
+                                    .userId(AccountIdentity.userIdOf(jwt))
                                     .username(jwt.getClaimAsString("preferred_username"))
                                     .email(jwt.getClaimAsString("email"))
                                     .roles(roles)
                                     .authorities(authorities)
-                                    .tokenId(jwt.getId())
                                     .issuedAt(jwt.getIssuedAt())
                                     .expiresAt(jwt.getExpiresAt())
                                     .build();
@@ -198,7 +197,6 @@ public final class SecurityContextUtils {
         String email;
         Set<String> roles;
         Set<String> authorities;
-        String tokenId;
         java.time.Instant issuedAt;
         java.time.Instant expiresAt;
 

@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.concurrent.Callable;
 import java.util.function.Supplier;
 
 /**
@@ -42,14 +41,7 @@ public class PaymentMetrics {
 
     // Payment request counters
     private final Counter depositInitiatedCounter;
-    private final Counter depositSuccessCounter;
     private final Counter depositFailedCounter;
-    private final Counter refundInitiatedCounter;
-    private final Counter refundSuccessCounter;
-    private final Counter refundFailedCounter;
-    private final Counter payoutInitiatedCounter;
-    private final Counter payoutSuccessCounter;
-    private final Counter payoutFailedCounter;
 
     // Webhook counters
     private final Counter webhookReceivedCounter;
@@ -58,15 +50,10 @@ public class PaymentMetrics {
     private final Counter webhookIpRejectedCounter;
 
     // Circuit breaker counters
-    private final Counter circuitBreakerOpenCounter;
     private final Counter circuitBreakerFallbackCounter;
 
-    // Timers
+    // Timer
     private final Timer depositLatencyTimer;
-    private final Timer refundLatencyTimer;
-    private final Timer payoutLatencyTimer;
-    private final Timer webhookProcessingTimer;
-    private final Timer statusCheckTimer;
 
     public PaymentMetrics(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -76,36 +63,8 @@ public class PaymentMetrics {
                 .description("Number of deposit (payment) requests initiated")
                 .register(meterRegistry);
 
-        this.depositSuccessCounter = Counter.builder(METRIC_PREFIX + ".deposit.success")
-                .description("Number of successful deposits")
-                .register(meterRegistry);
-
         this.depositFailedCounter = Counter.builder(METRIC_PREFIX + ".deposit.failed")
                 .description("Number of failed deposits")
-                .register(meterRegistry);
-
-        this.refundInitiatedCounter = Counter.builder(METRIC_PREFIX + ".refund.initiated")
-                .description("Number of refund requests initiated")
-                .register(meterRegistry);
-
-        this.refundSuccessCounter = Counter.builder(METRIC_PREFIX + ".refund.success")
-                .description("Number of successful refunds")
-                .register(meterRegistry);
-
-        this.refundFailedCounter = Counter.builder(METRIC_PREFIX + ".refund.failed")
-                .description("Number of failed refunds")
-                .register(meterRegistry);
-
-        this.payoutInitiatedCounter = Counter.builder(METRIC_PREFIX + ".payout.initiated")
-                .description("Number of payout requests initiated")
-                .register(meterRegistry);
-
-        this.payoutSuccessCounter = Counter.builder(METRIC_PREFIX + ".payout.success")
-                .description("Number of successful payouts")
-                .register(meterRegistry);
-
-        this.payoutFailedCounter = Counter.builder(METRIC_PREFIX + ".payout.failed")
-                .description("Number of failed payouts")
                 .register(meterRegistry);
 
         // Webhook counters
@@ -126,15 +85,11 @@ public class PaymentMetrics {
                 .register(meterRegistry);
 
         // Circuit breaker counters
-        this.circuitBreakerOpenCounter = Counter.builder(METRIC_PREFIX + ".circuitbreaker.open")
-                .description("Times circuit breaker opened")
-                .register(meterRegistry);
-
         this.circuitBreakerFallbackCounter = Counter.builder(METRIC_PREFIX + ".circuitbreaker.fallback")
                 .description("Times fallback was invoked")
                 .register(meterRegistry);
 
-        // Latency timers with percentiles for SLO monitoring
+        // Latency timer with percentiles for SLO monitoring
         this.depositLatencyTimer = Timer.builder(METRIC_PREFIX + ".deposit.latency")
                 .description("Deposit API call latency")
                 .publishPercentiles(0.5, 0.95, 0.99)
@@ -142,32 +97,7 @@ public class PaymentMetrics {
                 .serviceLevelObjectives(Duration.ofMillis(500), Duration.ofSeconds(2), Duration.ofSeconds(5))
                 .register(meterRegistry);
 
-        this.refundLatencyTimer = Timer.builder(METRIC_PREFIX + ".refund.latency")
-                .description("Refund API call latency")
-                .publishPercentiles(0.5, 0.95, 0.99)
-                .publishPercentileHistogram()
-                .register(meterRegistry);
-
-        this.payoutLatencyTimer = Timer.builder(METRIC_PREFIX + ".payout.latency")
-                .description("Payout API call latency")
-                .publishPercentiles(0.5, 0.95, 0.99)
-                .publishPercentileHistogram()
-                .register(meterRegistry);
-
-        this.webhookProcessingTimer = Timer.builder(METRIC_PREFIX + ".webhook.processing_time")
-                .description("Webhook processing latency")
-                .publishPercentiles(0.5, 0.95, 0.99)
-                .publishPercentileHistogram()
-                .serviceLevelObjectives(Duration.ofMillis(100), Duration.ofMillis(500))
-                .register(meterRegistry);
-
-        this.statusCheckTimer = Timer.builder(METRIC_PREFIX + ".status_check.latency")
-                .description("Status check API call latency")
-                .publishPercentiles(0.5, 0.95, 0.99)
-                .register(meterRegistry);
-
-        log.info("PaymentMetrics initialized with {} metrics",
-                "deposit, refund, payout, webhook, circuit breaker");
+        log.info("PaymentMetrics initialized: deposit, webhook and circuit-breaker meters");
     }
 
     // ========================================================================
@@ -176,11 +106,6 @@ public class PaymentMetrics {
 
     public void recordDepositInitiated() {
         depositInitiatedCounter.increment();
-    }
-
-    public void recordDepositSuccess(String provider) {
-        depositSuccessCounter.increment();
-        meterRegistry.counter(METRIC_PREFIX + ".deposit.success.by_provider", "provider", provider).increment();
     }
 
     public void recordDepositFailed(String provider, String failureCode) {
@@ -196,52 +121,6 @@ public class PaymentMetrics {
 
     public void recordDepositLatency(Duration duration) {
         depositLatencyTimer.record(duration);
-    }
-
-    // ========================================================================
-    // REFUND METRICS
-    // ========================================================================
-
-    public void recordRefundInitiated() {
-        refundInitiatedCounter.increment();
-    }
-
-    public void recordRefundSuccess() {
-        refundSuccessCounter.increment();
-    }
-
-    public void recordRefundFailed(String failureCode) {
-        refundFailedCounter.increment();
-        meterRegistry.counter(METRIC_PREFIX + ".refund.failed.by_reason",
-                "failure_code", failureCode != null ? failureCode : "unknown").increment();
-    }
-
-    public <T> T recordRefundLatency(Supplier<T> operation) {
-        return refundLatencyTimer.record(operation);
-    }
-
-    // ========================================================================
-    // PAYOUT METRICS
-    // ========================================================================
-
-    public void recordPayoutInitiated() {
-        payoutInitiatedCounter.increment();
-    }
-
-    public void recordPayoutSuccess(String provider) {
-        payoutSuccessCounter.increment();
-        meterRegistry.counter(METRIC_PREFIX + ".payout.success.by_provider", "provider", provider).increment();
-    }
-
-    public void recordPayoutFailed(String provider, String failureCode) {
-        payoutFailedCounter.increment();
-        meterRegistry.counter(METRIC_PREFIX + ".payout.failed.by_reason",
-                Tags.of("provider", provider, "failure_code", failureCode != null ? failureCode : "unknown"))
-                .increment();
-    }
-
-    public <T> T recordPayoutLatency(Supplier<T> operation) {
-        return payoutLatencyTimer.record(operation);
     }
 
     // ========================================================================
@@ -278,32 +157,9 @@ public class PaymentMetrics {
                 Tags.of("type", type, "status", status)));
     }
 
-    // ========================================================================
-    // CIRCUIT BREAKER METRICS
-    // ========================================================================
-
-    public void recordCircuitBreakerOpen(String operation) {
-        circuitBreakerOpenCounter.increment();
-        meterRegistry.counter(METRIC_PREFIX + ".circuitbreaker.open.by_operation", "operation", operation).increment();
-        log.warn("CIRCUIT BREAKER: Opened for operation={}", operation);
-    }
-
     public void recordCircuitBreakerFallback(String operation) {
         circuitBreakerFallbackCounter.increment();
         meterRegistry.counter(METRIC_PREFIX + ".circuitbreaker.fallback.by_operation", "operation", operation).increment();
-    }
-
-    // ========================================================================
-    // STATUS CHECK METRICS
-    // ========================================================================
-
-    public <T> T recordStatusCheckLatency(String type, Supplier<T> operation) {
-        return statusCheckTimer.record(operation);
-    }
-
-    public void recordStatusCheck(String type, boolean found) {
-        meterRegistry.counter(METRIC_PREFIX + ".status_check",
-                Tags.of("type", type, "found", String.valueOf(found))).increment();
     }
 
     // ========================================================================

@@ -2,9 +2,9 @@ package com.pml.catalog.service;
 
 import com.pml.catalog.domain.enums.ReferenceType;
 import com.pml.catalog.domain.model.ReferenceData;
-import com.pml.catalog.dto.PageableInput;
-import com.pml.catalog.dto.PagedResult;
-import com.pml.catalog.dto.ReferenceDataPatch;
+import com.pml.catalog.web.graphql.dto.PageableInput;
+import com.pml.catalog.web.graphql.dto.PagedResult;
+import com.pml.catalog.web.graphql.dto.ReferenceDataPatch;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 

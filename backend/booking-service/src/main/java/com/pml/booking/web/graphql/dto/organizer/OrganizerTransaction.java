@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Transaction record for organizer's transaction history.
@@ -58,7 +58,7 @@ public class OrganizerTransaction {
     /**
      * When the transaction occurred
      */
-    private LocalDateTime timestamp;
+    private Instant timestamp;
 
     /**
      * Associated event ID (if applicable)

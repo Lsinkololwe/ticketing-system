@@ -1,5 +1,7 @@
 package com.pml.identity.service.impl;
 
+import com.pml.shared.security.Permission;
+import com.pml.identity.domain.valueobject.OrganizationGroups;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.OrganizationRole;
@@ -7,7 +9,12 @@ import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
 import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.service.OrganizationMemberService;
+import com.pml.identity.domain.enums.AccessGrantStatus;
+import com.pml.identity.repository.EventAccessGrantRepository;
 import com.pml.identity.service.PermissionResolutionService;
+import org.springframework.transaction.reactive.TransactionalOperator;
+
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
@@ -15,7 +22,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
 import java.util.Set;
 
 /**
@@ -37,6 +43,15 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
     private final KeycloakService keycloakService;
     private final PermissionResolutionService permissionResolutionService;
 
+    /** The grants a removal must revoke. */
+    private final EventAccessGrantRepository grantRepository;
+
+    /** The status and the revocations are only meaningful together. */
+    private final TransactionalOperator transactionalOperator;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
+
     // ========================================================================
     // READ OPERATIONS
     // ========================================================================
@@ -49,11 +64,6 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
     @Override
     public Mono<OrganizationMember> findByUserAndOrganization(String userId, String organizationId) {
         return memberRepository.findByUserIdAndOrganizationId(userId, organizationId);
-    }
-
-    @Override
-    public Mono<Boolean> isMember(String userId, String organizationId) {
-        return memberRepository.existsByUserIdAndOrganizationId(userId, organizationId);
     }
 
     @Override
@@ -72,23 +82,6 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
     }
 
     @Override
-    public Flux<OrganizationMember> findByOrganizationAndRole(
-            String organizationId,
-            OrganizationRole role,
-            MemberStatus status,
-            Pageable pageable) {
-        if (status != null) {
-            return memberRepository.findByOrganizationIdAndRoleAndStatus(organizationId, role, status);
-        }
-        return memberRepository.findByOrganizationIdAndRole(organizationId, role);
-    }
-
-    @Override
-    public Flux<OrganizationMember> findActiveMembers(String organizationId, Pageable pageable) {
-        return memberRepository.findByOrganizationIdAndStatus(organizationId, MemberStatus.ACTIVE, pageable);
-    }
-
-    @Override
     public Mono<OrganizationMember> findOwner(String organizationId) {
         return memberRepository.findOwnerByOrganizationId(organizationId);
     }
@@ -104,42 +97,8 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
     }
 
     @Override
-    public Mono<Long> countMembers(String organizationId) {
-        return memberRepository.countByOrganizationId(organizationId);
-    }
-
-    @Override
     public Mono<Long> countActiveMembers(String organizationId) {
         return memberRepository.countByOrganizationIdAndStatus(organizationId, MemberStatus.ACTIVE);
-    }
-
-    // ========================================================================
-    // WRITE OPERATIONS
-    // ========================================================================
-
-    @Override
-    public Mono<OrganizationMember> createOwner(String organizationId, String userId) {
-        log.info("Creating owner member for organization: {} with user: {}", organizationId, userId);
-
-        return memberRepository.existsByUserIdAndOrganizationId(userId, organizationId)
-                .flatMap(exists -> {
-                    if (exists) {
-                        return Mono.error(new IllegalStateException("User is already a member of this organization"));
-                    }
-
-                    OrganizationMember owner = OrganizationMember.builder()
-                            .userId(userId)
-                            .organizationId(organizationId)
-                            .role(OrganizationRole.OWNER)
-                            .status(MemberStatus.ACTIVE)
-                            .joinedAt(Instant.now())
-                            .lastActiveAt(Instant.now())
-                            .build();
-
-                    return memberRepository.save(owner)
-                            .flatMap(saved -> addToKeycloakGroup(saved).thenReturn(saved))
-                            .doOnSuccess(saved -> log.info("Owner member created: {}", saved.getId()));
-                });
     }
 
     @Override
@@ -168,8 +127,8 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                             .role(role)
                             .status(MemberStatus.ACTIVE)
                             .invitedById(invitedById)
-                            .joinedAt(Instant.now())
-                            .lastActiveAt(Instant.now())
+                            .joinedAt(clock.instant())
+                            .lastActiveAt(clock.instant())
                             .build();
 
                     return memberRepository.save(member)
@@ -252,11 +211,7 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                         return Mono.error(new IllegalStateException("Cannot remove owner"));
                     }
 
-                    member.setStatus(MemberStatus.REMOVED);
-                    return memberRepository.save(member)
-                            .flatMap(saved -> removeFromKeycloakGroup(saved).thenReturn(saved))
-                            .flatMap(saved -> updateOrganizationMemberCount(saved.getOrganizationId()))
-                            .then();
+                    return endMembership(member).then();
                 });
     }
 
@@ -271,57 +226,65 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                         return Mono.error(new IllegalStateException("Owner cannot leave. Transfer ownership first."));
                     }
 
-                    member.setStatus(MemberStatus.REMOVED);
-                    return memberRepository.save(member)
-                            .flatMap(saved -> removeFromKeycloakGroup(saved).thenReturn(saved))
-                            .flatMap(saved -> updateOrganizationMemberCount(organizationId))
-                            .then();
+                    return endMembership(member).then();
                 });
     }
 
-    @Override
-    public Mono<OrganizationMember> transferOwnership(String organizationId, String newOwnerId) {
-        log.info("Transferring ownership of organization {} to user {}", organizationId, newOwnerId);
+    /**
+     * Removal is a status, and it takes event access with it.
+     *
+     * <h2>Why the grants must go in the same transaction</h2>
+     * Organization membership and event access are two independent grants, and a member can hold
+     * an event grant the organization role never gave them — a freelancer given EDITOR on one
+     * festival, a scanner given access to one gate. Marking the membership {@code REMOVED} says
+     * nothing about those rows.
+     *
+     * <p>A removed member must lose access on their next request. Were the grants left in place,
+     * they could keep editing the event they were removed over, indefinitely, with the
+     * organization's own team screen showing them gone.
+     *
+     * <p>The revocations and the status move are one transaction because the halves are only
+     * meaningful together: a status without the revocations is the defect itself, and revocations
+     * without the status remove somebody's access while leaving them on the team.
+     *
+     * <h2>Retained, not deleted</h2>
+     * The record survives removal. A re-invited member gets a new row and the old one keeps
+     * its {@code removedAt}, so "was removed in March and re-invited in June" stays legible —
+     * which is the history a dispute is settled from.
+     */
+    private Mono<OrganizationMember> endMembership(OrganizationMember member) {
+        Instant now = clock.instant();
+        member.setStatus(MemberStatus.REMOVED);
+        member.setRemovedAt(now);
 
-        return findOwner(organizationId)
-                .switchIfEmpty(Mono.error(new IllegalStateException("Organization owner not found")))
-                .flatMap(currentOwner -> memberRepository.findByUserIdAndOrganizationId(newOwnerId, organizationId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException("New owner must be an existing member")))
-                        .flatMap(newOwnerMember -> {
-                            // Demote current owner to ADMIN
-                            currentOwner.setRole(OrganizationRole.ADMIN);
-
-                            // Promote new owner
-                            newOwnerMember.setRole(OrganizationRole.OWNER);
-
-                            return memberRepository.save(currentOwner)
-                                    .then(memberRepository.save(newOwnerMember))
-                                    .flatMap(saved -> {
-                                        // Update organization's ownerId
-                                        return organizationRepository.findById(organizationId)
-                                                .flatMap(org -> {
-                                                    org.setOwnerId(newOwnerId);
-                                                    return organizationRepository.save(org);
-                                                })
-                                                .thenReturn(saved);
-                                    })
-                                    .flatMap(saved -> {
-                                        // Update Keycloak groups
-                                        return updateKeycloakGroup(currentOwner, OrganizationRole.OWNER)
-                                                .then(updateKeycloakGroup(saved, OrganizationRole.ADMIN))
-                                                .thenReturn(saved);
-                                    })
-                                    .doOnSuccess(saved -> log.info("Ownership transferred successfully to: {}", newOwnerId));
-                        }));
+        return revokeEventGrants(member, now)
+                .then(memberRepository.save(member))
+                .as(transactionalOperator::transactional)
+                // Keycloak and the member count are outside the boundary deliberately: neither is
+                // the platform's source of truth, and a Keycloak outage must not prevent a removal.
+                // The group-mirror drift sweep is what repairs the mirror.
+                .flatMap(saved -> removeFromKeycloakGroup(saved).thenReturn(saved))
+                .flatMap(saved -> updateOrganizationMemberCount(saved.getOrganizationId())
+                        .thenReturn(saved));
     }
 
-    @Override
-    public Mono<OrganizationMember> updateLastActive(String memberId) {
-        return memberRepository.findById(memberId)
-                .flatMap(member -> {
-                    member.setLastActiveAt(Instant.now());
-                    return memberRepository.save(member);
-                });
+    /**
+     * Every grant this member holds for this organization's events, revoked.
+     *
+     * <p>Scoped to the organization rather than the user: a member removed from one organization
+     * keeps whatever access they hold in another, and revoking by user alone would take it.
+     */
+    private Mono<Void> revokeEventGrants(OrganizationMember member, Instant now) {
+        return grantRepository
+                .findByUserIdAndOrganizationId(member.getUserId(), member.getOrganizationId())
+                .filter(grant -> grant.getStatus() == AccessGrantStatus.ACTIVE)
+                .flatMap(grant -> {
+                    grant.setStatus(AccessGrantStatus.REVOKED);
+                    grant.setRevokedAt(now);
+                    grant.setRevocationReason("Removed from organization");
+                    return grantRepository.save(grant);
+                })
+                .then();
     }
 
     // ========================================================================
@@ -329,14 +292,13 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
     // ========================================================================
 
     @Override
-    public Mono<Boolean> hasPermission(String userId, String organizationId, String permission) {
+    public Mono<Boolean> hasPermission(String userId, String organizationId, Permission permission) {
         return permissionResolutionService.hasOrganizationPermission(userId, organizationId, permission);
     }
 
     @Override
-    public Mono<OrganizationRole> getUserRole(String userId, String organizationId) {
-        return memberRepository.findByUserIdAndOrganizationId(userId, organizationId)
-                .map(OrganizationMember::getRole);
+    public Mono<Void> requirePermission(String userId, String organizationId, Permission permission) {
+        return permissionResolutionService.requireOrganizationPermission(userId, organizationId, permission);
     }
 
     @Override
@@ -356,11 +318,8 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                 .flatMap(org -> keycloakService.addUserToOrganizationGroup(
                         member.getUserId(),
                         org.getSlug(),
-                        member.getRole().name().toLowerCase()))
-                .onErrorResume(e -> {
-                    log.warn("Failed to add user to Keycloak group: {}", e.getMessage());
-                    return Mono.empty();
-                });
+                        OrganizationGroups.of(member.getRole())))
+                .onErrorResume(e -> markMirrorPending(member, "Failed to add user to Keycloak group", e));
     }
 
     private Mono<Void> removeFromKeycloakGroup(OrganizationMember member) {
@@ -368,11 +327,8 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                 .flatMap(org -> keycloakService.removeUserFromOrganizationGroup(
                         member.getUserId(),
                         org.getSlug(),
-                        member.getRole().name().toLowerCase()))
-                .onErrorResume(e -> {
-                    log.warn("Failed to remove user from Keycloak group: {}", e.getMessage());
-                    return Mono.empty();
-                });
+                        OrganizationGroups.of(member.getRole())))
+                .onErrorResume(e -> markMirrorPending(member, "Failed to remove user from Keycloak group", e));
     }
 
     private Mono<Void> updateKeycloakGroup(OrganizationMember member, OrganizationRole previousRole) {
@@ -380,15 +336,46 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                 .flatMap(org -> keycloakService.removeUserFromOrganizationGroup(
                                 member.getUserId(),
                                 org.getSlug(),
-                                previousRole.name().toLowerCase())
+                                OrganizationGroups.of(previousRole))
                         .then(keycloakService.addUserToOrganizationGroup(
                                 member.getUserId(),
                                 org.getSlug(),
-                                member.getRole().name().toLowerCase())))
-                .onErrorResume(e -> {
-                    log.warn("Failed to update Keycloak group: {}", e.getMessage());
+                                OrganizationGroups.of(member.getRole()))))
+                .onErrorResume(e -> markMirrorPending(member, "Failed to update Keycloak group", e));
+    }
+
+    /**
+     * Records that Keycloak is behind this membership, and lets the mutation succeed.
+     *
+     * <h2>The failure must not propagate, and must not vanish either</h2>
+     * The change completes anyway: Keycloak mirrors membership rather than owning
+     * it, and an organizer removing somebody cannot be blocked by a third party being down — that
+     * is precisely the operation you least want blocked.
+     *
+     * <p>Swallowing the error to a log line achieves the first half and loses the second. The
+     * drift is then real, invisible, and unrepairable except by reconciling every member on the
+     * platform. Marking the row is what makes the sweep's work finite.
+     *
+     * <p>Marking is itself best-effort. If MongoDB is unreachable too there is nothing further to
+     * do, and failing the mutation at that point would surface a Keycloak outage as a membership
+     * error — exactly the coupling this method exists to prevent.
+     */
+    private Mono<Void> markMirrorPending(OrganizationMember member, String what, Throwable cause) {
+        log.warn("securityIncident=false {} for user {} in organization {}: {} — membership "
+                        + "committed, mirror marked pending",
+                what, member.getUserId(), member.getOrganizationId(), cause.getMessage());
+
+        return memberRepository.findById(member.getId())
+                .flatMap(current -> {
+                    current.setMirrorPending(true);
+                    return memberRepository.save(current);
+                })
+                .onErrorResume(unreachable -> {
+                    log.error("Could not mark mirrorPending for member {}: {}",
+                            member.getId(), unreachable.getMessage());
                     return Mono.empty();
-                });
+                })
+                .then();
     }
 
     // ========================================================================

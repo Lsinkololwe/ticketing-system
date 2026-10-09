@@ -23,14 +23,6 @@ public interface UserDeviceRepository extends ReactiveMongoRepository<UserDevice
     Flux<UserDevice> findByUserIdAndIsActive(String userId, boolean isActive);
 
     /**
-     * Find a device by its push notification token.
-     *
-     * @param deviceToken the device token (FCM/APNS)
-     * @return Mono containing the device, or empty if not found
-     */
-    Mono<UserDevice> findByDeviceToken(String deviceToken);
-
-    /**
      * Find a device by user ID and device token.
      * Used to check if a device is already registered before creating a new entry.
      *
@@ -47,4 +39,7 @@ public interface UserDeviceRepository extends ReactiveMongoRepository<UserDevice
      * @return Flux of all user devices
      */
     Flux<UserDevice> findByUserId(String userId);
+
+    /** A device only if it belongs to the user; someone else's id answers empty, like an unknown one. */
+    Mono<UserDevice> findByIdAndUserId(String id, String userId);
 }

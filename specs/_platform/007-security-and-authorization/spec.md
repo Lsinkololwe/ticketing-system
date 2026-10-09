@@ -1,6 +1,12 @@
 # ET-PLT-007 · Keycloak realm, roles, `@auth`, tenant scoping, idempotency
 
 > **Conformance** · PDI Phase 5 payment idempotency · US Part I §1 platform role hierarchy
+>
+> **Amended 2026-10-04 (D-44, D-45, D-48, D-49; F-044).** Where the earlier text says "one realm `event-ticketing`", the
+> platform has **two realms**, `myticketzm` (buyers and organizers) and `myticketzm-admin` (platform staff), as code
+> (R8). Buyer tokens live only in a server-side session of the buyer app. The `SCANNER` role does not exist (event
+> staff are event-scoped grants, [ET-ORG-003](../../organization/003-permission-resolution/)). Binding detail:
+> [CONTRACT §9](../../identity/004-accounts-and-contacts/CONTRACT.md).
 
 ## 1. Capability
 
@@ -124,11 +130,11 @@ refresh token, an admin console in a browser holds a short one.
 
 ### ET-PLT-007-R1 · The realm defines the platform's actors
 
-THE SYSTEM SHALL define one Keycloak realm carrying the five platform roles and the client
-set of §4, with composite inheritance as declared.
+THE SYSTEM SHALL define the Keycloak realms of R8 carrying the five platform roles and the client
+set of §4, with composite inheritance as declared. *(Amended: two realms, see R8.)*
 
 **Acceptance**
-- [ ] Realm `event-ticketing` exists and is exported to `../docker-resources/keycloak/` as versioned configuration, not configured by hand
+- [ ] Realms `myticketzm` and `myticketzm-admin` exist and are exported to `../docker-resources/keycloak/` as versioned configuration, not configured by hand (previously one realm `event-ticketing`)
 - [ ] The realm declares exactly `SUPER_ADMIN`, `ADMIN`, `FINANCE`, `ORGANIZER`, `CUSTOMER`
 - [ ] Composites are as §4 declares — `SUPER_ADMIN` includes `ADMIN`; `ADMIN` includes `FINANCE`; `ORGANIZER` includes `CUSTOMER`
 - [ ] `CUSTOMER` is the realm's default role, granted on registration with no administrative step
@@ -200,6 +206,43 @@ and apply the operation at most once per key.
 - [ ] Two parallel submissions of one key produce exactly one application (ET-PLT-006 R5)
 - [ ] The fingerprint excludes the key itself and any field the client may legitimately vary on retry
 
+### ET-PLT-007-R8 · Two realms as code, short tokens, a server-side buyer session *(added 2026-10-04)*
+
+THE SYSTEM SHALL run buyers and staff in separate realms defined as code, issue short-lived audience-bound tokens, rotate refresh tokens with reuse detection, and keep buyer tokens out of the browser.
+
+**Acceptance**
+- [ ] `myticketzm` holds buyers, organizers, team members and event staff and binds the contact flow ([ET-IDN-001](../../identity/001-phone-otp-identity/)); `myticketzm-admin` holds platform staff and binds password plus a required second factor; `user-sync` is enabled in both
+- [ ] Access tokens live 5 minutes; every service validates `iss` and an `aud` that names that service; a token minted for another audience is refused
+- [ ] Refresh tokens rotate on every use with **reuse detection**: presenting a used refresh token revokes the whole session family
+- [ ] The buyer client `myticketzm-web` is confidential with PKCE S256, exact redirect URIs, **no direct-access (password) grant**; the password grant is disabled on every client in both realms, asserted by a realm-export test
+- [ ] The buyer app (Next.js server side) is the OAuth client: it holds access and refresh tokens in a server-side session keyed by an opaque HttpOnly, Secure, SameSite=Lax cookie; no token reaches browser JavaScript, `localStorage` or a URL
+- [ ] The realm user profile makes `email`, `firstName`, `lastName` optional; users are edited only with a full representation
+- [ ] The contact authenticator ([ET-IDN-001](../../identity/001-phone-otp-identity/)) is the only custom authenticator in the buyer browser flow; it authenticates to identity-service with `client_credentials` and has no unauthenticated mode
+- [ ] No registration page or mapper lets a user choose a role or an account type; roles come only from identity-service
+- [ ] Importing the exports into clean Keycloak instances reproduces this table; no step is a console click
+
+### ET-PLT-007-R9 · Anonymous access is an allowlist per service, enforced in one shared component *(added 2026-10-05)*
+
+WHEN a caller without an `Authorization` header posts to a service's `/graphql`, THE SYSTEM SHALL admit it only if
+the service's declared allowlist names every root field it selects, and SHALL refuse everything else with 401.
+
+A service's `/graphql` stays authenticated. The shared `PublicGraphQlFilter` (`com.pml.shared.security.publicop`)
+marks an exchange public only when the request is a POST with no token carrying one parsed query, so opening the
+path to anonymous callers can never expose federation's `_entities`/`_service`, introspection or a resolver that
+assumes a token. Each service declares its own `PublicOperationPolicy`; identity's is `publicPlatformRules`
+([ET-ADM-002](../../admin/002-platform-configuration/) R10), catalog's is [ET-CAT-004](../../catalog/004-event-content-media-and-ranking/) R13.
+
+**Acceptance**
+- [ ] A single, unbatched, non-persisted query is admitted only when every root field is allowlisted; a mutation, a subscription, a batch, a second operation, a root fragment, a `__schema`/`__type`/`__typename` root, an unallowlisted field or a mixed selection is refused with 401
+- [ ] `_entities` is admitted only for an entity type and leaf fields the policy names, over representations carrying nothing but `__typename` and `id`; `_service` never
+- [ ] Fragments below a root field are followed: depth, field count and fragment count are limited by the policy (defaults 10, 300, 10), a fragment cycle or an unknown fragment is refused, and a body over 16 KiB is never parsed
+- [ ] An admitted caller is limited per client address (the last `X-Forwarded-For` entry) in Redis, default 120 per minute; the next request is refused with 429 and `Retry-After`; if Redis is unreachable the request is served
+- [ ] Metrics `platform.public_graphql.requests{service,outcome,reason}` carry no address, query text or variable
+- [ ] A request that carries a token is never touched by the filter
+- [ ] A field that is not part of a service's public surface carries `@auth` even where it is reachable from an allowlisted root
+
+**Tests** `PublicOperationRulesTest` (L1), `PublicGraphQlFilterTest` (L1), `PublicGraphQlSecurityTest` (L2)
+
 ### ET-PLT-007-R7 · A revoked session stops working
 
 WHEN a session is terminated or an account disabled, THE SYSTEM SHALL stop accepting that
@@ -218,9 +261,11 @@ actor's credentials within the access-token lifetime.
 
 | Setting | Value |
 |---|---|
-| Realm | `event-ticketing` |
-| Issuer | `${KEYCLOAK_URL}/realms/event-ticketing` |
-| JWKS | `${KEYCLOAK_URL}/realms/event-ticketing/protocol/openid-connect/certs` |
+| Realms | `myticketzm` (buyers, organizers, team members, event staff) and `myticketzm-admin` (platform staff) — formerly one realm `event-ticketing` |
+| Issuer | `${KEYCLOAK_URL}/realms/{realm}` |
+| JWKS | `${KEYCLOAK_URL}/realms/{realm}/protocol/openid-connect/certs` |
+| Refresh tokens | rotated on use, reuse detection on |
+| Audience | each service's `aud` is validated |
 | Access-token lifetime | 5 min |
 | Default role | `CUSTOMER` |
 
@@ -231,6 +276,7 @@ actor's credentials within the access-token lifetime.
 | `SUPER_ADMIN` | `ADMIN` | everything, including platform configuration |
 | `ADMIN` | `FINANCE` | approvals, suspensions, all-tenant reads |
 | `FINANCE` | — | payouts, refunds, reconciliation, ledger reads |
+| `FINANCE_LEAD` | — | receives chargeback and refund escalations (ROADMAP D-32); grants nothing, and is held together with `FINANCE` |
 | `ORGANIZER` | `CUSTOMER` | create events, request payouts — **within their own organizations only**, which R4 enforces |
 | `CUSTOMER` | — | browse, buy, transfer, validate-if-granted |
 
@@ -242,8 +288,8 @@ Everything organization-scoped is decided by
 
 | Client | Type | Flow | Refresh lifetime | Used by |
 |---|---|---|---|---|
-| `event-ticketing-web` | public | authorization code + PKCE | 30 min | customer web |
-| `event-ticketing-admin` | public | authorization code + PKCE | 30 min | admin, organizer console |
+| `myticketzm-web` | **confidential**, PKCE S256, no direct grant | authorization code (buyer app server side) | 30 min | customer web — tokens stay in the server-side session |
+| `event-ticketing-admin` (realm `myticketzm-admin` for platform staff; the organizer console is a client of `myticketzm`) | public | authorization code + PKCE | 30 min | admin, organizer console |
 | `event-ticketing-mobile` | public | authorization code + PKCE | 30 days | Expo app |
 | `internal-service` | confidential | client credentials | — | keycloak-extensions → identity |
 | `catalog-service` | confidential | client credentials | — | service-to-service |
@@ -267,11 +313,10 @@ old set.
 
 | Attribute | Meaning |
 |---|---|
-| `phone_number` | E.164; the login identity |
-| `phone_verified` | set by the OTP authenticator (ET-IDN-001) |
+| `accountId` | the account id; equals the Keycloak username for new accounts (written by identity-service only) |
 | `primary_org_id` | convenience for client routing; never an authorization input |
 
-`User.id` in MongoDB **is** the Keycloak user ID. There is no `keycloakUserId` field.
+Legacy `User.id` in MongoDB is the Keycloak user ID; new accounts use an account UUID that equals the Keycloak username, linked by `keycloakUserId` ([ET-IDN-004](../../identity/004-accounts-and-contacts/)). No phone number is stored in Keycloak.
 
 ### Operation-gate registry
 
@@ -300,6 +345,9 @@ for their capability's spec and are enumerated there.
 | `POST /api/internal/keycloak/sync/user` | `internal-write` | sync one user | ET-IDN-002 |
 | `POST /api/internal/keycloak/sync/event` | `internal-write` | process a Keycloak event | ET-IDN-002 |
 | `POST /api/internal/permissions/resolve` | `internal-read` | resolve a permission for booking/catalog | ET-ORG-003 |
+| `GET /api/internal/finance-leads/contacts` | `internal-read` | the active finance leads' email addresses, for booking's escalation emails | ET-FIN-004, ROADMAP D-32 |
+| `POST /api/internal/finance-leads/notifications` | `internal-write` | a WhatsApp escalation to every finance lead, deduplicated per lead and escalation | ET-FIN-004, ROADMAP D-32 |
+| `POST /api/internal/notifications/approvals` | `internal-write` | an event review's messages: every active `ADMIN` when an event joins the queue, the organizer when it is decided; deduplicated per recipient, event, submission and outcome | ET-NTF-002, ROADMAP D-36 |
 
 No other internal path exists.
 
@@ -350,6 +398,7 @@ by an explicit allowlist rather than by omission.
 | Key | TTL | Purpose | Authority |
 |---|---|---|---|
 | `idem:{key}` | 24 h | in-flight guard + cached response | the persisted intent's unique index |
+| `rl:{service}:public-graphql:{clientAddress}` | 1 min | signed-out GraphQL request counter (R9) | none; fails open |
 
 ### Error codes used
 
@@ -399,6 +448,20 @@ by an explicit allowlist rather than by omission.
   - verify: replay returns the original; a changed body refuses; two parallel submissions apply once
   - parallel-safe: no — one guard, nine call sites
   - depends: T2
+
+- [ ] **T8 · Two realms as code, audience, refresh rotation, password grant banned, server-side buyer session**
+  - requirements: R8
+  - files: `../docker-resources/keycloak/` (realm exports; coordinator-owned), `frontend/web/apps/ticketing/src/` server routes
+  - verify: a realm-export test finds no client with direct grant; reuse of a refresh token kills the family; a wrong-audience token is refused; no token appears in browser storage
+  - parallel-safe: no — one realm export
+  - depends: T1
+
+- [x] **T9 · Public operations as a per-service allowlist**
+  - requirements: R9
+  - files: `backend/shared-library/src/main/java/com/pml/shared/security/publicop/*`, `ServiceSecurity`
+  - verify: the L1 rules and filter tests, and the L2 test through the real security chain with Redis
+  - parallel-safe: yes
+  - depends: T3
 
 - [ ] **T7 · Backchannel logout; the removed-member latency test**
   - requirements: R7

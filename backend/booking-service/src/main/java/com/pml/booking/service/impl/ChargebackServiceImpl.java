@@ -1,15 +1,14 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.constants.PlatformTime;
+
 import com.pml.booking.domain.enums.ChargebackFundSource;
 import com.pml.booking.domain.enums.ChargebackReason;
 import com.pml.shared.constants.ChargebackStatus;
 import com.pml.booking.domain.enums.RecoveryStatus;
 import com.pml.booking.domain.model.ChargebackRecord;
 import com.pml.booking.domain.model.PayoutRequest;
-import com.pml.booking.event.domain.ChargebackReceivedEvent;
-import com.pml.booking.event.domain.ChargebackResolvedEvent;
 import com.pml.booking.exception.ChargebackProcessingException;
-import com.pml.booking.exception.InsufficientRecoveryFundsException;
 import com.pml.booking.repository.ChargebackRecordRepository;
 import com.pml.booking.repository.EventEscrowAccountRepository;
 import com.pml.booking.repository.PayoutRequestRepository;
@@ -19,16 +18,13 @@ import com.pml.booking.service.PlatformAccountService;
 import com.pml.shared.constants.PayoutRequestStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -64,11 +60,13 @@ import java.util.Map;
 public class ChargebackServiceImpl implements ChargebackService {
 
     private final ChargebackRecordRepository chargebackRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final EventEscrowAccountRepository escrowRepository;
     private final PayoutRequestRepository payoutRequestRepository;
     private final AccountingService accountingService;
     private final PlatformAccountService platformAccountService;
-    private final ApplicationEventPublisher eventPublisher;
 
     // ========================================================================
     // CHARGEBACK RECEIVING
@@ -89,7 +87,7 @@ public class ChargebackServiceImpl implements ChargebackService {
             BigDecimal chargebackFee,
             String currency,
             ChargebackReason reason,
-            LocalDateTime responseDeadline,
+            Instant responseDeadline,
             Map<String, String> gatewayMetadata
     ) {
         log.info("Receiving chargeback: id={}, ticket={}, amount={}, org={}",
@@ -114,8 +112,8 @@ public class ChargebackServiceImpl implements ChargebackService {
                             chargebackAmount,
                             chargebackFee != null ? chargebackFee : BigDecimal.valueOf(15), // Default fee
                             reason,
-                            responseDeadline.toLocalDate()
-                    );
+                            PlatformTime.dateAt(responseDeadline)
+                    , clock.instant());
 
                     return chargebackRepository.save(record)
                             .flatMap(saved -> {
@@ -148,22 +146,6 @@ public class ChargebackServiceImpl implements ChargebackService {
                             .doOnSuccess(saved -> {
                                 log.info("Chargeback recorded: {} with status {} (accounting entries created)",
                                         saved.getId(), saved.getStatus());
-                                // Publish event for notification to organizer and finance team
-                                eventPublisher.publishEvent(ChargebackReceivedEvent.of(
-                                        saved.getId(),
-                                        saved.getChargebackId(),
-                                        saved.getOriginalTransactionId(),
-                                        saved.getTicketId(),
-                                        saved.getEventId(),
-                                        saved.getOrganizerId(),
-                                        saved.getCustomerId(),
-                                        saved.getOriginalAmount(),
-                                        saved.getChargebackAmount(),
-                                        saved.getChargebackFee(),
-                                        saved.getCurrency(),
-                                        saved.getReason(),
-                                        saved.getResponseDeadline().atStartOfDay()
-                                ));
                             });
                 }));
     }
@@ -185,48 +167,6 @@ public class ChargebackServiceImpl implements ChargebackService {
                 });
     }
 
-    @Override
-    public Mono<DisputeRecommendation> getDisputeRecommendation(String chargebackId) {
-        return findByIdInternal(chargebackId)
-                .map(record -> {
-                    ChargebackReason reason = record.getReason();
-                    int winRate = reason.getAverageWinRate();
-                    double winProbability = winRate / 100.0;
-                    String[] requiredEvidence = reason.getRequiredEvidence();
-                    String difficulty = reason.getDisputeDifficulty();
-
-                    // Build available evidence list based on what we might have
-                    List<String> availableEvidence = new java.util.ArrayList<>();
-                    availableEvidence.add("Ticket purchase confirmation");
-                    availableEvidence.add("Terms of service acceptance");
-
-                    // TODO: Check if ticket was validated (used)
-                    // If ticket was scanned, add "Ticket validation proof"
-
-                    // Dispute if win rate >= 40% and difficulty is not HARD
-                    boolean shouldDispute = winProbability >= 0.4 &&
-                            !difficulty.equals("HARD");
-
-                    List<String> reasons = new java.util.ArrayList<>();
-                    if (shouldDispute) {
-                        reasons.add("Win probability (" + winRate + "%) suggests dispute is worthwhile");
-                        reasons.add("Dispute difficulty is manageable: " + difficulty);
-                    } else {
-                        reasons.add("Low win probability (" + winRate + "%)");
-                        reasons.add("High dispute difficulty: " + difficulty);
-                        reasons.add("Consider accepting to save dispute effort");
-                    }
-
-                    return new DisputeRecommendation(
-                            shouldDispute,
-                            winProbability,
-                            reasons,
-                            List.of(requiredEvidence),
-                            availableEvidence
-                    );
-                });
-    }
-
     // ========================================================================
     // CHARGEBACK DECISIONS
     // ========================================================================
@@ -238,7 +178,7 @@ public class ChargebackServiceImpl implements ChargebackService {
 
         return findByIdInternal(chargebackId)
                 .flatMap(record -> {
-                    record.accept(acceptedBy, reason);
+                    record.accept(acceptedBy, reason, clock.instant());
                     return chargebackRepository.save(record)
                             .flatMap(this::startRecovery)
                             .doOnSuccess(saved -> log.info("Chargeback {} accepted, recovery initiated", chargebackId));
@@ -271,7 +211,7 @@ public class ChargebackServiceImpl implements ChargebackService {
 
                     List<String> evidenceDocs = new java.util.ArrayList<>();
                     evidenceDocs.add(evidence.toString());
-                    record.submitDispute(disputedBy, evidenceDocs, disputeNotes);
+                    record.submitDispute(disputedBy, evidenceDocs, disputeNotes, clock.instant());
                     return chargebackRepository.save(record)
                             .doOnSuccess(saved -> log.info("Chargeback {} dispute submitted", chargebackId));
                 });
@@ -283,65 +223,31 @@ public class ChargebackServiceImpl implements ChargebackService {
 
     @Override
     @Transactional
-    public Mono<ChargebackRecord> recordWin(String chargebackId, LocalDateTime wonAt, String notes) {
+    public Mono<ChargebackRecord> recordWin(String chargebackId, Instant wonAt, String notes) {
         log.info("Recording chargeback win: {}", chargebackId);
 
         return findByIdInternal(chargebackId)
                 .flatMap(record -> {
-                    record.recordWin(notes != null ? notes : "System");
+                    record.recordWin(notes != null ? notes : "System", clock.instant());
                     return chargebackRepository.save(record)
                             .doOnSuccess(saved -> {
                                 log.info("Chargeback {} won - no recovery needed", chargebackId);
-                                // Publish event for analytics and notifications
-                                eventPublisher.publishEvent(ChargebackResolvedEvent.of(
-                                        saved.getId(),
-                                        saved.getChargebackId(),
-                                        saved.getTicketId(),
-                                        saved.getEventId(),
-                                        saved.getOrganizerId(),
-                                        saved.getStatus(),
-                                        true, // disputeWon = true
-                                        saved.getRecoveryStatus(),
-                                        saved.getPrimaryFundSource(),
-                                        saved.getTotalImpact(),
-                                        saved.getRecoveredAmount(),
-                                        saved.getWrittenOffAmount(),
-                                        saved.getJournalEntryId(),
-                                        LocalDateTime.now()
-                                ));
                             });
                 });
     }
 
     @Override
     @Transactional
-    public Mono<ChargebackRecord> recordLoss(String chargebackId, LocalDateTime lostAt, String notes) {
+    public Mono<ChargebackRecord> recordLoss(String chargebackId, Instant lostAt, String notes) {
         log.info("Recording chargeback loss: {}", chargebackId);
 
         return findByIdInternal(chargebackId)
                 .flatMap(record -> {
-                    record.recordLoss(notes != null ? notes : "System");
+                    record.recordLoss(notes != null ? notes : "System", clock.instant());
                     return chargebackRepository.save(record)
                             .flatMap(this::startRecovery)
                             .doOnSuccess(saved -> {
                                 log.info("Chargeback {} lost - recovery initiated", chargebackId);
-                                // Publish event for analytics and notifications
-                                eventPublisher.publishEvent(ChargebackResolvedEvent.of(
-                                        saved.getId(),
-                                        saved.getChargebackId(),
-                                        saved.getTicketId(),
-                                        saved.getEventId(),
-                                        saved.getOrganizerId(),
-                                        saved.getStatus(),
-                                        false, // disputeWon = false
-                                        saved.getRecoveryStatus(),
-                                        saved.getPrimaryFundSource(),
-                                        saved.getTotalImpact(),
-                                        saved.getRecoveredAmount(),
-                                        saved.getWrittenOffAmount(),
-                                        saved.getJournalEntryId(),
-                                        LocalDateTime.now()
-                                ));
                             });
                 });
     }
@@ -489,7 +395,7 @@ public class ChargebackServiceImpl implements ChargebackService {
 
                         // Add audit note explaining the deduction
                         String note = String.format("[%s] CHARGEBACK RECOVERY: K%.2f deducted for chargeback %s (ticket: %s, event: %s)",
-                                LocalDateTime.now(),
+                                clock.instant(),
                                 deduction,
                                 record.getChargebackId(),
                                 record.getTicketId(),
@@ -573,20 +479,6 @@ public class ChargebackServiceImpl implements ChargebackService {
 
     @Override
     @Transactional
-    public Mono<ChargebackRecord> recoverFromSource(
-            String chargebackId,
-            ChargebackFundSource fundSource,
-            BigDecimal amount
-    ) {
-        return findByIdInternal(chargebackId)
-                .flatMap(record -> {
-                    record.recordRecovery(amount, fundSource, fundSource.name() + "-" + System.currentTimeMillis());
-                    return chargebackRepository.save(record);
-                });
-    }
-
-    @Override
-    @Transactional
     public Mono<ChargebackRecord> recordRecovery(
             String chargebackId,
             BigDecimal amount,
@@ -654,12 +546,6 @@ public class ChargebackServiceImpl implements ChargebackService {
     @Override
     public Flux<ChargebackRecord> findByRecoveryStatus(RecoveryStatus recoveryStatus) {
         return chargebackRepository.findByRecoveryStatus(recoveryStatus);
-    }
-
-    @Override
-    public Flux<ChargebackRecord> findWithApproachingDeadline(int withinHours) {
-        LocalDate deadline = LocalDate.now().plusDays(withinHours / 24);
-        return chargebackRepository.findApproachingDeadline(deadline);
     }
 
     @Override

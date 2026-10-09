@@ -1,4 +1,20 @@
 # Authentication Architecture Recommendations
+
+> ## Superseded in part: 2026-10-04 redesign
+>
+> Authoritative sources: [`specs/identity/001-phone-otp-identity`](../specs/identity/001-phone-otp-identity/spec.md) (ET-IDN-001, now *Contact-OTP*),
+> [`specs/identity/004-accounts-and-contacts`](../specs/identity/004-accounts-and-contacts/spec.md) and its binding
+> [`CONTRACT.md`](../specs/identity/004-accounts-and-contacts/CONTRACT.md), decisions **D-38..D-50** in [`specs/ROADMAP.md`](../specs/ROADMAP.md), finding **F-044**.
+> The text below is kept as history and is **not** rewritten; where it disagrees with the specs, the specs win (specs/README precedence).
+>
+> - **Recommendation adopted, with changes:** Keycloak is the only token issuer; the buyer flow is a contact (WhatsApp or email) one-time code, the code is typed in checkout and verified by identity-service, and a Keycloak authenticator redeems a 60-second single-use login handle (D-44).
+> - **Section 3.3 (token exchange with impersonation) is rejected.** Giving identity-service the realm-management `impersonation` role and minting tokens on a user's behalf is a second token path; it is not used (ET-IDN-001 Rejected alternatives). The `KeycloakAuthService` password and service-token paths and the `PhoneOtpMutationResolver` that returned a service-account token as a buyer token are deleted.
+> - **Section 3.4 / ROPC (password grant) is banned** on every client in both realms (ET-PLT-007 R8).
+> - **SMS is dropped** (D-39): "SMS primary" or "WhatsApp then SMS" wording is superseded by WhatsApp and email. Mobile-money only, no cards (D-42).
+> - **Plugin-creates-users is superseded** (D-43): `findOrCreateUser` / `addUser` below describe the retired design.
+> - **Two realms** (D-48): `myticketzm`, `myticketzm-admin`. Tokens: 5-minute access token, audience validated, refresh rotation with reuse detection, buyer tokens held in a server-side session of the buyer app and never in the browser (D-45).
+> - **Open items** are tracked in F-044 (organizer second factor, recycled-number inactivity check, contact quarantine length, merge policy, support recovery proofs, legacy users without a verified contact).
+
 ## Event Ticketing Platform - Keycloak Integration
 
 **Version:** 1.0

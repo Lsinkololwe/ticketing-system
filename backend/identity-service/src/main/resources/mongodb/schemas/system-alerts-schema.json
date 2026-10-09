@@ -1,0 +1,25 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "System Alerts Schema",
+    "description": "Operational alerts and their acknowledgement (com.pml.identity.domain.model.SystemAlert)",
+    "required": ["source", "key", "severity", "title", "status", "raisedAt"],
+    "properties": {
+      "_class": { "bsonType": "string", "description": "Spring Data type hint" },
+      "_id": { "bsonType": ["objectId", "string"] },
+      "source": { "bsonType": "string", "maxLength": 60, "description": "The service or probe that raised it" },
+      "key": { "bsonType": "string", "maxLength": 120, "description": "Identifies the condition; one OPEN alert per source and key" },
+      "severity": { "bsonType": "string", "enum": ["INFO", "WARNING", "CRITICAL"] },
+      "title": { "bsonType": "string", "maxLength": 160 },
+      "message": { "bsonType": ["string", "null"], "maxLength": 1000 },
+      "status": { "bsonType": "string", "enum": ["OPEN", "ACKNOWLEDGED", "RESOLVED"] },
+      "occurrences": { "bsonType": ["int", "long"], "minimum": 1 },
+      "raisedAt": { "bsonType": "date" },
+      "lastSeenAt": { "bsonType": ["date", "null"] },
+      "acknowledgedAt": { "bsonType": ["date", "null"] },
+      "acknowledgedBy": { "bsonType": ["string", "null"] },
+      "resolvedAt": { "bsonType": ["date", "null"] }
+    },
+    "additionalProperties": false
+  }
+}

@@ -1,5 +1,12 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.graphql.PageSize;
+import java.time.format.DateTimeFormatter;
+
+import com.pml.shared.constants.PlatformTime;
+
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.shared.constants.EscrowStatus;
 import com.pml.booking.domain.model.EventEscrowAccount;
 import com.pml.booking.domain.model.PayoutRequest;
@@ -7,7 +14,6 @@ import com.pml.booking.domain.model.Ticket;
 import com.pml.booking.repository.EventEscrowAccountRepository;
 import com.pml.booking.security.ActorOrganizationResolver;
 import com.pml.booking.repository.PayoutRequestRepository;
-import com.pml.booking.repository.TicketRepository;
 import com.pml.booking.service.OrganizerDashboardService;
 import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
 import com.pml.booking.web.graphql.dto.organizer.*;
@@ -18,7 +24,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.aggregation.AggregationExpression;
 import org.springframework.data.mongodb.core.aggregation.ConditionalOperators;
 import org.springframework.data.mongodb.core.aggregation.ConvertOperators;
@@ -30,10 +35,9 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -51,14 +55,14 @@ import java.util.Arrays;
 public class OrganizerDashboardServiceImpl implements OrganizerDashboardService {
 
     private final ReactiveMongoTemplate mongoTemplate;
-    private final TicketRepository ticketRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final PayoutRequestRepository payoutRequestRepository;
     private final EventEscrowAccountRepository escrowAccountRepository;
     private final ActorOrganizationResolver actorOrganizationResolver;
 
-    private static final String TICKETS_COLLECTION = "tickets";
-    private static final String ESCROW_ACCOUNTS_COLLECTION = "booking_escrow_accounts";
-    private static final String PAYOUT_REQUESTS_COLLECTION = "booking_payout_requests";
+    private static final String TICKETS_COLLECTION = BookingCollections.TICKETS;
 
     @Override
     public Mono<OrganizerDashboardStats> getDashboardStats(String organizerId) {
@@ -72,10 +76,9 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
     private Mono<OrganizerDashboardStats> dashboardStatsFor(String organizerId, String organizationId) {
         log.debug("Getting dashboard stats for organizer: {}", organizerId);
 
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime thirtyDaysAgo = now.minusDays(30);
-        LocalDateTime sixtyDaysAgo = now.minusDays(60);
-        LocalDateTime oneWeekFromNow = now.plusDays(7);
+        Instant now = clock.instant();
+        Instant thirtyDaysAgo = now.minus(Duration.ofDays(30));
+        Instant sixtyDaysAgo = now.minus(Duration.ofDays(60));
 
         // Run multiple aggregations in parallel using Mono.zip
         return Mono.zip(
@@ -136,10 +139,11 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
     private Mono<OrganizerFinanceOverview> financeOverviewFor(String organizerId, String organizationId) {
         log.debug("Getting finance overview for organizer: {}", organizerId);
 
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime startOfMonth = now.withDayOfMonth(1).truncatedTo(ChronoUnit.DAYS);
-        LocalDateTime startOfLastMonth = startOfMonth.minusMonths(1);
-        LocalDateTime endOfLastMonth = startOfMonth.minusSeconds(1);
+        Instant now = clock.instant();
+        Instant startOfMonth = PlatformTime.atZone(now)
+                .withDayOfMonth(1).truncatedTo(ChronoUnit.DAYS).toInstant();
+        Instant startOfLastMonth = PlatformTime.atZone(startOfMonth).minusMonths(1).toInstant();
+        Instant endOfLastMonth = startOfMonth.minus(Duration.ofSeconds(1));
 
         return Mono.zip(
                 // 1. Balance from escrow accounts
@@ -165,7 +169,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                     .totalEarned((BigDecimal) balances.getOrDefault("totalEarned", BigDecimal.ZERO))
                     .currency("ZMW")
                     .pendingPayoutRequests((Integer) payoutInfo.getOrDefault("pendingCount", 0))
-                    .lastPayoutDate((LocalDateTime) payoutInfo.get("lastPayoutDate"))
+                    .lastPayoutDate((Instant) payoutInfo.get("lastPayoutDate"))
                     .lastPayoutAmount((BigDecimal) payoutInfo.get("lastPayoutAmount"))
                     .totalTicketRevenue((BigDecimal) revenue.getOrDefault("grossRevenue", BigDecimal.ZERO))
                     .totalRefunds((BigDecimal) revenue.getOrDefault("refunds", BigDecimal.ZERO))
@@ -189,7 +193,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
     private Flux<OrganizerActivityItem> recentActivityFor(
             String organizerId, String organizationId, Integer limit) {
-        int activityLimit = limit != null && limit > 0 ? Math.min(limit, 50) : 10;
+        int activityLimit = PageSize.require(limit, 50, 10);
         log.debug("Getting recent activity for organizer: {}, limit: {}", organizerId, activityLimit);
 
         // Get recent tickets (sales), check-ins, and payouts
@@ -204,7 +208,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
     @Override
     public Flux<OrganizerUpcomingEvent> getUpcomingEvents(String organizerId, Integer limit) {
-        int eventLimit = limit != null && limit > 0 ? Math.min(limit, 20) : 5;
+        int eventLimit = PageSize.require(limit, 20, 5);
         log.debug("Getting upcoming events for organizer: {}, limit: {}", organizerId, eventLimit);
 
         // This would typically aggregate ticket data with event data from catalog-service
@@ -312,7 +316,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
     // PRIVATE HELPER METHODS - AGGREGATIONS
     // ========================================================================
 
-    private Mono<Map<String, Object>> getRevenueAndTicketStats(String organizerId, LocalDateTime from, LocalDateTime to) {
+    private Mono<Map<String, Object>> getRevenueAndTicketStats(String organizerId, Instant from, Instant to) {
         Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(Criteria.where("organizerId").is(organizerId)
                         .and("purchaseDate").gte(from).lte(to)
@@ -333,7 +337,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                 .defaultIfEmpty(new HashMap<>(Map.of("totalRevenue", BigDecimal.ZERO, "ticketsSold", 0)));
     }
 
-    private Mono<Map<String, Object>> getAttendeeStats(String organizerId, LocalDateTime from, LocalDateTime to) {
+    private Mono<Map<String, Object>> getAttendeeStats(String organizerId, Instant from, Instant to) {
         Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(Criteria.where("organizerId").is(organizerId)
                         .and("validatedAt").gte(from).lte(to)
@@ -443,7 +447,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                 )));
     }
 
-    private Mono<BigDecimal> getMonthlyEarnings(String organizerId, LocalDateTime from, LocalDateTime to) {
+    private Mono<BigDecimal> getMonthlyEarnings(String organizerId, Instant from, Instant to) {
         Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(Criteria.where("organizerId").is(organizerId)
                         .and("purchaseDate").gte(from).lte(to)
@@ -547,8 +551,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
      * <p>The alternative — registering a Decimal128 converter so BigDecimal is
      * stored numerically — is the better long-term fix, but it is a data
      * migration: every existing document holds a string, and a numeric-only
-     * pipeline would silently skip all of them. That decision is called out in
-     * the handover notes rather than made here.
+     * pipeline would silently skip all of them. So it is not done here.
      */
     private static AggregationExpression asDecimal(String field) {
         return ConvertOperators.Convert.convertValueOf(field)
@@ -578,10 +581,11 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
         // Bound the series at the START of the current month, so the partial
         // month in progress is excluded rather than drawn as a short column.
-        LocalDateTime seriesEnd = LocalDateTime.now()
+        Instant seriesEnd = PlatformTime.atZone(clock.instant())
                 .withDayOfMonth(1)
-                .truncatedTo(ChronoUnit.DAYS);
-        LocalDateTime seriesStart = seriesEnd.minusMonths(window);
+                .truncatedTo(ChronoUnit.DAYS)
+                .toInstant();
+        Instant seriesStart = PlatformTime.atZone(seriesEnd).minusMonths(window).toInstant();
 
         log.debug("Getting {}-month revenue series for organizer {} ({} .. {})",
                 window, organizerId, seriesStart, seriesEnd);
@@ -618,7 +622,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                 // sales. A gap in the x-axis would misrepresent a flat month as
                 // a shorter time span.
                 .flatMapMany(byMonth -> Flux.range(0, window).map(offset -> {
-                    YearMonth period = YearMonth.from(seriesStart.plusMonths(offset));
+                    YearMonth period = YearMonth.from(PlatformTime.atZone(seriesStart).plusMonths(offset));
                     Map<?, ?> row = byMonth.get(period);
                     return OrganizerRevenuePoint.forMonth(period.atDay(1))
                             .revenue(row != null ? toBigDecimal(row.get("revenue")) : BigDecimal.ZERO)
@@ -704,7 +708,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
     public Mono<OrganizerCheckInRate> getCheckInRate(String organizerId) {
         log.debug("Getting check-in rate for organizer: {}", organizerId);
 
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = clock.instant();
 
         // Most recent event that has already run. Grouping by eventId and
         // sorting descending on the event date gives us that in one pass.
@@ -737,7 +741,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
         return mongoTemplate.aggregate(aggregation, TICKETS_COLLECTION, Map.class)
                 .filter(doc -> {
-                    LocalDateTime eventDate = parseNullableDateTime(doc.get("eventDate"));
+                    Instant eventDate = parseNullableDateTime(doc.get("eventDate"));
                     return eventDate != null && eventDate.isBefore(now);
                 })
                 .next()
@@ -797,8 +801,8 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
                     return OrganizerPayoutWindow.windowBetween(
                                     nextToRelease.getCreatedAt(),
-                                    nextToRelease.getHoldUntil().toInstant(ZoneOffset.UTC),
-                                    Instant.now())
+                                    nextToRelease.getHoldUntil(),
+                                    clock.instant())
                             .availableNow(availableNow)
                             .pendingRelease(pendingRelease)
                             .currency("ZMW")
@@ -830,7 +834,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                         .availableAmount(account.getCurrentBalance())
                         .currency(account.getCurrency() != null ? account.getCurrency() : "ZMW")
                         .eligibleSince(account.getPayoutEligibleAt() != null
-                                ? LocalDateTime.ofInstant(account.getPayoutEligibleAt(), ZoneOffset.UTC)
+                                ? account.getPayoutEligibleAt()
                                 : null)
                         .build())
                 // Oldest eligible first: money that has been sitting longest
@@ -915,10 +919,10 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
         return BigDecimal.ZERO;
     }
 
-    private LocalDateTime parseDateTime(Object value) {
-        if (value instanceof LocalDateTime) return (LocalDateTime) value;
-        if (value instanceof Date) return LocalDateTime.ofInstant(((Date) value).toInstant(), java.time.ZoneId.systemDefault());
-        return LocalDateTime.now();
+    private Instant parseDateTime(Object value) {
+        if (value instanceof Instant) return (Instant) value;
+        if (value instanceof Date) return ((Date) value).toInstant();
+        return clock.instant();
     }
 
     /**
@@ -930,17 +934,18 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
      * a future event look like one that has already run, then report a 0%
      * check-in rate for it.
      */
-    private LocalDateTime parseNullableDateTime(Object value) {
-        if (value instanceof LocalDateTime dt) return dt;
+    private Instant parseNullableDateTime(Object value) {
+        if (value instanceof Instant dt) return dt;
         if (value instanceof Date date) {
-            return LocalDateTime.ofInstant(date.toInstant(), java.time.ZoneId.systemDefault());
+            return date.toInstant();
         }
         if (value instanceof String s && !s.isBlank()) {
             try {
-                return LocalDateTime.parse(s);
+                return Instant.parse(s);
             } catch (DateTimeParseException ignored) {
                 try {
-                    return LocalDateTime.ofInstant(Instant.parse(s), ZoneOffset.UTC);
+                    // Civil time with no offset — a wall-clock string means Zambian time.
+                    return PlatformTime.parseLocal(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
                 } catch (DateTimeParseException stillUnparseable) {
                     log.debug("Unparseable eventDate '{}' — excluded from date-sensitive aggregates", s);
                     return null;

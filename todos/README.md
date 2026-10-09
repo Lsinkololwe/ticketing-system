@@ -1,5 +1,7 @@
 # Admin Dashboard Implementation Plan
 
+> **HISTORICAL — superseded by `specs/tasks` FE-* items; kept for reference. Role names in this file are pre-spec** (see `specs/` for the current role and permission vocabulary). Unticked boxes here are not a backlog.
+
 ## Overview
 
 This document outlines the comprehensive implementation plan for the Event Ticketing System Admin Dashboard. The admin dashboard is designed with a **bento-style grid layout** using Radix UI Themes, providing role-based access control for different admin types.

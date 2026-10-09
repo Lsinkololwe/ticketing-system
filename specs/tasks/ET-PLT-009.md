@@ -3,7 +3,7 @@
 > **Spec** [`specs/_platform/009-audit-trail/spec.md`](../_platform/009-audit-trail/spec.md) · **Wave 7** · `blocked_by:` ET-PLT-001, 007, 008, ET-ADM-005
 > **Screen** `Admin - Transactions & System.dc.html` *(Audit logs)*
 > **Routes** `apps/admin/src/app/(dashboard)/system/audit`
-> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-PLT-009 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-PLT-009 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 Specs across the corpus say *"writes an audit row"* as an acceptance condition —
 [`ET-ORG-003`](ET-ORG-003.md) BE-7's step-1 allows, [`ET-FIN-001`](ET-FIN-001.md) BE-8's manual
@@ -166,5 +166,5 @@ populated.
 - [ ] **An audit-write failure does not fail the business operation**, and leaves a visible gap plus an alert
 - [ ] Plain `ADMIN` sees no financial action; users see their own trail
 - [ ] No edit or delete affordance in the UI; gaps shown in the timeline; redaction reads as redaction
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-PLT-009 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-PLT-009 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

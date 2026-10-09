@@ -1,12 +1,14 @@
 package com.pml.catalog.service.impl;
 
+import com.pml.shared.constants.PlatformTime;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.pml.catalog.domain.enums.ExportFormat;
 import com.pml.catalog.domain.model.Event;
-import com.pml.catalog.dto.EventFilterInput;
-import com.pml.catalog.dto.ReportExportDto;
+import com.pml.catalog.web.graphql.dto.EventFilterInput;
+import com.pml.catalog.web.graphql.dto.ReportExportDto;
 import com.pml.catalog.repository.EventRepository;
 import com.pml.catalog.service.ExportService;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +20,8 @@ import reactor.core.publisher.Mono;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
@@ -32,15 +35,22 @@ import java.util.*;
 public class ExportServiceImpl implements ExportService {
 
     private final EventRepository eventRepository;
-    private final ObjectMapper objectMapper;
 
-    @Value("${app.export.base-url:http://localhost:8085/api/exports}")
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
+    private final com.pml.catalog.service.EventAdminFilter adminFilter;
+    private final org.springframework.data.mongodb.core.ReactiveMongoTemplate mongoTemplate;
+
+    /** The largest event export; a filter selecting more is refused. */
+    static final int MAX_EXPORT_ROWS = 10_000;
+
+    @Value("${catalog.export.base-url:http://localhost:8085/api/exports}")
     private String exportBaseUrl;
 
-    @Value("${app.export.directory:${java.io.tmpdir}/exports}")
+    @Value("${catalog.export.directory:${java.io.tmpdir}/exports}")
     private String exportDirectory;
 
-    @Value("${app.export.expiry-hours:24}")
+    @Value("${catalog.export.expiry-hours:24}")
     private int expiryHours;
 
     @Override
@@ -52,7 +62,7 @@ public class ExportServiceImpl implements ExportService {
                 .flatMap(event -> generateExport(List.of(event), format, "event_" + eventId))
                 .onErrorResume(e -> {
                     log.error("Error exporting event data: {}", e.getMessage(), e);
-                    return Mono.just(ReportExportDto.error(e.getMessage(), format));
+                    return Mono.just(ReportExportDto.error(e.getMessage(), format, clock.instant()));
                 });
     }
 
@@ -65,41 +75,33 @@ public class ExportServiceImpl implements ExportService {
                 .collectList()
                 .flatMap(events -> {
                     if (events.isEmpty()) {
-                        return Mono.just(ReportExportDto.error("No events found matching filter criteria", format));
+                        return Mono.just(ReportExportDto.error("No events found matching filter criteria", format, clock.instant()));
                     }
-                    String filePrefix = "events_report_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+                    String filePrefix = "events_report_" + PlatformTime.format(
+                            clock.instant(), DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
                     return generateExport(events, format, filePrefix);
                 })
-                .onErrorResume(e -> {
+                // A refusal is the caller's to see as a refusal; only a failure to write the file
+                // becomes an error export.
+                .onErrorResume(e -> !(e instanceof com.pml.shared.error.DomainRefusal), e -> {
                     log.error("Error exporting events report: {}", e.getMessage(), e);
-                    return Mono.just(ReportExportDto.error(e.getMessage(), format));
+                    return Mono.just(ReportExportDto.error(e.getMessage(), format, clock.instant()));
                 });
     }
 
     /**
-     * Find events by filter criteria.
+     * The events the filter selects, at most {@link #MAX_EXPORT_ROWS}. A larger selection is refused
+     * so the administrator narrows it, rather than receiving a file that silently stops.
      */
     private reactor.core.publisher.Flux<Event> findEventsByFilter(EventFilterInput filter) {
-        if (filter == null) {
-            return eventRepository.findAll();
-        }
-
-        // Apply filters - prioritize most specific filter first
-        if (filter.getOrganizerId() != null && filter.getStatus() != null) {
-            return eventRepository.findByOrganizerIdAndStatus(filter.getOrganizerId(), filter.getStatus());
-        }
-        if (filter.getStatus() != null) {
-            return eventRepository.findByStatus(filter.getStatus());
-        }
-        if (filter.getOrganizerId() != null) {
-            return eventRepository.findByOrganizerId(filter.getOrganizerId());
-        }
-        if (filter.getCategoryId() != null) {
-            // Use the existing method that filters by category
-            return eventRepository.findByCategoryIdAndPublishedTrueAndIsActiveTrue(filter.getCategoryId());
-        }
-
-        return eventRepository.findAll();
+        return adminFilter.query(filter)
+                .flatMapMany(query -> mongoTemplate.find(query.limit(MAX_EXPORT_ROWS + 1), Event.class)
+                        .collectList()
+                        .flatMapMany(found -> found.size() > MAX_EXPORT_ROWS
+                                ? reactor.core.publisher.Flux.error(new com.pml.shared.error.ValidationRefusal(List.of(
+                                        new com.pml.shared.error.FieldViolation("filter",
+                                                "selects more than " + MAX_EXPORT_ROWS + " events; narrow it"))))
+                                : reactor.core.publisher.Flux.fromIterable(found)));
     }
 
     /**
@@ -124,11 +126,11 @@ public class ExportServiceImpl implements ExportService {
             }
 
             String downloadUrl = exportBaseUrl + "/" + fileName;
-            LocalDateTime expiresAt = LocalDateTime.now().plusHours(expiryHours);
+            Instant expiresAt = clock.instant().plus(Duration.ofHours(expiryHours));
 
             log.info("Export generated: fileName={}, downloadUrl={}", fileName, downloadUrl);
 
-            return ReportExportDto.success(downloadUrl, fileName, format, expiresAt);
+            return ReportExportDto.success(downloadUrl, fileName, format, expiresAt, clock.instant());
         });
     }
 
@@ -171,7 +173,7 @@ public class ExportServiceImpl implements ExportService {
 
         // Create export data structure
         Map<String, Object> exportData = new LinkedHashMap<>();
-        exportData.put("exportedAt", LocalDateTime.now().toString());
+        exportData.put("exportedAt", clock.instant().toString());
         exportData.put("totalEvents", events.size());
         exportData.put("events", events.stream().map(this::eventToMap).toList());
 
@@ -208,7 +210,7 @@ public class ExportServiceImpl implements ExportService {
         try (BufferedWriter writer = Files.newBufferedWriter(filePath)) {
             writer.write("EVENT EXPORT REPORT\n");
             writer.write("=" .repeat(60) + "\n");
-            writer.write("Generated: " + LocalDateTime.now() + "\n");
+            writer.write("Generated: " + clock.instant() + "\n");
             writer.write("Total Events: " + events.size() + "\n");
             writer.write("=" .repeat(60) + "\n\n");
 
@@ -271,6 +273,12 @@ public class ExportServiceImpl implements ExportService {
     private String escapeCsv(String value) {
         if (value == null) {
             return "";
+        }
+        // A cell a spreadsheet would evaluate — =, +, -, @, or a tab or carriage return — is made
+        // text with a leading apostrophe, so an organizer's event title cannot run as a formula on
+        // the administrator's machine.
+        if (!value.isEmpty() && "=+-@\t\r".indexOf(value.charAt(0)) >= 0) {
+            value = "'" + value;
         }
         // If contains comma, newline, or quote, wrap in quotes and escape internal quotes
         if (value.contains(",") || value.contains("\n") || value.contains("\"")) {

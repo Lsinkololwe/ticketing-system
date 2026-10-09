@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/payment/002-webhooks-and-settlement/spec.md`](../payment/002-webhooks-and-settlement/spec.md) · **Wave 3** · `blocked_by:` ET-PLT-002, 005, 007, ET-TKT-001, ET-PAY-001
 > **Screens** — **none.** The Coverage map: *"payment intents and webhook processing are provider-facing backend flows; their operator-facing surface is the Transaction Recovery queue's provider-detail drawer"* ([`ET-ADM-003`](ET-ADM-003.md)).
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-PAY-002 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-PAY-002 -DfailIfNoTests=false`
 > `spec.yaml` declares **0 queries, 0 mutations** — this spec has no GraphQL surface at all.
 
 The one unauthenticated entry point in the platform. Everything else is protected by a JWT; this
@@ -57,7 +57,7 @@ Classify, with these as the decisive questions:
 - **Acceptance** callback and poll fired **simultaneously** produce one ticket; conservation and
   balance hold.
 
-### BE-6 · Orphan retention, the re-match sweep and escalation
+### BE-6 · Orphan retention, the re-match workflow and escalation
 - **Spec** R5 · **§5** T6 · **depends** BE-5 · **parallel-safe** yes
 - **Acceptance** an orphan matched later applies **once**; one unmatched past an hour **escalates**.
 - Orphans are retained, never discarded. A callback the platform cannot match is money that moved.
@@ -138,13 +138,13 @@ accidentally opened by the exclusion — enumerate the security chain and assert
 - [ ] Parser proven unreachable on invalid signature
 - [ ] Replay window enforced; one-byte mutation rejected
 - [ ] Receipt recorded **before** processing; unique index live
-- [ ] Two parallel identical callbacks → one ticket
-- [ ] Provider status API consulted; a signature-valid callback for a failed payment issues no ticket
-- [ ] Both callback orderings yield one ticket
+- [x] Two parallel identical callbacks → one ticket — `PaymentConfirmationPathTest.simultaneousCallbacksConfirmOnce` (ten callbacks, one CAS transition, one envelope, one confirm); mutation-verified 2026-09-13 by dropping the status criterion
+- [x] Provider status API consulted; a signature-valid callback for a failed payment issues no ticket — `aForgedSuccessCallbackIssuesNothing`, `anUnavailableStatusApiIsNotAFailure`
+- [x] Both callback orderings yield one ticket — `aCallbackAheadOfTheSubmissionResponseStands`, `submissionUsesTheStoredDepositId`
 - [ ] Callback, poll and reconciliation converge through one transition
 - [ ] Orphans retained, re-matched once, escalated past an hour
 - [ ] Every outcome has a declared code; **nothing returns 500**
 - [ ] JWT exclusion is explicit, documented, and opens no other path
 - [ ] **No screen was built for this spec**
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-PAY-002 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-PAY-002 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

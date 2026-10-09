@@ -1,5 +1,7 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.enums.ChargebackFundSource;
 import com.pml.booking.domain.enums.ChargebackReason;
 import com.pml.shared.constants.ChargebackStatus;
@@ -8,13 +10,11 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -99,19 +99,12 @@ import java.util.List;
  * @see ChargebackFundSource
  * @since 1.0.0
  */
-@Document(collection = "chargebacks")
+@Document(collection = BookingCollections.CHARGEBACKS)
+@TypeAlias("chargebacks")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "status_received_idx", def = "{'status': 1, 'receivedAt': -1}"),
-    @CompoundIndex(name = "organizer_status_idx", def = "{'organizerId': 1, 'status': 1}")
-    // recovery_status_idx removed: it was a one-key "compound" index over
-    // recoveryStatus, which already carries @Indexed. Same keys, two names —
-    // MongoDB refuses the second with error 85, and that refusal aborted the
-    // data migration runner before check-in-backfill could run.
-})
 public class ChargebackRecord {
 
     /**
@@ -127,7 +120,6 @@ public class ChargebackRecord {
      * notify us of the chargeback.</p>
      */
     @NotBlank(message = "External chargeback ID is required")
-    @Indexed(unique = true)
     private String chargebackId;
 
     // ========================================================================
@@ -140,20 +132,17 @@ public class ChargebackRecord {
      * <p>Links to PaymentIntent or PaymentAttempt that was charged back.</p>
      */
     @NotBlank(message = "Original transaction ID is required")
-    @Indexed
     private String originalTransactionId;
 
     /**
      * Reference to the ticket that was purchased.
      */
-    @Indexed
     private String ticketId;
 
     /**
      * Reference to the event.
      */
     @NotBlank(message = "Event ID is required")
-    @Indexed
     private String eventId;
 
     /**
@@ -162,7 +151,6 @@ public class ChargebackRecord {
      * <p>Important for recovery - we recover funds from the organizer.</p>
      */
     @NotBlank(message = "Organizer ID is required")
-    @Indexed
     private String organizerId;
 
     /**
@@ -174,14 +162,12 @@ public class ChargebackRecord {
      *
      * OWASP A01:2021 Compliance: Used for tenant isolation in authorization.
      */
-    @Indexed
     private String organizationId;
 
     /**
      * Reference to the customer who initiated the chargeback.
      */
     @NotBlank(message = "Customer ID is required")
-    @Indexed
     private String customerId;
 
     // ========================================================================
@@ -229,7 +215,6 @@ public class ChargebackRecord {
      * Reason for the chargeback as reported by the customer/bank.
      */
     @NotNull(message = "Reason is required")
-    @Indexed
     private ChargebackReason reason;
 
     /**
@@ -241,7 +226,6 @@ public class ChargebackRecord {
      * Current status of the chargeback case.
      */
     @NotNull(message = "Status is required")
-    @Indexed
     @Builder.Default
     private ChargebackStatus status = ChargebackStatus.RECEIVED;
 
@@ -253,7 +237,6 @@ public class ChargebackRecord {
      * When the chargeback was received/created.
      */
     @NotNull(message = "Received date is required")
-    @Indexed
     private Instant receivedAt;
 
     /**
@@ -304,7 +287,6 @@ public class ChargebackRecord {
      * Status of fund recovery from organizer.
      */
     @NotNull(message = "Recovery status is required")
-    @Indexed
     @Builder.Default
     private RecoveryStatus recoveryStatus = RecoveryStatus.NOT_STARTED;
 
@@ -356,7 +338,6 @@ public class ChargebackRecord {
     /**
      * Reference to the journal entry recording this chargeback.
      */
-    @Indexed
     private String journalEntryId;
 
     /**
@@ -387,6 +368,16 @@ public class ChargebackRecord {
      * Internal notes for tracking.
      */
     private String internalNotes;
+
+    /**
+     * Whether this chargeback is counted in its escrow's {@code openDisputeCount}.
+     * Set and cleared by compare-and-set in the same transaction as the count, so a retried step
+     * cannot count one chargeback twice.
+     */
+    private boolean disputeOpen;
+
+    /** When finance was alerted that this chargeback was still undecided near its deadline. */
+    private Instant escalatedAt;
 
     @CreatedDate
     private Instant createdAt;
@@ -422,14 +413,14 @@ public class ChargebackRecord {
      * @param acceptedBy User accepting the chargeback
      * @param reason Reason for accepting
      */
-    public void accept(String acceptedBy, String reason) {
+    public void accept(String acceptedBy, String reason, Instant now) {
         if (status != ChargebackStatus.RECEIVED && status != ChargebackStatus.UNDER_REVIEW) {
             throw new IllegalStateException(
                     "Cannot accept chargeback from status " + status
             );
         }
         this.status = ChargebackStatus.ACCEPTED;
-        this.resolvedAt = Instant.now();
+        this.resolvedAt = now;
         this.processedBy = acceptedBy;
         this.internalNotes = appendNote("Accepted: " + reason);
     }
@@ -441,7 +432,7 @@ public class ChargebackRecord {
      * @param evidenceDocs List of evidence document references
      * @param notes Notes about the dispute
      */
-    public void submitDispute(String disputedBy, List<String> evidenceDocs, String notes) {
+    public void submitDispute(String disputedBy, List<String> evidenceDocs, String notes, Instant now) {
         if (status != ChargebackStatus.RECEIVED && status != ChargebackStatus.UNDER_REVIEW) {
             throw new IllegalStateException(
                     "Cannot dispute chargeback from status " + status
@@ -449,7 +440,7 @@ public class ChargebackRecord {
         }
         this.status = ChargebackStatus.DISPUTED;
         this.evidenceSubmitted = true;
-        this.evidenceSubmittedAt = Instant.now();
+        this.evidenceSubmittedAt = now;
         this.disputedBy = disputedBy;
         if (evidenceDocs != null) {
             this.evidenceDocuments.addAll(evidenceDocs);
@@ -462,14 +453,14 @@ public class ChargebackRecord {
      *
      * @param processedBy User recording the outcome
      */
-    public void recordWin(String processedBy) {
+    public void recordWin(String processedBy, Instant now) {
         if (status != ChargebackStatus.DISPUTED) {
             throw new IllegalStateException(
                     "Cannot record win from status " + status
             );
         }
         this.status = ChargebackStatus.WON;
-        this.resolvedAt = Instant.now();
+        this.resolvedAt = now;
         this.processedBy = processedBy;
         this.recoveryStatus = RecoveryStatus.RECOVERED; // Funds returned by bank
         this.recoveredAmount = this.chargebackAmount;
@@ -480,14 +471,14 @@ public class ChargebackRecord {
      *
      * @param processedBy User recording the outcome
      */
-    public void recordLoss(String processedBy) {
+    public void recordLoss(String processedBy, Instant now) {
         if (status != ChargebackStatus.DISPUTED) {
             throw new IllegalStateException(
                     "Cannot record loss from status " + status
             );
         }
         this.status = ChargebackStatus.LOST;
-        this.resolvedAt = Instant.now();
+        this.resolvedAt = now;
         this.processedBy = processedBy;
     }
 
@@ -565,15 +556,6 @@ public class ChargebackRecord {
     }
 
     /**
-     * Checks if recovery is needed.
-     *
-     * @return true if loss and recovery not yet started
-     */
-    public boolean needsRecovery() {
-        return isLoss() && recoveryStatus == RecoveryStatus.NOT_STARTED;
-    }
-
-    /**
      * Gets the total financial impact (chargeback + fee).
      *
      * @return Total amount
@@ -589,25 +571,6 @@ public class ChargebackRecord {
      */
     public BigDecimal getUnrecoveredAmount() {
         return chargebackAmount.subtract(recoveredAmount != null ? recoveredAmount : BigDecimal.ZERO);
-    }
-
-    /**
-     * Checks if response deadline has passed.
-     *
-     * @return true if past deadline
-     */
-    public boolean isPastDeadline() {
-        return responseDeadline != null && LocalDate.now().isAfter(responseDeadline);
-    }
-
-    /**
-     * Gets days until response deadline.
-     *
-     * @return Days remaining (negative if past)
-     */
-    public long getDaysUntilDeadline() {
-        if (responseDeadline == null) return 0;
-        return java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), responseDeadline);
     }
 
     // ========================================================================
@@ -641,8 +604,7 @@ public class ChargebackRecord {
      * @param responseDeadline Deadline to respond
      * @return New ChargebackRecord instance
      */
-    public static ChargebackRecord create(
-            String chargebackId,
+    public static ChargebackRecord create(String chargebackId,
             String originalTransactionId,
             String ticketId,
             String eventId,
@@ -653,8 +615,7 @@ public class ChargebackRecord {
             BigDecimal chargebackAmount,
             BigDecimal chargebackFee,
             ChargebackReason reason,
-            LocalDate responseDeadline
-    ) {
+            LocalDate responseDeadline, Instant now) {
         return ChargebackRecord.builder()
                 .chargebackId(chargebackId)
                 .originalTransactionId(originalTransactionId)
@@ -669,7 +630,7 @@ public class ChargebackRecord {
                 .reason(reason)
                 .status(ChargebackStatus.RECEIVED)
                 .recoveryStatus(RecoveryStatus.NOT_STARTED)
-                .receivedAt(Instant.now())
+                .receivedAt(now)
                 .responseDeadline(responseDeadline)
                 .build();
     }

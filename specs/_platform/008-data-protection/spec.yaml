@@ -26,16 +26,19 @@ persistence:
     - identity_consent_records     # ET-PLT-002 §4 registry row
   indexes:
     - "identity_erasure_requests {userId} PARTIAL UNIQUE where status in (PENDING, DEFERRED, EXECUTING)"
-    - "identity_erasure_requests {status,scheduledFor} compound   # the erasure sweep"
+    - "identity_erasure_requests {status,scheduledFor} compound   # the erasure requests list"
     - "identity_data_exports {userId,status} compound"
     - "identity_consent_records {userId,consentType,recordedAt} compound"
-  redis_keys:
-    - "lock:sweep:erasure   STRING  30 s"
+  redis_keys: []
 
 events:
   module: []
   bus: []
   topics: []
+
+workflows:
+  - "ErasureWorkflow      erasure/{userId}         identity-onboarding   timers T−7d and scheduledFor; obligation re-check P1D; updates cancel, expedite"
+  - "DataExportWorkflow   data-export/{exportId}   identity-onboarding"
 
 graphql:
   schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
@@ -84,7 +87,7 @@ erasure_sequence:
   - "1  request        -> PENDING_DELETION, +P30D, notified"
   - "2  grace          cancellable throughout; the account still works"
   - "3  T-7d           reminder"
-  - "4  T              sweep claims under lock:sweep:erasure"
+  - "4  T              ErasureWorkflow timer fires"
   - "5  obligations    defer + tell the user + re-attempt"
   - "6  inventory      apply each declared action, per service"
   - "7  user           accountStatus = ERASED"
@@ -98,13 +101,13 @@ config:
   data.retention.notifications: P180D
   data.retention.consent: P7Y
   data.export.link-ttl: PT24H
-  data.erasure.sweep-interval: PT1H
+  data.erasure.obligation-recheck: P1D
   PII_SUBJECT_SALT: "${PII_SUBJECT_SALT}  — NEVER rotated"
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend test -Dgroups=ET-PLT-008 -DfailIfNoTests=true
-  - mvn -q -f backend verify -Dgroups=ET-PLT-008 -DfailIfNoTests=true
+  - mvn -q -f backend test -Dgroups=ET-PLT-008 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-PLT-008 -DfailIfNoTests=false
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

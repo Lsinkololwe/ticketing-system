@@ -9,11 +9,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 
+import java.time.Clock;
+
 /**
  * Contributes the two shared helpers that services genuinely consume, without either of them
  * being a component-scanned {@code @Service}.
  *
- * <h2>ET-PLT-001 R5, and why these are beans rather than stereotypes</h2>
+ * <h2>Why these are beans rather than stereotypes</h2>
  * A library that declares {@code @Service} only works because every application happens to
  * component-scan the library's package — which the three services do,
  * {@code @ComponentScan(basePackages = {"com.pml.identity", "com.pml.shared"})}. That is an
@@ -26,22 +28,21 @@ import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
  * so these two join them instead of relying on the scan.
  *
  * <h2>These two still do not belong here</h2>
- * R5's acceptance is an allowlist — the JWT and role converters, {@code DomainRefusal}, the
- * error-code enum, {@code graphql/auth.graphqls}, and pure utilities. Neither of these is on
- * it:
+ * What belongs in a shared library is a short list — the JWT and role converters,
+ * {@code DomainRefusal}, the error-code enum, {@code graphql/auth.graphqls}, and pure
+ * utilities. Neither of these is on it:
  *
  * <ul>
  *   <li>{@link MoneyFieldMigrationService} is booking's money migration and has exactly one
- *       consumer, booking's own {@code DataMigrationRunner}. It belongs in booking, and
- *       moving it is <b>ET-PLT-002</b>'s work (T5, money).</li>
+ *       consumer, booking's own {@code DataMigrationRunner}. It belongs in booking.</li>
  *   <li>{@link StatusSemanticResolver} resolves a status code to its {@code WorkflowSemantic}
- *       and is consumed by identity and catalog. It belongs to the reference engine, and
- *       moving it is <b>ET-PLT-014</b>'s work.</li>
+ *       and is consumed by identity and catalog. It belongs to the reference
+ *       data engine.</li>
  * </ul>
  *
- * <p>Relocating them now would mean rewriting consumers in three services inside a slice about
- * the runtime baseline. This class removes the stereotype R5 names while leaving the move to
- * the specs that own the code — and records the debt where the next reader will find it.
+ * <p>Relocating them means rewriting consumers in three services. Until that happens this class
+ * keeps them out of component scanning, and records the debt where the next reader will find
+ * it.
  */
 @AutoConfiguration
 @ConditionalOnClass(ReactiveMongoTemplate.class)
@@ -61,7 +62,14 @@ public class SharedPersistenceSupportAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public StatusSemanticResolver statusSemanticResolver(
+            ObjectProvider<ReactiveMongoTemplate> mongoTemplateProvider, Clock clock) {
+        return new StatusSemanticResolver(mongoTemplateProvider, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public PlatformConfigurationReader platformConfigurationReader(
             ObjectProvider<ReactiveMongoTemplate> mongoTemplateProvider) {
-        return new StatusSemanticResolver(mongoTemplateProvider);
+        return new PlatformConfigurationReader(mongoTemplateProvider);
     }
 }

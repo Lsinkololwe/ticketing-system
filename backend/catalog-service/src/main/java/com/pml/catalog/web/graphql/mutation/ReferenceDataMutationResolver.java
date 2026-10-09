@@ -1,13 +1,13 @@
 package com.pml.catalog.web.graphql.mutation;
 
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.domain.model.ReferenceData;
-import com.pml.catalog.dto.ReferenceDataPatch;
+import com.pml.catalog.web.graphql.dto.ReferenceDataPatch;
 import com.pml.catalog.service.ReferenceDataService;
 import com.pml.catalog.web.graphql.dto.CreateReferenceDataInput;
-import com.pml.catalog.web.graphql.dto.DeleteMutationResponse;
 import com.pml.catalog.web.graphql.dto.ReferenceDataMutationResponse;
 import com.pml.catalog.web.graphql.dto.UpdateReferenceDataInput;
 import lombok.RequiredArgsConstructor;
@@ -16,12 +16,17 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL mutation resolver for reference data. All mutations are admin-only.
  */
 @Slf4j
+
 @DgsComponent
+@FailClosedOnRevocation
+@Validated
 @RequiredArgsConstructor
 public class ReferenceDataMutationResolver {
 
@@ -30,7 +35,7 @@ public class ReferenceDataMutationResolver {
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<ReferenceDataMutationResponse> createReferenceData(
-            @InputArgument CreateReferenceDataInput input) {
+            @Valid @InputArgument CreateReferenceDataInput input) {
         log.info("Creating reference data: type={}, code={}", input.type(), input.code());
 
         return referenceDataService.create(mapCreate(input))
@@ -45,7 +50,7 @@ public class ReferenceDataMutationResolver {
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<ReferenceDataMutationResponse> updateReferenceData(
             @InputArgument String id,
-            @InputArgument UpdateReferenceDataInput input) {
+            @Valid @InputArgument UpdateReferenceDataInput input) {
         log.info("Updating reference data: {}", id);
         return referenceDataService.update(id, mapUpdate(input))
                 .map(updated -> ReferenceDataMutationResponse.success(updated, "Reference data updated successfully"))
@@ -56,7 +61,7 @@ public class ReferenceDataMutationResolver {
     }
 
     /**
-     * Retires a row. It is retained, per ET-CAT-003 R7.
+     * Retires a row. The row is kept, marked retired, rather than deleted.
      *
      * <p>The name is kept because it is the mutation clients already call, but
      * the message says what actually happened — a row removed from the platform
@@ -65,16 +70,13 @@ public class ReferenceDataMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<DeleteMutationResponse> deleteReferenceData(@InputArgument String id) {
+    public Mono<String> deleteReferenceData(@InputArgument String id) {
         log.info("Retiring reference data: {}", id);
+        // Retired, not removed: the row is deactivated and kept, so anything
+        // already referencing it still resolves. Returning the id makes that
+        // explicit to a client evicting it from a cache.
         return referenceDataService.delete(id)
-                .then(Mono.just(DeleteMutationResponse.success(
-                        "Reference data retired. It is deactivated and kept, so anything already "
-                                + "referencing it still resolves.")))
-                .onErrorResume(e -> {
-                    log.error("Retire reference data failed: {}", e.getMessage());
-                    return Mono.just(DeleteMutationResponse.error(e.getMessage()));
-                });
+                .thenReturn(id);
     }
 
     @DgsMutation

@@ -33,7 +33,8 @@
         "enum": [
           "GATEWAY",
           "BANK",
-          "ESCROW"
+          "ESCROW",
+          "ESCROW_JOURNAL"
         ],
         "description": "OWASP A04 - Enum constraint"
       },

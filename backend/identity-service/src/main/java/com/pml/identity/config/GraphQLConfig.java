@@ -4,11 +4,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.graphql.execution.RuntimeWiringConfigurer;
-
 /**
  * DGS GraphQL Configuration
  *
- * This service uses DGS annotations exclusively (@DgsComponent, @DgsQuery, @DgsMutation)
+ * This service uses DGS annotations exclusively (@DgsComponent
+@Validated, @DgsQuery, @DgsMutation)
  * for proper Apollo Federation integration.
  *
  * Custom scalar types (DateTime, BigDecimal, JSON) are automatically registered
@@ -19,6 +19,7 @@ import org.springframework.graphql.execution.RuntimeWiringConfigurer;
  * Apollo Federation for distributed GraphQL architectures.
  */
 @Configuration
+
 public class GraphQLConfig {
 
     /**

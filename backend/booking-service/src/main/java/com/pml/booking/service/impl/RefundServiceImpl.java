@@ -1,16 +1,27 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.constants.PlatformTime;
+import com.pml.booking.domain.RefundEligibility;
+import com.pml.booking.service.BookingStore;
+import com.pml.booking.domain.RefundSplit;
+import com.pml.booking.domain.model.CommissionRecord;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TranslatedRefusal;
+
 import com.pml.booking.config.PaymentProperties;
 import com.pml.booking.infrastructure.client.PawaPayClient;
-import com.pml.booking.event.domain.RefundCompletedEvent;
-import com.pml.booking.domain.model.CommissionRecord;
 import com.pml.booking.domain.model.RefundRequest;
 import com.pml.booking.domain.model.Ticket;
+import com.pml.booking.exception.ProviderUnavailableException;
 import com.pml.booking.repository.RefundRequestRepository;
 import com.pml.booking.repository.TicketRepository;
 import com.pml.booking.service.AccountingService;
 import com.pml.booking.service.CommissionService;
 import com.pml.booking.service.EscrowService;
+import com.pml.booking.service.PaymentAttemptRecorder;
+import com.pml.booking.service.PaymentAttemptRecorder.CallOutcome;
+import com.pml.booking.service.PaymentAttemptRecorder.ProviderCall;
+import com.pml.booking.domain.enums.PaymentAttemptType;
 import com.pml.booking.service.RefundService;
 import com.pml.booking.web.graphql.dto.RefundCalculation;
 import com.pml.booking.web.graphql.dto.BulkOperationResponse;
@@ -22,16 +33,21 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.AggregationUpdate;
+import org.springframework.data.mongodb.core.aggregation.ConditionalOperators;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
@@ -56,13 +72,21 @@ import java.util.UUID;
 public class RefundServiceImpl implements RefundService {
 
     private final RefundRequestRepository refundRequestRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final TicketRepository ticketRepository;
     private final PawaPayClient pawaPayClient;
     private final CommissionService commissionService;
     private final EscrowService escrowService;
     private final AccountingService accountingService;
-    private final ApplicationEventPublisher eventPublisher;
     private final PaymentProperties paymentProperties;
+    private final TransactionalOperator transactionalOperator;
+    private final ReactiveMongoTemplate mongoTemplate;
+    private final PaymentAttemptRecorder attempts;
+
+    /** The failure code {@link PawaPayClient}'s circuit-breaker fallback reports instead of an answer. */
+    private static final String PROVIDER_UNREACHABLE = "CIRCUIT_BREAKER_OPEN";
 
     @Override
     @Transactional
@@ -70,14 +94,17 @@ public class RefundServiceImpl implements RefundService {
         log.info("Processing refund request for ticket: {}", ticketId);
 
         return ticketRepository.findById(ticketId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + ticketId)))
+                // A buyer asks about their own seat. Anyone else, and the buyer of a seat since given
+                // away, is told the ticket does not exist: the refund goes to whoever paid.
+                .filter(ticket -> RefundEligibility.isHolder(ticket, requestedBy))
+                .switchIfEmpty(Mono.error(new TranslatedRefusal(ErrorCode.TICKET_UNKNOWN, "no ticket " + ticketId)))
                 .flatMap(ticket -> {
-                    if (!isRefundable(ticket)) {
-                        return Mono.error(new IllegalStateException(
-                                "Ticket is not eligible for refund. Status: " + ticket.getStatus()));
+                    RefundEligibility.Verdict verdict = RefundEligibility.forHolder(ticket);
+                    if (!verdict.eligible()) {
+                        return Mono.error(verdict.refusal());
                     }
 
-                    RefundRequest refundRequest = buildRefundRequest(ticket, ticket.getPrice(), reason, requestedBy);
+                    RefundRequest refundRequest = buildRefundRequest(ticket, verdict.remaining(), reason, requestedBy);
                     return refundRequestRepository.save(refundRequest)
                             .doOnSuccess(rr -> log.info("Refund request created: {} for ticket: {}",
                                     rr.getId(), ticketId));
@@ -97,12 +124,13 @@ public class RefundServiceImpl implements RefundService {
         return ticketRepository.findById(ticketId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + ticketId)))
                 .flatMap(ticket -> {
-                    if (!isRefundable(ticket)) {
-                        return Mono.error(new IllegalStateException("Ticket is not eligible for refund"));
+                    RefundEligibility.Verdict verdict = RefundEligibility.of(ticket);
+                    if (!verdict.eligible()) {
+                        return Mono.error(verdict.refusal());
                     }
-                    if (amount.compareTo(ticket.getPrice()) > 0) {
-                        return Mono.error(new IllegalArgumentException(
-                                "Refund amount cannot exceed ticket price"));
+                    Throwable invalid = RefundEligibility.checkAmount(amount, verdict.remaining());
+                    if (invalid != null) {
+                        return Mono.error(invalid);
                     }
 
                     RefundRequest refundRequest = buildRefundRequest(ticket, amount, reason, requestedBy);
@@ -126,7 +154,7 @@ public class RefundServiceImpl implements RefundService {
 
                     refundRequest.setStatus(RefundRequestStatus.APPROVED);
                     refundRequest.setReviewedBy(approvedBy);
-                    refundRequest.setReviewedAt(LocalDateTime.now());
+                    refundRequest.setReviewedAt(clock.instant());
                     refundRequest.setReviewComments(comments);
 
                     return refundRequestRepository.save(refundRequest)
@@ -148,7 +176,7 @@ public class RefundServiceImpl implements RefundService {
 
                     refundRequest.setStatus(RefundRequestStatus.REJECTED);
                     refundRequest.setReviewedBy(rejectedBy);
-                    refundRequest.setReviewedAt(LocalDateTime.now());
+                    refundRequest.setReviewedAt(clock.instant());
                     refundRequest.setRejectionReason(reason);
 
                     return refundRequestRepository.save(refundRequest)
@@ -156,8 +184,13 @@ public class RefundServiceImpl implements RefundService {
                 });
     }
 
+    /**
+     * The provider is called from outside this method's transaction. Commission and
+     * escrow are the platform's own books, adjusted and committed first; only then is PawaPay
+     * asked to move money, so a slow or failed call never holds that commit open and never rolls
+     * back an adjustment PawaPay may already be acting on.
+     */
     @Override
-    @Transactional
     public Mono<RefundRequest> processRefund(String refundRequestId) {
         log.info("Processing refund: {}", refundRequestId);
 
@@ -170,10 +203,16 @@ public class RefundServiceImpl implements RefundService {
                                 "Refund must be approved before processing. Status: " + refundRequest.getStatus()));
                     }
 
-                    // Step 1: Handle commission adjustment
-                    return handleCommissionAdjustment(refundRequest)
-                            .then(handleEscrowDebit(refundRequest))
-                            .then(initiatePayaPayRefund(refundRequest));
+                    // Step 1: the split, the commission adjustment and the escrow debit commit together.
+                    return settleInternally(refundRequest)
+                            .as(transactionalOperator::transactional)
+                            // Step 2: only after that commit does the provider get called.
+                            .then(Mono.defer(() -> mongoTemplate.findOne(
+                                    org.springframework.data.mongodb.core.query.Query.query(
+                                            org.springframework.data.mongodb.core.query.Criteria.where("_id").is(refundRequestId)
+                                                    .and("organizationId").is(refundRequest.getOrganizationId())),
+                                    RefundRequest.class)))
+                            .flatMap(this::initiatePayaPayRefund);
                 });
     }
 
@@ -192,11 +231,16 @@ public class RefundServiceImpl implements RefundService {
                 .switchIfEmpty(Mono.error(new IllegalArgumentException(
                         "Refund request not found for pawaPay ID: " + pawaPayRefundId)))
                 .flatMap(refundRequest -> {
+                    if ("COMPLETED".equals(status) && refundRequest.getStatus() == RefundRequestStatus.COMPLETED) {
+                        // Already applied. The callback and the poll both report a completion, and the
+                        // ticket and the booking must only be credited with it once.
+                        return Mono.just(refundRequest);
+                    }
                     refundRequest.setProviderTransactionId(providerTransactionId);
 
                     if ("COMPLETED".equals(status)) {
                         refundRequest.setStatus(RefundRequestStatus.COMPLETED);
-                        refundRequest.setProcessedAt(LocalDateTime.now());
+                        refundRequest.setProcessedAt(clock.instant());
 
                         /*
                          * ACCOUNTING ENTRIES for completed refund:
@@ -214,9 +258,12 @@ public class RefundServiceImpl implements RefundService {
                          * confirms the refund was sent to the customer.
                          */
                         return commissionService.findByTicketId(refundRequest.getTicketId())
-                                .flatMap(commission -> {
-                                    BigDecimal commissionClawback = commission != null ?
-                                            commission.getAmount() : BigDecimal.ZERO;
+                                // The share this refund took, fixed when it was processed; a record that
+                                // has since been reduced or closed would give a different answer.
+                                .map(commission -> refundRequest.getCommissionShare() != null
+                                        ? refundRequest.getCommissionShare() : commission.getAmount())
+                                .defaultIfEmpty(BigDecimal.ZERO)
+                                .flatMap(commissionClawback -> {
 
                                     // Step 1: Record refund - creates Refunds Payable liability
                                     return accountingService.recordRefund(
@@ -237,8 +284,7 @@ public class RefundServiceImpl implements RefundService {
                                     ));
                                 })
                                 .then(refundRequestRepository.save(refundRequest))
-                                .flatMap(this::updateTicketForCompletedRefund)
-                                .doOnSuccess(this::publishRefundCompletedEvent);
+                                .flatMap(this::updateTicketForCompletedRefund);
                     } else if ("FAILED".equals(status)) {
                         refundRequest.setStatus(RefundRequestStatus.FAILED);
                         refundRequest.setRejectionReason(failureMessage);
@@ -255,6 +301,13 @@ public class RefundServiceImpl implements RefundService {
     @Override
     public Mono<RefundRequest> findById(String id) {
         return refundRequestRepository.findById(id);
+    }
+
+    @Override
+    public Flux<RefundRequest> findAllByTicketId(String ticketId) {
+        return refundRequestRepository.findByTicketId(ticketId)
+                .sort(java.util.Comparator.comparing(RefundRequest::getCreatedAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
     }
 
     @Override
@@ -288,28 +341,6 @@ public class RefundServiceImpl implements RefundService {
     }
 
     @Override
-    public Flux<RefundRequest> findApprovedRefundsPendingProcessing() {
-        return refundRequestRepository.findByStatus(RefundRequestStatus.APPROVED);
-    }
-
-    @Override
-    @Transactional
-    public Mono<Long> processAutomaticRefunds(String eventId) {
-        log.info("Processing automatic refunds for event: {}", eventId);
-
-        return refundRequestRepository.findByEventIdAndIsAutomatic(eventId, true)
-                .filter(rr -> rr.getStatus() == RefundRequestStatus.PENDING)
-                .flatMap(rr -> {
-                    rr.setStatus(RefundRequestStatus.APPROVED);
-                    rr.setReviewComments("Auto-approved for event cancellation");
-                    return refundRequestRepository.save(rr)
-                            .flatMap(saved -> processRefund(saved.getId()));
-                })
-                .count()
-                .doOnSuccess(count -> log.info("Processed {} automatic refunds for event: {}", count, eventId));
-    }
-
-    @Override
     public Mono<RefundCalculation> calculateRefundAmount(String ticketId) {
         log.info("Calculating refund amount for ticket: {}", ticketId);
 
@@ -317,7 +348,7 @@ public class RefundServiceImpl implements RefundService {
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + ticketId)))
                 .flatMap(ticket -> {
                     // Parse event date
-                    LocalDateTime eventDate = parseEventDate(ticket.getEventDate());
+                    Instant eventDate = parseEventDate(ticket.getEventDate());
                     if (eventDate == null) {
                         return Mono.just(RefundCalculation.ineligible(
                                 ticketId,
@@ -364,8 +395,8 @@ public class RefundServiceImpl implements RefundService {
                 });
     }
 
-    private Mono<RefundCalculation> calculateRefundBreakdown(Ticket ticket, LocalDateTime eventDate) {
-        LocalDateTime now = LocalDateTime.now();
+    private Mono<RefundCalculation> calculateRefundBreakdown(Ticket ticket, Instant eventDate) {
+        Instant now = clock.instant();
         long daysBeforeEvent = ChronoUnit.DAYS.between(now, eventDate);
         long hoursBeforeEvent = ChronoUnit.HOURS.between(now, eventDate);
 
@@ -431,12 +462,11 @@ public class RefundServiceImpl implements RefundService {
                 refundAmount,
                 commissionRefund,
                 platformRetains,
-                processingFee,
                 policyDetails
         ));
     }
 
-    private LocalDateTime parseEventDate(String eventDateStr) {
+    private Instant parseEventDate(String eventDateStr) {
         if (eventDateStr == null || eventDateStr.isBlank()) {
             return null;
         }
@@ -455,9 +485,9 @@ public class RefundServiceImpl implements RefundService {
             try {
                 if (formatter.equals(DateTimeFormatter.ofPattern("yyyy-MM-dd"))) {
                     // For date-only format, assume start of day
-                    return LocalDateTime.parse(eventDateStr + "T00:00:00", DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                    return PlatformTime.parseLocal(eventDateStr + "T00:00:00", DateTimeFormatter.ISO_LOCAL_DATE_TIME);
                 }
-                return LocalDateTime.parse(eventDateStr, formatter);
+                return PlatformTime.parseLocal(eventDateStr, formatter);
             } catch (DateTimeParseException ignored) {
                 // Try next format
             }
@@ -479,29 +509,47 @@ public class RefundServiceImpl implements RefundService {
             String adminId,
             boolean bypassApproval
     ) {
-        log.info("Admin creating refund request for ticket: {} by: {} (bypass: {})", ticketId, adminId, bypassApproval);
+        return createAdminRefundRequest(ticketId, reason, adminId, bypassApproval, null);
+    }
+
+    @Override
+    @Transactional
+    public Mono<RefundRequest> createAdminRefundRequest(
+            String ticketId,
+            String reason,
+            String adminId,
+            boolean bypassApproval,
+            BigDecimal amount
+    ) {
+        log.info("Operator creating refund request for ticket: {} by: {} (bypass: {}, amount: {})",
+                ticketId, adminId, bypassApproval, amount);
 
         return ticketRepository.findById(ticketId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + ticketId)))
+                .switchIfEmpty(Mono.error(new TranslatedRefusal(ErrorCode.TICKET_UNKNOWN, "no ticket " + ticketId)))
                 .flatMap(ticket -> {
-                    if (!isRefundable(ticket)) {
-                        return Mono.error(new IllegalStateException(
-                                "Ticket is not eligible for refund. Status: " + ticket.getStatus()));
+                    RefundEligibility.Verdict verdict = RefundEligibility.of(ticket);
+                    if (!verdict.eligible()) {
+                        return Mono.error(verdict.refusal());
+                    }
+                    BigDecimal refundAmount = amount == null ? verdict.remaining() : amount;
+                    Throwable invalid = RefundEligibility.checkAmount(refundAmount, verdict.remaining());
+                    if (invalid != null) {
+                        return Mono.error(invalid);
                     }
 
-                    RefundRequest refundRequest = buildRefundRequest(ticket, ticket.getPrice(), reason, adminId);
+                    RefundRequest refundRequest = buildRefundRequest(ticket, refundAmount, reason, adminId);
                     refundRequest.setRequestType(RefundRequestType.ADMIN_INITIATED);
 
                     if (bypassApproval) {
-                        // Auto-approve if bypass requested
+                        // Approved by the person raising it: the operator is the decision.
                         refundRequest.setStatus(RefundRequestStatus.APPROVED);
                         refundRequest.setReviewedBy(adminId);
-                        refundRequest.setReviewedAt(LocalDateTime.now());
-                        refundRequest.setReviewComments("Admin bypass approval");
+                        refundRequest.setReviewedAt(clock.instant());
+                        refundRequest.setReviewComments("Approved by the operator who raised it");
                     }
 
                     return refundRequestRepository.save(refundRequest)
-                            .doOnSuccess(rr -> log.info("Admin refund request created: {} (status: {})",
+                            .doOnSuccess(rr -> log.info("Operator refund request created: {} (status: {})",
                                     rr.getId(), rr.getStatus()));
                 });
     }
@@ -526,9 +574,10 @@ public class RefundServiceImpl implements RefundService {
                     }
 
                     refundRequest.setStatus(RefundRequestStatus.CANCELLED);
-                    refundRequest.setRejectionReason("Cancelled by admin: " + reason);
+                    refundRequest.setRejectionReason((cancelledBy != null && cancelledBy.equals(refundRequest.getRequestedBy())
+                            ? "Cancelled by the requester: " : "Cancelled by staff: ") + reason);
                     refundRequest.setReviewedBy(cancelledBy);
-                    refundRequest.setReviewedAt(LocalDateTime.now());
+                    refundRequest.setReviewedAt(clock.instant());
 
                     return refundRequestRepository.save(refundRequest)
                             .doOnSuccess(rr -> log.info("Refund request cancelled: {}", rr.getId()));
@@ -554,7 +603,7 @@ public class RefundServiceImpl implements RefundService {
 
                             refundRequest.setStatus(RefundRequestStatus.APPROVED);
                             refundRequest.setReviewedBy(reviewerId);
-                            refundRequest.setReviewedAt(LocalDateTime.now());
+                            refundRequest.setReviewedAt(clock.instant());
                             refundRequest.setReviewComments("Bulk approved");
 
                             return refundRequestRepository.save(refundRequest)
@@ -613,8 +662,7 @@ public class RefundServiceImpl implements RefundService {
     }
 
     private boolean isRefundable(Ticket ticket) {
-        // ET-TKT-003 R8: a validated ticket is still refundable.
-        return ticket.getStatus().isRefundable();
+        return RefundEligibility.of(ticket).eligible();
     }
 
     private RefundRequest buildRefundRequest(Ticket ticket, BigDecimal amount, String reason, String requestedBy) {
@@ -622,7 +670,10 @@ public class RefundServiceImpl implements RefundService {
                 .ticketId(ticket.getId())
                 .ticketNumber(ticket.getTicketNumber())
                 .eventId(ticket.getEventId())
-                .buyerId(ticket.getBuyerId())
+                .organizerId(ticket.getOrganizerId())
+                .organizationId(ticket.getOrganizationId())
+                // The refund returns to whoever paid, which after a transfer is not the holder.
+                .buyerId(ticket.getOriginalBuyerId() != null ? ticket.getOriginalBuyerId() : ticket.getBuyerId())
                 .requestId(generateRefundRequestId())
                 .refundAmount(amount)
                 .currency(ticket.getCurrency())
@@ -630,143 +681,171 @@ public class RefundServiceImpl implements RefundService {
                 .requestType(RefundRequestType.FULL)
                 .requestReason(reason)
                 .requestedBy(requestedBy)
-                .requestedAt(Instant.now())
+                .requestedAt(clock.instant())
                 .originalTicketPrice(ticket.getPrice())
                 .originalPaymentTransactionId(ticket.getPaymentReference())
                 .build();
     }
 
-    private Mono<Void> handleCommissionAdjustment(RefundRequest refundRequest) {
+    /**
+     * Fixes how this refund divides between commission and escrow — once, the first time through —
+     * then applies it. A retry finds the split already stored and the adjustments already marked with
+     * this refund's id, so it changes nothing a second time.
+     */
+    private Mono<Void> settleInternally(RefundRequest refundRequest) {
+        if (refundRequest.getEscrowDebit() != null) {
+            // The split is stored in the same transaction as the adjustments it describes, so a stored
+            // split means they are applied. Recomputing it here would read a commission record the first
+            // attempt already adjusted.
+            return Mono.empty();
+        }
         return commissionService.findByTicketId(refundRequest.getTicketId())
                 .flatMap(commission -> {
-                    if (commission.isPending()) {
-                        // Commission not yet earned - just cancel it
-                        return commissionService.cancelPendingCommission(
-                                refundRequest.getTicketId(),
-                                refundRequest.getId(),
-                                "Refund: " + refundRequest.getRequestReason()
-                        ).then();
-                    } else if (commission.isEarned()) {
-                        // Commission already earned - need to clawback (rare)
-                        return commissionService.clawbackEarnedCommission(
-                                refundRequest.getTicketId(),
-                                refundRequest.getId(),
-                                "Refund after event: " + refundRequest.getRequestReason()
-                        ).then();
-                    }
-                    return Mono.empty();
-                })
-                .then();
+                    RefundSplit split = RefundSplit.of(commission.getTicketPrice(), commission.getAmount(),
+                            refundRequest.getRefundAmount());
+                    return refundRequestRepository.save(withSplit(refundRequest, split))
+                            .then(split.whole()
+                                    ? handleCommissionAdjustment(refundRequest, commission)
+                                    : commissionService.reduceForPartialRefund(refundRequest.getTicketId(),
+                                            refundRequest.getId(), refundRequest.getRefundAmount(), split.commissionShare()).then())
+                            .then(escrowService.debitForRefund(
+                                    refundRequest.getEventId(),
+                                    split.escrowDebit(),
+                                    refundRequest.getTicketId(),
+                                    refundRequest.getId(),
+                                    "Refund: " + refundRequest.getTicketNumber()))
+                            .then();
+                });
     }
 
-    private Mono<Void> handleEscrowDebit(RefundRequest refundRequest) {
-        // Debit the net amount (excluding commission) from escrow
-        return commissionService.findByTicketId(refundRequest.getTicketId())
-                .flatMap(commission -> {
-                    BigDecimal netAmount = commission.getTicketPrice().subtract(commission.getAmount());
-                    return escrowService.debitForRefund(
-                            refundRequest.getEventId(),
-                            netAmount,
-                            refundRequest.getTicketId(),
-                            refundRequest.getId(),
-                            "Refund: " + refundRequest.getTicketNumber()
-                    );
-                })
-                .then();
+    private static RefundRequest withSplit(RefundRequest refundRequest, RefundSplit split) {
+        refundRequest.setCommissionShare(split.commissionShare());
+        refundRequest.setEscrowDebit(split.escrowDebit());
+        return refundRequest;
     }
 
+    private Mono<Void> handleCommissionAdjustment(RefundRequest refundRequest, CommissionRecord commission) {
+        if (commission.isPending()) {
+            // Commission not yet earned - just cancel it
+            return commissionService.cancelPendingCommission(
+                    refundRequest.getTicketId(),
+                    refundRequest.getId(),
+                    "Refund: " + refundRequest.getRequestReason()).then();
+        }
+        if (commission.isEarned()) {
+            // Commission already earned - need to clawback (rare)
+            return commissionService.clawbackEarnedCommission(
+                    refundRequest.getTicketId(),
+                    refundRequest.getId(),
+                    "Refund after event: " + refundRequest.getRequestReason()).then();
+        }
+        return Mono.empty();
+    }
+
+    /**
+     * Sends the refund to PawaPay under a refund id that is minted once and stored before the call.
+     *
+     * <p>Storing the id first means a retry after a crash, a timeout or a failed save sends the same
+     * id again, and PawaPay treats the repeat as the refund it already has instead of paying twice.
+     * When PawaPay cannot be reached at all the call fails with {@link ProviderUnavailableException},
+     * so the caller retries with the same id rather than recording a refusal PawaPay never gave.
+     */
     private Mono<RefundRequest> initiatePayaPayRefund(RefundRequest refundRequest) {
-        String pawaPayRefundId = PawaPayClient.generateTransactionId();
-
-        // Get the original deposit ID from the ticket's payment
         return ticketRepository.findById(refundRequest.getTicketId())
                 .flatMap(ticket -> {
-                    // The deposit ID should be stored in the payment info
                     String depositId = refundRequest.getPawaPayDepositId();
                     if (depositId == null && ticket.getPaymentInfo() != null) {
                         depositId = ticket.getPaymentInfo().getTransactionId();
                     }
-
                     if (depositId == null) {
                         return Mono.error(new IllegalStateException(
                                 "Cannot process refund: original deposit ID not found"));
                     }
-
-                    final String finalDepositId = depositId;
-                    return pawaPayClient.initiateRefund(
-                            pawaPayRefundId,
-                            finalDepositId,
-                            refundRequest.getRefundAmount(),
-                            refundRequest.getCurrency(),
-                            Map.of(
-                                    "ticketId", refundRequest.getTicketId(),
-                                    "refundRequestId", refundRequest.getId()
-                            )
-                    ).flatMap(response -> {
-                        refundRequest.setPawaPayRefundId(pawaPayRefundId);
-                        refundRequest.setPawaPayDepositId(finalDepositId);
-                        refundRequest.setStatus(
-                                response.isAccepted() ?
-                                        RefundRequestStatus.PROCESSING :
-                                        RefundRequestStatus.FAILED
-                        );
-
-                        if (!response.isAccepted() && response.failureReason() != null) {
-                            refundRequest.setRejectionReason(response.failureReason().failureMessage());
-                        }
-
-                        return refundRequestRepository.save(refundRequest);
-                    });
+                    return withRefundId(refundRequest.getId(), depositId)
+                            .flatMap(stored -> attempts.beforeCall(new ProviderCall(PaymentAttemptType.REFUND,
+                                            stored.getPawaPayRefundId(), stored.getRefundAmount(), stored.getCurrency(),
+                                            stored.getEventId(), stored.getOrganizationId(), stored.getId(), null, null))
+                                    .then(pawaPayClient.initiateRefund(
+                                            stored.getPawaPayRefundId(),
+                                            stored.getPawaPayDepositId(),
+                                            stored.getRefundAmount(),
+                                            stored.getCurrency(),
+                                            Map.of("ticketId", stored.getTicketId(), "refundRequestId", stored.getId())))
+                                    .flatMap(response -> recordRefundResponse(stored, response)));
                 });
     }
 
+    /**
+     * Gives the refund its PawaPay id if it has none, and returns the stored request, in one atomic
+     * update: {@code $ifNull} keeps an id already written, so concurrent callers all read back the
+     * first id stored and never overwrite it.
+     */
+    private Mono<RefundRequest> withRefundId(String refundRequestId, String depositId) {
+        AggregationUpdate assignOnce = AggregationUpdate.update()
+                .set("pawaPayRefundId").toValue(
+                        ConditionalOperators.ifNull("pawaPayRefundId").then(PawaPayClient.generateTransactionId()))
+                .set("pawaPayDepositId").toValue(ConditionalOperators.ifNull("pawaPayDepositId").then(depositId));
+        return mongoTemplate.findAndModify(Query.query(Criteria.where("_id").is(refundRequestId)), assignOnce,
+                FindAndModifyOptions.options().returnNew(true), RefundRequest.class);
+    }
+
+    /**
+     * Applies PawaPay's answer. ACCEPTED, and DUPLICATE_IGNORED for an id PawaPay already holds, both
+     * mean the refund is with PawaPay; REJECTED fails it. A circuit-breaker fallback is not an answer
+     * from PawaPay and is raised as {@link ProviderUnavailableException}.
+     */
+    private Mono<RefundRequest> recordRefundResponse(RefundRequest refund, PawaPayClient.RefundResponse response) {
+        if (response.failureReason() != null && PROVIDER_UNREACHABLE.equals(response.failureReason().failureCode())) {
+            return Mono.error(new ProviderUnavailableException(
+                    "PawaPay could not be reached for refund " + refund.getId() + "; it is sent again with the same id"));
+        }
+        boolean withProvider = response.isAccepted() || "DUPLICATE_IGNORED".equals(response.status());
+        refund.setStatus(withProvider ? RefundRequestStatus.PROCESSING : RefundRequestStatus.FAILED);
+        String failureCode = response.failureReason() != null ? response.failureReason().failureCode() : null;
+        String failureMessage = response.failureReason() != null ? response.failureReason().failureMessage() : null;
+        if (!withProvider) {
+            refund.setRejectionReason(failureMessage);
+        }
+        return attempts.afterCall(refund.getPawaPayRefundId(), withProvider ? CallOutcome.ACCEPTED : CallOutcome.REFUSED,
+                        failureCode, failureMessage)
+                .then(refundRequestRepository.save(refund));
+    }
+
+    /**
+     * Credits the seat and its booking with a refund that has completed.
+     *
+     * <p>A seat is {@code REFUNDED} only once the refunds that completed add up to its price; a part
+     * refund leaves it as it was — still admissible, still the holder's — with the sum recorded. The
+     * booking is told the same amount so its status ({@code PARTIALLY_REFUNDED}, {@code REFUNDED})
+     * is read from money that really came back.
+     */
     private Mono<RefundRequest> updateTicketForCompletedRefund(RefundRequest refundRequest) {
         return ticketRepository.findById(refundRequest.getTicketId())
                 .flatMap(ticket -> {
-                    ticket.setStatus(TicketStatus.REFUNDED);
-                    ticket.setRefundedAt(LocalDateTime.now());
-                    ticket.setRefundReason(refundRequest.getRequestReason());
+                    BigDecimal previous = ticket.getRefundedAmount() == null ? BigDecimal.ZERO : ticket.getRefundedAmount();
+                    BigDecimal refunded = previous.add(refundRequest.getRefundAmount());
+                    ticket.setRefundedAmount(refunded);
+                    if (refunded.compareTo(ticket.getPrice()) >= 0) {
+                        ticket.setStatus(TicketStatus.REFUNDED);
+                        ticket.setRefundedAt(clock.instant());
+                        ticket.setRefundReason(refundRequest.getRequestReason());
+                    }
 
                     Ticket.RefundInfo refundInfo = Ticket.RefundInfo.builder()
                             .refundId(refundRequest.getId())
                             .refundAmount(refundRequest.getRefundAmount())
                             .reason(refundRequest.getRequestReason())
                             .status(com.pml.shared.constants.TicketRefundStatus.COMPLETED)
-                            .refundDate(LocalDateTime.now())
-                            .processedBy("SYSTEM")
+                            .refundDate(clock.instant())
+                            .processedBy(refundRequest.getReviewedBy() != null ? refundRequest.getReviewedBy() : "SYSTEM")
                             .build();
                     ticket.setRefundInfo(refundInfo);
 
-                    return ticketRepository.save(ticket);
+                    return ticketRepository.save(ticket)
+                            .then(BookingStore.refundCompleted(mongoTemplate, ticket.getReservationId(),
+                                    refundRequest.getRefundAmount()));
                 })
                 .thenReturn(refundRequest);
-    }
-
-    private void publishRefundCompletedEvent(RefundRequest refundRequest) {
-        BigDecimal processingFee = refundRequest.getProcessingFee() != null ?
-                refundRequest.getProcessingFee() : BigDecimal.ZERO;
-        BigDecimal netRefundAmount = refundRequest.getNetRefundAmount() != null ?
-                refundRequest.getNetRefundAmount() : refundRequest.getRefundAmount();
-
-        RefundCompletedEvent event = new RefundCompletedEvent(
-                refundRequest.getId(),
-                refundRequest.getTicketId(),
-                refundRequest.getTicketNumber(),
-                refundRequest.getEventId(),
-                refundRequest.getBuyerId(),
-                refundRequest.getOrganizerId(),
-                refundRequest.getOriginalTicketPrice(),
-                refundRequest.getRefundAmount(),
-                processingFee,
-                netRefundAmount,
-                BigDecimal.ZERO, // commissionAmount - will be set by listener
-                "PENDING", // commissionAction - determined by timing
-                refundRequest.getRequestType() != null ? refundRequest.getRequestType().name() : "USER_REQUESTED",
-                refundRequest.getRequestReason(),
-                refundRequest.getProviderTransactionId()
-        );
-        eventPublisher.publishEvent(event);
-        log.info("Published RefundCompletedEvent for ticket: {}", refundRequest.getTicketId());
     }
 
     private String generateRefundRequestId() {

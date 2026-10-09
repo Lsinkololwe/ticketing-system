@@ -1,5 +1,7 @@
 package com.pml.catalog.service;
 
+import com.pml.catalog.persistence.CatalogCollections;
+
 import com.pml.catalog.web.graphql.dto.stats.CatalogPendingCounts;
 import com.pml.shared.constants.EventStatus;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +28,7 @@ import static org.springframework.data.mongodb.core.aggregation.Aggregation.newA
 @RequiredArgsConstructor
 public class PendingApprovalStatsService {
 
-    private static final String EVENTS_COLLECTION = "events";
+    private static final String EVENTS_COLLECTION = CatalogCollections.EVENTS;
 
     private final ReactiveMongoTemplate mongoTemplate;
 

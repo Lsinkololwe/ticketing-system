@@ -140,27 +140,6 @@ public class ChargebackProcessingException extends RuntimeException {
         this.operation = operation;
     }
 
-    /**
-     * Static factory for invalid state transition.
-     *
-     * @param chargebackId The chargeback ID
-     * @param currentStatus Current status
-     * @param targetStatus Attempted target status
-     * @return New ChargebackProcessingException
-     */
-    public static ChargebackProcessingException invalidTransition(
-            String chargebackId,
-            ChargebackStatus currentStatus,
-            ChargebackStatus targetStatus
-    ) {
-        return new ChargebackProcessingException(
-                chargebackId,
-                currentStatus,
-                "status_transition",
-                String.format("Cannot transition from %s to %s", currentStatus, targetStatus)
-        );
-    }
-
     // Getters
 
     public String getChargebackId() {

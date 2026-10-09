@@ -3,7 +3,7 @@ package com.pml.catalog.web.graphql.query;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.catalog.dto.EventLifecycleDto;
+import com.pml.catalog.web.graphql.dto.EventLifecycleDto;
 import com.pml.catalog.service.EventLifecycleService;
 import com.pml.shared.constants.EventStatus;
 import lombok.RequiredArgsConstructor;

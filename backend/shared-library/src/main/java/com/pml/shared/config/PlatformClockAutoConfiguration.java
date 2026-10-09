@@ -9,7 +9,7 @@ import java.time.Clock;
 /**
  * The platform's single source of "now".
  *
- * <h2>ET-PLT-001 R3</h2>
+ * <h2>No inline clock reads</h2>
  * Every timestamp in the platform comes from this bean. No production code calls
  * {@code Instant.now()}, {@code LocalDateTime.now()} or {@code System.currentTimeMillis()}
  * directly, because a class that reads the wall clock cannot be tested against a boundary —
@@ -18,11 +18,11 @@ import java.time.Clock;
  * {@code salesStartAt} and not a second before. Each of those is specified on <em>both</em>
  * sides, and none of them is testable against a clock the test cannot move.
  *
- * <p>{@link com.pml.shared.testing.TestClock} in the ET-PLT-006 harness is what replaces this
+ * <p>{@link com.pml.shared.testing.TestClock} in the test harness is what replaces this
  * in a test, which is the whole reason the bean exists rather than a static call.
  *
  * <h2>Why an auto-configuration rather than a class per service</h2>
- * ET-PLT-001 §5 T3 names a {@code PlatformConfig} in each service. Five copies of
+ * The alternative is a {@code PlatformConfig} in each service. Five copies of
  * {@code Clock.systemUTC()} is five things to keep in step, and the failure mode is silent:
  * one service on a different clock source produces timestamps that look fine and order
  * wrongly against another service's. Spring Boot's native mechanism for "a library

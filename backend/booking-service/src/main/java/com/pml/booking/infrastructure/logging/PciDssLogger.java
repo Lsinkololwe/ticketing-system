@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -217,55 +216,11 @@ public class PciDssLogger {
     }
 
     /**
-     * Log a security event (authentication, authorization, suspicious activity).
-     */
-    public void logSecurityEvent(String eventType, String description, String sourceIp,
-                                  String userId, Map<String, String> additionalData) {
-        String correlationId = UUID.randomUUID().toString();
-
-        try (var ignored = MDC.putCloseable("correlationId", correlationId)) {
-
-            StringBuilder logMessage = new StringBuilder();
-            logMessage.append("SECURITY_EVENT | type=").append(eventType);
-            logMessage.append(" | desc=").append(sanitizeMessage(description));
-            logMessage.append(" | sourceIp=").append(sourceIp);
-            logMessage.append(" | user=").append(userId != null ? userId : "ANONYMOUS");
-            logMessage.append(" | timestamp=").append(Instant.now());
-
-            if (additionalData != null) {
-                additionalData.forEach((key, value) ->
-                        logMessage.append(" | ").append(key).append("=").append(sanitizeMessage(value)));
-            }
-
-            SECURITY_LOG.warn(logMessage.toString());
-        }
-    }
-
-    /**
-     * Log an access denied event.
-     */
-    public void logAccessDenied(String resource, String action, String userId, String sourceIp, String reason) {
-        try (var ignored = MDC.putCloseable("userId", userId != null ? userId : "ANONYMOUS")) {
-
-            SECURITY_LOG.warn("ACCESS_DENIED | resource={} | action={} | user={} | sourceIp={} | reason={}",
-                    resource, action, userId != null ? userId : "ANONYMOUS", sourceIp, reason);
-        }
-    }
-
-    /**
      * Log an IP allowlist rejection.
      */
-    public void logIpRejected(String endpoint, String sourceIp, String expectedAllowlist) {
+    public void logIpRejected(String endpoint, String sourceIp, String expectedAllowlist, Instant now) {
         SECURITY_LOG.error("IP_REJECTED | endpoint={} | sourceIp={} | reason=not_in_allowlist | timestamp={}",
-                endpoint, sourceIp, Instant.now());
-    }
-
-    /**
-     * Log a circuit breaker state change.
-     */
-    public void logCircuitBreakerStateChange(String serviceName, String previousState, String newState) {
-        AUDIT_LOG.warn("CIRCUIT_BREAKER | service={} | from={} | to={} | timestamp={}",
-                serviceName, previousState, newState, Instant.now());
+                endpoint, sourceIp, now);
     }
 
     // ========================================================================
@@ -284,13 +239,6 @@ public class PciDssLogger {
      */
     public static void setTransactionId(String transactionId) {
         MDC.put("transactionId", transactionId);
-    }
-
-    /**
-     * Clear MDC context.
-     */
-    public static void clearContext() {
-        MDC.clear();
     }
 
     /**

@@ -6,8 +6,7 @@ import org.springframework.data.mongodb.core.query.Query;
 /**
  * Asserts the corpus-wide property: <strong>a refused operation persists nothing.</strong>
  *
- * <p>ROADMAP lists this under cross-cutting properties and ET-PLT-006 R4 requires it on
- * <em>every</em> refusal test in the corpus. It exists because the common failure is not
+ * <p>Every refusal test in the corpus asserts it. It exists because the common failure is not
  * "the refusal returned the wrong code" — it is that the service wrote three documents,
  * then discovered the fourth step was not allowed, and returned a tidy error over a
  * half-applied change.
@@ -20,7 +19,7 @@ public final class Persistence {
     private Persistence() {
     }
 
-    /** Short form, as written in the specs' acceptance boxes. Requires {@link Harness#bind}. */
+    /** Short form, reading through the template bound by {@link Harness#bind}. */
     public static void assertNothingPersisted(String collection) {
         assertNothingPersisted(Harness.template(), collection);
     }

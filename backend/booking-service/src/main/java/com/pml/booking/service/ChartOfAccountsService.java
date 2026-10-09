@@ -97,23 +97,6 @@ public interface ChartOfAccountsService {
             String description
     );
 
-    /**
-     * Creates a dynamic escrow account for a specific event.
-     *
-     * <p>Generates an account code in the format 2011-{eventId} under
-     * the Event Escrow parent account (2010).</p>
-     *
-     * @param eventId   The event ID
-     * @param eventName The event name (used in account name)
-     * @param currency  Currency code
-     * @return Created escrow account entry
-     */
-    Mono<ChartOfAccountsEntry> createEventEscrowAccount(
-            String eventId,
-            String eventName,
-            String currency
-    );
-
     // ========================================================================
     // ACCOUNT UPDATES
     // ========================================================================
@@ -154,14 +137,6 @@ public interface ChartOfAccountsService {
      * @return Updated (inactive) account entry
      */
     Mono<ChartOfAccountsEntry> deactivateAccount(String accountCode);
-
-    /**
-     * Reactivates a previously deactivated account.
-     *
-     * @param accountCode Account code to reactivate
-     * @return Updated (active) account entry
-     */
-    Mono<ChartOfAccountsEntry> reactivateAccount(String accountCode);
 
     // ========================================================================
     // ACCOUNT QUERIES

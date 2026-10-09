@@ -67,14 +67,6 @@ public interface PlatformAccountRepository extends ReactiveMongoRepository<Platf
      */
     Mono<PlatformAccount> findByAccountType(PlatformAccountType accountType);
 
-    /**
-     * Check if an account type exists.
-     *
-     * @param accountType The account type to check
-     * @return Mono<Boolean> true if exists
-     */
-    Mono<Boolean> existsByAccountType(PlatformAccountType accountType);
-
     // ========================================================================
     // ACTIVE ACCOUNT QUERIES
     // ========================================================================
@@ -85,52 +77,6 @@ public interface PlatformAccountRepository extends ReactiveMongoRepository<Platf
      * @return Flux of active accounts
      */
     Flux<PlatformAccount> findByIsActiveTrue();
-
-    /**
-     * Find active account by type.
-     *
-     * @param accountType The account type
-     * @return Mono containing the active account if found
-     */
-    Mono<PlatformAccount> findByAccountTypeAndIsActiveTrue(PlatformAccountType accountType);
-
-    /**
-     * Find all inactive platform accounts.
-     *
-     * @return Flux of inactive accounts
-     */
-    Flux<PlatformAccount> findByIsActiveFalse();
-
-    // ========================================================================
-    // BALANCE QUERIES (for Monitoring)
-    // ========================================================================
-
-    /**
-     * Find accounts with balance below their minimum threshold.
-     *
-     * <p>Used for balance monitoring and alert generation.</p>
-     *
-     * <p>Note: This uses a custom query because we need to compare
-     * balance against each account's individual threshold.</p>
-     *
-     * @return Flux of accounts below their minimum threshold
-     */
-    default Flux<PlatformAccount> findAccountsBelowMinimumThreshold() {
-        return findByIsActiveTrue()
-                .filter(PlatformAccount::isBelowMinimumThreshold);
-    }
-
-    /**
-     * Find accounts with balance below their target.
-     *
-     * <p>Used for planning reserve replenishment.</p>
-     *
-     * @return Flux of accounts below their target balance
-     */
-    default Flux<PlatformAccount> findAccountsBelowTarget() {
-        return findByIsActiveTrue()
-                .filter(PlatformAccount::isBelowTarget);
-    }
 
     // ========================================================================
     // BALANCE QUERIES (Specific Account Types)
@@ -181,42 +127,4 @@ public interface PlatformAccountRepository extends ReactiveMongoRepository<Platf
                 .map(PlatformAccount::getBalance)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
-
-    // ========================================================================
-    // NAME/CURRENCY QUERIES
-    // ========================================================================
-
-    /**
-     * Find account by name.
-     *
-     * @param name The account name
-     * @return Mono containing the account if found
-     */
-    Mono<PlatformAccount> findByName(String name);
-
-    /**
-     * Find accounts by currency.
-     *
-     * @param currency The currency code
-     * @return Flux of accounts in that currency
-     */
-    Flux<PlatformAccount> findByCurrency(String currency);
-
-    // ========================================================================
-    // COUNT QUERIES
-    // ========================================================================
-
-    /**
-     * Count active platform accounts.
-     *
-     * @return Mono<Long> count
-     */
-    Mono<Long> countByIsActiveTrue();
-
-    /**
-     * Count inactive platform accounts.
-     *
-     * @return Mono<Long> count
-     */
-    Mono<Long> countByIsActiveFalse();
 }

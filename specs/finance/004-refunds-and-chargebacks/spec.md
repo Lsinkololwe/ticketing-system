@@ -1,6 +1,30 @@
 # ET-FIN-004 · Refunds, cancellation refunds and chargebacks
 
+> **Amended 2026-10-05 (partial refunds, buyer withdrawal, admin-created requests).**
+> `refundTicket(ticketNumber, reason, amount?)` may refund part of a seat: the amount is a positive sum of ngwee (2 dp) not above what remains
+> (`price - refundedAmount`), else `REFUND_NOT_PERMITTED` / `COMMAND_NOT_WELL_FORMED`; a seat is `REFUNDED` only when nothing remains. The commission and
+> escrow share the amount proportionally (`RefundSplit`; the two always add up to the refund) and the booking's `refundedAmount` rises, so the booking reads
+> `PARTIALLY_REFUNDED` then `REFUNDED`. It reuses the existing refund workflow (idempotent per ticket and amount). A buyer may
+> `cancelRefundRequest` only while it is still pending and only their own; an admin may `createAdminRefundRequest` for any ticket;
+> `refundRequestsByOrganizer` lists only the caller's organization. A ticket received by transfer is not refundable by the new holder (the
+> organizer or platform may refund it). Tests: `BookingOperationsRulesTest` (L1).
+>
+> **Verified 2026-10-05 (integration tests `RefundMoneyTest`, `RefundAccessTest`: real workflow, services, ledger and MongoDB).** A ticket has at most one *open* refund request: asking again
+> for the same sum returns it, asking for a different sum is `REFUND_NOT_PERMITTED` (withdraw the open one first); a request that has `COMPLETED` no longer stands in the way, so a part refund
+> can be followed by another until the price is reached (previously the completed one was handed back and the second part refund never happened). Eight simultaneous requests make one request and one
+> provider refund. A refund completing is applied once (one escrow debit, one ledger entry, the ticket credited once) however often it is told to complete, and every entry balances. The ledger
+> account `2010-<event>` is opened by the first posting that names it (nothing created it before, so a sale or refund for an event with no such account failed). A refund goes to whoever paid; the
+> organizer's team refunds only its own events (`TICKET_UNKNOWN` otherwise).
+
 > **Conformance** · V3 §9.2 event cancellation · V3 §14 refund processing fees · US Part III §16
+
+> **Amendment, 2026-09-19 — the refund policies are platform configuration.** Decided by the
+> product owner: the platform defines the refund policies and their schedules as a kind of
+> system configuration ([ET-ADM-002 §4 *Refund policies*](../../admin/002-platform-configuration/)),
+> and the organizer picks one of the active policies for each event. The four policies below
+> are the platform's starting set, not a code enum. R1 reads the schedule from
+> `catalog_platform_configuration`; the event records the policy code and the version in force
+> when it was published, and a buyer is refunded under that version.
 
 ## 1. Capability
 
@@ -32,9 +56,10 @@ chargeback differ in who initiates, what percentage comes back, who bears the fe
 approval is required and what happens to commission. Collapsing them produces a single
 function with four flags, and the flags get the wrong combination.
 
-**The refund policy is a property of the event, chosen by the organizer from a closed
-set.** `FLEXIBLE`, `MODERATE`, `STRICT`, `NO_REFUNDS` — each a schedule of percentage
-against time-before-event. A free-text policy is unenforceable; a per-event percentage
+**The refund policy is a property of the event, chosen by the organizer from the set the
+platform defines.** The platform starts with `FLEXIBLE`, `MODERATE`, `STRICT` and
+`NO_REFUNDS` — each a schedule of percentage against time-before-event — and administrators
+maintain the set as platform configuration (ET-ADM-002). Organizers never define their own. A free-text policy is unenforceable; a per-event percentage
 field invites a hundred variants nobody can display to a buyer in a sentence.
 
 **The buyer bears the refund processing fee by default; the organizer bears it on a
@@ -67,9 +92,10 @@ so the loss is booked against `5030` and the organizer's chargeback rate becomes
 signal that can extend their hold period. Pretending it can be recovered produces a
 receivable nobody will ever collect.
 
-**Refunds are approved by finance above a threshold and automatic below it.** A K50 refund
-inside the policy window does not need a human. A K5,000 one does, and so does any refund
-outside the policy. The threshold is configuration.
+**Only an event cancellation's refund approves itself; every other refund is decided by a
+person** (ROADMAP D-26). A cancellation refunds everyone at 100% under R6, so there is nothing to
+judge. Every other request, whatever its size, waits for finance; one nobody decides is escalated
+after two days and again after five, and is never approved by waiting.
 
 **A refund is idempotent on the ticket.** One ticket, one refund. The unique index on
 `ticketId` where the refund is not rejected is what enforces it, because a double refund is
@@ -87,14 +113,16 @@ money that does not come back.
 
 ## 3. Requirements
 
-### ET-FIN-004-R1 · The refund policy is a closed set with a declared schedule
+### ET-FIN-004-R1 · The refund policy is platform-defined, and each event carries one
 
-THE SYSTEM SHALL apply one of the four §4 refund policies to every event and SHALL compute
-the refundable percentage from its schedule.
+THE SYSTEM SHALL apply to every event one of the refund policies the platform defines, as
+chosen by its organizer, and SHALL compute the refundable percentage from that policy's
+schedule at the version the event was published under.
 
 **Acceptance**
-- [ ] `RefundPolicy` declares exactly `FLEXIBLE`, `MODERATE`, `STRICT`, `NO_REFUNDS`
-- [ ] Each carries the §4 schedule of percentage against hours before the event
+- [ ] The policies are read from the platform settings (ET-ADM-002), seeded with `FLEXIBLE`, `MODERATE`, `STRICT`, `NO_REFUNDS` and the §4 schedules
+- [ ] An organizer can pick only an active policy; an event cannot be published without one
+- [ ] The event records the policy code and version; a later change to the policy does not change the refund of a ticket already sold
 - [ ] The percentage is computed by one method over values, testable at layer 1
 - [ ] A request outside every window is refused with `REFUND_WINDOW_CLOSED` carrying `closedAt`
 - [ ] `NO_REFUNDS` refuses every buyer-initiated request with `REFUND_NOT_PERMITTED` carrying `reason`
@@ -139,21 +167,25 @@ THE SYSTEM SHALL permit at most one non-rejected refund per ticket.
 - [ ] Two parallel requests for one ticket produce exactly one
 - [ ] A rejected refund may be re-requested
 - [ ] Every money-moving refund mutation carries an `idempotencyKey`
-- [ ] A test issues two parallel approvals for one request and asserts one provider refund call
+- [ ] The PawaPay refund id is minted once and stored on the request before PawaPay is called; every retry — after a crash, a timeout or an unreachable provider — sends that same id, so PawaPay drops a repeat rather than paying twice
+- [ ] The escrow debit for a refund is taken once per refund request, however many times the refund is processed
+- [ ] An unreachable provider (open circuit breaker) is retried with the same id, never recorded as a refusal
+- [ ] A test processes one refund concurrently and after a lost answer, and asserts one refund id and one escrow debit (`RefundProviderRetryTest`)
 
-### ET-FIN-004-R5 · Small refunds are automatic; large or out-of-policy ones are approved
+### ET-FIN-004-R5 · Only a cancellation's refund is automatic; every other refund is decided by a person
 
-IF a refund is within policy and below the threshold, THEN THE SYSTEM SHALL approve it
-automatically; otherwise it SHALL require finance approval.
+IF a refund arises from an event cancellation (R6), THEN THE SYSTEM SHALL approve it
+automatically; otherwise it SHALL require finance approval, and WHILE a request waits it SHALL
+escalate it to finance after `P2D` and again after `P5D`.
 
 **Acceptance**
-- [ ] A request within policy and below `finance.refund.auto-approve-threshold` (K1,000) moves straight to `APPROVED`
-- [ ] Above the threshold, or outside policy, it becomes `PENDING_REVIEW`
+- [ ] A cancellation's refund moves straight to `APPROVED`, recorded as automatic with the cancellation reason
+- [ ] Every other request stays `PENDING` until a person approves or rejects it, whatever its amount
+- [ ] A request still `PENDING` after each of `finance.refund.review-escalations` (`P2D`, `P5D`) alerts the finance lead by email and WhatsApp, with a copy to the finance channel, once, and records `REVIEW_ESCALATED_{n}` in its history; it is never approved by waiting
 - [ ] `approveRefund` requires `FINANCE`, `ticket:refund` and an `idempotencyKey`
 - [ ] An out-of-policy approval requires a reason, which is audited
-- [ ] The auto-approval decision is recorded on the request, so a report can distinguish the two
 - [ ] `rejectRefund` requires a reason and notifies the buyer
-- [ ] A test asserts a K1,001 in-policy refund requires review and a K999 one does not
+- [ ] A test asserts a K50 buyer refund waits for a person, and an undecided one is escalated at two and five days
 
 ### ET-FIN-004-R6 · An event cancellation refunds everyone, resumably
 
@@ -196,9 +228,37 @@ and otherwise book the loss.
 - [ ] No path claws back from a settled payout
 - [ ] `openDisputeCount` on the escrow is incremented on receipt and decremented on resolution, which is what blocks payout eligibility ([ET-FIN-003](../003-payouts-and-settlement/) R1)
 - [ ] Contesting supplies evidence and awaits the provider; a `REVERSED` chargeback re-credits the escrow with a balanced entry
+- [ ] A chargeback with no decision 24 hours before its response deadline alerts the finance lead by email and WhatsApp, with a copy to the finance channel, once, and records `escalatedAt`; at the deadline it is accepted (ROADMAP D-25)
 - [ ] The chargeback rate per organization is a metric and may extend that organization's hold period
 
 ## 4. Model
+
+> **Reconciliation note, 2026-09-01 — `myRefundRequests` · **built**, not renamed.**
+>
+> **Resolved 2026-09-01.** Built as `myRefundRequests(pagination)` — **subject-scoped, not
+> tenant-scoped**. §4 declares it `AUTHENTICATED`, so the question is "my refunds" for a buyer,
+> and a buyer is not a tenant: the id comes from the token through `CallerScope.subject()` and
+> there is deliberately **no argument to override it**. That is the difference from
+> `refundRequestsByBuyer(buyerId)`, which stands and is still the admin view.
+>
+> An unauthenticated caller gets `ACTOR_NOT_AUTHENTICATED`, not a disguised `*_UNKNOWN`: nothing
+> was supplied, so there is no id to enumerate and nothing to hide — and answering "unknown"
+> would tell a signed-out user their own refunds do not exist. Covered by `CallerScopedReadTest`.
+>
+> `refundRequestsByBuyer(buyerId)` is caller-supplied; §4 asks for the authenticated buyer's own.
+> Same reasoning as `myPayoutRequests` in [ET-FIN-003](../../finance/003-payouts-and-settlement/spec.md).
+> Deferred to F-001's read-path conversion.
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** `requestRefund` → `createUserRefundRequest` — §4 says CUSTOMER, and the shipped mutation is `isAuthenticated()`; `createAdminRefundRequest` is the admin path and takes `bypassApproval`.
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 2 operation names below adopt the
+> shipped names: `approveRefund` → `approveRefundRequest`, `rejectRefund` → `rejectRefundRequest`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
 
 ### Refund policies
 
@@ -211,8 +271,10 @@ Percentage refundable, by hours before the event starts.
 | `STRICT` | 50% | 0% | 0% | 0% |
 | `NO_REFUNDS` | 0% | 0% | 0% | 0% |
 
-Chosen by the organizer at event creation, displayed to the buyer before purchase, and
-overridden to 100% by cancellation (R6) and by a reschedule window (R7).
+The platform's starting set — administrators maintain it in the platform settings
+(ET-ADM-002). Chosen by the organizer at event creation from the active policies, displayed to
+the buyer before purchase, and overridden to 100% by cancellation (R6) and by a reschedule
+window (R7).
 
 ### Fee bearers
 
@@ -339,9 +401,9 @@ Subgraph `booking`.
 | `myRefundRequests(page)` | query | `AUTHENTICATED` | `RefundRequestPage!` |
 | `refundRequests(status, page)` | query | `FINANCE` | `RefundRequestPage!` `@tag(name: "admin")` |
 | `chargebacks(status, page)` | query | `FINANCE` | `ChargebackPage!` `@tag(name: "admin")` |
-| `requestRefund(input)` | mutation | `CUSTOMER` | `RefundRequest!` |
-| `approveRefund(input)` | mutation | `FINANCE` | `RefundRequest!` `@tag(name: "admin")` |
-| `rejectRefund(id, reason)` | mutation | `FINANCE` | `RefundRequest!` `@tag(name: "admin")` |
+| `createUserRefundRequest(input)` | mutation | `CUSTOMER` | `RefundRequest!` |
+| `approveRefundRequest(input)` | mutation | `FINANCE` | `RefundRequest!` `@tag(name: "admin")` |
+| `rejectRefundRequest(id, reason)` | mutation | `FINANCE` | `RefundRequest!` `@tag(name: "admin")` |
 | `retryRefund(id)` | mutation | `FINANCE` | `RefundRequest!` `@tag(name: "admin")` |
 | `contestChargeback(input)` | mutation | `FINANCE` | `Chargeback!` `@tag(name: "admin")` |
 | `acceptChargeback(id, reason)` | mutation | `FINANCE` | `Chargeback!` `@tag(name: "admin")` |
@@ -361,7 +423,8 @@ Subgraph `booking`.
 | Tier | Name | Consumers |
 |---|---|---|
 | bus | `booking.RefundCompleted` v1 | catalog → restore counters; identity → notify |
-| module | `ChargebackReceivedEvent`, `ChargebackResolvedEvent` | alerting, risk |
+
+Chargeback alerting and risk flags are activities of `ChargebackWorkflow`, not in-memory events.
 
 ### Configuration
 
@@ -369,7 +432,8 @@ Subgraph `booking`.
 |---|---|
 | `finance.refund.fee-bearer` | `CUSTOMER` |
 | `finance.refund.minimum` | `K10.00` |
-| `finance.refund.auto-approve-threshold` | `K1,000.00` |
+| `finance.refund.review-escalations` | `P2D`, `P5D` |
+| `finance.chargeback.escalate-before-deadline` | `PT24H` |
 | `finance.refund.max-attempts` | 3 |
 | `finance.cancellation.batch-size` | 200 |
 | `catalog.reschedule.refund-window` | `P7D` |
@@ -382,10 +446,10 @@ Subgraph `booking`.
 
 ## 5. Tasks
 
-- [ ] **T1 · The four policies, the schedule and the boundary tests**
+- [ ] **T1 · The policy schedule read from the platform settings, and the boundary tests**
   - requirements: R1
-  - files: `backend/booking-service/.../domain/RefundPolicy.java`
-  - verify: the percentage either side of every schedule step
+  - files: `backend/booking-service/.../domain/RefundSchedule.java`, a shared-library reader over `catalog_platform_configuration`
+  - verify: the percentage either side of every schedule step; a policy change leaves a sold ticket's refund unchanged
   - parallel-safe: no
   - depends: —
 
@@ -396,10 +460,10 @@ Subgraph `booking`.
   - parallel-safe: yes
   - depends: T1
 
-- [ ] **T3 · The request, its partial unique index and the auto-approve rule**
+- [ ] **T3 · The request, its partial unique index and the approval rule**
   - requirements: R4, R5
   - files: `backend/booking-service/.../domain/model/RefundRequest.java`, `.../service/impl/`
-  - verify: two parallel requests yield one; K999 auto-approves and K1,001 does not
+  - verify: two parallel requests yield one; only a cancellation's refund approves itself, and a waiting one escalates at P2D and P5D
   - parallel-safe: no
   - depends: T2
 

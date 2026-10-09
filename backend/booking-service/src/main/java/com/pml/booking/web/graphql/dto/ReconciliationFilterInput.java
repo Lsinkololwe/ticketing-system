@@ -3,7 +3,7 @@ package com.pml.booking.web.graphql.dto;
 import com.pml.booking.domain.enums.ReconciliationStatus;
 import com.pml.booking.domain.enums.ReconciliationType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Filter input for querying reconciliation runs.
@@ -18,8 +18,8 @@ import java.time.LocalDateTime;
 public record ReconciliationFilterInput(
     ReconciliationType type,
     ReconciliationStatus status,
-    LocalDateTime startDate,
-    LocalDateTime endDate
+    Instant startDate,
+    Instant endDate
 ) {
     /**
      * Check if any filters are active.

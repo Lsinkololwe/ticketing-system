@@ -1,5 +1,6 @@
 package com.pml.catalog.web.rest;
 
+import com.pml.catalog.domain.model.Event;
 import com.pml.catalog.service.EventService;
 import com.pml.shared.dto.EventSummaryDto;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.util.stream.Collectors;
-
 /**
  * Internal Event Controller
  *
@@ -49,16 +49,15 @@ public class InternalEventController {
                         .bannerImageUrl(event.getBannerImageUrl())
                         .featured(event.isFeatured())
                         .soldOut(event.isSoldOut())
+                        .maxTicketsPerOrder(event.getCheckoutSettings() == null ? null
+                                : event.getCheckoutSettings().maxTicketsPerOrder())
+                        .collectHolderNames(event.getCheckoutSettings() != null
+                                && event.getCheckoutSettings().collectHolderNames())
+                        .extraQuestion(event.getCheckoutSettings() == null ? null
+                                : event.getCheckoutSettings().extraQuestion())
                         .ticketCategories(event.getTicketCategories() != null ?
                                 event.getTicketCategories().stream()
-                                        .map(cat -> EventSummaryDto.TicketCategoryDto.builder()
-                                                .code(cat.getCode())
-                                                .name(cat.getName())
-                                                .price(cat.getPrice())
-                                                .capacity(cat.getQuantity())
-                                                .sold(cat.getSoldQuantity())
-                                                .active(cat.isActive())
-                                                .build())
+                                        .map(InternalEventController::tierMirror)
                                         .collect(Collectors.toList())
                                 : null)
                         .build())
@@ -67,62 +66,22 @@ public class InternalEventController {
     }
 
     /**
-     * Get ticket category for an event
+     * The tier as booking prices it. The early-bird pair travels with the full price so booking
+     * charges what the storefront advertises; booking decides which price applies against
+     * its own clock at reservation time.
      */
-    @GetMapping("/{id}/categories/{code}")
-    public Mono<ResponseEntity<EventSummaryDto.TicketCategoryDto>> getTicketCategory(
-            @PathVariable String id, @PathVariable String code) {
-        log.debug("Internal request for event {} category: {}", id, code);
-
-        return eventService.findById(id)
-                .flatMap(event -> {
-                    if (event.getTicketCategories() == null) {
-                        return Mono.empty();
-                    }
-                    return Mono.justOrEmpty(event.getTicketCategories().stream()
-                            .filter(cat -> cat.getCode().equals(code))
-                            .findFirst()
-                            .map(cat -> EventSummaryDto.TicketCategoryDto.builder()
-                                    .code(cat.getCode())
-                                    .name(cat.getName())
-                                    .price(cat.getPrice())
-                                    .capacity(cat.getQuantity())
-                                    .sold(cat.getSoldQuantity())
-                                    .active(cat.isActive())
-                                    .build()));
-                })
-                .map(ResponseEntity::ok)
-                .defaultIfEmpty(ResponseEntity.notFound().build());
+    static EventSummaryDto.TicketCategoryDto tierMirror(Event.EventTicketCategory cat) {
+        return EventSummaryDto.TicketCategoryDto.builder()
+                .id(cat.getTierId())
+                .code(cat.getCode())
+                .name(cat.getName())
+                .price(cat.getPrice())
+                .capacity(cat.getQuantity())
+                .sold(cat.getSoldQuantity())
+                .active(cat.isActive())
+                .hidden(cat.isHidden())
+                .earlyBirdPrice(cat.isEarlyBird() ? cat.getEarlyBirdPrice() : null)
+                .earlyBirdEndsAt(cat.isEarlyBird() ? cat.getEarlyBirdEndDate() : null)
+                .build();
     }
-
-    /**
-     * Update sold ticket count for an event
-     * Called by Booking service after successful ticket purchase
-     */
-    @PutMapping("/{id}/sold-tickets")
-    public Mono<ResponseEntity<Void>> updateSoldTickets(
-            @PathVariable String id,
-            @RequestBody UpdateSoldTicketsRequest request) {
-        log.debug("Internal request to update sold tickets for event: {}", id);
-
-        return eventService.updateSoldTickets(id, request.count())
-                .map(event -> ResponseEntity.ok().<Void>build())
-                .defaultIfEmpty(ResponseEntity.notFound().build());
-    }
-
-    /**
-     * Check if event exists and is available for ticket purchase
-     */
-    @GetMapping("/{id}/available")
-    public Mono<ResponseEntity<Boolean>> isEventAvailable(@PathVariable String id) {
-        return eventService.findById(id)
-                .map(event -> ResponseEntity.ok(
-                        event.isPublished() &&
-                                event.isActive() &&
-                                !event.isSoldOut() &&
-                                !event.isInThePast()))
-                .defaultIfEmpty(ResponseEntity.ok(false));
-    }
-
-    public record UpdateSoldTicketsRequest(int count) {}
 }

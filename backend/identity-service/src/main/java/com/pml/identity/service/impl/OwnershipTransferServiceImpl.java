@@ -9,27 +9,29 @@ import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
 import com.pml.identity.repository.OwnershipTransferRepository;
-import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.service.OwnershipTransferService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TranslatedRefusal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 /**
  * Ownership Transfer Service Implementation
  *
- * Manages organization ownership transfer workflow with:
- * - 2FA verification requirement
- * - Expiration handling
- * - Member role updates
- * - Keycloak group synchronization
+ * <p>The MongoDB half of a transfer. The process — the three-day expiry, the
+ * Keycloak mirror, the notifications — is {@code OwnershipTransferWorkflow}; every write here is
+ * one of its activities, and safe to run twice.
  */
 @Slf4j
 @Service
@@ -37,12 +39,26 @@ import java.util.UUID;
 public class OwnershipTransferServiceImpl implements OwnershipTransferService {
 
     private final OwnershipTransferRepository transferRepository;
+
+    /** The claim, the two role changes and the organization's ownerId are one transaction. */
+    private final TransactionalOperator transactionalOperator;
+
+    /** For the conditional writes; a repository save cannot express "only if still PENDING". */
+    private final ReactiveMongoTemplate mongoTemplate;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final OrganizationRepository organizationRepository;
     private final OrganizationMemberRepository memberRepository;
-    private final KeycloakService keycloakService;
-    private final StreamBridge streamBridge;
 
-    private static final int TRANSFER_EXPIRY_HOURS = 72;
+    /**
+     * How long a transfer stays open, from {@code identity.transfer.ttl}.
+     *
+     * <p>Three days rather than an hour: the nominee has to be reached, understand that they are
+     * being handed a business, and complete a 2FA challenge. A window measured in hours turns an
+     * ownership handshake into a race against a notification.
+     */
+    private static final java.time.Duration TRANSFER_TTL = java.time.Duration.ofDays(3);
 
     // ========================================================================
     // READ OPERATIONS
@@ -84,14 +100,29 @@ public class OwnershipTransferServiceImpl implements OwnershipTransferService {
 
     @Override
     public Mono<OwnershipTransferRequest> initiate(
+            String transferId,
             String organizationId,
             String currentOwnerId,
             String newOwnerId,
             String reason) {
-        log.info("Initiating ownership transfer for organization {} from {} to {}",
-                organizationId, currentOwnerId, newOwnerId);
+        return findById(transferId)
+                .flatMap(existing -> existing.getOrganizationId().equals(organizationId)
+                        && existing.getNewOwnerId().equals(newOwnerId)
+                        ? Mono.just(existing)
+                        : Mono.<OwnershipTransferRequest>error(new TranslatedRefusal(ErrorCode.TRANSFER_NOT_PENDING,
+                                "transfer id " + transferId + " belongs to another nomination")))
+                .switchIfEmpty(Mono.defer(() -> create(transferId, organizationId, currentOwnerId, newOwnerId, reason)));
+    }
 
-        // Validate organization exists and current user is owner
+    private Mono<OwnershipTransferRequest> create(
+            String transferId,
+            String organizationId,
+            String currentOwnerId,
+            String newOwnerId,
+            String reason) {
+        log.info("Initiating ownership transfer {} for organization {} from {} to {}",
+                transferId, organizationId, currentOwnerId, newOwnerId);
+
         return organizationRepository.findById(organizationId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Organization not found: " + organizationId)))
                 .flatMap(org -> {
@@ -99,7 +130,6 @@ public class OwnershipTransferServiceImpl implements OwnershipTransferService {
                         return Mono.error(new IllegalStateException("Only the owner can initiate a transfer"));
                     }
 
-                    // Check for existing pending transfer
                     return hasPendingTransfer(organizationId)
                             .flatMap(hasPending -> {
                                 if (hasPending) {
@@ -107,128 +137,81 @@ public class OwnershipTransferServiceImpl implements OwnershipTransferService {
                                             "Organization already has a pending transfer request"));
                                 }
 
-                                // Validate new owner is an ADMIN member
                                 return memberRepository.findByUserIdAndOrganizationId(newOwnerId, organizationId)
                                         .switchIfEmpty(Mono.error(new IllegalArgumentException(
                                                 "New owner must be an existing member of the organization")))
                                         .flatMap(newOwnerMember -> {
-                                            if (newOwnerMember.getRole() != OrganizationRole.ADMIN) {
-                                                return Mono.error(new IllegalArgumentException(
-                                                        "New owner must be an ADMIN to receive ownership"));
+                                            // The nominee must be an ACTIVE ADMIN, both halves. The role check
+                                            // alone admits a nominee who is SUSPENDED or already
+                                            // REMOVED — somebody the organization has deliberately
+                                            // shut out, handed the business instead.
+                                            if (!eligible(newOwnerMember)) {
+                                                return Mono.error(ineligible(newOwnerId, newOwnerMember));
                                             }
 
                                             OwnershipTransferRequest transfer = OwnershipTransferRequest.builder()
+                                                    .id(transferId)
                                                     .organizationId(organizationId)
                                                     .currentOwnerId(currentOwnerId)
                                                     .newOwnerId(newOwnerId)
                                                     .reason(reason)
                                                     .transferToken(generateToken())
                                                     .status(TransferStatus.PENDING)
-                                                    .expiresAt(Instant.now().plus(TRANSFER_EXPIRY_HOURS, ChronoUnit.HOURS))
+                                                    .expiresAt(clock.instant().plus(TRANSFER_TTL))
                                                     .build();
 
-                                            return transferRepository.save(transfer)
-                                                    .doOnSuccess(saved -> {
-                                                        log.info("Transfer request created: {} for organization: {}",
-                                                                saved.getId(), organizationId);
-                                                        sendTransferNotification(saved, org);
-                                                    });
+                                            return transferRepository.save(transfer);
                                         });
                             });
                 });
     }
 
     @Override
-    public Mono<OwnershipTransferRequest> cancel(String organizationId, String currentOwnerId) {
-        log.info("Cancelling ownership transfer for organization: {}", organizationId);
-
-        return findPendingByOrganization(organizationId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("No pending transfer found")))
+    public Mono<OwnershipTransferRequest> complete(String transferId) {
+        return existing(transferId)
                 .flatMap(transfer -> {
-                    if (!transfer.getCurrentOwnerId().equals(currentOwnerId)) {
-                        return Mono.error(new IllegalStateException("Only the current owner can cancel the transfer"));
+                    if (transfer.getStatus() == TransferStatus.COMPLETED) {
+                        return Mono.just(transfer);
                     }
-
-                    transfer.setStatus(TransferStatus.CANCELLED);
-                    transfer.setCancelledAt(Instant.now());
-
-                    return transferRepository.save(transfer)
-                            .doOnSuccess(cancelled -> log.info("Transfer cancelled: {}", cancelled.getId()));
-                });
-    }
-
-    @Override
-    public Mono<OwnershipTransferRequest> accept(
-            String transferToken,
-            String newOwnerId,
-            String confirmationCode) {
-        log.info("Accepting ownership transfer for user: {}", newOwnerId);
-
-        return transferRepository.findByTransferToken(transferToken)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Invalid transfer token")))
-                .flatMap(transfer -> {
-                    // Validate transfer state
-                    if (!transfer.isValid()) {
-                        if (transfer.isExpired()) {
-                            transfer.setStatus(TransferStatus.EXPIRED);
-                            return transferRepository.save(transfer)
-                                    .then(Mono.error(new IllegalStateException("Transfer request has expired")));
-                        }
-                        return Mono.error(new IllegalStateException("Transfer request is no longer valid"));
-                    }
-
-                    // Validate new owner matches
-                    if (!transfer.getNewOwnerId().equals(newOwnerId)) {
-                        return Mono.error(new IllegalStateException("User is not the designated new owner"));
-                    }
-
-                    // Verify 2FA code
-                    return keycloakService.verify2FACode(newOwnerId, confirmationCode)
-                            .flatMap(isValid -> {
-                                if (!isValid) {
-                                    return Mono.error(new IllegalArgumentException("Invalid confirmation code"));
-                                }
-
-                                // Execute ownership transfer
-                                return executeTransfer(transfer);
-                            });
-                });
-    }
-
-    @Override
-    public Mono<OwnershipTransferRequest> decline(String transferToken, String newOwnerId) {
-        log.info("Declining ownership transfer");
-
-        return transferRepository.findByTransferToken(transferToken)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Invalid transfer token")))
-                .flatMap(transfer -> {
                     if (transfer.getStatus() != TransferStatus.PENDING) {
-                        return Mono.error(new IllegalStateException("Transfer request is no longer pending"));
+                        return Mono.error(notPending(transfer));
                     }
-
-                    if (!transfer.getNewOwnerId().equals(newOwnerId)) {
-                        return Mono.error(new IllegalStateException("User is not the designated new owner"));
+                    if (!transfer.isValid(clock.instant())) {
+                        return Mono.error(new TranslatedRefusal(ErrorCode.TRANSFER_NOT_PENDING,
+                                "transfer " + transferId + " expired at " + transfer.getExpiresAt()));
                     }
-
-                    transfer.setStatus(TransferStatus.CANCELLED);
-                    transfer.setCancelledAt(Instant.now());
-
-                    return transferRepository.save(transfer)
-                            .doOnSuccess(declined -> log.info("Transfer declined: {}", declined.getId()));
+                    return executeTransfer(transfer);
                 });
     }
 
     @Override
-    public Mono<Long> expireOldTransfers() {
-        log.info("Expiring old ownership transfers");
+    public Mono<OwnershipTransferRequest> decline(String transferId, String newOwnerId) {
+        return close(transferId, newOwnerId, true);
+    }
 
-        return transferRepository.findByStatusAndExpiresAtBefore(TransferStatus.PENDING, Instant.now())
-                .flatMap(transfer -> {
-                    transfer.setStatus(TransferStatus.EXPIRED);
-                    return transferRepository.save(transfer);
-                })
-                .count()
-                .doOnSuccess(count -> log.info("Expired {} ownership transfer requests", count));
+    @Override
+    public Mono<OwnershipTransferRequest> cancel(String transferId, String currentOwnerId) {
+        return close(transferId, currentOwnerId, false);
+    }
+
+    @Override
+    public Mono<OwnershipTransferRequest> expire(String transferId) {
+        return mongoTemplate.updateFirst(
+                        Query.query(Criteria.where("_id").is(transferId).and("status").is(TransferStatus.PENDING)),
+                        Update.update("status", TransferStatus.EXPIRED),
+                        OwnershipTransferRequest.class)
+                .then(existing(transferId));
+    }
+
+    @Override
+    public Mono<OwnershipTransferRequest> markMirrorPending(String transferId) {
+        return existing(transferId)
+                .flatMap(transfer -> mongoTemplate.updateMulti(
+                                Query.query(Criteria.where("organizationId").is(transfer.getOrganizationId())
+                                        .and("userId").in(List.of(transfer.getCurrentOwnerId(), transfer.getNewOwnerId()))),
+                                Update.update("mirrorPending", true),
+                                OrganizationMember.class)
+                        .thenReturn(transfer));
     }
 
     // ========================================================================
@@ -239,6 +222,73 @@ public class OwnershipTransferServiceImpl implements OwnershipTransferService {
         return UUID.randomUUID().toString().replace("-", "");
     }
 
+    private Mono<OwnershipTransferRequest> existing(String transferId) {
+        return findById(transferId)
+                .switchIfEmpty(Mono.error(() -> new TranslatedRefusal(ErrorCode.TRANSFER_NOT_PENDING,
+                        "no transfer " + transferId)));
+    }
+
+    private static boolean eligible(OrganizationMember member) {
+        return member.getRole() == OrganizationRole.ADMIN && member.getStatus() == MemberStatus.ACTIVE;
+    }
+
+    private static TranslatedRefusal ineligible(String userId, OrganizationMember member) {
+        return new TranslatedRefusal(
+                ErrorCode.TRANSFER_TARGET_INELIGIBLE,
+                "nominee " + userId + " is " + member.getStatus() + " " + member.getRole()
+                        + "; an ACTIVE ADMIN is required");
+    }
+
+    private static TranslatedRefusal notPending(OwnershipTransferRequest transfer) {
+        return new TranslatedRefusal(ErrorCode.TRANSFER_NOT_PENDING,
+                "transfer " + transfer.getId() + " is " + transfer.getStatus());
+    }
+
+    /** Decline or cancel: {@code PENDING → CANCELLED} by the party entitled to it. */
+    private Mono<OwnershipTransferRequest> close(String transferId, String actorId, boolean byNominee) {
+        return existing(transferId)
+                .flatMap(transfer -> {
+                    String party = byNominee ? transfer.getNewOwnerId() : transfer.getCurrentOwnerId();
+                    if (!party.equals(actorId)) {
+                        return Mono.error(new TranslatedRefusal(ErrorCode.ACTOR_NOT_PERMITTED,
+                                actorId + " is not a party entitled to close transfer " + transferId));
+                    }
+                    if (transfer.getStatus() == TransferStatus.CANCELLED) {
+                        return Mono.just(transfer);
+                    }
+                    return mongoTemplate.updateFirst(
+                                    Query.query(Criteria.where("_id").is(transferId)
+                                            .and("status").is(TransferStatus.PENDING)),
+                                    Update.update("status", TransferStatus.CANCELLED)
+                                            .set("cancelledAt", clock.instant()),
+                                    OwnershipTransferRequest.class)
+                            .then(existing(transferId))
+                            .flatMap(current -> current.getStatus() == TransferStatus.CANCELLED
+                                    ? Mono.just(current)
+                                    : Mono.error(notPending(current)));
+                });
+    }
+
+    /**
+     * Moves the transfer {@code PENDING → COMPLETED}, if and only if it is still {@code PENDING}.
+     *
+     * @return {@code true} when this caller made the move and therefore owns the handover
+     */
+    private Mono<Boolean> claimPending(String transferId) {
+        return mongoTemplate.updateFirst(
+                        Query.query(Criteria.where("_id").is(transferId)
+                                .and("status").is(TransferStatus.PENDING)),
+                        Update.update("status", TransferStatus.COMPLETED)
+                                .set("completedAt", clock.instant()),
+                        OwnershipTransferRequest.class)
+                .map(result -> result.getModifiedCount() == 1);
+    }
+
+    /**
+     * The handover. The claim is inside the transaction, so a failure further down rolls the status
+     * back to {@code PENDING} and a retried activity can claim it again, rather than finding it
+     * spent with nobody promoted.
+     */
     private Mono<OwnershipTransferRequest> executeTransfer(OwnershipTransferRequest transfer) {
         String organizationId = transfer.getOrganizationId();
         String currentOwnerId = transfer.getCurrentOwnerId();
@@ -246,104 +296,43 @@ public class OwnershipTransferServiceImpl implements OwnershipTransferService {
 
         log.info("Executing ownership transfer for organization: {}", organizationId);
 
-        return organizationRepository.findById(organizationId)
-                .flatMap(org -> {
-                    // Get both members
+        return claimPending(transfer.getId())
+                .flatMap(claimed -> {
+                    if (!claimed) {
+                        return Mono.<Organization>error(new TranslatedRefusal(
+                                ErrorCode.TRANSFER_NOT_PENDING,
+                                "transfer " + transfer.getId() + " was resolved concurrently"));
+                    }
                     return Mono.zip(
-                            memberRepository.findByUserIdAndOrganizationId(currentOwnerId, organizationId),
-                            memberRepository.findByUserIdAndOrganizationId(newOwnerId, organizationId)
-                    ).flatMap(tuple -> {
-                        OrganizationMember currentOwnerMember = tuple.getT1();
-                        OrganizationMember newOwnerMember = tuple.getT2();
+                                    organizationRepository.findById(organizationId),
+                                    memberRepository.findByUserIdAndOrganizationId(currentOwnerId, organizationId),
+                                    memberRepository.findByUserIdAndOrganizationId(newOwnerId, organizationId))
+                            .switchIfEmpty(Mono.error(() -> new TranslatedRefusal(
+                                    ErrorCode.TRANSFER_TARGET_INELIGIBLE,
+                                    "a party to transfer " + transfer.getId() + " is no longer a member")))
+                            .flatMap(parties -> {
+                                Organization org = parties.getT1();
+                                OrganizationMember currentOwnerMember = parties.getT2();
+                                OrganizationMember newOwnerMember = parties.getT3();
+                                if (!eligible(newOwnerMember)) {
+                                    return Mono.error(ineligible(newOwnerId, newOwnerMember));
+                                }
 
-                        // Update roles
-                        currentOwnerMember.setRole(OrganizationRole.ADMIN);
-                        newOwnerMember.setRole(OrganizationRole.OWNER);
+                                // Demote before promoting: the partial unique index on
+                                // {organizationId} where role = OWNER holds one owner at a time, so
+                                // promoting first would collide with the owner still in place.
+                                currentOwnerMember.setRole(OrganizationRole.ADMIN);
+                                newOwnerMember.setRole(OrganizationRole.OWNER);
+                                org.setOwnerId(newOwnerId);
 
-                        // Update organization owner
-                        org.setOwnerId(newOwnerId);
-
-                        // Save all changes
-                        return memberRepository.save(currentOwnerMember)
-                                .then(memberRepository.save(newOwnerMember))
-                                .then(organizationRepository.save(org))
-                                .then(updateKeycloakGroups(org.getSlug(), currentOwnerId, newOwnerId))
-                                .then(Mono.defer(() -> {
-                                    transfer.setStatus(TransferStatus.COMPLETED);
-                                    transfer.setCompletedAt(Instant.now());
-                                    return transferRepository.save(transfer);
-                                }))
-                                .doOnSuccess(completed -> {
-                                    log.info("Ownership transfer completed: {} - {} is now owner",
-                                            completed.getId(), newOwnerId);
-                                    sendTransferCompletedNotification(completed, org);
-                                });
-                    });
-                });
-    }
-
-    private Mono<Void> updateKeycloakGroups(String orgSlug, String currentOwnerId, String newOwnerId) {
-        return keycloakService.removeUserFromOrganizationGroup(currentOwnerId, orgSlug, "owners")
-                .then(keycloakService.addUserToOrganizationGroup(currentOwnerId, orgSlug, "admins"))
-                .then(keycloakService.removeUserFromOrganizationGroup(newOwnerId, orgSlug, "admins"))
-                .then(keycloakService.addUserToOrganizationGroup(newOwnerId, orgSlug, "owners"))
-                .onErrorResume(e -> {
-                    log.warn("Failed to update Keycloak groups during ownership transfer: {}", e.getMessage());
-                    return Mono.empty();
-                });
-    }
-
-    private void sendTransferNotification(OwnershipTransferRequest transfer, Organization organization) {
-        try {
-            record OwnershipTransferInitiatedEvent(
-                    String transferId,
-                    String organizationId,
-                    String organizationName,
-                    String currentOwnerId,
-                    String newOwnerId,
-                    String transferToken,
-                    Instant expiresAt
-            ) {}
-
-            OwnershipTransferInitiatedEvent event = new OwnershipTransferInitiatedEvent(
-                    transfer.getId(),
-                    organization.getId(),
-                    organization.getName(),
-                    transfer.getCurrentOwnerId(),
-                    transfer.getNewOwnerId(),
-                    transfer.getTransferToken(),
-                    transfer.getExpiresAt()
-            );
-
-            streamBridge.send("notificationOutput-out-0", event);
-            log.info("Sent transfer notification for organization: {}", organization.getId());
-        } catch (Exception e) {
-            log.error("Failed to send transfer notification: {}", e.getMessage());
-        }
-    }
-
-    private void sendTransferCompletedNotification(OwnershipTransferRequest transfer, Organization organization) {
-        try {
-            record OwnershipTransferCompletedEvent(
-                    String transferId,
-                    String organizationId,
-                    String organizationName,
-                    String previousOwnerId,
-                    String newOwnerId
-            ) {}
-
-            OwnershipTransferCompletedEvent event = new OwnershipTransferCompletedEvent(
-                    transfer.getId(),
-                    organization.getId(),
-                    organization.getName(),
-                    transfer.getCurrentOwnerId(),
-                    transfer.getNewOwnerId()
-            );
-
-            streamBridge.send("notificationOutput-out-0", event);
-            log.info("Sent transfer completed notification for organization: {}", organization.getId());
-        } catch (Exception e) {
-            log.error("Failed to send transfer completed notification: {}", e.getMessage());
-        }
+                                return memberRepository.save(currentOwnerMember)
+                                        .then(memberRepository.save(newOwnerMember))
+                                        .then(organizationRepository.save(org));
+                            });
+                })
+                .as(transactionalOperator::transactional)
+                .then(existing(transfer.getId()))
+                .doOnSuccess(completed -> log.info("Ownership transfer completed: {} - {} is the owner",
+                        completed.getId(), newOwnerId));
     }
 }

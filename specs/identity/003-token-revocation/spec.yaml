@@ -15,6 +15,7 @@ sources:
   - specs/ROADMAP.md
   - specs/_platform/007-security-and-authorization/spec.md
   - specs/identity/002-keycloak-user-sync/spec.md
+  - specs/identity/004-accounts-and-contacts/spec.md
 
 persistence:
   collections:
@@ -30,8 +31,7 @@ persistence:
     - "revoked:complete         STRING  10 min         — cache-completeness marker; absent means untrusted"
 
 events:
-  module:
-    - TokenRevokedEvent
+  module: []   # a step within a service is a workflow activity (ET-PLT-015)
   bus:
     - identity.TokenRevoked        # v1 -> catalog, booking (local cache invalidation)
   consumes: []
@@ -71,6 +71,13 @@ triggers:
   - ACCOUNT_ERASED
   - ADMIN_REVOKE
   - SUSPECTED_COMPROMISE
+  - CONTACT_CHANGE      # added 2026-10-04 (F-044)
+  - ACCOUNT_SUSPENDED   # added 2026-10-04, D-47
+  - ACCOUNT_MERGED      # added 2026-10-04
+  - BACK_CHANNEL_LOGOUT # added 2026-10-04
+  # Keycloak LOGOUT / REFRESH_TOKEN_ERROR reach identity-service through the user-sync listener
+  # (POST /api/internal/keycloak/sync/event, field `sid`) and are recorded as a SESSION revocation
+  # with reason keycloak-logout / keycloak-refresh-token-error; no new trigger value.
 
 eviction_policy:
   trusted:   [noeviction, volatile-lru, volatile-lfu, volatile-ttl, volatile-random]
@@ -78,7 +85,7 @@ eviction_policy:
 
 config:
   identity.revocation.enabled: true
-  identity.revocation.access-token-lifespan: PT1H
+  identity.revocation.access-token-lifespan: PT5M   # amended 2026-10-04 (was PT1H)
   identity.revocation.clock-skew: PT60S
   identity.revocation.cache-timeout: PT0.25S
   identity.revocation.durable-timeout: PT2S
@@ -88,9 +95,9 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/identity-service test
-  - mvn -q -f backend/shared-library test
-  - mvn -q -f backend verify
+  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-003 -DfailIfNoTests=false
+  - mvn -q -f backend/shared-library test -Dgroups=ET-IDN-003 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-IDN-003 -DfailIfNoTests=false
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:

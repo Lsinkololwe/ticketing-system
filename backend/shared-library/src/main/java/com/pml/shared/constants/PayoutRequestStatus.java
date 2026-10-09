@@ -1,19 +1,16 @@
 package com.pml.shared.constants;
 
 /**
- * Payout request lifecycle, per ET-FIN-003 R7.
+ * Payout request lifecycle.
  *
- * <p>Exactly the seven the spec declares. {@code PENDING_FINANCE_APPROVAL} was
- * an eighth, and it described the same fact as {@link #PENDING}: a request
- * sitting in the finance queue waiting on a human. Two codes for one state means
- * every query has to remember both, and the one that forgets under-reports the
- * approval backlog — the queue looks shorter than it is, which is the direction
- * nobody investigates.
+ * <p>Exactly seven states. A request sitting in the finance queue waiting on a
+ * human is {@link #PENDING}, and only {@link #PENDING}: two codes for one state
+ * means every query has to remember both, and the one that forgets under-reports
+ * the approval backlog — the queue looks shorter than it is, which is the
+ * direction nobody investigates.
  *
  * <p>{@link #COMPLETED}, {@link #REJECTED} and {@link #CANCELLED} are terminal.
- * {@link #FAILED} is not: ET-FIN-003 R7 permits retry and re-request from it.
- *
- * @see <a href="file:../../../../../../../../specs/finance/003-payouts-and-settlement/spec.md">ET-FIN-003</a>
+ * {@link #FAILED} is not: a failed payout may be retried or re-requested.
  */
 public enum PayoutRequestStatus {
 
@@ -69,10 +66,5 @@ public enum PayoutRequestStatus {
 
     public boolean isFinal() {
         return this == COMPLETED || this == REJECTED || this == FAILED || this == CANCELLED;
-    }
-
-    /** ET-FIN-003 R7: an organizer may cancel only while PENDING. */
-    public boolean canBeCancelled() {
-        return this == PENDING;
     }
 }

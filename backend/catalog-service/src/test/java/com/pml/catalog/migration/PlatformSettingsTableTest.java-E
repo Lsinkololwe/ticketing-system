@@ -1,0 +1,193 @@
+package com.pml.catalog.migration;
+
+import com.mongodb.MongoWriteException;
+import com.mongodb.reactivestreams.client.MongoClient;
+import com.mongodb.reactivestreams.client.MongoClients;
+import com.pml.catalog.config.MongoSchemaValidationConfig;
+import com.pml.catalog.domain.model.PlatformConfiguration;
+import com.pml.catalog.persistence.CatalogCollections;
+import com.pml.catalog.repository.PlatformConfigurationRepository;
+import com.pml.catalog.testing.CatalogWiring;
+import com.pml.shared.config.PlatformConfigurationReader;
+import com.pml.shared.config.model.PlatformPaymentDefaults;
+import com.pml.shared.config.MongoSchemaValidationProperties;
+import com.pml.shared.testing.MongoReplicaSet;
+import org.bson.Document;
+import org.bson.types.Decimal128;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.repository.support.ReactiveMongoRepositoryFactory;
+import reactor.core.publisher.Mono;
+
+import java.math.BigDecimal;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * The platform keeps one settings table. Catalog writes it; the other services read the same
+ * document through shared-library. Against a replica set, with catalog's real validators.
+ */
+@Tag("L2")
+@Tag("ET-PLT-002")
+@Tag("ET-ADM-002")
+@DisplayName("The platform settings are one table, moved without loss and read by every service")
+class PlatformSettingsTableTest {
+
+    private static MongoClient client;
+    private static ReactiveMongoTemplate template;
+    private static CatalogCollectionRenameMigrationService renames;
+    private static PlatformConfigurationRepository settings;
+    private static PlatformConfigurationReader reader;
+
+    @BeforeAll
+    static void connect() {
+        client = MongoClients.create(MongoReplicaSet.connectionString());
+        template = CatalogWiring.platformTemplate(client, "catalog_platform_settings");
+        renames = new CatalogCollectionRenameMigrationService(
+                new StaticListableBeanFactory(Map.of("template", template)).getBeanProvider(ReactiveMongoTemplate.class));
+        settings = new ReactiveMongoRepositoryFactory(template).getRepository(PlatformConfigurationRepository.class);
+        reader = new PlatformConfigurationReader(template);
+    }
+
+    @AfterAll
+    static void disconnect() {
+        client.close();
+    }
+
+    @BeforeEach
+    void emptyDatabase() {
+        template.getMongoDatabase().flatMap(db -> Mono.from(db.drop())).block();
+    }
+
+    /** The document as an environment holds it before the move: an administrator's edits included. */
+    private static void legacySettings(double commissionRate) {
+        template.getCollection("platform_configuration")
+                .flatMap(c -> Mono.from(c.insertOne(new Document("_id", PlatformConfiguration.DEFAULT_ID)
+                        .append("_class", "platformConfiguration")
+                        .append("approvalSlaHours", 48)
+                        .append("payment", new Document("commissionRate", commissionRate)
+                                .append("payoutMethod", "MOBILE_MONEY")
+                                .append("payoutSchedule", "MONTHLY")
+                                .append("minimumPayoutAmount", new Decimal128(new BigDecimal("250.00")))))))
+                .block();
+    }
+
+    private static void startCatalog() throws Exception {
+        renames.migratePlatformSettings().block();
+        new MongoSchemaValidationConfig(template, new DefaultResourceLoader(), new MongoSchemaValidationProperties()).run(null);
+        settings.getConfiguration().block();          // the startup seed
+    }
+
+    @Test
+    @DisplayName("an administrator's settings survive the move, and no default is seeded beside them")
+    void settingsMoveIntact() throws Exception {
+        legacySettings(0.07);
+
+        startCatalog();
+
+        assertThat(template.collectionExists("platform_configuration").block()).isFalse();
+        assertThat(template.getCollection(CatalogCollections.PLATFORM_CONFIGURATION)
+                .flatMap(c -> Mono.from(c.countDocuments())).block()).isEqualTo(1);
+        PlatformConfiguration moved = settings.getConfiguration().block();
+        assertThat(moved.getApprovalSlaHours()).isEqualTo(48);
+        assertThat(moved.getPayment().getCommissionRate()).isEqualTo(0.07);
+    }
+
+    @Test
+    @DisplayName("another service reads catalog's payment defaults, money as an exact decimal")
+    void otherServicesReadTheSameDocument() throws Exception {
+        legacySettings(0.07);
+        startCatalog();
+
+        PlatformPaymentDefaults defaults = reader.paymentDefaults().block();
+
+        assertThat(defaults.getCommissionRate()).isEqualTo(0.07);
+        assertThat(defaults.getPayoutSchedule()).isEqualTo("MONTHLY");
+        assertThat(defaults.getMinimumPayoutAmount()).isEqualByComparingTo("250.00");
+    }
+
+    @Test
+    @DisplayName("a new platform is seeded once, and the other services see the seed")
+    void newPlatformIsSeeded() throws Exception {
+        startCatalog();
+        startCatalog();
+
+        assertThat(template.getCollection(CatalogCollections.PLATFORM_CONFIGURATION)
+                .flatMap(c -> Mono.from(c.countDocuments())).block()).isEqualTo(1);
+        assertThat(reader.paymentDefaults().block().getCommissionRate()).isEqualTo(0.05);
+    }
+
+    @Test
+    @DisplayName("ET-ADM-002-R8 · a settings document from before the rules existed is given them once, and other services read them")
+    void rulesAreBackfilledAndReadable() throws Exception {
+        legacySettings(0.07);
+        startCatalog();
+
+        var view = reader.rules().block();
+
+        assertThat(view.getRules().getReservationHoldMinutes()).isEqualTo(10);
+        assertThat(view.getRules().getRefundPolicies()).containsKeys("FLEXIBLE", "MODERATE", "STRICT", "NO_REFUNDS");
+        assertThat(view.getRules().getRefundPolicies().get("MODERATE").getRules()).hasSize(2);
+        assertThat(view.getCommissionRate()).as("the administrator's earlier commission is untouched").isEqualTo(0.07);
+        assertThat(view.getMinimumPayout()).isEqualByComparingTo("250.00");
+        assertThat(view.getApprovalSlaHours()).isEqualTo(48);
+    }
+
+    @Test
+    @DisplayName("ET-ADM-002-R8 · an administrator's edit is stored under the validator, versioned, and seen by the reader")
+    void editedRulesPersistAndVersion() throws Exception {
+        startCatalog();
+        PlatformConfiguration config = settings.getConfiguration().block();
+        var input = new com.pml.catalog.web.graphql.dto.UpdatePlatformConfigurationInput();
+        input.setReservationHoldMinutes(15);
+        input.setCommissionDefault(6.5);
+        input.setMaxTicketsPerBooking(6);
+        com.pml.catalog.service.PlatformRulesUpdater.apply(config, input);
+        settings.save(config).block();
+
+        var view = reader.rules().block();
+
+        assertThat(view.getRules().getReservationHoldMinutes()).isEqualTo(15);
+        assertThat(view.getRules().getMaxTicketsPerBooking()).isEqualTo(6);
+        assertThat(view.getRules().getVersion()).isEqualTo(2);
+        assertThat(view.getCommissionRate()).isEqualTo(0.065);
+    }
+
+    @Test
+    @DisplayName("ET-ADM-002-R8 · the validator refuses a hold of zero minutes written around the application")
+    void validatorBoundsTheRules() throws Exception {
+        startCatalog();
+
+        assertThatThrownBy(() -> template.getCollection(CatalogCollections.PLATFORM_CONFIGURATION)
+                .flatMap(c -> Mono.from(c.updateOne(new Document("_id", PlatformConfiguration.DEFAULT_ID),
+                        new Document("$set", new Document("rules.reservationHoldMinutes", 0)))))
+                .block()).isInstanceOf(MongoWriteException.class);
+    }
+
+    @Test
+    @DisplayName("with no settings, a reader gets nothing rather than an invented default")
+    void absentSettingsReadAsEmpty() {
+        assertThat(reader.paymentDefaults().blockOptional()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the settings table keeps its validator under the new name")
+    void validatorFollowsTheTable() throws Exception {
+        startCatalog();
+
+        assertThatThrownBy(() -> template.getCollection(CatalogCollections.PLATFORM_CONFIGURATION)
+                .flatMap(c -> Mono.from(c.insertOne(new Document("_id", "second").append("approvalSlaHours", "soon"))))
+                .block())
+                .isInstanceOf(MongoWriteException.class)
+                .hasMessageContaining("Document failed validation");
+    }
+}

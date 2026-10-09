@@ -1,6 +1,5 @@
 package com.pml.identity.service;
 
-import com.pml.identity.web.rest.InternalAuthorizationController.MembershipCheckResponse;
 import com.pml.identity.web.rest.InternalAuthorizationController.OrganizationMembershipInfo;
 import com.pml.identity.web.rest.InternalAuthorizationController.SharedOrganizationResponse;
 import com.pml.shared.dto.authorization.AuthorizationRequest;
@@ -50,7 +49,7 @@ public interface AuthorizationService {
      *
      * @param userId User ID (from JWT)
      * @param organizationId Organization ID
-     * @param permission Required permission (e.g., "EVENT_CREATE", "EVENT_EDIT")
+     * @param permission a catalogue code, e.g. "event:create"
      * @return AuthorizationResult
      */
     Mono<AuthorizationResult> checkEventPermission(String userId, String organizationId, String permission);
@@ -69,25 +68,6 @@ public interface AuthorizationService {
     Mono<AuthorizationResult> checkEventAccess(String userId, String eventId, String organizationId, String permission);
 
     /**
-     * Check if user is a member of an organization with at least the specified role.
-     *
-     * @param userId User ID (from JWT)
-     * @param organizationId Organization ID
-     * @param minimumRole Minimum role required
-     * @return AuthorizationResult
-     */
-    Mono<AuthorizationResult> checkMembership(String userId, String organizationId, String minimumRole);
-
-    /**
-     * Check if user owns the organization (is the OWNER).
-     *
-     * @param userId User ID (from JWT)
-     * @param organizationId Organization ID
-     * @return AuthorizationResult
-     */
-    Mono<AuthorizationResult> checkOwnership(String userId, String organizationId);
-
-    /**
      * Check if user owns the organization (is the OWNER).
      *
      * <p>Convenience method that returns a boolean instead of AuthorizationResult.</p>
@@ -99,17 +79,6 @@ public interface AuthorizationService {
     Mono<Boolean> isOrganizationOwner(String userId, String organizationId);
 
     /**
-     * Get the organization ID that a user can create events for.
-     *
-     * <p>Used when organizationId is not provided in the request.
-     * Returns the organization where the user is OWNER or has EVENT_CREATE permission.</p>
-     *
-     * @param userId User ID (from JWT)
-     * @return Mono containing organization ID, or empty if user has no organization
-     */
-    Mono<String> getDefaultOrganizationForUser(String userId);
-
-    /**
      * Find the organization ID for an event's organizer.
      *
      * <p>Used when we have organizerId (user ID) but need organizationId.
@@ -119,22 +88,6 @@ public interface AuthorizationService {
      * @return Mono containing organization ID, or empty if not found
      */
     Mono<String> findOrganizationByOwnerId(String organizerId);
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // ORGANIZATION MEMBERSHIP METHODS (OWASP A01:2021 - Multi-tenant isolation)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Check if a user is an active member of an organization.
-     *
-     * <p>OWASP A01:2021 Compliance: Used for query resolver authorization to
-     * ensure users can only access data from organizations they belong to.</p>
-     *
-     * @param userId User ID (from JWT)
-     * @param organizationId Organization ID to check membership for
-     * @return MembershipCheckResponse with membership status
-     */
-    Mono<MembershipCheckResponse> checkOrganizationMembership(String userId, String organizationId);
 
     /**
      * Check if two users belong to the same organization.

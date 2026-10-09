@@ -1,5 +1,7 @@
 package com.pml.booking.web.graphql.query;
 
+import com.pml.shared.constants.PlatformTime;
+
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -16,7 +18,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
@@ -89,15 +90,15 @@ public class JournalEntryQueryResolver {
 
     /**
      * Get journal entries with filtering and offset pagination.
-     * Schema: journalEntriesOffsetPagination(filter: JournalEntryFilterInput, pagination: OffsetPaginationInput): JournalEntryOffsetPage!
+     * Schema: journalEntries(filter: JournalEntryFilterInput, pagination: OffsetPaginationInput): JournalEntryOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<JournalEntryOffsetPage> journalEntriesOffsetPagination(
+    public Mono<JournalEntryOffsetPage> journalEntries(
             @InputArgument JournalEntryFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: journalEntriesOffsetPagination");
+        log.debug("GraphQL query: journalEntries");
 
         Flux<JournalEntry> entryFlux = getFilteredEntries(filter);
         return entryFlux.collectList()
@@ -124,14 +125,14 @@ public class JournalEntryQueryResolver {
 
     /**
      * Get pending (draft) journal entries.
-     * Schema: pendingJournalEntriesOffsetPagination(pagination: OffsetPaginationInput): JournalEntryOffsetPage!
+     * Schema: pendingJournalEntries(pagination: OffsetPaginationInput): JournalEntryOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<JournalEntryOffsetPage> pendingJournalEntriesOffsetPagination(
+    public Mono<JournalEntryOffsetPage> pendingJournalEntries(
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: pendingJournalEntriesOffsetPagination");
+        log.debug("GraphQL query: pendingJournalEntries");
 
         return journalService.findByStatus(JournalEntryStatus.DRAFT)
                 .collectList()
@@ -165,8 +166,8 @@ public class JournalEntryQueryResolver {
 
         if (filter.startDate() != null && filter.endDate() != null) {
             return journalService.findByDateRange(
-                    filter.startDate().toLocalDate(),
-                    filter.endDate().toLocalDate()
+                    PlatformTime.dateAt(filter.startDate()),
+                    PlatformTime.dateAt(filter.endDate())
             );
         }
 

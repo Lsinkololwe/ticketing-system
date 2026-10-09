@@ -1,18 +1,19 @@
 package com.pml.identity.domain.model;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.domain.valueobject.EventRole;
+import com.pml.shared.security.Permission;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -41,15 +42,12 @@ import java.util.Set;
  * 2. If yes, use event role permissions (overrides org role)
  * 3. If no, fall back to organization role permissions
  */
-@Document(collection = "event_access_grants")
+@Document(collection = IdentityCollections.EVENT_ACCESS_GRANTS)
+@TypeAlias("event_access_grants")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "user_event_idx", def = "{'userId': 1, 'eventId': 1}", unique = true),
-    @CompoundIndex(name = "event_status_idx", def = "{'eventId': 1, 'status': 1}")
-})
 public class EventAccessGrant {
 
     @Id
@@ -59,21 +57,18 @@ public class EventAccessGrant {
      * User ID who has access
      */
     @NotBlank(message = "User ID is required")
-    @Indexed
     private String userId;
 
     /**
      * Event ID (references Event in Catalog Service)
      */
     @NotBlank(message = "Event ID is required")
-    @Indexed
     private String eventId;
 
     /**
      * Organization ID (for scoping queries)
      */
     @NotBlank(message = "Organization ID is required")
-    @Indexed
     private String organizationId;
 
     /**
@@ -139,11 +134,11 @@ public class EventAccessGrant {
     /**
      * Check if access is currently valid
      */
-    public boolean isValid() {
+    public boolean isValid(Instant now) {
         if (status != AccessGrantStatus.ACTIVE) {
             return false;
         }
-        if (expiresAt != null && expiresAt.isBefore(Instant.now())) {
+        if (expiresAt != null && expiresAt.isBefore(now)) {
             return false;
         }
         return true;
@@ -152,31 +147,34 @@ public class EventAccessGrant {
     /**
      * Check if access has expired
      */
-    public boolean isExpired() {
-        return expiresAt != null && expiresAt.isBefore(Instant.now());
+    public boolean isExpired(Instant now) {
+        return expiresAt != null && expiresAt.isBefore(now);
     }
 
     /**
-     * Check if this grant confers a specific permission for the event.
-     * Custom permissions take precedence, then the event role's defaults.
+     * Whether this grant lets its holder do {@code permission} on the event: the event role's
+     * permissions plus the grant's custom ones. When a grant exists it is the whole answer for
+     * that event — nothing falls through to the holder's organization role.
      */
-    public boolean hasPermission(String permission) {
+    public boolean hasPermission(Permission permission) {
         if (permission == null) {
             return false;
         }
-        // Custom permissions take precedence
-        if (customPermissions != null && customPermissions.contains(permission)) {
+        if (customPermissions != null && customPermissions.contains(permission.code())) {
             return true;
         }
-        // Fall back to the event role's default permissions
         return eventRole != null && eventRole.grants(permission);
     }
 
-    /**
-     * Whether this grant permits the action: the grant must be active AND confer the permission.
-     */
-    public boolean canPerform(String permission) {
-        return status == com.pml.identity.domain.enums.AccessGrantStatus.ACTIVE
-            && hasPermission(permission);
+    /** Every permission this grant confers on the event. */
+    public Set<Permission> permissions() {
+        java.util.EnumSet<Permission> granted = java.util.EnumSet.noneOf(Permission.class);
+        if (eventRole != null) {
+            granted.addAll(eventRole.permissions());
+        }
+        if (customPermissions != null) {
+            customPermissions.forEach(code -> Permission.fromCode(code).ifPresent(granted::add));
+        }
+        return granted;
     }
 }

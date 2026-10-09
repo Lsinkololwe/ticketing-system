@@ -60,14 +60,10 @@ export const UPDATE_NOTIFICATION_PREFERENCES = gql`
 
 /**
  * Update the caller's own profile.
- *
- * The server types this input as `JSON`, so there is no schema-level guarantee
- * about its shape — the typed wrapper in `settings.hooks.ts` is the only thing
- * constraining what this app sends. Widen it there, not at the call site.
  */
 export const UPDATE_PROFILE = gql`
-  mutation UpdateProfile($input: JSON!) {
-    updateProfile(input: $input) {
+  mutation UpdateMyProfile($input: UpdateUserInput!) {
+    updateMyProfile(input: $input) {
       id
       firstName
       lastName

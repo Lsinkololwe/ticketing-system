@@ -1,0 +1,6 @@
+shared-library files=     154 loc=   13025 yml=       0
+identity-service files=     265 loc=   28320 yml=     464
+catalog-service files=     213 loc=   18675 yml=     313
+booking-service files=     414 loc=   55305 yml=     558
+api-gateway files=      18 loc=    1919 yml=     239
+keycloak-extensions files=       8 loc=    2289 yml=       0

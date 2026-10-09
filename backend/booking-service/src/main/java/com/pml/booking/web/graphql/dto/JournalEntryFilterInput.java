@@ -3,7 +3,7 @@ package com.pml.booking.web.graphql.dto;
 import com.pml.booking.domain.enums.JournalEntryStatus;
 import com.pml.booking.domain.enums.JournalEntryType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Filter input for querying journal entries.
@@ -22,8 +22,8 @@ public record JournalEntryFilterInput(
     JournalEntryType type,
     String correlationId,
     String accountCode,
-    LocalDateTime startDate,
-    LocalDateTime endDate
+    Instant startDate,
+    Instant endDate
 ) {
     /**
      * Check if any filters are active.

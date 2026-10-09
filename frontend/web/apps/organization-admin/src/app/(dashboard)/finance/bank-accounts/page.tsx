@@ -1,665 +1,118 @@
 'use client';
 
-/**
- * Bank Accounts Page
- *
- * Manage bank accounts for payouts:
- * - Add bank accounts
- * - Set default account
- * - Remove accounts
- */
-
-import { useState, useCallback, useMemo } from 'react';
+import { useMutation } from '@apollo/client/react';
+import { useSnackbar } from '@pml.tickets/shared/components/m3';
 import {
-  Box,
-  Flex,
-  Text,
-  Card,
-  Button,
-  Badge,
-  TextField,
-  Select,
-  Dialog,
-  AlertDialog,
-} from '@radix-ui/themes';
-import {
-  Plus,
-  Bank,
-  Trash,
-  Check,
-  Edit,
-  Star,
-  StarSolid,
-  WarningTriangle,
-} from 'iconoir-react';
-import { PageHeader } from '@/components/ui';
-import { useSession } from '@/lib/auth/client';
-import {
-  useMyOrganization,
-  canRequestPayouts,
-} from '@pml.tickets/shared/api/organization-admin/modules/organization';
-import {
-  useMyBankAccounts,
-  useCreateBankAccount,
-  useUpdateBankAccount,
+  CREATE_BANK_ACCOUNT,
+  UPDATE_BANK_ACCOUNT,
   useDeleteBankAccount,
+  useMyBankAccounts,
   useSetDefaultBankAccount,
-  type BankAccountVM,
 } from '@pml.tickets/shared/api/organization-admin/modules/finance';
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-interface BankAccount {
-  id: string;
-  bankName: string;
-  bankCode: string;
-  branchCode: string;
-  accountNumber: string;
-  accountHolder: string;
-  accountType: 'savings' | 'current';
-  isDefault: boolean;
-  isVerified: boolean;
-  createdAt: string;
-}
-
-// =============================================================================
-// ADAPTER — backend view model → this page's presentation shape
-//
-// No fixture data lives in this app. This maps the real BankAccountVM from
-// booking-service onto the shape the cards render.
-// =============================================================================
-
-function toBankAccount(row: BankAccountVM): BankAccount {
-  return {
-    id: row.id,
-    bankName: row.bankName,
-    bankCode: row.bankCode ?? '',
-    branchCode: row.branchCode ?? '',
-    accountNumber: row.accountNumber,
-    accountHolder: row.accountHolderName,
-    // The backend stores free-text account type; the UI offers two. Anything
-    // it does not recognise falls back to "current" rather than crashing a
-    // select, and the raw value is preserved on the server either way.
-    accountType: (row.accountType ?? '').toLowerCase() === 'savings' ? 'savings' : 'current',
-    isDefault: row.isDefault,
-    isVerified: row.isVerified,
-    createdAt: row.createdAt,
-  };
-}
-
-const zambianBanks = [
-  { code: 'SBICZMLX', name: 'Stanbic Bank Zambia' },
-  { code: 'ZNCOZMLU', name: 'Zanaco' },
-  { code: 'BABORZMLU', name: 'Atlas Mara Bank' },
-  { code: 'FILOZMLU', name: 'First National Bank' },
-  { code: 'INDBZMLU', name: 'Indo-Zambia Bank' },
-  { code: 'AABORZMLU', name: 'Absa Bank Zambia' },
-  { code: 'ACBKZMLU', name: 'Access Bank Zambia' },
-  { code: 'UBPRZMLX', name: 'United Bank for Africa' },
-];
-
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
-
-function formatAccountNumber(number: string): string {
-  return `****${number.slice(-4)}`;
-}
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
-// =============================================================================
-// BANK ACCOUNT CARD COMPONENT
-// =============================================================================
-
-interface BankAccountCardProps {
-  account: BankAccount;
-  onSetDefault: (id: string) => void;
-  onEdit: (account: BankAccount) => void;
-  onDelete: (account: BankAccount) => void;
-  canManage: boolean;
-}
-
-function BankAccountCard({ account, onSetDefault, onEdit, onDelete, canManage }: BankAccountCardProps) {
-  return (
-    <Card
-      style={{
-        padding: '24px',
-        background: 'var(--surface-elevated)',
-        border: account.isDefault
-          ? '2px solid var(--brand-500)'
-          : '1px solid var(--surface-border)',
-        borderRadius: 'var(--card-radius-bento)',
-        position: 'relative',
-      }}
-    >
-      {account.isDefault && (
-        <Badge
-          color="green"
-          variant="soft"
-          style={{
-            position: 'absolute',
-            top: '16px',
-            right: '16px',
-          }}
-        >
-          <Flex align="center" gap="1">
-            <StarSolid style={{ width: 12, height: 12 }} />
-            Default
-          </Flex>
-        </Badge>
-      )}
-
-      <Flex gap="4">
-        <Box
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: 'var(--card-radius-bento)',
-            background: 'var(--accent-a5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Bank style={{ width: 28, height: 28, color: 'var(--brand-500)' }} />
-        </Box>
-
-        <Box style={{ flex: 1 }}>
-          <Flex align="center" gap="2" mb="1">
-            <Text size="3" weight="bold" style={{ color: 'var(--content-primary)' }}>
-              {account.bankName}
-            </Text>
-            {account.isVerified && (
-              <Badge color="green" variant="soft" size="1">
-                <Flex align="center" gap="1">
-                  <Check style={{ width: 12, height: 12 }} />
-                  Verified
-                </Flex>
-              </Badge>
-            )}
-          </Flex>
-
-          <Text size="2" style={{ color: 'var(--content-muted)', display: 'block', marginBottom: '12px' }}>
-            {account.accountHolder}
-          </Text>
-
-          <Flex gap="4" wrap="wrap">
-            <Box>
-              <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
-                Account Number
-              </Text>
-              <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', fontFamily: 'monospace' }}>
-                {formatAccountNumber(account.accountNumber)}
-              </Text>
-            </Box>
-            <Box>
-              <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
-                Account Type
-              </Text>
-              <Text size="2" weight="medium" style={{ color: 'var(--content-primary)', textTransform: 'capitalize' }}>
-                {account.accountType}
-              </Text>
-            </Box>
-            <Box>
-              <Text size="1" style={{ color: 'var(--content-muted)', display: 'block' }}>
-                Added
-              </Text>
-              <Text size="2" weight="medium" style={{ color: 'var(--content-primary)' }}>
-                {formatDate(account.createdAt)}
-              </Text>
-            </Box>
-          </Flex>
-        </Box>
-      </Flex>
-
-      {canManage && (
-        <Flex gap="2" mt="4" pt="4" style={{ borderTop: '1px solid var(--surface-border)' }}>
-          {!account.isDefault && (
-            <Button
-              variant="outline"
-              size="1"
-              onClick={() => onSetDefault(account.id)}
-              style={{ borderColor: 'var(--surface-border)' }}
-            >
-              <Star style={{ width: 14, height: 14, marginRight: 6 }} />
-              Set as Default
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="1"
-            onClick={() => onEdit(account)}
-            style={{ borderColor: 'var(--surface-border)' }}
-          >
-            <Edit style={{ width: 14, height: 14, marginRight: 6 }} />
-            Edit
-          </Button>
-          {!account.isDefault && (
-            <Button
-              variant="outline"
-              size="1"
-              color="red"
-              onClick={() => onDelete(account)}
-            >
-              <Trash style={{ width: 14, height: 14, marginRight: 6 }} />
-              Remove
-            </Button>
-          )}
-        </Flex>
-      )}
-    </Card>
-  );
-}
-
-// =============================================================================
-// ADD/EDIT BANK ACCOUNT DIALOG
-// =============================================================================
-
-interface BankAccountDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  account?: BankAccount | null;
-  onSubmit: (data: Omit<BankAccount, 'id' | 'isDefault' | 'isVerified' | 'createdAt'>) => void;
-}
-
-function BankAccountDialog({ open, onOpenChange, account, onSubmit }: BankAccountDialogProps) {
-  const [bankCode, setBankCode] = useState(account?.bankCode || '');
-  const [branchCode, setBranchCode] = useState(account?.branchCode || '');
-  const [accountNumber, setAccountNumber] = useState(account?.accountNumber || '');
-  const [accountHolder, setAccountHolder] = useState(account?.accountHolder || '');
-  const [accountType, setAccountType] = useState<'savings' | 'current'>(account?.accountType || 'current');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const selectedBank = zambianBanks.find((b) => b.code === bankCode);
-
-  const handleSubmit = async () => {
-    if (!bankCode || !branchCode || !accountNumber || !accountHolder) return;
-
-    setIsSubmitting(true);
-    try {
-      await onSubmit({
-        bankName: selectedBank?.name || '',
-        bankCode,
-        branchCode,
-        accountNumber,
-        accountHolder,
-        accountType,
-      });
-      onOpenChange(false);
-      // Reset form
-      setBankCode('');
-      setBranchCode('');
-      setAccountNumber('');
-      setAccountHolder('');
-      setAccountType('current');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content style={{ maxWidth: 500 }}>
-        <Dialog.Title>{account ? 'Edit Bank Account' : 'Add Bank Account'}</Dialog.Title>
-        <Dialog.Description size="2" style={{ color: 'var(--content-muted)' }}>
-          {account
-            ? 'Update your bank account details'
-            : 'Add a bank account to receive payouts'}
-        </Dialog.Description>
-
-        <Flex direction="column" gap="4" mt="4">
-          {/* Bank Selection */}
-          <Box>
-            <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-secondary)', display: 'block' }}>
-              Bank
-            </Text>
-            <Select.Root value={bankCode} onValueChange={setBankCode}>
-              <Select.Trigger placeholder="Select a bank" style={{ width: '100%' }} />
-              <Select.Content>
-                {zambianBanks.map((bank) => (
-                  <Select.Item key={bank.code} value={bank.code}>
-                    {bank.name}
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select.Root>
-          </Box>
-
-          {/* Branch Code */}
-          <Box>
-            <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-secondary)', display: 'block' }}>
-              Branch Code
-            </Text>
-            <TextField.Root
-              size="3"
-              value={branchCode}
-              onChange={(e) => setBranchCode(e.target.value)}
-              placeholder="e.g., LSK001"
-            />
-          </Box>
-
-          {/* Account Number */}
-          <Box>
-            <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-secondary)', display: 'block' }}>
-              Account Number
-            </Text>
-            <TextField.Root
-              size="3"
-              value={accountNumber}
-              onChange={(e) => setAccountNumber(e.target.value)}
-              placeholder="Your account number"
-            />
-          </Box>
-
-          {/* Account Holder */}
-          <Box>
-            <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-secondary)', display: 'block' }}>
-              Account Holder Name
-            </Text>
-            <TextField.Root
-              size="3"
-              value={accountHolder}
-              onChange={(e) => setAccountHolder(e.target.value)}
-              placeholder="Name as it appears on account"
-            />
-          </Box>
-
-          {/* Account Type */}
-          <Box>
-            <Text size="2" weight="medium" mb="2" style={{ color: 'var(--content-secondary)', display: 'block' }}>
-              Account Type
-            </Text>
-            <Select.Root value={accountType} onValueChange={(v) => setAccountType(v as any)}>
-              <Select.Trigger style={{ width: '100%' }} />
-              <Select.Content>
-                <Select.Item value="current">Current Account</Select.Item>
-                <Select.Item value="savings">Savings Account</Select.Item>
-              </Select.Content>
-            </Select.Root>
-          </Box>
-
-          {/* Warning */}
-          <Box
-            p="3"
-            style={{
-              background: 'var(--status-warning-a3)',
-              border: '1px solid var(--amber-a5)',
-              borderRadius: 'var(--radius-4)',
-            }}
-          >
-            <Flex align="start" gap="2">
-              <WarningTriangle style={{ width: 18, height: 18, color: 'var(--status-warning-11)', flexShrink: 0, marginTop: 2 }} />
-              <Text size="1" style={{ color: 'var(--content-secondary)' }}>
-                Please ensure all bank details are correct. Incorrect details may result in failed or delayed payouts.
-              </Text>
-            </Flex>
-          </Box>
-        </Flex>
-
-        <Flex gap="3" justify="end" mt="5">
-          <Dialog.Close>
-            <Button variant="outline" style={{ borderColor: 'var(--surface-border)' }}>
-              Cancel
-            </Button>
-          </Dialog.Close>
-          <Button
-            onClick={handleSubmit}
-            disabled={!bankCode || !branchCode || !accountNumber || !accountHolder || isSubmitting}
-            style={{
-              background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
-              cursor: !bankCode || !branchCode || !accountNumber || !accountHolder || isSubmitting
-                ? 'not-allowed'
-                : 'pointer',
-            }}
-          >
-            {isSubmitting ? 'Saving...' : account ? 'Save Changes' : 'Add Account'}
-          </Button>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
-  );
-}
-
-// =============================================================================
-// DELETE CONFIRMATION DIALOG
-// =============================================================================
-
-interface DeleteConfirmDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  account: BankAccount | null;
-  onConfirm: () => void;
-}
-
-function DeleteConfirmDialog({ open, onOpenChange, account, onConfirm }: DeleteConfirmDialogProps) {
-  return (
-    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
-      <AlertDialog.Content style={{ maxWidth: 450 }}>
-        <AlertDialog.Title>Remove Bank Account</AlertDialog.Title>
-        <AlertDialog.Description size="2">
-          Are you sure you want to remove <strong>{account?.bankName}</strong> ({formatAccountNumber(account?.accountNumber || '')})?
-          This action cannot be undone.
-        </AlertDialog.Description>
-        <Flex gap="3" justify="end" mt="4">
-          <AlertDialog.Cancel>
-            <Button variant="outline" style={{ borderColor: 'var(--surface-border)' }}>
-              Cancel
-            </Button>
-          </AlertDialog.Cancel>
-          <AlertDialog.Action>
-            <Button data-testid="bank-account-remove-confirm" color="red" onClick={onConfirm}>
-              Remove account
-            </Button>
-          </AlertDialog.Action>
-        </Flex>
-      </AlertDialog.Content>
-    </AlertDialog.Root>
-  );
-}
-
-// =============================================================================
-// MAIN COMPONENT
-// =============================================================================
+import { minorToKwachaString } from '@pml.tickets/shared';
+import type { MobileMoneyProvider } from '@pml.tickets/shared/types/graphql';
+import { useOrgContext } from '@/lib/api/org-context';
+import { useReferenceList } from '@/lib/api/platform';
+import { useStepUp } from '@/lib/useStepUp';
+import { useBankVerification, usePayoutWallet, useSetMobileMoneyAccount } from '@/lib/api/finance';
+import { BankAccountsView } from '@/components/finance/BankAccountsView';
+import { BankAccountDialog, BankVerifyDialog, WalletDialog, type BankFormValues } from '@/components/finance/BankAccountDialogs';
 
 export default function BankAccountsPage() {
-  const { data: session } = useSession();
-  const isAuthenticated = !!session?.user;
-  const { status } = useMyOrganization({ skip: !isAuthenticated });
-  const canPayout = canRequestPayouts(status);
-
-  const organizerId = session?.user?.id ?? null;
-  const { bankAccounts: rows, refetch } = useMyBankAccounts(organizerId);
-  const { createBankAccount } = useCreateBankAccount();
-  const { updateBankAccount } = useUpdateBankAccount();
+  const { organization, capabilities } = useOrgContext();
+  // Bank accounts belong to the organization's owner; every member reads them, only the owner changes them.
+  const organizerId = organization?.ownerId ?? null;
+  const banks = useReferenceList('BANK');
+  const walletState = usePayoutWallet();
+  const { saveWallet } = useSetMobileMoneyAccount();
+  const { bankAccounts, loading, error, refetch } = useMyBankAccounts(organizerId);
+  const snackbar = useSnackbar();
+  const [createBankAccount] = useMutation(CREATE_BANK_ACCOUNT);
+  const [updateBankAccount] = useMutation(UPDATE_BANK_ACCOUNT);
   const { deleteBankAccount } = useDeleteBankAccount();
   const { setDefaultBankAccount } = useSetDefaultBankAccount();
+  const verification = useBankVerification();
+  const ensureFresh = useStepUp();
 
-  const accounts = useMemo(() => rows.map(toBankAccount), [rows]);
-
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [editAccount, setEditAccount] = useState<BankAccount | null>(null);
-  const [deleteAccount, setDeleteAccount] = useState<BankAccount | null>(null);
-
-  // Every handler refetches rather than mutating local state optimistically.
-  // A bank account that the server rejected must not sit in the list looking
-  // saved — this screen decides where an organizer's money is sent.
-  const handleSetDefault = useCallback(async (id: string) => {
-    const result = await setDefaultBankAccount(id);
-    if (result.success) await refetch();
-  }, [setDefaultBankAccount, refetch]);
-
-  const handleAddAccount = useCallback(async (
-    data: Omit<BankAccount, 'id' | 'isDefault' | 'isVerified' | 'createdAt'>
-  ) => {
-    if (!organizerId) return;
-    const result = await createBankAccount({
-      organizerId,
-      accountHolderName: data.accountHolder,
-      bankName: data.bankName,
-      bankCode: data.bankCode || null,
-      branchCode: data.branchCode || null,
-      accountNumber: data.accountNumber,
-      accountType: data.accountType,
-      currency: 'ZMW',
-      // First account added becomes the default — otherwise a payout has no
-      // destination until the organizer explicitly picks one.
-      isDefault: accounts.length === 0,
-    });
-    if (result.success) await refetch();
-  }, [organizerId, createBankAccount, refetch, accounts.length]);
-
-  const handleEditAccount = useCallback(async (
-    data: Omit<BankAccount, 'id' | 'isDefault' | 'isVerified' | 'createdAt'>
-  ) => {
-    if (!editAccount) return;
-    const result = await updateBankAccount(editAccount.id, {
-      accountHolderName: data.accountHolder,
-      bankName: data.bankName,
-      bankCode: data.bankCode || null,
-      branchCode: data.branchCode || null,
-      accountNumber: data.accountNumber,
-      accountType: data.accountType,
-    });
-    if (result.success) await refetch();
-    setEditAccount(null);
-  }, [editAccount, updateBankAccount, refetch]);
-
-  const handleDeleteAccount = useCallback(async () => {
-    if (!deleteAccount) return;
-    const result = await deleteBankAccount(deleteAccount.id);
-    if (result.success) await refetch();
-    setDeleteAccount(null);
-  }, [deleteAccount, deleteBankAccount, refetch]);
+  const run = async (fn: () => Promise<{ success: boolean; message: string | null }>, ok: string) => {
+    // Bank-account changes redirect payouts: require a recent interactive login first.
+    if (!(await ensureFresh())) return { success: false, message: 'Confirm your identity to continue' };
+    const res = await fn();
+    snackbar.show(res.success ? ok : { message: res.message ?? 'Something went wrong', tone: 'error' });
+    if (res.success) await refetch();
+    return res;
+  };
 
   return (
-    <Box>
-      <PageHeader
-        title="Payout destinations"
-        description="Manage your bank accounts for receiving payouts"
-        breadcrumbs={[
-          { label: 'Finance', href: '/finance' },
-          { label: 'Bank Accounts' },
-        ]}
-        actions={canPayout ? [
-          {
-            label: 'Add Account',
-            icon: <Plus style={{ width: 18, height: 18, marginRight: 8 }} />,
-            onClick: () => setShowAddDialog(true),
-          },
-        ] : undefined}
-      />
-
-      {/* Info Card */}
-      <Card
-        mb="6"
-        style={{
-          padding: '16px 20px',
-          background: 'var(--status-info-a3)',
-          border: '1px solid var(--blue-a5)',
-          borderRadius: 'var(--card-radius)',
-        }}
-      >
-        <Flex align="center" gap="3">
-          <Bank style={{ width: 20, height: 20, color: 'var(--status-info-11)' }} />
-          <Text size="2" style={{ color: 'var(--content-secondary)' }}>
-            <strong>Payout Information:</strong>{' '}
-            <Text style={{ color: 'var(--content-muted)' }}>
-              Payouts are processed within 1-3 business days to your default bank account. A 5% platform fee applies to all payouts.
-            </Text>
-          </Text>
-        </Flex>
-      </Card>
-
-      {/* Bank Accounts List */}
-      {accounts.length === 0 ? (
-        <Card
-          style={{
-            padding: '60px 24px',
-            background: 'var(--surface-elevated)',
-            border: '1px solid var(--surface-border)',
-            borderRadius: 'var(--card-radius-bento)',
-            textAlign: 'center',
+    <BankAccountsView
+      accounts={bankAccounts}
+      loading={loading}
+      error={error}
+      onRetry={() => void refetch()}
+      canManage={capabilities.isOwner}
+      wallet={walletState.wallet}
+      renderWalletForm={(wallet, close, switchToBank) => (
+        <WalletDialog
+          initial={wallet ? { holder: wallet.accountHolderName ?? '', network: wallet.provider ?? undefined } : undefined}
+          onClose={close}
+          onSwitchToBank={switchToBank}
+          onSave={async (v) => {
+            if (!(await ensureFresh())) return;
+            if (!walletState.organizationId) throw new Error('Your organization could not be loaded');
+            await saveWallet(walletState.organizationId, { provider: v.network as MobileMoneyProvider, phoneNumber: v.phone, accountHolderName: v.holder });
+            snackbar.show('Wallet saved. We will send a small test deposit to verify it.');
           }}
-        >
-          <Box
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: '50%',
-              background: 'var(--surface-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 20px',
-            }}
-          >
-            <Bank style={{ width: 28, height: 28, color: 'var(--content-muted)' }} />
-          </Box>
-          <Text size="4" weight="medium" style={{ color: 'var(--content-primary)', display: 'block', marginBottom: '8px' }}>
-            No bank accounts added
-          </Text>
-          <Text size="2" style={{ color: 'var(--content-muted)', display: 'block', marginBottom: '24px' }}>
-            Add a bank account to start receiving payouts from your ticket sales
-          </Text>
-          {canPayout && (
-            <Button
-              size="3"
-              onClick={() => setShowAddDialog(true)}
-              style={{
-                background: 'linear-gradient(135deg, var(--accent-9), var(--accent-11))',
-              }}
-            >
-              <Plus style={{ width: 18, height: 18, marginRight: 8 }} />
-              Add First Bank Account
-            </Button>
-          )}
-        </Card>
-      ) : (
-        <Flex direction="column" gap="4">
-          {accounts.map((account) => (
-            <BankAccountCard
-              key={account.id}
-              account={account}
-              onSetDefault={handleSetDefault}
-              onEdit={setEditAccount}
-              onDelete={setDeleteAccount}
-              canManage={canPayout}
-            />
-          ))}
-        </Flex>
+        />
       )}
-
-      {/* Add Account Dialog */}
-      <BankAccountDialog
-        open={showAddDialog}
-        onOpenChange={setShowAddDialog}
-        onSubmit={handleAddAccount}
-      />
-
-      {/* Edit Account Dialog */}
-      <BankAccountDialog
-        open={!!editAccount}
-        onOpenChange={(open) => !open && setEditAccount(null)}
-        account={editAccount}
-        onSubmit={handleEditAccount}
-      />
-
-      {/* Delete Confirmation Dialog */}
-      <DeleteConfirmDialog
-        open={!!deleteAccount}
-        onOpenChange={(open) => !open && setDeleteAccount(null)}
-        account={deleteAccount}
-        onConfirm={handleDeleteAccount}
-      />
-    </Box>
+      onStartVerification={async (id) => {
+        try {
+          if (!(await ensureFresh())) return;
+          await verification.start(id);
+          snackbar.show('Test deposit started. Check the account for a small amount.');
+          await refetch();
+        } catch (e) {
+          snackbar.show({ message: (e as Error).message, tone: 'error' });
+        }
+      }}
+      onMakeDefault={async (id) => void (await run(() => setDefaultBankAccount(id), 'Default account updated'))}
+      onDelete={async (id) => void (await run(() => deleteBankAccount(id), 'Account deleted'))}
+      renderForm={(account, close, switchToWallet) => (
+        <BankAccountDialog
+          banks={banks.items.map((b) => b.name)}
+          onSwitchToWallet={switchToWallet}
+          initial={
+            account
+              ? { id: account.id, holder: account.accountHolderName, bankName: account.bankName, branchCode: account.branchCode ?? '', number: account.accountNumber, swift: account.swiftCode ?? '', currency: account.currency }
+              : undefined
+          }
+          onClose={close}
+          onSave={async (v: BankFormValues) => {
+            if (!(await ensureFresh())) return;
+            const input = { accountHolderName: v.holder, bankName: v.bankName, branchCode: v.branchCode || null, swiftCode: v.swift || null, currency: v.currency };
+            // Rejections carry the server error contract; the dialog's <Form> maps them onto fields.
+            if (account) await updateBankAccount({ variables: { id: account.id, input: { accountHolderName: input.accountHolderName, bankName: input.bankName, branchCode: input.branchCode, swiftCode: input.swiftCode } } });
+            else await createBankAccount({ variables: { input: { ...input, organizerId: organizerId ?? '', accountNumber: v.number } } });
+            snackbar.show(account ? 'Account saved' : 'Account added. Start a test deposit to verify it.');
+            await refetch();
+          }}
+        />
+      )}
+      renderVerify={(account, close) => (
+        <BankVerifyDialog
+          accountNumber={account.accountNumber}
+          onClose={close}
+          onConfirm={async (amountMinor) => {
+            if (!(await ensureFresh())) return undefined;
+            const res = await verification.confirm(account.id, minorToKwachaString(amountMinor));
+            const st = (res.data as { confirmBankVerification?: { status?: string } } | null | undefined)?.confirmBankVerification?.status;
+            if (st === 'REJECTED') snackbar.show({ message: 'Too many wrong tries. The account was rejected.', tone: 'error' });
+            else if (st !== 'VERIFIED') return { amountError: 'That is not the amount we sent.' };
+            else snackbar.show('Account verified');
+            await refetch();
+            return undefined;
+          }}
+        />
+      )}
+    />
   );
 }

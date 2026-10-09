@@ -20,7 +20,8 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -41,8 +42,6 @@ import java.util.UUID;
  * number the payment intent charges and the number the ticket records. Re-reading
  * the price at confirmation would be simpler and would silently overcharge
  * anyone who was mid-checkout when an organiser edited a tier.
- *
- * @see <a href="file:../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001</a>
  */
 @Slf4j
 @Service
@@ -50,17 +49,25 @@ import java.util.UUID;
 public class ReservationServiceImpl implements ReservationService {
 
     private final TicketReservationRepository reservationRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final CatalogServiceClient catalogServiceClient;
     private final PurchaseService purchaseService;
 
     @Value("${booking.reservation.ttl-minutes:10}")
     private int reservationTtlMinutes;
 
-    /** ET-PLT-002's money scale. Applied once, to the total. */
+    /** The platform's money scale. Applied once, to the total. */
     private static final int MONEY_SCALE = 2;
 
     @Override
     public Mono<TicketReservation> createReservation(String userId, ReserveTicketsInput input) {
+        return createReservation(userId, input, UUID.randomUUID().toString());
+    }
+
+    @Override
+    public Mono<TicketReservation> createReservation(String userId, ReserveTicketsInput input, String reservationId) {
         String idempotencyKey = input.idempotencyKey();
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return Mono.error(new IllegalArgumentException(
@@ -75,11 +82,11 @@ public class ReservationServiceImpl implements ReservationService {
                         "Idempotency key {} already produced reservation {} — returning it unchanged",
                         idempotencyKey, existing.getId()))
                 .switchIfEmpty(Mono.defer(() -> existingHoldFor(userId, input)
-                        .switchIfEmpty(Mono.defer(() -> reserveAfresh(userId, input, idempotencyKey)))));
+                        .switchIfEmpty(Mono.defer(() -> reserveAfresh(userId, input, idempotencyKey, reservationId)))));
     }
 
     /**
-     * A live hold this buyer already has on one of the requested tiers (R5).
+     * A live hold this buyer already has on one of the requested tiers.
      *
      * <p>Returned unchanged rather than added to. A buyer on a flaky connection
      * who taps <em>reserve</em> four times would otherwise accumulate four holds
@@ -91,7 +98,7 @@ public class ReservationServiceImpl implements ReservationService {
                 .toList();
 
         return reservationRepository.findByUserIdAndStatus(userId, ReservationStatus.HELD)
-                .filter(held -> !held.isExpired())
+                .filter(held -> !held.isExpired(clock.instant()))
                 .filter(held -> held.getItems() != null && held.getItems().stream()
                         .anyMatch(item -> requestedTiers.contains(item.getTicketTierId())))
                 .next()
@@ -103,12 +110,11 @@ public class ReservationServiceImpl implements ReservationService {
 
     private Mono<TicketReservation> reserveAfresh(String userId,
                                                   ReserveTicketsInput input,
-                                                  String idempotencyKey) {
-        // Generated up front because the catalog needs it as the hold's owner
-        // before the reservation document exists. If the save then fails, this
-        // is the handle the rollback uses to find what to give back.
-        String reservationId = UUID.randomUUID().toString();
-
+                                                  String idempotencyKey,
+                                                  String reservationId) {
+        // The catalog records the hold under this id before the reservation document exists, and
+        // takes it again as a no-op on a retry. If the save fails, it is the handle the rollback uses
+        // to find what to give back.
         return catalogServiceClient.getEventById(input.eventId())
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "EVENT_UNKNOWN: " + input.eventId())))
@@ -122,7 +128,8 @@ public class ReservationServiceImpl implements ReservationService {
     }
 
     /**
-     * A duplicate key here means one of R5's or R6's unique indexes refused the
+     * A duplicate key here means one of the reservation unique indexes (one live hold
+     * per buyer per tier, one reservation per idempotency key) refused the
      * write — a second buyer request that raced past the read-side checks above.
      *
      * <p>Translated rather than propagated because a raw
@@ -217,13 +224,15 @@ public class ReservationServiceImpl implements ReservationService {
                 .discountAmount(BigDecimal.ZERO)
                 .totalAmount(subtotal.setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                 .currency("ZMW")
-                .expiresAt(LocalDateTime.now().plusMinutes(reservationTtlMinutes))
+                .expiresAt(clock.instant().plus(Duration.ofMinutes(reservationTtlMinutes)))
                 .build();
     }
 
     private TicketReservation.ReservationItem line(TicketSelectionInput selection, EventSummaryDto event) {
         EventSummaryDto.TicketCategoryDto tier = tierOf(event, selection.ticketTierId());
-        BigDecimal unitPrice = tier.getPrice();
+        // Charge what the storefront advertised: the early-bird price strictly before its
+        // end, the full price from that instant on, against this service's own injected clock.
+        BigDecimal unitPrice = tier.priceAt(clock.instant());
         return TicketReservation.ReservationItem.builder()
                 .ticketTierId(selection.ticketTierId())
                 .tierName(tier.getName())
@@ -242,17 +251,20 @@ public class ReservationServiceImpl implements ReservationService {
      * and the buyer was charged it.
      */
     private EventSummaryDto.TicketCategoryDto tierOf(EventSummaryDto event, String tierId) {
-        List<EventSummaryDto.TicketCategoryDto> tiers = event.getTicketCategories();
-        if (tiers != null) {
-            for (EventSummaryDto.TicketCategoryDto tier : tiers) {
-                if (Objects.equals(tier.getCode(), tierId)) {
-                    if (tier.getPrice() == null) {
-                        throw new IllegalStateException(
-                                "TIER_PRICE_UNAVAILABLE: tier " + tierId + " has no price");
-                    }
-                    return tier;
-                }
+        List<EventSummaryDto.TicketCategoryDto> tiers =
+                event.getTicketCategories() == null ? List.of() : event.getTicketCategories();
+        // A buyer selects the tier by catalog's id. A code is still accepted, but only when no
+        // tier carries that id, so a code that happens to look like an id never shadows one.
+        EventSummaryDto.TicketCategoryDto tier = tiers.stream()
+                .filter(candidate -> Objects.equals(candidate.getId(), tierId))
+                .findFirst()
+                .or(() -> tiers.stream().filter(candidate -> Objects.equals(candidate.getCode(), tierId)).findFirst())
+                .orElse(null);
+        if (tier != null) {
+            if (tier.getPrice() == null) {
+                throw new IllegalStateException("TIER_PRICE_UNAVAILABLE: tier " + tierId + " has no price");
             }
+            return tier;
         }
         throw new IllegalStateException("TIER_UNKNOWN: " + tierId + " is not a tier of event " + event.getId());
     }
@@ -284,35 +296,14 @@ public class ReservationServiceImpl implements ReservationService {
     }
 
     @Override
-    public Flux<TicketReservation> findExpiredByEventId(String eventId, LocalDateTime since) {
+    public Flux<TicketReservation> findExpiredByEventId(String eventId, Instant since) {
         return reservationRepository.findByEventIdAndStatusAndExpiresAtBefore(
                 eventId, ReservationStatus.EXPIRED, since);
     }
 
     @Override
-    public Flux<TicketReservation> findExpiredSince(LocalDateTime since) {
+    public Flux<TicketReservation> findExpiredSince(Instant since) {
         return reservationRepository.findByStatusAndExpiresAtBefore(ReservationStatus.EXPIRED, since);
     }
 
-    @Override
-    public Mono<Long> expireReservations() {
-        return reservationRepository.findExpiredReservations()
-                .concatMap(reservation -> purchaseService.release(
-                                reservation.getId(), ReservationStateMachine.Action.EXPIRE, null)
-                        // One reservation that cannot be released must not stop
-                        // the sweep: the rest of the batch is holding inventory
-                        // that other buyers are waiting for.
-                        .onErrorResume(error -> {
-                            log.error("Could not expire reservation {}: {}",
-                                    reservation.getId(), error.getMessage());
-                            return Mono.empty();
-                        })
-                        .filter(released -> released.getStatus() == ReservationStatus.EXPIRED))
-                .count()
-                .doOnSuccess(count -> {
-                    if (count > 0) {
-                        log.info("Expiry sweep released {} reservation(s)", count);
-                    }
-                });
-    }
 }

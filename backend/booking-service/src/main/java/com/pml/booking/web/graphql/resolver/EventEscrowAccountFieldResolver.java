@@ -7,7 +7,7 @@ import com.pml.booking.domain.model.EventEscrowAccount;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Field Resolver for EventEscrowAccount type.
@@ -39,7 +39,7 @@ public class EventEscrowAccountFieldResolver {
      * Resolve EventEscrowAccount.closedAt - closure timestamp.
      */
     @DgsData(parentType = "EventEscrowAccount", field = "closedAt")
-    public LocalDateTime closedAt(DgsDataFetchingEnvironment dfe) {
+    public Instant closedAt(DgsDataFetchingEnvironment dfe) {
         EventEscrowAccount account = dfe.getSource();
         return account.getClosedAt();
     }

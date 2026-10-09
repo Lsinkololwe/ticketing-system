@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * One escrow account an organizer can currently draw a payout from.
@@ -41,5 +41,5 @@ public class OrganizerPayoutSource {
     private String currency = "ZMW";
 
     /** When this account became eligible, so the UI can order oldest-first. */
-    private LocalDateTime eligibleSince;
+    private Instant eligibleSince;
 }

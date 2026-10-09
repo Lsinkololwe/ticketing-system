@@ -113,6 +113,26 @@ public class MongoRevocationStore implements DurableRevocationStore {
                 .flatMap(saved -> primeCache(saved).thenReturn(saved));
     }
 
+    /**
+     * Lifts a revocation, for the one case where it should not outlive its cause: an unsuspended
+     * account must be able to sign in again before the record would have expired on its own.
+     * The durable record goes first; a cache key that cannot be removed ages out with its TTL.
+     */
+    public Mono<Void> lift(RevocationType type, String value) {
+        if (value == null || value.isBlank()) {
+            return Mono.empty();
+        }
+        return repository.deleteById(type.documentId(value))
+                .timeout(properties.getDurableTimeout())
+                .then(cache.delete(type.cacheKey(value))
+                        .onErrorResume(error -> {
+                            log.warn("[Revocation] Lifted {} but could not clear its cache key ({})",
+                                    new RevocationIdentifier(type, value).masked(), error.toString());
+                            return Mono.just(0L);
+                        })
+                        .then());
+    }
+
     /** Best-effort cache population. Never fails the enclosing write. */
     private Mono<Void> primeCache(RevocationRecord record) {
         Duration ttl = Duration.between(clock.instant(), record.getExpiresAt());

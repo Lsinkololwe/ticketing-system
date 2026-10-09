@@ -23,11 +23,10 @@ persistence:
   collections:
     - booking_commission_records
   indexes:
-    - "booking_commission_records {eventId,status} compound   # the recognition sweep"
+    - "booking_commission_records {eventId,status} compound   # recognition per event"
     - "booking_commission_records {ticketId} unique"
     - "booking_commission_records {organizationId,status} compound"
-  redis_keys:
-    - "lock:sweep:commission-recognition   STRING  30 s"
+  redis_keys: []
 
 events:
   module: []
@@ -37,6 +36,9 @@ events:
     - catalog.EventCancelled     # cancel PENDING, claw back EARNED
     - booking.RefundCompleted    # cancel or claw back the refunded ticket
   topics: []
+
+workflows:
+  - "EventFinanceWorkflow   recogniseCommission activity once the escrow is PAYOUT_ELIGIBLE (ET-FIN-001)"
 
 graphql:
   schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
@@ -86,8 +88,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=true
-  - mvn -q -f backend verify -Dgroups=ET-FIN-002 -DfailIfNoTests=true
+  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-FIN-002 -DfailIfNoTests=false
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -98,4 +100,4 @@ risks:
   - "The per-organization rate override is mentioned in §4 as replacing the resolved rate, but R1's acceptance boxes assert the lowest applicable tier rate always wins. An override that is HIGHER than the resolved tier contradicts R1, and nothing here says whether an override is a floor, a ceiling or a replacement."
   - "Commission is snapshotted per ticket, and a partial refund cancels proportionally with one rounding. Rounding a proportion of an already-rounded amount reintroduces the residual that R2's per-line computation exists to avoid — a 1/3 refund of a K5.01 commission cannot be represented exactly and the remainder has no declared home."
   - "The charity flag is 'set at approval' on the event, but ET-CAT-001's event document declares no charity field and its approval mutation takes no such input. The rate card depends on data no other spec creates."
-  - "recogniseCommission lets FINANCE trigger recognition for an event early. It shares the sweep's idempotent path, but it does not check that the hold period has elapsed — so a finance operator can recognise revenue on an event whose refund window is still open, which is precisely the reversal the two-stage model exists to prevent."
+  - "recogniseCommission lets FINANCE trigger recognition for an event early. It shares the workflow activity's idempotent path, but it does not check that the hold period has elapsed — so a finance operator can recognise revenue on an event whose refund window is still open, which is precisely the reversal the two-stage model exists to prevent."

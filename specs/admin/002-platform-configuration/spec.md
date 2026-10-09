@@ -2,6 +2,21 @@
 
 > **Conformance** · V3 §2.2 commission structure · V3 §14.1 refund fee policy
 
+> **Amendment, 2026-09-19 — one settings table, owned by catalog; refund policies are platform
+> configuration.** Decided by the product owner:
+>
+> - **The platform settings are one table, like the reference data.** The database is shared;
+>   the services differ, the settings do not. Everything this spec stores — settings,
+>   organization overrides and feature flags — lives in **`catalog_platform_configuration`**,
+>   written only by catalog-service and read directly, read-only, by every other service through
+>   shared-library's `PlatformConfigurationReader` (the arrangement `StatusSemanticResolver`
+>   already uses for `catalog_reference_data`). The two identity collections this spec had
+>   reserved are withdrawn; ET-PLT-002 §4 carries the one row. The spec moves to
+>   catalog-service and the `catalog` subgraph, which already serves `platformConfiguration`.
+> - **Refund policies are platform configuration.** The platform defines the refund policies and
+>   their schedules (§4 *Refund policies*); an organizer picks one of the active policies for
+>   each event. [ET-FIN-004](../../finance/004-refunds-and-chargebacks/) R1 reads them from here.
+
 ## 1. Capability
 
 Scattered through this corpus are roughly sixty numbers: commission rates, hold periods,
@@ -94,7 +109,7 @@ WHEN a configuration value changes, THE SYSTEM SHALL append a new version and SH
 who changed it and why.
 
 **Acceptance**
-- [ ] Setting a value inserts a new `identity_platform_configuration` row; no row is updated or deleted
+- [ ] Setting a value inserts a new `catalog_platform_configuration` row; no row is updated or deleted
 - [ ] The current value is the highest `version` for that key and scope
 - [ ] Every change requires a reason of at least 20 characters
 - [ ] Every change writes an audit row with the old value, the new value, the actor and the reason ([ET-PLT-009](../../_platform/009-audit-trail/))
@@ -183,7 +198,7 @@ current state.
 | `finance.payout.minimum` | money | `[0, 100000]` | `K100` | — | — |
 | `finance.payout.schedule` | enum | `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `ON_REQUEST` | `ON_REQUEST` | **organization** | — |
 | `finance.refund.minimum` | money | `[0, 10000]` | `K10` | — | — |
-| `finance.refund.auto-approve-threshold` | money | `[0, 100000]` | `K1000` | — | — |
+| `finance.refund.review-escalations` | durations | each `[PT1H, P30D]` | `P2D, P5D` | — | — |
 | `finance.refund.fee-bearer` | enum | `CUSTOMER`, `PLATFORM`, `ORGANIZER` | `CUSTOMER` | — | — |
 | `booking.reservation.ttl` | duration | `[PT2M, PT60M]` | `PT10M` | — | — |
 | `catalog.transfer.cutoff` | duration | `[PT0S, P7D]` | `PT2H` | — | — |
@@ -192,6 +207,32 @@ current state.
 | `notification.per-user-hourly-cap` | int | `[1, 100]` | `10` | — | — |
 
 Eighteen keys. Every other number in this corpus stays in YAML.
+
+### Refund policies — defined by the platform, picked by the organizer
+
+A refund policy is a platform setting: a code, a name the buyer reads, and a schedule of
+refundable percentage against hours before the event starts. Administrators define and
+change them here; an organizer picks one **active** policy for each event, and an event
+cannot be published without one. The platform starts with the four policies of
+[ET-FIN-004 §4](../../finance/004-refunds-and-chargebacks/):
+
+| Code | > 168 h | 168–48 h | 48–24 h | < 24 h |
+|---|---|---|---|---|
+| `FLEXIBLE` | 100% | 100% | 50% | 0% |
+| `MODERATE` | 100% | 50% | 0% | 0% |
+| `STRICT` | 50% | 0% | 0% | 0% |
+| `NO_REFUNDS` | 0% | 0% | 0% | 0% |
+
+- Each policy is a row of `catalog_platform_configuration` under key `refund.policy.{CODE}`,
+  value type `REFUND_SCHEDULE`, versioned and audited like every other key (R2).
+- A schedule's steps are bounded: hours in `[0, 8760]`, percentages in `[0, 100]`, and the
+  percentage never rises as the event approaches.
+- A policy is retired, never deleted, so an event that chose it keeps resolving.
+- **An event records the policy code and the version it was published under** (R6). A later
+  change to the policy applies to events published afterwards; the buyer is always refunded
+  under the schedule they were shown before paying.
+- Cancellation and the reschedule window still override every policy to 100%
+  (ET-FIN-004 R6, R7).
 
 ### Feature flags — closed
 
@@ -212,11 +253,14 @@ finds them under pressure.
 
 ### Documents
 
-`identity_platform_configuration` — append-only, versioned.
+`catalog_platform_configuration` — append-only, versioned. Settings, organization overrides,
+refund policies and feature flags are all rows of this one table, told apart by `kind`
+(`SETTING`, `REFUND_POLICY`, `FLAG`).
 
 | Field | Type | Notes |
 |---|---|---|
 | `_id` | `String` | |
+| `kind` | `ConfigKind` | `SETTING`, `REFUND_POLICY` or `FLAG` |
 | `configKey` | `String` | a registry key |
 | `scope` | `ConfigScope` | `PLATFORM` or `ORGANIZATION` |
 | `scopeId` | `String` | the organization id when scoped |
@@ -230,7 +274,10 @@ finds them under pressure.
 
 `{configKey, scope, scopeId, version}` is unique. Nothing is ever updated or deleted.
 
-`identity_feature_flags` — same shape, with `state` and `organizationIds`.
+A flag row carries `state` and `organizationIds` in place of `value`.
+
+*Until this spec is built, the table holds the single pre-registry settings document
+(`_id: platform-config`) that catalog seeds at startup. T2 migrates it to versioned rows.*
 
 ### Resolution order
 
@@ -268,8 +315,7 @@ Nothing polls. A write evicts across instances via Redis.
 
 ### GraphQL
 
-Subgraph `identity` — configuration is platform state and identity is where platform
-administration lives.
+Subgraph `catalog` — catalog owns the settings table, as it owns the reference data.
 
 | Operation | Kind | `@auth` | Returns |
 |---|---|---|---|
@@ -306,28 +352,28 @@ settings must not be changeable through the configuration system.
 
 - [ ] **T1 · The registry, its types and bounds, and the seeder**
   - requirements: R1
-  - files: `backend/identity-service/.../domain/ConfigurationRegistry.java`, the seeder
+  - files: `backend/catalog-service/.../domain/ConfigurationRegistry.java`, the seeder
   - verify: an unknown key refuses; each bound refuses its violation; seeding is idempotent
   - parallel-safe: no
   - depends: —
 
 - [ ] **T2 · Append-only versioned storage, with the reason and the audit row**
   - requirements: R2
-  - files: `backend/identity-service/.../domain/model/PlatformConfiguration.java`
+  - files: `backend/catalog-service/.../domain/model/PlatformConfiguration.java`
   - verify: no row is ever updated; the value as at a past instant is recoverable
   - parallel-safe: yes
   - depends: T1
 
 - [ ] **T3 · Caching with cross-instance eviction**
   - requirements: R3
-  - files: `backend/identity-service/.../infrastructure/cache/ConfigurationCache.java`
+  - files: `backend/catalog-service/.../infrastructure/cache/ConfigurationCache.java`
   - verify: cold and warm answers are identical; nothing polls; no hot-path query in the warm case
   - parallel-safe: yes
   - depends: T2
 
 - [ ] **T4 · The resolution order and the organization override**
   - requirements: R4
-  - files: `backend/identity-service/.../service/impl/ConfigurationServiceImpl.java`
+  - files: `backend/catalog-service/.../service/impl/ConfigurationServiceImpl.java`
   - verify: an override replaces rather than merges; the source is always returned
   - parallel-safe: yes
   - depends: T3
@@ -341,7 +387,7 @@ settings must not be changeable through the configuration system.
 
 - [ ] **T6 · Feature flags, their audiences and the kill-switch list**
   - requirements: R5
-  - files: `backend/identity-service/.../domain/FeatureFlag.java`
+  - files: `backend/catalog-service/.../domain/FeatureFlag.java`
   - verify: an unknown flag evaluates off; no percentage rollout exists
   - parallel-safe: yes
   - depends: T2
@@ -355,9 +401,9 @@ settings must not be changeable through the configuration system.
 
 - [ ] **T8 · The subgraph half; `SUPER_ADMIN` writes, `ADMIN` reads**
   - requirements: R7
-  - files: `backend/identity-service/src/main/resources/graphql/schema.graphqls`
+  - files: `backend/catalog-service/src/main/resources/graphql/schema.graphqls`
   - verify: an `ADMIN` reads and cannot write; the public contract exposes nothing
-  - parallel-safe: no — shared SDL across identity's specs
+  - parallel-safe: no — shared SDL across catalog's specs
   - depends: T6
 
 ## 6. Out of scope
@@ -375,3 +421,65 @@ Deliberately never in scope: **all configuration mutable at runtime** (the platf
 behaviour becomes unreproducible), **percentage-based rollouts** (bucketing nobody can
 explain), and **retroactive application of a value change** (it re-prices tickets people
 have already bought).
+
+---
+
+## 7 · Amendment, 2026-10-04 — the runtime rules organizers and buyers obey
+
+Decided with the three frontends' rewrite (`PLATFORM_CONFIG.md`): the values an organizer or buyer must
+obey are administrator-owned configuration, and both apps read them. They live in the **same
+settings document** (`catalog_platform_configuration`, written only by catalog) as a `rules` section
+beside `payment` and the approval fields; no second table exists. The approval SLA default is
+**48 hours** (the frontends are specified against it; the earlier 72 is withdrawn), with the warning at 36
+and the escalation delay at 12.
+
+### ET-ADM-002-R8 · The rules are bounded, versioned and edited as a whole
+
+THE SYSTEM SHALL let an administrator edit `commissionDefault` (percent, 0 to 50), `minimumPayout`,
+`reservationHoldMinutes` (1 to 120), `reservationGraceMinutes` (0 to 60), `escrowHoldDays` (0 to 90),
+`refundCutoffHours` (0 to 720), `maxTicketsPerBooking` (1 to 50), `rescheduleLimit` (0 to 20),
+`currency` (ISO-4217) and the four refund policies (`FLEXIBLE`, `MODERATE`, `STRICT`, `NO_REFUNDS`),
+and SHALL bump a `version` on every save.
+
+**Acceptance**
+- [ ] `updatePlatformConfiguration` validates every supplied value before writing any; one violation refuses the whole update with `CONFIGURATION_VALUE_INVALID` carrying `constraint`, and the document is unchanged
+- [ ] A refund policy's tiers have `percent` in 0..100, `daysBefore` in 0..365 and distinct, and never refund more closer to the event; `NO_REFUNDS` has no tiers; a code outside the four is refused
+- [ ] A document written before the section existed is given the documented defaults once, on first read
+- [ ] `PlatformConfiguration` returns the new fields, `version`, `updatedAt` and `updatedBy`
+
+**Tests** `PlatformRulesUpdaterTest` (L1)
+
+### ET-ADM-002-R9 · Organizers and buyers read the rules without admin rights
+
+THE SYSTEM SHALL serve `platformRules` to any signed-in caller from identity-service, read through
+shared-library's `PlatformConfigurationReader`, with the commission that applies to the caller's own
+organization.
+
+**Acceptance**
+- [ ] `platformRules` needs no role beyond being signed in and returns no personal data; `updatedBy` is a display name, never an id or email
+- [ ] `commissionRate` is the caller's organization's own rate when it has one, else the default; both are percentages
+- [ ] Reference lists (banks, categories, cities, cancellation reasons, KYB document types) stay catalog reference data, read with `referenceData(type:)`
+
+**Tests** `PlatformRulesAssemblerTest` (L1)
+
+### ET-ADM-002-R10 · A signed-out buyer reads the buyer-facing rules
+
+WHEN a caller without a token queries `publicPlatformRules`, THE SYSTEM SHALL return only the
+buyer-facing subset of the rules, rate limited per client address, and SHALL refuse every other
+operation without a token.
+
+The 'buy first' flow starts signed out and must show the hold time, the per-booking ticket limit
+and the refund policies before anyone has an account. The subset is a separate query, not nullable
+fields on `platformRules`, so nothing organizer-only can leak by a resolver mistake: the type does
+not contain it.
+
+**Acceptance**
+- [ ] `publicPlatformRules` returns `version`, `updatedAt`, `currency`, `reservationHoldMinutes`, `reservationGraceMinutes`, `maxTicketsPerBooking`, `refundCutoffHours`, `rescheduleLimit` and `refundPolicies` (with tiers), and nothing else
+- [ ] The type has no commission, minimum payout, escrow days, approval settings, `updatedBy` or any account data; `platformRules` still needs a signed-in caller and keeps them
+- [ ] Cancellation reasons and banks stay catalog reference data (`referenceData(type:)`), not part of either query
+- [ ] Without an `Authorization` header only a single, non-batched query whose top-level fields are all on the allowlist (`publicPlatformRules`) is admitted; `_service`, introspection, mutations, subscriptions, other queries and mixed selections get 401; `_entities` is refused except the router's `Organization { verified }` lookup for the signed-out event page ([ET-PLT-007](../../_platform/007-security-and-authorization/) R9)
+- [ ] A request that carries a token is handled exactly as before
+- [ ] An admitted anonymous caller is limited to 120 requests per minute per client address (the address the gateway appended to `X-Forwarded-For`); the 121st is refused with 429 and `Retry-After`; if Redis is unreachable the request is served, because the data is public
+- [ ] The gateway needs no change: it already forwards `/graphql` without authentication and each subgraph decides
+
+**Tests** `PublicOperationFilterTest` (L1), `PlatformRulesAssemblerTest` (L1), `PublicPlatformRulesSchemaTest` (L4)

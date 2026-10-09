@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/notification/002-lifecycle-triggers/spec.md`](../notification/002-lifecycle-triggers/spec.md) · **Wave 5** · `blocked_by:` ET-PLT-003, ET-NTF-001, ET-CAT-001, ET-TKT-002, ET-FIN-003, ET-FIN-004, ET-ORG-002
 > **Screens** — **none.** Same Coverage-map ruling as [`ET-NTF-001`](ET-NTF-001.md). The only surface is the `triggerRegistry` query, which is an admin read for operators, not a screen of its own.
-> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-NTF-002 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-NTF-002 -DfailIfNoTests=false`
 
 Seven blockers — the most of any spec in the corpus — because it listens to facts produced by
 nearly every other one. **The registry is data, not code**: which fact produces which message, to
@@ -49,7 +49,7 @@ rate cap, coalescing and recipient resolution, and it is invisible to the operat
   browsed a lot of events would be absurd. Suppressions are **recorded**, so "why didn't I get
   it?" has an answer.
 
-### BE-5 · Reminder rows, their lifecycle consumers and the dispatch sweep
+### BE-5 · Reminder rows, their lifecycle consumers and the reminder workflow
 - **Spec** R5 · **§5** T5 · **depends** BE-1 · **parallel-safe** yes
 - **Acceptance** reminders **track a reschedule in both directions**; a past-due creation **skips**.
 - Both directions: an event moved later pushes the reminder later; moved earlier pulls it in. A
@@ -113,8 +113,8 @@ around it.
 ### TS-4 · Cap *(L3)* — 15 optional + 5 transactional → 10 + 5; suppressions recorded and queryable.
 
 ### TS-5 · Reminders *(L3, frozen clock)*
-Reschedule later and earlier both move the reminder; past-due creation skips; the dispatch sweep is
-idempotent.
+Reschedule later and earlier both move the reminder; past-due creation skips; a reminder fires once
+under time skipping.
 
 ### TS-6 · Digest *(L3)* — 500 sales → one digest; no activity → none.
 
@@ -133,10 +133,16 @@ Trigger registry viewer: loading, empty, error, populated. That is the whole fro
 - [ ] A 10-ticket purchase yields one notification
 - [ ] 10,000-holder mass send resumes to exactly 10,000
 - [ ] Hourly cap applies to optional only; suppressions recorded
-- [ ] Reminders track reschedules in both directions; past-due skips
+- [~] Reminders track reschedules in both directions; past-due skips — **ET-PLT-015, 2026-09-13.**
+      Each reminder is a `ReminderWorkflow` with durable timers at start − 24 h and − 1 h.
+      `ReminderWorkflowTest` (L3, time skipped) moves an event forward and backward and asserts the
+      sends follow it, drops a moment that passed, and sends nothing for a reminder created after both
+      moments; the history replays. **Open**: no `catalog.EventRescheduled` consumer sends the
+      reschedule yet, and reminders are created from `setEventReminder` (which carries no event start)
+      rather than from ticket issuance.
 - [ ] 500 sales → one digest; no activity → no digest
 - [ ] Recipients resolved **at send**; a mid-flight transfer reaches the new owner
 - [ ] No PII read from any event payload
 - [ ] **Only the registry viewer was built** — no template editor, no campaign composer
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-NTF-002 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-NTF-002 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented` — **Wave 6 does not open until all of Wave 5 is**

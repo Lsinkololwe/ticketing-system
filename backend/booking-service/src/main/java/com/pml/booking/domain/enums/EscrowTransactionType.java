@@ -41,23 +41,4 @@ public enum EscrowTransactionType {
      * - Chargeback recoveries
      */
     DEBIT;
-
-    /**
-     * Returns the opposite transaction type.
-     *
-     * @return DEBIT if this is CREDIT, CREDIT if this is DEBIT
-     */
-    public EscrowTransactionType opposite() {
-        return this == CREDIT ? DEBIT : CREDIT;
-    }
-
-    /**
-     * Calculates the signed amount for balance calculations.
-     *
-     * @param amount The absolute amount
-     * @return Positive for CREDIT, negative for DEBIT
-     */
-    public java.math.BigDecimal signedAmount(java.math.BigDecimal amount) {
-        return this == CREDIT ? amount : amount.negate();
-    }
 }

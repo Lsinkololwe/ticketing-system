@@ -1,6 +1,7 @@
 package com.pml.catalog.domain.model;
 
 import com.pml.catalog.domain.enums.ApprovalNotificationChannel;
+import com.pml.catalog.persistence.CatalogCollections;
 import com.pml.shared.config.model.PlatformPaymentDefaults;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,7 +12,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * PlatformConfiguration Model
@@ -21,7 +22,7 @@ import java.time.LocalDateTime;
  *
  * This is a singleton document - there should only be one configuration per platform.
  */
-@Document(collection = "platform_configuration")
+@Document(collection = CatalogCollections.PLATFORM_CONFIGURATION)
 @TypeAlias("platformConfiguration")
 @Data
 @Builder(toBuilder = true)
@@ -41,18 +42,19 @@ public class PlatformConfiguration {
 
     /**
      * Default SLA for event approval in hours.
-     * Default: 72 hours (3 business days)
+     * Default: 48 hours (the value the organizer and admin apps are specified against,
+     * PLATFORM_CONFIG.md; the earlier 72 was reconciled down to it).
      */
     @Builder.Default
-    private int approvalSlaHours = 72;
+    private int approvalSlaHours = 48;
 
     /**
      * Warning threshold before SLA deadline in hours.
      * Triggers SLA_WARNING notifications to reviewers.
-     * Default: 24 hours before deadline
+     * Default: warn at 36 hours into the 48 hour SLA
      */
     @Builder.Default
-    private int approvalWarningThresholdHours = 24;
+    private int approvalWarningThresholdHours = 36;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // AUTO-ESCALATION SETTINGS
@@ -67,10 +69,10 @@ public class PlatformConfiguration {
     /**
      * Hours after SLA breach before triggering escalation.
      * Allows grace period before escalation.
-     * Default: 0 (escalate immediately on breach)
+     * Default: 12 hours
      */
     @Builder.Default
-    private int escalationDelayHours = 0;
+    private int escalationDelayHours = 12;
 
     /**
      * Role to escalate to when SLA is breached.
@@ -158,16 +160,85 @@ public class PlatformConfiguration {
     private PlatformPaymentDefaults payment;
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // RUNTIME RULES (obeyed by organizers and buyers)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Hold and grace minutes, escrow days, refund cutoff, ticket cap, reschedule limit, currency
+     * and the refund policies. Read by identity-service's {@code platformRules} through
+     * shared-library's {@code PlatformConfigurationReader}. Null only on a document written before
+     * this section existed; the repository backfills it on first read.
+     */
+    private com.pml.shared.config.model.PlatformRulesSection rules;
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AUDIT FIELDS
     // ═══════════════════════════════════════════════════════════════════════════
 
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     /**
      * ID of the admin who last updated the configuration
      */
     private String updatedBy;
+
+    /** Actor recorded for the documented defaults, before any administrator has saved. */
+    public static final String SYSTEM_ACTOR = "system";
+
+    /** Never null: the schema declares it non-null, and a configuration nobody has saved has no editor. */
+    public String getUpdatedBy() {
+        return updatedBy == null || updatedBy.isBlank() ? SYSTEM_ACTOR : updatedBy;
+    }
+
+    /** Never null, for the same reason; a document without a timestamp reads as the epoch. */
+    public Instant getUpdatedAt() {
+        return updatedAt == null ? Instant.EPOCH : updatedAt;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // GRAPHQL READ MODEL (derived; none of these is persisted)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private com.pml.shared.config.model.PlatformRulesSection rulesOrDefaults() {
+        return rules != null ? rules : com.pml.shared.config.model.PlatformRulesSection.defaults();
+    }
+
+    /** Default commission as a percentage (5.0 = 5%). */
+    public Double getCommissionDefault() {
+        return payment == null || payment.getCommissionRate() == null ? null
+                : java.math.BigDecimal.valueOf(payment.getCommissionRate()).movePointRight(2).doubleValue();
+    }
+
+    public java.math.BigDecimal getMinimumPayout() {
+        return payment == null ? null : payment.getMinimumPayoutAmount();
+    }
+
+    public int getReservationHoldMinutes() { return rulesOrDefaults().getReservationHoldMinutes(); }
+
+    public int getReservationGraceMinutes() { return rulesOrDefaults().getReservationGraceMinutes(); }
+
+    public int getEscrowHoldDays() { return rulesOrDefaults().getEscrowHoldDays(); }
+
+    public int getRefundCutoffHours() { return rulesOrDefaults().getRefundCutoffHours(); }
+
+    public int getMaxTicketsPerBooking() { return rulesOrDefaults().getMaxTicketsPerBooking(); }
+
+    public int getRescheduleLimit() { return rulesOrDefaults().getRescheduleLimit(); }
+
+    public String getCurrency() { return rulesOrDefaults().getCurrency(); }
+
+    public long getVersion() { return rulesOrDefaults().getVersion(); }
+
+    public java.util.List<java.util.Map<String, Object>> getRefundPolicies() {
+        return rulesOrDefaults().getRefundPolicies().entrySet().stream()
+                .map(e -> java.util.Map.<String, Object>of(
+                        "code", e.getKey(),
+                        "label", e.getValue().getLabel(),
+                        "summary", e.getValue().getSummary(),
+                        "rules", e.getValue().getRules()))
+                .toList();
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // FACTORY METHODS
@@ -179,37 +250,14 @@ public class PlatformConfiguration {
     public static PlatformConfiguration createDefault() {
         return PlatformConfiguration.builder()
                 .id(DEFAULT_ID)
+                .updatedBy(SYSTEM_ACTOR)
+                .rules(com.pml.shared.config.model.PlatformRulesSection.defaults())
                 .payment(PlatformPaymentDefaults.builder()
                         .commissionRate(0.05)
                         .payoutMethod("MOBILE_MONEY")
                         .payoutSchedule("WEEKLY")
-                        .minimumPayoutAmount(100.0)
+                        .minimumPayoutAmount(new java.math.BigDecimal("100.00"))
                         .build())
                 .build();
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // HELPER METHODS
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /**
-     * Calculate the SLA deadline from submission time.
-     */
-    public LocalDateTime calculateSlaDeadline(LocalDateTime submittedAt) {
-        return submittedAt.plusHours(approvalSlaHours);
-    }
-
-    /**
-     * Calculate when SLA warning should be triggered.
-     */
-    public LocalDateTime calculateWarningTime(LocalDateTime slaDeadline) {
-        return slaDeadline.minusHours(approvalWarningThresholdHours);
-    }
-
-    /**
-     * Calculate when escalation should be triggered after SLA breach.
-     */
-    public LocalDateTime calculateEscalationTime(LocalDateTime slaDeadline) {
-        return slaDeadline.plusHours(escalationDelayHours);
     }
 }

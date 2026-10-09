@@ -53,7 +53,7 @@ therefore correlates on the platform's own reference, which is sent to the provi
 `depositId`, and never solely on the provider's.
 
 **A callback for an unknown reference is retained, not rejected.** It is recorded with
-`status = ORPHANED` and re-matched by a sweep. Rejecting it loses the only evidence that a
+`status = ORPHANED` and re-matched by its own `WebhookOrphanWorkflow`. Rejecting it loses the only evidence that a
 payment the platform lost track of actually succeeded — and that is precisely the payment
 that matters.
 
@@ -144,7 +144,7 @@ retain it and attempt to match it later.
 
 **Acceptance**
 - [ ] An unmatched callback is recorded with `status = ORPHANED` and returns 200
-- [ ] A sweep under `lock:sweep:webhook-orphans` re-attempts matching on `booking.webhook.orphan-retry` (PT5M)
+- [ ] Each orphan starts a `WebhookOrphanWorkflow` (`webhook-orphan/{providerEventId}`, `USE_EXISTING`) that re-attempts matching every `booking.webhook.orphan-retry` (PT5M) by timer; no sweep or lock exists
 - [ ] A match found later applies the outcome through the same idempotent path
 - [ ] An orphan unmatched past `booking.webhook.orphan-escalate` (PT1H) is surfaced to [ET-ADM-003](../../admin/003-transaction-recovery/)
 - [ ] The orphan count is a metric and alerts when it is non-zero for longer than the escalation window
@@ -285,13 +285,13 @@ The path is excluded from the JWT filter chain and is protected exclusively by R
 declared here so that the exclusion is a deliberate, reviewed entry rather than a gap in
 [ET-PLT-007](../../_platform/007-security-and-authorization/) R5's internal surface.
 
-### Sweeps
+### Workflows and Schedules
 
-| Sweep | Lock | Interval | Purpose |
-|---|---|---|---|
-| orphan re-match | `lock:sweep:webhook-orphans` | `PT5M` | R5 |
-| pending verification retry | `lock:sweep:webhook-verify` | `PT1M` | R3 |
-| daily reconciliation | `lock:sweep:payment-reconciliation` | `P1D` | R8 |
+| Mechanism | Id | Queue | Cadence | Purpose |
+|---|---|---|---|---|
+| `WebhookOrphanWorkflow` | `webhook-orphan/{providerEventId}` | `booking-checkout` | timer every `PT5M`; escalates at `PT1H` | R5 |
+| a verified callback signals `PurchaseWorkflow.paymentCallback` | `purchase/{reservationId}` | `booking-checkout` | wakes the workflow's own verification polls | R3 |
+| Schedule `recon-provider` → `ReconciliationWorkflow(PROVIDER)`, shared with [ET-FIN-005](../../finance/005-reconciliation/) | `recon/provider/scheduled` | `booking-recon` | daily 03:00 UTC, overlap `SKIP` | R8 |
 
 ### Configuration
 
@@ -301,7 +301,7 @@ declared here so that the exclusion is a deliberate, reviewed entry rather than 
 | `booking.webhook.response-budget` | `PT3S` |
 | `booking.webhook.orphan-retry` | `PT5M` |
 | `booking.webhook.orphan-escalate` | `PT1H` |
-| `booking.webhook.reconciliation-cron` | daily, off-peak |
+| `booking.webhook.reconciliation-schedule` | `0 3 * * *` UTC — a Temporal Schedule |
 | `PAWAPAY_WEBHOOK_SECRET` | environment only |
 
 ### Error codes
@@ -314,8 +314,7 @@ reaches a GraphQL client; both are REST outcomes and metrics.
 
 | Tier | Name | When | Consumers |
 |---|---|---|---|
-| module | `WebhookReceivedEvent` | step 5 | metrics |
-| module | `PaymentDisputedEvent` | step 7 disagreement | alerting, [ET-ADM-003](../../admin/003-transaction-recovery/) |
+| — | *none in-memory* | — | receipt metrics and the step 7 disagreement alert to [ET-ADM-003](../../admin/003-transaction-recovery/) are recorded by the verification activity |
 
 No bus event: the outcome's bus events are
 [ET-PAY-001](../001-payment-intents-and-providers/)'s, published from the confirmation.
@@ -357,9 +356,9 @@ No bus event: the outcome's bus events are
   - parallel-safe: no — the convergence point
   - depends: T3
 
-- [ ] **T6 · Orphan retention, the re-match sweep and escalation**
+- [ ] **T6 · Orphan retention, the re-match workflow and escalation**
   - requirements: R5
-  - files: `backend/booking-service/.../scheduler/WebhookOrphanSweeper.java`
+  - files: `backend/booking-service/.../workflow/webhook/WebhookOrphanWorkflowImpl.java`
   - verify: an orphan matched later applies once; one unmatched past an hour escalates
   - parallel-safe: yes
   - depends: T5
@@ -373,7 +372,7 @@ No bus event: the outcome's bus events are
 
 - [ ] **T8 · Daily reconciliation and its four discrepancy classes**
   - requirements: R8
-  - files: `backend/booking-service/.../scheduler/PaymentReconciliationJob.java`
+  - files: `backend/booking-service/.../workflow/recon/ReconciliationWorkflowImpl.java` (the `PROVIDER` run, shared with ET-FIN-005), `.../workflow/recon/ReconciliationSchedules.java`
   - verify: seeded discrepancies of each class are classified in one run
   - parallel-safe: yes
   - depends: T5

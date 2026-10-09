@@ -5,8 +5,8 @@ import java.math.BigDecimal;
 /**
  * DTO for ticket aggregation results.
  *
- * <p>One counter per resting state of ET-TKT-002 R7. {@code TRANSFERRED} has none
- * because no ticket rests there — §4 returns a transferred ticket to
+ * <p>One counter per resting ticket state. {@code TRANSFERRED} has none
+ * because no ticket rests there — a transfer returns the ticket to
  * {@code ISSUED} under its new owner.
  */
 public record TicketSummaryResult(

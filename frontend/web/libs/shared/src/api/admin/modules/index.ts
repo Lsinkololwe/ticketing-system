@@ -16,8 +16,18 @@
 
 export * from './organization';
 export * from './document';
-export * from './admin';
 export * from './reference-data';
 export * from './user';
 export * from './finance';
 export * from './event';
+export * from './platform-config';
+export * from './reports';
+export * from './approvals';
+export * from './catalog-admin';
+export * from './identity-admin';
+export * from './finance-ops';
+export * as ledgerModule from './ledger';
+export * as transactionsModule from './transactions';
+export * from './platform-ops';
+export * from './payments-ops';
+export * from './media-ops';

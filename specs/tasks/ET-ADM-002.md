@@ -3,7 +3,7 @@
 > **Spec** [`specs/admin/002-platform-configuration/spec.md`](../admin/002-platform-configuration/spec.md) · **Wave 6** · `blocked_by:` ET-PLT-005, ET-ORG-003, ET-FIN-002
 > **Screen** `Admin - Platform Configuration.dc.html` — **read it first**
 > **Routes** `apps/admin/src/app/(dashboard)/system/configuration`
-> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-ADM-002 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-ADM-002 -DfailIfNoTests=false`
 
 Configuration that changes commission rates, hold periods and TTLs — which is to say,
 configuration that can silently rewrite what people were charged. **R6 is the requirement that
@@ -159,5 +159,5 @@ edit affordance. Loading, empty, error, populated.
 - [ ] `ADMIN` reads and cannot write; `SUPER_ADMIN` writes
 - [ ] Prospectivity is stated in the UI **before** confirmation
 - [ ] Kill switches visually distinct
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-ADM-002 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-ADM-002 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

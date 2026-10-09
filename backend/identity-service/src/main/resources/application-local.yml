@@ -28,35 +28,62 @@ app:
 # Swap to real Azure with SPRING_PROFILES_ACTIVE=prod (managed identity).
 # ============================================================================
 spring:
+  # The GraphiQL console, on for local development only. A value in a file called `local` is
+  # visibly a development value, which is also why the dev credentials live here. The base file
+  # defaults it OFF.
+  graphql:
+    graphiql:
+      enabled: true
+  data:
+    # Pinned to the local stack rather than inherited from application.yml.
+    # The `local` profile exists to name the containers in docker-resources/ explicitly; a
+    # profile that leaves its datastore to a default in another file does not actually say
+    # where it connects, and anything reading it - a person, or a tool checking that this
+    # really is a local database - has to look somewhere else to find out.
+    # These are the same values application.yml already carries as its defaults.
+    mongodb:
+      uri: mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin
+      database: dev_ticketing
+    redis:
+      host: localhost
+      port: 6379
   cloud:
     azure:
       servicebus:
-        namespace: ""
         connection-string: "Endpoint=sb://localhost:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
     stream:
       default-binder: servicebus
 
-spring:
-  security:
-    oauth2:
-      client:
-        registration:
-          identity-service:
-            client-secret: ${IDENTITY_SERVICE_SECRET:identity-service-secret}
-
 # ---------------------------------------------------------------------------
-# ET-PLT-001 R6 · credentials for local development
+# Credentials for local development
 #
 # Deliberately NOT defaulted here. The real values live in the sibling repo,
 # already gitignored, and are the same variables the realm import substitutes:
 #
-#   docker-resources/.env.ticketing   IDENTITY_SERVICE_SECRET, CATALOG_SERVICE_SECRET,
+#   docker-resources/env/ticketing.env   IDENTITY_SERVICE_SECRET, CATALOG_SERVICE_SECRET,
 #                                     BOOKING_SERVICE_SECRET, API_GATEWAY_SECRET
-#   docker-resources/.env.keycloak    KC_BOOTSTRAP_ADMIN_USERNAME / _PASSWORD
+#   docker-resources/env/keycloak.env    KC_BOOTSTRAP_ADMIN_USERNAME / _PASSWORD
 #
-#   set -a && . ../../docker-resources/.env.ticketing && set +a
+#   set -a && . ../../docker-resources/env/ticketing.env && set +a
 #
 # A default here would be a credential in git, and the placeholder ones this
 # replaced ("identity-service-secret") never matched the provisioned realm —
 # so they bought no convenience either.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Buyer identity (ET-IDN-004) - DEVELOPMENT VALUES ONLY. Not secrets: they exist so the local
+# stack starts without environment variables. Every other profile must provide its own.
+# ---------------------------------------------------------------------------
+identity:
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:3001,http://localhost:3003,http://localhost:3030
+  challenge:
+    hmac-pepper: local-dev-challenge-pepper-not-a-secret
+  contact:
+    hash-key: local-dev-contact-hash-key-not-a-secret
+  id-hash:
+    key: local-dev-id-hash-key-not-a-secret
+  delivery:
+    capture:
+      enabled: true

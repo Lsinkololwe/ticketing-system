@@ -5,6 +5,12 @@
 # See docs/MESSAGING_AND_SERVICE_BUS.html.
 # =====================================================================
 spring:
+  # Self-hosted Temporal: the platform's own Temporal frontend and namespace.
+  temporal:
+    connection:
+      target: ${TEMPORAL_ADDRESS}
+      enable-https: ${TEMPORAL_TLS_ENABLED:false}
+    namespace: ${TEMPORAL_NAMESPACE:ticketing}
   cloud:
     azure:
       credential:

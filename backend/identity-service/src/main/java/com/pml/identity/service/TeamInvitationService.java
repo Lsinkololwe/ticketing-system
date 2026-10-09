@@ -1,6 +1,5 @@
 package com.pml.identity.service;
 
-import com.pml.shared.constants.InvitationStatus;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.domain.model.TeamInvitation;
@@ -51,15 +50,8 @@ public interface TeamInvitationService {
      */
     Flux<TeamInvitation> findPendingByEmail(String email);
 
-    /**
-     * Check if email has pending invitation for organization
-     */
-    Mono<Boolean> hasPendingInvitation(String email, String organizationId);
-
-    /**
-     * Count pending invitations for organization
-     */
-    Mono<Long> countPendingByOrganization(String organizationId);
+    /** Pending invitations sent to a WhatsApp number (E.164). */
+    Flux<TeamInvitation> findPendingByPhone(String phoneNumber);
 
     // ─────────────────────────────────────────────────────────────────────
     // Write Operations
@@ -107,11 +99,6 @@ public interface TeamInvitationService {
      * Decline invitation
      */
     Mono<TeamInvitation> decline(String invitationToken);
-
-    /**
-     * Expire old invitations (scheduled task)
-     */
-    Mono<Long> expireOldInvitations();
 
     // ─────────────────────────────────────────────────────────────────────
     // Helper Classes

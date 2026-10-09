@@ -29,4 +29,34 @@ public class UpdatePlatformConfigurationInput {
     private Boolean requireCommentsOnRejection;
     private Boolean requireCommentsOnChangesRequested;
     private Boolean allowSelfApproval;
+
+    /** Platform default commission as a percentage, 0 to 50. */
+    private java.math.BigDecimal commissionDefault;
+    private java.math.BigDecimal minimumPayout;
+    private Integer reservationHoldMinutes;
+    private Integer reservationGraceMinutes;
+    private Integer escrowHoldDays;
+    private Integer refundCutoffHours;
+    private Integer maxTicketsPerBooking;
+    private Integer rescheduleLimit;
+    private String currency;
+    private java.util.List<RefundPolicyInput> refundPolicies;
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RefundPolicyInput {
+        private String code;
+        private String label;
+        private String summary;
+        private java.util.List<RefundRuleInput> rules;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RefundRuleInput {
+        private int daysBefore;
+        private int percent;
+    }
 }

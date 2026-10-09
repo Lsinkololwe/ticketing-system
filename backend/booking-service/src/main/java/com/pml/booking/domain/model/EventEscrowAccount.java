@@ -1,24 +1,28 @@
 package com.pml.booking.domain.model;
 
+import com.pml.shared.constants.PlatformTime;
+
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.shared.constants.EscrowStatus;
 import com.pml.shared.constants.WorkflowSemantic;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -42,7 +46,8 @@ import java.util.List;
  * - We MUST pay this out eventually (unless refunded)
  * - This is NOT platform revenue (that's the commission)
  */
-@Document(collection = "booking_escrow_accounts")
+@Document(collection = BookingCollections.ESCROW_ACCOUNTS)
+@TypeAlias("escrow_accounts")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -56,47 +61,43 @@ public class EventEscrowAccount {
     /**
      * Human-readable account number, format {@code ESC-{eventId}-{year}}.
      *
-     * <p>Another documented delta from ET-FIN-001, which keys the account on
-     * {@code eventId} alone. It stays because it is exposed on the GraphQL
+     * <p>The account is keyed on {@code eventId} alone; this number is a display
+     * label. It stays because it is exposed on the GraphQL
      * {@code AccountSummary} type and the organizer finance screen queries it;
      * removing it is an API break needing frontend coordination, not a field
      * deletion.
      */
-    @Indexed(unique = true)
     private String accountNumber;
 
     @NotBlank(message = "Event ID is required")
-    @Indexed(unique = true)
     private String eventId;
 
     /**
      * Denormalised event title.
      *
-     * <p><b>Not in ET-FIN-001's document, and kept anyway — deliberately, and
-     * temporarily.</b> The organizer's payout screen and the event financial
-     * report both display it. Removing it leaves two choices, and both are
-     * worse than a documented delta: blank the labels, or fabricate
-     * {@code "Event " + id} and present it as the name of a real event.
+     * <p><b>A copy of catalog's data, kept deliberately and temporarily.</b> The
+     * organizer's payout screen and the event financial report both display it.
+     * Removing it leaves two choices, and both are worse: blank the labels, or
+     * fabricate {@code "Event " + id} and present it as the name of a real event.
      *
-     * <p>The spec is right that this does not belong here — it is a copy of
-     * catalog's data that can go stale and disagree with its source. Removing it
+     * <p>It does not really belong here — it is a copy of catalog's data that can
+     * go stale and disagree with its source. Removing it
      * needs a catalog lookup on those two surfaces, which is a functional change
      * rather than a field deletion.
      */
     private String eventTitle;
 
     @NotBlank(message = "Organizer ID is required")
-    @Indexed
     private String organizerId;
 
-    /** Denormalised organizer name. Same delta and same reason as eventTitle. */
+    /** Denormalised organizer name. Kept for the same reason as eventTitle. */
     private String organizerName;
 
     /**
      * Commission collected from this event's sales.
      *
-     * <p>ET-FIN-001 puts commission on platform account {@code 2020 Pending
-     * Commission}, not on the escrow. Kept for now because AccountSummary
+     * <p>The ledger carries commission on platform account {@code 2020 Pending
+     * Commission}, not on the escrow. Kept here because AccountSummary
      * exposes it, and a fabricated zero on a commission field is precisely the
      * confidently-wrong number this work exists to eliminate.
      */
@@ -112,7 +113,6 @@ public class EventEscrowAccount {
      *
      * OWASP A01:2021 Compliance: Used for tenant isolation in authorization.
      */
-    @Indexed
     private String organizationId;
 
     // Balances
@@ -141,7 +141,6 @@ public class EventEscrowAccount {
 
     // Status
     @NotNull(message = "Status is required")
-    @Indexed
     private EscrowStatus status;
 
     /**
@@ -157,17 +156,15 @@ public class EventEscrowAccount {
      * {@code StatusSemanticMigrationService}. Null means the code matched
      * no reference-data row, which is findable; a guessed value would not be.
      */
-    @Indexed
     private WorkflowSemantic statusSemantic;
 
     /**
      * When the account became payout-eligible.
      *
-     * <p>Also not in ET-FIN-001's document, and kept for the same reason: the
-     * organizer's dashboard shows "eligible since". The spec's position is
-     * defensible — the status transition and its audit entry already record
-     * this — but reading it back out of the audit trail is work this increment
-     * does not do, and dropping the field silently blanks the column.
+     * <p>Also a denormalised copy, kept for the same reason: the organizer's
+     * dashboard shows "eligible since". The status transition and its audit entry
+     * already record this, but nothing reads it back out of the audit trail, and
+     * dropping the field silently blanks the column.
      */
     private Instant payoutEligibleAt;
 
@@ -178,12 +175,12 @@ public class EventEscrowAccount {
      * {@link EscrowStatus#HOLD} from {@link EscrowStatus#SUSPENDED} — the latter
      * has no date because it ends when a person decides it does.
      */
-    private LocalDateTime holdUntil;
+    private Instant holdUntil;
 
     /**
      * Open chargebacks against this event's tickets.
      *
-     * <p>ET-FIN-001 R4 blocks {@code PAYOUT_ELIGIBLE} while this is above zero:
+     * <p>The account cannot become {@code PAYOUT_ELIGIBLE} while this is above zero:
      * money that may still be clawed back must not be paid out. Denormalised
      * onto the account rather than counted on demand because it is read on the
      * payout path, where a scan of the chargeback collection per request would
@@ -196,15 +193,15 @@ public class EventEscrowAccount {
      * When the account opened — the moment its event published.
      *
      * <p>Distinct from {@code createdAt}: that is an audit timestamp maintained
-     * by the framework, this is a business fact ET-FIN-001 names and reports
-     * are entitled to rely on.
+     * by the framework, this is a business fact that finance reports are
+     * entitled to rely on.
      */
     private Instant openedAt;
 
     /**
      * Timestamp when the account was closed.
      */
-    private LocalDateTime closedAt;
+    private Instant closedAt;
 
     // Transaction Ledger (embedded for quick access)
     @Builder.Default
@@ -224,27 +221,25 @@ public class EventEscrowAccount {
     // com.pml.shared.constants.EscrowStatus, so catalog-service can reflect over
     // it to derive the administrator-editable status list.
 
-
     // Factory method
 
     /**
-     * Open the account for a published event (ET-FIN-001 R4).
+     * Open the account for a published event, already {@code ACTIVE}.
      *
-     * <p>No accountNumber, eventTitle or organizerName: the spec's document has
-     * none of them. They were denormalised copies of catalog and identity data,
-     * which means they were also three things that could go stale and disagree
-     * with their source. The eventId resolves all three when a screen needs them.
+     * <p>No eventTitle or organizerName: they are denormalised copies of catalog
+     * and identity data, which means they are two things that can go stale and
+     * disagree with their source. The eventId resolves both when a screen needs them.
      */
-    public static EventEscrowAccount create(String eventId, String organizerId, LocalDateTime eventDate) {
+    public static EventEscrowAccount create(String eventId, String organizerId, Instant eventDate, Instant now) {
         return EventEscrowAccount.builder()
                 .accountNumber(String.format("ESC-%s-%d",
                         eventId.substring(0, Math.min(8, eventId.length())).toUpperCase(),
-                        eventDate.getYear()))
+                        PlatformTime.atZone(eventDate).getYear()))
                 .eventId(eventId)
                 .organizerId(organizerId)
                 .status(EscrowStatus.ACTIVE)
-                .openedAt(Instant.now())
-                .holdUntil(eventDate.plusDays(7))
+                .openedAt(now)
+                .holdUntil(eventDate.plus(Duration.ofDays(7)))
                 .build();
     }
 
@@ -253,12 +248,10 @@ public class EventEscrowAccount {
     /**
      * Credit funds to escrow (ticket sale).
      */
-    public void credit(
-            BigDecimal amount,
+    public void credit(BigDecimal amount,
             String ticketId,
             String paymentIntentId,
-            String description
-    ) {
+            String description, Instant now) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Credit amount must be positive");
         }
@@ -272,9 +265,8 @@ public class EventEscrowAccount {
         this.currentBalance = this.currentBalance.add(amount);
         this.totalCredited = this.totalCredited.add(amount);
 
-        // No activation step: ET-FIN-001 R4 opens the account ACTIVE when the
-        // event publishes. The old CREATED -> ACTIVE hop existed only to record
-        // "has taken money", which the balance already says.
+        // No activation step: the account opens ACTIVE when the event publishes.
+        // A separate "has taken money" state would repeat what the balance already says.
 
         // Record transaction
         EscrowTransaction txn = EscrowTransaction.builder()
@@ -286,7 +278,7 @@ public class EventEscrowAccount {
                 .ticketId(ticketId)
                 .paymentIntentId(paymentIntentId)
                 .description(description)
-                .timestamp(Instant.now())
+                .timestamp(now)
                 .build();
         if (this.transactions == null) {
             this.transactions = new ArrayList<>();
@@ -297,12 +289,21 @@ public class EventEscrowAccount {
     /**
      * Debit funds from escrow (refund).
      */
-    public void debitForRefund(
-            BigDecimal amount,
+    /**
+     * Whether this account already holds the refund debit for {@code refundRequestId}. A refund's
+     * debit is looked up by its request id, so debiting the same refund a second time can be refused.
+     */
+    public boolean hasRefundDebit(String refundRequestId) {
+        return refundRequestId != null && transactions != null && transactions.stream().anyMatch(txn ->
+                txn.getType() == EscrowTransaction.TransactionType.DEBIT
+                        && "REFUND".equals(txn.getCategory())
+                        && refundRequestId.equals(txn.getRefundRequestId()));
+    }
+
+    public void debitForRefund(BigDecimal amount,
             String ticketId,
             String refundRequestId,
-            String description
-    ) {
+            String description, Instant now) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Debit amount must be positive");
         }
@@ -322,7 +323,7 @@ public class EventEscrowAccount {
                 .ticketId(ticketId)
                 .refundRequestId(refundRequestId)
                 .description(description)
-                .timestamp(Instant.now())
+                .timestamp(now)
                 .build();
         this.transactions.add(txn);
     }
@@ -330,11 +331,9 @@ public class EventEscrowAccount {
     /**
      * Debit funds from escrow (payout to organizer).
      */
-    public void debitForPayout(
-            BigDecimal amount,
+    public void debitForPayout(BigDecimal amount,
             String payoutRequestId,
-            String description
-    ) {
+            String description, Instant now) {
         if (status != EscrowStatus.PAYOUT_ELIGIBLE) {
             throw new IllegalStateException("Escrow is not eligible for payout");
         }
@@ -353,7 +352,7 @@ public class EventEscrowAccount {
                 .balanceAfter(this.currentBalance)
                 .payoutRequestId(payoutRequestId)
                 .description(description)
-                .timestamp(Instant.now())
+                .timestamp(now)
                 .build();
         this.transactions.add(txn);
 
@@ -364,7 +363,35 @@ public class EventEscrowAccount {
     }
 
     /**
-     * Enter the post-event hold period (ET-FIN-001 R4).
+     * Restores a payout debit exactly, when the transfer it paid for failed.
+     *
+     * <p>The mirror of {@link #debitForPayout}: the balance and the debited total return to what they
+     * were, a CREDIT row names the same payout request, and an account the debit emptied and closed
+     * is eligible for payout again.
+     */
+    public void reverseDebitForPayout(BigDecimal amount, String payoutRequestId, Instant now) {
+        this.currentBalance = this.currentBalance.add(amount);
+        this.totalDebited = this.totalDebited.subtract(amount);
+
+        this.transactions.add(EscrowTransaction.builder()
+                .id(payoutRequestId + ":reversal:" + now.toEpochMilli())
+                .type(EscrowTransaction.TransactionType.CREDIT)
+                .category("PAYOUT_REVERSAL")
+                .amount(amount)
+                .balanceAfter(this.currentBalance)
+                .payoutRequestId(payoutRequestId)
+                .description("Payout reversed: " + payoutRequestId)
+                .timestamp(now)
+                .build());
+
+        if (this.status == EscrowStatus.CLOSED) {
+            this.status = EscrowStatus.PAYOUT_ELIGIBLE;
+            this.closedAt = null;
+        }
+    }
+
+    /**
+     * Enter the post-event hold period.
      *
      * <p>Triggered by {@code catalog.EventCompleted}. This is the clock-driven
      * hold — a platform-imposed stop is {@link #suspend(String)}, which is a
@@ -375,19 +402,6 @@ public class EventEscrowAccount {
             throw new IllegalStateException("Can only hold an active escrow");
         }
         this.status = EscrowStatus.HOLD;
-    }
-
-    /**
-     * Stop the account by decision — fraud review, a dispute, a compliance hold.
-     *
-     * <p>Reachable from any live state, unlike {@link #hold(String)}: fraud is
-     * found whenever it is found, not only while an event is still selling.
-     */
-    public void suspend() {
-        if (status == EscrowStatus.CLOSED) {
-            throw new IllegalStateException("Cannot suspend a closed escrow");
-        }
-        this.status = EscrowStatus.SUSPENDED;
     }
 
     /**
@@ -405,19 +419,19 @@ public class EventEscrowAccount {
      *
      * @param reason The reason for cancellation
      */
-    public void cancel(String reason) {
+    public void cancel(String reason, Instant now) {
         if (this.currentBalance.compareTo(BigDecimal.ZERO) != 0) {
             throw new IllegalStateException("Cannot cancel escrow with remaining balance");
         }
         this.status = EscrowStatus.CLOSED;
-        this.closedAt = LocalDateTime.now();
+        this.closedAt = now;
     }
 
     /**
      * Cancel escrow (event cancelled, all refunded).
      */
-    public void cancel() {
-        cancel("EVENT_CANCELLED");
+    public void cancel(Instant now) {
+        cancel("EVENT_CANCELLED", now);
     }
 
     /**
@@ -425,14 +439,13 @@ public class EventEscrowAccount {
      *
      * @param reason The reason for closure
      */
-    public void close(String reason) {
+    public void close(String reason, Instant now) {
         if (this.currentBalance.compareTo(BigDecimal.ZERO) != 0) {
             throw new IllegalStateException("Cannot close escrow with remaining balance");
         }
         this.status = EscrowStatus.CLOSED;
-        this.closedAt = LocalDateTime.now();
+        this.closedAt = now;
     }
-
 
     // Query helpers
 
@@ -462,8 +475,8 @@ public class EventEscrowAccount {
         return status == EscrowStatus.CLOSED;
     }
 
-    public boolean isHoldPeriodPassed() {
-        return holdUntil != null && LocalDateTime.now().isAfter(holdUntil);
+    public boolean isHoldPeriodPassed(Instant now) {
+        return holdUntil != null && now.isAfter(holdUntil);
     }
 
     public BigDecimal getAvailableForPayout() {

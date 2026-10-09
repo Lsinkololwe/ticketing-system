@@ -1,23 +1,34 @@
 package com.pml.identity.web.graphql.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
 /**
- * Input DTO for updating user notification preferences.
- * All fields are optional - only provided fields will be updated.
+ * The {@code UpdateNotificationPreferencesInput} GraphQL type; a null field leaves the stored value.
  *
- * @param emailEnabled whether to enable email notifications
- * @param smsEnabled whether to enable SMS notifications
- * @param whatsappEnabled whether to enable WhatsApp notifications
- * @param pushEnabled whether to enable push notifications
- * @param eventReminders whether to receive event reminder notifications
- * @param marketingEmails whether to receive marketing emails
- * @param reminderHoursBefore how many hours before an event to send reminder
+ * <p>The five essential categories — tickets, payments, event updates, team, system — are always on:
+ * sending {@code true} is accepted, sending {@code false} is refused rather than ignored.
  */
 public record UpdateNotificationPreferencesInput(
-    Boolean emailEnabled,
-    Boolean smsEnabled,
-    Boolean whatsappEnabled,
-    Boolean pushEnabled,
-    Boolean eventReminders,
-    Boolean marketingEmails,
-    Integer reminderHoursBefore
-) {}
+        Boolean emailEnabled,
+        Boolean smsEnabled,
+        Boolean whatsappEnabled,
+        Boolean pushEnabled,
+        Boolean inAppEnabled,
+        Boolean ticketNotifications,
+        Boolean eventReminders,
+        Boolean eventUpdates,
+        Boolean paymentNotifications,
+        Boolean teamNotifications,
+        Boolean marketingEmails,
+        Boolean systemAnnouncements,
+        @Min(1) @Max(168) Integer reminderHoursBefore,
+        @Pattern(regexp = QUIET_HOUR) String quietHoursStart,
+        @Pattern(regexp = QUIET_HOUR) String quietHoursEnd,
+        @Size(max = 64) String timezone
+) {
+    /** A 24-hour clock time, {@code 00:00} to {@code 23:59}. */
+    public static final String QUIET_HOUR = "([01]\\d|2[0-3]):[0-5]\\d";
+}

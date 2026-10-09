@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Individual check-in event for live dashboard feed.
@@ -32,7 +32,7 @@ public class CheckInEvent {
     private String buyerName;
 
     /** When the check-in occurred */
-    private LocalDateTime checkedInAt;
+    private Instant checkedInAt;
 
     /** Scanner device/user ID */
     private String scannerId;

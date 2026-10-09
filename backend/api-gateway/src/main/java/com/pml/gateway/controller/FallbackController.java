@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -78,6 +79,19 @@ import java.util.Map;
 @RestController
 @RequestMapping("/fallback")
 public class FallbackController {
+
+    /**
+     * The injected platform clock, which is UTC.
+     *
+     * <p>The fallback body a client sees when a circuit is open carries an {@link Instant} from this
+     * clock. That timestamp is the one an operator reads while correlating an outage against service
+     * logs, which are UTC — the moment it is least useful to be ambiguous about the zone.</p>
+     */
+    private final Clock clock;
+
+    public FallbackController(Clock clock) {
+        this.clock = clock;
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // GRAPHQL FALLBACK
@@ -150,7 +164,7 @@ public class FallbackController {
                         "service", service,
                         "message", message,
                         "errorCode", "CIRCUIT_BREAKER_OPEN",
-                        "timestamp", LocalDateTime.now().toString(),
+                        "timestamp", Instant.now(clock).toString(),
                         "retryAfter", 30
                 ));
     }

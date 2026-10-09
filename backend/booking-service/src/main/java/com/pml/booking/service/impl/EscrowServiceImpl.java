@@ -1,21 +1,21 @@
 package com.pml.booking.service.impl;
 
 import com.pml.shared.constants.EscrowStatus;
-import com.pml.booking.event.domain.EscrowCreditedEvent;
 import com.pml.booking.domain.model.EventEscrowAccount;
 import com.pml.booking.repository.EventEscrowAccountRepository;
 import com.pml.booking.security.TenantAccessGuard;
 import com.pml.booking.service.EscrowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collection;
 
 /**
  * Escrow Service Implementation
@@ -39,7 +39,9 @@ public class EscrowServiceImpl implements EscrowService {
     private static final String ESCROW_READ = "escrow:read";
 
     private final EventEscrowAccountRepository escrowRepository;
-    private final ApplicationEventPublisher eventPublisher;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final TenantAccessGuard tenantAccessGuard;
 
     @Override
@@ -49,7 +51,7 @@ public class EscrowServiceImpl implements EscrowService {
             String eventTitle,
             String organizerId,
             String organizerName,
-            LocalDateTime eventDate
+            Instant eventDate
     ) {
         log.info("Creating escrow account for event: {}", eventId);
 
@@ -61,11 +63,29 @@ public class EscrowServiceImpl implements EscrowService {
                     }
 
                     EventEscrowAccount escrow = EventEscrowAccount.create(
-                            eventId, organizerId, eventDate);
+                            eventId, organizerId, eventDate, clock.instant());
 
                     return escrowRepository.save(escrow)
                             .doOnSuccess(e -> log.info("Escrow account created: {}", e.getEventId()));
                 });
+    }
+
+    @Override
+    public Mono<EventEscrowAccount> openEscrowForPublishedEvent(String eventId,
+                                                                String organizationId,
+                                                                Instant startsAt) {
+        return escrowRepository.findByEventId(eventId)
+                .switchIfEmpty(Mono.defer(() -> {
+                    EventEscrowAccount escrow = EventEscrowAccount.create(eventId, null, startsAt, clock.instant());
+                    escrow.setOrganizationId(organizationId);
+                    return escrowRepository.save(escrow)
+                            .doOnSuccess(e -> log.info("Escrow account opened for event {} (organization {})",
+                                    eventId, organizationId))
+                            // Two deliveries can reach the save together. The unique index on eventId
+                            // refuses the second, and losing that race means the escrow exists.
+                            .onErrorResume(org.springframework.dao.DuplicateKeyException.class,
+                                    e -> escrowRepository.findByEventId(eventId));
+                }));
     }
 
     @Override
@@ -83,12 +103,9 @@ public class EscrowServiceImpl implements EscrowService {
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "Escrow account not found for event: " + eventId)))
                 .flatMap(escrow -> {
-                    escrow.credit(amount, ticketId, paymentIntentId, description);
+                    escrow.credit(amount, ticketId, paymentIntentId, description, clock.instant());
                     return escrowRepository.save(escrow)
-                            .doOnSuccess(e -> {
-                                log.info("Escrow credited. New balance: {}", e.getCurrentBalance());
-                                publishEscrowCredited(e, ticketId, paymentIntentId, amount, "TICKET_SALE");
-                            });
+                            .doOnSuccess(e -> log.info("Escrow credited. New balance: {}", e.getCurrentBalance()));
                 });
     }
 
@@ -107,7 +124,12 @@ public class EscrowServiceImpl implements EscrowService {
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "Escrow account not found for event: " + eventId)))
                 .flatMap(escrow -> {
-                    escrow.debitForRefund(amount, ticketId, refundRequestId, description);
+                    // A repeated call for the same refund returns the account unchanged: the debit is
+                    // taken once per refund request, however many times the refund is processed.
+                    if (escrow.hasRefundDebit(refundRequestId)) {
+                        return Mono.just(escrow);
+                    }
+                    escrow.debitForRefund(amount, ticketId, refundRequestId, description, clock.instant());
                     return escrowRepository.save(escrow)
                             .doOnSuccess(e -> log.info("Escrow debited for refund. New balance: {}", e.getCurrentBalance()));
                 });
@@ -127,7 +149,7 @@ public class EscrowServiceImpl implements EscrowService {
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "Escrow account not found for event: " + eventId)))
                 .flatMap(escrow -> {
-                    escrow.debitForPayout(amount, payoutRequestId, description);
+                    escrow.debitForPayout(amount, payoutRequestId, description, clock.instant());
                     return escrowRepository.save(escrow)
                             .doOnSuccess(e -> log.info("Escrow debited for payout. New balance: {}", e.getCurrentBalance()));
                 });
@@ -172,7 +194,7 @@ public class EscrowServiceImpl implements EscrowService {
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "Escrow account not found for event: " + eventId)))
                 .flatMap(escrow -> {
-                    escrow.cancel();
+                    escrow.cancel(clock.instant());
                     return escrowRepository.save(escrow)
                             .doOnSuccess(e -> log.info("Escrow cancelled: {}", e.getEventId()));
                 });
@@ -195,7 +217,7 @@ public class EscrowServiceImpl implements EscrowService {
 
                     // Set timestamps based on new status
                     if (status == EscrowStatus.PAYOUT_ELIGIBLE) {
-                        escrow.setPayoutEligibleAt(java.time.Instant.now());
+                        escrow.setPayoutEligibleAt(clock.instant());
                     }
 
                     return escrowRepository.save(escrow)
@@ -206,7 +228,7 @@ public class EscrowServiceImpl implements EscrowService {
 
     @Override
     @Transactional
-    public Mono<EventEscrowAccount> lockEscrowAccount(String accountId, LocalDateTime lockUntil, String reason) {
+    public Mono<EventEscrowAccount> lockEscrowAccount(String accountId, Instant lockUntil, String reason) {
         log.info("Admin locking escrow account {} until {} (reason: {})", accountId, lockUntil, reason);
 
         return escrowRepository.findById(accountId)
@@ -239,7 +261,7 @@ public class EscrowServiceImpl implements EscrowService {
 
                     // Unlocking makes it payout eligible
                     escrow.setStatus(EscrowStatus.PAYOUT_ELIGIBLE);
-                    escrow.setPayoutEligibleAt(java.time.Instant.now());
+                    escrow.setPayoutEligibleAt(clock.instant());
                     escrow.setHoldUntil(null);
 
                     return escrowRepository.save(escrow)
@@ -298,47 +320,9 @@ public class EscrowServiceImpl implements EscrowService {
     }
 
     @Override
-    public Flux<EventEscrowAccount> findPayoutEligibleByOrganizationId(
-            String actorUserId, String organizationId) {
-        return tenantAccessGuard.requireAccess(actorUserId, organizationId, ESCROW_READ)
-                .flatMapMany(orgId -> escrowRepository
-                        .findByOrganizationIdAndStatus(orgId, EscrowStatus.PAYOUT_ELIGIBLE));
-    }
-
-    @Override
     @Deprecated
     public Flux<EventEscrowAccount> findPayoutEligibleByOrganizerId(String organizerId) {
         return escrowRepository.findPayoutEligibleByOrganizerId(organizerId);
-    }
-
-    @Override
-    public Flux<EventEscrowAccount> findLockedEscrowsWithPassedHoldPeriod() {
-        return escrowRepository.findByStatusAndHoldUntilBefore(
-                EscrowStatus.HOLD,
-                LocalDateTime.now()
-        );
-    }
-
-    @Override
-    @Transactional
-    public Mono<Long> processHoldPeriodExpirations() {
-        log.info("Processing hold period expirations");
-
-        return findLockedEscrowsWithPassedHoldPeriod()
-                .flatMap(escrow -> {
-                    escrow.markPayoutEligible();
-                    return escrowRepository.save(escrow)
-                            .doOnSuccess(e -> log.info("Escrow {} now payout-eligible", e.getEventId()));
-                })
-                .count()
-                .doOnSuccess(count -> log.info("Processed {} hold period expirations", count));
-    }
-
-    @Override
-    public Mono<BigDecimal> getTotalPayoutEligibleBalance(String organizerId) {
-        return findPayoutEligibleByOrganizerId(organizerId)
-                .map(EventEscrowAccount::getAvailableForPayout)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     @Override
@@ -353,11 +337,10 @@ public class EscrowServiceImpl implements EscrowService {
                         return escrowRepository.findByEventId(eventId);
                     }
 
-                    // The "Event {id}" and "Organizer" placeholders here were
-                    // filling denormalised title fields the spec does not have.
-                    // Nothing needed inventing once those fields went.
+                    // No title or organizer name is set: those denormalised fields are
+                    // resolved from the event when a screen needs them, never invented here.
                     EventEscrowAccount escrow = EventEscrowAccount.create(
-                            eventId, organizerId, LocalDateTime.now().plusDays(30));
+                            eventId, organizerId, clock.instant().plus(Duration.ofDays(30)), clock.instant());
                     escrow.setCurrency(currency);
 
                     return escrowRepository.save(escrow)
@@ -367,39 +350,17 @@ public class EscrowServiceImpl implements EscrowService {
 
     @Override
     @Transactional
-    public Mono<EventEscrowAccount> updateExpectedLockDate(String accountId, LocalDateTime newLockDate) {
+    public Mono<EventEscrowAccount> updateExpectedLockDate(String accountId, Instant newLockDate) {
         log.info("Updating expected lock date for escrow account: {} to {}", accountId, newLockDate);
 
         return escrowRepository.findById(accountId)
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "Escrow account not found: " + accountId)))
                 .flatMap(escrow -> {
-                    escrow.setHoldUntil(newLockDate.plusDays(7));
+                    escrow.setHoldUntil(newLockDate.plus(Duration.ofDays(7)));
                     return escrowRepository.save(escrow)
                             .doOnSuccess(e -> log.info("Updated escrow lock date to: {}", e.getHoldUntil()));
                 });
-    }
-
-    private void publishEscrowCredited(
-            EventEscrowAccount escrow,
-            String ticketId,
-            String transactionRef,
-            BigDecimal amount,
-            String category
-    ) {
-        EscrowCreditedEvent event = new EscrowCreditedEvent(
-                escrow.getId(),
-                escrow.getEventId(),
-                escrow.getOrganizerId(),
-                ticketId,
-                transactionRef,
-                amount,
-                escrow.getCurrentBalance(),
-                escrow.getCurrency(),
-                category
-        );
-        eventPublisher.publishEvent(event);
-        log.debug("Published EscrowCreditedEvent for ticket: {}", ticketId);
     }
 
     // ========================================================================
@@ -409,11 +370,6 @@ public class EscrowServiceImpl implements EscrowService {
     @Override
     public Flux<EventEscrowAccount> findAll() {
         return escrowRepository.findAll();
-    }
-
-    @Override
-    public Mono<Long> countAll() {
-        return escrowRepository.count();
     }
 
     @Override
@@ -447,5 +403,13 @@ public class EscrowServiceImpl implements EscrowService {
         return escrowRepository.findAll()
                 .map(EventEscrowAccount::getTotalRefunded)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Override
+    public Flux<EventEscrowAccount> findByOrganizationIdIn(Collection<String> organizationIds) {
+        if (organizationIds.isEmpty()) {
+            return Flux.empty();
+        }
+        return escrowRepository.findByOrganizationIdIn(organizationIds);
     }
 }

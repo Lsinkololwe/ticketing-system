@@ -22,7 +22,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.4</version>
+        <version>3.5.5</version>
         <relativePath/>
     </parent>
 
@@ -44,6 +44,8 @@
     </modules>
 
     <properties>
+        <!-- required by azure-core-http-netty 1.16.6 (Service Bus SDK pin, see dependencyManagement) -->
+        <netty.version>4.1.137.Final</netty.version>
         <java.version>21</java.version>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -53,6 +55,10 @@
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
         <maven-jar-plugin.version>3.3.0</maven-jar-plugin.version>
         <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+        <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
+
+        <!-- Empty unless the coverage profile's agent fills it; surefire reads it as @{argLine}. -->
+        <argLine></argLine>
 
         <!-- the BOMs of CONVENTIONS §0, plus the gateway's Spring Cloud train -->
         <dgs.version>10.5.0</dgs.version>
@@ -63,13 +69,45 @@
         <resilience4j.version>2.2.0</resilience4j.version>
         <jjwt.version>0.12.3</jjwt.version>
         <aws-sdk.version>2.28.29</aws-sdk.version>
-        <mongock.version>5.5.0</mongock.version>
         <zxing.version>3.5.2</zxing.version>
         <libphonenumber.version>8.13.50</libphonenumber.version>
         <springdoc.version>2.8.4</springdoc.version>
-        <keycloak.version>26.0.7</keycloak.version>
+        <!-- the Keycloak SERVER the SPI plugin compiles against and the containers run -->
+        <keycloak.version>26.5.2</keycloak.version>
+        <!-- Latest published is 26.0.12; Maven Central has no keycloak-admin-client 26.1+ (checked
+             2026-10-04), so the admin REST client stays on the 26.0 line. The Admin REST API is
+             stable across 26.x and KeycloakServiceContainerTest runs it against server 26.5.2. -->
+        <keycloak-admin-client.version>26.0.12</keycloak-admin-client.version>
+        <!-- 26.0.12 brings RESTEasy 6.2.15, which asks for slightly newer jaxb/mail/logging than Spring Boot 3.5.5
+             manages; raised here so requireUpperBoundDeps stays satisfied (patch-level bumps). Its Jackson 2.21
+             artifacts are excluded on the dependency itself: the platform's Jackson is Boot's. -->
+        <glassfish-jaxb.version>4.0.6</glassfish-jaxb.version>
+        <jakarta-mail.version>2.1.5</jakarta-mail.version>
+        <angus-mail.version>2.0.5</angus-mail.version>
+        <jakarta-activation.version>2.1.4</jakarta-activation.version>
+        <jboss-logging.version>3.6.2.Final</jboss-logging.version>
         <testcontainers-keycloak.version>3.7.0</testcontainers-keycloak.version>
         <java-dataloader.version>5.0.1</java-dataloader.version>
+        <reactor-bom.version>2024.0.9</reactor-bom.version>
+        <context-propagation.version>1.1.3</context-propagation.version>
+        <oauth2-oidc-sdk.version>11.18</oauth2-oidc-sdk.version>
+        <nimbus-jose-jwt.version>9.48</nimbus-jose-jwt.version>
+        <httpclient.version>4.5.14</httpclient.version>
+
+        <!--
+            ET-PLT-012 R7 · overrides spring-boot-starter-parent, which manages kotlin.version
+            to 1.9.25.
+
+            `java-dataloader` 5.0.1 is built against Kotlin 2.2 and carries a transitive
+            requirement on kotlin-stdlib 2.2.0. Maven's nearest-wins resolution then downgrades
+            it to Boot's 1.9.25 — silently, with no warning — and a class compiled against a
+            newer stdlib running on an older one fails as a NoSuchMethodError, on whichever
+            dataloader path happens to touch the moved symbol.
+
+            The platform has no Kotlin source; this artifact is transitive only, so raising it
+            costs nothing and `requireUpperBoundDeps` keeps the pair honest from here.
+        -->
+        <kotlin.version>2.2.0</kotlin.version>
 
         <!-- Testcontainers 1.19 pins the Docker API to 1.32, which Docker Engine 29
              refuses (minimum 1.40). Held here so one bump moves every module. -->
@@ -86,10 +124,174 @@
              runtime guarantee: it fails the test when a blocking call reaches an
              event-loop thread, including one inside a library we did not write. -->
         <blockhound.version>1.0.13.RELEASE</blockhound.version>
+
+        <!-- ET-PLT-015 · durable execution. One property moves the SDK, the Spring Boot
+             starter and the test server together through temporal-bom. -->
+        <temporal.version>1.38.0</temporal.version>
+        <!-- ET-PLT-012 R7 · Temporal's gRPC stack requires these above what Boot and the
+             transitive paths resolve; pinned in dependencyManagement ahead of the BOMs. -->
+        <guava.version>33.4.8-jre</guava.version>
+        <protobuf-java.version>3.25.8</protobuf-java.version>
+        <commons-lang3.version>3.18.0</commons-lang3.version>
+        <commons-codec.version>1.19.0</commons-codec.version>
+        <commons-io.version>2.20.0</commons-io.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>io.projectreactor</groupId>
+                <artifactId>reactor-core</artifactId>
+                <version>3.7.19</version>
+            </dependency>
+            <dependency>
+                <groupId>io.projectreactor</groupId>
+                <artifactId>reactor-test</artifactId>
+                <version>3.7.19</version>
+            </dependency>
+            <dependency>
+                <groupId>io.projectreactor.netty</groupId>
+                <artifactId>reactor-netty-http</artifactId>
+                <version>1.2.18</version>
+            </dependency>
+            <dependency>
+                <groupId>io.projectreactor.netty</groupId>
+                <artifactId>reactor-netty-core</artifactId>
+                <version>1.2.18</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-tcnative-boringssl-static</artifactId>
+                <version>2.0.81.Final</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-tcnative-classes</artifactId>
+                <version>2.0.81.Final</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Service Bus SDK pinned above the Spring Cloud Azure BOM: 7.17.7 (the BOM's) does not understand the
+                 UseDevelopmentEmulator connection string and always dials <namespace>.servicebus.windows.net:5671,
+                 so nothing could reach the local emulator. 7.17.20 is the same API line. -->
+            <dependency>
+                <groupId>com.azure</groupId>
+                <artifactId>azure-messaging-servicebus</artifactId>
+                <version>7.17.20</version>
+            </dependency>
+            <dependency>
+                <groupId>com.azure</groupId>
+                <artifactId>azure-core-amqp</artifactId>
+                <version>2.12.1</version>
+            </dependency>
+            <dependency>
+                <groupId>com.azure</groupId>
+                <artifactId>azure-core</artifactId>
+                <version>1.59.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.azure</groupId>
+                <artifactId>azure-core-http-netty</artifactId>
+                <version>1.16.6</version>
+            </dependency>
+            <dependency>
+                <groupId>com.azure</groupId>
+                <artifactId>azure-json</artifactId>
+                <version>1.5.1</version>
+            </dependency>
+            <dependency>
+                <groupId>com.azure</groupId>
+                <artifactId>azure-xml</artifactId>
+                <version>1.2.1</version>
+            </dependency>
+
+            <!--
+                ET-PLT-012 R7 · three artifacts the imported BOMs pin OLDER than Spring Boot
+                needs, pinned back up here.
+
+                Import order decides these, and the DGS platform BOM is imported before Boot's
+                management reaches them — so `reactor-core` resolved to 3.6.1 while Boot 3.5.5 is
+                built against 3.7.9, and `context-propagation` to 1.1.1 against a required 1.1.3.
+                A reactive platform running a reactor older than the Spring that compiles against
+                it is the kind of skew that surfaces as a missing method on an operator nobody
+                calls until load.
+
+                `oauth2-oidc-sdk` is the same shape from the Azure BOM: 9.43.6 resolved where
+                Spring Security 6.5.3 wants 11.18, and the two are not source-compatible.
+
+                Pinned explicitly rather than by reordering the imports, because import order is
+                invisible at the point of failure and a reader cannot tell it was deliberate.
+            -->
+            <dependency>
+                <groupId>io.projectreactor</groupId>
+                <artifactId>reactor-bom</artifactId>
+                <version>${reactor-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>context-propagation</artifactId>
+                <version>${context-propagation.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.nimbusds</groupId>
+                <artifactId>oauth2-oidc-sdk</artifactId>
+                <version>${oauth2-oidc-sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.nimbusds</groupId>
+                <artifactId>nimbus-jose-jwt</artifactId>
+                <version>${nimbus-jose-jwt.version}</version>
+            </dependency>
+            <!--
+                Keycloak's admin client reaches httpclient through resteasy at 4.5.14 while another
+                path resolves 4.5.13. Same minor line, a patch apart, so pinned up rather than
+                excluded — 4.5.14 carries the fix resteasy expects.
+            -->
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpclient</artifactId>
+                <version>${httpclient.version}</version>
+            </dependency>
+            <!--
+                ET-PLT-015 · Temporal's service client reaches Guava through gRPC as the
+                `-android` flavour while its own path asks for `-jre`, and protobuf-java one patch
+                below what the SDK is compiled against. The test server's commons-compress wants
+                commons-lang3, commons-codec and commons-io above what Boot and resteasy resolve.
+                All five are raised to the required version, never excluded.
+            -->
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>${protobuf-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <version>${commons-codec.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>${commons-io.version}</version>
+            </dependency>
+
             <!-- Netflix DGS — Apollo Federation 2 support -->
             <dependency>
                 <groupId>com.netflix.graphql.dgs</groupId>
@@ -100,6 +302,18 @@
             </dependency>
 
             <!-- Override java-dataloader to match Spring for GraphQL 1.4.x -->
+            <!--
+                Not a member of the Testcontainers BOM — a third-party companion module — so it
+                needs its own managed version. Declared here rather than in identity-service so R1
+                holds literally: no module POM carries a <version> at all.
+            -->
+            <dependency>
+                <groupId>com.github.dasniko</groupId>
+                <artifactId>testcontainers-keycloak</artifactId>
+                <version>${testcontainers-keycloak.version}</version>
+                <scope>test</scope>
+            </dependency>
+
             <dependency>
                 <groupId>com.graphql-java</groupId>
                 <artifactId>java-dataloader</artifactId>
@@ -159,14 +373,6 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- Mongock — document migrations -->
-            <dependency>
-                <groupId>io.mongock</groupId>
-                <artifactId>mongock-bom</artifactId>
-                <version>${mongock.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
 
             <!-- Testcontainers -->
             <dependency>
@@ -177,10 +383,36 @@
                 <scope>import</scope>
             </dependency>
 
+            <!-- Temporal — durable execution (ET-PLT-015) -->
+            <dependency>
+                <groupId>io.temporal</groupId>
+                <artifactId>temporal-bom</artifactId>
+                <version>${temporal.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- Blocking-call detection (ET-PLT-001 R1) -->
             <dependency>
                 <groupId>io.projectreactor.tools</groupId>
                 <artifactId>blockhound</artifactId>
+                <version>${blockhound.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <!--
+                Installs BlockHound from a JUnit Platform launcher listener, before the first
+                test class loads.
+
+                Installing it from a @BeforeAll instead redefines java.util.concurrent classes
+                while Schedulers.parallel() workers are already parked on them. Those workers
+                then die with IllegalMonitorStateException inside DelayedWorkQueue.take(), and
+                every later delayed task on the parallel scheduler is dropped — a retry backoff
+                simply never fires and its Mono hangs forever rather than failing.
+            -->
+            <dependency>
+                <groupId>io.projectreactor.tools</groupId>
+                <artifactId>blockhound-junit-platform</artifactId>
                 <version>${blockhound.version}</version>
                 <scope>test</scope>
             </dependency>
@@ -280,6 +512,14 @@
                                         <exclude>org.postgresql:postgresql</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-data-jpa</exclude>
                                         <exclude>org.springframework.boot:spring-boot-starter-jdbc</exclude>
+                                        <!--
+                                            ET-PLT-012 §4 bans the Modulith family with the rest of
+                                            the relational stack. Its JDBC event publication is the
+                                            reason a relational store would come back: it needs a
+                                            blocking driver, and this platform is reactive
+                                            end-to-end. Cross-service events go over Service Bus.
+                                        -->
+                                        <exclude>org.springframework.modulith:*</exclude>
                                     </excludes>
                                     <message>
 ET-PLT-012 R7 · banned dependency in the module named above.
@@ -302,6 +542,38 @@ ET-PLT-012 R7 · banned dependency in the module named above.
                                      BOM imports exist to prevent; catch it here rather
                                      than in a dependency:tree nobody reads. -->
                                 <banDuplicatePomDependencyVersions/>
+
+                                <!--
+                                    ET-PLT-012 R7 · a transitive downgrade fails here rather
+                                    than surprising somebody at runtime.
+
+                                    Maven's nearest-wins resolution silently picks the shallower
+                                    version, so a direct dependency on an older artifact quietly
+                                    downgrades what a BOM pinned. Nothing in the build reports
+                                    it, and the symptom arrives as a NoSuchMethodError on a code
+                                    path that only runs in production.
+                                -->
+                                <requireUpperBoundDeps>
+                                    <excludes>
+                                        <!--
+                                            The single case where the LOWER version is the correct
+                                            one, so it is excluded rather than pinned up.
+
+                                            `hibernate-validator:8.0.3.Final` implements Jakarta
+                                            Validation *3.0*, and Spring Boot manages the API to
+                                            3.0.2 as a matched pair. A transitive asks for 3.1.0;
+                                            taking it would put a 3.1 API in front of a 3.0
+                                            implementation, and 3.1 added methods to the interfaces
+                                            hibernate-validator implements — the mismatch surfaces
+                                            as AbstractMethodError at first use, not at build time.
+
+                                            Revisit when Boot ships hibernate-validator 9.x, which
+                                            is the 3.1 implementation; then the pair moves together
+                                            and this exclusion should be deleted rather than raised.
+                                        -->
+                                        <exclude>jakarta.validation:jakarta.validation-api</exclude>
+                                    </excludes>
+                                </requireUpperBoundDeps>
                             </rules>
                             <fail>true</fail>
                         </configuration>
@@ -311,4 +583,34 @@ ET-PLT-012 R7 · banned dependency in the module named above.
         </plugins>
     </build>
 
+    <!--
+        Coverage is evidence for the reachability audit (backend/tools/reachability), never a
+        gate: a number to hit invites tests that execute code without checking it.
+        `mvn -Pcoverage verify` writes target/site/jacoco/jacoco.xml per module.
+    -->
+    <profiles>
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>${jacoco-maven-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>prepare-agent</id>
+                                <goals><goal>prepare-agent</goal></goals>
+                            </execution>
+                            <execution>
+                                <id>report</id>
+                                <phase>verify</phase>
+                                <goals><goal>report</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

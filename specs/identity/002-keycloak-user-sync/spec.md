@@ -1,6 +1,18 @@
 # ET-IDN-002 · Keycloak ↔ MongoDB user synchronisation
 
 > **Conformance** · US Part I §6 Keycloak integration · US Part II §7 user CRUD
+>
+> **Amended 2026-10-04 (D-43, D-47, D-48; F-044).** This spec is **re-scoped to adoption and repair**: accounts
+> are now created identity-first by [ET-IDN-004](../004-accounts-and-contacts/), the account (not the Keycloak
+> user) is the record, and the listener only reports facts. Where this spec's earlier text disagrees with the
+> list below, the list wins:
+> 1. **`enabled` is owned by identity-service** (D-47). It decides suspension and applies it to Keycloak; a change made in the Keycloak console is adopted back into the account and audited. This **supersedes** the earlier statement in §2 that `enabled` lives only in Keycloak.
+> 2. **No phone change by profile.** A contact changes only by re-proof through `ContactChangeWorkflow` ([ET-IDN-004](../004-accounts-and-contacts/) R5). R6 below is superseded and `changePhoneNumber` is removed.
+> 3. **Tombstone, never hard delete**, on every path (R7 is unchanged in intent and now also governs the Keycloak delete event).
+> 4. **Roles and account type are never read from user-editable Keycloak attributes** (`roles`, `accountType`); they derive from database policy ([ET-IDN-004](../004-accounts-and-contacts/) R4).
+> 5. **Two realms** (D-48): the listener is enabled in both `myticketzm` and `myticketzm-admin`; the event body is `{eventId, eventType, userId, username, realm, enabled, emailVerified, timestamp}` (plus `sid` on `LOGOUT` and `REFRESH_TOKEN_ERROR` only, which identity-service turns into a session revocation, [ET-IDN-003](../003-token-revocation/) R7) and carries no attributes, names, roles or phone ([CONTRACT §4.6](../004-accounts-and-contacts/CONTRACT.md)).
+> 6. Email, first name and last name are **optional** in Keycloak and in `identity_users`; buyers may have neither.
+> 7. New accounts: `_id` = account UUID and Keycloak username = account id; legacy accounts keep `_id` = Keycloak id and are linked by `keycloakUserId`.
 
 ## 1. Capability
 
@@ -18,8 +30,8 @@ MongoDB owns, so that no field has two writers. It declares the event listener t
 Keycloak's changes across. And — because that listener runs inside Keycloak's own request
 path and must never be allowed to fail a login — it declares the two repairs that make the
 platform correct even when the listener does not fire: a lazy repair on the next
-authenticated request, which costs nothing and fixes the common case, and a reconciliation
-sweep that finds the rest.
+authenticated request, which costs nothing and fixes the common case, and a nightly
+reconciliation workflow that finds the rest.
 
 The design principle is that **the listener is an optimisation, not the guarantee**. A
 platform whose correctness depends on a webhook from another process, delivered exactly
@@ -35,16 +47,17 @@ narrow set of fields a profile update is allowed to write back into Keycloak.
 
 | Field | Owner | Notes |
 |---|---|---|
-| credentials, `enabled`, MFA | Keycloak | never mirrored |
+| credentials, MFA (staff only) | Keycloak | never mirrored |
+| `enabled` | identity-service decides, applies to Keycloak (D-47) | a console change is adopted back and audited |
 | `email`, `firstName`, `lastName`, `username` | Keycloak | **cached** in MongoDB for display and search |
-| `phoneNumber`, `phoneVerified`, `emailVerified` | Keycloak | cached |
-| realm roles | Keycloak | read from the JWT per request, never cached |
+| contacts (`phone`, `email`), `emailVerified` | MongoDB `identity_contacts` ([ET-IDN-004](../004-accounts-and-contacts/)) | Keycloak `email`/`emailVerified` derive from the primary email contact; no phone in Keycloak |
+| realm roles | Keycloak, derived from database policy by identity-service | read from the JWT per request, never cached; user-editable attributes never grant authority |
 | `avatarUrl`, `bio`, `dateOfBirth`, `locale`, `timezone` | MongoDB | never in Keycloak |
 | `userType`, `accountStatus` | MongoDB | derived from platform state |
 | `primaryOrganizationId` | MongoDB | mirrored to Keycloak as a routing convenience only |
 | organization membership | MongoDB | [ET-ORG-002](../../organization/002-teams-and-invitations/) |
 
-**`User.id` is the Keycloak user ID.** There is no `keycloakUserId` field, because a second
+**`User.id` is the Keycloak user ID for legacy accounts.** *(Amended: new accounts use an account UUID and `keycloakUserId` links the two — see the amendment above.)* There is no `keycloakUserId` field for legacy accounts, because a second
 identifier for one identity is where the two eventually disagree, and reconciling them is
 work that exists only because the field does.
 
@@ -61,10 +74,12 @@ a path that is already reading the user, needs no coordination, and means a user
 in after a listener outage is simply correct. Anything the JWT does not carry is filled by
 the Admin API on the same path.
 
-**Reconciliation finds what neither the listener nor a login found.** A scheduled sweep
-compares Keycloak's user set against `identity_users` in both directions: users in Keycloak
-with no document, documents whose cached fields have drifted, and documents for users
-Keycloak no longer has. It runs under a distributed lock, reports counts as metrics, and
+**Reconciliation finds what neither the listener nor a login found.** A nightly Temporal
+Schedule starts `UserBackfillWorkflow`, which pages through Keycloak's users and hands each to that
+user's own `UserSyncWorkflow`, so a reconciliation and a live change for the same user are applied
+one after the other by one writer. It compares in both directions: users in Keycloak with no
+document, documents whose cached fields have drifted, and documents for users Keycloak no longer
+has. The Schedule's overlap policy is its lock; it reports counts as metrics, and
 repairs rather than reports — a reconciliation that only reports is a dashboard nobody
 reads.
 
@@ -73,7 +88,7 @@ their display name changes it in both, in that order — Keycloak first, MongoDB
 failure leaves MongoDB stale rather than leaving Keycloak wrong. Everything else is a
 MongoDB write and never touches the identity provider.
 
-**A phone number is changed by verifying the new one, never by editing a profile field.**
+**A contact is changed by re-proof, never by editing a profile field.** *(Superseded 2026-10-04: now [ET-IDN-004](../004-accounts-and-contacts/) R5; the text below is the original rationale.)*
 Phone is the login identity. Allowing it to be edited like a display name means account
 takeover by profile update. The change runs through [ET-IDN-001](../001-phone-otp-identity/)'s
 verification against the new number, and only then is `phone_number` rewritten.
@@ -83,7 +98,9 @@ verification against the new number, and only then is `phone_number` rewritten.
 ledger entries reference it and an orphaned foreign key is worse than a tombstone. Actual
 erasure — anonymising the personal fields while retaining the financial record — is
 [ET-PLT-008](../../_platform/008-data-protection/)'s, and this spec deliberately stops at
-the marker.
+the marker. Reconciliation never infers deletion from absence: a document whose Keycloak user is
+missing from a listing is left as it is, because a partial or failed read would otherwise tombstone
+real accounts (ROADMAP D-29).
 
 **Rejected alternatives**
 
@@ -103,7 +120,7 @@ THE SYSTEM SHALL hold at most one `identity_users` document per Keycloak user, k
 Keycloak user ID.
 
 **Acceptance**
-- [ ] `identity_users._id` is the Keycloak user ID; the document declares no `keycloakUserId` field
+- [ ] Legacy `identity_users._id` is the Keycloak user ID; new accounts have `_id` = account UUID and a unique sparse `keycloakUserId` (amended)
 - [ ] Every write is an upsert keyed on that id — no code path inserts unconditionally
 - [ ] Two concurrent syncs for one user produce one document
 - [ ] `email` and `phoneNumber` carry unique sparse indexes ([ET-PLT-002](../../_platform/002-persistence-baseline/) §4)
@@ -121,6 +138,7 @@ succeed regardless.
 - [ ] Every failure — timeout, 5xx, connection refused — is caught, logged with the user id, and **not** rethrown
 - [ ] A login succeeds with identity-service stopped, asserted by an integration test
 - [ ] `LOGIN` updates only `lastLoginAt`, and does so without rewriting the profile
+- [ ] The event body is exactly the six-plus fields of CONTRACT §4.6 and the listener is enabled in both realms (amended)
 - [ ] The listener authenticates with `client_credentials` as `internal-service`
 - [ ] Registering `user-sync` as a realm event listener is part of the realm export, not a manual console step
 
@@ -130,7 +148,7 @@ IF an authenticated request arrives for a user with no document, THEN THE SYSTEM
 create it from the token's claims before serving the request.
 
 **Acceptance**
-- [ ] The first authenticated request for an unknown subject upserts a document from `sub`, `preferred_username`, `email`, `given_name`, `family_name`, `phone_number` and `phone_verified`
+- [ ] The first authenticated request for an unknown subject is **adopted** ([ET-IDN-004](../004-accounts-and-contacts/) R4): an account is created from the `accountId` claim (else `sub`) and `preferred_username` only; roles and account type are never taken from token claims or user-editable attributes (amended)
 - [ ] Fields the token does not carry are fetched from the Keycloak Admin API on the same path, and a failure there leaves them null rather than failing the request
 - [ ] The repair is idempotent and concurrent-safe — ten parallel first requests produce one document
 - [ ] After the repair the request proceeds normally; the user observes no error and no additional round trip they can perceive
@@ -143,13 +161,13 @@ THE SYSTEM SHALL periodically compare Keycloak's users against `identity_users` 
 every difference it finds.
 
 **Acceptance**
-- [ ] A scheduled reconciliation pages through Keycloak's users and compares each against its document
-- [ ] A Keycloak user with no document is created; a document whose cached fields differ is updated; a document whose Keycloak user is absent is marked `accountStatus = DELETED`
-- [ ] The sweep runs under `lock:sweep:user-reconciliation` and a second instance takes no action
+- [ ] The `identity-user-reconciliation` Schedule (daily 03:30 UTC, overlap `SKIP`) starts `UserBackfillWorkflow`, which pages through Keycloak's users 100 at a time, continuing as new per page, and signals each user's `UserSyncWorkflow`; at boot an existing Schedule takes this cadence and keeps an operator\'s pause (ROADMAP D-34)
+- [ ] A Keycloak user with no document is created; a document whose cached fields differ is updated; a document whose Keycloak user is absent is left as it is (ROADMAP D-29)
+- [ ] A fire while a run is open is skipped by the Schedule, and an operator request while a backfill runs reaches it (`user-backfill`, `USE_EXISTING`); no Redis lock exists
 - [ ] Counts of each repair kind are exported as metrics, and a non-zero created-or-drifted count alerts
-- [ ] An operator can trigger a full reconciliation on demand, and it is `SUPER_ADMIN`-only
-- [ ] The sweep never writes a MongoDB-owned field — a reconciliation that overwrites an avatar is a data-loss bug
-- [ ] A test seeds drift of each kind and asserts one sweep repairs all of them
+- [ ] An operator can trigger a full reconciliation on demand, and it is `SUPER_ADMIN`-only on both the mutation and `POST /api/internal/keycloak/sync/all` (ROADMAP D-30)
+- [ ] The reconciliation never writes a MongoDB-owned field — a reconciliation that overwrites an avatar is a data-loss bug
+- [ ] A test seeds drift of each kind and asserts one reconciliation run repairs all of them; the backfill's recorded history replays
 
 ### ET-IDN-002-R5 · Profile writes go to exactly one owner per field
 
@@ -164,7 +182,7 @@ other store.
 - [ ] An email change sets `emailVerified` false in Keycloak and lets Keycloak's own verification restore it
 - [ ] A test asserts each field lands in exactly one store
 
-### ET-IDN-002-R6 · The phone number changes only by verification
+### ET-IDN-002-R6 · The phone number changes only by verification *(superseded by ET-IDN-004-R5 on 2026-10-04: `changePhoneNumber` is removed; a contact changes only through `ContactChangeWorkflow`)*
 
 IF a user changes their phone number, THEN THE SYSTEM SHALL require verification of the new
 number before it takes effect.
@@ -183,7 +201,7 @@ WHEN a user is removed from Keycloak, THE SYSTEM SHALL mark the document deleted
 it.
 
 **Acceptance**
-- [ ] A Keycloak admin `DELETE` on a user sets `accountStatus = DELETED` and `deletedAt`, and deletes no document
+- [ ] A Keycloak admin `DELETE` on a user sets `status = DELETED` and `deletedAt`, and deletes no document; the previous hard delete is removed (amended)
 - [ ] A deleted user's tickets, payments and journal lines still resolve their owner
 - [ ] A deleted user cannot authenticate, and every `@auth`-gated operation refuses
 - [ ] `me` for a deleted subject refuses with `USER_UNKNOWN` rather than returning a tombstone
@@ -239,9 +257,9 @@ mutation, because it is an operator action and belongs in the audit trail.
 ### The three paths to a correct document
 
 ```
-1 · listener       Keycloak event → REST → upsert          fast, best-effort, may not fire
+1 · listener       Keycloak event → REST → UserSyncWorkflow signal → upsert   fast, best-effort, may not fire
 2 · lazy repair    first authenticated request → upsert     the actual guarantee
-3 · reconciliation scheduled sweep → upsert / mark deleted  catches what 1 and 2 miss
+3 · reconciliation nightly Schedule → UserBackfillWorkflow → upsert / mark deleted   catches what 1 and 2 miss
 ```
 
 Path 2 is what makes paths 1 and 3 optimisations. A user who logs in is correct; a user who
@@ -274,9 +292,7 @@ Subgraph `identity`. Every field carries `@auth` explicitly
 
 ### Redis keys
 
-| Key | TTL | Purpose |
-|---|---|---|
-| `lock:sweep:user-reconciliation` | 30 s | the R4 sweep mutex ([ET-PLT-002](../../_platform/002-persistence-baseline/) §4) |
+None. Reconciliation's mutex is its Schedule's overlap policy and the backfill's workflow id.
 
 ### Configuration
 
@@ -315,17 +331,17 @@ Subgraph `identity`. Every field carries `@auth` explicitly
   - parallel-safe: yes
   - depends: T2
 
-- [ ] **T4 · Lazy repair on the authenticated request path**
+- [ ] **T4 · Lazy repair on the authenticated request path (re-scoped: adoption per ET-IDN-004 R4, never trusting token claims for roles)**
   - requirements: R3
   - files: `backend/identity-service/.../security/`, the `me` resolver
   - verify: the listener disabled entirely, a new user logs in and the platform is fully functional
   - parallel-safe: no — it is on every request path
   - depends: T2
 
-- [ ] **T5 · The reconciliation sweep, its lock, its metrics and the operator mutation**
+- [ ] **T5 · The reconciliation Schedule, the backfill workflow, its metrics and the operator mutation**
   - requirements: R4
-  - files: `backend/identity-service/.../scheduler/UserReconciliationSweeper.java`
-  - verify: seeded drift of each kind is repaired in one sweep; a second instance takes no action
+  - files: `backend/identity-service/.../workflow/usersync/UserBackfillWorkflowImpl.java`, `.../workflow/usersync/UserReconciliationSchedule.java`
+  - verify: seeded drift of each kind is repaired in one run; overlap is `SKIP`; the history replays
   - parallel-safe: yes
   - depends: T2
 
@@ -336,14 +352,14 @@ Subgraph `identity`. Every field carries `@auth` explicitly
   - parallel-safe: yes
   - depends: T2
 
-- [ ] **T7 · `changePhoneNumber` behind OTP verification of the new number**
+- [ ] **T7 · ~~`changePhoneNumber` behind OTP verification~~ — superseded: remove `changePhoneNumber`; the contact-change flow is ET-IDN-004 T6**
   - requirements: R6
   - files: `backend/identity-service/.../service/impl/UserServiceImpl.java`
   - verify: no profile input accepts a phone field; a number held by another user refuses without disclosure
   - parallel-safe: yes
   - depends: T6
 
-- [ ] **T8 · Deletion tombstone and the orphan-resolution test**
+- [ ] **T8 · Deletion tombstone (the hard delete is removed) and the orphan-resolution test**
   - requirements: R7
   - files: `backend/identity-service/.../service/impl/UserSyncServiceImpl.java`
   - verify: a deleted user's tickets still resolve their owner; `me` refuses with `USER_UNKNOWN`

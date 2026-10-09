@@ -1,42 +1,36 @@
 package com.pml.identity.service.impl;
 
-import com.pml.identity.event.domain.UserRegisteredEvent;
-import com.pml.identity.event.domain.UserRoleChangedEvent;
+import com.pml.identity.account.AccountService;
+import com.pml.identity.account.AccountStates;
+import com.pml.identity.account.ContactService;
+import com.pml.identity.account.KeycloakUserAdminPort;
+import com.pml.identity.config.KeycloakProperties;
+import com.pml.identity.domain.enums.AccountState;
+import com.pml.identity.domain.enums.ContactType;
 import com.pml.identity.domain.model.User;
 import com.pml.identity.repository.UserRepository;
-import com.pml.identity.infrastructure.keycloak.KeycloakService;
+import com.pml.identity.security.ContactHasher;
 import com.pml.identity.service.UserService;
 import com.pml.shared.constants.UserType;
-import com.pml.shared.util.PhoneNumbers;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.util.Emails;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
+import java.time.Clock;
 import java.util.EnumSet;
+import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
- * User Service Implementation
- *
- * ARCHITECTURE NOTE (Phase 1 Migration):
- * ======================================
- * This service manages user profile data stored in MongoDB.
- * Keycloak is the SINGLE SOURCE OF TRUTH for:
- * - Authentication credentials (password)
- * - Account status (enabled, locked)
- * - Brute force protection (failed login attempts, lockout)
- *
- * REMOVED methods (now handled by Keycloak):
- * - changePassword() → Use KeycloakService.updatePassword()
- * - incrementFailedLoginAttempts() → Keycloak brute force protection
- * - resetFailedLoginAttempts() → Keycloak handles automatically
- * - lockAccount() → Keycloak handles via brute force protection
- * - unlockAccount() → Use Keycloak Admin Console or Admin API
+ * Accounts as the rest of identity reads them. Keycloak is never searched by email or phone from
+ * here; the only email lookup is the contacts collection, and the legacy document field for
+ * accounts that predate it.
  */
 @Slf4j
 @Service
@@ -44,16 +38,29 @@ import java.util.stream.Collectors;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
-    private final KeycloakService keycloakService;
-    private final StreamBridge streamBridge;
+    private final ContactService contacts;
+    private final AccountService accounts;
+    private final KeycloakUserAdminPort keycloak;
+    private final KeycloakProperties keycloakProperties;
+    private final ContactHasher contactHasher;
+    private final Clock clock;
 
-    // ========================================================================
-    // READ OPERATIONS
-    // ========================================================================
+    // ---- reads -------------------------------------------------------------------------------------
 
+    /**
+     * By account id, else by Keycloak user id. A token's {@code sub} is the Keycloak id, which equals
+     * the account id only for accounts that predate ET-IDN-004, so code that passes the subject on as
+     * "the user id" (memberships, invitations, entity references) keeps finding the account.
+     */
     @Override
     public Mono<User> findById(String id) {
-        return userRepository.findById(id);
+        return userRepository.findById(id)
+                .switchIfEmpty(Mono.defer(() -> userRepository.findByKeycloakUserId(id)));
+    }
+
+    @Override
+    public Mono<User> findBySubject(String subject) {
+        return accounts.bySubject(subject);
     }
 
     @Override
@@ -63,12 +70,22 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Mono<User> findByEmail(String email) {
-        return userRepository.findByEmail(email);
+        if (email == null || email.isBlank()) {
+            return Mono.empty();
+        }
+        return contacts.accountByContact(email, ContactType.EMAIL)
+                .switchIfEmpty(Mono.defer(() -> Emails.normalize(email)
+                        .map(userRepository::findByEmail).orElse(Mono.empty())))
+                .switchIfEmpty(Mono.defer(() -> userRepository.findByEmail(email.trim())));
     }
 
     @Override
     public Mono<User> findByPhoneNumber(String phoneNumber) {
-        return userRepository.findByPhoneNumber(phoneNumber);
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            return Mono.empty();
+        }
+        return contacts.accountByContact(phoneNumber, ContactType.WHATSAPP)
+                .switchIfEmpty(Mono.defer(() -> userRepository.findByPhoneNumber(phoneNumber.trim())));
     }
 
     @Override
@@ -82,13 +99,8 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public Flux<User> findActiveUsers() {
-        return userRepository.findByActiveTrue();
-    }
-
-    @Override
     public Mono<Boolean> existsByEmail(String email) {
-        return userRepository.existsByEmail(email);
+        return findByEmail(email).hasElement();
     }
 
     @Override
@@ -96,427 +108,111 @@ public class UserServiceImpl implements UserService {
         return userRepository.existsByUsername(username);
     }
 
-    // ========================================================================
-    // WRITE OPERATIONS
-    // ========================================================================
+    // ---- writes ------------------------------------------------------------------------------------
 
     @Override
-    public Mono<User> createUser(User user) {
-        log.info("Creating new user profile with email: {}", user.getEmail());
-        // NOTE: Password is NOT stored in MongoDB - Keycloak is the source of truth
-        // The user should already be created in Keycloak before calling this method
-        user.setCreatedAt(Instant.now());
-        user.setUpdatedAt(Instant.now());
-        return userRepository.save(user)
-                .doOnSuccess(u -> {
-                    log.info("User profile created successfully: {}", u.getId());
-                    publishUserRegisteredEvent(u);
-                });
-    }
-
-    /**
-     * Publish UserRegisteredEvent to Azure Service Bus.
-     * Used to notify other services of new user registrations.
-     *
-     * <p>Multi-role support: Publishes all user roles in the event.</p>
-     */
-    private void publishUserRegisteredEvent(User user) {
-        try {
-            // Convert EnumSet<UserType> to Set<String> for the event
-            Set<String> roleNames = user.getRoles() != null && !user.getRoles().isEmpty()
-                    ? user.getRoles().stream().map(Enum::name).collect(Collectors.toSet())
-                    : Set.of("CUSTOMER");
-
-            UserRegisteredEvent event = new UserRegisteredEvent(
-                    user.getId(),
-                    user.getEmail(),
-                    user.getPhoneNumber(),
-                    roleNames
-            );
-
-            boolean sent = streamBridge.send("userOutput-out-0", event);
-            if (sent) {
-                log.info("Published UserRegisteredEvent for user: {} with roles: {}", user.getId(), roleNames);
-            } else {
-                log.warn("Failed to publish UserRegisteredEvent for user: {}", user.getId());
-            }
-        } catch (Exception e) {
-            // Don't fail user creation if event publishing fails
-            log.error("Error publishing UserRegisteredEvent for user {}: {}", user.getId(), e.getMessage());
+    public Mono<User> createStaffUser(String email, String firstName, String lastName, String temporaryPassword,
+                                      String actorId) {
+        String normalized = Emails.normalize(email).orElse(null);
+        if (normalized == null) {
+            return Mono.error(new TranslatedRefusal(ErrorCode.CONTACT_INVALID, "a staff user needs a valid email"));
         }
+        return findByEmail(normalized)
+                .flatMap(existing -> Mono.<User>error(new TranslatedRefusal(ErrorCode.RESOURCE_CONFLICT,
+                        "a user with this email already exists")))
+                .switchIfEmpty(Mono.defer(() -> keycloak.createStaffUser(normalized, normalized, firstName, lastName,
+                                temporaryPassword)
+                        .flatMap(keycloakUserId -> {
+                            var now = clock.instant();
+                            User staff = User.builder()
+                                    .id(keycloakUserId)
+                                    .keycloakUserId(keycloakUserId)
+                                    .username(normalized)
+                                    .email(normalized)
+                                    .firstName(firstName)
+                                    .lastName(lastName)
+                                    .roles(EnumSet.of(UserType.CUSTOMER))
+                                    .createdVia(AccountService.STAFF_ADMIN)
+                                    .createdAt(now)
+                                    .updatedAt(now)
+                                    .createdBy(actorId)
+                                    .build();
+                            AccountStates.apply(staff, AccountState.ACTIVE);
+                            return userRepository.save(staff);
+                        })
+                        .onErrorMap(DuplicateKeyException.class, duplicate -> new TranslatedRefusal(
+                                ErrorCode.RESOURCE_CONFLICT, "a user with this email already exists"))));
     }
 
     @Override
-    public Mono<User> updateUser(String id, User user) {
-        return userRepository.findById(id)
-                .flatMap(existingUser -> {
-                    existingUser.setFirstName(user.getFirstName());
-                    existingUser.setLastName(user.getLastName());
-                    String e164 = PhoneNumbers.toE164(user.getPhoneNumber());
-                    existingUser.setPhoneNumber(e164);
-                    existingUser.setPhoneCountry(e164 != null ? PhoneNumbers.regionFor(e164) : null);
-                    // Update roles if provided (multi-role support)
-                    if (user.getRoles() != null && !user.getRoles().isEmpty()) {
-                        existingUser.setRoles(user.getRoles());
+    public Mono<User> createStaffUser(String email, String firstName, String lastName, String temporaryPassword,
+                                      String phoneNumber, UserType role, String actorId) {
+        Optional<ContactHasher.Normalized> phone = phoneNumber == null || phoneNumber.isBlank()
+                ? Optional.empty()
+                : contactHasher.normalize(phoneNumber, ContactType.WHATSAPP, null, null);
+        if (phoneNumber != null && !phoneNumber.isBlank() && phone.isEmpty()) {
+            return Mono.error(new TranslatedRefusal(ErrorCode.PHONE_NUMBER_INVALID, "the staff member's number is not valid"));
+        }
+        return createStaffUser(email, firstName, lastName, temporaryPassword, actorId)
+                .flatMap(created -> {
+                    if (phone.isEmpty()) {
+                        return Mono.just(created);
                     }
-                    existingUser.setUpdatedAt(Instant.now());
-                    return userRepository.save(existingUser)
-                            .flatMap(savedUser ->
-                                // Sync changes to Keycloak
-                                keycloakService.updateUser(savedUser)
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to sync user update to Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            );
-                });
+                    created.setPhoneNumber(phone.get().value());
+                    created.setPhoneCountry(phone.get().region());
+                    return userRepository.save(created)
+                            .onErrorMap(DuplicateKeyException.class, duplicate -> new TranslatedRefusal(
+                                    ErrorCode.RESOURCE_CONFLICT, "that number belongs to another account"));
+                })
+                .flatMap(created -> role == null || role == UserType.CUSTOMER
+                        ? Mono.just(created)
+                        : accounts.addRole(created.getId(), role, actorId));
+    }
+
+    @Override
+    public Mono<User> deleteUser(String id, String actorId) {
+        return accounts.delete(id, actorId, true);
     }
 
     @Override
     public Mono<User> updateProfile(String id, User profileData) {
-        return userRepository.findById(id)
-                .flatMap(existingUser -> {
-                    if (profileData.getFirstName() != null) {
-                        existingUser.setFirstName(profileData.getFirstName());
-                    }
-                    if (profileData.getLastName() != null) {
-                        existingUser.setLastName(profileData.getLastName());
-                    }
-                    if (profileData.getPhoneNumber() != null) {
-                        String e164 = PhoneNumbers.toE164(profileData.getPhoneNumber());
-                        existingUser.setPhoneNumber(e164);
-                        existingUser.setPhoneCountry(e164 != null ? PhoneNumbers.regionFor(e164) : null);
-                    }
-                    existingUser.setUpdatedAt(Instant.now());
-                    return userRepository.save(existingUser)
-                            .flatMap(savedUser ->
-                                // Sync changes to Keycloak
-                                keycloakService.updateUser(savedUser)
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to sync profile update to Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            );
-                });
+        return userRepository.findById(id).flatMap(existing -> {
+            if (profileData.getFirstName() != null) {
+                existing.setFirstName(profileData.getFirstName());
+            }
+            if (profileData.getLastName() != null) {
+                existing.setLastName(profileData.getLastName());
+            }
+            if (profileData.getDisplayName() != null) {
+                existing.setDisplayName(profileData.getDisplayName());
+            }
+            if (profileData.getGender() != null) {
+                existing.setGender(profileData.getGender());
+            }
+            existing.setUpdatedAt(clock.instant());
+            return userRepository.save(existing);
+        });
     }
 
-    @Override
-    public Mono<Void> deleteUser(String id) {
-        return userRepository.findById(id)
-                .flatMap(user ->
-                    // Delete from Keycloak first
-                    keycloakService.deleteUser(user.getEmail())
-                            .onErrorResume(e -> {
-                                log.warn("Failed to delete user from Keycloak: {}", e.getMessage());
-                                return Mono.empty();
-                            })
-                            // Then delete from MongoDB
-                            .then(userRepository.deleteById(id))
-                );
-    }
-
-    @Override
-    public Mono<Void> deactivateUser(String id) {
-        return userRepository.findById(id)
-                .flatMap(user -> {
-                    user.setActive(false);
-                    user.setUpdatedAt(Instant.now());
-                    return userRepository.save(user)
-                            .flatMap(savedUser ->
-                                // Disable in Keycloak as well
-                                keycloakService.setUserEnabled(savedUser.getEmail(), false)
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to disable user in Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            );
-                })
-                .then();
-    }
-
-    @Override
-    public Mono<Void> activateUser(String id) {
-        return userRepository.findById(id)
-                .flatMap(user -> {
-                    user.setActive(true);
-                    user.setUpdatedAt(Instant.now());
-                    return userRepository.save(user)
-                            .flatMap(savedUser ->
-                                // Enable in Keycloak as well
-                                keycloakService.setUserEnabled(savedUser.getEmail(), true)
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to enable user in Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            );
-                })
-                .then();
-    }
-
-    // ========================================================================
-    // VERIFICATION OPERATIONS
-    // ========================================================================
-
-    @Override
-    public Mono<User> verifyEmail(String userId) {
-        return userRepository.findById(userId)
-                .flatMap(user -> {
-                    user.setEmailVerified(true);
-                    user.setUpdatedAt(Instant.now());
-                    return userRepository.save(user)
-                            .flatMap(savedUser ->
-                                // Sync emailVerified status to Keycloak
-                                keycloakService.updateUser(savedUser)
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to sync email verification to Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            );
-                });
-    }
-
-    @Override
-    @Deprecated
-    public Mono<User> verifyPhone(String userId, String otpCode) {
-        // DEPRECATED: OTP verification should be done via OtpService/Redis
-        // This method is kept for backward compatibility
-        log.warn("Using deprecated verifyPhone with OTP code. Use OtpService instead.");
-        return verifyPhone(userId);
-    }
-
-    @Override
-    public Mono<User> verifyPhone(String userId) {
-        // Mark phone as verified (OTP already validated via OtpService/Redis)
-        return userRepository.findById(userId)
-                .flatMap(user -> {
-                    user.setPhoneVerified(true);
-                    user.setUpdatedAt(Instant.now());
-                    return userRepository.save(user)
-                            .flatMap(savedUser ->
-                                // Sync phoneVerified status to Keycloak
-                                keycloakService.updatePhoneVerified(savedUser.getId(), true)
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to sync phone verification to Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            );
-                });
-    }
-
-    @Override
-    public Mono<Void> sendEmailVerification(String userId) {
-        log.info("Sending email verification for user: {}", userId);
-        // Use Keycloak to send verification email
-        return keycloakService.sendVerificationEmail(userId)
-                .onErrorResume(e -> {
-                    log.error("Failed to send verification email: {}", e.getMessage());
-                    return Mono.empty();
-                });
-    }
-
-    @Override
-    public Mono<Void> sendPhoneVerification(String userId) {
-        // Phone verification is handled by OtpService + MessagingService
-        // This method is a placeholder - actual implementation uses OtpService
-        log.info("Phone verification for user {} should use OtpService", userId);
-        return Mono.empty();
-    }
-
-    // ========================================================================
-    // ACTIVITY TRACKING
-    // ========================================================================
-
-    @Override
-    public Mono<User> updateLastLogin(String userId) {
-        return userRepository.findById(userId)
-                .flatMap(user -> {
-                    user.setLastLoginAt(Instant.now());
-                    return userRepository.save(user);
-                });
-    }
-
-    // ========================================================================
-    // ROLE MANAGEMENT OPERATIONS
-    // ========================================================================
+    // ---- roles -------------------------------------------------------------------------------------
 
     @Override
     public Mono<User> addRole(String userId, UserType role, String addedBy) {
-        log.info("Adding role {} to user {} by {}", role, userId, addedBy);
-
-        return userRepository.findById(userId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("User not found: " + userId)))
-                .flatMap(user -> {
-                    // Validate role can be added
-                    if (!UserType.canAddRole(user.getRoles(), role)) {
-                        return Mono.error(new IllegalArgumentException(
-                                "Cannot add role " + role + " to user. Invalid role combination."));
-                    }
-
-                    Set<UserType> oldRoles = EnumSet.copyOf(user.getRoles());
-                    user.addRole(role);
-                    user.setUpdatedAt(Instant.now());
-                    user.setUpdatedBy(addedBy);
-
-                    return userRepository.save(user)
-                            .flatMap(savedUser ->
-                                // Sync role to Keycloak
-                                keycloakService.addRoleToUser(savedUser.getId(), role.name())
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to sync role addition to Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            )
-                            .doOnSuccess(savedUser -> {
-                                log.info("Role {} added to user {} by {}", role, userId, addedBy);
-                                publishUserRoleChangedEvent(savedUser, oldRoles, "ADD", role, addedBy);
-                            });
-                });
+        return accounts.addRole(userId, role, addedBy);
     }
 
     @Override
     public Mono<User> removeRole(String userId, UserType role, String removedBy) {
-        log.info("Removing role {} from user {} by {}", role, userId, removedBy);
-
-        // Cannot remove CUSTOMER role
-        if (role == UserType.CUSTOMER) {
-            return Mono.error(new IllegalStateException("Cannot remove CUSTOMER role. It is the base role for all users."));
-        }
-
-        return userRepository.findById(userId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("User not found: " + userId)))
-                .flatMap(user -> {
-                    // Validate role can be removed
-                    if (!UserType.canRemoveRole(user.getRoles(), role)) {
-                        return Mono.error(new IllegalArgumentException(
-                                "Cannot remove role " + role + " from user. User does not have this role or it would result in an invalid state."));
-                    }
-
-                    Set<UserType> oldRoles = EnumSet.copyOf(user.getRoles());
-                    user.removeRole(role);
-                    user.setUpdatedAt(Instant.now());
-                    user.setUpdatedBy(removedBy);
-
-                    return userRepository.save(user)
-                            .flatMap(savedUser ->
-                                // Sync role removal to Keycloak
-                                keycloakService.removeRoleFromUser(savedUser.getId(), role.name())
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to sync role removal to Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            )
-                            .doOnSuccess(savedUser -> {
-                                log.info("Role {} removed from user {} by {}", role, userId, removedBy);
-                                publishUserRoleChangedEvent(savedUser, oldRoles, "REMOVE", role, removedBy);
-                            });
-                });
+        return accounts.removeRole(userId, role, removedBy);
     }
 
     @Override
     public Mono<User> setRoles(String userId, Set<UserType> roles, String updatedBy) {
-        log.info("Setting roles {} for user {} by {}", roles, userId, updatedBy);
-
-        // Validate the new role set
-        if (!UserType.isValidRoleCombination(roles)) {
-            return Mono.error(new IllegalArgumentException(
-                    "Invalid role combination. Roles must include CUSTOMER and follow business rules."));
-        }
-
-        return userRepository.findById(userId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("User not found: " + userId)))
-                .flatMap(user -> {
-                    Set<UserType> oldRoles = EnumSet.copyOf(user.getRoles());
-
-                    // Determine roles to add and remove
-                    Set<UserType> rolesToAdd = EnumSet.copyOf(roles);
-                    rolesToAdd.removeAll(oldRoles);
-
-                    Set<UserType> rolesToRemove = EnumSet.copyOf(oldRoles);
-                    rolesToRemove.removeAll(roles);
-
-                    // Update user's roles
-                    user.getRoles().clear();
-                    user.getRoles().addAll(roles);
-                    user.setUpdatedAt(Instant.now());
-                    user.setUpdatedBy(updatedBy);
-
-                    return userRepository.save(user)
-                            .flatMap(savedUser ->
-                                // Sync roles to Keycloak
-                                syncRolesToKeycloak(savedUser.getId(), rolesToAdd, rolesToRemove)
-                                        .thenReturn(savedUser)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to sync roles to Keycloak: {}", e.getMessage());
-                                            return Mono.just(savedUser);
-                                        })
-                            )
-                            .doOnSuccess(savedUser -> {
-                                log.info("Roles set to {} for user {} by {}", roles, userId, updatedBy);
-                                publishUserRoleChangedEvent(savedUser, oldRoles, "SET", null, updatedBy);
-                            });
-                });
+        return accounts.setRoles(userId, roles, updatedBy);
     }
 
     @Override
     public Mono<Set<UserType>> getRoles(String userId) {
-        return userRepository.findById(userId)
-                .map(User::getRoles)
-                .defaultIfEmpty(EnumSet.of(UserType.CUSTOMER));
-    }
-
-    /**
-     * Sync role changes to Keycloak.
-     */
-    private Mono<Void> syncRolesToKeycloak(String userId, Set<UserType> rolesToAdd, Set<UserType> rolesToRemove) {
-        // Add new roles
-        Mono<Void> addRoles = Flux.fromIterable(rolesToAdd)
-                .flatMap(role -> keycloakService.addRoleToUser(userId, role.name()))
-                .then();
-
-        // Remove old roles
-        Mono<Void> removeRoles = Flux.fromIterable(rolesToRemove)
-                .flatMap(role -> keycloakService.removeRoleFromUser(userId, role.name()))
-                .then();
-
-        return Mono.when(addRoles, removeRoles);
-    }
-
-    /**
-     * Publish UserRoleChangedEvent for audit logging.
-     */
-    private void publishUserRoleChangedEvent(User user, Set<UserType> oldRoles, String action, UserType changedRole, String changedBy) {
-        try {
-            Set<String> oldRoleNames = oldRoles.stream().map(Enum::name).collect(Collectors.toSet());
-            Set<String> newRoleNames = user.getRoles().stream().map(Enum::name).collect(Collectors.toSet());
-
-            UserRoleChangedEvent event = new UserRoleChangedEvent(
-                    user.getId(),
-                    user.getEmail(),
-                    oldRoleNames,
-                    newRoleNames,
-                    action,
-                    changedRole != null ? changedRole.name() : null,
-                    changedBy,
-                    Instant.now()
-            );
-
-            boolean sent = streamBridge.send("userRoleOutput-out-0", event);
-            if (sent) {
-                log.info("Published UserRoleChangedEvent for user: {} action: {}", user.getId(), action);
-            } else {
-                log.warn("Failed to publish UserRoleChangedEvent for user: {}", user.getId());
-            }
-        } catch (Exception e) {
-            // Don't fail role update if event publishing fails
-            log.error("Error publishing UserRoleChangedEvent for user {}: {}", user.getId(), e.getMessage());
-        }
+        return accounts.rolesOf(userId);
     }
 }

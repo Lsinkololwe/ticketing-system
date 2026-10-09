@@ -16,7 +16,8 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -40,6 +41,9 @@ import java.util.Arrays;
 public class LiveDashboardServiceImpl implements LiveDashboardService {
 
     private final TicketRepository ticketRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final ReactiveMongoTemplate mongoTemplate;
 
     // Statuses that count as "sold" tickets
@@ -178,7 +182,7 @@ public class LiveDashboardServiceImpl implements LiveDashboardService {
      * Count check-ins in the last hour.
      */
     private Mono<Integer> getCheckInsLastHour(String eventId) {
-        LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
+        Instant oneHourAgo = clock.instant().minus(Duration.ofHours(1));
 
         Query query = new Query(
                 Criteria.where("eventId").is(eventId)

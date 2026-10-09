@@ -1,5 +1,7 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.enums.CheckInConflictStatus;
 import com.pml.booking.domain.enums.CheckInConflictType;
 import com.pml.booking.domain.enums.ValidationMethod;
@@ -7,13 +9,11 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * A scan that was refused, kept so the organizer can see it.
@@ -33,23 +33,18 @@ import java.time.LocalDateTime;
  *
  * <p>Reviewing a conflict annotates it. It never deletes it: the count is the
  * finding.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/003-validation-and-checkin/spec.md">ET-TKT-003</a>
  */
-@Document(collection = "booking_checkin_conflicts")
+@Document(collection = BookingCollections.CHECKIN_CONFLICTS)
+@TypeAlias("checkin_conflicts")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-        @CompoundIndex(name = "conflict_event_detected_idx", def = "{'eventId': 1, 'detectedAt': -1}")
-})
 public class CheckInConflict {
 
     @Id
     private String id;
 
-    @Indexed
     private String eventId;
 
     /**
@@ -59,7 +54,6 @@ public class CheckInConflict {
      * falls back to the organizer who was doing the scanning — who is by
      * definition the one entitled to see it.
      */
-    @Indexed
     private String organizerId;
 
     /**
@@ -80,10 +74,10 @@ public class CheckInConflict {
     private String deviceId;
 
     /** Device clock, as reported. See {@link CheckIn#getScannedAt()}. */
-    private LocalDateTime scannedAt;
+    private Instant scannedAt;
 
     /** Server clock. */
-    private LocalDateTime detectedAt;
+    private Instant detectedAt;
 
     /**
      * When the winning check-in happened, for a DUPLICATE_SCAN.
@@ -91,7 +85,7 @@ public class CheckInConflict {
      * <p>Present so the organizer can see how far apart the two presentations
      * were: ten seconds is a steward double-tapping, two hours is two people.
      */
-    private LocalDateTime originalCheckInAt;
+    private Instant originalCheckInAt;
 
     @Builder.Default
     private CheckInConflictStatus status = CheckInConflictStatus.OPEN;
@@ -100,5 +94,5 @@ public class CheckInConflict {
 
     private String reviewedBy;
 
-    private LocalDateTime reviewedAt;
+    private Instant reviewedAt;
 }

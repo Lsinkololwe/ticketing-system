@@ -25,8 +25,8 @@ import {
  * <ul>
  *   <li>`GRAPHQL_ENDPOINT` — read by the server, so the guard sees the mock</li>
  *   <li>`NEXT_PUBLIC_GRAPHQL_ENDPOINT` — read by the browser, so Apollo agrees</li>
- *   <li>`NEXT_PUBLIC_API_URL` — the document REST surface (spec R4 keeps
- *       documents off GraphQL entirely)</li>
+ *   <li>`NEXT_PUBLIC_API_URL` — the document REST surface (documents stay off
+ *       GraphQL entirely)</li>
  * </ul>
  *
  * Each spec declares the organization state it needs by re-importing the
@@ -35,7 +35,7 @@ import {
  * test while disagreeing with the backend.
  *
  * <h2>Why a real Keycloak login</h2>
- * Better Auth validates the session against MongoDB rather than trusting the
+ * The BFF validates the session against its Redis store rather than trusting the
  * cookie, and the guard needs a real access token: `myOwnedOrganization` is
  * `hasRole('ORGANIZER')`-guarded, so a tokenless query returns an authorization
  * error rather than "no organization". Telling those two apart is exactly what
@@ -43,7 +43,7 @@ import {
  *
  * <h2>Prerequisites</h2>
  * <pre>
- *   docker compose up -d    # mongo (Better Auth sessions) + keycloak (8084)
+ *   docker compose up -d    # redis (BFF sessions) + keycloak (8084)
  *   # Docker itself, for the Microcks container
  * </pre>
  * No Java service is needed — Microcks replaces the whole backend.
@@ -88,9 +88,12 @@ export default defineConfig({
   },
 
   projects: [
+    // Signed out: the brand contract is read off the login page, which needs no session.
+    { name: 'public', testMatch: /brand\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
     {
       name: 'chromium',
+      testIgnore: /brand\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         // One real Keycloak login per run, reused by every spec.

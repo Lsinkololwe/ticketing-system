@@ -1,0 +1,19 @@
+specs: 406 names; jacoco: shared-library=yes, identity-service=yes, catalog-service=yes, booking-service=yes, api-gateway=yes, keycloak-extensions=no
+methods  shared-library       DEAD=12  DEAD_WITH_TYPE=30  GAP=132  KEEP_ACCESSOR=20  KEEP_ENTRY=97  LIVE=226  TEST_ONLY=5
+methods  identity-service     DEAD=102  DEAD_WITH_TYPE=34  GAP=656  KEEP_ACCESSOR=26  KEEP_ENTRY=396  KEEP_SPEC=3  LIVE=239  TEST_ONLY=3
+methods  catalog-service      DEAD=109  DEAD_WITH_TYPE=3  GAP=434  KEEP_ACCESSOR=35  KEEP_ENTRY=389  LIVE=167  TEST_ONLY=5
+methods  booking-service      DEAD=269  DEAD_WITH_TYPE=19  GAP=1217  KEEP_ACCESSOR=127  KEEP_ENTRY=569  LIVE=471  TEST_ONLY=2
+methods  api-gateway          DEAD=2  GAP=14  KEEP_ENTRY=25  LIVE=5
+methods  keycloak-extensions  DEAD=1  KEEP_ACCESSOR=13  KEEP_ENTRY=49  LIVE=86
+types    shared-library       BEAN_UNINJECTED=1  DEAD=3  KEEP_BEAN=2  KEEP_ENTRY=21  LIVE=138  TEST_ONLY=2
+types    identity-service     BEAN_UNINJECTED=2  DEAD=5  KEEP_BEAN=24  KEEP_ENTRY=64  LIVE=252  TEST_ONLY=1
+types    catalog-service      DEAD=5  KEEP_BEAN=21  KEEP_ENTRY=44  LIVE=186
+types    booking-service      DEAD=10  KEEP_BEAN=33  KEEP_ENTRY=76  LIVE=461
+types    api-gateway          KEEP_BEAN=6  KEEP_ENTRY=7  LIVE=1
+types    keycloak-extensions  LIVE=18
+config   shared-library       
+config   identity-service     BOUND=51  ORPHAN=44
+config   catalog-service      BOUND=23  ORPHAN=10
+config   booking-service      BOUND=81  ORPHAN=32
+config   api-gateway          BOUND=13  ORPHAN=2
+config   keycloak-extensions  

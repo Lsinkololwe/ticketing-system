@@ -1,0 +1,424 @@
+/**
+ * M3 design tokens: MEASUREMENTS.
+ *
+ * Single source of truth for every size, space, radius, type metric, elevation,
+ * state-layer opacity and motion duration used by the shared M3 components.
+ * Components and `m3.components.css` may reference ONLY these variables (a lint
+ * test fails on a raw px / hex / rgb value anywhere else).
+ *
+ * Each value is the COMPUTED value measured in the approved visual prototype
+ * (Chromium, 1440x900, organizer/platform "medium density" layer, and the buyer
+ * storefront layer). The trailing comment names the prototype rule it came from.
+ * Colors live in `m3.themes.css`.
+ *
+ * Breakpoints cannot be CSS variables inside @media; the same numbers are
+ * exported from `m3.tokens.ts` and a test asserts the two agree.
+ */
+
+/* @tokens:start */
+:root {
+  /* ---- spacing scale (px names are the values) ---- */
+  --m3-sp-0: 0px;
+  --m3-sp-1: 1px;
+  --m3-sp-2: 2px;
+  --m3-sp-3: 3px;
+  --m3-sp-4: 4px;
+  --m3-sp-6: 6px;
+  --m3-sp-8: 8px;
+  --m3-sp-10: 10px;
+  --m3-sp-12: 12px;
+  --m3-sp-14: 14px;
+  --m3-sp-16: 16px;
+  --m3-sp-18: 18px;
+  --m3-sp-20: 20px;
+  --m3-sp-24: 24px;
+  --m3-sp-28: 28px;
+  --m3-sp-32: 32px;
+  --m3-sp-40: 40px;
+  --m3-sp-48: 48px;
+  --m3-sp-56: 56px;
+  --m3-sp-64: 64px;
+
+  /* ---- borders / focus ---- */
+  --m3-bw: 1px; /* .btn, .card, .tf .box border */
+  --m3-bw-2: 2px; /* .sw border, dashed ticket divider */
+  --m3-bw-3: 3px; /* :focus-visible outline, tab indicator */
+  --m3-focus-offset: 2px; /* :focus-visible outline-offset */
+
+  /* ---- radii ---- */
+  --m3-r-xs: 4px; /* .tf .box, .chipin, toast(base) */
+  --m3-r-sm: 6px; /* .pill, .thumb, .toast, .kpi .up */
+  --m3-r-md: 8px; /* .chipb, nav.cats button */
+  --m3-r-lg: 10px; /* .kpi .ki, buyer .btn */
+  --m3-r-card: 12px; /* .card, .menu, .alert, .notice, .drop */
+  --m3-r-xl: 16px; /* .drw left corners, login card */
+  --m3-r-dialog: 20px; /* .modal .dl (medium) */
+  --m3-r-full: 999px; /* pills, circles */
+  --m3-r-circle: 50%;
+
+  /* ---- type: families come from the app (next/font), these are fallbacks ---- */
+  --m3-font-display: var(--font-display, 'Bricolage Grotesque'), system-ui, sans-serif;
+  --m3-font-body: var(--font-body, 'DM Sans'), system-ui, sans-serif;
+  --m3-font-mono: var(--font-mono, 'JetBrains Mono'), ui-monospace, monospace;
+
+  /* ---- type scale (medium density) ---- */
+  --m3-body-size: 14px; /* body */
+  --m3-body-line: 20px;
+  --m3-body-track: 0.01em; /* body letter-spacing */
+  --m3-body-s-size: 13px; /* td, .btn, .cs, .etabs button */
+  --m3-body-s-line: 18px;
+  --m3-label-size: 13px; /* .btn, .nvl */
+  --m3-label-line: 20px;
+  --m3-label-s-size: 12px; /* .btn.sm */
+  --m3-caption-size: 12px; /* .sub, .cs, .dl2, .ferr */
+  --m3-caption-line: 16px;
+  --m3-support-size: 11px; /* .sup */
+  --m3-overline-size: 11px; /* th, .kpi .k, .kv span, .sec */
+  --m3-overline-line: 20px;
+  --m3-track-overline: 0.06em; /* th, .kv span */
+  --m3-track-kpi: 0.05em; /* .kpi span.k */
+  --m3-track-section: 0.1em; /* .dr .sec */
+  --m3-field-size: 13.5px; /* .tf input */
+  --m3-field-line: 20px;
+  --m3-field-label-float-size: 11px; /* floated .tf label */
+  --m3-field-label-float-line: 14px;
+  --m3-title-s-size: 14px; /* .cardh h3, .card>h3 */
+  --m3-title-s-line: 17px;
+  --m3-title-size: 20px; /* .topbar h1, .modal .dl h2 */
+  --m3-title-line: 26px;
+  --m3-title-track: -0.01em;
+  --m3-dialog-title-line: 24px;
+  --m3-sheet-title-size: 19px; /* .drw h2 */
+  --m3-sheet-title-line: 23px;
+  --m3-kpi-size: 21px; /* .kpi b */
+  --m3-kpi-line: 28px;
+  --m3-kpi-lg-size: 26px; /* organizer .kpi b (large variant) */
+  --m3-kpi-lg-line: 32px;
+  --m3-stat-size: 18px; /* .hs b */
+  --m3-stat-line: 24px;
+  --m3-chip-size: 12.5px; /* .chipb, .segc button */
+  --m3-pill-size: 11px; /* .pill */
+  --m3-pill-line: 16px;
+  --m3-brand-size: 18px; /* .dr .brandtxt */
+  --m3-weight-regular: 400;
+  --m3-weight-medium: 500;
+  --m3-weight-bold: 700;
+  --m3-weight-black: 800;
+  --m3-chart-label-size: 11px; /* .chart text */
+  --m3-tip-size: 12px; /* #tip */
+
+  /* ---- component sizes (medium density) ---- */
+  --m3-btn-h: 34px; /* .btn */
+  --m3-btn-h-sm: 28px; /* .btn.sm */
+  --m3-btn-pad-x: 14px; /* .btn padding */
+  --m3-btn-pad-x-sm: 12px; /* .btn.sm */
+  --m3-btn-pad-x-text: 12px; /* .btn.txt */
+  --m3-btn-radius: 18px; /* .btn */
+  --m3-btn-radius-sm: 14px; /* .btn.sm */
+  --m3-btn-gap: 6px;
+  --m3-btn-icon: 16px; /* .btn svg */
+  --m3-btn-font-size: 13px;
+  --m3-btn-weight: 700;
+  --m3-btn-border-outlined: 1px;
+  --m3-icon-btn: 34px; /* .btn.ic */
+  --m3-icon-btn-icon: 18px; /* .btn.ic svg */
+  --m3-fab: 44px; /* .fab */
+  --m3-fab-radius: 12px;
+  --m3-fab-icon: 22px;
+  --m3-field-h: 40px; /* .tf .box (toolbar/medium) */
+  --m3-field-h-form: 44px; /* organizer form .tf .box min-height */
+  --m3-field-pad-x: 12px; /* .tf input */
+  --m3-field-pad-y: 9px;
+  --m3-field-pad-x-form: 14px; /* form-grid field input */
+  --m3-field-pad-y-form: 11px;
+  --m3-field-label-left: 8px; /* resting label inset */
+  --m3-field-label-top: 8px;
+  --m3-field-label-float-top: -8px;
+  --m3-field-label-pad: 4px;
+  --m3-field-affix-pad: 14px; /* .tf .pre / .suf outer padding */
+  --m3-field-support-pad: 14px; /* .sup */
+  --m3-field-textarea-h: 84px; /* .tf textarea min-height */
+  --m3-field-chev: 7px; /* .tf .chev (form) */
+  --m3-field-select-pad-end: 34px;
+  --m3-field-support-gap: 4px; /* .fld gap */
+  --m3-field-grid-gap-y: 20px; /* .fgrid row gap */
+  --m3-field-grid-gap-x: 16px; /* .fgrid column gap */
+  --m3-check: 18px; /* checkbox / radio box, .cb input */
+  --m3-switch-w: 44px; /* .sw */
+  --m3-switch-h: 24px;
+  --m3-switch-thumb-off: 12px;
+  --m3-switch-thumb-on: 18px;
+  --m3-switch-inset-off: 4px;
+  --m3-switch-inset-on: 2px;
+  --m3-switch-travel: 22px; /* thumb left when on */
+  --m3-chip-h: 28px; /* .chipb */
+  --m3-chip-pad-x: 10px;
+  --m3-chip-radius: 8px;
+  --m3-chip-gap: 6px;
+  --m3-chip-bw: 1px;
+  --m3-chip-input-h: 30px; /* .chipin span.c */
+  --m3-chip-input-close: 28px;
+  --m3-seg-h: 32px; /* .segc button */
+  --m3-seg-pad-x: 12px;
+  --m3-seg-radius: 18px; /* .segc */
+  --m3-pill-h: 20px; /* .pill min-height */
+  --m3-pill-pad-x: 8px;
+  --m3-pill-pad-y: 2px;
+  --m3-pill-radius: 6px;
+  --m3-tab-h: 40px; /* .etabs button */
+  --m3-tab-pad-x: 14px;
+  --m3-tab-indicator-h: 3px;
+  --m3-tab-indicator-inset: 12px;
+  --m3-tab-num: 20px; /* .etabs .n */
+  --m3-tab-num-gap: 8px;
+  --m3-nav-item-h: 36px; /* .dr .nvl */
+  --m3-nav-item-pad-x: 12px;
+  --m3-nav-item-radius: 18px;
+  --m3-nav-item-gap: 12px;
+  --m3-nav-icon: 18px; /* .dr .nvl svg */
+  --m3-nav-icon-rail: 20px; /* .rail .nv svg */
+  --m3-nav-count-h: 18px; /* .dr .cnt */
+  --m3-nav-section-pad-top: 10px; /* .dr .sec */
+  --m3-nav-section-pad-bottom: 4px;
+  --m3-nav-org-h: 52px; /* .dr .orgsw / .ucard */
+  --m3-nav-avatar: 32px; /* .orgav */
+  --m3-nav-avatar-user: 30px; /* .dr .ucard .av */
+  --m3-nav-new-h: 46px; /* .dr .newbtn */
+  --m3-nav-new-radius: 14px;
+  --m3-nav-brand-mark: 28px; /* .dr .bm */
+  --m3-nav-brand-mark-radius: 9px;
+  --m3-nav-brand-mark-corner: 3px;
+  --m3-nav-collapse-btn: 32px; /* .colbtn */
+  --m3-rail-w: 76px; /* .app (collapsed rail) */
+  --m3-rail-item-w: 68px; /* .rail .nv */
+  --m3-rail-pill-w: 48px; /* .nv .pill-i */
+  --m3-rail-pill-h: 28px;
+  --m3-rail-label-size: 11px;
+  --m3-drawer-w: 236px; /* .app.dr */
+  --m3-drawer-pad-x: 10px;
+  --m3-drawer-pad-y: 12px;
+  --m3-bottomnav-h: 76px; /* phone .rail */
+  --m3-bottomnav-item-w: 72px;
+  --m3-topbar-min-h: 60px; /* .topbar */
+  --m3-topbar-pad-y: 8px;
+  --m3-topbar-gap: 8px;
+  --m3-work-pad-x: 24px; /* .work */
+  --m3-work-pad-x-compact: 16px;
+  --m3-work-pad-bottom: 40px;
+  --m3-work-max-w: 1280px;
+  --m3-work-pad-bottom-bottomnav: 170px;
+  --m3-content-gap: 16px; /* #main>*+*, .grid, .formcol */
+  --m3-grid-gap: 16px;
+  --m3-kpi-gap: 12px; /* .kpis */
+  --m3-kpi-min-w: 220px;
+  --m3-card-pad: 16px; /* .card (medium) */
+  --m3-card-pad-lg: 20px;
+  --m3-card-radius: 12px;
+  --m3-card-head-gap: 12px; /* .cardh */
+  --m3-kpi-pad-y: 12px; /* .kpi */
+  --m3-kpi-pad-x: 14px;
+  --m3-kpi-icon: 32px; /* .kpi .ki */
+  --m3-kpi-icon-radius: 10px;
+  --m3-kpi-icon-svg: 18px;
+  --m3-kpi-col-gap: 12px;
+  --m3-kpi-go-h: 24px; /* .kpi .kgo */
+  --m3-kpi-spark-w: 64px; /* .kpi svg.sp */
+  --m3-kpi-spark-h: 28px;
+  --m3-th-pad-y: 8px; /* th, td */
+  --m3-th-pad-x: 12px;
+  --m3-td-pad-y: 8px;
+  --m3-td-pad-x: 12px;
+  --m3-td-compact-pad-y: 6px; /* .ledger td */
+  --m3-td-compact-pad-x: 10px;
+  --m3-table-min-w: 560px; /* table min-width */
+  --m3-table-row-min-h: 44px;
+  --m3-table-thumb-w: 40px; /* .thumb */
+  --m3-table-thumb-h: 28px;
+  --m3-table-thumb-gap: 12px;
+  --m3-table-select-w: 52px; /* checkbox column */
+  --m3-pager-gap-y: 12px;
+  --m3-pager-gap-x: 20px;
+  --m3-pager-pad-top: 6px;
+  --m3-pager-btn: 30px; /* .pgn */
+  --m3-pager-btn-radius: 15px;
+  --m3-pager-btn-gap: 2px;
+  --m3-list-row-h: 44px; /* .lst li */
+  --m3-list-row-pad-y: 4px;
+  --m3-list-row-gap: 12px;
+  --m3-menu-item-h: 40px; /* .menu button */
+  --m3-menu-item-pad-x: 16px;
+  --m3-menu-pad-y: 8px;
+  --m3-menu-min-w: 190px;
+  --m3-menu-offset: 4px;
+  --m3-dialog-w: 560px; /* .modal .dl */
+  --m3-dialog-w-wide: 720px;
+  --m3-dialog-pad: 20px;
+  --m3-dialog-gap: 12px;
+  --m3-dialog-max-h: 92vh;
+  --m3-dialog-margin: 16px;
+  --m3-sheet-w: 560px; /* .drw */
+  --m3-sheet-pad: 20px;
+  --m3-sheet-gap: 12px;
+  --m3-sheet-radius: 16px;
+  --m3-sheet-foot-pad-y: 12px; /* .drw .dfoot */
+  --m3-snackbar-pad-y: 12px; /* .toast */
+  --m3-snackbar-pad-start: 16px;
+  --m3-snackbar-pad-end: 8px;
+  --m3-snackbar-gap: 20px;
+  --m3-snackbar-radius: 6px;
+  --m3-snackbar-offset: 24px;
+  --m3-snackbar-max-w: 560px;
+  --m3-snackbar-action-pad: 12px;
+  --m3-banner-pad-y: 10px; /* .alert */
+  --m3-banner-pad-x: 14px;
+  --m3-notice-pad-y: 8px; /* .notice */
+  --m3-empty-pad: 28px; /* .empty */
+  --m3-empty-icon: 40px;
+  --m3-stat-pad-y: 8px; /* .hs */
+  --m3-stat-pad-x: 12px;
+  --m3-avatar: 34px; /* .av */
+  --m3-avatar-sm: 32px; /* .av.sm */
+  --m3-avatar-lg: 72px; /* .av.lg */
+  --m3-avatar-font: 12px;
+  --m3-badge-min: 18px; /* nav count badge, buyer .badge 19 */
+  --m3-badge-dot: 8px;
+  --m3-progress-h: 4px; /* .lin / .bar */
+  --m3-progress-h-lg: 6px; /* .meter2 */
+  --m3-progress-circle: 72px; /* .ring */
+  --m3-progress-circle-inner: 56px;
+  --m3-tooltip-pad-y: 8px; /* #tip */
+  --m3-tooltip-pad-x: 10px;
+  --m3-tooltip-min-w: 140px;
+  --m3-tooltip-radius: 10px;
+  --m3-tooltip-offset: 8px;
+  --m3-stepper-dot: 24px;
+  --m3-stepper-line-h: 2px;
+  --m3-skeleton-line-h: 12px;
+  --m3-skeleton-radius: 6px;
+  --m3-expansion-h: 56px; /* .ri>summary */
+  --m3-expansion-pad-x: 16px;
+  --m3-expansion-pad-y: 6px;
+  --m3-expansion-pad-end: 8px;
+  --m3-expansion-body-pad-top: 8px;
+  --m3-expansion-body-pad-bottom: 18px;
+  --m3-expansion-gap: 18px;
+  --m3-drop-pad: 20px; /* .drop */
+  --m3-savebar-radius: 14px; /* .savebar */
+  --m3-savebar-pad-y: 10px;
+  --m3-savebar-pad-x: 12px;
+  --m3-savebar-pad-start: 20px;
+  --m3-savebar-offset: 12px;
+  --m3-kv-pad-y: 8px; /* .kv */
+  --m3-kv-gap: 2px;
+  --m3-timeline-pad: 14px; /* .tlv */
+  --m3-chart-h: 270px;
+  --m3-donut: 170px; /* .donutw .chart */
+  --m3-chart-legend-dot: 10px;
+  --m3-heat-cell-h: 30px;
+  --m3-icon-sm: 16px;
+  --m3-icon-md: 18px;
+  --m3-icon-lg: 20px;
+  --m3-icon-xl: 24px;
+
+  /* ---- buyer storefront (overridden under [data-app=buyer], see themes) ---- */
+  --m3-page-title-size: clamp(28px, 4vw, 38px); /* buyer .h1s */
+  --m3-page-title-line: 1.2;
+  --m3-page-title-weight: 800;
+  --m3-page-title-track: -0.02em;
+  --m3-tabs-seg-pad: 3px; /* buyer .seg */
+  --m3-tabs-seg-gap: 2px;
+  --m3-tabs-seg-weight: 600;
+  --m3-tabs-seg-item-pad-y: 9px;
+  --m3-tabs-seg-item-pad-x: 14px;
+  --m3-site-w: 1180px; /* .wrap */
+  --m3-site-pad-x: 16px;
+  --m3-site-header-h: 60px; /* header.top */
+  --m3-site-header-pad-y: 10px;
+  --m3-site-header-gap: 14px;
+  --m3-site-logo-size: 24px;
+  --m3-site-logo-mark: 26px;
+  --m3-site-nav-item-h: 38px;
+  --m3-site-tool-h: 40px;
+  --m3-site-search-pad: 6px; /* .search */
+  --m3-site-search-radius: 14px;
+  --m3-site-search-field-pad-y: 8px;
+  --m3-site-search-field-pad-x: 12px;
+  --m3-site-search-field-radius: 9px;
+  --m3-site-search-btn-h: 68px;
+  --m3-site-hero-pad-top: 56px;
+  --m3-site-hero-pad-bottom: 40px;
+  --m3-site-section-pad: 36px;
+  --m3-site-grid-min: 250px; /* .grid */
+  --m3-site-grid-gap: 18px;
+  --m3-site-card-radius: 14px;
+  --m3-site-card-body-pad: 14px;
+  --m3-site-card-img-ratio: 1.5; /* 3/2 */
+  --m3-stepper-rule: 3px; /* buyer .steps underline */
+  --m3-site-narrow-w: 780px; /* .narrow */
+  --m3-site-unread-tint: 6%; /* .nit.un */
+  --m3-tier-bw: 1.5px; /* buyer .tcat */
+  --m3-tier-selected-tint: 5%; /* prototype 8%, lowered so muted text keeps 4.5:1 */
+  --m3-site-dhero-h: 330px; /* .dhero */
+  --m3-site-dhero-pad-bottom: 56px;
+  --m3-site-facts-overlap: 34px; /* .facts margin-top */
+  --m3-site-facts-inset: 24px;
+  --m3-site-panel-title-size: 20px; /* .panel h3, .bkm h3 */
+  --m3-site-card-title-size: 19px;
+  --m3-site-meta-size: 13px;
+  --m3-site-date-radius: 8px;
+  --m3-site-date-size: 18px;
+  --m3-site-panel-pad: 20px;
+  --m3-site-panel-radius: 14px;
+  --m3-site-aside-w: 340px; /* .two second column */
+  --m3-site-banner-radius: 18px;
+  --m3-site-banner-pad: 28px;
+  --m3-site-footer-pad: 36px;
+  --m3-site-ticket-radius: 16px;
+  --m3-site-ticket-pad: 22px;
+  --m3-site-ticket-max-w: 620px;
+  --m3-site-qr: 148px;
+  --m3-site-step-h: 32px;
+  --m3-site-hover-lift: -3px;
+
+  /* ---- auth ---- */
+  --m3-auth-w: 400px; /* .loginc */
+  --m3-auth-pad: 24px;
+  --m3-auth-gap: 14px;
+  --m3-auth-radius: 16px;
+  --m3-auth-mark: 36px;
+
+  /* ---- state layers (M3) ---- */
+  --m3-state-hover: 0.08; /* .btn:hover::before */
+  --m3-state-focus: 0.14; /* :focus-visible::before / :active::before */
+  --m3-state-pressed: 0.14;
+  --m3-state-disabled: 0.38; /* .btn:disabled opacity */
+  --m3-state-nav-hover: 0.08; /* rgba(255,255,255,.08) on dark nav */
+  --m3-state-nav-selected: 0.18; /* nav selected */
+  --m3-state-nav-soft: 0.1;
+
+  /* ---- motion ---- */
+  --m3-dur-fast: 0.12s; /* state layer, border */
+  --m3-dur-base: 0.15s; /* switch, label float, rail pill */
+  --m3-dur-medium: 0.2s; /* width, progress fill */
+  --m3-dur-slow: 0.25s; /* linear progress */
+  --m3-ease: ease;
+  --m3-snackbar-default-ms: 4000; /* unitless: used by SnackbarProvider */
+
+  /* ---- list toolbars (admin .toolbar .fld) ---- */
+  --m3-toolbar-search-w: 290px;
+  --m3-toolbar-select-w: 220px;
+  --m3-tile-min-w: 150px; /* .tiles */
+  --m3-tile-size: 19px; /* .tile b (medium) */
+  --m3-tile-line: 24px;
+
+  /* ---- layering ---- */
+  --m3-z-sticky: 20;
+  --m3-z-tabs: 15;
+  --m3-z-nav: 40;
+  --m3-z-menu: 60;
+  --m3-z-sheet: 65;
+  --m3-z-dialog: 70;
+  --m3-z-snackbar: 80;
+  --m3-z-tooltip: 95;
+}
+/* @tokens:end */

@@ -1,7 +1,5 @@
 package com.pml.shared.constants;
 
-import java.math.BigDecimal;
-
 /**
  * Ticket Category Enum
  */

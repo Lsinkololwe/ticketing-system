@@ -1,40 +1,16 @@
 /**
  * Dashboard Layout (Server Component)
  *
- * Protected layout for authenticated organizers with approved status.
- *
- * ## Security Model (Industry Standard 3-Layer)
- *
- * ```
- * Layer 1: Proxy (proxy.ts)
- * -------------------------
- * - Optimistic routing based on session cookie PRESENCE
- * - NOT SECURE - cookies can be forged
- * - Purpose: Better UX with fast redirects
- *
- * Layer 2: THIS LAYOUT (Server Component)
- * ---------------------------------------
- * - Validates session via auth.api.getSession()
- * - Checks organization status from GraphQL
- * - Redirects unauthorized users
- * - DEFENSE IN DEPTH
- *
- * Layer 3: Backend API
- * --------------------
- * - @PreAuthorize annotations on GraphQL resolvers
- * - JWT validation + role-based access control
- * - Returns only authorized data
- * - SOURCE OF TRUTH (SECURE)
- * ```
- *
- * @see https://nextjs.org/docs/app/guides/authentication
- * @see https://better-auth.com/docs/integrations/next
+ * Authoritative session and role check (the proxy only gates coarsely), then the
+ * organization lifecycle guard. Every privileged action is independently enforced
+ * by the backend resolvers.
  */
 
 import { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import { verifySession, getOrganizationStatus, getRouteForStatus } from '@/lib/auth/dal';
-import { DashboardLayoutContent } from '@/components/layout/DashboardLayoutContent';
+import { bff } from '@/lib/bff';
+import { getOrganizationStatus, getRouteForStatus } from '@/lib/organization/server';
+import { ConsoleShell } from '@/components/console/ConsoleShell';
 
 // =============================================================================
 // TYPES
@@ -53,9 +29,9 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   // LAYER 2: Server-Side Authentication & Authorization
   // ============================================================================
 
-  // Step 1: Verify session (validates against MongoDB, not just cookie)
+  // Step 1: Verify the BFF session and role (Redis-backed, server only)
   // Redirects to /login if not authenticated
-  await verifySession();
+  await bff.requireSession({ roles: ['ORGANIZER', 'ADMIN'] });
 
   // Step 2: Check organization status (with graceful fallback on transport errors only).
   // Keep the GraphQL call inside try/catch, but NOT the redirects — redirect() throws a
@@ -87,11 +63,5 @@ export default async function DashboardLayout({ children }: DashboardLayoutProps
   // read-only preview banner.
   // ============================================================================
 
-  const previewMode = organization.isPendingReview;
-
-  return (
-    <DashboardLayoutContent previewMode={previewMode}>
-      {children}
-    </DashboardLayoutContent>
-  );
+  return <ConsoleShell>{children}</ConsoleShell>;
 }

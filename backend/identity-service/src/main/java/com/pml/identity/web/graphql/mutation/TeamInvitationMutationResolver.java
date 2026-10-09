@@ -1,5 +1,7 @@
 package com.pml.identity.web.graphql.mutation;
 
+import com.pml.shared.security.Permission;
+import com.pml.identity.security.IdentityTenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -17,19 +19,23 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Team Invitation operations.
  */
 @Slf4j
+
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class TeamInvitationMutationResolver {
 
     private final TeamInvitationService invitationService;
+    private final IdentityTenantReads reads;
     private final OrganizationMemberService memberService;
-
-    private static final String MEMBER_INVITE_PERMISSION = "MEMBER_INVITE";
 
     /**
      * Invite a team member.
@@ -38,15 +44,11 @@ public class TeamInvitationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<TeamInvitation> inviteTeamMember(
             @InputArgument String organizationId,
-            @InputArgument InviteMemberInput input) {
+            @Valid @InputArgument InviteMemberInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(inviterId -> log.info("User {} inviting {} to organization {}", inviterId, input.email(), organizationId))
-                .flatMap(inviterId -> memberService.hasPermission(inviterId, organizationId, MEMBER_INVITE_PERMISSION)
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied: " + MEMBER_INVITE_PERMISSION));
-                            }
-
+                .flatMap(inviterId -> memberService.requirePermission(inviterId, organizationId, Permission.TEAM_INVITE)
+                        .then(Mono.defer(() -> {
                             List<TeamInvitation.EventAccessInput> eventGrants = null;
                             if (input.eventAccessGrants() != null) {
                                 eventGrants = input.eventAccessGrants().stream()
@@ -68,7 +70,7 @@ public class TeamInvitationMutationResolver {
                                     eventGrants,
                                     inviterId
                             );
-                        }));
+                        })));
     }
 
     /**
@@ -78,15 +80,11 @@ public class TeamInvitationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Flux<TeamInvitation> bulkInviteTeamMembers(
             @InputArgument String organizationId,
-            @InputArgument List<InviteMemberInput> invitations) {
+            @Valid @InputArgument List<@Valid InviteMemberInput> invitations) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(inviterId -> log.info("User {} bulk inviting {} members to organization {}", inviterId, invitations.size(), organizationId))
-                .flatMapMany(inviterId -> memberService.hasPermission(inviterId, organizationId, MEMBER_INVITE_PERMISSION)
-                        .flatMapMany(hasPermission -> {
-                            if (!hasPermission) {
-                                return Flux.error(new IllegalStateException("Permission denied: " + MEMBER_INVITE_PERMISSION));
-                            }
-
+                .flatMapMany(inviterId -> memberService.requirePermission(inviterId, organizationId, Permission.TEAM_INVITE)
+                        .thenMany(Flux.defer(() -> {
                             List<TeamInvitationService.InviteRequest> requests = invitations.stream()
                                     .map(input -> {
                                         List<TeamInvitation.EventAccessInput> eventGrants = null;
@@ -111,7 +109,7 @@ public class TeamInvitationMutationResolver {
                                     .collect(Collectors.toList());
 
                             return invitationService.bulkInvite(organizationId, requests, inviterId);
-                        }));
+                        })));
     }
 
     /**
@@ -122,15 +120,11 @@ public class TeamInvitationMutationResolver {
     public Mono<TeamInvitation> resendInvitation(@InputArgument String invitationId) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("User {} resending invitation: {}", userId, invitationId))
-                .flatMap(userId -> invitationService.findById(invitationId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Invitation not found")))
-                        .flatMap(invitation -> memberService.hasPermission(userId, invitation.getOrganizationId(), MEMBER_INVITE_PERMISSION)
-                                .flatMap(hasPermission -> {
-                                    if (!hasPermission) {
-                                        return Mono.error(new IllegalStateException("Permission denied"));
-                                    }
+                .flatMap(userId -> reads.invitationForCaller(invitationId)
+                        .flatMap(invitation -> memberService.requirePermission(userId, invitation.getOrganizationId(), Permission.TEAM_INVITE)
+                                .then(Mono.defer(() -> {
                                     return invitationService.resend(invitationId);
-                                })));
+                                }))));
     }
 
     /**
@@ -141,15 +135,11 @@ public class TeamInvitationMutationResolver {
     public Mono<TeamInvitation> revokeInvitation(@InputArgument String invitationId) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("User {} revoking invitation: {}", userId, invitationId))
-                .flatMap(userId -> invitationService.findById(invitationId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Invitation not found")))
-                        .flatMap(invitation -> memberService.hasPermission(userId, invitation.getOrganizationId(), MEMBER_INVITE_PERMISSION)
-                                .flatMap(hasPermission -> {
-                                    if (!hasPermission) {
-                                        return Mono.error(new IllegalStateException("Permission denied"));
-                                    }
+                .flatMap(userId -> reads.invitationForCaller(invitationId)
+                        .flatMap(invitation -> memberService.requirePermission(userId, invitation.getOrganizationId(), Permission.TEAM_INVITE)
+                                .then(Mono.defer(() -> {
                                     return invitationService.revoke(invitationId);
-                                })));
+                                }))));
     }
 
     /**
@@ -164,11 +154,16 @@ public class TeamInvitationMutationResolver {
     }
 
     /**
-     * Decline invitation.
+     * Decline an invitation by its token.
+     *
+     * <p>Answers with a bare boolean. The token is a bearer credential that gets forwarded, so
+     * echoing the invitation back would hand the invitee's email, phone number and name to whoever
+     * holds the link; the acceptance page only needs to know the decline happened.</p>
      */
     @DgsMutation
-    public Mono<TeamInvitation> declineInvitation(@InputArgument String token) {
+    @PreAuthorize("isAuthenticated()")
+    public Mono<Boolean> declineInvitation(@InputArgument String token) {
         log.info("Declining invitation");
-        return invitationService.decline(token);
+        return invitationService.decline(token).thenReturn(Boolean.TRUE);
     }
 }

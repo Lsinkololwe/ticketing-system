@@ -374,52 +374,6 @@ public class JournalLine {
     }
 
     /**
-     * Creates a debit line with reference tracking.
-     *
-     * @param accountCode Account to debit
-     * @param amount Debit amount
-     * @param description Line description
-     * @param referenceType Type of business entity referenced
-     * @param referenceId ID of the referenced entity
-     * @return New JournalLine with debit and reference
-     */
-    public static JournalLine debitWithReference(
-            String accountCode,
-            BigDecimal amount,
-            String description,
-            String referenceType,
-            String referenceId
-    ) {
-        JournalLine line = debit(accountCode, amount, description);
-        line.setReferenceType(referenceType);
-        line.setReferenceId(referenceId);
-        return line;
-    }
-
-    /**
-     * Creates a credit line with reference tracking.
-     *
-     * @param accountCode Account to credit
-     * @param amount Credit amount
-     * @param description Line description
-     * @param referenceType Type of business entity referenced
-     * @param referenceId ID of the referenced entity
-     * @return New JournalLine with credit and reference
-     */
-    public static JournalLine creditWithReference(
-            String accountCode,
-            BigDecimal amount,
-            String description,
-            String referenceType,
-            String referenceId
-    ) {
-        JournalLine line = credit(accountCode, amount, description);
-        line.setReferenceType(referenceType);
-        line.setReferenceId(referenceId);
-        return line;
-    }
-
-    /**
      * Creates a reversed copy of this line (debit becomes credit, vice versa).
      *
      * <p>Used when creating reversal journal entries.</p>

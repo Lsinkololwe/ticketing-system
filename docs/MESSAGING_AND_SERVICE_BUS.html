@@ -172,7 +172,7 @@
       <div class="grid2">
         <div class="card" style="padding:18px">
           <h3 class="subhead" style="margin-top:0">Tier 1 — Intra-service <span class="pill on">working</span></h3>
-          <p style="font-size:13.5px;color:var(--ink-soft);margin:0">Events <em>within</em> one service use <b>Spring Modulith</b> + PostgreSQL (<span class="mono">event_publication</span> table). Guaranteed delivery, auto-republish on restart. Verified healthy at boot: <span class="mono">“No publication found”</span>, Hikari pool up. <b>Independent of Service Bus.</b></p>
+          <p style="font-size:13.5px;color:var(--ink-soft);margin:0">Within one service, a process runs as a <b>Temporal workflow</b>, and a fact for other services is staged in the service's MongoDB outbox (<span class="mono">*_outbox</span>) in the same transaction as the write; a drain then publishes it to Service Bus.</p>
         </div>
         <div class="card" style="padding:18px">
           <h3 class="subhead" style="margin-top:0">Tier 2 — Cross-service <span class="pill off">blocked</span></h3>
@@ -276,7 +276,7 @@
         </li>
         <li>
           <h4>Set the environment variables</h4>
-          <p>The services already read these (with empty defaults). Put them in <span class="mono">docker-resources/.env.ticketing</span> or your service's environment.</p>
+          <p>The services already read these (with empty defaults). Put them in <span class="mono">docker-resources/env/ticketing.env</span> or your service's environment.</p>
 <pre><span class="c"># Option (a): connection string</span>
 <span class="y">AZURE_SERVICEBUS_CONNECTION_STRING</span>=Endpoint=sb://sb-myticketzm-dev.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=...
 

@@ -1,5 +1,19 @@
 # Event Ticketing Platform - Keycloak Integration Implementation Plan
 
+> ## Superseded in part: 2026-10-04 redesign
+>
+> Authoritative sources: [`specs/identity/001-phone-otp-identity`](../specs/identity/001-phone-otp-identity/spec.md) (ET-IDN-001, now *Contact-OTP*),
+> [`specs/identity/004-accounts-and-contacts`](../specs/identity/004-accounts-and-contacts/spec.md) and its binding
+> [`CONTRACT.md`](../specs/identity/004-accounts-and-contacts/CONTRACT.md), decisions **D-38..D-50** in [`specs/ROADMAP.md`](../specs/ROADMAP.md), finding **F-044**.
+> The text below is kept as history and is **not** rewritten; where it disagrees with the specs, the specs win (specs/README precedence).
+>
+> - **There is no `SCANNER` role.** Ticket validators are event-scoped access grants (ET-ORG-003, `ticket:scan` on a specific event), not a realm role and not "admin-created Keycloak users"; the role hierarchy and the "Admin creates SCANNER user" test below are historical.
+> - **Registration**: buyers are not "self-registered through Keycloak" with a form; they are created identity-first by the account workflow after a contact proof. Registrants can never choose `ORGANIZER`; that role follows an approved organization application (ET-ORG-001). Platform staff are created from the admin app (D-49); console creation is break-glass and adopted by user sync.
+> - **Realms**: two (D-48), `myticketzm` and `myticketzm-admin`; the single `event-ticketing` realm and the `event-ticketing-mobile` / `-admin` client ids in this plan are historical.
+> - **Role to permission mapping.** The plan's per-role `permissions` JSON blocks and any text implying an editable role -> permission table are superseded by **D-37**: the table lives in the software (`com.pml.shared.security.Permission`, identity's `OrganizationRole` and `EventRole`) and changes only by a release. This **contradicts ET-PLT-013's editable mapping (R3, R7, R8) and any "resolution order" text that reads a stored mapping**; the resolver order is the **six steps of ET-ORG-003** (platform role; event grant with its denied, custom and role sets; organization membership; denied; custom or role set; deny) over the in-code table. That order supersedes the shorter summaries in D-10 and in `USER_STORIES.md` section 6 ("custom, then denied"): an explicit deny is checked **before** a custom allow at both the event and the organization level. ET-PLT-013 carries a matching pointer note; its history is not rewritten.
+> - **SMS** is dropped (D-39); OTP is WhatsApp or email. The OTP limit is 5 tries (not 3).
+
+
 ## Document Metadata
 - **Version:** 1.0
 - **Created:** 2026-02-18
@@ -113,7 +127,6 @@ SUPER_ADMIN
     └── ADMIN
             ├── CUSTOMER
             ├── ORGANIZER (includes CUSTOMER)
-            ├── SCANNER
             └── FINANCE
 ```
 
@@ -123,7 +136,6 @@ SUPER_ADMIN
 |------|-------------|-------------------|--------------|
 | **CUSTOMER** | Event attendees, ticket buyers | Self-registration via Keycloak | Keycloak only |
 | **ORGANIZER** | Event creators and managers | Self-registration → Admin approval | Keycloak + MongoDB (business) |
-| **SCANNER** | Ticket validators at events | Admin-created only | Keycloak only |
 | **FINANCE** | Financial operations team | Admin-created only | Keycloak only |
 | **ADMIN** | Platform administrators | Admin-created only | Keycloak only |
 | **SUPER_ADMIN** | Super administrators | Initial setup only | Keycloak only |
@@ -576,7 +588,7 @@ The Identity Service uses Keycloak Admin API for:
 
 ### 6.2 Backend API Tests
 
-- [ ] Admin creates SCANNER user
+- [ ] ~~Admin creates SCANNER user~~ (removed 2026-10-04: event staff are event-scoped grants)
 - [ ] Admin creates FINANCE user
 - [ ] Admin approves organizer
 - [ ] Admin rejects organizer

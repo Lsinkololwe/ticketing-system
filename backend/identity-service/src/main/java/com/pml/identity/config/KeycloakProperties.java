@@ -15,7 +15,7 @@ public class KeycloakProperties {
     /**
      * Keycloak server URL (e.g., http://localhost:8084)
      */
-    private String serverUrl = "http://localhost:8084";
+    private String serverUrl;
 
     /**
      * Keycloak realm name
@@ -23,14 +23,21 @@ public class KeycloakProperties {
     private String realm = "myticketzm";
 
     /**
-     * Admin username for Admin API access
+     * Realm of platform staff (admin web). Staff users are synced into accounts from this realm;
+     * buyers live in {@link #realm}.
      */
-    private String adminUsername = "admin";
+    private String staffRealm = "myticketzm-admin";
 
     /**
-     * Admin password for Admin API access
+     * Admin username for Admin API access. No default: a missing value stops the first admin call
+     * naming this property, instead of trying a credential that is public knowledge.
      */
-    private String adminPassword = "admin";
+    private String adminUsername;
+
+    /**
+     * Admin password for Admin API access. No default, for the same reason as the username.
+     */
+    private String adminPassword;
 
     /**
      * Admin realm (usually "master" for admin operations)

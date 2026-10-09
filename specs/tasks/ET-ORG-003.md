@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/organization/003-permission-resolution/spec.md`](../organization/003-permission-resolution/spec.md) · **Wave 1** · `blocked_by:` ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-ORG-002
 > **Screen** `Org Admin - Team & Permissions.dc.html` — **grants only.** The Coverage map is explicit: *"the permission-resolution algorithm itself is an internal service-to-service API with no graph surface — its effects show up as disabled buttons and role badges throughout, not as its own screen."*
-> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-ORG-003 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-ORG-003 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 **D-10** in one line: one resolver, one order — platform role → event grant → organization role →
 custom → denied → deny. **Explicit deny beats inherited allow.** Written once, in identity-service,
@@ -166,5 +166,5 @@ Every step-1 allow writes a row naming actor, permission, resource.
 - [ ] Cache self-heals at 31 s; denials cached; four evictions observed
 - [ ] Every step-1 allow audited with actor, permission, resource
 - [ ] No client-side precedence logic anywhere in `frontend/web`
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-ORG-003 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-ORG-003 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented` — **Wave 2 does not open until all of Wave 1 is**

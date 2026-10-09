@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -31,9 +32,33 @@ public class RevocationGuardAspect {
 
     private final SensitiveOperationGuard guard;
 
-    @Around("@annotation(annotation)")
-    public Object enforce(ProceedingJoinPoint joinPoint, FailClosedOnRevocation annotation)
-            throws Throwable {
+    // The annotation is read reflectively, never bound as an advice argument: when Spring Security's
+    // reactive method interceptors run in the same chain, argument binding fails at runtime with
+    // "Required to bind 2 arguments, but only bound 1 (JoinPointMatch was NOT bound in invocation)".
+    @Around("@annotation(com.pml.shared.security.revocation.FailClosedOnRevocation)")
+    public Object enforce(ProceedingJoinPoint joinPoint) throws Throwable {
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        FailClosedOnRevocation annotation = signature.getMethod().getAnnotation(FailClosedOnRevocation.class);
+        if (annotation == null) {
+            annotation = AnnotationUtils.findAnnotation(signature.getMethod(), FailClosedOnRevocation.class);
+        }
+        return guard(joinPoint, annotation);
+    }
+
+    /** A class-level annotation covers each of the class's mutations that is not annotated itself. */
+    @Around("@within(com.pml.shared.security.revocation.FailClosedOnRevocation) && @annotation(com.netflix.graphql.dgs.DgsMutation) "
+            + "&& !@annotation(com.pml.shared.security.revocation.FailClosedOnRevocation)")
+    public Object enforceMutation(ProceedingJoinPoint joinPoint) throws Throwable {
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        Class<?> target = joinPoint.getTarget() != null ? joinPoint.getTarget().getClass() : signature.getDeclaringType();
+        FailClosedOnRevocation annotation = AnnotationUtils.findAnnotation(target, FailClosedOnRevocation.class);
+        if (annotation == null) {
+            annotation = AnnotationUtils.findAnnotation(signature.getDeclaringType(), FailClosedOnRevocation.class);
+        }
+        return guard(joinPoint, annotation);
+    }
+
+    private Object guard(ProceedingJoinPoint joinPoint, FailClosedOnRevocation annotation) {
 
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         if (!Mono.class.isAssignableFrom(signature.getReturnType())) {

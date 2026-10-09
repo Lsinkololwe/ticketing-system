@@ -1,6 +1,6 @@
 package com.pml.identity.domain.valueobject;
 
-import com.pml.identity.domain.enums.PayoutMethod;
+import com.pml.shared.constants.PayoutMethod;
 import com.pml.identity.domain.enums.PayoutSchedule;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -38,12 +38,20 @@ public class PayoutConfig {
      */
     private Double commissionRate;
 
+    /** The administrator who last set this organization's commission rate; null while it is the platform default. */
+    private String commissionSetBy;
+
+    private java.time.Instant commissionSetAt;
+
     /**
-     * Minimum payout amount (in ZMW).
-     * Seeded from the {@code platform_configuration} document at organization creation —
-     * no default is baked into the entity.
+     * Minimum payout amount, in ZMW.
+     *
+     * <p>{@code BigDecimal} because it is compared against an escrow balance that is also a
+     * BigDecimal, and a {@code Double} threshold has to be converted to make that comparison.
+     * K0.10 has no exact binary representation, so a payout of precisely the minimum can be
+     * refused — a rejection with no explanation anyone can find in the numbers.</p>
      */
-    private Double minimumPayoutAmount;
+    private java.math.BigDecimal minimumPayoutAmount;
 
     /**
      * Bank account for payouts (if preferredMethod = BANK_TRANSFER)
@@ -76,7 +84,15 @@ public class PayoutConfig {
     /**
      * Check if payouts can be processed
      */
+    /** True when an administrator has frozen payouts to the account a payout would use. */
+    public boolean isAccountSuspended() {
+        if (preferredMethod == com.pml.shared.constants.PayoutMethod.MOBILE_MONEY) {
+            return mobileMoneyAccount != null && mobileMoneyAccount.isSuspended();
+        }
+        return bankAccount != null && bankAccount.isSuspended();
+    }
+
     public boolean canProcessPayouts() {
-        return isConfigured() && verified;
+        return isConfigured() && verified && !isAccountSuspended();
     }
 }

@@ -1,5 +1,7 @@
 package com.pml.booking.migration;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -13,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Moves payout requests onto ET-FIN-003's collection and status set.
+ * Moves payout requests onto their current collection and status set.
  *
  * <h2>Two changes, one migration</h2>
  * The collection becomes {@code booking_payout_requests}, and
@@ -23,7 +25,7 @@ import java.util.Map;
  * rewriting the status just relocates unreadable documents.
  *
  * <h2>Why the status collapses rather than being kept</h2>
- * ET-FIN-003 R7 declares exactly seven statuses. The eighth described the same
+ * A payout has exactly seven statuses. The eighth described the same
  * fact as {@code PENDING} — a request sitting in the finance queue, waiting on a
  * person. Two codes for one state means every query must remember both, and the
  * one that forgets under-reports the approval backlog. A queue that looks
@@ -32,8 +34,6 @@ import java.util.Map;
  * <p>The semantic moves with it. Both codes mapped to {@code INITIAL}, so this
  * one happens to be a no-op — asserted rather than assumed, because the next
  * status collapse will not be.
- *
- * @see <a href="file:../../../../../../../specs/finance/003-payouts-and-settlement/spec.md">ET-FIN-003</a>
  */
 @Slf4j
 @Service
@@ -44,16 +44,16 @@ public class PayoutConformanceMigrationService {
     // pre-conformance name must survive a find-and-replace: it is the thing
     // that reads it.
     private static final String OLD_COLLECTION = "payout_requests";
-    private static final String NEW_COLLECTION = "booking_payout_requests";
+    private static final String NEW_COLLECTION = BookingCollections.PAYOUT_REQUESTS;
 
     private static final String RETIRED_STATUS = "PENDING_FINANCE_APPROVAL";
     private static final String REPLACEMENT_STATUS = "PENDING";
 
     /**
-     * Old field name → ET-FIN-003's name.
+     * Old field name → the field's current name.
      *
      * <p>{@code netPayoutAmount → settledAmount} is not cosmetic: "net" reads as
-     * "gross minus fees, computed once", and R2's whole point is that this figure
+     * "gross minus fees, computed once", and the whole point is that this figure
      * is RECOMPUTED at approval because money can move in between. The old name
      * described a guarantee the system does not make.
      */

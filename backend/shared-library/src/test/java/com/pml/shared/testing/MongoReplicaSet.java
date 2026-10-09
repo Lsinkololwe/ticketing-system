@@ -1,5 +1,6 @@
 package com.pml.shared.testing;
 
+import com.github.dockerjava.api.model.Ulimit;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -7,7 +8,7 @@ import org.testcontainers.utility.DockerImageName;
  * The platform's MongoDB test container — a real single-node <em>replica set</em>.
  *
  * <h2>Why a replica set and not a plain {@code mongod}</h2>
- * ET-PLT-002 D-01: against a standalone {@code mongod} a reactive
+ * Against a standalone {@code mongod} a reactive
  * {@code @Transactional} method is <strong>silently inert</strong>. It does not
  * error, it does nothing. Reservations, escrow movements and journal pairs are
  * all multi-document writes, so a standalone development database gives you a
@@ -28,13 +29,19 @@ import org.testcontainers.utility.DockerImageName;
  */
 public final class MongoReplicaSet {
 
-    /** Pinned to the 8.x line CONVENTIONS.md §0 fixes for business data. */
+    /** Pinned to the 8.x line the platform uses for business data. */
     private static final DockerImageName IMAGE = DockerImageName.parse("mongo:8.0");
 
     private static final MongoDBContainer CONTAINER;
 
     static {
         CONTAINER = new MongoDBContainer(IMAGE)
+                // WiredTiger keeps a file open per collection and per index, and the suite
+                // creates many databases in one container. Some Docker hosts (Colima among them)
+                // start containers with a soft limit of 1024 open files; past it mongod aborts
+                // with EMFILE mid-suite. 64000 is MongoDB's own production recommendation.
+                .withCreateContainerCmdModifier(command -> command.getHostConfig()
+                        .withUlimits(new Ulimit[]{new Ulimit("nofile", 64000L, 64000L)}))
                 // Honours `testcontainers.reuse.enable` when the developer has
                 // opted in; a no-op in CI, where the daemon is fresh anyway.
                 .withReuse(true);

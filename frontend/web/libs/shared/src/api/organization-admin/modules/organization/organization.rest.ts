@@ -50,11 +50,11 @@ export interface RegisterDocumentRequest {
 export interface DocumentResponse {
   success: boolean;
   message: string;
-  document?: VerificationDocument;
+  document?: RestVerificationDocument;
   error?: string;
 }
 
-export interface VerificationDocument {
+export interface RestVerificationDocument {
   id: string;
   organizationId: string;
   documentType: string;
@@ -77,19 +77,15 @@ export interface UploadProgress {
 
 // ==================== Configuration ====================
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-const IDENTITY_SERVICE_URL = `${API_BASE_URL}/api/v1`;
-
 /**
- * Get authorization headers from session storage
+ * Same-origin BFF proxy (`/api/rest/*`): the server attaches the bearer token, so none ever
+ * reaches the browser. The path after `/api/rest` is relative to the gateway (`API_BASE_URL`).
  */
-function getAuthHeaders(): HeadersInit {
-  const token = typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null;
+const IDENTITY_SERVICE_URL = '/api/rest/api/v1';
 
-  return {
-    'Authorization': token ? `Bearer ${token}` : '',
-    'Content-Type': 'application/json',
-  };
+/** Constant header the BFF requires on unsafe methods (same-origin only). */
+function bffHeaders(): HeadersInit {
+  return { 'Content-Type': 'application/json', 'x-pml-csrf': '1' };
 }
 
 // ==================== API Functions ====================
@@ -112,7 +108,8 @@ export async function requestUploadUrl(
     `${IDENTITY_SERVICE_URL}/organizations/${organizationId}/documents/upload-url`,
     {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: bffHeaders(),
+      credentials: 'same-origin',
       body: JSON.stringify(request),
     }
   );
@@ -205,7 +202,8 @@ export async function registerDocument(
     `${IDENTITY_SERVICE_URL}/organizations/${organizationId}/documents`,
     {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: bffHeaders(),
+      credentials: 'same-origin',
       body: JSON.stringify(request),
     }
   );
@@ -237,7 +235,7 @@ export async function uploadDocument(
   documentType: string,
   file: File,
   onProgress?: (progress: UploadProgress) => void
-): Promise<VerificationDocument> {
+): Promise<RestVerificationDocument> {
   // Step 1: Request presigned URL
   const urlResponse = await requestUploadUrl(organizationId, {
     documentType,
@@ -282,15 +280,12 @@ export async function uploadDocument(
 export async function listDocuments(
   organizationId: string,
   status?: 'PENDING' | 'APPROVED' | 'REJECTED'
-): Promise<VerificationDocument[]> {
-  const url = new URL(`${IDENTITY_SERVICE_URL}/organizations/${organizationId}/documents`);
-  if (status) {
-    url.searchParams.append('status', status);
-  }
-
-  const response = await fetch(url.toString(), {
+): Promise<RestVerificationDocument[]> {
+  const query = status ? `?${new URLSearchParams({ status }).toString()}` : '';
+  const response = await fetch(`${IDENTITY_SERVICE_URL}/organizations/${organizationId}/documents${query}`, {
     method: 'GET',
-    headers: getAuthHeaders(),
+    headers: bffHeaders(),
+    credentials: 'same-origin',
   });
 
   if (!response.ok) {
@@ -306,10 +301,11 @@ export async function listDocuments(
  * @param documentId Document ID
  * @returns Verification document
  */
-export async function getDocument(documentId: string): Promise<VerificationDocument> {
+export async function getDocument(documentId: string): Promise<RestVerificationDocument> {
   const response = await fetch(`${IDENTITY_SERVICE_URL}/documents/${documentId}`, {
     method: 'GET',
-    headers: getAuthHeaders(),
+    headers: bffHeaders(),
+    credentials: 'same-origin',
   });
 
   if (!response.ok) {
@@ -329,7 +325,8 @@ export async function getDocument(documentId: string): Promise<VerificationDocum
 export async function deleteDocument(documentId: string): Promise<void> {
   const response = await fetch(`${IDENTITY_SERVICE_URL}/documents/${documentId}`, {
     method: 'DELETE',
-    headers: getAuthHeaders(),
+    headers: bffHeaders(),
+    credentials: 'same-origin',
   });
 
   if (!response.ok) {
@@ -343,7 +340,7 @@ export interface UseDocumentUploadReturn {
   /**
    * Upload a document with progress tracking
    */
-  upload: (documentType: string, file: File) => Promise<VerificationDocument>;
+  upload: (documentType: string, file: File) => Promise<RestVerificationDocument>;
 
   /**
    * Delete a document
@@ -378,7 +375,7 @@ export interface UseDocumentUploadReturn {
   /**
    * List of documents for the organization
    */
-  documents: VerificationDocument[];
+  documents: RestVerificationDocument[];
 }
 
 /**
@@ -423,13 +420,13 @@ export function useDocumentUpload(organizationId: string): UseDocumentUploadRetu
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<VerificationDocument[]>([]);
+  const [documents, setDocuments] = useState<RestVerificationDocument[]>([]);
 
   /**
    * Upload a document with progress tracking
    */
   const upload = useCallback(
-    async (documentType: string, file: File): Promise<VerificationDocument> => {
+    async (documentType: string, file: File): Promise<RestVerificationDocument> => {
       setIsUploading(true);
       setError(null);
       setProgress({ loaded: 0, total: file.size, percentage: 0 });
@@ -525,7 +522,7 @@ export function useSimpleUpload(organizationId: string) {
   const [error, setError] = useState<string | null>(null);
 
   const upload = useCallback(
-    async (documentType: string, file: File): Promise<VerificationDocument> => {
+    async (documentType: string, file: File): Promise<RestVerificationDocument> => {
       setIsUploading(true);
       setError(null);
       setProgress(0);

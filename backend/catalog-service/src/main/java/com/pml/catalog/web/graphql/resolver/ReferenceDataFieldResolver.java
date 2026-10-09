@@ -38,6 +38,7 @@ import java.util.concurrent.CompletableFuture;
 public class ReferenceDataFieldResolver {
 
     private final EventService eventService;
+    private final com.pml.catalog.service.ReferenceGeography referenceGeography;
     private final CityService cityService;
     private final ProvinceService provinceService;
 
@@ -74,15 +75,6 @@ public class ReferenceDataFieldResolver {
                 : null;
     }
 
-    /**
-     * Resolve EventCategory.sortOrder - alias for displayOrder
-     */
-    @DgsData(parentType = "EventCategory", field = "sortOrder")
-    public Integer sortOrder(DgsDataFetchingEnvironment dfe) {
-        EventCategory category = dfe.getSource();
-        return category.getDisplayOrder();
-    }
-
     // ═══════════════════════════════════════════════════════════════════════════
     // PROVINCE FIELD RESOLVERS
     // ═══════════════════════════════════════════════════════════════════════════
@@ -95,7 +87,7 @@ public class ReferenceDataFieldResolver {
     public CompletableFuture<Integer> cityCount(DgsDataFetchingEnvironment dfe) {
         Province province = dfe.getSource();
         log.debug("Resolving cityCount for province: {}", province.getId());
-        return cityService.countByProvinceId(province.getId())
+        return referenceGeography.cityCount(province.getId())
                 .map(Long::intValue)
                 .defaultIfEmpty(0)
                 .toFuture();

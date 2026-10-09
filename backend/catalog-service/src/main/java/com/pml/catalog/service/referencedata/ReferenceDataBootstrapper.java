@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +44,9 @@ import java.util.Map;
 public class ReferenceDataBootstrapper {
 
     private final ReferenceDataRepository repository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
 
     /**
      * @param inserted rows created by this run
@@ -136,7 +139,7 @@ public class ReferenceDataBootstrapper {
     private List<ReferenceData> derive(ReferenceDataSource.Registration registration) {
         Enum<?>[] constants = registration.enumClass().getEnumConstants();
         List<ReferenceData> rows = new ArrayList<>(constants.length);
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = clock.instant();
 
         int order = 0;
         for (Enum<?> constant : constants) {

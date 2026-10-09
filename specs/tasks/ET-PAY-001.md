@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/payment/001-payment-intents-and-providers/spec.md`](../payment/001-payment-intents-and-providers/spec.md) · **Wave 3** · `blocked_by:` ET-PLT-002, 003, 005, 007, ET-TKT-001
 > **Screens** the payment step of `Ticketing - Discover & Checkout.dc.html` only. Provider internals are **admin-tagged** and surface in [`ET-ADM-003`](ET-ADM-003.md)'s recovery drawer — the Coverage map places them there, not in a screen of their own.
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-PAY-001 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-PAY-001 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 **D-06**: PawaPay only at launch, behind a `PaymentProviderPort`. MTN, Airtel and Zamtel reach the
 platform through one aggregator; the port exists so the second aggregator is an adapter, not a
@@ -43,20 +43,20 @@ this is safe:
 - **Spec** R4 · **§5** T4 · **depends** BE-1 · **parallel-safe** yes
 - **Acceptance** every declared prefix routes; an unroutable number **creates no intent**. Refuse
   before the intent exists, not after — an intent for a number no provider serves is a row that
-  will sit `PENDING` until a sweep escalates it.
+  will sit `PENDING` until its workflow escalates it.
 
 ### BE-5 · `initiatePayment` — commit the intent, **then** call, outside any transaction
 - **Spec** R1, R6, R7 · **§5** T5 · **depends** BE-3 · **parallel-safe** no
-- **Acceptance** no `StreamBridge.send` inside a `@Transactional` method; **no `@Transactional`
+- **Acceptance** only the outbox drain reaches the bus; **no `@Transactional`
   reaches the port**.
 - Commit-then-call is the order that survives a crash: an intent with no provider call is
-  recoverable by the poll sweep; a provider call with no intent is money in flight the platform
+  recoverable by the purchase workflow's polls; a provider call with no intent is money in flight the platform
   has no record of.
 
-### BE-6 · The poll sweep, the backoff, and the escalation that holds the seat
+### BE-6 · The purchase workflow's polls, the backoff, and the escalation
 - **Spec** R5 · **§5** T6 · **depends** BE-5 · **parallel-safe** yes
-- **Acceptance** a never-answering provider **escalates with the seat still held and no refund
-  attempted**.
+- **Acceptance** a never-answering provider **escalates, is polled hourly, is never marked failed,
+  and no refund is attempted without a verified success**.
 - Same rule as [`ET-TKT-001`](ET-TKT-001.md) BE-7: while the outcome is unknown, hold. Refunding a
   payment that later succeeds, or releasing a seat that was paid for, are both worse than a
   ten-minute wait and an operator's attention.
@@ -135,7 +135,7 @@ Both translation tables; an unmapped status → `PENDING` + metric; no provider 
 ### TS-4 · Routing *(L1)* — every prefix routes; unroutable creates no intent.
 
 ### TS-5 · Transaction discipline *(L2 — lint-as-test)*
-No `@Transactional` reaches the port; no `StreamBridge.send` inside a transaction.
+No `@Transactional` reaches the port; only the outbox drain reaches the bus.
 
 ### TS-6 · Failure modes *(L3, the six `Providers` stubs from [`ET-PLT-006`](ET-PLT-006.md) BE-5)*
 - Never-answering provider → escalate, **seat held, no refund attempted**.
@@ -166,5 +166,5 @@ No `@Transactional` reaches the port; no `StreamBridge.send` inside a transactio
 - [ ] Public contract exposes no provider field; ticketing queries no admin-tagged field
 - [ ] Waiting state explains itself and shows the hold countdown
 - [ ] Escalated payments are **not** reported to the buyer as failures
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-PAY-001 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-PAY-001 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

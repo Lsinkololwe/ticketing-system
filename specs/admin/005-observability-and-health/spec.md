@@ -451,3 +451,19 @@ None introduced.
 Deliberately never in scope: **CPU and memory as SLOs** (inputs to an investigation, not
 commitments to a user), **alerts without runbooks** (acknowledged and forgotten), and
 **100% trace sampling** (a storage bill nobody sanctioned, for data nobody reads).
+
+---
+
+## Amendment, 2026-10-04 — service health, alerts and announcements
+
+### ET-ADM-005-R9 · Health, alerts and announcements
+
+**Acceptance**
+- [ ] `serviceHealth` probes MongoDB, Redis, Keycloak and every service in `identity.health.targets`; a failure reports a category ("timeout", "connection refused"), never an address
+- [ ] A service that is down opens one alert (`service-down:<name>`), repeated probes count occurrences, and recovery resolves it
+- [ ] Other services raise and resolve alerts through `POST /api/internal/alerts` (internal scope); one live alert exists per `(source, key)` even under concurrent raisers
+- [ ] `acknowledgeAlert` marks an open alert seen, keeps the first acknowledgement, and is audited
+- [ ] `broadcastNotification` publishes an announcement to ALL, ORGANIZERS, BUYERS or STAFF now or from a future `startsAt`; `myAnnouncements` returns only those live for the caller's segments; `cancelAnnouncement` withdraws one
+- [ ] **Deferred**: pushing an announcement as a per-user notification (a batch fan-out workflow); announcements are read by the clients
+
+**Tests** `HealthRulesTest`, `AnnouncementRulesTest` (L1), `PlatformOpsServiceTest` (L2)

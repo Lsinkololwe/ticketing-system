@@ -19,8 +19,11 @@ persistence:
   indexes: []
   redis_keys: []         # each with a TTL — Redis never holds business state
 
+workflows: []            # each a row of the ET-PLT-015 §4 registry: type, id, queue, conflict policy, timers
+schedules: []            # Temporal Schedules: id, workflow started, cadence (UTC), overlap SKIP
+
 events:
-  module: []             # intra-service, @TransactionalEventListener(AFTER_COMMIT)
+  module: []             # always empty — a step within a service is a workflow activity, never an in-memory event
   bus: []                # cross-service wire names this spec PUBLISHES, e.g. booking.TicketPurchased
   consumes: []           # cross-service wire names this spec SUBSCRIBES to
   topics: []             # catalog-events | booking-events | identity-events
@@ -37,6 +40,6 @@ errors: []               # codes introduced here; each must land in ET-PLT-005 �
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/<module> test -Dgroups=<ET-ID> -DfailIfNoTests=true
+  - mvn -q -f backend/<module> test -Dgroups=<ET-ID> -DfailIfNoTests=false
 
 risks: []

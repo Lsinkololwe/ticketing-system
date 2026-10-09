@@ -7,8 +7,6 @@ package com.pml.booking.domain.enums;
  * organizer should see. That is deliberately narrower than "any failed scan":
  * a QR that does not parse is a device problem, not an attendance problem, and
  * recording it would bury the cases that matter.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/003-validation-and-checkin/spec.md">ET-TKT-003</a>
  */
 public enum CheckInConflictType {
 

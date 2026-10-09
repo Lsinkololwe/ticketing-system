@@ -1,12 +1,11 @@
 package com.pml.booking.service;
 
 import com.pml.booking.domain.model.JournalEntry;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Accounting Service Interface - Central Hub for Financial Operations
@@ -183,29 +182,30 @@ public interface AccountingService {
             String currency
     );
 
-    // ========================================================================
-    // COMMISSION OPERATIONS
-    // ========================================================================
+    /**
+     * A micro-deposit sent to verify a bank account is a platform expense:
+     * DR Account Verification Costs (5050), CR Operating Bank. One entry per deposit, however often asked.
+     */
+    Mono<JournalEntry> recordVerificationDeposit(String depositId, String bankAccountId, BigDecimal amount, String currency);
 
     /**
-     * Records commission being earned (revenue recognition).
-     *
-     * <p>Called after event completion and hold period:</p>
-     * <ul>
-     *   <li>DR Deferred Commission Revenue (2031)</li>
-     *   <li>CR Commission Revenue (4010)</li>
-     * </ul>
-     *
-     * @param commissionRecordId Commission record ID (correlation)
-     * @param eventId            Event ID
-     * @param amount             Commission amount
-     * @param currency           Currency code
-     * @return The posted journal entry
+     * Reverses a verification deposit's cost once the provider confirmed the deposit failed.
+     * Answers the existing reversal when there is one, and nothing when no cost was booked.
      */
-    Mono<JournalEntry> recordCommissionEarned(
-            String commissionRecordId,
+    Mono<JournalEntry> reverseVerificationDeposit(String depositId, String reason);
+
+    /**
+     * Reverses {@link #recordPayout} exactly, when the transfer it prepared failed.
+     *
+     * <p>DR Organizer Payouts Payable and DR Fee Revenue, CR Event Escrow: the escrow liability is
+     * restored to what it was before the payout, and the fee the payout would have earned is undone.
+     */
+    Mono<JournalEntry> recordPayoutReversal(
+            String correlationId,
             String eventId,
-            BigDecimal amount,
+            String organizerId,
+            BigDecimal payoutAmount,
+            BigDecimal payoutFee,
             String currency
     );
 
@@ -433,7 +433,7 @@ public interface AccountingService {
             BigDecimal grossAmount,
             BigDecimal feeAmount,
             BigDecimal netAmount,
-            LocalDateTime settlementDate,
+            Instant settlementDate,
             String bankReference,
             String currency
     );
@@ -462,29 +462,6 @@ public interface AccountingService {
      * @return Balance as of the specified date
      */
     Mono<BigDecimal> getAccountBalanceAsOf(String accountCode, LocalDate asOfDate);
-
-    /**
-     * Gets a trial balance report.
-     *
-     * <p>Returns all accounts with their debit/credit balances.
-     * For a healthy system: SUM(debit balances) = SUM(credit balances)</p>
-     *
-     * @param asOfDate Date to calculate balances (null for current)
-     * @return Trial balance as list of account balances
-     */
-    Flux<AccountBalance> getTrialBalance(LocalDate asOfDate);
-
-    /**
-     * Represents an account balance in the trial balance.
-     */
-    record AccountBalance(
-            String accountCode,
-            String accountName,
-            String accountType,
-            BigDecimal debitBalance,
-            BigDecimal creditBalance,
-            BigDecimal netBalance
-    ) {}
 
     // ========================================================================
     // RECONCILIATION SUPPORT

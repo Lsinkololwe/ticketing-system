@@ -2,76 +2,79 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Event Access Grants Schema - OWASP Compliant",
-    "description": "Temporary event access grants for specific users",
+    "description": "Grants a user an event-level role that overrides organization-level permissions for that event (com.pml.identity.domain.model.EventAccessGrant)",
     "required": [
-      "eventId",
       "userId",
-      "grantedBy",
-      "accessLevel",
-      "isActive",
-      "grantedAt"
+      "eventId",
+      "organizationId",
+      "eventRole",
+      "grantedById"
     ],
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
         "bsonType": "objectId"
       },
-      "eventId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "OWASP A03 - ObjectId pattern validation"
-      },
       "userId": {
+        "bsonType": "string"
+      },
+      "eventId": {
+        "bsonType": "string"
+      },
+      "organizationId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "description": "OWASP A01 - tenant isolation"
       },
-      "grantedBy": {
+      "eventRole": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "enum": ["EVENT_OWNER", "EVENT_ADMIN", "EDITOR", "CHECK_IN", "VIEWER"],
+        "description": "com.pml.identity.domain.valueobject.EventRole"
       },
-      "accessLevel": {
-        "bsonType": "string",
-        "enum": [
-          "READ",
-          "WRITE",
-          "ADMIN"
-        ],
-        "description": "OWASP A04 - Enum constraint"
+      "customPermissions": {
+        "bsonType": ["array", "null"],
+        "items": {
+          "bsonType": "string",
+          "pattern": "^[a-z_]+:[a-z_]+$",
+          "maxLength": 100
+        },
+        "description": "Permission codes (module:action) added to the event role's"
       },
-      "isActive": {
-        "bsonType": "bool"
-      },
-      "grantedAt": {
-        "bsonType": "date"
-      },
-      "expiresAt": {
-        "bsonType": [
-          "date",
-          "null"
-        ]
-      },
-      "revokedAt": {
-        "bsonType": [
-          "date",
-          "null"
-        ]
-      },
-      "revokedBy": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^[a-fA-F0-9]{24}$"
+      "grantedById": {
+        "bsonType": "string"
       },
       "reason": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
+        "bsonType": ["string", "null"],
         "maxLength": 500
+      },
+      "status": {
+        "bsonType": ["string", "null"],
+        "enum": ["ACTIVE", "SUSPENDED", "REVOKED", "EXPIRED", null],
+        "description": "com.pml.identity.domain.enums.AccessGrantStatus"
+      },
+      "expiresAt": {
+        "bsonType": ["date", "null"]
+      },
+      "revokedById": {
+        "bsonType": ["string", "null"]
+      },
+      "revokedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "revocationReason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "grantedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "createdAt": {
+        "bsonType": ["date", "null"]
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
       }
     },
     "additionalProperties": false

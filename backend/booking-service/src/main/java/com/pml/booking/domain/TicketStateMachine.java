@@ -16,20 +16,19 @@ import static com.pml.shared.constants.TicketStatus.TRANSFERRED;
 import static com.pml.shared.constants.TicketStatus.VALIDATED;
 
 /**
- * ET-TKT-002 §4's ticket transition table, and nothing else.
+ * The ticket transition table, and nothing else.
  *
  * <h2>Why the whole grid is written down</h2>
  * Seven states and seven actions make forty-nine pairs, of which nine are legal.
- * Before this class the nine lived as {@code if} chains at eleven call sites,
- * each guarding the cases its author had in mind — and the forty absent pairs
- * were absent from everywhere, so nothing could enumerate what was missing.
- * R7 requires "a test drives all {@code (status, transition)} pairs", which is
- * only possible against a table that claims to be complete.
+ * As {@code if} chains spread across call sites, each guards the cases its author
+ * had in mind — and the forty absent pairs are absent from everywhere, so nothing
+ * can enumerate what is missing. A test that drives every {@code (status, action)}
+ * pair is only possible against a table that claims to be complete.
  *
  * <h2>The transitions that matter</h2>
  * {@code REFUNDED → VALIDATED} would readmit a ticket whose money has gone back.
  * {@code EXPIRED → ISSUED} would resurrect a ticket after the event it was for.
- * {@code VALIDATED → VALIDATED} is the double-admission ET-TKT-003 exists to
+ * {@code VALIDATED → VALIDATED} is the double admission that check-in exists to
  * prevent, and is refused here as well as by the unique index on
  * {@code booking_checkins.ticketId} — the index is the guarantee, this is the
  * error message.
@@ -39,34 +38,32 @@ import static com.pml.shared.constants.TicketStatus.VALIDATED;
  * a null key would let a caller apply it to an existing ticket and reopen a
  * terminal one.
  *
- * <p>{@code RESTORE} — ET-FIN-004's "refund refused → back to previous" — is the
+ * <p>{@code RESTORE} — a refused refund goes back to the previous state — is the
  * one transition whose target is not a function of {@code (from, action)}. It
  * takes the previous state explicitly through {@link #restore}, which admits
  * only the two states a refund can be requested from.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/002-ticket-issuance-and-qr/spec.md">ET-TKT-002 R7</a>
  */
 public final class TicketStateMachine {
 
     private TicketStateMachine() {}
 
-    /** The actions of §4's table, each owned by exactly one spec. */
+    /** The actions of the table, each driven by exactly one part of the system. */
     public enum Action {
-        /** Confirmation issues the ticket. The only action with no origin state. ET-TKT-002. */
+        /** Confirmation issues the ticket. The only action with no origin state. */
         ISSUE,
-        /** Admitted at the gate. ET-TKT-003. */
+        /** Admitted at the gate. */
         VALIDATE,
-        /** Handed to a new owner; the ticket rests at {@code ISSUED}. ET-TKT-004. */
+        /** Handed to a new owner; the ticket rests at {@code ISSUED}. */
         TRANSFER,
-        /** A refund was requested. ET-FIN-004. */
+        /** A refund was requested. */
         REQUEST_REFUND,
-        /** The provider confirmed the refund, or a chargeback landed. ET-FIN-004. */
+        /** The provider confirmed the refund, or a chargeback landed. */
         SETTLE_REFUND,
-        /** The refund was declined; see {@link #restore}. ET-FIN-004. */
+        /** The refund was declined; see {@link #restore}. */
         RESTORE,
-        /** The event was cancelled. ET-CAT-001. */
+        /** The event was cancelled. */
         CANCEL,
-        /** The event completed and nobody scanned it. ET-TKT-002's sweep. */
+        /** The event completed and nobody scanned it. */
         EXPIRE
     }
 
@@ -74,10 +71,9 @@ public final class TicketStateMachine {
      * From-state → action → to-state. A pair absent here is illegal.
      *
      * <p>{@code TRANSFER} maps {@code ISSUED → ISSUED} rather than to
-     * {@code TRANSFERRED}, which reads wrong until you read §4: "TRANSFERRED is
-     * a marker on the source ticket's history rather than a resting state — the
-     * ticket itself returns to ISSUED under a new ownerId, which is what keeps
-     * it scannable." A ticket parked in {@code TRANSFERRED} would refuse at the
+     * {@code TRANSFERRED}, which reads wrong at first: TRANSFERRED is a marker on
+     * the source ticket's history rather than a resting state — the ticket itself
+     * returns to ISSUED under a new ownerId, which is what keeps it scannable. A ticket parked in {@code TRANSFERRED} would refuse at the
      * gate, which is the opposite of what a transfer is for.
      */
     private static final Map<TicketStatus, Map<Action, TicketStatus>> TRANSITIONS = Map.of(
@@ -88,11 +84,11 @@ public final class TicketStateMachine {
                     Action.CANCEL, CANCELLED,
                     Action.EXPIRE, EXPIRED),
             VALIDATED, Map.of(
-                    // ET-TKT-003 R8: a scan at the door forfeits nothing.
+                    // A scan at the door forfeits nothing: an admitted ticket stays refundable.
                     Action.REQUEST_REFUND, REFUND_PENDING),
             REFUND_PENDING, Map.of(
                     Action.SETTLE_REFUND, REFUNDED),
-            // Declared by R7 but never rested in; see the TRANSITIONS note.
+            // A declared status that no ticket rests in; see the TRANSITIONS note.
             TRANSFERRED, Map.of(),
             // The three terminal states, spelled out rather than omitted so the
             // grid reads as complete rather than as an oversight.
@@ -103,13 +99,13 @@ public final class TicketStateMachine {
     /** The states a refund may be requested from, and so the only legal {@link #restore} targets. */
     private static final Set<TicketStatus> REFUNDABLE_ORIGINS = EnumSet.of(ISSUED, VALIDATED);
 
-    /** ET-TKT-002 R7's terminal three. */
+    /** The three terminal states. */
     public static final Set<TicketStatus> TERMINAL = EnumSet.of(REFUNDED, CANCELLED, EXPIRED);
 
-    /** Raised on any of the forty illegal pairs. Carries {@code currentStatus} as R7 requires. */
+    /** Raised on any of the forty illegal pairs. Carries {@code currentStatus} for the caller. */
     public static class IllegalTransitionException extends RuntimeException {
 
-        /** ET-PLT-005's row for this refusal. */
+        /** The error code for this refusal. */
         public static final String CODE = "TICKET_STATE_INVALID";
 
         private final TicketStatus currentStatus;
@@ -141,7 +137,7 @@ public final class TicketStateMachine {
     }
 
     /**
-     * ET-FIN-004: a declined refund returns the ticket to where it came from.
+     * A declined refund returns the ticket to where it came from.
      *
      * @param previous the state the refund was requested from
      * @throws IllegalTransitionException if the ticket is not {@code REFUND_PENDING},

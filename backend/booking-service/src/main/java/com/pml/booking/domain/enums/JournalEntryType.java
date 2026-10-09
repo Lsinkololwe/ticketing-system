@@ -104,17 +104,6 @@ public enum JournalEntryType {
     REVERSAL;
 
     /**
-     * Checks if this entry type requires a reference to another entry.
-     *
-     * <p>Reversal entries MUST reference the original entry being reversed.</p>
-     *
-     * @return true if this type requires a reference entry
-     */
-    public boolean requiresReferenceEntry() {
-        return this == REVERSAL;
-    }
-
-    /**
      * Checks if this entry type can modify account balances in normal direction.
      *
      * <p>Reversals are special - they always go opposite to normal direction.</p>

@@ -6,7 +6,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.Collection;
 
 /**
  * Escrow Service Interface
@@ -32,8 +33,17 @@ public interface EscrowService {
             String eventTitle,
             String organizerId,
             String organizerName,
-            LocalDateTime eventDate
+            Instant eventDate
     );
+
+    /**
+     * Opens the escrow for a published event, or returns the one already open.
+     *
+     * <p>Takes exactly the identifiers {@code catalog.EventPublished} carries: the
+     * event, the organization that owns it, and its start, from which the post-event hold is
+     * measured.</p>
+     */
+    Mono<EventEscrowAccount> openEscrowForPublishedEvent(String eventId, String organizationId, Instant startsAt);
 
     /**
      * Credit funds to escrow (from ticket sale).
@@ -137,7 +147,7 @@ public interface EscrowService {
      * @param reason    Reason for the lock
      * @return Updated escrow account
      */
-    Mono<EventEscrowAccount> lockEscrowAccount(String accountId, LocalDateTime lockUntil, String reason);
+    Mono<EventEscrowAccount> lockEscrowAccount(String accountId, Instant lockUntil, String reason);
 
     /**
      * Unlock escrow account (admin operation).
@@ -177,7 +187,7 @@ public interface EscrowService {
      */
     /**
      * Escrow accounts for an organization, after confirming the actor may act
-     * for it (ET-FIN-001; OWASP A01:2021).
+     * for it (OWASP A01:2021).
      *
      * @param actorUserId    from the JWT, never from request input
      * @param organizationId the tenant being reached for
@@ -188,32 +198,9 @@ public interface EscrowService {
     @Deprecated
     Flux<EventEscrowAccount> findByOrganizerId(String organizerId);
 
-    /**
-     * Find payout-eligible accounts for an organizer.
-     */
-    /** Payout-eligible escrow for an organization, actor-checked. */
-    Flux<EventEscrowAccount> findPayoutEligibleByOrganizationId(String actorUserId, String organizationId);
-
     /** @deprecated scope by organization. */
     @Deprecated
     Flux<EventEscrowAccount> findPayoutEligibleByOrganizerId(String organizerId);
-
-    /**
-     * Find locked escrows where hold period has passed.
-     * Used by scheduled job to transition to PAYOUT_ELIGIBLE.
-     */
-    Flux<EventEscrowAccount> findLockedEscrowsWithPassedHoldPeriod();
-
-    /**
-     * Process escrows that have passed their hold period.
-     * Transitions from LOCKED to PAYOUT_ELIGIBLE.
-     */
-    Mono<Long> processHoldPeriodExpirations();
-
-    /**
-     * Get total payout-eligible balance for an organizer.
-     */
-    Mono<BigDecimal> getTotalPayoutEligibleBalance(String organizerId);
 
     /**
      * Create a new escrow account with minimal parameters.
@@ -227,17 +214,6 @@ public interface EscrowService {
     Mono<EventEscrowAccount> createEscrowAccount(String eventId, String organizerId, String currency);
 
     /**
-     * Lock escrow for a specific event.
-     * Alias for lockEscrow for clarity in message consumers.
-     *
-     * @param eventId The event ID
-     * @return Updated escrow account
-     */
-    default Mono<EventEscrowAccount> lockEscrowForEvent(String eventId) {
-        return lockEscrow(eventId);
-    }
-
-    /**
      * Update the expected lock date for an escrow account.
      * Used when an event is rescheduled.
      *
@@ -245,7 +221,7 @@ public interface EscrowService {
      * @param newLockDate The new expected lock date
      * @return Updated escrow account
      */
-    Mono<EventEscrowAccount> updateExpectedLockDate(String accountId, LocalDateTime newLockDate);
+    Mono<EventEscrowAccount> updateExpectedLockDate(String accountId, Instant newLockDate);
 
     // ========================================================================
     // DASHBOARD & PAGINATION METHODS
@@ -255,11 +231,6 @@ public interface EscrowService {
      * Find all escrow accounts.
      */
     Flux<EventEscrowAccount> findAll();
-
-    /**
-     * Count all escrow accounts.
-     */
-    Mono<Long> countAll();
 
     /**
      * Count escrow accounts by status.
@@ -285,4 +256,11 @@ public interface EscrowService {
      * Get total refunds across all escrow accounts.
      */
     Mono<BigDecimal> getTotalRefunded();
+
+    /**
+     * Escrow accounts across a set of organizations — the caller's own.
+     *
+     * <p>Not {@code findAll()}: an empty set matches nothing rather than everything.
+     */
+    Flux<EventEscrowAccount> findByOrganizationIdIn(Collection<String> organizationIds);
 }

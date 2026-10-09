@@ -34,7 +34,8 @@ public interface PromoCodeService {
      * @param organizerId Organizer creating the code
      * @return Created promo code
      */
-    Mono<PromoCode> createPromoCode(CreatePromoCodeInput input, String organizerId);
+    /** Creates a code owned by {@code organizationId}, the organization of the event it discounts. */
+    Mono<PromoCode> createPromoCode(CreatePromoCodeInput input, String organizerId, String organizationId);
 
     /**
      * Update an existing promo code.
@@ -60,19 +61,6 @@ public interface PromoCodeService {
      * @return Deactivated promo code
      */
     Mono<PromoCode> deactivatePromoCode(String id);
-
-    /**
-     * Increment usage count for a promo code (atomic operation).
-     *
-     * @param id Promo code ID
-     * @return Updated promo code
-     */
-    Mono<PromoCode> incrementUsage(String id);
-
-    /**
-     * Find a promo code by code string.
-     */
-    Mono<PromoCode> findByCode(String code);
 
     /**
      * Find all promo codes for an event.

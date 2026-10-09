@@ -1,6 +1,6 @@
 package com.pml.booking.web.graphql.dto;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Financial Report Filter Input DTO
@@ -8,8 +8,8 @@ import java.time.LocalDateTime;
  * Business Intent: Filter criteria for generating financial reports.
  */
 public record FinancialReportFilterInput(
-        LocalDateTime startDate,
-        LocalDateTime endDate,
+        Instant startDate,
+        Instant endDate,
         String eventId,
         String organizerId,
         TimeUnit groupBy

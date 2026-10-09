@@ -1,17 +1,17 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.enums.ValidationMethod;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * One accepted admission of one ticket.
@@ -40,17 +40,13 @@ import java.time.LocalDateTime;
  *   <li>{@code (eventId, recordedAt)} — the summary and recent-check-ins reads,
  *       both of which are per-event and time-ordered.</li>
  * </ul>
- *
- * @see <a href="file:../../../../../../../specs/ticketing/003-validation-and-checkin/spec.md">ET-TKT-003</a>
  */
-@Document(collection = "booking_checkins")
+@Document(collection = BookingCollections.CHECKINS)
+@TypeAlias("checkins")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-        @CompoundIndex(name = "checkin_event_recorded_idx", def = "{'eventId': 1, 'recordedAt': -1}")
-})
 public class CheckIn {
 
     @Id
@@ -62,11 +58,9 @@ public class CheckIn {
      * <p>UNIQUE. This single constraint is the "a ticket admits once" guarantee.
      * Everything else in this class is reporting.
      */
-    @Indexed(unique = true)
     private String ticketId;
 
     /** Denormalised so the summary and recent-scans reads never join. */
-    @Indexed
     private String eventId;
 
     /**
@@ -77,7 +71,6 @@ public class CheckIn {
      * see one can read another's attendance — which is commercially sensitive
      * and none of their business.
      */
-    @Indexed
     private String organizerId;
 
     /** Human-facing code, carried so the organizer's list needs no lookup. */
@@ -86,11 +79,19 @@ public class CheckIn {
     /**
      * Client-generated id for one physical scan.
      *
-     * <p>UNIQUE and SPARSE. An offline device that loses its connection
-     * mid-upload retries the whole batch; without this, the retry admits
-     * everyone in it a second time. Sparse because online scans do not carry one.
+     * <p>Uniqueness is enforced by {@code idx_scanId}, declared in
+     * {@code BookingIndexInitializer}. An
+     * offline device that loses its connection mid-upload retries the whole
+     * batch; without the guard, the retry admits everyone in it a second time.
+     *
+     * <p>The index is <b>unique and partial</b> on {@code $type: string}, not
+     * sparse. Online scans carry no scan id, so they store
+     * {@code scanId: null} — a present field, which a sparse index still
+     * indexes. Every online check-in would compete for the single key
+     * {@code null}, so the first scan at a gate would succeed and every one
+     * after it would be rejected as a duplicate. A {@code $type} test excludes
+     * the absent field and the stored null together.
      */
-    @Indexed(unique = true, sparse = true)
     private String scanId;
 
     private ValidationMethod method;
@@ -107,13 +108,13 @@ public class CheckIn {
      * <p>For an offline scan this is the only ordering information available,
      * and it is also the tie-breaker for conflicts — which makes a device with a
      * slow clock win every conflict it is part of. That is a known and
-     * exploitable ordering, recorded in the spec's risks; server receipt order
-     * was the alternative and is non-deterministic across upload batches.
+     * exploitable ordering, accepted knowingly; server receipt order
+     * is the alternative and is non-deterministic across upload batches.
      */
-    private LocalDateTime scannedAt;
+    private Instant scannedAt;
 
     /** When the SERVER accepted it. Never client-supplied. */
-    private LocalDateTime recordedAt;
+    private Instant recordedAt;
 
     /** Required for MANUAL admissions; null otherwise. */
     private String reason;

@@ -1,6 +1,6 @@
 package com.pml.booking.infrastructure.gateway;
 
-import com.pml.booking.infrastructure.gateway.domain.*;
+import com.pml.booking.infrastructure.gateway.model.*;
 import reactor.core.publisher.Mono;
 
 import java.util.Set;
@@ -68,7 +68,7 @@ public interface MobileMoneyGateway {
      * @param request Payout request with recipient phone, amount, etc.
      * @return Payout result with provider transaction ID
      */
-    Mono<PayoutResult> initiatePayout(PayoutRequest request);
+    Mono<PayoutResult> initiatePayout(GatewayPayoutRequest request);
 
     /**
      * Check payout status.

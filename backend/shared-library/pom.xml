@@ -24,6 +24,12 @@
             <artifactId>spring-boot-starter-data-mongodb-reactive</artifactId>
             <scope>provided</scope>
         </dependency>
+        <!-- TemporalGateway and the workflow refusal contract; each service brings the starter. -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-sdk</artifactId>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
@@ -85,10 +91,25 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
+        <!-- Spring Cloud Stream (provided) — EventBridge is the one place StreamBridge is
+             called, and it lives here so the rule can be enforced in one file rather than
+             fourteen. The binder itself stays with the services. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-stream</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Spring Security OAuth2 Resource Server (provided - services will have their own) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- InternalServiceWebClients: the client-credentials token on service-to-service calls. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
             <scope>provided</scope>
         </dependency>
 
@@ -191,6 +212,13 @@
             <artifactId>blockhound</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Installs BlockHound before the first test class — see the parent POM for why -->
+        <dependency>
+            <groupId>io.projectreactor.tools</groupId>
+            <artifactId>blockhound-junit-platform</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -232,7 +260,7 @@
                         NOT reach the test JVM — it has to arrive as a system
                         property. Same pin as catalog/booking/identity.
                     -->
-                    <argLine>-Dapi.version=${docker.api.version} -XX:+AllowRedefinitionToAddDeleteMethods</argLine>
+                    <argLine>@{argLine} -Dapi.version=${docker.api.version} -XX:+AllowRedefinitionToAddDeleteMethods</argLine>
                 </configuration>
             </plugin>
         </plugins>

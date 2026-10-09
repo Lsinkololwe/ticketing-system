@@ -1,10 +1,12 @@
 # Event Ticketing Platform - Complete Architecture Redesign V3
 
+> **Process mechanics (ROADMAP D-21).** This document stays authoritative on the financial model. Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 ## World-Class Production Design with Financial Best Practices
 
 **Version:** 3.1 (Two-Stage Commission Model)
 **Date:** March 2026
-**Stack:** Spring Boot 3.x, Spring WebFlux, Spring Modulith, MongoDB Replica Set, Azure Service Bus
+**Stack:** Spring Boot 3.x, Spring WebFlux, Temporal (workflows and Schedules), a transactional outbox, MongoDB Replica Set, Azure Service Bus
 **Microservices:** Catalog Service, Booking Service, Identity Service
 
 ---
@@ -666,16 +668,16 @@ Your system needs these account types (based on USER_STORIES.md US-FIN-001, US-F
 │  │  │ • locations         │  │ • payment_intents   │  │ • organizer_profiles││  │
 │  │  │ • event_categories  │  │ • escrow_accounts   │  │ • bank_accounts     ││  │
 │  │  │ • cities/provinces  │  │ • financial_txns    │  │ • payout_requests   ││  │
-│  │  │ • event_publications│  │ • refund_requests   │  │ • notifications     ││  │
-│  │  │                     │  │ • processed_webhooks│  │ • event_publications││  │
-│  │  │                     │  │ • event_publications│  │                     ││  │
+│  │  │ • catalog_outbox    │  │ • refund_requests   │  │ • notifications     ││  │
+│  │  │                     │  │ • processed_webhooks│  │ • identity_outbox   ││  │
+│  │  │                     │  │ • booking_outbox    │  │                     ││  │
 │  │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘│  │
 │  │                                                                           │  │
-│  │                     SPRING MODULITH EVENT FLOW                            │  │
+│  │                     PROCESSES AND FACTS                                   │  │
 │  │  ┌─────────────────────────────────────────────────────────────────────┐ │  │
-│  │  │ Internal Events: @ApplicationModuleListener                         │ │  │
-│  │  │ • Within each service, events handled synchronously in transaction  │ │  │
-│  │  │ • Guaranteed delivery via event_publications collection             │ │  │
+│  │  │ Processes: Temporal workflows and Schedules (ET-PLT-015)            │ │  │
+│  │  │ • Activities write MongoDB and stage outbox rows in one transaction │ │  │
+│  │  │ • Each service's *_outbox is drained to Service Bus after commit    │ │  │
 │  │  └─────────────────────────────────────────────────────────────────────┘ │  │
 │  │                                    │                                      │  │
 │  │                                    ▼                                      │  │
@@ -744,19 +746,7 @@ Your system needs these account types (based on USER_STORIES.md US-FIN-001, US-F
 // - availableTickets, soldTickets - correct
 // - status (EventStatus enum) - correct
 
-// Collection: event_publications (Spring Modulith)
-// Auto-created by Spring Modulith for guaranteed event delivery
-{
-  "_id": ObjectId("..."),
-  "event": { /* serialized event */ },
-  "listenerId": "com.pml.catalog.listeners.InventoryListener.onTicketPurchased",
-  "publicationDate": ISODate("..."),
-  "completionDate": null  // null until processed
-}
-
-// Indexes for event_publications
-db.event_publications.createIndex({ "completionDate": 1 })
-db.event_publications.createIndex({ "publicationDate": 1 })
+// Collection: catalog_outbox — the transactional outbox (ET-PLT-003); fields and indexes in ET-PLT-002 §4
 ```
 
 ### 7.2 Booking Service Collections
@@ -927,8 +917,7 @@ db.escrow_accounts.createIndex({ "status": 1 })
 // TTL Index - auto-delete after 30 days
 db.processed_webhooks.createIndex({ "processedAt": 1 }, { expireAfterSeconds: 2592000 })
 
-// Collection: event_publications (Spring Modulith)
-// Same structure as catalog service
+// Collection: booking_outbox — the transactional outbox (ET-PLT-003)
 ```
 
 ### 7.3 Identity Service Collections
@@ -1054,7 +1043,7 @@ db.processed_events.createIndex({ "processedAt": 1 }, { expireAfterSeconds: 6048
 
 ## 8. Payment Integration & Consistency
 
-(Same as ARCHITECTURE_REDESIGN_V2.md - the payment flow design remains correct)
+(The payment flow is specified by ET-PAY-001 and runs as `PurchaseWorkflow`; see `docs/architecture/DURABLE_EXECUTION.md`.)
 
 ---
 
@@ -2049,7 +2038,7 @@ public class ReconciliationService {
 
 ### Phase 1: Foundation (Week 1-2)
 - [ ] Set up MongoDB Replica Set (use existing docker/mongodb-replica-set/)
-- [ ] Add Spring Modulith dependencies to all 3 services
+- [ ] Add the transactional outbox and a Temporal worker to all 3 services
 - [ ] Configure Azure Service Bus
 - [ ] Update Ticket.java with @Version, commissionStatus, commissionEarnedAt
 - [ ] Create PaymentIntent model with settlementStatus

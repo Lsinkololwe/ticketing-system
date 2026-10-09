@@ -1,5 +1,7 @@
 package com.pml.booking.migration;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -13,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Moves the escrow collection and its field names onto ET-FIN-001's document.
+ * Moves the escrow collection and its field names onto the {@code EventEscrowAccount} shape.
  *
  * <h2>Why the rename and the move are one migration</h2>
  * The model now reads {@code booking_escrow_accounts} with {@code totalCredited}
@@ -33,8 +35,6 @@ import java.util.Map;
  * <h2>Idempotent</h2>
  * If the old collection is already gone the migration reports zero and does
  * nothing. Re-running after a successful run is a no-op.
- *
- * @see <a href="file:../../../../../../../specs/finance/001-escrow-and-ledger/spec.md">ET-FIN-001</a>
  */
 @Slf4j
 @Service
@@ -46,9 +46,9 @@ public class EscrowDocumentConformanceMigrationService {
     // "helpfully" updates this line makes the source and target identical, and
     // the migration then copies the collection onto itself and drops it.
     private static final String OLD_COLLECTION = "event_escrow_accounts";
-    private static final String NEW_COLLECTION = "booking_escrow_accounts";
+    private static final String NEW_COLLECTION = BookingCollections.ESCROW_ACCOUNTS;
 
-    /** Old field name → the name ET-FIN-001 gives it. */
+    /** Old field name → the field's current name. */
     private static final Map<String, String> RENAMES = Map.of(
             "totalDeposits", "totalCredited",
             "totalWithdrawals", "totalDebited",

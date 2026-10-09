@@ -1,5 +1,7 @@
 package com.pml.catalog.config;
 
+import com.pml.catalog.persistence.CatalogCollections;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ResourceLoader;
@@ -66,34 +68,34 @@ public class MongoSchemaValidationConfig extends com.pml.shared.config.MongoSche
         // =========================================================================
         // EVENT COLLECTIONS
         // =========================================================================
-        schemas.put("events", "events-schema.json");
-        schemas.put("ticket_tiers", "ticket-tiers-schema.json");
+        schemas.put(CatalogCollections.EVENTS, "events-schema.json");
+        schemas.put(CatalogCollections.TICKET_TIERS, "ticket-tiers-schema.json");
+        schemas.put(CatalogCollections.MEDIA, "media-schema.json");
 
         // =========================================================================
         // LOCATION & GEOGRAPHY COLLECTIONS
         // =========================================================================
-        schemas.put("locations", "locations-schema.json");
-        schemas.put("cities", "cities-schema.json");
-        schemas.put("provinces", "provinces-schema.json");
+        schemas.put(CatalogCollections.LOCATIONS, "locations-schema.json");
+        schemas.put(CatalogCollections.CITIES, "cities-schema.json");
+        schemas.put(CatalogCollections.PROVINCES, "provinces-schema.json");
 
         // =========================================================================
         // CATEGORIZATION COLLECTIONS
         // =========================================================================
-        schemas.put("event_categories", "event-categories-schema.json");
+        schemas.put(CatalogCollections.CATEGORIES, "event-categories-schema.json");
 
-        schemas.put("reference_data", "reference-data-schema.json");
+        schemas.put(CatalogCollections.REFERENCE_DATA, "reference-data-schema.json");
 
         // =========================================================================
         // APPROVAL WORKFLOW COLLECTIONS
         // =========================================================================
-        schemas.put("approval_timelines", "approval-timelines-schema.json");
-        schemas.put("approval_escalations", "approval-escalations-schema.json");
-        schemas.put("approval_notifications", "approval-notifications-schema.json");
+        schemas.put(CatalogCollections.APPROVAL_TIMELINES, "approval-timelines-schema.json");
+        schemas.put(CatalogCollections.APPROVAL_ESCALATIONS, "approval-escalations-schema.json");
 
         // =========================================================================
         // PLATFORM CONFIGURATION COLLECTIONS
         // =========================================================================
-        schemas.put("platform_configuration", "platform-configuration-schema.json");
+        schemas.put(CatalogCollections.PLATFORM_CONFIGURATION, "platform-configuration-schema.json");
 
         log.info("Catalog Service: Configured {} collection schemas for validation", schemas.size());
         return schemas;

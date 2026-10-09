@@ -1,0 +1,15 @@
+/**
+ * M3 design system entry point. Import ONCE per app, in the app's global.css,
+ * before the Tailwind layers:
+ *
+ *   @import '../../../../libs/shared/src/styles/m3.css';
+ *
+ * Parts:
+ *  - m3.tokens.css      measurements (the only place for raw px)
+ *  - m3.themes.css      color roles, elevation, per-app overrides (only place for hex)
+ *  - m3.components.css  component styles (var(--m3-*) only)
+ */
+@import './m3.tokens.css';
+@import './m3.themes.css';
+@import './m3.components.css';
+@import './m3.extra.css';

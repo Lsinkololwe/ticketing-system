@@ -1,26 +1,21 @@
 package com.pml.identity.service.impl;
 
-import com.pml.identity.domain.enums.MemberStatus;
+import java.util.Map;
+import com.pml.shared.event.EventType;
+import com.pml.shared.event.EventEnvelopes;
 import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.domain.model.Organization;
-import com.pml.identity.domain.model.OrganizationMember;
-import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.domain.valueobject.OrganizationSettings;
-import com.pml.identity.domain.valueobject.OrganizationStats;
-import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
-import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.service.OrganizationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.text.Normalizer;
-import java.time.Instant;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -31,7 +26,7 @@ import java.util.regex.Pattern;
  *
  * PROGRESSIVE ONBOARDING (Industry Standard):
  * ==========================================
- * Organizations are now created LAZILY via OrganizationOnboardingService when a user
+ * Organizations are created LAZILY via OrganizationOnboardingService when a user
  * creates their first event. This class handles existing organization management.
  *
  * KEYCLOAK INTEGRATION:
@@ -49,10 +44,15 @@ import java.util.regex.Pattern;
 public class OrganizationServiceImpl implements OrganizationService {
 
     private final OrganizationRepository organizationRepository;
-    private final OrganizationMemberRepository memberRepository;
-    private final KeycloakService keycloakService;
-    private final StreamBridge streamBridge;
 
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
+
+    /** Envelopes are staged here, inside the business transaction. */
+    private final com.pml.shared.event.Outbox outbox;
+
+    /** So the document and its envelope commit together, or neither does. */
+    private final org.springframework.transaction.reactive.TransactionalOperator transaction;
     private static final Pattern NONLATIN = Pattern.compile("[^\\w-]");
     private static final Pattern WHITESPACE = Pattern.compile("[\\s]");
 
@@ -124,45 +124,6 @@ public class OrganizationServiceImpl implements OrganizationService {
         ));
     }
 
-    // ========================================================================
-    // WRITE OPERATIONS
-    // ========================================================================
-
-    // NOTE: Organization creation is now handled by OrganizationOnboardingService
-    // using lazy creation when a user creates their first event.
-
-    /**
-     * Create Keycloak group structure for the organization
-     */
-    private Mono<Void> createKeycloakGroupStructure(Organization organization) {
-        return keycloakService.createOrganizationGroups(organization.getSlug())
-                .flatMap(groupId -> {
-                    organization.setKeycloakGroupId(groupId);
-                    return organizationRepository.save(organization);
-                })
-                .then()
-                .onErrorResume(e -> {
-                    log.warn("Failed to create Keycloak group structure for organization {}: {}",
-                            organization.getSlug(), e.getMessage());
-                    return Mono.empty();
-                });
-    }
-
-    /**
-     * Create the owner member record
-     */
-    private Mono<OrganizationMember> createOwnerMember(String organizationId, String ownerId) {
-        OrganizationMember owner = OrganizationMember.builder()
-                .userId(ownerId)
-                .organizationId(organizationId)
-                .role(OrganizationRole.OWNER)
-                .status(MemberStatus.ACTIVE)
-                .joinedAt(Instant.now())
-                .build();
-
-        return memberRepository.save(owner);
-    }
-
     @Override
     public Mono<Organization> update(String id, String name, String description, String logoUrl, String bannerUrl) {
         return organizationRepository.findById(id)
@@ -211,8 +172,23 @@ public class OrganizationServiceImpl implements OrganizationService {
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Organization not found: " + id)))
                 .flatMap(org -> {
                     org.setStatus(OrganizationStatus.SUSPENDED);
-                    return organizationRepository.save(org)
-                            .doOnSuccess(suspended -> publishOrganizationSuspendedEvent(suspended, reason));
+                    org.setSuspensionReason(reason);
+                    org.setSuspendedAt(clock.instant());
+                    // The suspension and its message commit together.
+                    //
+                    // A publish after the commit leaves a window with no owner: the document is
+                    // durable, the send can fail, and nothing records that the message is owed.
+                    // Staging the envelope in the same transaction closes that window — a
+                    // suspended organisation that no other service hears about keeps selling.
+                    return transaction.transactional(
+                            organizationRepository.save(org)
+                                    .flatMap(suspended -> outbox.stage(EventEnvelopes.of(
+                                                    EventType.IDENTITY_ORGANIZATION_SUSPENDED,
+                                                    clock.instant(),
+                                                    suspended.getId(),
+                                                    Map.of("organizationId", suspended.getId(),
+                                                            "reason", reason)))
+                                            .thenReturn(suspended)));
                 });
     }
 
@@ -226,36 +202,8 @@ public class OrganizationServiceImpl implements OrganizationService {
                         return Mono.error(new IllegalStateException("Organization is not suspended"));
                     }
                     org.setStatus(OrganizationStatus.ACTIVE);
-                    return organizationRepository.save(org);
-                });
-    }
-
-    @Override
-    public Mono<Organization> transferOwnership(String id, String newOwnerId) {
-        log.info("Transferring ownership of organization {} to user {}", id, newOwnerId);
-        return organizationRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Organization not found: " + id)))
-                .flatMap(org -> {
-                    String previousOwnerId = org.getOwnerId();
-                    org.setOwnerId(newOwnerId);
-                    return organizationRepository.save(org)
-                            .doOnSuccess(updated -> log.info("Ownership transferred from {} to {} for organization {}",
-                                    previousOwnerId, newOwnerId, id));
-                });
-    }
-
-    @Override
-    public Mono<Organization> updateStats(String id, int memberCount, int totalEvents, int totalTicketsSold) {
-        return organizationRepository.findById(id)
-                .flatMap(org -> {
-                    OrganizationStats stats = org.getStats();
-                    if (stats == null) {
-                        stats = new OrganizationStats();
-                    }
-                    stats.setMemberCount(memberCount);
-                    stats.setTotalEvents(totalEvents);
-                    stats.setTotalTicketsSold(totalTicketsSold);
-                    org.setStats(stats);
+                    org.setSuspensionReason(null);
+                    org.setSuspendedAt(null);
                     return organizationRepository.save(org);
                 });
     }
@@ -284,7 +232,7 @@ public class OrganizationServiceImpl implements OrganizationService {
                         return Mono.just(candidateSlug);
                     }
                     if (suffix > 100) {
-                        return Mono.just(baseSlug + "-" + System.currentTimeMillis());
+                        return Mono.just(baseSlug + "-" + clock.millis());
                     }
                     return findAvailableSlug(baseSlug, suffix + 1);
                 });
@@ -312,53 +260,11 @@ public class OrganizationServiceImpl implements OrganizationService {
     // EVENT PUBLISHING
     // ========================================================================
 
-    private void publishOrganizationCreatedEvent(Organization organization) {
-        try {
-            // Event record for cross-service communication
-            record OrganizationCreatedEvent(
-                    String organizationId,
-                    String name,
-                    String slug,
-                    String ownerId
-            ) {}
+    /*
+     * A suspension is announced in exactly one way: suspend() stages
+     * IDENTITY_ORGANIZATION_SUSPENDED into the outbox inside its own transaction, and OutboxDrain
+     * publishes it, so the message is owed rather than attempted. There is deliberately no direct
+     * send beside it — a second, lossy way to announce the same fact would read more naturally.
+     */
 
-            OrganizationCreatedEvent event = new OrganizationCreatedEvent(
-                    organization.getId(),
-                    organization.getName(),
-                    organization.getSlug(),
-                    organization.getOwnerId()
-            );
-
-            boolean sent = streamBridge.send("organizationOutput-out-0", event);
-            if (sent) {
-                log.info("Published OrganizationCreatedEvent for organization: {}", organization.getId());
-            } else {
-                log.warn("Failed to publish OrganizationCreatedEvent for organization: {}", organization.getId());
-            }
-        } catch (Exception e) {
-            log.error("Error publishing OrganizationCreatedEvent for organization {}: {}",
-                    organization.getId(), e.getMessage());
-        }
-    }
-
-    private void publishOrganizationSuspendedEvent(Organization organization, String reason) {
-        try {
-            record OrganizationSuspendedEvent(
-                    String organizationId,
-                    String name,
-                    String reason
-            ) {}
-
-            OrganizationSuspendedEvent event = new OrganizationSuspendedEvent(
-                    organization.getId(),
-                    organization.getName(),
-                    reason
-            );
-
-            streamBridge.send("organizationOutput-out-0", event);
-            log.info("Published OrganizationSuspendedEvent for organization: {}", organization.getId());
-        } catch (Exception e) {
-            log.error("Error publishing OrganizationSuspendedEvent: {}", e.getMessage());
-        }
-    }
 }

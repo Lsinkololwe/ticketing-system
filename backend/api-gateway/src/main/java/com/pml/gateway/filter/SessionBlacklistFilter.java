@@ -61,7 +61,6 @@ import reactor.core.publisher.Mono;
  * over immediate revocation. Trade-off: revoked tokens may briefly work until Redis recovers.
  * </p>
  *
- * @see docs/TOKEN_VALIDATION_ARCHITECTURE_RECOMMENDATION.md
  */
 @Slf4j
 @Component
@@ -84,9 +83,12 @@ public class SessionBlacklistFilter implements GlobalFilter, Ordered {
                 // Step 3: Extract JWT from authentication
                 .map(context -> (JwtAuthenticationToken) context.getAuthentication())
                 // Step 4: Check blacklist
-                .flatMap(auth -> checkBlacklistAndFilter(exchange, chain, auth))
+                // checkBlacklistAndFilter completes empty (Mono<Void>), so it reports "handled" explicitly:
+                // switchIfEmpty on its result would run the chain a second time, and after a 401.
+                .flatMap(auth -> checkBlacklistAndFilter(exchange, chain, auth).thenReturn(Boolean.TRUE))
                 // Step 5: If no auth context (public endpoint), allow through
-                .switchIfEmpty(chain.filter(exchange));
+                .defaultIfEmpty(Boolean.FALSE)
+                .flatMap(handled -> handled ? Mono.<Void>empty() : chain.filter(exchange));
     }
 
     /**
@@ -109,7 +111,9 @@ public class SessionBlacklistFilter implements GlobalFilter, Ordered {
         // Extract all identifiers from JWT claims
         // jti = JWT ID (unique per token - INDUSTRY STANDARD for blacklisting)
         // sid = Keycloak session ID (unique per login session)
-        // sub = subject (user ID - for "logout everywhere" scenarios)
+        // sub = the KEYCLOAK user id (for "logout everywhere" scenarios). Deliberately NOT the
+        // accountId claim: identity revokes a user by keycloakUserId, which is what sub carries for
+        // buyers (whose account id differs) as well as for staff.
         String jti = jwt.getId();  // JWT ID claim
         String sid = jwt.getClaimAsString("sid");
         String sub = jwt.getSubject();
@@ -120,8 +124,15 @@ public class SessionBlacklistFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // Check all three blacklists in parallel for efficiency
+        // Check all three blacklists in parallel for efficiency. FAIL-OPEN: if Redis fails, the
+        // request is allowed through. Only the check is guarded; an error from the rest of the
+        // chain must not run the chain again.
         return sessionBlacklistService.isBlacklistedComprehensive(jti, sid, sub)
+                .onErrorResume(error -> {
+                    log.warn("[Blacklist] Redis check failed, allowing request (fail-open): {}",
+                            error.getMessage());
+                    return Mono.just(false);
+                })
                 .flatMap(isBlacklisted -> {
                     if (isBlacklisted) {
                         // Token/Session was revoked - reject request
@@ -134,12 +145,6 @@ public class SessionBlacklistFilter implements GlobalFilter, Ordered {
                         return exchange.getResponse().setComplete();
                     }
                     // Token valid - continue to next filter
-                    return chain.filter(exchange);
-                })
-                .onErrorResume(error -> {
-                    // FAIL-OPEN: If Redis fails, allow request through
-                    log.warn("[Blacklist] Redis check failed, allowing request (fail-open): {}",
-                            error.getMessage());
                     return chain.filter(exchange);
                 });
     }

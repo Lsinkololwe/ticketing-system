@@ -202,19 +202,6 @@ public enum PlatformAccountType {
     }
 
     /**
-     * Checks if withdrawals from this account require approval.
-     *
-     * @return true if additional approval is needed for withdrawals
-     */
-    public boolean requiresWithdrawalApproval() {
-        return switch (this) {
-            case OPERATING -> false;     // Normal operational use
-            case RESERVE -> true;        // Protect the emergency fund
-            case TAX_HOLDING -> true;    // Only for tax remittance
-        };
-    }
-
-    /**
      * Returns the alert threshold percentage.
      *
      * <p>When balance drops below this percentage of target, alert is triggered.</p>

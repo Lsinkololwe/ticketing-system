@@ -26,12 +26,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Contention, against a real replica set, with real threads released together.
  *
- * <h2>What this proves today, and what it does not</h2>
- * ET-PLT-006 R5's four scenarios all name production code that does not exist yet
- * (ET-CAT-002's inventory, ET-PAY-001's intents, ET-FIN-003's payouts, ET-FIN-001's escrow).
- * What <em>can</em> be proven now is the primitive every one of them rests on — the
- * conditional atomic update of ET-PLT-002 D-08 — and, more importantly, that
- * {@link Concurrency} actually produces contention.
+ * <h2>What this proves, and what it does not</h2>
+ * The contention scenarios that matter — inventory, payment intents, payouts, escrow — live in
+ * the services. What this class proves is the primitive every one of them rests on — the
+ * conditional atomic update — and, more importantly, that {@link Concurrency} actually produces
+ * contention.
  *
  * <p>So this class runs the 200-against-50 scenario twice: once with the conditional
  * {@code findAndModify} the specs mandate, and once with the read-modify-write they forbid.
@@ -39,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * of detecting the defect it exists to catch, and every contention test written against it
  * afterwards would be decoration.
  */
+@Tag("L5")
 @Tag("ET-PLT-006")
 @DisplayName("ET-PLT-006-R5 · concurrency is proven under real contention")
 class ContentionTest {
@@ -71,8 +71,8 @@ class ContentionTest {
     @Test
     @DisplayName("200 callers against 50 seats yield exactly 50, and the counters still sum to capacity")
     void conditionalUpdateHoldsUnderContention() {
-        // Five runs. One pass is luck; the point of R5's last box is that a
-        // concurrency test which has passed once has told you nothing.
+        // Five runs. One pass is luck: a concurrency test which has passed once has told you
+        // nothing.
         Concurrency.repeat(5, () -> {
             seed(CAPACITY);
 
@@ -96,7 +96,7 @@ class ContentionTest {
     @Test
     @DisplayName("the same scenario with a read-modify-write oversells — so the test has teeth")
     void readModifyWriteOversells() {
-        // Deliberately the forbidden implementation (ET-PLT-002 D-08). If this
+        // Deliberately the forbidden read-modify-write implementation. If this
         // does NOT oversell, the harness cannot see the bug it exists to see.
         boolean oversoldAtLeastOnce = false;
         int observedWorst = CAPACITY;

@@ -35,15 +35,14 @@
 /**
  * Organization statuses this app is prepared to route.
  *
- * NOTE ON SPEC DIVERGENCE: spec ET-ORG-001 §4 declares nine states with no
- * `APPROVED` ("`APPROVED` is not a state; `ACTIVE` is") and a `PENDING_DOCUMENTS`
- * state between `DRAFT` and `PENDING_REVIEW`. The shipped backend enum
- * (`com.pml.shared.constants.OrganizationStatus`) instead carries both
- * `APPROVED` and `ACTIVE`, and has no `PENDING_DOCUMENTS`.
+ * The backend enum (`com.pml.shared.constants.OrganizationStatus`) carries both
+ * `APPROVED` and `ACTIVE` and has no `PENDING_DOCUMENTS`. The target lifecycle
+ * has no `APPROVED` (`ACTIVE` is the operational state) and a
+ * `PENDING_DOCUMENTS` state between `DRAFT` and `PENDING_REVIEW`.
  *
- * This union covers the union of both, so routing is correct today and stays
- * correct if the backend is brought into line with the spec later. Every
- * function below handles all of them exhaustively.
+ * This union covers both vocabularies, so routing is correct whichever set of
+ * statuses the backend sends. Every function below handles all of them
+ * exhaustively.
  */
 export type OrganizationStatus =
   | 'DRAFT'
@@ -108,7 +107,7 @@ export function unknownState(reason: string): OnboardingState {
 }
 
 // =============================================================================
-// CAPABILITIES (spec ET-ORG-001 §4 stage access matrix)
+// CAPABILITIES (what each onboarding stage may access)
 // =============================================================================
 
 /**
@@ -117,7 +116,7 @@ export function unknownState(reason: string): OnboardingState {
  * This is the predicate that gates the wizard. `PENDING_REVIEW` is absent
  * deliberately — an application under review is frozen, which is exactly what
  * the backend's `Organization.canBeEdited()` enforces. Letting the wizard open
- * in `PENDING_REVIEW` produced a form the user could fill but never save.
+ * in `PENDING_REVIEW` would produce a form the user could fill but never save.
  */
 export function canEditApplication(status: OrganizationStatus): boolean {
   return status === 'DRAFT' || status === 'PENDING_DOCUMENTS' || status === 'CHANGES_REQUESTED';
@@ -136,7 +135,7 @@ export function isOperational(status: OrganizationStatus): boolean {
 /**
  * May the applicant re-apply from scratch?
  *
- * Spec ET-ORG-001 transition 8: `REJECTED → DRAFT`. A rejection is a door the
+ * `REJECTED → DRAFT` is a permitted transition. A rejection is a door the
  * applicant may walk back through; a suspension is not.
  */
 export function canReapply(status: OrganizationStatus): boolean {
@@ -146,7 +145,7 @@ export function canReapply(status: OrganizationStatus): boolean {
 /**
  * May a draft event be created?
  *
- * Spec R7: permitted from `PENDING_REVIEW` onward. This is the decision that
+ * Permitted from `PENDING_REVIEW` onward. This is the decision that
  * makes the review wait tolerable — the applicant builds an event while they
  * wait instead of watching a holding page.
  */

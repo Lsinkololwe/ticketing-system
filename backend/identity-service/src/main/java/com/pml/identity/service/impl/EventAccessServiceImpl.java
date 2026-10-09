@@ -5,10 +5,8 @@ import com.pml.identity.domain.model.EventAccessGrant;
 import com.pml.identity.domain.valueobject.EventRole;
 import com.pml.identity.repository.EventAccessGrantRepository;
 import com.pml.identity.service.EventAccessService;
-import com.pml.identity.service.PermissionResolutionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -32,8 +30,9 @@ import java.util.Set;
 public class EventAccessServiceImpl implements EventAccessService {
 
     private final EventAccessGrantRepository accessGrantRepository;
-    private final PermissionResolutionService permissionResolutionService;
 
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     // ========================================================================
     // READ OPERATIONS
     // ========================================================================
@@ -49,29 +48,6 @@ public class EventAccessServiceImpl implements EventAccessService {
     }
 
     @Override
-    public Mono<Boolean> hasAccess(String userId, String eventId) {
-        return accessGrantRepository.existsByUserIdAndEventId(userId, eventId);
-    }
-
-    @Override
-    public Mono<Boolean> hasActiveAccess(String userId, String eventId) {
-        return accessGrantRepository.existsByUserIdAndEventIdAndStatus(userId, eventId, AccessGrantStatus.ACTIVE);
-    }
-
-    @Override
-    public Flux<EventAccessGrant> findByEvent(String eventId, AccessGrantStatus status, Pageable pageable) {
-        if (status != null) {
-            return accessGrantRepository.findByEventIdAndStatus(eventId, status, pageable);
-        }
-        return accessGrantRepository.findByEventId(eventId, pageable);
-    }
-
-    @Override
-    public Flux<EventAccessGrant> findByEvent(String eventId) {
-        return accessGrantRepository.findByEventId(eventId);
-    }
-
-    @Override
     public Flux<EventAccessGrant> findByUser(String userId) {
         return accessGrantRepository.findByUserId(userId);
     }
@@ -79,57 +55,6 @@ public class EventAccessServiceImpl implements EventAccessService {
     @Override
     public Flux<EventAccessGrant> findActiveByUser(String userId) {
         return accessGrantRepository.findByUserIdAndStatus(userId, AccessGrantStatus.ACTIVE);
-    }
-
-    @Override
-    public Mono<EventAccessGrant> findEventOwner(String eventId) {
-        return accessGrantRepository.findByEventIdAndEventRole(eventId, EventRole.EVENT_OWNER);
-    }
-
-    @Override
-    public Mono<Long> countByEvent(String eventId) {
-        return accessGrantRepository.countByEventId(eventId);
-    }
-
-    @Override
-    public Mono<Long> countActiveByEvent(String eventId) {
-        return accessGrantRepository.countByEventIdAndStatus(eventId, AccessGrantStatus.ACTIVE);
-    }
-
-    // ========================================================================
-    // WRITE OPERATIONS
-    // ========================================================================
-
-    @Override
-    public Mono<EventAccessGrant> createEventOwner(String eventId, String organizationId, String userId) {
-        log.info("Creating event owner grant for event: {} user: {}", eventId, userId);
-
-        return accessGrantRepository.existsByUserIdAndEventId(userId, eventId)
-                .flatMap(exists -> {
-                    if (exists) {
-                        // Update existing to owner
-                        return accessGrantRepository.findByUserIdAndEventId(userId, eventId)
-                                .flatMap(grant -> {
-                                    grant.setEventRole(EventRole.EVENT_OWNER);
-                                    grant.setStatus(AccessGrantStatus.ACTIVE);
-                                    return accessGrantRepository.save(grant);
-                                });
-                    }
-
-                    EventAccessGrant grant = EventAccessGrant.builder()
-                            .userId(userId)
-                            .eventId(eventId)
-                            .organizationId(organizationId)
-                            .eventRole(EventRole.EVENT_OWNER)
-                            .status(AccessGrantStatus.ACTIVE)
-                            .grantedById(userId) // Self-granted for owner
-                            .reason("Event creator")
-                            .grantedAt(Instant.now())
-                            .build();
-
-                    return accessGrantRepository.save(grant)
-                            .doOnSuccess(saved -> log.info("Event owner grant created: {}", saved.getId()));
-                });
     }
 
     @Override
@@ -165,7 +90,7 @@ public class EventAccessServiceImpl implements EventAccessService {
                             .grantedById(grantedById)
                             .reason(reason)
                             .expiresAt(expiresAt)
-                            .grantedAt(Instant.now())
+                            .grantedAt(clock.instant())
                             .build();
 
                     return accessGrantRepository.save(grant)
@@ -242,57 +167,11 @@ public class EventAccessServiceImpl implements EventAccessService {
 
                     grant.setStatus(AccessGrantStatus.REVOKED);
                     grant.setRevokedById(revokedById);
-                    grant.setRevokedAt(Instant.now());
+                    grant.setRevokedAt(clock.instant());
                     grant.setRevocationReason(reason);
 
                     return accessGrantRepository.save(grant)
                             .doOnSuccess(revoked -> log.info("Event access revoked: {}", revoked.getId()));
                 });
-    }
-
-    @Override
-    public Mono<Long> expireOldGrants() {
-        log.info("Expiring old event access grants");
-
-        return accessGrantRepository.findByStatusAndExpiresAtBefore(AccessGrantStatus.ACTIVE, Instant.now())
-                .flatMap(grant -> {
-                    grant.setStatus(AccessGrantStatus.EXPIRED);
-                    return accessGrantRepository.save(grant);
-                })
-                .count()
-                .doOnSuccess(count -> log.info("Expired {} event access grants", count));
-    }
-
-    @Override
-    public Mono<Void> deleteByEvent(String eventId) {
-        log.info("Deleting all access grants for event: {}", eventId);
-        return accessGrantRepository.deleteByEventId(eventId);
-    }
-
-    // ========================================================================
-    // PERMISSION OPERATIONS
-    // ========================================================================
-
-    @Override
-    public Mono<EventRole> getUserEventRole(String userId, String eventId) {
-        return accessGrantRepository.findByUserIdAndEventId(userId, eventId)
-                .filter(EventAccessGrant::isValid)
-                .map(EventAccessGrant::getEventRole);
-    }
-
-    @Override
-    public Mono<Boolean> hasEventPermission(String userId, String eventId, String permission) {
-        return accessGrantRepository.findByUserIdAndEventId(userId, eventId)
-                .filter(EventAccessGrant::isValid)
-                .map(grant -> {
-                    // Check custom permissions first
-                    if (grant.getCustomPermissions() != null && grant.getCustomPermissions().contains(permission)) {
-                        return true;
-                    }
-                    // Check role-based permissions
-                    return permissionResolutionService.getEventRolePermissions(grant.getEventRole())
-                            .contains(permission);
-                })
-                .defaultIfEmpty(false);
     }
 }

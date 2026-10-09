@@ -1,4 +1,4 @@
-# ET-FIN-003 · Payout eligibility, bank accounts and the settlement saga
+# ET-FIN-003 · Payout eligibility, bank accounts and the payout workflow
 
 > **Conformance** · V3 §3.3 bank account linking · V3 §10.1 payout eligibility · V3 §10.2 payout flow · US-ORG-007 · US-FIN-001
 
@@ -13,8 +13,8 @@ payout sent to the wrong account is not undone by an apology.
 This spec builds it. It declares **eligibility** as a conjunction of four conditions that
 are each checked at request and re-checked at approval, because time passes between them.
 It declares **bank accounts** and their verification, because the platform must not send
-money to an account nobody has proved exists. It declares the **settlement saga** —
-request, approve, debit, transfer, confirm — with a compensation path for the transfer that
+money to an account nobody has proved exists. It declares the **payout workflow** —
+request, approve, debit, transfer, confirm, one Temporal execution per escrow account — with a compensation path for the transfer that
 fails after the escrow has already been debited, which is the failure that leaves an
 organizer's money in limbo.
 
@@ -65,6 +65,10 @@ Three attempts, then `FAILED` with the escrow restored and finance notified.
 Partial withdrawal invites a fee structure, a minimum-remaining rule and an argument about
 which tickets' money was withdrawn — for a capability nobody has asked for. It is recorded
 as rejected so that adding it later is deliberate.
+
+**A payout carries no fee.** The platform earns its per-ticket commission
+([ET-FIN-002](../002-commission/)); the settled amount is the full escrow balance, and a payout
+request has no platform or processing fee (ROADMAP D-23).
 
 **Rejected alternatives**
 
@@ -124,6 +128,7 @@ THE SYSTEM SHALL verify a bank account by micro-deposit before permitting a payo
 **Acceptance**
 - [ ] `createBankAccount` records `bankName`, `bankCode`, `accountNumber`, `accountHolderName`, `branchCode`, `organizationId`
 - [ ] Verification sends `finance.payout.micro-deposit` (K0.50) and requires the organizer to confirm the exact amount
+- [ ] A deposit the provider confirms failed has its `5050` entry reversed once and the account returned to `PENDING`; a deposit never answered for keeps its cost (ROADMAP D-31)
 - [ ] Three wrong confirmations lock verification for that account for 24 hours
 - [ ] Only a `VERIFIED` account may be selected for a payout; anything else refuses with `BANK_ACCOUNT_NOT_VERIFIED`
 - [ ] Changing the account number resets verification to `PENDING`
@@ -142,7 +147,7 @@ THE SYSTEM SHALL encrypt the full account number and SHALL return only a masked 
 - [ ] A test captures all output across a full payout and asserts no full account number appears
 - [ ] `accountHolderName` is returned in full — it is what a support conversation actually needs
 
-### ET-FIN-003-R6 · Settlement is a saga that debits early and compensates on failure
+### ET-FIN-003-R6 · Settlement is a workflow that debits early and compensates on failure
 
 WHEN an approved payout is settled, THE SYSTEM SHALL debit the escrow before initiating the
 transfer, and IF the transfer fails, THEN THE SYSTEM SHALL restore the escrow with a
@@ -155,7 +160,7 @@ balanced reversing entry.
 - [ ] A failure writes a reversing entry restoring the escrow exactly, and moves the request to `FAILED`
 - [ ] `Ledger.assertBalanced()` holds after a failure and its reversal
 - [ ] A test forces a transfer failure and asserts the escrow balance is exactly what it was before
-- [ ] A test kills the process between the debit and the transfer and asserts recovery resolves to either settled or reversed, never neither
+- [ ] A worker killed between the debit and the transfer resumes from the `PayoutWorkflow`'s history and resolves to either settled or reversed, never neither — asserted by a time-skipping test and a replay of the recorded history
 
 ### ET-FIN-003-R7 · A failed transfer retries three times, then escalates
 
@@ -163,7 +168,7 @@ IF a transfer fails transiently, THEN THE SYSTEM SHALL retry up to three times, 
 that SHALL escalate with the escrow restored.
 
 **Acceptance**
-- [ ] `retryPayout` is available while `attemptCount` is below `finance.payout.max-attempts` (3)
+- [ ] `retryPayout` is an update on the `PayoutWorkflow`, accepted while `attemptCount` is below `finance.payout.max-attempts` (3) and within 30 days of the failure
 - [ ] Retries use exponential backoff and each is recorded with its provider response
 - [ ] Past the limit the request is `FAILED`, the escrow is restored, and finance is notified
 - [ ] A provider response indicating bad account details does **not** retry — it fails immediately and marks the bank account `VERIFICATION_FAILED`
@@ -185,6 +190,31 @@ each transition.
 - [ ] `booking.PayoutCompleted` is published after commit on settlement
 
 ## 4. Model
+
+> **Reconciliation note, 2026-09-01 — `myPayoutRequests` · **built**, not renamed.**
+>
+> **Resolved 2026-09-01.** Built as `myPayoutRequests(organizationId, status, pagination)`,
+> scoped through `CallerScope`. Covered by `CallerScopedReadTest` on a real replica set, which
+> asserts a two-organization member sees both and only both, and that a selector naming another
+> tenant refuses indistinguishably from one naming nothing. The reasoning that ruled out renaming
+> to `payoutRequestsByOrganizer` follows, and still applies to that operation.
+>
+> `payoutRequestsByOrganizer(organizerId)` takes the subject from the client; §4 asks for the
+> caller's own. Renaming would sanction a caller-supplied key where the spec asked for an implicit
+> one. Deferred to F-001's read-path conversion, where the scoping is built rather than renamed
+> around. (Contrast `createPayoutRequest`, adopted above: it takes an id *and* checks it against
+> `authentication.principal.subject`, which is why that one was safe.)
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** `requestPayout` → `createPayoutRequest` — the only `create*` among nine `*PayoutRequest` mutations, and it already enforces `#input.organizerId == authentication.principal.subject`.
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 5 operation names below adopt the
+> shipped names: `approvePayout` → `approvePayoutRequest`, `bankAccounts` → `bankAccountsByOrganizer`, `cancelPayout` → `cancelPayoutRequest`, `rejectPayout` → `rejectPayoutRequest`, `retryPayout` → `retryPayoutRequest`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
 
 ### The request
 
@@ -256,16 +286,27 @@ public PayoutEligibility evaluate(Event event, EscrowAccount escrow, Money minim
 Seven states, six actions. `COMPLETED`, `REJECTED` and `CANCELLED` are terminal; `FAILED`
 is not, because it must permit retry and re-request.
 
-### The settlement saga
+### The payout workflow
+
+| | |
+|---|---|
+| Type | `PayoutWorkflow` |
+| Id | `payout/{escrowAccountId}` — one open request per escrow account |
+| Queues | `booking-finance`; transfers and status reads on `booking-provider` |
+| Start | Update-with-Start `submit`, conflict policy `FAIL` |
+| Updates | `approve` (its validator refuses the requester), `reject`, `cancel`, `retry`, `confirmTransfer` |
+| Signal | `providerCallback` — a verified payout webhook wakes the status poll |
+| Reached through | `PayoutProcess` |
 
 ```
 1  approve                 eligibility re-checked, amount recomputed        → APPROVED
 2  debit + mark            [TRANSACTION]                                    → PROCESSING
      journal: debit 2010 / credit 1020
 3  initiate transfer       PaymentProviderPort.payout(...)  — OUTSIDE the transaction
-4a confirmed               settledAt, publish PayoutCompleted               → COMPLETED
+4a confirmed               settledAt, stage PayoutCompleted in the outbox   → COMPLETED
 4b failed, attempts < 3    backoff, retry step 3
 4c failed, attempts = 3    [TRANSACTION] reversing entry, restore escrow    → FAILED
+4d no verified answer, 3d  escalate as unconfirmed; never assumed failed  → PROCESSING, flagged
      journal: debit 1020 / credit 2010
 5  escrow balance zero     escrow → CLOSED                                  ET-FIN-001
 ```
@@ -283,8 +324,12 @@ payouts both passing the balance check, and step 4c is the price of it.
 | 4 | Match → `VERIFIED`; mismatch → `verificationAttempts++` |
 | 5 | Three mismatches → `lockedUntil = now + 24h` |
 
-The deposit is a platform expense: `debit 5040 Verification Costs` / `credit 1020`.
-`5040` is added to [ET-FIN-001](../001-escrow-and-ledger/)'s chart by this spec.
+The deposit is a platform expense: `debit 5050 Account Verification Costs` / `credit 1020`, one
+entry per deposit, booked by `BankVerificationWorkflow` once the provider accepts it (ROADMAP D-27).
+`5050` is a row of [ET-FIN-001](../001-escrow-and-ledger/)'s chart; the seeder creates any standard
+account a database lacks at every boot. WHILE the owner has not confirmed, the workflow asks the
+provider what became of the deposit; a confirmed failure reverses the entry and returns the account
+to `PENDING`, so the owner can start again (ROADMAP D-31).
 
 ### GraphQL
 
@@ -297,12 +342,12 @@ Subgraph `booking`. Organizer-scoped fields are not `@tag`ged; platform aggregat
 | `myPayoutRequests(organizationId, status, page)` | query | `ORGANIZER` | `PayoutRequestPage!` |
 | `payoutRequests(status, page)` | query | `FINANCE` | `PayoutRequestPage!` `@tag(name: "admin")` |
 | `payoutRequestsForReview(page)` | query | `FINANCE` | `PayoutRequestPage!` `@tag(name: "admin")` |
-| `bankAccounts(organizationId)` | query | `ORGANIZER` | `[BankAccount!]!` |
-| `requestPayout(input)` | mutation | `ORGANIZER` | `PayoutRequest!` |
-| `cancelPayout(id)` | mutation | `ORGANIZER` | `PayoutRequest!` |
-| `approvePayout(input)` | mutation | `FINANCE` | `PayoutRequest!` `@tag(name: "admin")` |
-| `rejectPayout(id, reason)` | mutation | `FINANCE` | `PayoutRequest!` `@tag(name: "admin")` |
-| `retryPayout(id)` | mutation | `FINANCE` | `PayoutRequest!` `@tag(name: "admin")` |
+| `bankAccountsByOrganizer(organizationId)` | query | `ORGANIZER` | `[BankAccount!]!` |
+| `createPayoutRequest(input)` | mutation | `ORGANIZER` | `PayoutRequest!` |
+| `cancelPayoutRequest(id)` | mutation | `ORGANIZER` | `PayoutRequest!` |
+| `approvePayoutRequest(input)` | mutation | `FINANCE` | `PayoutRequest!` `@tag(name: "admin")` |
+| `rejectPayoutRequest(id, reason)` | mutation | `FINANCE` | `PayoutRequest!` `@tag(name: "admin")` |
+| `retryPayoutRequest(id)` | mutation | `FINANCE` | `PayoutRequest!` `@tag(name: "admin")` |
 | `createBankAccount(input)` | mutation | `ORGANIZER` | `BankAccount!` |
 | `updateBankAccount(id, input)` | mutation | `ORGANIZER` | `BankAccount!` |
 | `deleteBankAccount(id)` | mutation | `ORGANIZER` | `Boolean!` |
@@ -323,9 +368,10 @@ the GraphQL type at all, which is stronger than gating them.
 
 | Tier | Name | When | Consumers |
 |---|---|---|---|
-| module | `PayoutApprovedEvent` | state 2 | notify the organizer |
-| module | `PayoutFailedEvent` | state 7 | notify finance, alert |
-| bus | `booking.PayoutCompleted` v1 | after settlement commits | identity → notify the organizer |
+| bus | `booking.PayoutCompleted` v1 | staged in the settlement transaction | identity → notify the organizer |
+
+Telling the organizer of an approval and alerting finance of a failure are activities of the
+payout workflow, not in-memory events.
 
 ### Configuration
 
@@ -365,7 +411,7 @@ elsewhere.
 - [ ] **T3 · Micro-deposit verification, its lockout and its journal entry**
   - requirements: R4
   - files: `backend/booking-service/.../service/impl/BankAccountServiceImpl.java`
-  - verify: three mismatches lock for 24 h; the deposit is expensed to `5040`
+  - verify: three mismatches lock for 24 h; the deposit is expensed to `5050`
   - parallel-safe: yes
   - depends: T2
 
@@ -383,16 +429,16 @@ elsewhere.
   - parallel-safe: yes
   - depends: T4
 
-- [ ] **T6 · The settlement saga: debit-then-transfer, with compensation**
+- [ ] **T6 · The payout workflow: debit-then-transfer, with compensation**
   - requirements: R6
-  - files: `backend/booking-service/.../service/impl/PayoutSettlementSaga.java`
-  - verify: a forced failure restores the escrow exactly; a kill between debit and transfer resolves either way
+  - files: `backend/booking-service/.../workflow/payout/PayoutWorkflowImpl.java`, `.../service/PayoutSettlementService.java`
+  - verify: a forced failure restores the escrow exactly; a worker killed between debit and transfer resolves either way; the history replays
   - parallel-safe: no — the highest-risk write in the platform
   - depends: T5
 
 - [ ] **T7 · Retry, the bad-details fast-fail and the escalation**
   - requirements: R7
-  - files: `backend/booking-service/.../service/impl/PayoutSettlementSaga.java`
+  - files: `backend/booking-service/.../workflow/payout/PayoutRules.java`, `.../workflow/payout/PayoutWorkflowImpl.java`
   - verify: bad account details fail immediately without retry and mark the account
   - parallel-safe: yes
   - depends: T6

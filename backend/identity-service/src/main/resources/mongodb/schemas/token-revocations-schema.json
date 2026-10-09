@@ -1,0 +1,58 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Token Revocations Schema",
+    "description": "Revoked tokens, sessions and subjects, the system of record (com.pml.identity.security.revocation.RevocationRecord)",
+    "required": [
+      "type",
+      "value",
+      "revokedAt"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data type hint"
+      },
+      "_id": {
+        "bsonType": [
+          "string",
+          "objectId"
+        ]
+      },
+      "type": {
+        "bsonType": "string",
+        "enum": [
+          "TOKEN",
+          "SESSION",
+          "USER"
+        ]
+      },
+      "value": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "reason": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "revokedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "revokedAt": {
+        "bsonType": "date"
+      },
+      "expiresAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": true
+  }
+}

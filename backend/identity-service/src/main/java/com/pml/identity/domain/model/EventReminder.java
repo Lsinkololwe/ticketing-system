@@ -1,23 +1,26 @@
 package com.pml.identity.domain.model;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.identity.domain.enums.ReminderStatus;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Entity representing a scheduled reminder for an upcoming event.
  * Users can set reminders for events they have tickets for.
  */
-@Document(collection = "event_reminders")
+@Document(collection = IdentityCollections.EVENT_REMINDERS)
+@TypeAlias("event_reminders")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -33,13 +36,11 @@ public class EventReminder {
     /**
      * ID of the user who set the reminder
      */
-    @Indexed
     private String userId;
 
     /**
      * ID of the event to remind about
      */
-    @Indexed
     private String eventId;
 
     /**
@@ -50,7 +51,13 @@ public class EventReminder {
     /**
      * Timestamp when the reminder should be sent
      */
-    private LocalDateTime reminderAt;
+    private Instant reminderAt;
+
+    /**
+     * When the event starts; the reminders fire 24 hours and 1 hour before it.
+     * {@code reminderAt} holds the next of those moments.
+     */
+    private Instant eventStartsAt;
 
     /**
      * Current status of the reminder
@@ -60,11 +67,11 @@ public class EventReminder {
     /**
      * Timestamp when reminder was sent
      */
-    private LocalDateTime sentAt;
+    private Instant sentAt;
 
     /**
      * Timestamp when reminder was created
      */
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 }

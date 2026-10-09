@@ -1,6 +1,7 @@
 package com.pml.identity.security;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -69,8 +70,12 @@ public class FieldEncryptionService {
     private static final int GCM_IV_LENGTH = 12; // 96 bits (recommended for GCM)
     private static final int GCM_TAG_LENGTH = 128; // 128 bits authentication tag
 
+    /** Identifies the key a ciphertext was written under, so a later rotation can tell them apart. */
+    public static final String DEFAULT_KEY_ID = "v1";
+
     private final SecretKey secretKey;
     private final SecureRandom secureRandom;
+    private final String keyId;
 
     /**
      * Initialize encryption service with secret key.
@@ -83,9 +88,19 @@ public class FieldEncryptionService {
      *
      * @param encryptionKeyBase64 Base64-encoded 256-bit encryption key
      */
+    public FieldEncryptionService(String encryptionKeyBase64) {
+        this(encryptionKeyBase64, DEFAULT_KEY_ID);
+    }
+
+    @Autowired
     public FieldEncryptionService(
-        @Value("${app.security.encryption.key}") String encryptionKeyBase64
+        @Value("${app.security.encryption.key}") String encryptionKeyBase64,
+        @Value("${identity.contact.encryption-key-id:" + DEFAULT_KEY_ID + "}") String keyId
     ) {
+        if (keyId == null || keyId.isBlank() || keyId.indexOf('.') >= 0 || keyId.indexOf(':') >= 0) {
+            throw new IllegalArgumentException("Encryption key id must be non-blank and contain no '.' or ':'");
+        }
+        this.keyId = keyId;
         // Decode base64 key
         byte[] decodedKey = Base64.getDecoder().decode(encryptionKeyBase64);
 
@@ -147,49 +162,35 @@ public class FieldEncryptionService {
         });
     }
 
+    /** The id of the key this service encrypts with. */
+    public String keyId() {
+        return keyId;
+    }
+
     /**
-     * Decrypt ciphertext using AES-256-GCM.
+     * Decrypt a value produced by {@link #encrypt(String)}.
      *
-     * SECURITY: This operation should be audited for PCI-DSS compliance.
-     * Only authorized users should be able to decrypt sensitive data.
+     * <p>A wrong key, a truncated value or a tampered ciphertext fails authentication and errors
+     * with an {@link EncryptionException} that carries no part of the input.</p>
      *
-     * @param ciphertext Base64-encoded encrypted data
-     * @return decrypted plaintext
+     * @param encrypted Base64 of [IV][ciphertext+tag]
+     * @return the plaintext, or empty for null/blank input
      */
-    public Mono<String> decrypt(String ciphertext) {
+    public Mono<String> decrypt(String encrypted) {
         return Mono.fromCallable(() -> {
-            if (ciphertext == null || ciphertext.isBlank()) {
-                log.warn("Attempted to decrypt null/blank value");
+            if (encrypted == null || encrypted.isBlank()) {
                 return null;
             }
-
             try {
-                // Decode Base64
-                byte[] cipherBytes = Base64.getDecoder().decode(ciphertext);
-
-                // Extract IV (first 12 bytes)
-                ByteBuffer byteBuffer = ByteBuffer.wrap(cipherBytes);
-                byte[] iv = new byte[GCM_IV_LENGTH];
-                byteBuffer.get(iv);
-
-                // Extract ciphertext (remaining bytes)
-                byte[] encryptedData = new byte[byteBuffer.remaining()];
-                byteBuffer.get(encryptedData);
-
-                // Initialize cipher for decryption
+                byte[] all = Base64.getDecoder().decode(encrypted);
+                if (all.length <= GCM_IV_LENGTH) {
+                    throw new IllegalArgumentException("ciphertext too short");
+                }
                 Cipher cipher = Cipher.getInstance(ALGORITHM);
-                GCMParameterSpec parameterSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-                cipher.init(Cipher.DECRYPT_MODE, secretKey, parameterSpec);
-
-                // Decrypt
-                byte[] plainBytes = cipher.doFinal(encryptedData);
-                String decrypted = new String(plainBytes, StandardCharsets.UTF_8);
-
-                log.debug("Successfully decrypted data");
-                return decrypted;
-
+                cipher.init(Cipher.DECRYPT_MODE, secretKey, new GCMParameterSpec(GCM_TAG_LENGTH, all, 0, GCM_IV_LENGTH));
+                byte[] plain = cipher.doFinal(all, GCM_IV_LENGTH, all.length - GCM_IV_LENGTH);
+                return new String(plain, StandardCharsets.UTF_8);
             } catch (Exception e) {
-                log.error("Decryption failed - data may be corrupted or tampered", e);
                 throw new EncryptionException("Failed to decrypt data", e);
             }
         });

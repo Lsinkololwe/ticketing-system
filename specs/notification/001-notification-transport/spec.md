@@ -2,6 +2,20 @@
 
 > **Conformance** · V3 §4 user journeys · US Part I §6 Keycloak integration
 
+> **Amended 2026-10-04 (D-39, D-40, D-46; F-044) — SMS is dropped; WhatsApp and email carry codes and tickets.** `SMS` is removed from the
+> channel set (R1), every fallback chain below that names SMS reads without it, the `SmsAdapter` and `SMS_*` settings are not built, and no
+> message contains a sign-in link. One-time codes are sent by identity-service's own delivery component ([ET-IDN-001](../../identity/001-phone-otp-identity/)
+> R2, `identity.delivery.*`), synchronously because the buyer is waiting, through the same WhatsApp and email adapters; the `OTP` category row below
+> is retained only for the template registry. R9 adds WhatsApp templates and opt-in; R10 ticket delivery and its fallback.
+
+> **Amended 2026-09-19 (product owner) — notifications are system-only.** Every message is
+> caused by something that happened, and [ET-NTF-002](../002-lifecycle-triggers/) lists all of
+> them. An administrator does not compose, schedule or broadcast notifications. The admin
+> mutations `sendNotification` and `sendBulkNotification`, and the `imageUrl`, `actionUrl`,
+> `priority` and `scheduledAt` options of `SendNotificationInput`, were `@deprecated` and are
+> **removed (2026-10-06, product owner — see F-045)**, with `SendNotificationInput` itself and the
+> service methods behind them. `resendNotification(id)` stays: it retries a system message.
+
 ## 1. Capability
 
 The platform speaks to people constantly: a login code, a ticket, a receipt, a cancellation,
@@ -9,7 +23,7 @@ a payout. Each of those messages has to reach somebody on a channel they actuall
 a language they read, without arriving four times, and without the sending of it ever being
 able to break the thing that caused it.
 
-This spec builds the pipe. It declares the four channels — WhatsApp, SMS, push and email —
+This spec builds the pipe. It declares the three channels — WhatsApp, push and email (SMS dropped, D-39) —
 and the provider port behind each, so a provider change is an adapter. It declares
 templates, which is how a message stops being a string concatenated in a service and starts
 being a reviewable, translatable artefact. It declares device registration for push, user
@@ -27,7 +41,7 @@ as a distinct class with its own urgency and its own no-logging rule
 
 ## 2. Design decisions
 
-**Four channels, each behind a port, each with one adapter.** `WHATSAPP`, `SMS`, `PUSH`,
+**Three channels, each behind a port, each with one adapter** *(was four; SMS dropped, D-39)*. `WHATSAPP`, `PUSH`,
 `EMAIL`. `NotificationChannelPort` declares `send` and `status`; each adapter translates its
 provider's vocabulary at the boundary, exactly as
 [ET-PAY-001](../../payment/001-payment-intents-and-providers/) does. No service names a
@@ -50,15 +64,15 @@ cancellation path waits for a provider. This is the rule that keeps a WhatsApp o
 stopping ticket sales.
 
 **Delivery is attempted down a fallback chain, and the chain is per category.** A ticket
-tries WhatsApp, then SMS, then email. An OTP tries WhatsApp, then SMS, and stops — email is
+tries WhatsApp, then email *(SMS removed, D-39)*. An OTP is sent on the contact's own channel and stops — silent switching is
 too slow for a five-minute code. A marketing message tries push and stops. The chain is
 declared per category rather than per message, so a new message type inherits a considered
 default.
 
 **A failed send is retried with backoff and then recorded as failed — it never throws.**
 [ET-PLT-003](../../_platform/003-event-contract/) §2's rule applies: a provider being down
-is a business outcome. The listener records it, the retry sweep re-attempts, and the
-dead-letter queue is reserved for messages that are actually malformed.
+is a business outcome. The notification's workflow retries it with backoff and records the
+outcome, and the dead-letter queue is reserved for messages that are actually malformed.
 
 **Deduplication is on a caller-supplied key.** The same fact can reach the notification
 layer twice — a redelivered bus message, a retried job. Every request carries a
@@ -81,13 +95,13 @@ retry after expiry, and its content is never logged at any level in any environm
 
 ## 3. Requirements
 
-### ET-NTF-001-R1 · Four channels, each behind a port, no provider named outside its adapter
+### ET-NTF-001-R1 · Three channels (WhatsApp, push, email), each behind a port, no provider named outside its adapter *(SMS removed 2026-10-04)*
 
 THE SYSTEM SHALL define a channel port and SHALL confine every provider's vocabulary to its
 adapter.
 
 **Acceptance**
-- [ ] `NotificationChannel` declares exactly `WHATSAPP`, `SMS`, `PUSH`, `EMAIL`
+- [ ] `NotificationChannel` declares exactly `WHATSAPP`, `PUSH`, `EMAIL` (`SMS` was removed by D-39 and exists in no enum, adapter, template or setting)
 - [ ] `NotificationChannelPort` declares `send(RenderedMessage)` and `status(providerReference)`, both returning platform types
 - [ ] One adapter per channel; no service, resolver or listener names a provider, imports its types or knows its URLs
 - [ ] Each adapter maps its provider's status and failure vocabulary in one table
@@ -121,18 +135,25 @@ transactional categories SHALL be sent regardless.
 - [ ] A user with no preferences receives everything; the default is opt-in for transactional and opt-in for reminders, opt-out for marketing
 - [ ] Every `OPTIONAL` message carries an unsubscribe path appropriate to its channel
 
+> **Amended 2026-09-19.** The shipped preference model is flat — five channel switches, two optional
+> categories (`eventReminders`, `marketingEmails`), quiet hours with a time zone — not a per-category,
+> per-channel grid. The five essential switches the schema carries (`ticketNotifications`,
+> `paymentNotifications`, `eventUpdates`, `teamNotifications`, `systemAnnouncements`) always read as
+> on; setting one to `false` is refused. An `OPTIONAL` message uses only the channels its recipient
+> left on, is not sent inside their quiet hours, and is recorded as `SUPPRESSED` with the reason.
+
 ### ET-NTF-001-R4 · Sending never blocks or breaks the business path
 
 THE SYSTEM SHALL send asynchronously and SHALL NOT allow a delivery failure to affect the
 operation that requested it.
 
 **Acceptance**
-- [ ] Notification is requested by publishing a module event; no business method calls a channel adapter
+- [ ] Notification is requested through `NotificationProcess`, which starts `NotificationWorkflow` (`notify/{deduplicationKey}`); no business method calls a channel adapter
 - [ ] No `@Transactional` method calls the notification service
-- [ ] A listener never rethrows a provider failure ([ET-PLT-003](../../_platform/003-event-contract/) R6)
+- [ ] A provider failure is retried inside the workflow and never fails the operation that requested it ([ET-PLT-003](../../_platform/003-event-contract/) R6)
 - [ ] Every messaging provider stopped, a purchase, a payout and a cancellation all still complete — asserted by three tests
-- [ ] No `StreamBridge.send` appears inside a `@Transactional` method, no module boundary uses a bare `@EventListener`, and no `@TransactionalEventListener(AFTER_COMMIT)` rethrows a delivery failure
-- [ ] The notification queue depth is a metric and alerts
+- [ ] A request that cannot reach Temporal is retried a bounded number of times and then logged; the requesting operation still completes
+- [ ] Schedule-to-start latency on `identity-notify` is a metric and alerts
 
 ### ET-NTF-001-R5 · Delivery follows a per-category fallback chain
 
@@ -141,12 +162,33 @@ and SHALL stop at its end.
 
 **Acceptance**
 - [ ] Each category declares its chain in §4
-- [ ] `OTP` is `WHATSAPP → SMS` and stops — it never attempts email
+- [ ] `OTP` is not delivered by this pipeline (see the amendment): identity-service sends it on the contact's own channel and refuses with `OTP_DELIVERY_FAILED` on failure; it never switches channel silently
 - [ ] A channel that reports a terminal failure advances immediately; a transient one is retried before advancing
 - [ ] Each attempt is recorded with its channel, provider reference, outcome and timestamp
 - [ ] The notification is `DELIVERED` on the first success and `FAILED` when the chain is exhausted
 - [ ] A user with no phone number skips the phone channels rather than failing them
 - [ ] A test fails every channel in turn and asserts the chain order and the terminal state
+
+### ET-NTF-001-R9 · WhatsApp uses approved templates and a recorded opt-in *(added 2026-10-04)*
+
+WHEN a message is sent on WhatsApp, THE SYSTEM SHALL use a provider-approved template and SHALL send business-initiated messages only to a contact with a recorded opt-in.
+
+**Acceptance**
+- [ ] Every WhatsApp message is a registered template with `templateName` and `templateLanguage` matching the provider's approved template; the one-time code uses an authentication-category template
+- [ ] The opt-in to receive ticket and payment messages on WhatsApp is recorded at checkout in `identity_consents` (purpose `WHATSAPP_NOTIFICATIONS`, version, source) when the contact is proved; a business-initiated WhatsApp message to a contact with no opt-in is suppressed and the chain advances to email
+- [ ] Parameters are escaped or URL-encoded per the provider's rules; the code appears in no log
+- [ ] Each adapter call has a timeout (default `PT5S` for codes) and a circuit breaker
+- [ ] Email messages use fixed templates with the account's locale and contain no sign-in link
+
+### ET-NTF-001-R10 · Ticket delivery falls back from WhatsApp to email, then to the gate *(added 2026-10-04)*
+
+WHEN a ticket is issued, THE SYSTEM SHALL deliver the same fixed QR on WhatsApp, fall back to email, and keep the ticket available in-app and at the gate.
+
+**Acceptance**
+- [ ] `TicketDeliveryWorkflow` (`ticket-delivery/{ticketId}`) tries WhatsApp (if opted in), then email, retrying transient failures before advancing; each attempt is recorded against the ticket
+- [ ] When neither channel confirms, the ticket stays valid, appears in the buyer's app, and is admissible at the gate by ticket code plus ID ([ET-TKT-003](../../ticketing/003-validation-and-checkin/) R6a)
+- [ ] The message carries the ticket reference and the same QR; it never carries a link that signs the buyer in
+- [ ] A test fails WhatsApp and asserts the email carries the identical payload
 
 ### ET-NTF-001-R6 · A failed send retries, then rests as failed
 
@@ -155,7 +197,7 @@ past it SHALL record a failure without throwing.
 
 **Acceptance**
 - [ ] Retries use exponential backoff up to `notification.max-attempts` (3) per channel
-- [ ] A retry sweep under `lock:sweep:notification-retry` re-attempts eligible notifications
+- [ ] Retries are the send activity's retry policy — 30 s doubling, 3 attempts per channel — inside `NotificationWorkflow`; no sweep or lock exists
 - [ ] Past the limit on every channel, the notification is `FAILED` with a reason
 - [ ] A `FAILED` transactional notification is surfaced to an operator; a failed optional one is only counted
 - [ ] No provider failure reaches the dead-letter queue
@@ -215,14 +257,14 @@ reports as invalid.
 
 | Category | Kind | Fallback chain | Preference |
 |---|---|---|---|
-| `OTP` | transactional | `WHATSAPP → SMS` | ignored |
-| `TICKET` | transactional | `WHATSAPP → SMS → EMAIL` | ignored |
-| `PAYMENT` | transactional | `WHATSAPP → SMS → EMAIL` | ignored |
-| `REFUND` | transactional | `WHATSAPP → SMS → EMAIL` | ignored |
-| `EVENT_CHANGE` | transactional | `PUSH → WHATSAPP → SMS → EMAIL` | ignored |
+| `OTP` | transactional | the contact's own channel only (WhatsApp for a phone, email for an address); delivered by ET-IDN-001, not queued | ignored |
+| `TICKET` | transactional | `WHATSAPP → EMAIL` | ignored |
+| `PAYMENT` | transactional | `WHATSAPP → EMAIL` | ignored |
+| `REFUND` | transactional | `WHATSAPP → EMAIL` | ignored |
+| `EVENT_CHANGE` | transactional | `PUSH → WHATSAPP → EMAIL` | ignored |
 | `PAYOUT` | transactional | `EMAIL → WHATSAPP` | ignored |
 | `ORGANIZATION` | transactional | `EMAIL → WHATSAPP` | ignored |
-| `TEAM_INVITE` | transactional | `EMAIL → WHATSAPP → SMS` | ignored |
+| `TEAM_INVITE` | transactional | `EMAIL → WHATSAPP` | ignored |
 | `EVENT_REMINDER` | optional | `PUSH → WHATSAPP` | honoured |
 | `MARKETING` | optional | `PUSH → EMAIL` | honoured, **opt-in** |
 
@@ -265,18 +307,17 @@ public interface NotificationChannelPort {
 | Channel | Adapter | Provider |
 |---|---|---|
 | `WHATSAPP` | `WhatsAppAdapter` | WhatsApp Business API |
-| `SMS` | `SmsAdapter` | Africa's Talking, with Twilio as an alternate adapter |
 | `PUSH` | `PushAdapter` | FCM / APNs via Expo |
 | `EMAIL` | `EmailAdapter` | SMTP |
 
 ### The send path
 
 ```
-1  a business fact commits
-2  an @TransactionalEventListener(AFTER_COMMIT) publishes NotificationRequestedEvent
-       { userId, category, templateKey, parameters, deduplicationKey }
-3  the notification service:
-       dedup on deduplicationKey            → drop
+1  a business fact commits, or a workflow step reaches its message
+2  NotificationProcess starts NotificationWorkflow notify/{deduplicationKey}
+       { templateKey, category, subject ids — never the destination or the text }
+3  the workflow:
+       a second start with the same key     → drop
        category OPTIONAL and disabled       → SUPPRESSED
        resolve the chain for the category
        resolve the user's locale
@@ -313,12 +354,12 @@ Subgraph `identity`.
 `updateNotificationPreferences` accepts only `OPTIONAL` categories; an attempt to disable a
 transactional one is refused rather than silently ignored.
 
-### Sweeps
+### Workflows and Schedules
 
-| Sweep | Lock | Interval | Purpose |
-|---|---|---|---|
-| retry | `lock:sweep:notification-retry` | `PT1M` | re-attempt eligible notifications |
-| device pruning | `lock:sweep:device-pruning` | `P1D` | deactivate stale tokens |
+| Mechanism | Id | Queue | Cadence | Purpose |
+|---|---|---|---|---|
+| `NotificationWorkflow` | `notify/{deduplicationKey}` | `identity-notify` | per request; channel retries 30 s doubling, 3 per channel | R4–R7 |
+| Schedule `identity-device-pruning` → `DevicePruningWorkflow` | `device-pruning/scheduled` | `identity-notify` | daily 02:15 UTC, overlap `SKIP` | deactivate stale tokens |
 
 ### Configuration
 
@@ -331,7 +372,6 @@ transactional one is refused rather than silently ignored.
 | `notification.device.stale-after` | `P90D` |
 | `notification.default-locale` | `en` |
 | `WHATSAPP_API_URL`, `WHATSAPP_API_TOKEN` | environment only |
-| `SMS_API_KEY`, `SMS_SENDER_ID` | environment only |
 | `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD` | environment only |
 
 ### Error codes
@@ -378,9 +418,9 @@ transactional one is refused rather than silently ignored.
   - parallel-safe: yes
   - depends: T4
 
-- [ ] **T6 · Retry with backoff, the sweep and the terminal failure**
+- [ ] **T6 · Retry with backoff inside the workflow, and the terminal failure**
   - requirements: R6
-  - files: `backend/identity-service/.../scheduler/NotificationRetrySweeper.java`
+  - files: `backend/identity-service/.../workflow/notify/NotificationWorkflowImpl.java`, `.../workflow/notify/NotificationRules.java`
   - verify: nothing reaches the dead-letter queue; a failed transactional message surfaces
   - parallel-safe: yes
   - depends: T4

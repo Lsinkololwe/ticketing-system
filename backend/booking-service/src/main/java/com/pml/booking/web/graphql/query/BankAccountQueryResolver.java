@@ -1,5 +1,6 @@
 package com.pml.booking.web.graphql.query;
 
+import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -38,6 +39,7 @@ import reactor.core.publisher.Mono;
 public class BankAccountQueryResolver {
 
     private final BankAccountService bankAccountService;
+    private final TenantReads tenantReads;
 
     /**
      * Get all bank accounts for an organizer.
@@ -50,7 +52,7 @@ public class BankAccountQueryResolver {
      * @return Flux of bank accounts belonging to the organizer
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
+    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN,FINANCE', #organizerId)")
     public Flux<BankAccount> bankAccountsByOrganizer(@InputArgument String organizerId) {
         log.debug("GraphQL query: bankAccountsByOrganizer(organizerId={})", organizerId);
         return bankAccountService.findByOrganizerId(organizerId);
@@ -64,10 +66,10 @@ public class BankAccountQueryResolver {
      * @return Mono containing the bank account or empty if not found
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @bankAccountSecurityService.isBankAccountOwner(#id, authentication)")
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
     public Mono<BankAccount> bankAccount(@InputArgument String id) {
         log.debug("GraphQL query: bankAccount(id={})", id);
-        return bankAccountService.findById(id);
+        return tenantReads.bankAccountForCaller(id);
     }
 
     /**
@@ -81,7 +83,7 @@ public class BankAccountQueryResolver {
      * @return Mono containing the default bank account or empty if none set
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
+    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN,FINANCE', #organizerId)")
     public Mono<BankAccount> defaultBankAccount(@InputArgument String organizerId) {
         log.debug("GraphQL query: defaultBankAccount(organizerId={})", organizerId);
         return bankAccountService.findDefaultByOrganizerId(organizerId);

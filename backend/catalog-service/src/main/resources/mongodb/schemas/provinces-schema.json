@@ -37,6 +37,12 @@
       },
       "isActive": {
         "bsonType": "bool"
+      },
+      "createdAt": {
+        "bsonType": ["date", "null"]
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
       }
     },
     "additionalProperties": false

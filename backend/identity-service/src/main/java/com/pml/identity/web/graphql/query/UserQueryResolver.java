@@ -24,7 +24,7 @@ import java.util.Objects;
 
 /**
  * GraphQL Query Resolver for User operations.
- * Handles user-related queries with both offset and cursor pagination.
+ * Handles user-related queries with offset pagination.
  *
  * Uses DGS annotations for proper integration with Apollo Federation.
  */
@@ -42,22 +42,27 @@ public class UserQueryResolver {
     // ========================================================================
 
     /**
-     * Get the currently authenticated user.
+     * The caller's own account, found by the token's {@code sub}: by account id, else by the Keycloak
+     * user it is linked to. No email or phone is involved, so an account with neither is found too.
      * Schema: me: User
      */
     @DgsQuery
+    @PreAuthorize("isAuthenticated()")
     public Mono<User> me() {
-        return SecurityContextUtils.getCurrentUserEmail()
-                .doOnNext(email -> log.debug("GraphQL query: me (email={})", email))
-                .flatMap(userService::findByEmail);
+        return SecurityContextUtils.getCurrentUserId()
+                .doOnNext(subject -> log.debug("GraphQL query: me"))
+                .flatMap(userService::findBySubject)
+                .flatMap(com.pml.identity.account.AccountRequestGate::admit);
     }
 
     /**
-     * Get a user by ID.
+     * Get a user by ID. Administrators only: an account id is not a secret a caller can be held
+     * to, so letting any signed-in caller read any account by id is the textbook object-level
+     * authorization flaw. A buyer reads their own account through {@code me}.
      * Schema: user(id: ID!): User
      */
     @DgsQuery
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> user(@InputArgument String id) {
         log.debug("GraphQL query: user(id={})", id);
         Objects.requireNonNull(id, "User ID is required");
@@ -65,25 +70,23 @@ public class UserQueryResolver {
     }
 
     /**
-     * Get a user by email.
+     * Get a user by email contact (admin only), through the contacts collection.
      * Schema: userByEmail(email: String!): User
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> userByEmail(@InputArgument String email) {
-        log.debug("GraphQL query: userByEmail(email={})", email);
         Objects.requireNonNull(email, "Email is required");
         return userService.findByEmail(email);
     }
 
     /**
-     * Get a user by phone number.
+     * Get a user by WhatsApp contact (admin only), through the contacts collection.
      * Schema: userByPhone(phoneNumber: String!): User
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> userByPhone(@InputArgument String phoneNumber) {
-        log.debug("GraphQL query: userByPhone(phoneNumber={})", phoneNumber);
         Objects.requireNonNull(phoneNumber, "Phone number is required");
         return userService.findByPhoneNumber(phoneNumber);
     }
@@ -94,44 +97,21 @@ public class UserQueryResolver {
 
     /**
      * Search users with offset pagination (admin only).
-     * Schema: usersOffsetPagination(search: String, role: UserType, accountStatus: AccountStatus, pagination: OffsetPaginationInput): UserOffsetPage!
+     * Schema: users(search: String, role: UserType, accountStatus: AccountStatus, pagination: OffsetPaginationInput): UserOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<UserOffsetPage> usersOffsetPagination(
+    public Mono<UserOffsetPage> users(
             @InputArgument String search,
             @InputArgument UserType role,
             @InputArgument AccountStatus accountStatus,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: usersOffsetPagination(search={}, role={}, accountStatus={})",
+        log.debug("GraphQL query: users(search={}, role={}, accountStatus={})",
                 search, role, accountStatus);
 
         Flux<User> userFlux = applyFilters(userService.findAll(), search, role, accountStatus);
         return buildOffsetPage(userFlux, pagination);
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Search users with cursor pagination (admin only, mobile/infinite scroll).
-     * Schema: usersCursorPagination(search: String, role: UserType, accountStatus: AccountStatus, pagination: CursorPaginationInput): UserConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<UserConnection> usersCursorPagination(
-            @InputArgument String search,
-            @InputArgument UserType role,
-            @InputArgument AccountStatus accountStatus,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: usersCursorPagination(search={}, role={}, accountStatus={})",
-                search, role, accountStatus);
-
-        Flux<User> userFlux = applyFilters(userService.findAll(), search, role, accountStatus);
-        return buildCursorConnection(userFlux, pagination);
     }
 
     // ========================================================================
@@ -207,10 +187,11 @@ public class UserQueryResolver {
      */
     private Flux<User> applyFilters(Flux<User> users, String search, UserType role, AccountStatus accountStatus) {
         return users.filter(user -> {
-            // Filter by search term (name or email)
+            // Filter by search term (name, display name or the email a staff user carries)
             if (search != null && !search.isBlank()) {
                 String searchLower = search.toLowerCase();
                 boolean matchesSearch = (user.getFirstName() != null && user.getFirstName().toLowerCase().contains(searchLower))
+                        || (user.getDisplayName() != null && user.getDisplayName().toLowerCase().contains(searchLower))
                         || (user.getLastName() != null && user.getLastName().toLowerCase().contains(searchLower))
                         || (user.getEmail() != null && user.getEmail().toLowerCase().contains(searchLower))
                         || (user.getUsername() != null && user.getUsername().toLowerCase().contains(searchLower));
@@ -266,52 +247,4 @@ public class UserQueryResolver {
                 });
     }
 
-    /**
-     * Build UserConnection from a Flux of users.
-     */
-    private Mono<UserConnection> buildCursorConnection(Flux<User> userFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : CursorPaginationInput.defaults();
-        int limit = p.getLimit();
-
-        return userFlux.collectList()
-                .map(allUsers -> {
-                    int totalCount = allUsers.size();
-
-                    // Find starting position based on cursor
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allUsers.size(); i++) {
-                            if (allUsers.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Get the page of users
-                    List<User> pageUsers = allUsers.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageUsers.isEmpty()) {
-                        return UserConnection.empty();
-                    }
-
-                    // Build edges
-                    List<UserEdge> edges = pageUsers.stream()
-                            .map(UserEdge::of)
-                            .toList();
-
-                    // Build page info
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.forCursor(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new UserConnection(edges, pageInfo, totalCount);
-                });
-    }
 }

@@ -1,8 +1,8 @@
 /**
  * OpenAPI artifact for the verification-document REST surface.
  *
- * Documents do not travel over GraphQL — spec ET-ORG-001 R4 and D-11 put them on
- * REST with presigned URLs, deliberately, so that no document byte passes
+ * Documents do not travel over GraphQL — they go over REST with presigned
+ * URLs, deliberately, so that no document byte passes
  * through a resolver. That means the onboarding e2e suite needs a second
  * Microcks API alongside the GraphQL one.
  *
@@ -35,7 +35,7 @@ export const uploaded = (documentType: string): StubDocument => ({
 
 /**
  * A document a reviewer turned down.
- * Does NOT satisfy its requirement — spec R3.
+ * Does NOT satisfy its requirement.
  */
 export const rejected = (documentType: string, reason: string): StubDocument => ({
   id: `doc-${documentType}`,

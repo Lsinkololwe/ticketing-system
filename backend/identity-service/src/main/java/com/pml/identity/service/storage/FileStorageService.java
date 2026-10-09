@@ -57,7 +57,7 @@ public interface FileStorageService {
      * Result of file upload operation
      */
     record UploadResult(
-            String fileUrl,        // Public URL or presigned URL
+            // Public URL or presigned URL
             String fileKey,        // Storage key/path
             String fileName,       // Original filename (sanitized)
             Long fileSize,         // File size in bytes

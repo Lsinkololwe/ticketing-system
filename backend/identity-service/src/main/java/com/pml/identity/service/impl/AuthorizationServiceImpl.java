@@ -1,16 +1,14 @@
 package com.pml.identity.service.impl;
 
+import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.domain.enums.MemberStatus;
-import com.pml.identity.domain.model.EventAccessGrant;
+import com.pml.shared.security.Permission;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.model.OrganizationMember;
-import com.pml.identity.domain.valueobject.EventRole;
-import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.service.AuthorizationService;
 import com.pml.identity.service.EventAccessService;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationService;
-import com.pml.identity.web.rest.InternalAuthorizationController.MembershipCheckResponse;
 import com.pml.identity.web.rest.InternalAuthorizationController.OrganizationMembershipInfo;
 import com.pml.identity.web.rest.InternalAuthorizationController.SharedOrganizationResponse;
 import com.pml.shared.dto.authorization.AuthorizationRequest;
@@ -21,28 +19,14 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-
 /**
- * Authorization Service Implementation
+ * Answers the permission checks catalog and booking make before acting for a user.
  *
- * <p>Implements centralized authorization logic combining organization membership
- * and event access grants.</p>
- *
- * <h2>Permission Mapping</h2>
- * <pre>
- * Permission          | Required Role(s)
- * --------------------|------------------
- * EVENT_CREATE        | OWNER, ADMIN, MANAGER
- * EVENT_EDIT          | OWNER, ADMIN, MANAGER, EDITOR (event-level)
- * EVENT_DELETE        | OWNER, ADMIN
- * EVENT_PUBLISH       | OWNER, ADMIN, MANAGER
- * EVENT_VIEW          | All members
- * TICKET_SCAN         | OWNER, ADMIN, MANAGER, CHECK_IN (event-level)
- * FINANCIAL_VIEW      | OWNER, ADMIN, MANAGER
- * PAYOUT_REQUEST      | OWNER, ADMIN
- * MEMBER_INVITE       | OWNER, ADMIN
- * MEMBER_REMOVE       | OWNER, ADMIN
- * </pre>
+ * <p>Permissions are catalogue codes ({@code com.pml.shared.security.Permission}); a name outside
+ * the catalogue is refused. On an event, an active access grant from the event's own organization
+ * decides on its own; otherwise the user's membership of the organization decides, under that
+ * organization's settings and lifecycle status. The role sets themselves live on
+ * {@code OrganizationRole} and {@code EventRole}.
  */
 @Slf4j
 @Service
@@ -87,107 +71,55 @@ public class AuthorizationServiceImpl implements AuthorizationService {
     }
 
     @Override
-    public Mono<AuthorizationResult> checkEventPermission(String userId, String organizationId, String permission) {
-        log.debug("Checking event permission: userId={}, orgId={}, permission={}", userId, organizationId, permission);
+    public Mono<AuthorizationResult> checkEventPermission(String userId, String organizationId, String permissionCode) {
+        log.debug("Checking event permission: userId={}, orgId={}, permission={}", userId, organizationId, permissionCode);
+        Permission permission = Permission.fromCode(permissionCode).orElse(null);
+        if (permission == null) {
+            return Mono.just(AuthorizationResult.denied("Unknown permission " + permissionCode));
+        }
 
-        // Authorization is two entity-level questions, both must pass:
-        //   1. Can the ACTOR do this?  -> OrganizationMember (role + custom/denied permissions)
-        //   2. Can the ORGANIZATION do this?  -> Organization (lifecycle status)
-        // Neither rule lives in this service; it just asks the entities and combines them.
+        // Two questions, both must pass: may this member do it (role, the organization's
+        // settings, custom and denied permissions), and may this organization do it at all
+        // (its lifecycle status — an unapproved organization cannot publish or request payouts).
         return memberService.findByUserAndOrganization(userId, organizationId)
                 .filter(OrganizationMember::isActive)
-                .flatMap(member -> {
-                    // (1) Actor check — the member's authority within the organization.
-                    if (!member.hasPermission(permission)) {
-                        return Mono.just(AuthorizationResult.deniedInsufficientPermissions(
-                                permission, member.getRole().name()));
-                    }
-
-                    // (2) Organization check — the lifecycle status must permit the action.
-                    // The ORGANIZER realm role is granted at registration, so it does not imply
-                    // "approved"; privileged actions (publish, payout) are gated here on the
-                    // backend, the single source of truth (OWASP A01:2021).
-                    return organizationService.findById(organizationId)
-                            .flatMap(org -> {
-                                if (!org.canPerform(permission)) {
-                                    return Mono.just(AuthorizationResult.denied(
-                                            "Organization status " + org.getStatus()
-                                                    + " does not permit " + permission));
-                                }
-                                return Mono.just(AuthorizationResult.authorizedAsMember(
-                                        organizationId,
-                                        member.getRole().name(),
-                                        member.effectivePermissions()
-                                ));
-                            })
-                            .switchIfEmpty(Mono.just(AuthorizationResult.denied("Organization not found")));
-                })
+                .flatMap(member -> organizationService.findById(organizationId)
+                        .map(org -> decide(member, org, permission))
+                        .switchIfEmpty(Mono.just(AuthorizationResult.denied("Organization not found"))))
                 .switchIfEmpty(Mono.just(AuthorizationResult.deniedNotMember()));
     }
 
+    private static AuthorizationResult decide(OrganizationMember member, Organization org, Permission permission) {
+        if (!member.hasPermission(permission, org.getSettings())) {
+            return AuthorizationResult.deniedInsufficientPermissions(permission.code(), member.getRole().name());
+        }
+        if (!org.canPerform(permission)) {
+            return AuthorizationResult.denied("Organization status " + org.getStatus() + " does not permit " + permission.code());
+        }
+        return AuthorizationResult.authorizedAsMember(org.getId(), member.getRole().name());
+    }
+
     @Override
-    public Mono<AuthorizationResult> checkEventAccess(String userId, String eventId, String organizationId, String permission) {
+    public Mono<AuthorizationResult> checkEventAccess(String userId, String eventId, String organizationId, String permissionCode) {
         log.debug("Checking event access: userId={}, eventId={}, orgId={}, permission={}",
-                userId, eventId, organizationId, permission);
+                userId, eventId, organizationId, permissionCode);
+        Permission permission = Permission.fromCode(permissionCode).orElse(null);
+        if (permission == null) {
+            return Mono.just(AuthorizationResult.denied("Unknown permission " + permissionCode));
+        }
 
-        // Step 1: Check EventAccessGrant first (overrides organization membership)
+        // An active grant on the event decides on its own; the holder's organization role is not
+        // consulted. A grant only counts on an event of the organization that issued it, so a grant
+        // naming another organization's event id authorizes nothing there.
         return eventAccessService.findByUserAndEvent(userId, eventId)
-                .filter(grant -> grant.getStatus() == com.pml.identity.domain.enums.AccessGrantStatus.ACTIVE)
-                .flatMap(grant -> {
-                    EventRole eventRole = grant.getEventRole();
-
-                    // Actor check on the grant entity (custom permissions + event-role defaults).
-                    if (grant.hasPermission(permission)) {
-                        return Mono.just(AuthorizationResult.authorizedByEventGrant(eventId, eventRole.name()));
-                    }
-
-                    // Has event access but not the required permission
-                    return Mono.just(AuthorizationResult.deniedInsufficientPermissions(permission, eventRole.name()));
-                })
-                // Step 2: Fall back to organization membership check
-                .switchIfEmpty(Mono.defer(() -> {
-                    if (organizationId != null) {
-                        return checkEventPermission(userId, organizationId, permission);
-                    }
-                    return Mono.just(AuthorizationResult.denied("No event access grant and organization ID not provided"));
-                }));
-    }
-
-    @Override
-    public Mono<AuthorizationResult> checkMembership(String userId, String organizationId, String minimumRole) {
-        log.debug("Checking membership: userId={}, orgId={}, minimumRole={}", userId, organizationId, minimumRole);
-
-        return memberService.findByUserAndOrganization(userId, organizationId)
-                .filter(member -> member.getStatus() == MemberStatus.ACTIVE)
-                .map(member -> {
-                    OrganizationRole role = member.getRole();
-                    OrganizationRole requiredRole = OrganizationRole.valueOf(minimumRole);
-
-                    if (role.isAtLeast(requiredRole)) {
-                        return AuthorizationResult.authorizedAsMember(
-                                organizationId,
-                                role.name(),
-                                role.permissions()
-                        );
-                    }
-
-                    return AuthorizationResult.deniedInsufficientPermissions(minimumRole, role.name());
-                })
-                .switchIfEmpty(Mono.just(AuthorizationResult.deniedNotMember()));
-    }
-
-    @Override
-    public Mono<AuthorizationResult> checkOwnership(String userId, String organizationId) {
-        log.debug("Checking ownership: userId={}, orgId={}", userId, organizationId);
-
-        return organizationService.findById(organizationId)
-                .map(org -> {
-                    if (userId.equals(org.getOwnerId())) {
-                        return AuthorizationResult.authorizedAsOwner(organizationId);
-                    }
-                    return AuthorizationResult.denied("User is not the owner of the organization");
-                })
-                .switchIfEmpty(Mono.just(AuthorizationResult.denied("Organization not found")));
+                .filter(grant -> grant.getStatus() == AccessGrantStatus.ACTIVE)
+                .filter(grant -> organizationId == null || organizationId.equals(grant.getOrganizationId()))
+                .map(grant -> grant.hasPermission(permission)
+                        ? AuthorizationResult.authorizedByEventGrant(eventId, grant.getEventRole().name())
+                        : AuthorizationResult.deniedInsufficientPermissions(permission.code(), grant.getEventRole().name()))
+                .switchIfEmpty(Mono.defer(() -> organizationId != null
+                        ? checkEventPermission(userId, organizationId, permissionCode)
+                        : Mono.just(AuthorizationResult.denied("No event access grant and organization ID not provided"))));
     }
 
     @Override
@@ -200,45 +132,11 @@ public class AuthorizationServiceImpl implements AuthorizationService {
     }
 
     @Override
-    public Mono<String> getDefaultOrganizationForUser(String userId) {
-        log.debug("Getting default organization for user: {}", userId);
-
-        // Find organization where user is owner first
-        return organizationService.findByOwnerId(userId)
-                .map(Organization::getId)
-                // If not owner, find first organization where user can create events
-                .switchIfEmpty(memberService.findActiveByUser(userId)
-                        .filter(member -> member.hasPermission("EVENT_CREATE"))
-                        .next()
-                        .map(OrganizationMember::getOrganizationId));
-    }
-
-    @Override
     public Mono<String> findOrganizationByOwnerId(String organizerId) {
         log.debug("Finding organization by owner ID: {}", organizerId);
 
         return organizationService.findByOwnerId(organizerId)
                 .map(Organization::getId);
-    }
-
-    // ========================================================================
-    // ORGANIZATION MEMBERSHIP METHODS (OWASP A01:2021 - Multi-tenant isolation)
-    // ========================================================================
-
-    @Override
-    public Mono<MembershipCheckResponse> checkOrganizationMembership(String userId, String organizationId) {
-        log.debug("Checking organization membership: userId={}, orgId={}", userId, organizationId);
-
-        return memberService.findByUserAndOrganization(userId, organizationId)
-                .map(member -> new MembershipCheckResponse(
-                        true,
-                        member.getStatus() == MemberStatus.ACTIVE,
-                        member.getRole().name(),
-                        organizationId
-                ))
-                .defaultIfEmpty(MembershipCheckResponse.notMember())
-                .doOnSuccess(result -> log.debug("Membership check result: isMember={}, isActive={}, role={}",
-                        result.isMember(), result.isActive(), result.role()));
     }
 
     @Override
@@ -252,11 +150,9 @@ public class AuthorizationServiceImpl implements AuthorizationService {
                     .flatMap(orgId -> memberService.findByUserAndOrganization(requestingUserId, orgId)
                             .map(member -> new SharedOrganizationResponse(
                                     true,
-                                    orgId,
-                                    member.getRole().name(),
-                                    member.getRole().name()
+                                    orgId
                             )))
-                    .switchIfEmpty(Mono.just(new SharedOrganizationResponse(true, null, "SELF", "SELF")));
+                    .switchIfEmpty(Mono.just(new SharedOrganizationResponse(true, null)));
         }
 
         // Find organizations where requesting user is a member
@@ -269,9 +165,7 @@ public class AuthorizationServiceImpl implements AuthorizationService {
                             .filter(targetMember -> targetMember.getStatus() == MemberStatus.ACTIVE)
                             .map(targetMember -> new SharedOrganizationResponse(
                                     true,
-                                    orgId,
-                                    requestingMembership.getRole().name(),
-                                    targetMember.getRole().name()
+                                    orgId
                             ));
                 })
                 .next()  // Take first matching organization
@@ -288,9 +182,7 @@ public class AuthorizationServiceImpl implements AuthorizationService {
                 .flatMap(member -> organizationService.findById(member.getOrganizationId())
                         .map(org -> new OrganizationMembershipInfo(
                                 org.getId(),
-                                org.getName(),
                                 member.getRole().name(),
-                                member.getRole() == OrganizationRole.OWNER,
                                 member.getStatus() == MemberStatus.ACTIVE
                         )));
     }

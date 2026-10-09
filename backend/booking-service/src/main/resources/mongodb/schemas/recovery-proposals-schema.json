@@ -1,0 +1,133 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Recovery Proposals Schema",
+    "description": "A proposed dual-control action on stuck money: proposed by one person, confirmed by a different one within two hours.",
+    "required": [
+      "action",
+      "subjectIds",
+      "status",
+      "proposedById",
+      "proposedAt",
+      "proposalReason",
+      "expiresAt"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data's type hint, written on every document by the mapping converter"
+      },
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "version": {
+        "bsonType": [
+          "long",
+          "int",
+          "null"
+        ]
+      },
+      "action": {
+        "bsonType": "string",
+        "enum": [
+          "FORCE_COMPLETE_PAYMENT_ATTEMPTS",
+          "WRITE_OFF_CHARGEBACK",
+          "TRANSFER_PLATFORM_FUNDS"
+        ]
+      },
+      "subjectType": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "subjectIds": {
+        "bsonType": "array",
+        "minItems": 1,
+        "items": {
+          "bsonType": "string"
+        }
+      },
+      "amount": {
+        "bsonType": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "currency": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "parameters": {
+        "bsonType": [
+          "object",
+          "null"
+        ]
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": [
+          "PENDING",
+          "CONFIRMED",
+          "WITHDRAWN",
+          "EXPIRED",
+          "FAILED"
+        ]
+      },
+      "proposedById": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "proposedAt": {
+        "bsonType": "date"
+      },
+      "proposalReason": {
+        "bsonType": "string",
+        "minLength": 20
+      },
+      "expiresAt": {
+        "bsonType": "date"
+      },
+      "confirmedById": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "confirmedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "confirmationReason": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "outcome": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "failureReason": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "createdAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  }
+}

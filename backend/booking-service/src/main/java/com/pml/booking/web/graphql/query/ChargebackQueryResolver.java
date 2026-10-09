@@ -4,12 +4,10 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.shared.constants.ChargebackStatus;
-import com.pml.booking.domain.enums.RecoveryStatus;
 import com.pml.booking.domain.model.ChargebackRecord;
 import com.pml.booking.service.ChargebackService;
 import com.pml.booking.web.graphql.dto.ChargebackFilterInput;
 import com.pml.booking.web.graphql.dto.ChargebackOffsetPage;
-import com.pml.booking.web.graphql.dto.ChargebackStats;
 import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
 import com.pml.booking.web.graphql.dto.PaginationInfo;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +52,7 @@ import java.util.Objects;
 public class ChargebackQueryResolver {
 
     private final ChargebackService chargebackService;
+    private final com.pml.booking.service.AdminFinanceReads financeReads;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
@@ -118,19 +117,18 @@ public class ChargebackQueryResolver {
 
     /**
      * Get chargebacks with filtering and offset pagination.
-     * Schema: chargebacksOffsetPagination(filter: ChargebackFilterInput, pagination: OffsetPaginationInput): ChargebackOffsetPage!
+     * Schema: chargebacks(filter: ChargebackFilterInput, pagination: OffsetPaginationInput): ChargebackOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ChargebackOffsetPage> chargebacksOffsetPagination(
+    public Mono<ChargebackOffsetPage> chargebacks(
             @InputArgument ChargebackFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: chargebacksOffsetPagination");
+        log.debug("GraphQL query: chargebacks");
 
-        Flux<ChargebackRecord> chargebackFlux = getFilteredChargebacks(filter);
-        return chargebackFlux.collectList()
-                .map(chargebacks -> buildOffsetPage(chargebacks, pagination));
+        return financeReads.chargebacks(filter, pagination)
+                .map(slice -> new ChargebackOffsetPage(slice.data(), slice.pagination()));
     }
 
     /**

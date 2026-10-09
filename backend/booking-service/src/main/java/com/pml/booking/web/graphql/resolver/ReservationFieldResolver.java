@@ -7,7 +7,7 @@ import com.pml.booking.domain.model.TicketReservation;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Field Resolver for TicketReservation type.
@@ -30,14 +30,12 @@ public class ReservationFieldResolver {
      * @return Remaining seconds (0 if expired)
      */
     @DgsData(parentType = "TicketReservation", field = "remainingSeconds")
-    public Integer remainingSeconds(DgsDataFetchingEnvironment dfe) {
+    public Integer remainingSeconds(DgsDataFetchingEnvironment dfe, Instant now) {
         TicketReservation reservation = dfe.getSource();
 
         if (reservation.getExpiresAt() == null) {
             return 0;
         }
-
-        LocalDateTime now = LocalDateTime.now();
         if (now.isAfter(reservation.getExpiresAt())) {
             return 0;
         }

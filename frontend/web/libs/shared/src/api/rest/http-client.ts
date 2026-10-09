@@ -4,11 +4,10 @@
  * Provides a base axios instance with token management interceptors
  * and error handling utilities for all API operations.
  *
- * The token getter function allows integration with different token storage mechanisms.
- * For apps using Better Auth, use the authClient from better-auth/react.
+ * Apps use the same-origin BFF client (`createBffApiClient`); the browser holds no tokens.
  */
 
-import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
 
 // Backend API base URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
@@ -34,95 +33,26 @@ export interface ApiError {
 }
 
 /**
- * Type for synchronous token getter function
+ * Axios client for the same-origin BFF (`/api/rest/*`). No token getters: the BFF attaches the
+ * bearer server-side. Cookies travel same-origin only and every request carries the constant
+ * `x-pml-csrf` header the BFF requires on unsafe methods. A 401 sends the user to `/login`.
  */
-export type TokenGetter = () => { token: string } | null;
-
-/**
- * Type for async token getter function (recommended)
- */
-export type AsyncTokenGetter = () => Promise<string | null>;
-
-/**
- * Create base axios instance with default configuration
- *
- * @param tokenGetter - Optional synchronous function to get the current token
- * @param asyncTokenGetter - Optional async function to get token string (recommended)
- */
-export const createApiClient = (
-  tokenGetter?: TokenGetter,
-  asyncTokenGetter?: AsyncTokenGetter
-): AxiosInstance => {
+export const createBffApiClient = (baseURL = '/api/rest'): AxiosInstance => {
   const client = axios.create({
-    baseURL: API_BASE_URL,
-    timeout: 30000, // 30 seconds timeout for admin operations
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    baseURL,
+    timeout: 30000,
+    withCredentials: false, // same-origin requests send cookies regardless; never cross-origin
+    headers: { 'Content-Type': 'application/json', 'x-pml-csrf': '1' },
   });
-
-  // Request interceptor to add auth token with validation
-  client.interceptors.request.use(
-    async (config: InternalAxiosRequestConfig) => {
-      try {
-        let token: string | null = null;
-        if (asyncTokenGetter) {
-          token = await asyncTokenGetter();
-        } else if (tokenGetter) {
-          token = tokenGetter()?.token ?? null;
-        }
-        // If no token getter provided and no token found, redirect to logout
-        if (!token) {
-          redirectToLogout();
-          return Promise.reject(new Error('No valid token available'));
-        }
-        if (config.headers) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      } catch (error) {
-        redirectToLogout();
-        return Promise.reject(error);
-      }
-    },
-    (error) => {
-      return Promise.reject(error);
-    }
-  );
-
-  // Response interceptor for error handling
   client.interceptors.response.use(
-    (response: AxiosResponse) => {
-      return response;
-    },
+    (response: AxiosResponse) => response,
     (error: AxiosError) => {
-      // Handle common error scenarios
-      if (error.response?.status === 401) {
-        // Unauthorized - clear auth data
-        redirectToLogout();
-      } else if (error.response?.status === 403) {
-        // Forbidden - user doesn't have permission
-        const errorData = error.response?.data as { message?: string } | undefined;
-        console.warn('Access forbidden:', errorData?.message || 'Insufficient permissions');
-      }
-      
+      if (error.response?.status === 401) redirectToLogout();
       return Promise.reject(error);
     }
   );
-
   return client;
 };
-
-/**
- * Default API client instance
- * NOTE: For authenticated requests, you must provide an asyncTokenGetter.
- * Example with Keycloak:
- * ```ts
- * const { getToken } = useKeycloak();
- * const client = createApiClient(undefined, getToken);
- * ```
- */
-export const apiClient = createApiClient();
 
 /**
  * Convert axios error to ApiError

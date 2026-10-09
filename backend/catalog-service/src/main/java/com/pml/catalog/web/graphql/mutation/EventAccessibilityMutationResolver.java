@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Event Accessibility Mutation Resolver
@@ -20,7 +22,10 @@ import reactor.core.publisher.Mono;
  * details to help users with disabilities.
  */
 @Slf4j
+
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class EventAccessibilityMutationResolver {
 
@@ -33,7 +38,7 @@ public class EventAccessibilityMutationResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
     public Mono<EventMutationResponse> updateEventAccessibility(
             @InputArgument String eventId,
-            @InputArgument EventAccessibilityInput input
+            @Valid @InputArgument EventAccessibilityInput input
     ) {
         log.info("Updating accessibility for event {}", eventId);
         return accessibilityService.updateAccessibility(eventId, input)

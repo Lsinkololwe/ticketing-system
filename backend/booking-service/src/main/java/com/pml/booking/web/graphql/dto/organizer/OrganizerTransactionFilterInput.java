@@ -1,7 +1,7 @@
 package com.pml.booking.web.graphql.dto.organizer;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Filter input for organizer transaction queries.
@@ -9,8 +9,8 @@ import java.time.LocalDateTime;
 public record OrganizerTransactionFilterInput(
         OrganizerTransaction.OrganizerTransactionType type,
         String eventId,
-        LocalDateTime startDate,
-        LocalDateTime endDate,
+        Instant startDate,
+        Instant endDate,
         BigDecimal minAmount,
         BigDecimal maxAmount
 ) {

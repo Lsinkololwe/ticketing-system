@@ -10,7 +10,7 @@
  * hooks normalise so callers do not have to care which service owns a table.
  *
  * <h2>Locations are cursor-only</h2>
- * There is no `locationsOffsetPagination` — only `locationsCursorPagination`.
+ * There is no `locationsOffsetPagination` — only `locations`.
  * So the locations view pages by cursor while the other two page by offset.
  *
  * @see backend/catalog-service/src/main/resources/graphql/schema.graphqls
@@ -53,7 +53,7 @@ export const EVENT_LIST_FIELDS = gql`
 export const ADMIN_EVENTS = gql`
   ${EVENT_LIST_FIELDS}
   query AdminEvents($filter: EventFilterInput, $pagination: OffsetPaginationInput) {
-    eventsOffsetPagination(filter: $filter, pagination: $pagination) {
+    events(filter: $filter, pagination: $pagination) {
       content {
         ...EventListFields
       }
@@ -84,17 +84,18 @@ export const EVENT_STATS = gql`
   }
 `;
 
+/**
+ * Every category, active or not, for the management screens. The rows are `EVENT_CATEGORY` reference data, the
+ * store the public `categories` list reads. That list also carries the event count, but only for active categories.
+ */
 export const ADMIN_EVENT_CATEGORIES = gql`
   query AdminEventCategories($pagination: OffsetPaginationInput) {
-    eventCategoriesOffsetPagination(pagination: $pagination) {
+    referenceDataAll(type: EVENT_CATEGORY, pagination: $pagination) {
       content {
         id
-        name
         code
+        name
         description
-        color
-        sortOrder
-        eventCount
         isActive
       }
       pageNumber
@@ -104,13 +105,17 @@ export const ADMIN_EVENT_CATEGORIES = gql`
       hasNext
       hasPrevious
     }
+    categories {
+      code
+      eventCount
+    }
   }
 `;
 
 /** Cursor-paged: catalog exposes no offset variant for locations. */
 export const ADMIN_LOCATIONS = gql`
   query AdminLocations($pagination: CursorPaginationInput) {
-    locationsCursorPagination(pagination: $pagination) {
+    locations(pagination: $pagination) {
       edges {
         node {
           id
@@ -145,9 +150,8 @@ export const ADMIN_LOCATIONS = gql`
 export const APPROVE_EVENT = gql`
   mutation ApproveEvent($eventId: ID!, $comments: String) {
     approveEvent(eventId: $eventId, comments: $comments) {
-      success
-      message
-      errors
+      id
+      status
     }
   }
 `;
@@ -155,9 +159,8 @@ export const APPROVE_EVENT = gql`
 export const REJECT_EVENT = gql`
   mutation RejectEvent($eventId: ID!, $comments: String!) {
     rejectEvent(eventId: $eventId, comments: $comments) {
-      success
-      message
-      errors
+      id
+      status
     }
   }
 `;
@@ -165,9 +168,8 @@ export const REJECT_EVENT = gql`
 export const REQUEST_EVENT_CHANGES = gql`
   mutation RequestEventChanges($eventId: ID!, $comments: String!) {
     requestEventChanges(eventId: $eventId, comments: $comments) {
-      success
-      message
-      errors
+      id
+      status
     }
   }
 `;

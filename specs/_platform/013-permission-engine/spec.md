@@ -2,6 +2,15 @@
 
 > **Conformance** · US Part IV §22 permission resolution algorithm · V3 §3 account access
 
+> **Superseded in part, 2026-09-18 — ROADMAP D-37.** The role → permission mapping is fixed in
+> software and changes only with a release. What this spec calls an administrator-edited mapping —
+> R3's stored role documents, R7's per-role cache, R8's change log, and the `setRolePermissions`,
+> `setRolePermissionActive` and `setPermissionActive` mutations — will not be built, and the
+> `identity_permissions` / `identity_role_permissions` collections were dropped. What stands:
+> R1 and R2, realised as `com.pml.shared.security.Permission` (30 codes, one colon each, no runtime
+> extension), with the platform-role sets on the same enum and the organization and event sets on
+> identity's `OrganizationRole` and `EventRole` ([ET-ORG-003 §4](../../organization/003-permission-resolution/)).
+
 ## 1. Capability
 
 A role is a name. It carries no meaning until something says what a holder of that name may do,
@@ -200,6 +209,11 @@ immutable record of the change.
 
 ## 4. Model
 
+> **Reconciliation note, 2026-09-01 — `myPermissions` · **absent**, not renamed.**
+> Same finding as [ET-ORG-003](../../organization/003-permission-resolution/spec.md): of the four
+> candidates, `allPermissions` and `myEffectivePermissions` have no resolver at all. The catalogue
+> this spec defines has no working query surface, so the name is `absent` rather than misnamed.
+
 ### The grammar
 
 ```
@@ -334,8 +348,9 @@ render affordances from one fetched answer rather than reimplementing the algori
 
 | Tier | Java type | Wire name | Topic | Consumers |
 |---|---|---|---|---|
-| module | `RolePermissionsChangedEvent` | — | — | the local cache |
 | bus | `RolePermissionsChangedEvent` | `identity.RolePermissionsChanged` v`1` | `identity-events` | catalog, booking — cache eviction |
+
+Identity evicts its own cache in the method that changes the role; there is no in-memory event.
 
 ### Redis keys
 

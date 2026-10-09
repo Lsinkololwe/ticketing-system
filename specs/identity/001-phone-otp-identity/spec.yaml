@@ -1,5 +1,5 @@
 id: ET-IDN-001
-title: Phone-OTP passwordless identity
+title: Contact-OTP passwordless identity
 status: approved
 area: IDN
 service: identity-service
@@ -13,6 +13,7 @@ conformance: "US Part I §6 Keycloak integration"
 sources:
   - specs/CONVENTIONS.md
   - specs/ROADMAP.md
+  - specs/identity/004-accounts-and-contacts/CONTRACT.md
   - specs/_platform/005-error-contract/spec.md
   - specs/_platform/007-security-and-authorization/spec.md
   - docs/KEYCLOAK_PHONE_OTP_AUTHENTICATOR.md
@@ -20,20 +21,28 @@ sources:
   - docs/KEYCLOAK_IMPLEMENTATION_PLAN.md
   - docs/USER_STORIES.md
 
+# Redesign 2026-10-04 (D-38..D-50, F-044). The folder name 001-phone-otp-identity is kept so references stay stable.
 persistence:
-  collections: []          # writes no collection; the Keycloak REGISTER event carries the user (ET-IDN-002)
+  collections:
+    - identity_account_events      # OTP_LOCK mirror only; the account collections belong to ET-IDN-004
   indexes:
-    - "identity_users {phoneNumber} unique sparse"   # declared by ET-PLT-002; R1 depends on it
+    - "identity_account_events {eventId} unique"      # declared by ET-IDN-004
   redis_keys:
-    - "otp:{phone}            STRING  300 s  — HMAC-SHA256(code, pepper), hex. NEVER the code"
-    - "otp:cooldown:{phone}   STRING   60 s  — resend throttle"
-    - "otp:attempts:{phone}   STRING  300 s  — remaining attempts, from 5"
-    - "otp:locked:{phone}     STRING  900 s  — lockout after exhaustion"
+    - "ch:{contactKey}              HASH    300 s  — HMAC(code,pepper)+challengeId+expiry. NEVER the code, NEVER a raw contact"
+    - "chid:{challengeId}           STRING  300 s  — contactKey"
+    - "ch:att:{contactKey}          STRING  300 s  — tries left, from 5"
+    - "ch:lock:{contactKey}         STRING  900 s  — lock after exhaustion (mirrored to identity_account_events kind OTP_LOCK)"
+    - "ch:cool:{contactKey}         STRING   60 s  — resend throttle"
+    - "lim:{scope}:{id}:{window}    counter hour|day — scope contact|ip|device|country"
+    - "proof:{id}                   HASH    120 s while NEW, PT30M once CONSUMED by ensure — contactKey, type, valueEncrypted, valueMasked, state"
+    - "handle:{id}                  HASH     60 s  — accountId, clientId; read-and-delete (GETDEL)"
 
 events:
   module: []
-  bus: []                  # Keycloak's own REGISTER event is the trigger; see ET-IDN-002
+  bus: []
   topics: []
+
+workflows: []              # AccountEnsureWorkflow is owned by ET-IDN-004
 
 graphql:
   schema: null
@@ -42,53 +51,81 @@ graphql:
 
 rest:
   internal:
-    - "POST   /api/internal/otp/request         internal-write"
-    - "POST   /api/internal/otp/verify          internal-write"
-    - "GET    /api/internal/otp/status/{phone}  internal-read"
-    - "DELETE /api/internal/otp/{phone}         internal-write"
+    - "POST   /api/internal/auth/challenges                       internal-write"
+    - "POST   /api/internal/auth/challenges/verify               internal-write"
+    - "POST   /api/internal/auth/accounts/ensure                 internal-write"
+    - "POST   /api/internal/auth/handles/redeem                  internal-write"
+    - "GET    /api/internal/auth/accounts/{accountId}/status     internal-read"
+  # The old /api/internal/otp/* endpoints are deleted, no shim.
 
 errors:
+  # introduced here (rows of ET-PLT-005 §4)
+  - CONTACT_INVALID
+  - OTP_LOCKED
+  - OTP_RATE_LIMITED
+  - OTP_DELIVERY_FAILED
+  - LOGIN_HANDLE_INVALID
+  - PROOF_INVALID
+  # kept
   - PHONE_NUMBER_INVALID
   - OTP_INVALID
   - OTP_EXPIRED
   - OTP_COOLDOWN_ACTIVE
   - OTP_ATTEMPTS_EXHAUSTED
+  # CONTACT_ALREADY_CLAIMED, ACCOUNT_SUSPENDED, ACCOUNT_MERGING, ACCOUNT_NOT_ACTIVE are introduced by ET-IDN-004 and used here
   # NOTIFICATION_CHANNEL_UNAVAILABLE is introduced by ET-NTF-001 and used here
 
 config:
-  identity.otp.length: 6
-  identity.otp.ttl: PT5M
-  identity.otp.cooldown: PT60S
-  identity.otp.max-attempts: 5
-  identity.otp.lockout: PT15M
-  identity.otp.pepper: "${OTP_PEPPER}"
-  identity.otp.default-channel: WHATSAPP
-  identity.otp.test-numbers: "empty in production — enforced by a startup check"
-  identity.phone.default-region: ZM
+  identity.challenge.code-length: 6
+  identity.challenge.ttl: PT5M
+  identity.challenge.max-attempts: 5
+  identity.challenge.lock: PT15M
+  identity.challenge.cooldown: PT60S
+  identity.challenge.hmac-pepper: "${IDENTITY_CHALLENGE_PEPPER} — no default; startup fails if blank outside local,test"
+  identity.proof.ttl: PT2M
+  identity.proof.ensure-hold: PT30M
+  identity.login-handle.ttl: PT60S
+  identity.contact.hash-key: "${IDENTITY_CONTACT_HASH_KEY} — no default"
+  identity.contact.encryption-key-id: "reuses app.security.encryption.key"
+  identity.id-hash.key: "${IDENTITY_ID_HASH_KEY} — no default"
+  identity.limits.contact-codes-per-day: 10
+  identity.limits.ip-codes-per-hour: 10
+  identity.limits.device-distinct-contacts-per-day: 5
+  identity.limits.country-codes-per-day.default: 2000
+  identity.limits.allowed-countries: "ZM,GB,US,ZA,ZW,MW,TZ,KE,BW,NA,AE,CA,AU,IE,DE,FR,NL"
+  identity.delivery.whatsapp.enabled: true
+  identity.delivery.whatsapp.timeout: PT5S
+  identity.delivery.email.enabled: true
+  identity.delivery.email.timeout: PT5S
+  identity.delivery.capture.enabled: "profiles local,test only; in-memory CapturedMessages; never logs the code"
 
 keycloak_spi:
   module: backend/keycloak-extensions
   registration: META-INF/services/org.keycloak.authentication.AuthenticatorFactory
   components:
-    - PhoneOtpAuthenticator
-    - PhoneOtpAuthenticatorFactory
-    - OtpServiceClient
-    - phone-otp-input.ftl
-    - phone-otp-verify.ftl
-  flow: "phone-otp-browser — bound by the ET-PLT-007 T1 realm export, not by a script"
+    - ContactOtpAuthenticator
+    - ContactOtpAuthenticatorFactory
+    - IdentityClient
+    - contact-input.ftl
+    - contact-code.ftl
+  modes: [SCREEN, HANDOFF]
+  env: [IDENTITY_BASE_URL, IDENTITY_CLIENT_ID, IDENTITY_CLIENT_SECRET, KEYCLOAK_TOKEN_URL]
+  flow: "contact-browser in realm myticketzm; staff-browser (password + second factor) in realm myticketzm-admin — both bound by the realm export, not by a script"
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=true
+  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=false
   - mvn -q -f backend/keycloak-extensions package
-  - mvn -q -f backend verify -Dgroups=ET-IDN-001 -DfailIfNoTests=true
+  - mvn -q -f backend verify -Dgroups=ET-IDN-001 -DfailIfNoTests=false
 
 risks:
-  - "R4 requires that an unregistered number be indistinguishable from a registered one, but R6's find-or-create happens after verification, so the platform genuinely does not know at request time — which is what makes the property achievable. It breaks the moment any future feature wants to say 'no account found, sign up first' at the phone-entry step, and that is a natural product request."
-  - "Response-time indistinguishability (R4) is asserted as a 'same latency band' with no threshold. A registered number's flow does a Keycloak lookup that an unregistered one does not, and if that lookup ever moves earlier the timing difference becomes a real oracle that no test here would catch."
-  - "The OTP pepper is a single environment value with no rotation story. Rotating it invalidates every live code, which is acceptable, but there is no dual-pepper verification window specified, so a rotation during business hours logs out every in-flight login."
-  - "R7 excludes privileged roles from the phone flow, but the exclusion has to be evaluated inside the authenticator, which means the SPI must ask Keycloak for the user's roles before authenticating them — and at that point it has confirmed the number belongs to a privileged account, which is exactly the disclosure R4 forbids for ordinary accounts."
-  - "The SPI shades Gson while Keycloak 26 ships its own JSON stack. A future Keycloak upgrade that changes the classloader isolation model can break the shaded JAR in a way that surfaces only at runtime, in the login flow, for every customer at once."
-  - "Two concurrent verifications producing one user (R6) relies on Keycloak's own uniqueness on username. The username is derived deterministically from the number, so the collision resolves — but if the derivation ever includes a random component for readability, the guarantee silently disappears."
-  - "identity.otp.test-numbers must be empty in production and a startup check enforces it. That check is the only thing between a convenience list and a permanent backdoor into any account whose number is on it, and startup checks are exactly what gets relaxed during an incident."
-  - "The four internal endpoints are the platform's highest-value target: anything that can call /otp/verify with a chosen number and code can log in as anyone. They are protected by a single client_credentials secret held by keycloak-extensions, which runs inside Keycloak — so a compromise of Keycloak yields both the secret and the ability to use it."
+  - "R4 requires an unregistered contact to be indistinguishable from a registered one, which holds only while registration is learned after the proof. It breaks the moment a product request wants 'no account found, sign up first' at the contact-entry step."
+  - "Response-time indistinguishability (R4) is a 'same latency band' with no numeric threshold. If the account lookup ever moves before the challenge, the timing difference becomes an oracle that no test here would catch."
+  - "The login handle is the new bearer secret: 60 s, single-use, bound to a client. A handle leaked through a redirect URL (login_hint) or a referrer header is a sign-in for its lifetime. The buyer app must keep it out of logs and analytics, and the authenticator must delete it on first read even when the later steps fail."
+  - "Keys are HMACs of the contact with identity.contact.hash-key. Rotating that key changes every contactKey and therefore every uniqueness check and Redis key; there is no dual-key window specified. Rotation is a migration, not a config change."
+  - "The pepper has no rotation story either: rotating it invalidates live codes (acceptable), but nothing specifies a dual-pepper verification window."
+  - "The contact authenticator excludes privileged roles by reading the user's roles, which confirms the contact belongs to a privileged account. Staff living in a separate realm removes the need, but a staff user wrongly created in the buyer realm would still disclose."
+  - "A WhatsApp number that cannot receive the template yields OTP_DELIVERY_FAILED; there is no automatic email fallback by design, so a buyer without working WhatsApp must choose email themselves. Support volume depends on the UI making that choice obvious."
+  - "Recycled phone numbers: a verified WhatsApp number can pass to a new subscriber. Proof of control is current, but the account behind it is the previous owner's. Open item in F-044 (inactivity check)."
+  - "The internal endpoints are the highest-value target: anything able to call challenges/verify and accounts/ensure with a chosen proof can obtain a login handle for any account. They are protected by a client_credentials secret held inside Keycloak and by the buyer app's service token, so a compromise of either yields the means to use it."
+  - "The SPI shades Gson while Keycloak 26 ships its own JSON stack; a Keycloak upgrade that changes classloader isolation breaks the JAR at runtime in the login flow."

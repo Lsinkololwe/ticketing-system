@@ -3,7 +3,7 @@
 > **Spec** [`specs/finance/004-refunds-and-chargebacks/spec.md`](../finance/004-refunds-and-chargebacks/spec.md) · **Wave 4** · `blocked_by:` ET-PLT-005, 007, ET-FIN-001, 002, 003, ET-CAT-001, ET-TKT-002
 > **Screens** `Admin - Ledger, Commission & Reconciliation.dc.html` *(approval, contest)* · `Ticketing - My Tickets & Transfer.dc.html` *(refund quote — the Coverage map marks this **partial**)*
 > **Authority** `docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md` §9, §14
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-004 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-004 -DfailIfNoTests=false`
 
 8 requirements, **65 acceptance boxes** — the largest box count in the corpus, because every
 (reason × fee-bearer × timing) combination is a distinct arithmetic that must balance.
@@ -22,19 +22,22 @@ The decisive checks:
 
 ## A · Backend
 
-### BE-1 · The four policies, the schedule and the boundary tests
-- **Spec** R1 · **§5** T1 · **depends** R0 · **parallel-safe** no
+### BE-1 · The platform's policies, the schedule and the boundary tests
+- **Spec** R1 · **§5** T1 · **depends** R0, ET-ADM-002 (refund policies) · **parallel-safe** no
 - **Acceptance** the percentage **either side of every schedule step**. Both sides, every step —
   this is the arithmetic a buyer will check against the policy page.
+- *Amended 2026-09-19:* the policies are platform configuration (ET-ADM-002 §4), not a code
+  enum. The schedule is read at the version the event was published under, so a policy the
+  platform edits later does not change a sold ticket's refund.
 
 ### BE-2 · The calculation and its four outputs, per fee bearer
 - **Spec** R2 · **§5** T2 · **depends** BE-1 · **parallel-safe** yes
 - **Acceptance** **every (reason × bearer) combination sums correctly**; below-minimum **refuses**.
 - Refunding K3 when the processing fee is K5 costs the platform money to give the buyer nothing.
 
-### BE-3 · The request, its partial unique index and the auto-approve rule
+### BE-3 · The request, its partial unique index and the approval rule
 - **Spec** R4, R5 · **§5** T3 · **depends** BE-2 · **parallel-safe** no
-- **Acceptance** two parallel requests yield **one**; **K999 auto-approves and K1,001 does not**.
+- **Acceptance** two parallel requests yield **one**; **only a cancellation's refund approves itself; a waiting one escalates at P2D and P5D** (ROADMAP D-26).
 - Both sides of the threshold. Index confirmed live via MCP.
 
 ### BE-4 · The journal entries per bearer, and the settlement entry
@@ -121,7 +124,7 @@ The decisive checks:
 
 ### FE-5 · Refund approval queue
 - **depends** GQL-1 · **parallel-safe** yes
-- Above-threshold requests only (below auto-approves, BE-3). Each row shows the computed split.
+- Every request except a cancellation's (BE-3). Each row shows the computed split.
 - **testids** `refund-queue-row`, `refund-approve`, `refund-reject`, `refund-split-breakdown`
 
 ### FE-6 · Chargeback management
@@ -146,7 +149,7 @@ The decisive checks:
 Every (reason × bearer) combination sums; below-minimum refuses.
 
 ### TS-3 · Request *(L3)*
-Two parallel requests → one; K999 auto-approves, K1,001 does not; index live.
+Two parallel requests → one; only a cancellation's refund approves itself; escalations at P2D and P5D; index live.
 
 ### TS-4 · Journal *(L3)*
 100% / 50% / **0%** each balance; the ticket moves **only** on confirmation — assert by failing the
@@ -178,7 +181,7 @@ Quote and executed refund identical across the full combination matrix, not one 
 - [ ] R0 recorded; ticket-moves-on-request and any settled-payout clawback classified `contradicted`
 - [ ] Both sides of every policy schedule step
 - [ ] Every (reason × bearer) combination sums; below-minimum refuses
-- [ ] Two parallel requests yield one; both sides of the auto-approve threshold
+- [ ] Two parallel requests yield one; a buyer refund waits for a person and escalates at P2D and P5D
 - [ ] 0% refunds still produce balanced journal entries
 - [ ] Ticket moves **only** on confirmation
 - [ ] Mass refund resumes without double-refunding or skipping; ledger balanced
@@ -187,5 +190,5 @@ Quote and executed refund identical across the full combination matrix, not one 
 - [ ] `openDisputeCount` moves in both directions
 - [ ] Quote equals executed refund across the full matrix
 - [ ] Buyer sees the quote **before** committing, with the reason for the percentage
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-004 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-004 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

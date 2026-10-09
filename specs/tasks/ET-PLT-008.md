@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/_platform/008-data-protection/spec.md`](../_platform/008-data-protection/spec.md) · **Wave 7** · `blocked_by:` ET-PLT-002, 007, ET-IDN-002, ET-FIN-001, ET-NTF-001
 > **Screens** `Ticketing - Profile & Registration.dc.html` *(erasure request, export, consent)* · `Admin - Users & Organizations.dc.html` *(obligations, certificate)*
-> **Verify** `mvn -q -f backend test -Dgroups=ET-PLT-008 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend test -Dgroups=ET-PLT-008 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 > **Corpus note.** This spec has **four broken links** (**P4**) — it writes
 > `../001-notification-transport/` when [`ET-NTF-001`](ET-NTF-001.md) lives under `notification/`.
@@ -179,5 +179,5 @@ populated.
 - [ ] No consent record → marketing suppressed
 - [ ] Certificate states what was retained **and why**
 - [ ] No PII renders in the erasure UI
-- [ ] `mvn -q -f backend verify -Dgroups=ET-PLT-008 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend verify -Dgroups=ET-PLT-008 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

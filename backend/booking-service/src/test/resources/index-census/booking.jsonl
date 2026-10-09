@@ -1,0 +1,148 @@
+{"collection": "booking_bank_accounts", "key": {"accountNumber": 1}, "unique": false, "sparse": false}
+{"collection": "booking_bank_accounts", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_bank_accounts", "key": {"organizerId": 1, "isDefault": 1}, "unique": false, "sparse": false}
+{"collection": "booking_bank_accounts", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"chargebackId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"customerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"journalEntryId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"organizerId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"originalTransactionId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"reason": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"receivedAt": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"recoveryStatus": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"status": 1, "receivedAt": -1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chargebacks", "key": {"ticketId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chart_of_accounts", "key": {"accountCode": 1}, "unique": true, "sparse": false}
+{"collection": "booking_chart_of_accounts", "key": {"accountType": 1, "isActive": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chart_of_accounts", "key": {"accountType": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chart_of_accounts", "key": {"isActive": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chart_of_accounts", "key": {"parentAccountCode": 1}, "unique": false, "sparse": false}
+{"collection": "booking_chart_of_accounts", "key": {"subType": 1, "isActive": 1}, "unique": false, "sparse": false}
+{"collection": "booking_checkin_conflicts", "key": {"eventId": 1, "detectedAt": -1}, "unique": false, "sparse": false}
+{"collection": "booking_checkin_conflicts", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_checkin_conflicts", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_checkins", "key": {"eventId": 1, "recordedAt": -1}, "unique": false, "sparse": false}
+{"collection": "booking_checkins", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_checkins", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_checkins", "key": {"ticketId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_commission_records", "key": {"eventId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_commission_records", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_commission_records", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_commission_records", "key": {"organizerId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_commission_records", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_commission_records", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_commission_records", "key": {"ticketId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_escrow_accounts", "key": {"accountNumber": 1}, "unique": true, "sparse": false}
+{"collection": "booking_escrow_accounts", "key": {"eventId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_escrow_accounts", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_accounts", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_accounts", "key": {"status": 1, "organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_accounts", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_accounts", "key": {"statusSemantic": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"category": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"chargebackId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"escrowAccountId": 1, "category": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"escrowAccountId": 1, "timestamp": -1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"escrowAccountId": 1, "type": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"escrowAccountId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"journalEntryId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"paymentIntentId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"payoutRequestId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"refundRequestId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"ticketId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"timestamp": 1}, "unique": false, "sparse": false}
+{"collection": "booking_escrow_transactions", "key": {"type": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"correlationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"entryDate": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"entryDate": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"entryNumber": 1}, "unique": true, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"lines.accountCode": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"reversalOfEntryId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"reversedByEntryId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"type": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_journal_entries", "key": {"type": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"attemptNumber": 1}, "unique": true, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"buyerId": 1, "createdAt": -1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"buyerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"correlationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"depositId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"eventId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"expiresAt": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"providerTransactionId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"reservationId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"reservationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"status": 1, "createdAt": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"status": 1, "expiresAt": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_attempts", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_intents", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_intents", "key": {"idempotencyKey": 1}, "unique": true, "sparse": false}
+{"collection": "booking_payment_intents", "key": {"providerTransactionId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_intents", "key": {"reservationId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_payment_intents", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payment_intents", "key": {"transactionRef": 1}, "unique": true, "sparse": false}
+{"collection": "booking_payment_intents", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"escrowAccountId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"eventId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"organizerId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"paymentReference": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"requestId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"status": 1, "organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_payout_requests", "key": {"statusSemantic": 1}, "unique": false, "sparse": false}
+{"collection": "booking_platform_accounts", "key": {"accountType": 1}, "unique": true, "sparse": false}
+{"collection": "booking_promo_codes", "key": {"code": 1}, "unique": true, "sparse": false}
+{"collection": "booking_promo_codes", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_promo_codes", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_promo_codes", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_purchase_escalations", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_purchase_escalations", "key": {"reason": 1}, "unique": false, "sparse": false}
+{"collection": "booking_purchase_escalations", "key": {"reservationId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_purchase_escalations", "key": {"resolved": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reconciliation_runs", "key": {"reconciliationDate": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reconciliation_runs", "key": {"runNumber": 1}, "unique": true, "sparse": false}
+{"collection": "booking_reconciliation_runs", "key": {"status": 1, "reconciliationDate": -1}, "unique": false, "sparse": false}
+{"collection": "booking_reconciliation_runs", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reconciliation_runs", "key": {"type": 1, "reconciliationDate": -1}, "unique": false, "sparse": false}
+{"collection": "booking_reconciliation_runs", "key": {"type": 1}, "unique": false, "sparse": false}
+{"collection": "booking_refund_requests", "key": {"buyerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_refund_requests", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_refund_requests", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_refund_requests", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_refund_requests", "key": {"pawaPayRefundId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_refund_requests", "key": {"requestId": 1}, "unique": true, "sparse": false}
+{"collection": "booking_refund_requests", "key": {"ticketId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_refund_requests", "key": {"ticketNumber": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reservations", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reservations", "key": {"expiresAt": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reservations", "key": {"idempotencyKey": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reservations", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reservations", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reservations", "key": {"paymentIntentId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reservations", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_reservations", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"buyerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"eventId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"reservationId": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"statusSemantic": 1}, "unique": false, "sparse": false}
+{"collection": "booking_tickets", "key": {"ticketNumber": 1}, "unique": true, "sparse": false}
+{"collection": "booking_tickets", "key": {"ticketTierId": 1}, "unique": false, "sparse": false}
+{"collection": "financial_transactions", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "financial_transactions", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "financial_transactions", "key": {"status": 1, "transactionDate": 1}, "unique": false, "sparse": false}
+{"collection": "financial_transactions", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "financial_transactions", "key": {"transactionType": 1}, "unique": false, "sparse": false}

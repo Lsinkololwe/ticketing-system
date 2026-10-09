@@ -2,6 +2,15 @@
   "name": "@pml.tickets/ticketing",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default", "^default"],
+      "options": {
+        "command": "vitest run --config apps/ticketing/vitest.config.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
     "build": {
       "inputs": [
         "default",

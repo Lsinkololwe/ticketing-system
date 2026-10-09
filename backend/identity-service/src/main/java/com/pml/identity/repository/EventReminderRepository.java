@@ -7,8 +7,6 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-
 /**
  * Repository for managing EventReminder entities in MongoDB.
  * Provides reactive queries for event reminder scheduling and retrieval.
@@ -26,16 +24,6 @@ public interface EventReminderRepository extends ReactiveMongoRepository<EventRe
     Flux<EventReminder> findByUserIdAndStatus(String userId, ReminderStatus status);
 
     /**
-     * Find reminders scheduled before a specific time with a given status.
-     * Used by scheduler to find reminders that need to be sent.
-     *
-     * @param status the reminder status (typically SCHEDULED)
-     * @param time the cutoff time
-     * @return Flux of reminders ready to be sent
-     */
-    Flux<EventReminder> findByStatusAndReminderAtBefore(ReminderStatus status, LocalDateTime time);
-
-    /**
      * Find a reminder by user ID and ticket ID.
      *
      * @param userId the user ID
@@ -45,15 +33,6 @@ public interface EventReminderRepository extends ReactiveMongoRepository<EventRe
     Mono<EventReminder> findByUserIdAndTicketId(String userId, String ticketId);
 
     /**
-     * Delete all reminders for a specific ticket.
-     * Used when a ticket is cancelled or refunded.
-     *
-     * @param ticketId the ticket ID
-     * @return Mono signaling completion
-     */
-    Mono<Void> deleteByTicketId(String ticketId);
-
-    /**
      * Find reminders for a user and specific event.
      *
      * @param userId the user ID
@@ -61,4 +40,7 @@ public interface EventReminderRepository extends ReactiveMongoRepository<EventRe
      * @return Flux of reminders for the user and event
      */
     Flux<EventReminder> findByUserIdAndEventId(String userId, String eventId);
+
+    /** The reminders a workflow must own, adopted at boot. */
+    Flux<EventReminder> findByStatus(ReminderStatus status);
 }

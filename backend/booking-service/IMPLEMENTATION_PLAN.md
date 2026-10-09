@@ -60,8 +60,8 @@ Queries with mismatched method names:
 | Query | Issue | Fix |
 |-------|-------|-----|
 | `Query.bankAccounts` | Parameter mismatch | Check argument mapping |
-| `Query.retryablePayoutRequestsOffsetPagination` | Registration issue | Verify @QueryMapping |
-| `Query.recentlyResolvedPayoutRequestsOffsetPagination` | Registration issue | Verify @QueryMapping |
+| `Query.retryablePayoutRequests` | Registration issue | Verify @QueryMapping |
+| `Query.recentlyResolvedPayoutRequests` | Registration issue | Verify @QueryMapping |
 
 ---
 
@@ -389,9 +389,9 @@ Check that query method signatures match schema:
 @QueryMapping
 public Flux<BankAccount> bankAccounts(@Argument String organizerId) { ... }
 
-// Schema: retryablePayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+// Schema: retryablePayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
 @QueryMapping
-public Mono<PayoutRequestOffsetPage> retryablePayoutRequestsOffsetPagination(
+public Mono<PayoutRequestOffsetPage> retryablePayoutRequests(
         @Argument OffsetPaginationInput pagination) { ... }
 ```
 

@@ -5,7 +5,6 @@
     "description": "Categories for organizing and filtering events",
     "required": [
       "name",
-      "slug",
       "isActive"
     ],
     "properties": {
@@ -21,10 +20,17 @@
         "minLength": 1,
         "maxLength": 100
       },
-      "slug": {
-        "bsonType": "string",
-        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-        "description": "OWASP A03 - URL-safe slug format"
+      "code": {
+        "bsonType": ["string", "null"],
+        "description": "Unique code for this category, e.g. MUSIC, SPORTS"
+      },
+      "color": {
+        "bsonType": ["string", "null"],
+        "maxLength": 20
+      },
+      "displayOrder": {
+        "bsonType": ["int", "null"],
+        "minimum": 0
       },
       "description": {
         "bsonType": [

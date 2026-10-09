@@ -1,5 +1,18 @@
 # Back-Channel Logout Implementation Guide
 
+> ## Updated: 2026-10-04 redesign
+>
+> Authoritative sources: [`specs/identity/001-phone-otp-identity`](../specs/identity/001-phone-otp-identity/spec.md) (ET-IDN-001, now *Contact-OTP*),
+> [`specs/identity/004-accounts-and-contacts`](../specs/identity/004-accounts-and-contacts/spec.md) and its binding
+> [`CONTRACT.md`](../specs/identity/004-accounts-and-contacts/CONTRACT.md), decisions **D-38..D-50** in [`specs/ROADMAP.md`](../specs/ROADMAP.md), finding **F-044**.
+> The text below is kept as history and is **not** rewritten; where it disagrees with the specs, the specs win (specs/README precedence).
+>
+> - **End-to-end logout** is now ET-IDN-003 R9: the buyer app's logout deletes its **server-side session**, clears the HttpOnly cookie, calls Keycloak's end-session endpoint and registers the `sid` revocation; Keycloak's back-channel logout (`backchannel_logout_url` on the confidential client `myticketzm-web`) deletes the matching session by `sid` for logouts begun anywhere. The endpoint validates signature, `iss`, `aud`, the `events` claim, absence of `nonce`, and replay of `jti`.
+> - **Triggers** that revoke without a logout: contact change, suspension (including a console `enabled` change adopted back, D-47), merge, deletion, credential change, member removal, grant revocation (ET-IDN-003 R7).
+> - **Fail-open is limited.** The "Fail-Open Behavior" section below applies to ordinary reads only. Operations that move money, change roles, issue or validate tickets, or alter an organization **fail closed** when revocation state cannot be established (ET-IDN-003 R5). The access token lives 5 minutes, which bounds the exposure of the fail-open case.
+> - The `admin` app path in this guide is the platform-staff app in realm `myticketzm-admin`; the buyer app (`apps/ticketing`) has its own back-channel route backed by its server-side session store. Realm name `event-ticketing` in the commands below is historical.
+
+
 ## Overview
 
 Back-channel logout enables immediate session invalidation across all applications when a user logs out from any Keycloak client. Unlike front-channel logout (browser-based), Keycloak sends a direct HTTP POST to your application with a signed `logout_token`.

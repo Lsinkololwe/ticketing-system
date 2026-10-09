@@ -1,18 +1,18 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.enums.JournalEntryStatus;
 import com.pml.booking.domain.enums.JournalEntryType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.Valid;
@@ -108,16 +108,12 @@ import java.util.Map;
  * @see JournalEntryStatus
  * @since 1.0.0
  */
-@Document(collection = "journal_entries")
+@Document(collection = BookingCollections.JOURNAL_ENTRIES)
+@TypeAlias("journal_entries")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "date_status_idx", def = "{'entryDate': 1, 'status': 1}"),
-    @CompoundIndex(name = "type_status_idx", def = "{'type': 1, 'status': 1}"),
-    @CompoundIndex(name = "account_code_idx", def = "{'lines.accountCode': 1, 'status': 1}")
-})
 public class JournalEntry {
 
     /**
@@ -137,7 +133,6 @@ public class JournalEntry {
      * It must be unique and is typically generated sequentially.</p>
      */
     @NotBlank(message = "Entry number is required")
-    @Indexed(unique = true)
     private String entryNumber;
 
     /**
@@ -155,7 +150,6 @@ public class JournalEntry {
      *   <li>Chargeback: CHB-{chargebackId}</li>
      * </ul>
      */
-    @Indexed
     private String correlationId;
 
     /**
@@ -166,7 +160,6 @@ public class JournalEntry {
      * transactions today).</p>
      */
     @NotNull(message = "Entry date is required")
-    @Indexed
     private LocalDate entryDate;
 
     /**
@@ -202,7 +195,6 @@ public class JournalEntry {
      * @see JournalEntryType
      */
     @NotNull(message = "Entry type is required")
-    @Indexed
     private JournalEntryType type;
 
     /**
@@ -211,7 +203,6 @@ public class JournalEntry {
      * @see JournalEntryStatus
      */
     @NotNull(message = "Entry status is required")
-    @Indexed
     @Builder.Default
     private JournalEntryStatus status = JournalEntryStatus.DRAFT;
 
@@ -282,7 +273,6 @@ public class JournalEntry {
      * <p>Set when this entry is reversed. The reversal entry will have
      * type = REVERSAL and reference this entry.</p>
      */
-    @Indexed
     private String reversedByEntryId;
 
     /**
@@ -291,7 +281,6 @@ public class JournalEntry {
      * <p>Set only on REVERSAL type entries. Points to the original
      * entry being reversed.</p>
      */
-    @Indexed
     private String reversalOfEntryId;
 
     /**
@@ -422,17 +411,6 @@ public class JournalEntry {
         return errors;
     }
 
-    /**
-     * Checks if this entry can be posted.
-     *
-     * @return true if entry is in DRAFT status and valid
-     */
-    public boolean canPost() {
-        return status == JournalEntryStatus.DRAFT
-                && hasValidLines()
-                && isBalanced();
-    }
-
     // ========================================================================
     // STATE TRANSITION METHODS
     // ========================================================================
@@ -455,7 +433,7 @@ public class JournalEntry {
      * @throws IllegalStateException if entry is not in DRAFT status
      * @throws IllegalArgumentException if entry is not balanced or has invalid lines
      */
-    public void post(String userId) {
+    public void post(String userId, Instant now) {
         if (status != JournalEntryStatus.DRAFT) {
             throw new IllegalStateException(
                     "Cannot post entry in status " + status + ". Entry must be in DRAFT status."
@@ -470,7 +448,7 @@ public class JournalEntry {
         }
 
         this.status = JournalEntryStatus.POSTED;
-        this.postedAt = Instant.now();
+        this.postedAt = now;
         this.postedBy = userId;
     }
 
@@ -484,7 +462,7 @@ public class JournalEntry {
      * @param userId The user performing the reversal
      * @throws IllegalStateException if entry is not in POSTED status
      */
-    public void markReversed(String reversalEntryId, String userId) {
+    public void markReversed(String reversalEntryId, String userId, Instant now) {
         if (status != JournalEntryStatus.POSTED) {
             throw new IllegalStateException(
                     "Cannot reverse entry in status " + status + ". Entry must be in POSTED status."
@@ -492,45 +470,9 @@ public class JournalEntry {
         }
 
         this.status = JournalEntryStatus.REVERSED;
-        this.reversedAt = Instant.now();
+        this.reversedAt = now;
         this.reversedBy = userId;
         this.reversedByEntryId = reversalEntryId;
-    }
-
-    // ========================================================================
-    // LINE MANAGEMENT METHODS
-    // ========================================================================
-
-    /**
-     * Adds a line to this entry.
-     *
-     * @param line The journal line to add
-     * @throws IllegalStateException if entry is not in DRAFT status
-     */
-    public void addLine(JournalLine line) {
-        if (status != JournalEntryStatus.DRAFT) {
-            throw new IllegalStateException("Cannot modify posted entry");
-        }
-        if (lines == null) {
-            lines = new ArrayList<>();
-        }
-        lines.add(line);
-    }
-
-    /**
-     * Removes a line from this entry by index.
-     *
-     * @param index The index of the line to remove
-     * @throws IllegalStateException if entry is not in DRAFT status
-     * @throws IndexOutOfBoundsException if index is out of range
-     */
-    public void removeLine(int index) {
-        if (status != JournalEntryStatus.DRAFT) {
-            throw new IllegalStateException("Cannot modify posted entry");
-        }
-        if (lines != null && index >= 0 && index < lines.size()) {
-            lines.remove(index);
-        }
     }
 
     // ========================================================================
@@ -562,19 +504,6 @@ public class JournalEntry {
      */
     public int getLineCount() {
         return lines != null ? lines.size() : 0;
-    }
-
-    /**
-     * Gets lines affecting a specific account.
-     *
-     * @param accountCode The account code to filter by
-     * @return List of lines for that account
-     */
-    public List<JournalLine> getLinesForAccount(String accountCode) {
-        if (lines == null) return List.of();
-        return lines.stream()
-                .filter(line -> accountCode.equals(line.getAccountCode()))
-                .toList();
     }
 
     /**
@@ -611,7 +540,7 @@ public class JournalEntry {
      * @return New reversal entry (in DRAFT status)
      * @throws IllegalStateException if this entry is not in POSTED status
      */
-    public JournalEntry createReversal(String newEntryNumber, String reason, String userId) {
+    public JournalEntry createReversal(String newEntryNumber, String reason, String userId, LocalDate today) {
         if (status != JournalEntryStatus.POSTED) {
             throw new IllegalStateException(
                     "Cannot create reversal for entry in status " + status + ". Must be POSTED."
@@ -625,8 +554,8 @@ public class JournalEntry {
         return JournalEntry.builder()
                 .entryNumber(newEntryNumber)
                 .correlationId(this.correlationId)
-                .entryDate(LocalDate.now())
-                .effectiveDate(LocalDate.now())
+                .entryDate(today)
+                .effectiveDate(today)
                 .description("Reversal of " + this.entryNumber + ": " + reason)
                 .type(JournalEntryType.REVERSAL)
                 .status(JournalEntryStatus.DRAFT)
@@ -634,43 +563,6 @@ public class JournalEntry {
                 .currency(this.currency)
                 .reversalOfEntryId(this.id)
                 .createdBy(userId)
-                .build();
-    }
-
-    /**
-     * Creates a simple two-line entry (one debit, one credit).
-     *
-     * <p>Useful for simple transactions with a single debit and credit.</p>
-     *
-     * @param entryNumber Unique entry number
-     * @param entryDate Date of the entry
-     * @param description Entry description
-     * @param debitAccountCode Account to debit
-     * @param creditAccountCode Account to credit
-     * @param amount Amount to transfer
-     * @param createdBy User creating the entry
-     * @return New journal entry in DRAFT status
-     */
-    public static JournalEntry createSimpleEntry(
-            String entryNumber,
-            LocalDate entryDate,
-            String description,
-            String debitAccountCode,
-            String creditAccountCode,
-            BigDecimal amount,
-            String createdBy
-    ) {
-        return JournalEntry.builder()
-                .entryNumber(entryNumber)
-                .entryDate(entryDate)
-                .description(description)
-                .type(JournalEntryType.STANDARD)
-                .status(JournalEntryStatus.DRAFT)
-                .lines(List.of(
-                        JournalLine.debit(debitAccountCode, amount, description),
-                        JournalLine.credit(creditAccountCode, amount, description)
-                ))
-                .createdBy(createdBy)
                 .build();
     }
 }

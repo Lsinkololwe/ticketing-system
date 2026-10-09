@@ -1,0 +1,49 @@
+id: ET-PLT-015
+title: Durable execution — Temporal as the process layer
+status: implemented            # draft | approved | in-progress | implemented | verified | deferred | withdrawn
+area: PLT
+service: all
+subgraph: null
+owner: lazarous
+created: 2026-09-13
+priority: must
+wave: 0
+blocked_by: [ET-PLT-001, ET-PLT-003, ET-PLT-012]
+conformance: "ROADMAP D-21 · CONVENTIONS §0, §9, §10"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/_platform/001-runtime-baseline/spec.md
+  - specs/_platform/003-event-contract/spec.md
+  - specs/_platform/012-build-topology/spec.md
+
+# ---- the contract, mirrored from spec.md §4 ----
+temporal:
+  namespace: ticketing
+  task_queues:
+    booking: [booking-checkout, booking-provider, booking-finance, booking-recon]
+    catalog: [catalog-lifecycle]
+    identity: [identity-onboarding, identity-notify]
+
+persistence:
+  collections: []
+  indexes: []
+  redis_keys: []
+
+events:
+  module: []
+  bus: []
+  consumes: []
+  topics: []
+
+errors: []
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - mvn -q -f backend/shared-library test -Dgroups=ET-PLT-015 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-PLT-015 -DfailIfNoTests=false
+
+risks:
+  - "A workflow that reads the wall clock or a repository passes every unit test and fails on replay after a deploy; R3's lint and the replay test are the guard."
+  - "Temporal's database becomes a checkout dependency once PurchaseWorkflow carries traffic; the shard count is chosen once, before the first production write."
+  - "A signal is delivered at least once; a workflow that does not track originating ids applies a callback twice."

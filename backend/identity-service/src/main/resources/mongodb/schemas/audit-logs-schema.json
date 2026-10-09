@@ -1,0 +1,131 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Audit Logs Schema",
+    "description": "The immutable audit trail (com.pml.identity.domain.model.AuditLog)",
+    "required": [
+      "action",
+      "status",
+      "timestamp"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data type hint"
+      },
+      "_id": {
+        "bsonType": [
+          "objectId",
+          "string"
+        ]
+      },
+      "action": {
+        "bsonType": "string",
+        "enum": [
+          "USER_LOGIN",
+          "USER_LOGIN_FAILED",
+          "USER_LOGOUT",
+          "ROLE_GRANT",
+          "ROLE_REVOKE",
+          "PRIVILEGE_ESCALATION",
+          "ACCESS_DENIED",
+          "USER_CREATED",
+          "USER_UPDATED",
+          "USER_DELETED",
+          "USER_SUSPENDED",
+          "USER_ACTIVATED",
+          "ORGANIZATION_APPROVED",
+          "ORGANIZATION_REJECTED",
+          "ORGANIZATION_COMMISSION_CHANGED",
+          "ORGANIZATION_SUSPENDED",
+          "ORGANIZATION_UNSUSPENDED",
+          "ORGANIZATION_DELETION_REQUESTED",
+          "ORGANIZATION_DELETION_CANCELLED",
+          "PAYOUT_ACCOUNT_REJECTED",
+          "PAYOUT_ACCOUNT_SUSPENDED",
+          "PAYOUT_ACCOUNT_REINSTATED",
+          "ACCOUNT_DELETION_REQUESTED",
+          "ACCOUNT_DELETION_CANCELLED",
+          "SESSION_REVOKED",
+          "SYSTEM_ALERT_ACKNOWLEDGED",
+          "ANNOUNCEMENT_PUBLISHED",
+          "KEYCLOAK_SYNC_SUCCESS",
+          "KEYCLOAK_SYNC_FAILURE"
+        ]
+      },
+      "userId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "performedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "resourceId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "resourceType": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": [
+          "SUCCESS",
+          "FAILURE",
+          "PENDING",
+          "PARTIAL_SUCCESS"
+        ]
+      },
+      "clientIp": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "userAgent": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "timestamp": {
+        "bsonType": "date"
+      },
+      "createdAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "metadata": {
+        "bsonType": [
+          "object",
+          "null"
+        ]
+      },
+      "errorMessage": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "errorCode": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": true
+  }
+}

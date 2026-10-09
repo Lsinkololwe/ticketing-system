@@ -5,50 +5,30 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Response for bulk event publish reminder operations.
+ * Outcome of a bulk publish-reminder run.
+ *
+ * <p>Carries counts and nothing else. A bulk operation that could not run at all
+ * raises a refusal, so there is no state of this object meaning "ignore the
+ * numbers" — which is what a {@code success} flag beside them would create, and
+ * what a caller reading the counts without checking it would miss.</p>
+ *
+ * <p>{@code failedCount > 0} is not a failure of the operation: the run
+ * completed and some recipients were unreachable. That distinction is exactly
+ * what a boolean flattened away.</p>
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class BulkReminderResponse {
-    private boolean success;
-    private String message;
     private int sentCount;
     private int failedCount;
-    @Builder.Default
-    private List<String> errors = new ArrayList<>();
 
-    public static BulkReminderResponse success(int sentCount, int failedCount) {
+    public static BulkReminderResponse of(int sentCount, int failedCount) {
         return BulkReminderResponse.builder()
-                .success(failedCount == 0)
-                .message(sentCount + " reminders sent successfully" + (failedCount > 0 ? ", " + failedCount + " failed" : ""))
                 .sentCount(sentCount)
                 .failedCount(failedCount)
-                .build();
-    }
-
-    public static BulkReminderResponse success(int sentCount, int failedCount, List<String> errors) {
-        return BulkReminderResponse.builder()
-                .success(failedCount == 0)
-                .message(sentCount + " reminders sent successfully" + (failedCount > 0 ? ", " + failedCount + " failed" : ""))
-                .sentCount(sentCount)
-                .failedCount(failedCount)
-                .errors(errors)
-                .build();
-    }
-
-    public static BulkReminderResponse error(String errorMessage) {
-        return BulkReminderResponse.builder()
-                .success(false)
-                .message(errorMessage)
-                .sentCount(0)
-                .failedCount(0)
-                .errors(List.of(errorMessage))
                 .build();
     }
 }

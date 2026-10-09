@@ -8,13 +8,13 @@ import java.util.List;
  * Offset-based pagination for Reconciliation Runs.
  *
  * @param data List of reconciliation runs for the current page
- * @param paginationInfo Pagination metadata
+ * @param pagination Pagination metadata
  *
  * @since 1.0.0
  */
 public record ReconciliationRunOffsetPage(
     List<ReconciliationRun> data,
-    PaginationInfo paginationInfo
+    PaginationInfo pagination
 ) {
     /**
      * Create an empty page.

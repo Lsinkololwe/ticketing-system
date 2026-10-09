@@ -4,20 +4,20 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * A purchase that the platform cannot resolve on its own.
  *
  * <h2>Why a document rather than an ERROR log</h2>
- * ET-TKT-001 R8 requires that a reservation stuck with a pending intent be
- * "escalated to ET-ADM-003, not silently released — the money may still arrive".
+ * A reservation stuck with a pending intent is escalated to transaction recovery,
+ * never silently released — the money may still arrive.
  * An escalation that exists only as a log line is silent in every way that
  * matters: nothing lists it, nothing counts it, nothing notices when it is never
  * dealt with. These are cases where a buyer may have been charged, so the record
@@ -28,17 +28,16 @@ import java.time.LocalDateTime;
  * <ul>
  *   <li>A payment that completed <em>after</em> its hold expired. The seats were
  *       given back and may already be sold, so the tickets cannot be issued and
- *       the capture has to be refunded by hand until ET-FIN-004's ticketless
- *       refund path exists.</li>
+ *       the capture has to be refunded by hand, because the refund flow works
+ *       from issued tickets and there are none.</li>
  *   <li>A reservation whose intent has been pending beyond
  *       {@code booking.payment.max-pending}. Releasing it would look tidy and
  *       could be wrong: mobile-money confirmations do arrive late, and a
  *       released hold plus an arriving payment is an oversell.</li>
  * </ul>
- *
- * @see <a href="file:../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001 R7, R8</a>
  */
 @Document(collection = "booking_purchase_escalations")
+@TypeAlias("booking_purchase_escalations")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -49,21 +48,18 @@ public class PurchaseEscalation {
     private String id;
 
     /**
-     * Unique, so the sweep can run every thirty seconds without producing a
-     * queue of duplicates for one stuck reservation. An operator should see one
-     * row per problem, not one row per sweep tick.
+     * Unique, so a retried escalation cannot produce a queue of duplicates for
+     * one stuck reservation. An operator should see one row per problem, not one
+     * row per attempt.
      */
-    @Indexed(unique = true)
     private String reservationId;
 
-    @Indexed
     private String eventId;
 
     private String userId;
 
     private String paymentIntentId;
 
-    @Indexed
     private Reason reason;
 
     /** What the operator has to act on, in words. */
@@ -74,18 +70,17 @@ public class PurchaseEscalation {
 
     private String currency;
 
-    @Indexed
     @Builder.Default
     private boolean resolved = false;
 
     private String resolvedBy;
 
-    private LocalDateTime resolvedAt;
+    private Instant resolvedAt;
 
     private String resolution;
 
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     public enum Reason {
         /**

@@ -1,9 +1,12 @@
 package com.pml.catalog.domain.model;
 
+import com.pml.catalog.persistence.CatalogCollections;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -13,7 +16,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
  * Represents a simple address/location for events.
  * The platform does not own/manage venues - this is just location info.
  */
-@Document(collection = "locations")
+@Document(collection = CatalogCollections.LOCATIONS)
+@TypeAlias("locations")
 @Data
 @Builder
 @NoArgsConstructor
@@ -26,6 +30,9 @@ public class Location {
     private String name;
 
     private String address;
+
+    /** The reference-data {@code CITY} code of the venue; {@link #cityName} is that row's name, copied for display. */
+    private String cityId;
 
     private String cityName;
 
@@ -40,6 +47,13 @@ public class Location {
     private Double longitude;
 
     private String description;
+
+    /** The organization that created the venue; venues are shared, attribution is kept. */
+    private String organizationId;
+
+    private String createdById;
+
+    private java.time.Instant createdAt;
 
     @Builder.Default
     private boolean isActive = true;

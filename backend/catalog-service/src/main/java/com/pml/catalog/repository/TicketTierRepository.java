@@ -6,6 +6,8 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.Collection;
+
 /**
  * Ticket Tier Repository
  *
@@ -24,15 +26,6 @@ public interface TicketTierRepository extends ReactiveMongoRepository<TicketTier
      * @return Flux of ticket tiers
      */
     Flux<TicketTier> findByEventIdOrderBySortOrderAsc(String eventId);
-
-    /**
-     * Find active or inactive tiers for an event
-     *
-     * @param eventId Event ID
-     * @param isActive Active status
-     * @return Flux of ticket tiers
-     */
-    Flux<TicketTier> findByEventIdAndIsActiveOrderBySortOrderAsc(String eventId, boolean isActive);
 
     /**
      * Find hidden or visible tiers for an event
@@ -61,10 +54,26 @@ public interface TicketTierRepository extends ReactiveMongoRepository<TicketTier
     Mono<Long> countByEventId(String eventId);
 
     /**
-     * Delete all tiers for an event
+     * Find a tier by id, restricted to the caller's organizations.
      *
-     * @param eventId Event ID
-     * @return Number of deleted tiers
+     * <p>The boundary is the {@code IN} clause, not a comparison the caller of this
+     * method has to remember afterwards. A tier belonging to another organization
+     * does not come back, so "not yours" and "no such id" are the same empty
+     * {@code Mono} and cannot be told apart from outside — which is what stops the
+     * error code becoming an enumeration oracle over real tier ids.
+     *
+     * <p>A set rather than one id, because a user may belong to several
+     * organizations and pinning them to one is how {@code ActorOrganizationResolver}
+     * ended up returning {@code organizations.get(0)}.
+     *
+     * @param id              tier id, caller-supplied and therefore untrusted
+     * @param organizationIds the caller's active memberships; empty matches nothing
      */
-    Mono<Long> deleteByEventId(String eventId);
+    Mono<TicketTier> findByIdAndOrganizationIdIn(String id, Collection<String> organizationIds);
+
+    /** A tier anyone may see: active and not hidden. The event's own visibility is checked separately. */
+    Mono<TicketTier> findByIdAndIsHiddenFalseAndIsActiveTrue(String id);
+
+    /** A hidden, active tier by id: what an access code is checked against. */
+    Mono<TicketTier> findByIdAndIsHiddenTrueAndIsActiveTrue(String id);
 }

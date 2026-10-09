@@ -1,9 +1,12 @@
 package com.pml.identity.web.graphql.query;
 
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.TeamInvitation;
+import com.pml.identity.service.OrganizationService;
+import com.pml.identity.web.graphql.dto.InvitationPreview;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.TeamInvitationService;
 import com.pml.identity.web.graphql.dto.pagination.*;
@@ -19,7 +22,7 @@ import java.util.Objects;
 
 /**
  * GraphQL Query Resolver for Team Invitation operations.
- * Handles invitation-related queries with both offset and cursor pagination.
+ * Handles invitation-related queries with offset pagination.
  */
 @Slf4j
 @DgsComponent
@@ -27,21 +30,59 @@ import java.util.Objects;
 public class TeamInvitationQueryResolver {
 
     private final TeamInvitationService invitationService;
+    private final OrganizationService organizationService;
     private final OrganizationMemberService memberService;
+    private final com.pml.identity.account.ContactService contactService;
+    private final com.pml.identity.security.ContactCrypto contactCrypto;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
     // ========================================================================
 
     /**
-     * Get invitation by token (for acceptance page).
-     * Schema: invitationByToken(token: String!): TeamInvitation
+     * The acceptance page's view of an invitation.
+     * Schema: {@code invitationByToken(token: String!): InvitationPreview}
+     *
+     * <h2>Narrow on purpose</h2>
+     * This returns {@link InvitationPreview} and not the invitation document. The token is a
+     * bearer credential that travels by email or WhatsApp and is forwarded, screenshotted and
+     * pasted into group chats — so whatever this answers is answered to whoever the link reached,
+     * not to the person it was addressed to.
+     *
+     * <p>Returning {@code TeamInvitation} would hand that audience the invitee's
+     * {@code email} and {@code phoneNumber}, the inviter's user id, the personal message, and the
+     * token itself. The preview carries the five fields a stranger needs to decide whether to accept, and
+     * this returns those five.
+     *
+     * <p>Identity is checked at acceptance, not here: the preview deliberately answers before
+     * anyone has proved who they are, because the recipient may not have an account yet.
      */
     @DgsQuery
-    public Mono<TeamInvitation> invitationByToken(@InputArgument String token) {
+    public Mono<InvitationPreview> invitationByToken(@InputArgument String token) {
         log.debug("GraphQL query: invitationByToken");
         Objects.requireNonNull(token, "Token is required");
-        return invitationService.findByToken(token);
+
+        return invitationService.findByToken(token)
+                .flatMap(invitation -> organizationService.findById(invitation.getOrganizationId())
+                        .map(organization -> new InvitationPreview(
+                                organization.getName(),
+                                organization.getLogoUrl(),
+                                invitation.getProposedRole(),
+                                inviterDisplayName(invitation),
+                                invitation.getExpiresAt())));
+    }
+
+    /**
+     * A name, never an identifier.
+     *
+     * <p>Falls back to the organization's own name rather than to the inviter's id or email: an
+     * unresolvable inviter is a display problem, and answering it with a user id would put back
+     * one of the fields this type exists to withhold.
+     */
+    private static String inviterDisplayName(TeamInvitation invitation) {
+        return invitation.getInviteeName() != null && !invitation.getInviteeName().isBlank()
+                ? invitation.getInviteeName()
+                : "A team administrator";
     }
 
     /**
@@ -51,11 +92,19 @@ public class TeamInvitationQueryResolver {
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
     public Flux<TeamInvitation> myPendingInvitations() {
-        return SecurityContextUtils.getCurrentUserEmail()
+        // Invitations addressed to the caller by email (the token's address) and by any verified
+        // WhatsApp number the account holds. The numbers come from the account's own contacts,
+        // never from the request.
+        Flux<TeamInvitation> byEmail = SecurityContextUtils.getCurrentUserEmail()
                 .filter(email -> !email.isBlank())
-                .doOnNext(email -> log.debug("GraphQL query: myPendingInvitations(email={})", email))
-                .flatMapMany(email -> invitationService.findPendingByEmail(email))
-                .switchIfEmpty(Flux.empty());
+                .flatMapMany(invitationService::findPendingByEmail);
+        Flux<TeamInvitation> byPhone = SecurityContextUtils.requireCurrentUserId()
+                .flatMapMany(userId -> contactService.contactsOf(userId)
+                        .filter(contact -> contact.getType() == com.pml.identity.domain.enums.ContactType.WHATSAPP
+                                && contact.getVerifiedAt() != null)
+                        .concatMap(contact -> contactCrypto.decrypt(contact.getValueEncrypted()))
+                        .concatMap(invitationService::findPendingByPhone));
+        return byEmail.concatWith(byPhone).distinct(TeamInvitation::getId);
     }
 
     // ========================================================================
@@ -64,52 +113,22 @@ public class TeamInvitationQueryResolver {
 
     /**
      * Get pending invitations for organization with offset pagination.
-     * Schema: pendingInvitationsOffsetPagination(organizationId: ID!, pagination: OffsetPaginationInput): TeamInvitationOffsetPage!
+     * Schema: pendingInvitations(organizationId: ID!, pagination: OffsetPaginationInput): TeamInvitationOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<TeamInvitationOffsetPage> pendingInvitationsOffsetPagination(
+    public Mono<TeamInvitationOffsetPage> pendingInvitations(
             @InputArgument String organizationId,
             @InputArgument OffsetPaginationInput pagination
     ) {
         Objects.requireNonNull(organizationId, "Organization ID is required");
 
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.debug("GraphQL query: pendingInvitationsOffsetPagination(orgId={})", organizationId))
-                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied"));
-                            }
+                .doOnNext(userId -> log.debug("GraphQL query: pendingInvitations(orgId={})", organizationId))
+                .flatMap(userId -> memberService.requirePermission(userId, organizationId, Permission.TEAM_VIEW)
+                        .then(Mono.defer(() -> {
                             return buildOffsetPage(invitationService.findPendingByOrganization(organizationId), pagination);
-                        }));
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Get pending invitations with cursor pagination (mobile/infinite scroll).
-     * Schema: pendingInvitationsCursorPagination(organizationId: ID!, pagination: CursorPaginationInput): TeamInvitationConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("isAuthenticated()")
-    public Mono<TeamInvitationConnection> pendingInvitationsCursorPagination(
-            @InputArgument String organizationId,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        Objects.requireNonNull(organizationId, "Organization ID is required");
-
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.debug("GraphQL query: pendingInvitationsCursorPagination(orgId={})", organizationId))
-                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied"));
-                            }
-                            return buildCursorConnection(invitationService.findPendingByOrganization(organizationId), pagination);
-                        }));
+                        })));
     }
 
     // ========================================================================
@@ -149,52 +168,4 @@ public class TeamInvitationQueryResolver {
                 });
     }
 
-    /**
-     * Build TeamInvitationConnection from a Flux of invitations.
-     */
-    private Mono<TeamInvitationConnection> buildCursorConnection(Flux<TeamInvitation> invitationFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : CursorPaginationInput.defaults();
-        int limit = p.getLimit();
-
-        return invitationFlux.collectList()
-                .map(allInvitations -> {
-                    int totalCount = allInvitations.size();
-
-                    // Find starting position based on cursor
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allInvitations.size(); i++) {
-                            if (allInvitations.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Get the page of invitations
-                    List<TeamInvitation> pageInvitations = allInvitations.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageInvitations.isEmpty()) {
-                        return TeamInvitationConnection.empty();
-                    }
-
-                    // Build edges
-                    List<TeamInvitationEdge> edges = pageInvitations.stream()
-                            .map(TeamInvitationEdge::of)
-                            .toList();
-
-                    // Build page info
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.forCursor(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new TeamInvitationConnection(edges, pageInfo, totalCount);
-                });
-    }
 }

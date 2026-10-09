@@ -15,7 +15,7 @@ import { gql } from '@apollo/client';
  */
 export const MY_EVENTS = gql`
   query MyEvents($pagination: OffsetPaginationInput) {
-    myEventsOffsetPagination(pagination: $pagination) {
+    myEvents(pagination: $pagination) {
       content {
         id
         title
@@ -41,13 +41,8 @@ export const MY_EVENTS = gql`
 export const PUBLISH_EVENT = gql`
   mutation PublishEvent($id: ID!) {
     publishEvent(id: $id) {
-      success
-      message
-      errors
-      data {
-        id
-        status
-      }
+      id
+      status
     }
   }
 `;
@@ -56,13 +51,8 @@ export const PUBLISH_EVENT = gql`
 export const UNPUBLISH_EVENT = gql`
   mutation UnpublishEvent($id: ID!) {
     unpublishEvent(id: $id) {
-      success
-      message
-      errors
-      data {
-        id
-        status
-      }
+      id
+      status
     }
   }
 `;
@@ -121,14 +111,9 @@ export const MY_EVENT_DETAIL = gql`
 export const CREATE_EVENT = gql`
   mutation CreateEvent($input: CreateEventInput!) {
     createEvent(input: $input) {
-      success
-      message
-      errors
-      data {
-        id
-        title
-        status
-      }
+      id
+      title
+      status
     }
   }
 `;

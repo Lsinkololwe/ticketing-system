@@ -1,5 +1,7 @@
 # Event Configuration Flow Analysis Report
 
+> **Process mechanics (ROADMAP D-21).** Event approval, publication, rescheduling, cancellation and completion run as `EventApprovalWorkflow` and `EventLifecycleWorkflow` (ET-ADM-001, ET-CAT-001). Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 ## Executive Summary
 
 This report analyzes the Event configuration flow in the catalog-service for conformance with multi-tenant infrastructure tracking capabilities, OWASP security standards, and business rule enforcement.
@@ -209,7 +211,7 @@ No business validation before:
 | `eventsByOrganizer*` | `@organizationSecurityService` | ✅ Fixed |
 | `draftEvents*` | `@organizationSecurityService` | ✅ Fixed |
 | `eventCountByOrganizer` | `@organizationSecurityService` | ✅ Fixed |
-| `eventsOffsetPagination` | `hasRole('ADMIN')` | ✅ |
+| `events` | `hasRole('ADMIN')` | ✅ |
 
 ### 4.2 Mutation Resolver Security
 

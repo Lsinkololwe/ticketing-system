@@ -3,7 +3,7 @@ package com.pml.booking.web.graphql.dto;
 import com.pml.booking.domain.enums.JournalEntryType;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -24,8 +24,8 @@ import java.util.Map;
  */
 public record CreateJournalEntryInput(
     String correlationId,
-    LocalDateTime entryDate,
-    LocalDateTime effectiveDate,
+    Instant entryDate,
+    Instant effectiveDate,
     String description,
     JournalEntryType type,
     List<JournalLineInput> lines,
@@ -75,7 +75,7 @@ public record CreateJournalEntryInput(
     /**
      * Get effective date, defaulting to entry date if not specified.
      */
-    public LocalDateTime getEffectiveDateOrDefault() {
+    public Instant getEffectiveDateOrDefault() {
         return effectiveDate != null ? effectiveDate : entryDate;
     }
 }

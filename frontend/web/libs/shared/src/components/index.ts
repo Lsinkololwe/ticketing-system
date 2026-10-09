@@ -1,11 +1,9 @@
 /**
  * Shared Components
  *
- * Reusable components for authentication, UI, and more.
+ * Auth gates plus the Material Design 3 library (components/m3) and layouts.
+ * The old Radix-based `ui/` components are no longer exported.
  */
-
-// Auth components (PermissionGate, etc.)
 export * from './auth';
-
-// UI components (SectionError, etc.)
-export * from './ui';
+export * from './m3';
+export * from '../layouts';

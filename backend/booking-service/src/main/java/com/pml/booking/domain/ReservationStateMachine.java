@@ -14,7 +14,7 @@ import static com.pml.shared.constants.ReservationStatus.HELD;
 import static com.pml.shared.constants.ReservationStatus.RELEASED;
 
 /**
- * The seven legal reservation transitions of ET-TKT-001 R6, and nothing else.
+ * The seven legal reservation transitions, and nothing else.
  *
  * <h2>Why a table rather than checks at the call sites</h2>
  * Five states and six actions make thirty pairs, of which seven are legal. Spread
@@ -28,14 +28,12 @@ import static com.pml.shared.constants.ReservationStatus.RELEASED;
  * seats that have already been sold and paid for. {@code EXPIRED → CONFIRMED}
  * would issue tickets against inventory handed back to someone else. Both are
  * one careless retry away without a table that refuses them.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001</a>
  */
 public final class ReservationStateMachine {
 
     private ReservationStateMachine() {}
 
-    /** The six actions of R6's table. */
+    /** The six actions a reservation can undergo. */
     public enum Action {
         /** Buyer takes the hold. The only action with no origin state. */
         RESERVE,
@@ -43,7 +41,7 @@ public final class ReservationStateMachine {
         CONFIRM,
         /** Buyer changed their mind. */
         CANCEL,
-        /** The sweep found the hold past its expiry. */
+        /** The purchase workflow's expiry timer fired before payment. */
         EXPIRE,
         /** Payment failed; the seats go back. */
         RELEASE,

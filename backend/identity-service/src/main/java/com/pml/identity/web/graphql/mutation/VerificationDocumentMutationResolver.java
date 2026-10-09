@@ -1,13 +1,17 @@
 package com.pml.identity.web.graphql.mutation;
 
+import com.pml.identity.security.IdentityTenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.VerificationDocumentService;
+import com.pml.identity.service.storage.DocumentKeys;
 import com.pml.identity.service.storage.FileStorageService;
-import com.pml.identity.service.validation.FileUploadValidator;
+import com.pml.identity.validation.FileUploadValidator;
+import com.pml.shared.error.FieldViolation;
+import com.pml.shared.error.ValidationRefusal;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Verification Document operations.
@@ -29,15 +34,21 @@ import java.util.Map;
  * 4. Audit logging
  */
 @Slf4j
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class VerificationDocumentMutationResolver {
 
     private final VerificationDocumentService documentService;
+    private final IdentityTenantReads reads;
     private final OrganizationService organizationService;
     private final FileUploadValidator fileUploadValidator;
     private final FileStorageService fileStorageService;
 
+
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     // ========================================================================
     // DOCUMENT UPLOAD MUTATIONS
     // ========================================================================
@@ -57,8 +68,8 @@ public class VerificationDocumentMutationResolver {
      * - Generates audit trail
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ORGANIZER')")
-    public Mono<VerificationDocumentUploadResponse> uploadVerificationDocument(
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
+    public Mono<VerificationDocument> uploadVerificationDocument(
             @InputArgument("input") Map<String, Object> input) {
 
         String documentType = (String) input.get("documentType");
@@ -77,10 +88,8 @@ public class VerificationDocumentMutationResolver {
                             return validateFileMetadata(fileName, mimeType, fileSize)
                                     .flatMap(validationResult -> {
                                         if (!validationResult.isValid()) {
-                                            return Mono.just(VerificationDocumentUploadResponse.error(
-                                                    validationResult.getErrorMessage(),
-                                                    FileUploadErrorCode.VALIDATION_FAILED
-                                            ));
+                                            return Mono.error(new IllegalArgumentException(
+                                                    validationResult.getErrorMessage()));
                                         }
 
                                         // If documentUrl provided, file was pre-uploaded (client-side S3)
@@ -96,20 +105,12 @@ public class VerificationDocumentMutationResolver {
                                         }
 
                                         // Otherwise, expect multipart file (future implementation)
-                                        return Mono.just(VerificationDocumentUploadResponse.error(
-                                                "Direct file upload not yet implemented. " +
-                                                        "Use requestDocumentUploadUrl for client-side upload.",
-                                                FileUploadErrorCode.UPLOAD_FAILED
-                                        ));
+                                        return Mono.error(new UnsupportedOperationException(
+                                                "direct multipart upload is not implemented; "
+                                                        + "use requestDocumentUploadUrl"));
                                     });
                         }))
-                .onErrorResume(error -> {
-                    log.error("Failed to upload document: {}", error.getMessage(), error);
-                    return Mono.just(VerificationDocumentUploadResponse.error(
-                            "Upload failed: " + error.getMessage(),
-                            FileUploadErrorCode.UPLOAD_FAILED
-                    ));
-                });
+;
     }
 
     /**
@@ -126,7 +127,7 @@ public class VerificationDocumentMutationResolver {
      * - Better for mobile clients (handles network interruptions)
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<DocumentUploadUrlResponse> requestDocumentUploadUrl(
             @InputArgument("input") Map<String, Object> input) {
 
@@ -160,7 +161,7 @@ public class VerificationDocumentMutationResolver {
                                                 .map(presignedUrl -> new DocumentUploadUrlResponse(
                                                         presignedUrl,
                                                         fileKey,
-                                                        Instant.now().plus(Duration.ofMinutes(15)),
+                                                        clock.instant().plus(Duration.ofMinutes(15)),
                                                         10 * 1024 * 1024L, // 10MB max
                                                         List.of("application/pdf", "image/jpeg", "image/png", "image/webp")
                                                 ));
@@ -208,13 +209,12 @@ public class VerificationDocumentMutationResolver {
      * Delete verification document.
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<Boolean> deleteVerificationDocument(
             @InputArgument String documentId) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("User {} deleting document: {}", userId, documentId))
-                .flatMap(userId -> documentService.findById(documentId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Document not found")))
+                .flatMap(userId -> reads.documentForCaller(documentId)
                         .flatMap(doc -> organizationService.findByOwnerId(userId)
                                 .flatMap(organization -> {
                                     if (!doc.getOrganizationId().equals(organization.getId())) {
@@ -224,8 +224,12 @@ public class VerificationDocumentMutationResolver {
                                     }
 
                                     // Delete from storage first, then database
-                                    String fileKey = extractFileKeyFromUrl(doc.getDocumentUrl());
-                                    return fileStorageService.delete(fileKey)
+                                    // A URL that is not inside this organization's folder is never deleted from
+                                    // storage, whatever it says; only the record goes.
+                                    Mono<Void> removeFile = DocumentKeys.ownedKey(organization.getId(), doc.getDocumentUrl())
+                                            .map(fileStorageService::delete)
+                                            .orElseGet(Mono::empty);
+                                    return removeFile
                                             .then(documentService.delete(documentId))
                                             .thenReturn(true);
                                 })));
@@ -256,18 +260,17 @@ public class VerificationDocumentMutationResolver {
         }
 
         // Use validator's raw file validation (without file content)
-        return Mono.just(fileUploadValidator.validateRawFile(
+        return Mono.just(fileUploadValidator.validateDeclaredMetadata(
                 fileName,
                 mimeType,
-                fileSize,
-                new byte[0] // Magic number validation skipped for pre-uploaded files
+                fileSize
         ));
     }
 
     /**
      * Handles document that was pre-uploaded to S3
      */
-    private Mono<VerificationDocumentUploadResponse> handlePreUploadedDocument(
+    private Mono<VerificationDocument> handlePreUploadedDocument(
             String organizationId,
             String documentType,
             String documentUrl,
@@ -275,7 +278,11 @@ public class VerificationDocumentMutationResolver {
             Long fileSize,
             String mimeType) {
 
-        log.info("Processing pre-uploaded document: {}", documentUrl);
+        if (DocumentKeys.ownedKey(organizationId, documentUrl).isEmpty()) {
+            return Mono.error(new ValidationRefusal(List.of(new FieldViolation(
+                    "input.documentUrl", "must point at a file uploaded for your organization"))));
+        }
+        log.info("Processing pre-uploaded document");
 
         // Save document metadata to database
         return documentService.upload(
@@ -286,13 +293,9 @@ public class VerificationDocumentMutationResolver {
                         fileSize,
                         mimeType
                 )
-                .map(VerificationDocumentUploadResponse::success)
                 .onErrorResume(error -> {
                     log.error("Failed to save document metadata: {}", error.getMessage());
-                    return Mono.just(VerificationDocumentUploadResponse.error(
-                            "Failed to save document: " + error.getMessage(),
-                            FileUploadErrorCode.UPLOAD_FAILED
-                    ));
+                    return Mono.error(new IllegalStateException("Failed to save document: "));
                 });
     }
 
@@ -303,20 +306,6 @@ public class VerificationDocumentMutationResolver {
         int lastSlash = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'));
         String basename = lastSlash >= 0 ? filename.substring(lastSlash + 1) : filename;
         return basename.replaceAll("[^a-zA-Z0-9._-]", "_");
-    }
-
-    /**
-     * Extracts file key from S3 URL
-     */
-    private String extractFileKeyFromUrl(String url) {
-        // Handle S3 URLs, presigned URLs, local URLs
-        if (url.contains("amazonaws.com")) {
-            String[] parts = url.split("amazonaws.com/");
-            if (parts.length > 1) {
-                return parts[1].split("\\?")[0]; // Remove query params
-            }
-        }
-        return url;
     }
 
     /**
@@ -340,39 +329,6 @@ public class VerificationDocumentMutationResolver {
     /**
      * Response for document upload mutation
      */
-    public record VerificationDocumentUploadResponse(
-            Boolean success,
-            String message,
-            VerificationDocument document,
-            List<FileUploadError> errors
-    ) {
-        public static VerificationDocumentUploadResponse success(VerificationDocument document) {
-            return new VerificationDocumentUploadResponse(
-                    true,
-                    "Document uploaded successfully",
-                    document,
-                    List.of()
-            );
-        }
-
-        public static VerificationDocumentUploadResponse error(String message) {
-            return new VerificationDocumentUploadResponse(
-                    false,
-                    message,
-                    null,
-                    List.of(new FileUploadError("file", message, FileUploadErrorCode.UPLOAD_FAILED))
-            );
-        }
-
-        public static VerificationDocumentUploadResponse error(String message, FileUploadErrorCode code) {
-            return new VerificationDocumentUploadResponse(
-                    false,
-                    message,
-                    null,
-                    List.of(new FileUploadError("file", message, code))
-            );
-        }
-    }
 
     /**
      * File upload error details

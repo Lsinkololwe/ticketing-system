@@ -702,4 +702,3 @@ After completing migration:
 - [Radix Themes Documentation](https://www.radix-ui.com/themes/docs)
 - [Radix Color System](https://www.radix-ui.com/themes/docs/theme/color)
 - [Radix Layout Components](https://www.radix-ui.com/themes/docs/components/flex)
-- [Project Theme Tokens Reference](./THEME_TOKENS.md)

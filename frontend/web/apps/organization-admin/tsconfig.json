@@ -5,6 +5,7 @@
     "noEmit": true,
     "emitDeclarationOnly": false,
     "composite": false,
+    "declarationMap": false,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "lib": [
@@ -61,6 +62,7 @@
     "jest.config.cts",
     "src/**/*.spec.ts",
     "src/**/*.test.ts",
+    "src/**/*.it.ts",
     ".next"
   ],
   "references": [

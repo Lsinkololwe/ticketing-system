@@ -1,0 +1,23 @@
+verdict	method	path	owner	callers
+OK	POST	/api/internal/authorization/check	identity-service	booking-service,catalog-service
+OK	GET	/api/internal/authorization/event-access	identity-service	catalog-service
+OK	GET	/api/internal/authorization/check-same-organization	identity-service	booking-service,catalog-service
+OK	GET	/api/internal/authorization/user-organizations	identity-service	booking-service,shared-library
+OK	POST	/api/internal/keycloak/sync/user-data	identity-service	keycloak-extensions
+OK	POST	/api/internal/keycloak/sync/event	identity-service	keycloak-extensions
+NONE	POST	/api/internal/keycloak/sync/all	identity-service	
+NONE	GET	/api/internal/keycloak/sync/health	identity-service	
+OK	POST	/api/internal/notifications/approvals	identity-service	catalog-service
+OK	GET	/api/internal/finance-leads/contacts	identity-service	booking-service
+OK	POST	/api/internal/finance-leads/notifications	identity-service	booking-service
+OK	POST	/api/internal/revocations	identity-service	shared-library,ticketing-system
+OK	POST	/api/internal/revocations/logout	identity-service	ticketing-system
+OK	POST	/api/internal/revocations/check	identity-service	shared-library,ticketing-system
+OK	GET	/api/internal/revocations/health	identity-service	shared-library,ticketing-system
+OK	GET	/api/internal/events/{id}	catalog-service	booking-service
+OK	POST	/api/internal/inventory/tiers/{tierId}/reserve	catalog-service	booking-service
+OK	POST	/api/internal/inventory/tiers/{tierId}/release	catalog-service	booking-service
+OK	POST	/api/internal/inventory/tiers/{tierId}/commit	catalog-service	booking-service
+OK	POST	/api/internal/inventory/tiers/{tierId}/restore	catalog-service	booking-service
+OK	GET	/api/internal/tickets/sold-count/by-event/{eventId}	booking-service	catalog-service
+OK	GET	/api/internal/payouts/by-event/{eventId}/open	booking-service	catalog-service

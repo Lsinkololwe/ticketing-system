@@ -36,6 +36,12 @@ public class PayoutRequestFieldResolver {
      * @param dfe DataFetchingEnvironment containing the parent PayoutRequest
      * @return BankAccount entity or null if not found
      */
+    /** The stored status, or {@code ON_HOLD} while an operator's hold is on. */
+    @DgsData(parentType = "PayoutRequest", field = "status")
+    public String status(DgsDataFetchingEnvironment dfe) {
+        return com.pml.booking.domain.PayoutStatusView.of(dfe.getSource());
+    }
+
     @DgsData(parentType = "PayoutRequest", field = "bankAccount")
     public CompletableFuture<BankAccount> bankAccount(DgsDataFetchingEnvironment dfe) {
         PayoutRequest payoutRequest = dfe.getSource();

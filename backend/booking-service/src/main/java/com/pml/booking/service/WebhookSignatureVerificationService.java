@@ -54,6 +54,9 @@ public class WebhookSignatureVerificationService {
 
     private final PawaPayProperties pawaPayProperties;
 
+
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     private static final String PAWAPAY_SIGNATURE_LABEL = "sig-pp";
 
     /**
@@ -358,7 +361,7 @@ public class WebhookSignatureVerificationService {
             return false;
         }
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         Duration age = Duration.between(created, now);
 
         // Allow small clock skew (2 minutes)

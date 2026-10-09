@@ -60,7 +60,7 @@
       },
       "status": {
         "bsonType": "string",
-        "enum": ["PENDING", "APPROVED", "REJECTED"],
+        "enum": ["PENDING", "APPROVED", "REJECTED", "EXPIRED"],
         "description": "OWASP A04 - Enum constraint"
       },
       "uploadedAt": {

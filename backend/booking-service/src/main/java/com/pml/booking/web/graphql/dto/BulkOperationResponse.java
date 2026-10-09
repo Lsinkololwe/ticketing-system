@@ -10,17 +10,14 @@ import java.util.List;
  * processed and failed items along with error details.
  */
 public record BulkOperationResponse(
-        boolean success,
-        String message,
         int processedCount,
-        int failedCount,
-        List<String> errors
+        int failedCount
 ) {
     /**
      * Factory method for fully successful bulk operations.
      */
     public static BulkOperationResponse success(String message, int processedCount) {
-        return new BulkOperationResponse(true, message, processedCount, 0, List.of());
+        return new BulkOperationResponse(processedCount, 0);
     }
 
     /**
@@ -28,11 +25,8 @@ public record BulkOperationResponse(
      */
     public static BulkOperationResponse partial(String message, int processedCount, int failedCount, List<String> errors) {
         return new BulkOperationResponse(
-                failedCount == 0,
-                message,
                 processedCount,
-                failedCount,
-                errors
+                failedCount
         );
     }
 
@@ -40,6 +34,6 @@ public record BulkOperationResponse(
      * Factory method for failed bulk operations.
      */
     public static BulkOperationResponse error(String message, List<String> errors) {
-        return new BulkOperationResponse(false, message, 0, errors.size(), errors);
+        return new BulkOperationResponse(0, errors.size());
     }
 }

@@ -1,9 +1,11 @@
 package com.pml.identity.infrastructure.keycloak;
 
+import com.pml.identity.account.KeycloakAccountPort;
+import com.pml.identity.account.KeycloakUserAdminPort;
 import com.pml.identity.config.KeycloakProperties;
-import com.pml.identity.domain.model.User;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
+import com.pml.shared.constants.UserType;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.Keycloak;
@@ -11,862 +13,597 @@ import org.keycloak.admin.client.KeycloakBuilder;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.admin.client.resource.UsersResource;
-import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import jakarta.ws.rs.core.Response;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
- * Service for managing users in Keycloak via Admin API.
- * Provides user CRUD operations synchronized with MongoDB.
+ * The only writer of Keycloak users and roles (CONTRACT 1, 9).
+ *
+ * <h2>What changed from the email-keyed client</h2>
+ * <ul>
+ *   <li>Every operation is addressed by Keycloak id, or by {@code username = accountId}. Nothing
+ *       looks a user up by email: an email is one person's contact, not an identity, and adopting
+ *       "the user with this email" on a 409 is how one account ends up signed in as another.</li>
+ *   <li>A 409 on create is answered by reading back <em>the user with that exact username</em>,
+ *       which can only be this account's own earlier attempt.</li>
+ *   <li>Keycloak's {@code PUT /users/{id}} replaces the user (attributes included), so every update
+ *       first reads the full representation from the server and sends the merged result.</li>
+ *   <li>There is no delete. A removed person is disabled; an erasure is a separate, audited step.</li>
+ *   <li>Writes raise. A caller that never sees the failure cannot retry it.</li>
+ * </ul>
+ *
+ * <p>Calls are blocking; each is moved onto {@code boundedElastic}.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
-public class KeycloakService {
+public class KeycloakService implements KeycloakAccountPort, KeycloakUserAdminPort {
 
-    private final KeycloakProperties keycloakProperties;
-    private Keycloak keycloak;
+    /** The attribute that links a Keycloak user to its account. */
+    public static final String ACCOUNT_ID_ATTRIBUTE = "accountId";
 
-    @PostConstruct
-    public void init() {
-        this.keycloak = KeycloakBuilder.builder()
-                .serverUrl(keycloakProperties.getServerUrl())
-                .realm(keycloakProperties.getAdminRealm())
+    private final KeycloakProperties properties;
+    private final Supplier<Keycloak> clientFactory;
+    private volatile Keycloak client;
+
+    @Autowired
+    public KeycloakService(KeycloakProperties properties) {
+        this(properties, () -> build(properties));
+    }
+
+    /** For tests: a client the caller built. */
+    public KeycloakService(KeycloakProperties properties, Supplier<Keycloak> clientFactory) {
+        this.properties = properties;
+        this.clientFactory = clientFactory;
+    }
+
+    private static Keycloak build(KeycloakProperties properties) {
+        if (isBlank(properties.getServerUrl())) {
+            throw new KeycloakWriteFailed("keycloak.server-url is not configured");
+        }
+        if (isBlank(properties.getAdminUsername()) || isBlank(properties.getAdminPassword())) {
+            throw new KeycloakWriteFailed("keycloak.admin-username and keycloak.admin-password are not configured");
+        }
+        return KeycloakBuilder.builder()
+                .serverUrl(properties.getServerUrl())
+                .realm(properties.getAdminRealm())
                 .grantType(OAuth2Constants.PASSWORD)
                 .clientId("admin-cli")
-                .username(keycloakProperties.getAdminUsername())
-                .password(keycloakProperties.getAdminPassword())
+                .username(properties.getAdminUsername())
+                .password(properties.getAdminPassword())
                 .build();
-        log.info("Keycloak Admin Client initialized for realm: {}", keycloakProperties.getRealm());
     }
 
-    /**
-     * Create a user in Keycloak.
-     *
-     * @param user     The user entity from MongoDB
-     * @param password The plain text password (will be hashed by Keycloak)
-     * @return Mono with the Keycloak user ID
-     */
-    public Mono<String> createUser(User user, String password) {
-        return Mono.fromCallable(() -> {
-            log.info("Creating user in Keycloak: {}", user.getEmail());
+    private Keycloak keycloak() {
+        Keycloak current = client;
+        if (current == null) {
+            synchronized (this) {
+                current = client;
+                if (current == null) {
+                    current = clientFactory.get();
+                    client = current;
+                    log.info("Keycloak admin client ready for realm {}", properties.getRealm());
+                }
+            }
+        }
+        return current;
+    }
 
-            UserRepresentation keycloakUser = new UserRepresentation();
-            keycloakUser.setEnabled(true);
-            keycloakUser.setUsername(user.getUsername());
-            keycloakUser.setEmail(user.getEmail());
-            keycloakUser.setFirstName(user.getFirstName());
-            keycloakUser.setLastName(user.getLastName());
-            keycloakUser.setEmailVerified(user.isEmailVerified());
+    private RealmResource buyers() {
+        return keycloak().realm(properties.getRealm());
+    }
 
-            // Set custom attributes
+    private RealmResource realm(String name) {
+        return keycloak().realm(name == null || name.isBlank() ? properties.getRealm() : name);
+    }
+
+    private static <T> Mono<T> blocking(Callable<T> work) {
+        return Mono.fromCallable(work).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    // ========================================================================
+    // KeycloakAccountPort · what the account workflow activities use
+    // ========================================================================
+
+    @Override
+    public Mono<String> createUser(String accountId, boolean enabled, UserType role) {
+        return blocking(() -> {
+            if (isBlank(accountId)) {
+                throw new IllegalArgumentException("an account id is required to create a Keycloak user");
+            }
+            UsersResource users = buyers().users();
+            UserRepresentation user = new UserRepresentation();
+            // The id is Keycloak's to mint: a supplied one is ignored on create (verified against 26.5.2),
+            // so the token's sub is the Keycloak id, not the account id. Accounts link to it by keycloakUserId.
+            user.setUsername(accountId);
+            user.setEnabled(enabled);
             Map<String, List<String>> attributes = new HashMap<>();
-            attributes.put("userId", Collections.singletonList(user.getId()));
-
-            // Store roles as comma-separated string for backup/reference
-            String rolesStr = user.getRoles() != null && !user.getRoles().isEmpty()
-                    ? user.getRoles().stream()
-                        .map(Enum::name)
-                        .reduce((a, b) -> a + "," + b)
-                        .orElse("CUSTOMER")
-                    : "CUSTOMER";
-            attributes.put("roles", Collections.singletonList(rolesStr));
-
-            if (user.getPhoneNumber() != null) {
-                attributes.put("phoneNumber", Collections.singletonList(user.getPhoneNumber()));
-                attributes.put("phoneVerified", Collections.singletonList(String.valueOf(user.isPhoneVerified())));
-            }
-            keycloakUser.setAttributes(attributes);
-
-            // Set password credential
-            CredentialRepresentation credential = new CredentialRepresentation();
-            credential.setTemporary(false);
-            credential.setType(CredentialRepresentation.PASSWORD);
-            credential.setValue(password);
-            keycloakUser.setCredentials(Collections.singletonList(credential));
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-
-            Response response = usersResource.create(keycloakUser);
-            int status = response.getStatus();
-
-            if (status == 201) {
-                // Extract Keycloak user ID from Location header
-                String location = response.getHeaderString("Location");
-                String keycloakUserId = location.substring(location.lastIndexOf('/') + 1);
-                log.info("User created in Keycloak with ID: {}", keycloakUserId);
-
-                // Assign all roles from the user's role set
-                if (user.getRoles() != null) {
-                    for (var role : user.getRoles()) {
-                        assignRole(keycloakUserId, role.name());
-                    }
-                } else {
-                    // Default to CUSTOMER role
-                    assignRole(keycloakUserId, "CUSTOMER");
-                }
-
-                return keycloakUserId;
-            } else if (status == 409) {
-                log.warn("User already exists in Keycloak: {}", user.getEmail());
-                // Find existing user
-                List<UserRepresentation> existingUsers = usersResource.searchByEmail(user.getEmail(), true);
-                if (!existingUsers.isEmpty()) {
-                    return existingUsers.get(0).getId();
-                }
-                throw new RuntimeException("User already exists but could not be found");
-            } else {
-                String errorMessage = response.readEntity(String.class);
-                log.error("Failed to create user in Keycloak. Status: {}, Error: {}", status, errorMessage);
-                throw new RuntimeException("Failed to create user in Keycloak: " + errorMessage);
-            }
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Update a user in Keycloak.
-     *
-     * ARCHITECTURE NOTE: This syncs profile data from MongoDB to Keycloak.
-     * - firstName, lastName: Synced for display purposes
-     * - emailVerified: Synced for verification status
-     * - isActive (MongoDB) → enabled (Keycloak): Controls authentication ability
-     * - Attributes: roles, phoneNumber, phoneVerified
-     *
-     * Note: Role synchronization is handled separately via addRoleToUser/removeRoleFromUser
-     * or syncUserRoles methods. This method only updates the 'roles' attribute for reference.
-     *
-     * @param user The updated user entity
-     * @return Mono signaling completion
-     */
-    public Mono<Void> updateUser(User user) {
-        return Mono.fromRunnable(() -> {
-            log.info("Updating user in Keycloak: {}", user.getEmail());
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-
-            // Find user by email
-            List<UserRepresentation> users = usersResource.searchByEmail(user.getEmail(), true);
-            if (users.isEmpty()) {
-                log.warn("User not found in Keycloak: {}", user.getEmail());
-                return;
-            }
-
-            UserRepresentation keycloakUser = users.get(0);
-            UserResource userResource = usersResource.get(keycloakUser.getId());
-
-            // Update user details
-            // Note: isActive in MongoDB maps to enabled in Keycloak
-            keycloakUser.setFirstName(user.getFirstName());
-            keycloakUser.setLastName(user.getLastName());
-            keycloakUser.setEnabled(user.isActive());
-            keycloakUser.setEmailVerified(user.isEmailVerified());
-
-            // Update attributes
-            Map<String, List<String>> attributes = keycloakUser.getAttributes();
-            if (attributes == null) {
-                attributes = new HashMap<>();
-            }
-
-            // Store roles as comma-separated string for backup/reference
-            String rolesStr = user.getRoles() != null && !user.getRoles().isEmpty()
-                    ? user.getRoles().stream()
-                        .map(Enum::name)
-                        .reduce((a, b) -> a + "," + b)
-                        .orElse("CUSTOMER")
-                    : "CUSTOMER";
-            attributes.put("roles", Collections.singletonList(rolesStr));
-
-            if (user.getPhoneNumber() != null) {
-                attributes.put("phoneNumber", Collections.singletonList(user.getPhoneNumber()));
-                attributes.put("phoneVerified", Collections.singletonList(String.valueOf(user.isPhoneVerified())));
-            }
-            keycloakUser.setAttributes(attributes);
-
-            userResource.update(keycloakUser);
-            log.info("User updated in Keycloak: {}", user.getEmail());
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Sync user roles to Keycloak.
-     * This method ensures the user has exactly the specified roles in Keycloak.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @param roles The set of roles the user should have
-     * @return Mono signaling completion
-     */
-    public Mono<Void> syncUserRoles(String keycloakUserId, java.util.Set<com.pml.shared.constants.UserType> roles) {
-        return getUserRoles(keycloakUserId)
-                .flatMap(currentRoles -> {
-                    // Convert current roles to UserType set
-                    java.util.Set<String> targetRoleNames = roles.stream()
-                            .map(Enum::name)
-                            .collect(java.util.stream.Collectors.toSet());
-
-                    java.util.Set<String> currentRoleNames = new java.util.HashSet<>(currentRoles);
-
-                    // Roles to add
-                    java.util.Set<String> rolesToAdd = new java.util.HashSet<>(targetRoleNames);
-                    rolesToAdd.removeAll(currentRoleNames);
-
-                    // Roles to remove
-                    java.util.Set<String> rolesToRemove = new java.util.HashSet<>(currentRoleNames);
-                    rolesToRemove.removeAll(targetRoleNames);
-
-                    // Add new roles
-                    reactor.core.publisher.Mono<Void> addRoles = reactor.core.publisher.Flux.fromIterable(rolesToAdd)
-                            .flatMap(role -> addRoleToUser(keycloakUserId, role))
-                            .then();
-
-                    // Remove old roles
-                    reactor.core.publisher.Mono<Void> removeRoles = reactor.core.publisher.Flux.fromIterable(rolesToRemove)
-                            .flatMap(role -> removeRoleFromUser(keycloakUserId, role))
-                            .then();
-
-                    return reactor.core.publisher.Mono.when(addRoles, removeRoles);
-                })
-                .doOnSuccess(v -> log.info("Synced roles for user {}: {}", keycloakUserId, roles))
-                .onErrorResume(e -> {
-                    log.warn("Failed to sync roles for user {}: {}", keycloakUserId, e.getMessage());
-                    return reactor.core.publisher.Mono.empty();
-                });
-    }
-
-    /**
-     * Delete a user from Keycloak.
-     *
-     * @param email The user's email
-     * @return Mono signaling completion
-     */
-    public Mono<Void> deleteUser(String email) {
-        return Mono.fromRunnable(() -> {
-            log.info("Deleting user from Keycloak: {}", email);
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-
-            List<UserRepresentation> users = usersResource.searchByEmail(email, true);
-            if (users.isEmpty()) {
-                log.warn("User not found in Keycloak: {}", email);
-                return;
-            }
-
-            String keycloakUserId = users.get(0).getId();
-            usersResource.delete(keycloakUserId);
-            log.info("User deleted from Keycloak: {}", email);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Find a user in Keycloak by email.
-     *
-     * @param email The user's email
-     * @return Mono with optional UserRepresentation
-     */
-    public Mono<Optional<UserRepresentation>> findUserByEmail(String email) {
-        return Mono.<Optional<UserRepresentation>>fromCallable(() -> {
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-
-            List<UserRepresentation> users = usersResource.searchByEmail(email, true);
-            if (users.isEmpty()) {
-                return Optional.empty();
-            }
-            return Optional.of(users.get(0));
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Find a user in Keycloak by ID.
-     *
-     * @param userId The Keycloak user ID
-     * @return Mono with optional UserRepresentation
-     */
-    public Mono<Optional<UserRepresentation>> findUserById(String userId) {
-        return Mono.<Optional<UserRepresentation>>fromCallable(() -> {
-            try {
-                RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-                UserResource userResource = realmResource.users().get(userId);
-                UserRepresentation user = userResource.toRepresentation();
-                return Optional.of(user);
-            } catch (jakarta.ws.rs.NotFoundException e) {
-                return Optional.empty();
-            }
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Search users by query string (email, name, username).
-     *
-     * @param query      Search query
-     * @param maxResults Maximum results to return
-     * @return Flux of matching users
-     */
-    public Flux<UserRepresentation> searchUsers(String query, int maxResults) {
-        return Mono.fromCallable(() -> {
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-            return usersResource.search(query, 0, maxResults);
-        }).subscribeOn(Schedulers.boundedElastic())
-          .flatMapMany(Flux::fromIterable);
-    }
-
-    /**
-     * Get all users with a specific realm role.
-     *
-     * @param roleName Role name
-     * @return Flux of users with the role
-     */
-    public Flux<UserRepresentation> getUsersByRole(String roleName) {
-        return Mono.fromCallable(() -> {
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            return realmResource.roles().get(roleName).getUserMembers();
-        }).subscribeOn(Schedulers.boundedElastic())
-          .flatMapMany(Flux::fromIterable);
-    }
-
-    /**
-     * Add a realm role to a user.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @param roleName       The role name to add
-     * @return Mono signaling completion
-     */
-    public Mono<Void> addRoleToUser(String keycloakUserId, String roleName) {
-        return Mono.fromRunnable(() -> {
-            log.info("Adding role {} to user {}", roleName, keycloakUserId);
-            assignRole(keycloakUserId, roleName);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Remove a realm role from a user.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @param roleName       The role name to remove
-     * @return Mono signaling completion
-     */
-    public Mono<Void> removeRoleFromUser(String keycloakUserId, String roleName) {
-        return Mono.fromRunnable(() -> {
-            log.info("Removing role {} from user {}", roleName, keycloakUserId);
-            try {
-                RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-                RoleRepresentation role = realmResource.roles().get(roleName).toRepresentation();
-                realmResource.users().get(keycloakUserId).roles().realmLevel()
-                        .remove(Collections.singletonList(role));
-                log.info("Removed role {} from user {}", roleName, keycloakUserId);
-            } catch (Exception e) {
-                log.warn("Failed to remove role {} from user {}: {}", roleName, keycloakUserId, e.getMessage());
-            }
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Get all roles assigned to a user.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @return Mono with list of role names
-     */
-    public Mono<List<String>> getUserRoles(String keycloakUserId) {
-        return Mono.fromCallable(() -> {
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            List<RoleRepresentation> roles = realmResource.users()
-                    .get(keycloakUserId)
-                    .roles()
-                    .realmLevel()
-                    .listEffective();
-            return roles.stream()
-                    .map(RoleRepresentation::getName)
-                    .filter(name -> !name.startsWith("default-roles-"))
-                    .toList();
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Update user attributes in Keycloak.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @param attributeName  The attribute name
-     * @param attributeValue The attribute value
-     * @return Mono signaling completion
-     */
-    public Mono<Void> updateUserAttribute(String keycloakUserId, String attributeName, String attributeValue) {
-        return Mono.fromRunnable(() -> {
-            log.info("Updating attribute {} for user {}", attributeName, keycloakUserId);
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UserResource userResource = realmResource.users().get(keycloakUserId);
-            UserRepresentation user = userResource.toRepresentation();
-
-            Map<String, List<String>> attributes = user.getAttributes();
-            if (attributes == null) {
-                attributes = new HashMap<>();
-            }
-            attributes.put(attributeName, Collections.singletonList(attributeValue));
+            attributes.put(ACCOUNT_ID_ATTRIBUTE, List.of(accountId));
             user.setAttributes(attributes);
 
-            userResource.update(user);
-            log.info("Updated attribute {} for user {}", attributeName, keycloakUserId);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
+            String keycloakUserId;
+            try (Response response = users.create(user)) {
+                int status = response.getStatus();
+                if (status == 201) {
+                    String location = response.getHeaderString("Location");
+                    keycloakUserId = location.substring(location.lastIndexOf('/') + 1);
+                } else if (status == 409) {
+                    // Exactly this username, which only this account's own earlier attempt can hold.
+                    keycloakUserId = exactUser(users, accountId)
+                            .map(UserRepresentation::getId)
+                            .orElseThrow(() -> new KeycloakWriteFailed(
+                                    "Keycloak answered 409 for account " + accountId + " but holds no such username"));
+                } else {
+                    throw new KeycloakWriteFailed("Keycloak refused to create the user of account " + accountId
+                            + ": HTTP " + status);
+                }
+            }
+            if (role != null) {
+                grantRole(buyers(), keycloakUserId, role.name());
+            }
+            return keycloakUserId;
+        });
     }
 
-    /**
-     * Get all users with pagination.
-     *
-     * @param first      First result index
-     * @param maxResults Maximum results to return
-     * @return Flux of users
-     */
+    @Override
+    public Mono<Void> applyAttributesAndRoles(String keycloakUserId, AccountAttributes attributes, Set<UserType> roles) {
+        return blocking(() -> {
+            RealmResource realm = buyers();
+            UserResource resource = realm.users().get(keycloakUserId);
+            UserRepresentation user = fullRepresentation(resource, keycloakUserId);
+
+            Map<String, List<String>> merged = user.getAttributes() == null
+                    ? new HashMap<>() : new HashMap<>(user.getAttributes());
+            merged.put(ACCOUNT_ID_ATTRIBUTE, List.of(attributes.accountId()));
+            if (!isBlank(attributes.locale())) {
+                merged.put("locale", List.of(attributes.locale()));
+            }
+            if (!isBlank(attributes.displayName())) {
+                merged.put("displayName", List.of(attributes.displayName()));
+            }
+            user.setAttributes(merged);
+            if (!isBlank(attributes.email())) {
+                user.setEmail(attributes.email());
+                user.setEmailVerified(attributes.emailVerified());
+            }
+            resource.update(user);
+
+            if (roles != null && !roles.isEmpty()) {
+                Set<String> held = resource.roles().realmLevel().listAll().stream()
+                        .map(RoleRepresentation::getName).collect(Collectors.toSet());
+                for (UserType role : roles) {
+                    if (!held.contains(role.name())) {
+                        grantRole(realm, keycloakUserId, role.name());
+                    }
+                }
+            }
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    @Override
+    public Mono<Void> setEmail(String keycloakUserId, String email, boolean emailVerified) {
+        return blocking(() -> {
+            UserResource resource = buyers().users().get(keycloakUserId);
+            UserRepresentation user = fullRepresentation(resource, keycloakUserId);
+            boolean has = !isBlank(email);
+            user.setEmail(has ? email : null);
+            user.setEmailVerified(has && emailVerified);
+            resource.update(user);
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    @Override
+    public Mono<KeycloakAccount> findByUsername(String username) {
+        return blocking(() -> exactUser(buyers().users(), username)
+                .map(user -> new KeycloakAccount(user.getId(), user.getUsername(),
+                        Boolean.TRUE.equals(user.isEnabled()), Boolean.TRUE.equals(user.isEmailVerified())))
+                .orElse(null));
+    }
+
+    @Override
+    public Mono<Void> setEnabled(String keycloakUserId, boolean enabled) {
+        return setEnabled(null, keycloakUserId, enabled);
+    }
+
+    // ========================================================================
+    // KeycloakUserAdminPort
+    // ========================================================================
+
+    @Override
+    public Mono<Void> endSessions(String realmName, String keycloakUserId) {
+        return blocking(() -> {
+            try {
+                realm(realmName).users().get(keycloakUserId).logout();
+            } catch (NotFoundException absent) {
+                log.info("Keycloak user {} is absent; it has no sessions to end", keycloakUserId);
+            }
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    @Override
+    public reactor.core.publisher.Flux<SessionView> sessions(String realmName, String keycloakUserId) {
+        return blocking(() -> {
+            try {
+                return realm(realmName).users().get(keycloakUserId).getUserSessions().stream()
+                        .map(session -> new SessionView(
+                                session.getId(),
+                                session.getIpAddress(),
+                                session.getStart() <= 0 ? null : java.time.Instant.ofEpochMilli(session.getStart()),
+                                session.getLastAccess() <= 0 ? null : java.time.Instant.ofEpochMilli(session.getLastAccess()),
+                                session.getClients() == null ? java.util.List.<String>of()
+                                        : java.util.List.copyOf(session.getClients().values())))
+                        .toList();
+            } catch (NotFoundException absent) {
+                return java.util.List.<SessionView>of();
+            }
+        }).flatMapMany(reactor.core.publisher.Flux::fromIterable);
+    }
+
+    @Override
+    public Mono<Void> endSession(String realmName, String sessionId) {
+        return blocking(() -> {
+            try {
+                realm(realmName).deleteSession(sessionId, false);
+            } catch (NotFoundException gone) {
+                log.info("Keycloak session {} is already gone", sessionId);
+            }
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    @Override
+    public Mono<Void> grantRealmRole(String realmName, String keycloakUserId, String roleName) {
+        return blocking(() -> {
+            RealmResource realm = realm(realmName);
+            // The caller holds the platform account id, which is the Keycloak username rather than its id.
+            grantRole(realm, resolveUserId(realm, keycloakUserId).orElse(keycloakUserId), roleName);
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    @Override
+    public Mono<Void> revokeRealmRole(String realmName, String keycloakUserId, String roleName) {
+        return blocking(() -> {
+            try {
+                RealmResource realm = realm(realmName);
+                RoleRepresentation role = realm.roles().get(roleName).toRepresentation();
+                realm.users().get(resolveUserId(realm, keycloakUserId).orElse(keycloakUserId)).roles().realmLevel()
+                        .remove(Collections.singletonList(role));
+            } catch (NotFoundException absent) {
+                log.info("Role {} or user {} absent in Keycloak; nothing to revoke", roleName, keycloakUserId);
+            }
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    @Override
+    public Mono<Void> setEnabled(String realmName, String keycloakUserId, boolean enabled) {
+        return blocking(() -> {
+            UserResource resource = realm(realmName).users().get(keycloakUserId);
+            UserRepresentation user = fullRepresentation(resource, keycloakUserId);
+            user.setEnabled(enabled);
+            resource.update(user);
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    @Override
+    public Mono<String> createStaffUser(String username, String email, String firstName, String lastName,
+                                        String temporaryPassword) {
+        return blocking(() -> {
+            if (isBlank(username)) {
+                throw new IllegalArgumentException("a staff user needs a username");
+            }
+            UsersResource users = realm(properties.getStaffRealm()).users();
+            UserRepresentation user = new UserRepresentation();
+            user.setUsername(username);
+            user.setEmail(email);
+            user.setFirstName(firstName);
+            user.setLastName(lastName);
+            user.setEnabled(true);
+            user.setRequiredActions(List.of("UPDATE_PASSWORD", "CONFIGURE_TOTP"));
+            if (!isBlank(temporaryPassword)) {
+                org.keycloak.representations.idm.CredentialRepresentation credential =
+                        new org.keycloak.representations.idm.CredentialRepresentation();
+                credential.setType(org.keycloak.representations.idm.CredentialRepresentation.PASSWORD);
+                credential.setValue(temporaryPassword);
+                credential.setTemporary(true);
+                user.setCredentials(List.of(credential));
+            }
+            try (Response response = users.create(user)) {
+                int status = response.getStatus();
+                if (status == 201) {
+                    String location = response.getHeaderString("Location");
+                    return location.substring(location.lastIndexOf('/') + 1);
+                }
+                if (status == 409) {
+                    return exactUser(users, username).map(UserRepresentation::getId)
+                            .orElseThrow(() -> new KeycloakWriteFailed(
+                                    "Keycloak answered 409 for a staff user but holds no such username"));
+                }
+                throw new KeycloakWriteFailed("Keycloak refused to create a staff user: HTTP " + status);
+            }
+        });
+    }
+
+    @Override
+    public Mono<KeycloakUserView> readUser(String realmName, String keycloakUserId) {
+        return blocking(() -> {
+            try {
+                UserResource resource = realm(realmName).users().get(keycloakUserId);
+                return view(resource.toRepresentation(), realmRoleNames(resource));
+            } catch (NotFoundException absent) {
+                return null;
+            }
+        });
+    }
+
+    @Override
+    public Flux<KeycloakUserView> listUsers(String realmName, int first, int max) {
+        return blocking(() -> {
+            UsersResource users = realm(realmName).users();
+            List<KeycloakUserView> page = new java.util.ArrayList<>();
+            for (UserRepresentation found : users.list(first, max)) {
+                page.add(view(found, realmRoleNames(users.get(found.getId()))));
+            }
+            return page;
+        }).flatMapMany(Flux::fromIterable);
+    }
+
+    @Override
+    public Mono<Optional<String>> readAttribute(String realmName, String keycloakUserId, String name) {
+        return Mono.<Optional<String>>fromCallable(() -> {
+            try {
+                Map<String, List<String>> attributes = realm(realmName).users().get(keycloakUserId).toRepresentation().getAttributes();
+                List<String> values = attributes == null ? null : attributes.get(name);
+                return values == null || values.isEmpty() ? Optional.<String>empty() : Optional.of(values.get(0));
+            } catch (NotFoundException absent) {
+                return Optional.<String>empty();
+            }
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<Optional<KeycloakUserView>> readUserByUsername(String realmName, String username) {
+        return Mono.<Optional<KeycloakUserView>>fromCallable(() -> {
+            UsersResource users = realm(realmName).users();
+            return exactUser(users, username).map(found -> view(found, realmRoleNames(users.get(found.getId()))));
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** One page of the buyer realm's users, for the backfill. */
     public Flux<UserRepresentation> getAllUsers(int first, int maxResults) {
-        return Mono.fromCallable(() -> {
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            return realmResource.users().list(first, maxResults);
-        }).subscribeOn(Schedulers.boundedElastic())
-          .flatMapMany(Flux::fromIterable);
+        return blocking(() -> buyers().users().list(first, maxResults))
+                .flatMapMany(Flux::fromIterable);
     }
 
-    /**
-     * Count total users in realm.
-     *
-     * @return Mono with user count
-     */
-    public Mono<Integer> countUsers() {
-        return Mono.fromCallable(() -> {
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            return realmResource.users().count();
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
+    // ========================================================================
+    // Groups · a projection of organization membership, written from MongoDB
+    // ========================================================================
 
     /**
-     * Send verification email to user.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @return Mono signaling completion
+     * Best-effort: adds a user to an organization role group. The user is the identity_users id,
+     * which is the Keycloak id for an account that predates ET-IDN-004 and the account id (the
+     * Keycloak username) for every later one.
      */
-    public Mono<Void> sendVerificationEmail(String keycloakUserId) {
-        return Mono.fromRunnable(() -> {
-            log.info("Sending verification email to user {}", keycloakUserId);
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            realmResource.users().get(keycloakUserId).sendVerifyEmail();
-            log.info("Verification email sent to user {}", keycloakUserId);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Send password reset email to user.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @return Mono signaling completion
-     */
-    public Mono<Void> sendPasswordResetEmail(String keycloakUserId) {
-        return Mono.fromRunnable(() -> {
-            log.info("Sending password reset email to user {}", keycloakUserId);
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            realmResource.users().get(keycloakUserId).executeActionsEmail(
-                    Collections.singletonList("UPDATE_PASSWORD")
-            );
-            log.info("Password reset email sent to user {}", keycloakUserId);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Find a user in Keycloak by username.
-     *
-     * @param username The username
-     * @return Mono with optional UserRepresentation
-     */
-    public Mono<Optional<UserRepresentation>> findUserByUsername(String username) {
-        return Mono.<Optional<UserRepresentation>>fromCallable(() -> {
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-
-            List<UserRepresentation> users = usersResource.searchByUsername(username, true);
-            if (users.isEmpty()) {
-                return Optional.empty();
+    public Mono<Void> addUserToOrganizationGroup(String userId, String organizationSlug, String roleName) {
+        return blocking(() -> {
+            RealmResource realm = buyers();
+            Optional<String> keycloakUserId = resolveUserId(realm, userId);
+            if (keycloakUserId.isEmpty()) {
+                log.warn("No Keycloak user for account {}; group {} not joined", userId, roleName);
+                return Boolean.FALSE;
             }
-            return Optional.of(users.get(0));
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Update user password in Keycloak.
-     *
-     * @param email       The user's email
-     * @param newPassword The new password
-     * @return Mono signaling completion
-     */
-    public Mono<Void> updatePassword(String email, String newPassword) {
-        return Mono.fromRunnable(() -> {
-            log.info("Updating password in Keycloak for: {}", email);
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-
-            List<UserRepresentation> users = usersResource.searchByEmail(email, true);
-            if (users.isEmpty()) {
-                throw new RuntimeException("User not found in Keycloak: " + email);
+            String path = "/organizations/" + organizationSlug + "/" + roleName;
+            try {
+                GroupRepresentation group = realm.getGroupByPath(path);
+                if (group != null) {
+                    realm.users().get(keycloakUserId.get()).joinGroup(group.getId());
+                } else {
+                    log.warn("Group not found: {}", path);
+                }
+            } catch (RuntimeException e) {
+                log.warn("Failed to add account {} to group {}: {}", userId, path, e.getMessage());
             }
+            return Boolean.TRUE;
+        }).then();
+    }
 
-            String keycloakUserId = users.get(0).getId();
-            UserResource userResource = usersResource.get(keycloakUserId);
-
-            CredentialRepresentation credential = new CredentialRepresentation();
-            credential.setTemporary(false);
-            credential.setType(CredentialRepresentation.PASSWORD);
-            credential.setValue(newPassword);
-
-            userResource.resetPassword(credential);
-            log.info("Password updated in Keycloak for: {}", email);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
+    /** Best-effort counterpart of {@link #addUserToOrganizationGroup}. */
+    public Mono<Void> removeUserFromOrganizationGroup(String userId, String organizationSlug, String roleName) {
+        return blocking(() -> {
+            RealmResource realm = buyers();
+            Optional<String> keycloakUserId = resolveUserId(realm, userId);
+            if (keycloakUserId.isEmpty()) {
+                log.warn("No Keycloak user for account {}; group {} not left", userId, roleName);
+                return Boolean.FALSE;
+            }
+            String path = "/organizations/" + organizationSlug + "/" + roleName;
+            try {
+                GroupRepresentation group = realm.getGroupByPath(path);
+                if (group != null) {
+                    realm.users().get(keycloakUserId.get()).leaveGroup(group.getId());
+                }
+            } catch (RuntimeException e) {
+                log.warn("Failed to remove account {} from group {}: {}", userId, path, e.getMessage());
+            }
+            return Boolean.TRUE;
+        }).then();
     }
 
     /**
-     * Assign a realm role to a user.
+     * Creates {@code /organizations/{slug}} and its role subgroups where missing.
      *
-     * @param keycloakUserId The Keycloak user ID
-     * @param roleName       The role name (e.g., "CUSTOMER", "ORGANIZER")
+     * @return the organization group's id
      */
-    private void assignRole(String keycloakUserId, String roleName) {
+    public Mono<String> ensureOrganizationGroupTree(String organizationSlug) {
+        return blocking(() -> {
+            RealmResource realm = buyers();
+            String parent = requireGroup(findOrCreateGroup(realm, "organizations", null), "organizations");
+            String organization = requireGroup(findOrCreateGroup(realm, organizationSlug, parent), organizationSlug);
+            for (String roleGroup : com.pml.identity.domain.valueobject.OrganizationGroups.TREE) {
+                requireGroup(findOrCreateGroup(realm, roleGroup, organization), roleGroup);
+            }
+            return organization;
+        });
+    }
+
+    /** Adds a user to one role subgroup, raising when the group or the write is missing. */
+    public Mono<Void> joinOrganizationGroup(String userId, String organizationSlug, String groupName) {
+        return blocking(() -> {
+            RealmResource realm = buyers();
+            String path = "/organizations/" + organizationSlug + "/" + groupName;
+            GroupRepresentation group;
+            try {
+                group = realm.getGroupByPath(path);
+            } catch (NotFoundException absent) {
+                throw new KeycloakWriteFailed("group " + path + " does not exist");
+            }
+            if (group == null) {
+                throw new KeycloakWriteFailed("group " + path + " does not exist");
+            }
+            String keycloakUserId = resolveUserId(realm, userId)
+                    .orElseThrow(() -> new KeycloakWriteFailed("no Keycloak user for account " + userId));
+            realm.users().get(keycloakUserId).joinGroup(group.getId());
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    /** Removes a user from one role subgroup; a group or user that does not exist holds nobody. */
+    public Mono<Void> leaveOrganizationGroup(String userId, String organizationSlug, String groupName) {
+        return blocking(() -> {
+            RealmResource realm = buyers();
+            String path = "/organizations/" + organizationSlug + "/" + groupName;
+            try {
+                GroupRepresentation group = realm.getGroupByPath(path);
+                Optional<String> keycloakUserId = resolveUserId(realm, userId);
+                if (group != null && keycloakUserId.isPresent()) {
+                    realm.users().get(keycloakUserId.get()).leaveGroup(group.getId());
+                }
+            } catch (NotFoundException absent) {
+                log.info("Group {} or user {} absent in Keycloak; nothing to leave", path, userId);
+            }
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    // ========================================================================
+    // helpers
+    // ========================================================================
+
+    /**
+     * The Keycloak id of an identity_users id: the id itself for an account that predates
+     * ET-IDN-004, else the user whose username is the account id.
+     */
+    private Optional<String> resolveUserId(RealmResource realm, String userId) {
+        if (isBlank(userId)) {
+            return Optional.empty();
+        }
+        Optional<UserRepresentation> byUsername = exactUser(realm.users(), userId);
+        if (byUsername.isPresent()) {
+            return byUsername.map(UserRepresentation::getId);
+        }
         try {
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            RoleRepresentation role = realmResource.roles().get(roleName).toRepresentation();
-            realmResource.users().get(keycloakUserId).roles().realmLevel()
-                    .add(Collections.singletonList(role));
-            log.info("Assigned role {} to user {}", roleName, keycloakUserId);
-        } catch (Exception e) {
-            log.warn("Failed to assign role {} to user {}: {}", roleName, keycloakUserId, e.getMessage());
+            return Optional.ofNullable(realm.users().get(userId).toRepresentation()).map(UserRepresentation::getId);
+        } catch (NotFoundException absent) {
+            return Optional.empty();
         }
     }
 
-    /**
-     * Update user roles in Keycloak.
-     *
-     * @param email   The user's email
-     * @param newRole The new role to assign
-     * @return Mono signaling completion
-     */
-    public Mono<Void> updateUserRole(String email, String newRole) {
-        return Mono.fromRunnable(() -> {
-            log.info("Updating role for user {} to {}", email, newRole);
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-
-            List<UserRepresentation> users = usersResource.searchByEmail(email, true);
-            if (users.isEmpty()) {
-                throw new RuntimeException("User not found in Keycloak: " + email);
-            }
-
-            String keycloakUserId = users.get(0).getId();
-            UserResource userResource = usersResource.get(keycloakUserId);
-
-            // Remove existing realm roles (except default ones)
-            List<RoleRepresentation> currentRoles = userResource.roles().realmLevel().listAll();
-            List<RoleRepresentation> rolesToRemove = currentRoles.stream()
-                    .filter(r -> !r.getName().startsWith("default-roles-") &&
-                            !r.getName().equals("offline_access") &&
-                            !r.getName().equals("uma_authorization"))
-                    .toList();
-            if (!rolesToRemove.isEmpty()) {
-                userResource.roles().realmLevel().remove(rolesToRemove);
-            }
-
-            // Assign new role
-            assignRole(keycloakUserId, newRole);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
+    private static Optional<UserRepresentation> exactUser(UsersResource users, String username) {
+        if (isBlank(username)) {
+            return Optional.empty();
+        }
+        List<UserRepresentation> found = users.searchByUsername(username, true);
+        return found.stream().filter(user -> username.equalsIgnoreCase(user.getUsername())).findFirst();
     }
 
-    /**
-     * Enable or disable a user in Keycloak.
-     *
-     * @param email   The user's email
-     * @param enabled Whether the user should be enabled
-     * @return Mono signaling completion
-     */
-    public Mono<Void> setUserEnabled(String email, boolean enabled) {
-        return Mono.fromRunnable(() -> {
-            log.info("Setting user {} enabled status to: {}", email, enabled);
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-            UsersResource usersResource = realmResource.users();
-
-            List<UserRepresentation> users = usersResource.searchByEmail(email, true);
-            if (users.isEmpty()) {
-                throw new RuntimeException("User not found in Keycloak: " + email);
-            }
-
-            UserRepresentation user = users.get(0);
-            user.setEnabled(enabled);
-            usersResource.get(user.getId()).update(user);
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * End a user's session in Keycloak.
-     *
-     * @param sessionState The session state from the JWT
-     * @return Mono signaling completion
-     */
-    public Mono<Void> endUserSession(String sessionState) {
-        return Mono.fromRunnable(() -> {
-            log.info("Ending user session: {}", sessionState);
-            try {
-                RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-                // Second parameter 'isOffline' - false for online sessions
-                realmResource.deleteSession(sessionState, false);
-                log.info("Session ended successfully: {}", sessionState);
-            } catch (Exception e) {
-                log.warn("Failed to end session {}: {}", sessionState, e.getMessage());
-                // Session may have already expired, which is fine
-            }
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Update phone verification status for a user.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @param verified       Whether the phone is verified
-     * @return Mono signaling completion
-     */
-    public Mono<Void> updatePhoneVerified(String keycloakUserId, boolean verified) {
-        return updateUserAttribute(keycloakUserId, "phoneVerified", String.valueOf(verified));
-    }
-
-    // ========================================================================
-    // ORGANIZATION GROUP MANAGEMENT
-    // ========================================================================
-
-    /**
-     * Create organization group structure in Keycloak.
-     * Creates the main organization group and sub-groups for each role:
-     * /organizations/{slug}/owners
-     * /organizations/{slug}/admins
-     * /organizations/{slug}/managers
-     * /organizations/{slug}/marketers
-     * /organizations/{slug}/contributors
-     *
-     * @param organizationSlug The organization's URL slug
-     * @return Mono with the main group ID
-     */
-    public Mono<String> createOrganizationGroups(String organizationSlug) {
-        return Mono.fromCallable(() -> {
-            log.info("Creating Keycloak group structure for organization: {}", organizationSlug);
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-
-            // Find or create "organizations" parent group
-            String organizationsGroupId = findOrCreateGroup(realmResource, "organizations", null);
-
-            // Create organization-specific group under "organizations"
-            String orgGroupId = findOrCreateGroup(realmResource, organizationSlug, organizationsGroupId);
-
-            // Create role sub-groups
-            String[] roleGroups = {"owners", "admins", "managers", "marketers", "contributors"};
-            for (String roleGroup : roleGroups) {
-                findOrCreateGroup(realmResource, roleGroup, orgGroupId);
-            }
-
-            log.info("Created Keycloak group structure for organization: {} with ID: {}", organizationSlug, orgGroupId);
-            return orgGroupId;
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Add a user to an organization role group in Keycloak.
-     *
-     * @param userId           The user ID (MongoDB ID)
-     * @param organizationSlug The organization's URL slug
-     * @param roleName         The role name (owners, admins, managers, etc.)
-     * @return Mono signaling completion
-     */
-    public Mono<Void> addUserToOrganizationGroup(String userId, String organizationSlug, String roleName) {
-        return Mono.fromRunnable(() -> {
-            log.info("Adding user {} to organization {} group {}", userId, organizationSlug, roleName);
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-
-            // Find the user by MongoDB userId attribute
-            List<UserRepresentation> users = realmResource.users()
-                    .searchByAttributes("userId:" + userId);
-
-            if (users.isEmpty()) {
-                log.warn("User not found in Keycloak by userId attribute: {}", userId);
-                return;
-            }
-
-            String keycloakUserId = users.get(0).getId();
-
-            // Find the role group
-            String groupPath = "/organizations/" + organizationSlug + "/" + roleName;
-            try {
-                org.keycloak.representations.idm.GroupRepresentation group =
-                        realmResource.getGroupByPath(groupPath);
-                if (group != null) {
-                    realmResource.users().get(keycloakUserId).joinGroup(group.getId());
-                    log.info("User {} added to group {}", userId, groupPath);
-                } else {
-                    log.warn("Group not found: {}", groupPath);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to add user to group {}: {}", groupPath, e.getMessage());
-            }
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Remove a user from an organization role group in Keycloak.
-     *
-     * @param userId           The user ID (MongoDB ID)
-     * @param organizationSlug The organization's URL slug
-     * @param roleName         The role name (owners, admins, managers, etc.)
-     * @return Mono signaling completion
-     */
-    public Mono<Void> removeUserFromOrganizationGroup(String userId, String organizationSlug, String roleName) {
-        return Mono.fromRunnable(() -> {
-            log.info("Removing user {} from organization {} group {}", userId, organizationSlug, roleName);
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-
-            // Find the user by MongoDB userId attribute
-            List<UserRepresentation> users = realmResource.users()
-                    .searchByAttributes("userId:" + userId);
-
-            if (users.isEmpty()) {
-                log.warn("User not found in Keycloak by userId attribute: {}", userId);
-                return;
-            }
-
-            String keycloakUserId = users.get(0).getId();
-
-            // Find the role group
-            String groupPath = "/organizations/" + organizationSlug + "/" + roleName;
-            try {
-                org.keycloak.representations.idm.GroupRepresentation group =
-                        realmResource.getGroupByPath(groupPath);
-                if (group != null) {
-                    realmResource.users().get(keycloakUserId).leaveGroup(group.getId());
-                    log.info("User {} removed from group {}", userId, groupPath);
-                } else {
-                    log.warn("Group not found: {}", groupPath);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to remove user from group {}: {}", groupPath, e.getMessage());
-            }
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    /**
-     * Verify 2FA code for a user.
-     * Note: This is a placeholder - actual implementation depends on 2FA provider.
-     *
-     * @param userId           The user ID
-     * @param confirmationCode The 2FA code
-     * @return Mono with true if valid, false otherwise
-     */
-    public Mono<Boolean> verify2FACode(String userId, String confirmationCode) {
-        return Mono.fromCallable(() -> {
-            log.info("Verifying 2FA code for user: {}", userId);
-            // TODO: Implement actual 2FA verification
-            // This could integrate with OtpService for SMS/WhatsApp OTP
-            // or with Keycloak's built-in OTP verification
-            // For now, return true to allow development flow
-            log.warn("2FA verification not fully implemented - returning true for development");
-            return true;
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /**
-     * Delete organization groups from Keycloak.
-     *
-     * @param organizationSlug The organization's URL slug
-     * @return Mono signaling completion
-     */
-    public Mono<Void> deleteOrganizationGroups(String organizationSlug) {
-        return Mono.fromRunnable(() -> {
-            log.info("Deleting Keycloak group structure for organization: {}", organizationSlug);
-
-            RealmResource realmResource = keycloak.realm(keycloakProperties.getRealm());
-
-            String groupPath = "/organizations/" + organizationSlug;
-            try {
-                org.keycloak.representations.idm.GroupRepresentation group =
-                        realmResource.getGroupByPath(groupPath);
-                if (group != null) {
-                    realmResource.groups().group(group.getId()).remove();
-                    log.info("Deleted organization group: {}", groupPath);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to delete organization group {}: {}", groupPath, e.getMessage());
-            }
-        }).subscribeOn(Schedulers.boundedElastic()).then();
-    }
-
-    // ========================================================================
-    // HELPER METHODS
-    // ========================================================================
-
-    /**
-     * Find or create a group in Keycloak.
-     *
-     * @param realmResource The realm resource
-     * @param groupName     The group name
-     * @param parentGroupId The parent group ID (null for top-level)
-     * @return The group ID
-     */
-    private String findOrCreateGroup(RealmResource realmResource, String groupName, String parentGroupId) {
+    private static UserRepresentation fullRepresentation(UserResource resource, String keycloakUserId) {
         try {
-            // Try to find existing group
+            return resource.toRepresentation();
+        } catch (NotFoundException absent) {
+            throw new KeycloakWriteFailed("Keycloak holds no user " + keycloakUserId);
+        }
+    }
+
+    private static void grantRole(RealmResource realm, String keycloakUserId, String roleName) {
+        RoleRepresentation role = realm.roles().get(roleName).toRepresentation();
+        realm.users().get(keycloakUserId).roles().realmLevel().add(Collections.singletonList(role));
+    }
+
+    private static Set<String> realmRoleNames(UserResource resource) {
+        Set<String> names = new HashSet<>();
+        for (RoleRepresentation role : resource.roles().realmLevel().listAll()) {
+            names.add(role.getName());
+        }
+        return names;
+    }
+
+    private static KeycloakUserView view(UserRepresentation user, Set<String> realmRoles) {
+        return new KeycloakUserView(user.getId(), user.getUsername(), user.getEmail(), user.getFirstName(),
+                user.getLastName(), Boolean.TRUE.equals(user.isEnabled()),
+                Boolean.TRUE.equals(user.isEmailVerified()), realmRoles);
+    }
+
+    private static String requireGroup(String groupId, String name) {
+        if (groupId == null) {
+            throw new KeycloakWriteFailed("group " + name + " could not be found or created");
+        }
+        return groupId;
+    }
+
+    private String findOrCreateGroup(RealmResource realm, String groupName, String parentGroupId) {
+        try {
             if (parentGroupId != null) {
-                List<org.keycloak.representations.idm.GroupRepresentation> subGroups =
-                        realmResource.groups().group(parentGroupId).getSubGroups(0, 100, true);
-                for (org.keycloak.representations.idm.GroupRepresentation subGroup : subGroups) {
+                List<GroupRepresentation> subGroups = realm.groups().group(parentGroupId).getSubGroups(0, 100, true);
+                for (GroupRepresentation subGroup : subGroups) {
                     if (subGroup.getName().equals(groupName)) {
                         return subGroup.getId();
                     }
                 }
             } else {
-                List<org.keycloak.representations.idm.GroupRepresentation> topGroups =
-                        realmResource.groups().groups(groupName, 0, 1);
+                List<GroupRepresentation> topGroups = realm.groups().groups(groupName, 0, 1);
                 if (!topGroups.isEmpty() && topGroups.get(0).getName().equals(groupName)) {
                     return topGroups.get(0).getId();
                 }
             }
 
-            // Create new group
-            org.keycloak.representations.idm.GroupRepresentation newGroup =
-                    new org.keycloak.representations.idm.GroupRepresentation();
+            GroupRepresentation newGroup = new GroupRepresentation();
             newGroup.setName(groupName);
-
-            Response response;
-            if (parentGroupId != null) {
-                response = realmResource.groups().group(parentGroupId).subGroup(newGroup);
-            } else {
-                response = realmResource.groups().add(newGroup);
-            }
-
-            if (response.getStatus() == 201) {
-                String location = response.getHeaderString("Location");
-                String groupId = location.substring(location.lastIndexOf('/') + 1);
-                log.info("Created group {} with ID: {}", groupName, groupId);
-                return groupId;
-            } else {
+            try (Response response = parentGroupId != null
+                    ? realm.groups().group(parentGroupId).subGroup(newGroup)
+                    : realm.groups().add(newGroup)) {
+                if (response.getStatus() == 201) {
+                    String location = response.getHeaderString("Location");
+                    return location.substring(location.lastIndexOf('/') + 1);
+                }
                 log.warn("Failed to create group {}: {}", groupName, response.getStatus());
                 return null;
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.warn("Error finding/creating group {}: {}", groupName, e.getMessage());
             return null;
         }

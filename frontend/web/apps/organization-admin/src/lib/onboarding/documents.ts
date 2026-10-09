@@ -1,217 +1,85 @@
 /**
  * Required verification documents, as a function of business type.
  *
- * ISOMORPHIC: mirrors the backend `RequiredDocuments` class so the wizard can
- * gate its own Continue button without a round-trip. The backend remains the
- * authority — `submitForReview` re-derives this set server-side and refuses with
- * the missing types named. This copy exists to keep the UI honest, not to
- * replace the check.
+ * Both lists come from the platform's reference data: `BUSINESS_TYPE` rows carry the codes of the
+ * documents they require (`metadata.requiredDocuments`) and `KYB_DOCUMENT_TYPE` rows carry each
+ * document's name and hint. Nothing here knows a single business type or document code, so a new
+ * legal form or document is administration, not a release. The backend stays the authority:
+ * `submitForReview` re-derives the set server-side. These functions only keep the wizard honest.
  *
- * ## Why the set varies
- *
- * Spec ET-ORG-001: "A sole proprietor does not have a certificate of
- * incorporation and asking for one is how an application is abandoned." The
- * required set is a function of `businessType` and nothing else.
- *
- * @see specs/organization/001-organizer-onboarding/spec.md §4
- * @see Org Admin - Onboarding Wizard.dc.html (design authority)
  * @module lib/onboarding/documents
  */
 
-// =============================================================================
-// BUSINESS TYPES
-// =============================================================================
-
-/**
- * Business types accepted by the backend.
- *
- * These are the values of `com.pml.identity.domain.enums.BusinessType`. Note
- * that the backend spells it `SOLE_PROPRIETORSHIP` where spec §4 says
- * `SOLE_PROPRIETOR`, and carries an extra `INDIVIDUAL`. We send what the API
- * accepts and label it the way the design does.
- */
-export type BusinessType =
-  | 'SOLE_PROPRIETORSHIP'
-  | 'PARTNERSHIP'
-  | 'LIMITED_COMPANY'
-  | 'NGO'
-  | 'GOVERNMENT'
-  | 'INDIVIDUAL';
-
-/** Document type keys. Free-form strings on the wire; spec §4 vocabulary here. */
-export type DocumentType =
-  | 'NATIONAL_ID'
-  | 'TAX_CERTIFICATE'
-  | 'CERTIFICATE_OF_INCORPORATION'
-  | 'PARTNERSHIP_AGREEMENT'
-  | 'NGO_REGISTRATION'
-  | 'AUTHORISATION_LETTER'
-  | 'PROOF_OF_ADDRESS'
-  | 'BANK_STATEMENT';
-
+/** A document the platform can ask for (a `KYB_DOCUMENT_TYPE` row). */
 export interface DocumentSpec {
-  readonly type: DocumentType;
-  /** Human label, from the design authority. */
+  readonly type: string;
   readonly name: string;
-  /** One-line hint naming the real-world Zambian document. */
+  /** One-line hint naming the real-world document. */
   readonly hint: string;
-  /** Iconoir icon name. */
-  readonly icon: string;
 }
 
+/** A legal business type (a `BUSINESS_TYPE` row) and the document codes it must supply. */
 export interface BusinessTypeSpec {
-  readonly type: BusinessType;
+  readonly type: string;
   readonly label: string;
-  readonly icon: string;
-  readonly required: readonly DocumentType[];
+  readonly required: readonly string[];
 }
 
-// =============================================================================
-// DOCUMENT CATALOGUE
-// =============================================================================
-
-const DOCUMENTS: Record<DocumentType, DocumentSpec> = {
-  NATIONAL_ID: {
-    type: 'NATIONAL_ID',
-    name: 'National ID',
-    hint: 'Government-issued photo ID',
-    icon: 'id-card',
-  },
-  TAX_CERTIFICATE: {
-    type: 'TAX_CERTIFICATE',
-    name: 'Tax certificate',
-    hint: 'ZRA tax clearance certificate',
-    icon: 'page',
-  },
-  CERTIFICATE_OF_INCORPORATION: {
-    type: 'CERTIFICATE_OF_INCORPORATION',
-    name: 'Certificate of incorporation',
-    hint: 'PACRA registration certificate',
-    icon: 'page-star',
-  },
-  PARTNERSHIP_AGREEMENT: {
-    type: 'PARTNERSHIP_AGREEMENT',
-    name: 'Partnership agreement',
-    hint: 'Signed partnership deed',
-    icon: 'page-edit',
-  },
-  NGO_REGISTRATION: {
-    type: 'NGO_REGISTRATION',
-    name: 'NGO registration',
-    hint: 'Registrar of Societies certificate',
-    icon: 'page-star',
-  },
-  AUTHORISATION_LETTER: {
-    type: 'AUTHORISATION_LETTER',
-    name: 'Authorisation letter',
-    hint: 'Letter on official letterhead',
-    icon: 'page-edit',
-  },
-  // Optional everywhere — what a reviewer asks for via requestOrganizationChanges
-  // when something does not add up (spec §4).
-  PROOF_OF_ADDRESS: {
-    type: 'PROOF_OF_ADDRESS',
-    name: 'Proof of address',
-    hint: 'Utility bill or lease agreement',
-    icon: 'home',
-  },
-  BANK_STATEMENT: {
-    type: 'BANK_STATEMENT',
-    name: 'Bank statement',
-    hint: 'Statement showing the account name',
-    icon: 'bank',
-  },
-};
-
-export function documentSpec(type: DocumentType): DocumentSpec {
-  return DOCUMENTS[type];
+interface Row {
+  value: string;
+  label: string;
+  description: string | null;
+  metadata: unknown;
 }
 
-// =============================================================================
-// BUSINESS TYPE → REQUIRED DOCUMENTS (spec ET-ORG-001 §4)
-// =============================================================================
+export function toDocumentSpecs(rows: readonly Row[]): DocumentSpec[] {
+  return rows.map((r) => ({ type: r.value, name: r.label, hint: r.description ?? '' }));
+}
 
-export const BUSINESS_TYPES: readonly BusinessTypeSpec[] = [
-  {
-    type: 'SOLE_PROPRIETORSHIP',
-    label: 'Sole proprietor',
-    icon: 'user',
-    required: ['NATIONAL_ID', 'TAX_CERTIFICATE'],
-  },
-  {
-    type: 'INDIVIDUAL',
-    label: 'Individual',
-    icon: 'user',
-    required: ['NATIONAL_ID', 'TAX_CERTIFICATE'],
-  },
-  {
-    type: 'PARTNERSHIP',
-    label: 'Partnership',
-    icon: 'group',
-    required: ['NATIONAL_ID', 'TAX_CERTIFICATE', 'PARTNERSHIP_AGREEMENT'],
-  },
-  {
-    type: 'LIMITED_COMPANY',
-    label: 'Limited company',
-    icon: 'building',
-    required: ['NATIONAL_ID', 'TAX_CERTIFICATE', 'CERTIFICATE_OF_INCORPORATION'],
-  },
-  {
-    type: 'NGO',
-    label: 'NGO',
-    icon: 'heart',
-    required: ['NATIONAL_ID', 'TAX_CERTIFICATE', 'NGO_REGISTRATION'],
-  },
-  {
-    type: 'GOVERNMENT',
-    label: 'Government',
-    icon: 'bank',
-    required: ['NATIONAL_ID', 'AUTHORISATION_LETTER'],
-  },
-] as const;
+export function toBusinessTypeSpecs(rows: readonly Row[]): BusinessTypeSpec[] {
+  return rows.map((r) => {
+    const docs = (r.metadata as { requiredDocuments?: unknown } | null)?.requiredDocuments;
+    return { type: r.value, label: r.label, required: Array.isArray(docs) ? docs.filter((d): d is string => typeof d === 'string') : [] };
+  });
+}
 
-const BY_TYPE = new Map<BusinessType, BusinessTypeSpec>(
-  BUSINESS_TYPES.map((b) => [b.type, b])
-);
-
-export function businessTypeSpec(type: BusinessType | null | undefined): BusinessTypeSpec | null {
+export function businessTypeSpec(types: readonly BusinessTypeSpec[], type: string | null | undefined): BusinessTypeSpec | null {
   if (!type) return null;
-  return BY_TYPE.get(type) ?? null;
+  return types.find((b) => b.type === type) ?? null;
 }
 
 /**
- * The documents this business type must supply.
+ * The documents this business type must supply, in the platform's order.
  *
- * Returns an empty list for an unknown type rather than a default set — asking
- * for documents we cannot justify is the abandonment the spec warns about, and
- * the backend will refuse the submit anyway if the type is genuinely missing.
+ * Empty for an unknown type or a document the platform no longer lists: asking for documents we cannot
+ * justify is how applications get abandoned, and the backend refuses the submit anyway.
  */
-export function requiredDocuments(type: BusinessType | null | undefined): readonly DocumentSpec[] {
-  const spec = businessTypeSpec(type);
+export function requiredDocuments(
+  types: readonly BusinessTypeSpec[],
+  documents: readonly DocumentSpec[],
+  type: string | null | undefined,
+): readonly DocumentSpec[] {
+  const spec = businessTypeSpec(types, type);
   if (!spec) return [];
-  return spec.required.map(documentSpec);
+  return spec.required.flatMap((code) => documents.filter((d) => d.type === code));
 }
 
 /**
- * Which required documents are still outstanding?
- *
- * A document in `REJECTED` does not satisfy its requirement (spec R3), so only
- * `PENDING` and `APPROVED` uploads count.
+ * Which required documents are still outstanding? A document in `REJECTED` does not satisfy its
+ * requirement, so only `PENDING` and `APPROVED` uploads count.
  */
 export function missingDocuments(
-  type: BusinessType | null | undefined,
-  uploaded: ReadonlyArray<{ documentType: string; status?: string | null }>
+  types: readonly BusinessTypeSpec[],
+  documents: readonly DocumentSpec[],
+  type: string | null | undefined,
+  uploaded: ReadonlyArray<{ documentType: string; status?: string | null }>,
 ): readonly DocumentSpec[] {
-  const satisfied = new Set(
-    uploaded
-      .filter((d) => d.status !== 'REJECTED')
-      .map((d) => d.documentType)
-  );
-  return requiredDocuments(type).filter((d) => !satisfied.has(d.type));
+  const satisfied = new Set(uploaded.filter((d) => d.status !== 'REJECTED').map((d) => d.documentType));
+  return requiredDocuments(types, documents, type).filter((d) => !satisfied.has(d.type));
 }
 
 // =============================================================================
-// UPLOAD CONSTRAINTS (identity.onboarding.document.* — spec §4)
+// UPLOAD CONSTRAINTS (identity.onboarding.document.*)
 // =============================================================================
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -219,6 +87,7 @@ export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 export const ACCEPTED_MIME_TYPES: readonly string[] = [
   'image/jpeg',
   'image/png',
+  'image/webp',
   'application/pdf',
 ];
 
@@ -226,12 +95,12 @@ export const ACCEPT_ATTRIBUTE = ACCEPTED_MIME_TYPES.join(',');
 
 /**
  * Client-side pre-flight. The server enforces the same rules independently
- * (spec R4: "enforced server-side, not only in the browser") — this exists to
+ * (enforced server-side, not only in the browser) — this exists to
  * fail fast before a 10 MB upload starts, not to be trusted.
  */
 export function validateFile(file: File): string | null {
   if (!ACCEPTED_MIME_TYPES.includes(file.type)) {
-    return 'Upload a JPEG, PNG or PDF file.';
+    return 'Use a PDF, JPEG, PNG or WEBP file.';
   }
   if (file.size > MAX_DOCUMENT_BYTES) {
     return 'File is larger than 10 MB. Try a smaller scan or photo.';

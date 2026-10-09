@@ -2,85 +2,56 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Ownership Transfers Schema - OWASP Compliant",
-    "description": "Transfer ownership of events or organizations between users",
+    "description": "A request to transfer organization ownership from one member to another (com.pml.identity.domain.model.OwnershipTransferRequest)",
     "required": [
-      "entityType",
-      "entityId",
-      "fromUserId",
-      "toUserId",
+      "organizationId",
+      "currentOwnerId",
+      "newOwnerId",
+      "transferToken",
       "status",
-      "requestedAt"
+      "expiresAt"
     ],
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
-        "bsonType": "objectId"
+        "bsonType": ["objectId", "string"],
+        "description": "OwnershipTransferProcess mints the id as a UUID string before the workflow starts, so a retried start finds its own transfer"
       },
-      "entityType": {
-        "bsonType": "string",
-        "enum": [
-          "EVENT",
-          "ORGANIZATION"
-        ],
-        "description": "OWASP A04 - Enum constraint"
+      "organizationId": {
+        "bsonType": "string"
       },
-      "entityId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "OWASP A03 - ObjectId pattern validation"
+      "currentOwnerId": {
+        "bsonType": "string"
       },
-      "fromUserId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "Current owner"
+      "newOwnerId": {
+        "bsonType": "string"
       },
-      "toUserId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "New owner"
+      "reason": {
+        "bsonType": ["string", "null"],
+        "maxLength": 500
+      },
+      "transferToken": {
+        "bsonType": "string"
       },
       "status": {
         "bsonType": "string",
-        "enum": [
-          "PENDING",
-          "ACCEPTED",
-          "DECLINED",
-          "CANCELLED",
-          "COMPLETED"
-        ],
-        "description": "OWASP A04 - Enum constraint"
+        "enum": ["PENDING", "ACCEPTED", "REJECTED", "COMPLETED", "CANCELLED", "EXPIRED"],
+        "description": "com.pml.identity.domain.enums.TransferStatus"
       },
-      "requestedAt": {
+      "expiresAt": {
         "bsonType": "date"
       },
-      "acceptedAt": {
-        "bsonType": [
-          "date",
-          "null"
-        ]
+      "initiatedAt": {
+        "bsonType": ["date", "null"]
       },
       "completedAt": {
-        "bsonType": [
-          "date",
-          "null"
-        ]
+        "bsonType": ["date", "null"]
       },
-      "reason": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "maxLength": 500
-      },
-      "notes": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "maxLength": 2000
+      "cancelledAt": {
+        "bsonType": ["date", "null"]
       }
     },
     "additionalProperties": false

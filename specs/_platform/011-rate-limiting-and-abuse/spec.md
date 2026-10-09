@@ -49,7 +49,7 @@ was there at ten o'clock exactly.
 **A queue pass is bound to a subject and expires.** Otherwise a script collects passes and
 sells them, which is the same problem one layer up.
 
-**OTP abuse is bounded on three axes: per number, per IP, per device.** A single number's
+**OTP abuse is bounded on four axes: per contact, per IP, per device, per country (amended 2026-10-04, F-044; the numbers are [CONTRACT §7](../../identity/004-accounts-and-contacts/CONTRACT.md)).** A single contact's
 cooldown ([ET-IDN-001](../../identity/001-phone-otp-identity/) R3) stops one victim being
 spammed; the IP and device limits stop one attacker walking a list of numbers.
 
@@ -114,6 +114,9 @@ THE SYSTEM SHALL apply the §4 asymmetry between read and purchase limits.
 - [ ] Payment initiation is `10/minute` per subject
 - [ ] A test simulates a legitimate four-ticket purchase and asserts no limit is approached
 - [ ] A test simulates a catalogue scrape and asserts it is refused within `catalog.discovery.max-depth` results
+- [ ] The per-IP key of public GraphQL (`PublicGraphQlFilter`) is the client address resolved as in R6: `X-Forwarded-For` is read only when the connecting peer is in `platform.public-graphql.trusted-proxies` (addresses/CIDRs; default none, so the peer is the client), right-most untrusted entry wins, a non-IP entry falls back to the peer
+- [ ] End to end, anonymous traffic keeps one bucket per visitor: the Next BFF forwards its resolved client IP (`TRUST_PROXY_HOPS`) as the only `X-Forwarded-For` (never the browser's own chain), the Apollo Router propagates `x-forwarded-for` to subgraphs, and the subgraph trusts the router's network
+- [ ] Tests: `ClientAddressTest` (spoof from an untrusted peer ignored, right-most untrusted, malformed entry), `PublicGraphQlSecurityTest`/`AnonymousDiscoveryTest` (separate buckets per forwarded address), the BFF `upstream.test.ts` (forwarded header is the resolved IP only)
 
 ### ET-PLT-011-R4 · High-demand events use a fairness queue, and others do not
 
@@ -143,18 +146,22 @@ THE SYSTEM SHALL release passes at a configured rate and SHALL report the queue 
 - [ ] Queue state is Redis with a TTL past the sales window; losing it drains the queue rather than blocking
 - [ ] A test queues 5,000 arrivals against 500 tickets and asserts order is preserved and everybody learns their outcome
 
-### ET-PLT-011-R6 · OTP abuse is bounded on three axes
+### ET-PLT-011-R6 · OTP abuse is bounded on four axes
 
-THE SYSTEM SHALL limit OTP requests per phone number, per IP and per device.
+THE SYSTEM SHALL limit OTP challenges per contact (phone or email), per IP, per device and per country.
 
 **Acceptance**
-- [ ] Per phone: the 60-second cooldown and 5-attempt lock of [ET-IDN-001](../../identity/001-phone-otp-identity/) R3
-- [ ] Per IP: `10` OTP requests per hour
-- [ ] Per device: `5` distinct phone numbers per day
-- [ ] Exceeding the IP or device limit refuses with `RATE_LIMIT_EXCEEDED` and sends no message
+- [ ] Per contact: the 60-second cooldown, the 5-attempt lock for 15 minutes ([ET-IDN-001](../../identity/001-phone-otp-identity/) R3) and at most `10` codes per day (`identity.limits.contact-codes-per-day`)
+- [ ] Per IP: `10` codes per hour (`identity.limits.ip-codes-per-hour`)
+- [ ] Per device: `5` distinct contacts per day (`identity.limits.device-distinct-contacts-per-day`)
+- [ ] Per country: a configurable daily ceiling (`identity.limits.country-codes-per-day`, default `2000`) to bound toll-fraud style pumping; only countries in `identity.limits.allowed-countries` are accepted at all
+- [ ] Exceeding any limit refuses with `OTP_RATE_LIMITED` carrying `retryAfterSeconds`, and sends no message
+- [ ] **Trusted proxy IP**: the client IP is the right-most address in `X-Forwarded-For` that is not one of the configured trusted proxies; a caller-supplied header from an untrusted hop is ignored, and the buyer app forwards the browser's IP to identity-service in the request body field `clientIp` only over the authenticated service-to-service call
+- [ ] Counters live in Redis as `lim:{scope}:{id}:{window}` where `{id}` is a keyed hash for contact and device scopes, never a raw contact
 - [ ] A refusal does not disclose whether the number is registered ([ET-IDN-001](../../identity/001-phone-otp-identity/) R4)
 - [ ] The three limits are independent — exhausting one does not affect another's counter
-- [ ] A test walks 20 numbers from one IP and asserts refusal after 10, with no messages sent
+- [ ] A test walks 20 contacts (a mix of phone and email) from one IP and asserts refusal after 10, with no messages sent
+- [ ] A test sends `X-Forwarded-For: <other>` from an untrusted hop and asserts the counter keys on the trusted address
 
 ### ET-PLT-011-R7 · Limits are enforced where the knowledge is
 
@@ -198,9 +205,10 @@ SHALL alert.
 | 7 | `SUBJECT` | `initiatePayment` | 10 | 1 min | booking |
 | 8 | `SUBJECT` | `requestRefund` | 5 | 1 h | booking |
 | 9 | `SUBJECT` | `initiateTransfer` | 20 | 1 h | booking |
-| 10 | `PHONE` | OTP request | 1 per 60 s | rolling | identity |
+| 10 | `CONTACT` (phone or email) | OTP request | 1 per 60 s; 10 per day; 5 tries then 15 min lock | rolling / 1 d | identity |
 | 11 | `IP` | OTP request | 10 | 1 h | identity |
-| 12 | `DEVICE` | distinct numbers in an OTP request | 5 | 1 d | identity |
+| 12 | `DEVICE` | distinct contacts in an OTP request | 5 | 1 d | identity |
+| 12a | `COUNTRY` | OTP request | 2000 (configurable) | 1 d | identity |
 | 13 | `SUBJECT` | `claimTransfer` | 10 | 1 h | booking |
 | 14 | `ORGANIZATION` | `createEvent` | 50 | 1 d | catalog |
 | 15 | `ORGANIZATION` | `inviteTeamMember` | 100 | 1 d | identity |
@@ -236,7 +244,7 @@ None is a business record. Losing any of them fails open (R8).
 join           arrival appended to queue:{eventId}, position returned
                → queue:pos:{eventId}:{userId}
 poll           position + estimated wait = position ÷ admitRate
-admit          a sweep releases admitRate passes per minute, in order
+admit          the event's QueueAdmissionWorkflow releases admitRate passes a minute, by timer, in order
                → queue:pass:{eventId}:{userId}, TTL 5 min
 reserve        the reservation endpoint requires a valid pass for a high-demand event
 expire         an unused pass lapses; the buyer rejoins at the BACK
@@ -352,9 +360,9 @@ are YAML.
   - parallel-safe: yes — one service per agent
   - depends: T2
 
-- [ ] **T4 · The three OTP axes**
+- [ ] **T4 · The four OTP axes (contact, IP, device, country) and the trusted proxy IP**
   - requirements: R6
-  - files: `backend/identity-service/.../service/impl/OtpServiceImpl.java`
+  - files: `backend/identity-service/.../auth/limits/` (see ET-IDN-001 T3)
   - verify: 20 numbers from one IP refuse after 10, with no messages sent, no disclosure
   - parallel-safe: yes
   - depends: T3
@@ -368,7 +376,7 @@ are YAML.
 
 - [ ] **T6 · Admission rate, the estimate, and the sell-out notification**
   - requirements: R5
-  - files: `backend/booking-service/.../scheduler/QueueAdmissionSweeper.java`
+  - files: `backend/booking-service/.../workflow/queue/QueueAdmissionWorkflowImpl.java`
   - verify: 5,000 arrivals against 500 tickets preserve order and everybody learns their outcome
   - parallel-safe: no
   - depends: T5

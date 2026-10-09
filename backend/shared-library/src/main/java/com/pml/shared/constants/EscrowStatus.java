@@ -1,36 +1,29 @@
 package com.pml.shared.constants;
 
 /**
- * Lifecycle of a per-event escrow account, per ET-FIN-001 R4.
+ * Lifecycle of a per-event escrow account.
  *
- * <p>Exactly the five the spec names. It previously carried seven, none of which
- * matched the six in the collection's own MongoDB validator — three different
- * answers for the collection that holds organizers' money. The spec is the one
- * that wins.
+ * <p>Exactly five states, and the collection's MongoDB validator must agree with them: this is
+ * the collection that holds organizers' money, and it can have only one answer.
  *
- * <h2>What the four dropped constants became</h2>
+ * <h2>States it deliberately does not have</h2>
  * <ul>
- *   <li>{@code CREATED} → {@link #ACTIVE}. It meant "opened but no funds yet",
- *       a distinction only {@code activate()} cared about. ET-FIN-001 R4 opens
- *       the account when the event publishes and it is live from that moment;
- *       a balance of zero already says "no funds yet" without a status for it.</li>
- *   <li>{@code LOCKED} → {@link #HOLD}. A rename.</li>
- *   <li>{@code PROCESSING_PAYOUT} → dropped. In-flight payout state belongs to
- *       the payout request ({@code booking_payout_requests.status}), not to the
- *       account. Holding it in both places is two sources of truth for one fact,
- *       and they drift.</li>
- *   <li>{@code CANCELLED} → {@link #CLOSED}. Both are terminal and both refuse
- *       credits. <b>This loses a distinction:</b> "the event was cancelled and
- *       everyone was refunded" and "everything was paid out normally" now share
- *       a status. The journal still separates them — refunds and payouts are
- *       different entry types — so the fact is not lost, only the shortcut to it.</li>
+ *   <li>No "created but unfunded" state. The account opens when the event publishes and is
+ *       {@link #ACTIVE} from that moment; a balance of zero already says "no funds yet"
+ *       without a status for it.</li>
+ *   <li>No "processing payout" state. In-flight payout state belongs to the payout request
+ *       ({@code booking_payout_requests.status}), not to the account. Holding it in both
+ *       places is two sources of truth for one fact, and they drift.</li>
+ *   <li>No separate "cancelled" state. {@link #CLOSED} covers both endings and refuses
+ *       credits. <b>This gives up a distinction:</b> "the event was cancelled and everyone was
+ *       refunded" and "everything was paid out normally" share a status. The journal still
+ *       separates them — refunds and payouts are different entry types — so the fact is not
+ *       lost, only the shortcut to it.</li>
  * </ul>
  *
  * <p>Lives in shared-library rather than in booking-service so catalog-service's
  * reference-data bootstrapper can reflect over it to derive the administrator-
  * editable status list.
- *
- * @see <a href="file:../../../../../../../../specs/finance/001-escrow-and-ledger/spec.md">ET-FIN-001</a>
  */
 public enum EscrowStatus {
 

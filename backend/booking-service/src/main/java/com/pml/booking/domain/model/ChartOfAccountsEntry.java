@@ -1,5 +1,7 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.enums.AccountSubType;
 import com.pml.booking.domain.enums.AccountType;
 import com.pml.booking.domain.enums.BalanceDirection;
@@ -7,13 +9,11 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -86,16 +86,12 @@ import java.time.Instant;
  * @see JournalEntry
  * @since 1.0.0
  */
-@Document(collection = "chart_of_accounts")
+@Document(collection = BookingCollections.CHART_OF_ACCOUNTS)
+@TypeAlias("chart_of_accounts")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "type_active_idx", def = "{'accountType': 1, 'isActive': 1}"),
-    @CompoundIndex(name = "subtype_active_idx", def = "{'subType': 1, 'isActive': 1}"),
-    @CompoundIndex(name = "parent_idx", def = "{'parentAccountCode': 1}")
-})
 public class ChartOfAccountsEntry {
 
     /**
@@ -119,7 +115,6 @@ public class ChartOfAccountsEntry {
      * created (immutable in practice).</p>
      */
     @NotBlank(message = "Account code is required")
-    @Indexed(unique = true)
     private String accountCode;
 
     /**
@@ -141,7 +136,6 @@ public class ChartOfAccountsEntry {
      * @see AccountType
      */
     @NotNull(message = "Account type is required")
-    @Indexed
     private AccountType accountType;
 
     /**
@@ -193,7 +187,6 @@ public class ChartOfAccountsEntry {
      * </ul>
      */
     @Builder.Default
-    @Indexed
     private Boolean isActive = true;
 
     /**
@@ -309,20 +302,6 @@ public class ChartOfAccountsEntry {
         this.isActive = false;
     }
 
-    /**
-     * Reactivates a previously deactivated account.
-     *
-     * <p>Use sparingly - typically only to correct an accidental deactivation.</p>
-     *
-     * @throws IllegalStateException if account is already active
-     */
-    public void reactivate() {
-        if (this.isActive) {
-            throw new IllegalStateException("Account " + accountCode + " is already active");
-        }
-        this.isActive = true;
-    }
-
     // ========================================================================
     // FACTORY METHODS
     // ========================================================================
@@ -383,63 +362,6 @@ public class ChartOfAccountsEntry {
                 .parentAccountCode(parentAccountCode)
                 .currency(currency != null ? currency : "ZMW")
                 .description(description)
-                .isActive(true)
-                .build();
-    }
-
-    /**
-     * Creates a dynamic child account (e.g., per-event escrow).
-     *
-     * @param accountCode Unique account code (e.g., "2010-0001")
-     * @param accountName Human-readable name
-     * @param parentAccountCode Parent account code (e.g., "2010")
-     * @param accountType Primary type
-     * @param subType Sub-type
-     * @param description Optional description
-     * @return New ChartOfAccountsEntry instance with parent reference
-     */
-    public static ChartOfAccountsEntry createDynamicAccount(
-            String accountCode,
-            String accountName,
-            String parentAccountCode,
-            AccountType accountType,
-            AccountSubType subType,
-            String description
-    ) {
-        return ChartOfAccountsEntry.builder()
-                .accountCode(accountCode)
-                .accountName(accountName)
-                .parentAccountCode(parentAccountCode)
-                .accountType(accountType)
-                .subType(subType)
-                .description(description)
-                .isActive(true)
-                .build();
-    }
-
-    /**
-     * Creates an event-specific escrow account.
-     *
-     * <p>Escrow accounts follow the pattern: 2010-{eventIdPrefix}</p>
-     *
-     * @param eventId Event identifier
-     * @param eventName Event name for account name
-     * @return New escrow account entry
-     */
-    public static ChartOfAccountsEntry createEventEscrowAccount(
-            String eventId,
-            String eventName
-    ) {
-        String accountCode = "2010-" + eventId.substring(0, Math.min(8, eventId.length())).toUpperCase();
-        String accountName = "Event Escrow - " + eventName;
-
-        return ChartOfAccountsEntry.builder()
-                .accountCode(accountCode)
-                .accountName(accountName)
-                .parentAccountCode("2010")
-                .accountType(AccountType.LIABILITY)
-                .subType(AccountSubType.ESCROW_PAYABLE)
-                .description("Escrow account for event: " + eventName)
                 .isActive(true)
                 .build();
     }

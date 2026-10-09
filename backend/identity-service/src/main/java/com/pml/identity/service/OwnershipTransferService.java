@@ -1,14 +1,15 @@
 package com.pml.identity.service;
 
 import com.pml.identity.domain.model.OwnershipTransferRequest;
-import com.pml.identity.domain.enums.TransferStatus;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
  * Ownership Transfer Service Interface
  *
- * Manages organization ownership transfer workflow.
+ * <p>The reads GraphQL uses and the writes {@code OwnershipTransferWorkflow}'s
+ * activities make. Every write is safe to repeat: a retried activity finds the transfer where it
+ * was moving and returns it.
  */
 public interface OwnershipTransferService {
 
@@ -16,80 +17,35 @@ public interface OwnershipTransferService {
     // Read Operations
     // ─────────────────────────────────────────────────────────────────────
 
-    /**
-     * Find transfer by ID
-     */
     Mono<OwnershipTransferRequest> findById(String id);
 
-    /**
-     * Find transfer by token
-     */
     Mono<OwnershipTransferRequest> findByToken(String transferToken);
 
-    /**
-     * Find pending transfer for organization
-     */
     Mono<OwnershipTransferRequest> findPendingByOrganization(String organizationId);
 
-    /**
-     * Find all transfers for an organization
-     */
     Flux<OwnershipTransferRequest> findByOrganization(String organizationId);
 
-    /**
-     * Find pending transfers for new owner (user)
-     */
     Flux<OwnershipTransferRequest> findPendingByNewOwner(String newOwnerId);
 
-    /**
-     * Check if organization has pending transfer
-     */
     Mono<Boolean> hasPendingTransfer(String organizationId);
 
     // ─────────────────────────────────────────────────────────────────────
-    // Write Operations
+    // Write Operations · called by workflow activities
     // ─────────────────────────────────────────────────────────────────────
 
-    /**
-     * Initiate ownership transfer
-     * @param organizationId Organization to transfer
-     * @param currentOwnerId Current owner initiating the transfer
-     * @param newOwnerId New owner who will receive ownership
-     * @param reason Optional reason for transfer
-     * @return Created transfer request
-     */
-    Mono<OwnershipTransferRequest> initiate(
-            String organizationId,
-            String currentOwnerId,
-            String newOwnerId,
-            String reason
-    );
+    /** Validates the nomination and writes a {@code PENDING} transfer under {@code transferId}. */
+    Mono<OwnershipTransferRequest> initiate(String transferId, String organizationId, String currentOwnerId,
+                                            String newOwnerId, String reason);
 
-    /**
-     * Cancel transfer (by current owner)
-     */
-    Mono<OwnershipTransferRequest> cancel(String organizationId, String currentOwnerId);
+    /** The nominee's confirmation: claim, demote, promote and the organization's owner, in one transaction. */
+    Mono<OwnershipTransferRequest> complete(String transferId);
 
-    /**
-     * Accept transfer (by new owner)
-     * @param transferToken Transfer token from email/notification
-     * @param newOwnerId User accepting the transfer
-     * @param confirmationCode 2FA code for verification
-     * @return Completed transfer request
-     */
-    Mono<OwnershipTransferRequest> accept(
-            String transferToken,
-            String newOwnerId,
-            String confirmationCode
-    );
+    Mono<OwnershipTransferRequest> decline(String transferId, String newOwnerId);
 
-    /**
-     * Decline transfer (by new owner)
-     */
-    Mono<OwnershipTransferRequest> decline(String transferToken, String newOwnerId);
+    Mono<OwnershipTransferRequest> cancel(String transferId, String currentOwnerId);
 
-    /**
-     * Expire old transfers (scheduled task)
-     */
-    Mono<Long> expireOldTransfers();
+    Mono<OwnershipTransferRequest> expire(String transferId);
+
+    /** Marks both parties' memberships for the group-mirror repair. */
+    Mono<OwnershipTransferRequest> markMirrorPending(String transferId);
 }

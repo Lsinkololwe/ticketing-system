@@ -76,7 +76,7 @@ public interface OrganizationService {
 
     // ─────────────────────────────────────────────────────────────────────
     // Write Operations
-    // NOTE: Organization creation is now handled by OrganizationOnboardingService
+    // NOTE: Organization creation is handled by OrganizationOnboardingService
     // ─────────────────────────────────────────────────────────────────────
 
     /**
@@ -103,16 +103,6 @@ public interface OrganizationService {
      * Unsuspend organization (admin action)
      */
     Mono<Organization> unsuspend(String id);
-
-    /**
-     * Transfer ownership (updates ownerId)
-     */
-    Mono<Organization> transferOwnership(String id, String newOwnerId);
-
-    /**
-     * Update organization statistics (called asynchronously)
-     */
-    Mono<Organization> updateStats(String id, int memberCount, int totalEvents, int totalTicketsSold);
 
     // ─────────────────────────────────────────────────────────────────────
     // Utility Operations

@@ -21,17 +21,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Proves that the harness's transaction guarantee is real, by showing where it is not.
  *
- * <p>ET-PLT-006 T1's acceptance is deliberately two-sided: <em>"a transaction test
- * passes on the container and fails against a standalone {@code mongod}"</em>.
+ * <p>The check is deliberately two-sided: a transaction test passes on the container and
+ * fails against a standalone {@code mongod}.
  * Only the first half is usually written, and on its own it proves nothing — a
  * test that never fails cannot distinguish a working transaction from an absent
- * one. ET-PLT-002 D-01 is precisely that trap: against a standalone
+ * one. That is precisely the trap: against a standalone
  * {@code mongod}, {@code @Transactional} on a reactive method is
  * <strong>silently inert</strong>.
  *
  * <p>So this class runs the same two-document rollback twice and asserts the
  * outcomes differ.
  */
+@Tag("L2")
 @Tag("ET-PLT-006")
 @DisplayName("ET-PLT-006 · a transaction is only real on a replica set")
 class TransactionRealityTest {
@@ -96,7 +97,7 @@ class TransactionRealityTest {
                     .as("a standalone mongod must refuse the transaction outright")
                     .isNotInstanceOf(ForcedRollback.class);
 
-            // And the danger D-01 actually names: with no transaction in play —
+            // And the actual danger: with no transaction in play —
             // which is what @Transactional degrades to here — the first write
             // survives the failure. The operation was never atomic.
             reset(template);

@@ -1,6 +1,5 @@
 package com.pml.shared.testing.blockhound;
 
-import com.pml.shared.service.TenantValidationService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -11,14 +10,12 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
- * ET-PLT-001 R1 — the runtime half of the reactive contract.
+ * The runtime half of the reactive contract.
  *
  * <p>A grep finds the blocking calls we thought to look for. BlockHound finds the ones three
  * frames down inside a driver or a parser, and it draws the line where the harm actually is:
@@ -26,9 +23,10 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  * blocking a Netty worker stalls every concurrent request that worker is carrying, which at
  * on-sale peak is thousands.
  *
- * <p>That distinction is exactly the narrowing approved for R1 on 2026-08-18, and BlockHound
- * enforces it without anyone having to maintain a list of blessed call sites.
+ * <p>The rule is "never block a non-blocking thread", not "never block", and BlockHound
+ * enforces exactly that without anyone having to maintain a list of blessed call sites.
  */
+@Tag("L1")
 @Tag("ET-PLT-001")
 @DisplayName("ET-PLT-001-R1 · blocking calls are caught on non-blocking threads")
 class BlockHoundGuardTest {
@@ -88,73 +86,17 @@ class BlockHoundGuardTest {
     }
 
     /**
-     * {@code TenantValidationService.validateTenantContextBatch} after the B2 rewrite.
+     * {@code block()} inside {@code Mono.fromCallable} looks safe while the inner source is
+     * synchronous: Reactor resolves a callable source without parking. The moment the inner
+     * {@code Mono} does any I/O — a repository read, a remote call — {@code block()} starts
+     * parking and every request through that path stalls a Netty worker, and nothing about the
+     * change looks dangerous in review.
      *
-     * <p>It previously called {@code .block()} once per document inside a
-     * {@code Mono.fromCallable}. Reconciliation classified that a stalled Netty worker;
-     * BlockHound established it was not, because the inner {@code Mono} was callable and
-     * Reactor resolves a callable source without parking. Latent, not live.
-     *
-     * <p>It is now {@code Flux.defer(...).concatMap(...).then(...)} — composed, with nothing
-     * to park on regardless of what the inner source becomes. The next test is why that
-     * mattered even while the hazard was only latent.
+     * <p>So this asserts the hazard directly: the same shape, with an asynchronous inner source,
+     * is refused. Compose with {@code concatMap} instead.
      */
     @Test
-    @DisplayName("B2 · the rewritten batch validation composes, and blocks nothing")
-    void rewrittenBatchValidationDoesNotBlock() {
-        TenantValidationService service = new TenantValidationService();
-        List<Document> documents = List.of(new Document("org-1"), new Document("org-1"));
-
-        Iterable<Document> validated = service.validateTenantContextBatch(documents, "org-1")
-                .subscribeOn(Schedulers.parallel())
-                .block(Duration.ofSeconds(5));
-
-        assertThat(validated).containsExactlyElementsOf(documents);
-    }
-
-    @Test
-    @DisplayName("B2 · a violation fails on the first offending document, deterministically")
-    void batchValidationFailsFastAndInOrder() {
-        TenantValidationService service = new TenantValidationService();
-        List<Document> documents = List.of(
-                new Document("org-1"),
-                new Document("org-INTRUDER"),
-                new Document("org-OTHER"));
-
-        Throwable caught = catchThrowable(() ->
-                service.validateTenantContextBatch(documents, "org-1")
-                        .subscribeOn(Schedulers.parallel())
-                        .block(Duration.ofSeconds(5)));
-
-        // The service masks tenant identifiers in its refusal — "org-***UDER" — which is
-        // right: ET-PLT-005 R6 requires a cross-tenant response to disclose nothing. The
-        // surviving tail is still enough to tell the two candidates apart, so ordering can be
-        // asserted without defeating the masking.
-        assertThat(caught)
-                .as("""
-                    concatMap rather than flatMap: a tenant violation must name the first \
-                    offending document every time, not whichever of them lost the race. A \
-                    security refusal that reports a different document per run is not \
-                    something an operator can act on.""")
-                .isNotNull()
-                .hasMessageContaining("UDER")      // INTRUDER, the second document
-                .hasMessageNotContaining("HER");   // never OTHER, the third
-    }
-
-    /**
-     * Why B2 must still rewrite it.
-     *
-     * <p>The shape is one refactor away from a live stall: the moment
-     * {@code validateTenantContext} does any I/O — a repository read to resolve the
-     * organization, a permission call — its {@code Mono} stops being callable, {@code block()}
-     * starts parking, and every request through the batch path stalls a Netty worker. Nothing
-     * about that change would look dangerous in review.
-     *
-     * <p>So this asserts the hazard directly, on the same shape with an asynchronous inner
-     * source. It is the argument for {@code Flux.fromIterable(...).concatMap(...)} in B2.
-     */
-    @Test
-    @DisplayName("...but the same shape stalls the instant the inner Mono does I/O — which is why B2 rewrites it")
+    @DisplayName("block() inside fromCallable is refused the instant the inner Mono does I/O")
     void theSameShapeStallsAsSoonAsTheInnerMonoIsAsynchronous() {
         Mono<String> asynchronousInner = Mono.just("value").delayElement(Duration.ofMillis(5));
 
@@ -165,9 +107,8 @@ class BlockHoundGuardTest {
 
         assertThat(caught)
                 .as("""
-                    identical code to validateTenantContextBatch, differing only in that the \
-                    inner Mono is asynchronous — and now it is refused. The current safety is \
-                    an accident of the implementation, not a property of the design.""")
+                    the shape is only safe while the inner Mono is synchronous — an accident \
+                    of the implementation, not a property of the design.""")
                 .isNotNull();
 
         // Reactor guards block() on a NonBlocking thread itself, before any park happens,

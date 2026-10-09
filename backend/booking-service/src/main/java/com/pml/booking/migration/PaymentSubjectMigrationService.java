@@ -1,5 +1,7 @@
 package com.pml.booking.migration;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -14,13 +16,13 @@ import reactor.core.publisher.Mono;
  *
  * <h2>Why the rename is not enough on its own</h2>
  * Under the old model a payment intent named a ticket that had been created in
- * {@code PENDING_PAYMENT} before the buyer was charged. Under ET-TKT-001 R7 no
+ * {@code PENDING_PAYMENT} before the buyer was charged. In the current model no
  * such ticket exists — tickets are written inside the confirmation transaction —
  * so the field is renamed to {@code reservationId}.
  *
  * <p>But the values are still ticket ids, and no reservation has those ids. That
  * matters and is stated rather than hidden: a historical intent will not resolve
- * to a reservation, so the R8 recovery sweep will not find one for it. The rows
+ * to a reservation, so no purchase workflow will adopt one for it. The rows
  * are kept for audit and reconciliation, which is what they are actually for
  * once their purchase is long settled.
  *
@@ -34,16 +36,14 @@ import reactor.core.publisher.Mono;
  * genuine problem: its buyer may be mid-checkout. Those are counted and logged
  * loudly so a deploy can be timed to avoid them, rather than discovered later as
  * a support ticket.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001 R7</a>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class PaymentSubjectMigrationService {
 
-    private static final String INTENTS = "payment_intents";
-    private static final String ATTEMPTS = "payment_attempts";
+    private static final String INTENTS = BookingCollections.PAYMENT_INTENTS;
+    private static final String ATTEMPTS = BookingCollections.PAYMENT_ATTEMPTS;
     private static final String OLD_FIELD = "ticketId";
     private static final String NEW_FIELD = "reservationId";
 

@@ -3,7 +3,7 @@ package com.pml.booking.infrastructure.gateway.adapter;
 import com.pml.booking.config.PawaPayProperties;
 import com.pml.booking.infrastructure.client.PawaPayClient;
 import com.pml.booking.infrastructure.gateway.MobileMoneyGateway;
-import com.pml.booking.infrastructure.gateway.domain.*;
+import com.pml.booking.infrastructure.gateway.model.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -11,8 +11,6 @@ import reactor.core.publisher.Mono;
 
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
-
 /**
  * PawaPay adapter implementing the provider-agnostic MobileMoneyGateway interface.
  * <p>
@@ -37,6 +35,9 @@ public class PawaPayGatewayAdapter implements MobileMoneyGateway {
     private final PawaPayClient pawaPayClient;
     private final PawaPayProperties pawaPayProperties;
 
+
+    /** A gateway result's timestamp is what reconciliation later matches on. */
+    private final java.time.Clock clock;
     // ==================== Payment Collection ====================
 
     @Override
@@ -73,7 +74,7 @@ public class PawaPayGatewayAdapter implements MobileMoneyGateway {
     // ==================== Payouts ====================
 
     @Override
-    public Mono<PayoutResult> initiatePayout(PayoutRequest request) {
+    public Mono<PayoutResult> initiatePayout(GatewayPayoutRequest request) {
         log.info("[{}] Initiating payout: correlationId={}, amount={} {}",
                 PROVIDER_ID, request.correlationId(), request.amount(), request.currency());
 
@@ -117,7 +118,8 @@ public class PawaPayGatewayAdapter implements MobileMoneyGateway {
                                 "Cannot refund a deposit that is not completed",
                                 false,
                                 PROVIDER_ID
-                        ));
+                        ,
+                                clock.instant()));
                     }
 
                     return pawaPayClient.initiateRefund(
@@ -320,8 +322,10 @@ public class PawaPayGatewayAdapter implements MobileMoneyGateway {
             case "REJECTED", "CANCELLED" -> PaymentResultStatus.REJECTED;
             case "EXPIRED" -> PaymentResultStatus.EXPIRED;
             default -> {
-                log.warn("[{}] Unknown PawaPay status: {}", PROVIDER_ID, pawaPayStatus);
-                yield PaymentResultStatus.FAILED;
+                // An unmapped status is not a decline. Reading it as PENDING keeps
+                // the money path open until the provider gives an answer the platform understands.
+                log.warn("[{}] Unknown PawaPay status: {} — treated as PENDING", PROVIDER_ID, pawaPayStatus);
+                yield PaymentResultStatus.PENDING;
             }
         };
     }
@@ -343,7 +347,8 @@ public class PawaPayGatewayAdapter implements MobileMoneyGateway {
             isRetryable = isRetryableHttpStatus(ex.getStatusCode().value());
         }
 
-        return Mono.just(PaymentResult.failed(correlationId, errorCode, errorMessage, isRetryable, PROVIDER_ID));
+        return Mono.just(PaymentResult.failed(correlationId, errorCode, errorMessage, isRetryable, PROVIDER_ID,
+                                clock.instant()));
     }
 
     /**
@@ -362,7 +367,8 @@ public class PawaPayGatewayAdapter implements MobileMoneyGateway {
             isRetryable = isRetryableHttpStatus(ex.getStatusCode().value());
         }
 
-        return Mono.just(PayoutResult.failed(correlationId, errorCode, errorMessage, isRetryable, PROVIDER_ID));
+        return Mono.just(PayoutResult.failed(correlationId, errorCode, errorMessage, isRetryable, PROVIDER_ID,
+                                clock.instant()));
     }
 
     /**

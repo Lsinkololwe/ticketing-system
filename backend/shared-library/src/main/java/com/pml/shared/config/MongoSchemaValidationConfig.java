@@ -5,15 +5,15 @@ import com.mongodb.client.model.ValidationOptions;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.Ordered;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
@@ -55,20 +55,33 @@ import java.util.Map;
  */
 @Slf4j
 @RequiredArgsConstructor
-public abstract class MongoSchemaValidationConfig {
+public abstract class MongoSchemaValidationConfig implements ApplicationRunner, Ordered {
+
+    /**
+     * After migrations, which may move or reshape a collection first, and before every other
+     * runner: a seed or an adoption that writes before its collection's validator is current is
+     * checked against the old rules — and a value the old rules do not know stops the service.
+     */
+    public static final int ORDER = Ordered.HIGHEST_PRECEDENCE + 10;
+
+    @Override
+    public int getOrder() {
+        return ORDER;
+    }
+
+    @Override
+    public void run(ApplicationArguments args) {
+        applySchemaValidation();
+    }
 
     protected final ReactiveMongoTemplate mongoTemplate;
     protected final ResourceLoader resourceLoader;
     protected final MongoSchemaValidationProperties properties;
 
     /**
-     * Applies MongoDB schema validation when application is ready.
-     * <p>
-     * Uses {@link ApplicationReadyEvent} to ensure MongoDB connection is established
-     * and all beans are initialized before attempting schema application.
-     * </p>
+     * Applies every collection's validator, and waits for it: the runners after this one write.
+     * A failure stops startup when {@code fail-on-validation-error} is set, and is logged otherwise.
      */
-    @EventListener(ApplicationReadyEvent.class)
     public void applySchemaValidation() {
         if (!properties.isEnabled()) {
             log.info("MongoDB schema validation is disabled");
@@ -98,7 +111,7 @@ public abstract class MongoSchemaValidationConfig {
                 .doOnComplete(() -> log.info("MongoDB schema validation applied successfully to {} collections",
                         schemas.size()))
                 .doOnError(e -> log.error("Failed to apply MongoDB schemas", e))
-                .subscribe();
+                .blockLast();
     }
 
     /**

@@ -37,6 +37,13 @@ public class PlatformPaymentDefaults {
     /** Default payout schedule for a new organization (e.g. {@code WEEKLY}). */
     private String payoutSchedule;
 
-    /** Default minimum payout amount (in ZMW) for a new organization. */
-    private Double minimumPayoutAmount;
+    /**
+     * Minimum payout amount, in ZMW.
+     *
+     * <p>{@code BigDecimal} because it is compared against an escrow balance that is also a
+     * BigDecimal, and a {@code Double} threshold has to be converted to make that comparison.
+     * K0.10 has no exact binary representation, so a payout of precisely the minimum can be
+     * refused — a rejection with no explanation anyone can find in the numbers.</p>
+     */
+    private java.math.BigDecimal minimumPayoutAmount;
 }

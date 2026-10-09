@@ -1,15 +1,18 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.service.ChartOfAccountsService;
-import com.pml.booking.web.graphql.dto.ChartOfAccountsMutationResponse;
 import com.pml.booking.web.graphql.dto.CreateChartOfAccountsInput;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
+import com.pml.booking.domain.model.ChartOfAccountsEntry;
 
 /**
  * GraphQL Mutation Resolver for Chart of Accounts Operations.
@@ -29,7 +32,11 @@ import reactor.core.publisher.Mono;
  * @since 1.0.0
  */
 @Slf4j
+
+
 @DgsComponent
+@FailClosedOnRevocation
+@Validated
 @RequiredArgsConstructor
 public class ChartOfAccountsMutationResolver {
 
@@ -41,8 +48,8 @@ public class ChartOfAccountsMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ChartOfAccountsMutationResponse> createChartOfAccountsEntry(
-            @InputArgument CreateChartOfAccountsInput input
+    public Mono<ChartOfAccountsEntry> createChartOfAccountsEntry(
+            @Valid @InputArgument CreateChartOfAccountsInput input
     ) {
         log.info("GraphQL mutation: createChartOfAccountsEntry({})", input.accountCode());
 
@@ -54,13 +61,7 @@ public class ChartOfAccountsMutationResolver {
                         input.parentAccountCode(),
                         input.currency() != null ? input.currency() : "ZMW",
                         input.description()
-                )
-                .map(entry -> ChartOfAccountsMutationResponse.success(
-                        "Account " + input.accountCode() + " created successfully", entry))
-                .onErrorResume(e -> {
-                    log.error("Failed to create account {}: {}", input.accountCode(), e.getMessage());
-                    return Mono.just(ChartOfAccountsMutationResponse.error(e.getMessage()));
-                });
+                );
     }
 
     /**
@@ -69,9 +70,9 @@ public class ChartOfAccountsMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ChartOfAccountsMutationResponse> updateChartOfAccountsEntry(
+    public Mono<ChartOfAccountsEntry> updateChartOfAccountsEntry(
             @InputArgument String id,
-            @InputArgument CreateChartOfAccountsInput input
+            @Valid @InputArgument CreateChartOfAccountsInput input
     ) {
         log.info("GraphQL mutation: updateChartOfAccountsEntry(id={}, code={})", id, input.accountCode());
 
@@ -79,13 +80,7 @@ public class ChartOfAccountsMutationResolver {
                         id,  // accountCode
                         input.accountName(),
                         input.description()
-                )
-                .map(entry -> ChartOfAccountsMutationResponse.success(
-                        "Account " + entry.getAccountCode() + " updated successfully", entry))
-                .onErrorResume(e -> {
-                    log.error("Failed to update account {}: {}", id, e.getMessage());
-                    return Mono.just(ChartOfAccountsMutationResponse.error(e.getMessage()));
-                });
+                );
     }
 
     /**
@@ -96,16 +91,10 @@ public class ChartOfAccountsMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ChartOfAccountsMutationResponse> deactivateChartOfAccountsEntry(@InputArgument String id) {
+    public Mono<ChartOfAccountsEntry> deactivateChartOfAccountsEntry(@InputArgument String id) {
         log.info("GraphQL mutation: deactivateChartOfAccountsEntry({})", id);
 
-        return chartOfAccountsService.deactivateAccount(id)
-                .map(entry -> ChartOfAccountsMutationResponse.success(
-                        "Account " + entry.getAccountCode() + " deactivated successfully", entry))
-                .onErrorResume(e -> {
-                    log.error("Failed to deactivate account {}: {}", id, e.getMessage());
-                    return Mono.just(ChartOfAccountsMutationResponse.error(e.getMessage()));
-                });
+        return chartOfAccountsService.deactivateAccount(id);
     }
 
     /**

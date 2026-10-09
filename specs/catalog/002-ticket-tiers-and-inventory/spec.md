@@ -188,6 +188,15 @@ sold or reserved, and otherwise SHALL close it.
 
 ## 4. Model
 
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 1 operation name below adopts the
+> shipped name: `deleteTier` → `deleteTicketTier`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
+
 ### Documents
 
 `catalog_ticket_tiers` — the definition, owned by catalog.
@@ -295,7 +304,7 @@ Subgraph `catalog`, except the contributed fields, which are booking's.
 | `changeTierCapacity(id, capacity)` | mutation | `ORGANIZER` | `TicketTier!` |
 | `pauseTierSales(id)` / `resumeTierSales(id)` | mutation | `ORGANIZER` | `TicketTier!` |
 | `closeTier(id)` | mutation | `ORGANIZER` | `TicketTier!` |
-| `deleteTier(id)` | mutation | `ORGANIZER` | `Boolean!` |
+| `deleteTicketTier(id)` | mutation | `ORGANIZER` | `Boolean!` |
 | `promoCode(code, eventId)` | query | `AUTHENTICATED` | `PromoCodeValidation!` |
 | `createPromoCode(input)` | mutation | `ORGANIZER` | `PromoCode!` |
 | `updatePromoCode(id, input)` | mutation | `ORGANIZER` | `PromoCode!` |
@@ -327,7 +336,8 @@ see how much budget is left.
 |---|---|---|---|
 | bus | `catalog.TicketTierPublished` v1 | tier created on a published event, or event published | booking → create inventory |
 | bus | `catalog.TicketTierCapacityChanged` v1 | capacity change | booking → `$inc` the delta |
-| module | `TierClosedEvent` | close, sell-out | update the event's on-sale list |
+
+Closing a tier updates the event's on-sale list in the same transaction; there is no in-memory event.
 
 Both bus rows are session-keyed on `tierId`
 ([ET-PLT-003 §4](../../_platform/003-event-contract/)) — ordering matters, because a

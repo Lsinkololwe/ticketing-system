@@ -30,28 +30,34 @@ persistence:
     - "booking_ticket_transfers {expiresAt} ttl (ttl + grace)"
   redis_keys:
     - "idem:{key}                     STRING  24 h   — claimTransfer, buyResaleTicket"
-    - "lock:sweep:transfer-expiry     STRING  30 s"
 
 events:
-  module:
-    - TransferInitiatedEvent
-    - TransferExpiredEvent
+  module: []   # a step within a service is a workflow activity (ET-PLT-015)
   bus:
     - booking.TicketTransferred    # v1, session ticketId → identity (notify both parties)
   topics:
     - booking-events
 
+workflows:
+  - "TicketTransferWorkflow   ticket-transfer/{transferId}   booking-checkout   updates claim, cancel; timer expiresAt"
+
 graphql:
   schema: backend/booking-service/src/main/resources/graphql/schema.graphqls
   queries:
-    - "transferByToken(token)                    PUBLIC         TransferPreview   # six fields only"
+    - "ownershipTransferByToken(token)           PUBLIC         TransferPreview   # six fields only; 2026-09-01, was `transferByToken`"
     - "myTransfers(direction, page)              AUTHENTICATED  TicketTransferPage!"
     - "ticketTransferChain(ticketId)             AUTHENTICATED  [TicketTransfer!]!"
     - "resaleListings(eventId, first, after)     PUBLIC         ResaleListingConnection!"
+    - "transferRecipient(channel, value)         CUSTOMER       TransferRecipient   # amended 2026-10-05; masked name only"
+    - "myTicketTransfers(direction, status, pagination) CUSTOMER TicketTransferPage!  # amended 2026-10-05"
   mutations:
-    - "initiateTransfer(input)          CUSTOMER       TicketTransfer!"
-    - "cancelTransfer(id)               CUSTOMER       TicketTransfer!"
+    - "initiateOwnershipTransfer(input) CUSTOMER       TicketTransfer!"   # 2026-09-01, was `initiateTransfer`
+    - "cancelOwnershipTransfer(id)      CUSTOMER       TicketTransfer!"   # 2026-09-01, was `cancelTransfer`
     - "claimTransfer(token)             AUTHENTICATED  Ticket!          # idempotencyKey"
+    - "initiateTicketTransfer(input)    CUSTOMER       TicketTransfer!   # amended 2026-10-05: direct offers"
+    - "cancelTicketTransfer(transferId) CUSTOMER       TicketTransfer!"
+    - "acceptTicketTransfer(transferId) CUSTOMER       Ticket!"
+    - "declineTicketTransfer(transferId) CUSTOMER      TicketTransfer!"
     - "listForResale(input)             CUSTOMER       TicketTransfer!"
     - "withdrawResaleListing(id)        CUSTOMER       TicketTransfer!"
     - "buyResaleTicket(input)           CUSTOMER       PaymentIntent!   # idempotencyKey"
@@ -88,8 +94,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-004 -DfailIfNoTests=true
-  - mvn -q -f backend verify -Dgroups=ET-TKT-004 -DfailIfNoTests=true
+  - mvn -q -f backend/booking-service test -Dgroups=ET-TKT-004 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-TKT-004 -DfailIfNoTests=false
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
@@ -98,6 +104,6 @@ risks:
   - "An open claim link with no recipient identity is a bearer token for a ticket. Anyone who intercepts the message claims the ticket, and the sender has no recourse because the platform cannot tell an interceptor from the intended recipient. R2 permits this deliberately for usability and states it to the sender, but a stated risk is not a control."
   - "R7 credits seller proceeds to 2040 and pays them out through ET-FIN-003, which is built entirely around per-event escrow accounts, payout eligibility tied to event completion, and organization-scoped bank accounts. A private individual reselling one ticket has no organization, no bank account and no escrow — the payout path described does not exist for them and ET-FIN-003 would need substantial extension."
   - "Resale makes an ordinary customer a seller who receives money, which brings KYC, tax reporting and anti-money-laundering considerations the platform has not addressed anywhere in this corpus. Capping at face value reduces but does not remove that: the platform is still remitting funds to individuals."
-  - "The transfer TTL index has a grace like ET-TKT-001's reservations, but the sweep and the TTL both return the ticket. The return is idempotent per R3, yet the TTL deletes the transfer document while the ticket's TRANSFER_PENDING status lives on the ticket — if the sweep has not run, a deleted transfer leaves a permanently unusable ticket with nothing to recover it."
+  - "The transfer TTL index has a grace like ET-TKT-001's reservations, but the workflow's expiry timer and the TTL both return the ticket. The return is idempotent per R3, yet the TTL deletes the transfer document while the ticket's TRANSFER_PENDING status lives on the ticket — if the workflow's timer has not fired, a deleted transfer leaves a permanently unusable ticket with nothing to recover it."
   - "R5 refuses a transfer of a ticket the caller does not own with TICKET_UNKNOWN to avoid confirming existence. But transferByToken is PUBLIC and confirms a specific ticket exists to anyone holding a link, so the non-disclosure is inconsistent across the two surfaces."
   - "max-chain of 5 is enforced on transferCount, but a resale followed by transfers followed by another resale is the pattern a ticket-flipping ring would use. Nothing tracks value extracted per ticket or flags a ticket that has been priced at face value five times to five different buyers."

@@ -5,22 +5,28 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.OwnershipTransferRequest;
 import com.pml.identity.service.OrganizationMemberService;
-import com.pml.identity.service.OwnershipTransferService;
+import com.pml.identity.workflow.ownership.OwnershipTransferProcess;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Ownership Transfer operations.
+ *
+ * <p>Each mutation is a command to the transfer's {@code OwnershipTransferWorkflow},
+ * which owns the three-day expiry and the Keycloak mirror.
  */
 @Slf4j
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class OwnershipTransferMutationResolver {
 
-    private final OwnershipTransferService transferService;
+    private final OwnershipTransferProcess transferProcess;
     private final OrganizationMemberService memberService;
 
     /**
@@ -43,7 +49,7 @@ public class OwnershipTransferMutationResolver {
                                 return Mono.error(new IllegalStateException("Only the owner can initiate a transfer"));
                             }
 
-                            return transferService.initiate(organizationId, currentOwnerId, newOwnerId, reason);
+                            return transferProcess.initiate(organizationId, currentOwnerId, newOwnerId, reason);
                         }));
     }
 
@@ -56,12 +62,24 @@ public class OwnershipTransferMutationResolver {
     public Mono<OwnershipTransferRequest> cancelOwnershipTransfer(@InputArgument String organizationId) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(currentOwnerId -> log.info("User {} cancelling ownership transfer for organization {}", currentOwnerId, organizationId))
-                .flatMap(currentOwnerId -> transferService.cancel(organizationId, currentOwnerId));
+                .flatMap(currentOwnerId -> transferProcess.cancel(organizationId, currentOwnerId));
+    }
+
+    /**
+     * Sends the nominee a one-time code to their verified phone; {@code acceptOwnershipTransfer}
+     * requires it.
+     */
+    @DgsMutation
+    @PreAuthorize("isAuthenticated()")
+    public Mono<Boolean> requestOwnershipTransferCode(@InputArgument String token) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(callerId -> transferProcess.requestConfirmationCode(token, callerId))
+                .thenReturn(true);
     }
 
     /**
      * Accept ownership transfer.
-     * Only the designated new owner can accept.
+     * Only the designated new owner can accept, with the code sent to their phone.
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
@@ -70,7 +88,7 @@ public class OwnershipTransferMutationResolver {
             @InputArgument String confirmationCode) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(newOwnerId -> log.info("User {} accepting ownership transfer", newOwnerId))
-                .flatMap(newOwnerId -> transferService.accept(token, newOwnerId, confirmationCode));
+                .flatMap(newOwnerId -> transferProcess.accept(token, newOwnerId, confirmationCode));
     }
 
     /**
@@ -82,6 +100,6 @@ public class OwnershipTransferMutationResolver {
     public Mono<OwnershipTransferRequest> declineOwnershipTransfer(@InputArgument String token) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(newOwnerId -> log.info("User {} declining ownership transfer", newOwnerId))
-                .flatMap(newOwnerId -> transferService.decline(token, newOwnerId));
+                .flatMap(newOwnerId -> transferProcess.decline(token, newOwnerId));
     }
 }

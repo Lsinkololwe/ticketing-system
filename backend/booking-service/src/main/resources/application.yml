@@ -3,15 +3,45 @@ server:
   shutdown: graceful
 
 spring:
+
+  # The scheduler pool.
+  #
+  # Booking's timers, sweeps and reconciliation jobs run as Temporal workflows and Schedules,
+  # so the only scheduled task on this pool is the outbox drain, which polls every
+  # 2 seconds and must never wait behind anything else. The pool stays sized above one so a slow
+  # drain cycle cannot starve a future job that joins it.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:10}
   profiles:
     # Defaults to "local" (Service Bus emulator). Prod sets SPRING_PROFILES_ACTIVE=prod.
     active: ${SPRING_PROFILES_ACTIVE:local}
   application:
     name: booking-service
-  main:
-    allow-bean-definition-overriding: true
   lifecycle:
     timeout-per-shutdown-phase: 60s
+
+  # Durable execution. The task queues this service's workers poll; TemporalRegistryLintTest
+  # checks them against the platform's list of queues.
+  temporal:
+    connection:
+      target: ${TEMPORAL_ADDRESS:127.0.0.1:7233}
+    namespace: ${TEMPORAL_NAMESPACE:ticketing}
+    workers-auto-discovery:
+      packages:
+        - com.pml.booking.workflow
+    workers:
+      - task-queue: booking-checkout
+        capacity:
+          max-concurrent-activity-executors: ${TEMPORAL_ACTIVITY_EXECUTORS:50}
+      - task-queue: booking-provider
+        capacity:
+          max-concurrent-activity-executors: 16
+      - task-queue: booking-finance
+      - task-queue: booking-recon
+        capacity:
+          max-concurrent-activity-executors: 2
 
   cloud:
     azure:
@@ -28,7 +58,9 @@ spring:
         tenant-id: ${AZURE_TENANT_ID:}
       servicebus:
         connection-string: ${azure-servicebus-connection-string:${AZURE_SERVICEBUS_CONNECTION_STRING:}}
-        namespace: ${AZURE_SERVICEBUS_NAMESPACE:}
+        # No `namespace` key on purpose. An empty one is still "set": it overrides the connection string and sends the
+        # producer to ".servicebus.windows.net", where every send times out. Managed-identity deployments set
+        # SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE in the environment instead.
         retry:
           mode: exponential
           max-retries: 3
@@ -45,21 +77,22 @@ spring:
     stream:
       default-binder: servicebus
       function:
-        definition: catalogEventConsumer;ticketOutput
+        definition: catalogEventConsumer
       bindings:
+        # The binding the outbox drain publishes on, through EventBridge.
+        bookingEvents-out-0:
+          destination: booking-events
         catalogEventConsumer-in-0:
           destination: catalog-events
-          group: booking-service
+          # The subscription name. booking-sub is the one the broker defines with sessions required, so a
+          # tier's capacity change cannot overtake the tier's creation.
+          group: booking-sub
           consumer:
             max-attempts: 3
             back-off-initial-interval: 1000
             back-off-max-interval: 10000
             back-off-multiplier: 2.0
             default-retryable: true
-        ticketOutput-out-0:
-          destination: booking-events
-          producer:
-            partition-key-expression: headers['partitionKey']
       servicebus:
         bindings:
           catalogEventConsumer-in-0:
@@ -72,16 +105,27 @@ spring:
               max-auto-lock-renew-duration: 5m
               sub-queue: none
               receive-mode: peek-lock
-              session-enabled: false
-          ticketOutput-out-0:
+              session-enabled: true
+          bookingEvents-out-0:
             producer:
               entity-type: topic
+              # The binder sends asynchronously unless told otherwise: send() then returns true before the
+              # bus has accepted anything and a later failure is only logged, so the outbox would mark the
+              # event sent and lose it. Synchronous sends raise on failure, which keeps the row pending.
+              sync: true
 
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin&directConnection=true}
+      # No directConnection: it tells the driver to treat the server as a single node, so it
+      # never discovers the replica set — and multi-document transactions become silently inert.
+      # The compose file runs mongod --replSet rs0 with rs.initiate(), so the services connect to
+      # it as a replica set.
+      # No default: the local profile pins the development database, so any other profile that
+      # forgets the variable stops at startup naming it instead of dialling a password in git.
+      uri: ${MONGODB_URI}
       database: ${MONGODB_DATABASE:dev_ticketing}
-      auto-index-creation: true
+      # Indexes come only from the service's *IndexInitializer registry; annotations on the models create none.
+      auto-index-creation: false
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
@@ -96,7 +140,13 @@ spring:
   graphql:
     path: /graphql
     graphiql:
-      enabled: true
+      # A debug surface defaults OFF and is switched on deliberately. Every profile inherits this
+      # base file and application-prod.yml does not override it, so OFF here is what production
+      # gets; only application-local.yml turns it on.
+      #
+      # The page itself is served unauthenticated, but executing a query and introspecting the
+      # schema both go through /graphql, which IS authenticated.
+      enabled: ${GRAPHIQL_ENABLED:false}
       path: /graphiql
     websocket:
       path: /graphql
@@ -112,7 +162,7 @@ spring:
         registration:
           booking-service:
             client-id: ${BOOKING_SERVICE_CLIENT_ID:myticketzm-booking-service}
-            # ET-PLT-001 R6 · no default. Unset in prod must FAIL naming the variable, not start
+            # No default. Unset in prod must FAIL naming the variable, not start
             # against Keycloak with a credential readable in git.
             client-secret: ${BOOKING_SERVICE_SECRET}
             authorization-grant-type: client_credentials
@@ -121,15 +171,9 @@ spring:
           booking-service:
             token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/token}
 
-  cache:
-    type: redis
-    redis:
-      time-to-live: 600000
-      cache-null-values: false
-
 security:
   debug:
-    enabled: ${SECURITY_DEBUG_ENABLED:true}
+    enabled: ${SECURITY_DEBUG_ENABLED:false}
 
 dgs:
   graphql:
@@ -143,10 +187,14 @@ dgs:
 
 keycloak:
   client-id: ${BOOKING_SERVICE_CLIENT_ID:myticketzm-booking-service}
-  # Platform-admin realm split (OFF by default). Add the admin realm issuer to enable
-  # validating tokens from BOTH realms, selected by the token's `iss` claim, e.g.:
-  #   KEYCLOAK_TRUSTED_ISSUERS=http://localhost:8084/realms/myticketzm-admin
+  # Platform-admin realm split. The default below is NOT empty: the admin realm is trusted
+  # out of the box, and tokens from both realms are validated per their `iss` claim.
   trusted-issuers: ${KEYCLOAK_TRUSTED_ISSUERS:http://localhost:8084/realms/myticketzm-admin}
+  # The audience check. Blank = `aud` is NOT validated, and the service logs
+  # that at WARN on every start. Enabling it takes BOTH halves: an oidc-audience-mapper on
+  # the client in docker-resources/keycloak/myticketzm-realm.json (without one,
+  # Keycloak emits `"aud": "account"`), and this variable. Set one without the other and
+  # every token is rejected.
   expected-audiences: ${KEYCLOAK_EXPECTED_AUDIENCES:}
 
 services:
@@ -224,21 +272,12 @@ graphql:
     complexity-exceeded-message: "Query complexity limit exceeded"
 
 booking:
-  service:
-    version: 1.0.0
-    description: Ticket Inventory and Orders Microservice
-  inventory:
-    optimistic-locking: true
-    cache-enabled: true
-    cache-ttl-seconds: 60
-
-  # ET-TKT-001 §4. Ten minutes is a trade, not a round number: mobile-money
+  # How long a checkout holds its seats. Ten minutes is a trade, not a round number: mobile-money
   # confirmation has a long tail (handset off, subscriber in a meeting, PIN
   # mistyped twice). Two minutes releases inventory while people are still
   # paying; thirty lets a hundred abandoned checkouts strangle a hot tier.
   reservation:
     ttl-minutes: 10
-    sweep-interval: PT30S
 
   # Data migrations (see DataMigrationRunner).
   #
@@ -252,11 +291,8 @@ booking:
     fail-fast: ${BOOKING_MIGRATIONS_FAIL_FAST:true}
 
   payment:
-    timeout-minutes: 15
-    # Beyond this a pending intent stops being "slow" and becomes a question for
-    # an operator. Deliberately NOT a release threshold — the money may still
-    # arrive, and a released hold plus a late payment is an oversell.
-    max-pending: PT30M
+    # How long a payment intent stays payable once created.
+    timeout: PT15M
 
 pawapay:
   api:
@@ -280,12 +316,6 @@ pawapay:
     allowed-cidrs:
       - "${PAWAPAY_WEBHOOK_CIDR_1:}"
       - "${PAWAPAY_WEBHOOK_CIDR_2:}"
-  retry:
-    max-attempts: 3
-    initial-delay: 1s
-    max-delay: 30s
-    multiplier: 2.0
-    retryable-status-codes: [408, 429, 500, 502, 503, 504]
   providers:
     mtn:
       code: MTN_MOMO_ZMB
@@ -304,20 +334,12 @@ pawapay:
       enabled: true
 
 payment:
-  timeout: 15m
-  commission:
-    rate: ${PLATFORM_COMMISSION_RATE:0.05}
-    minimum: 0
-    maximum: 0
   escrow:
-    hold-period: 7d
-    allow-partial-payout: true
     minimum-payout-amount: 10.00
   refund:
     cutoff-hours-before-event: 24
     allow-post-event-refund: false
     require-approval: true
-    auto-approve-threshold: 100.00
     processing-fee-rate: 0
   gateway:
     primary-providers:
@@ -326,36 +348,39 @@ payment:
       ZAMTEL: pawapay
     fallback:
       enabled: true
-      max-retries: 2
-      health-check-timeout-ms: 5000
 
 platform:
+  # PawaPay calls these without a token; each callback's signature is verified instead.
+  security:
+    public-paths: [/api/webhooks/payment/**]
+  # Finance staff approve payouts, refunds and reconciliation across every organization, so in
+  # booking they read organization-owned records platform-wide, as administrators do.
+  tenancy:
+    platform-wide-authorities: [ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_FINANCE]
+    # Memberships come from identity-service, which owns them.
+    identity-url: ${services.identity.url}
+  # The transactional outbox. Payment outcomes and ticket purchases stage their
+  # envelopes here inside the business transaction; the drain publishes them on bookingEvents-out-0.
+  outbox:
+    collection: booking_outbox
+    binding: bookingEvents-out-0
+    drain-interval: PT2S
+  # The consumer retry budget, stated rather than defaulted.
+  # Spring Cloud Stream has a default for each of these, which is how a service
+  # can look configured while retrying a dead provider ten times a second or
+  # giving up after a single attempt. ConsumerRetryLintTest fails the build if
+  # any goes missing. Three attempts over roughly two seconds: long enough to
+  # ride out a driver reconnect, short enough that a genuinely broken consumer
+  # reaches its dead letter while an operator is still looking at the alert.
+  # Exhaustion dead-letters with a reason, it does not rethrow.
+  events:
+    consumer:
+      max-attempts: ${EVENT_CONSUMER_MAX_ATTEMPTS:3}
+      initial-backoff: ${EVENT_CONSUMER_INITIAL_BACKOFF:500ms}
+      max-backoff: ${EVENT_CONSUMER_MAX_BACKOFF:10s}
+      backoff-multiplier: ${EVENT_CONSUMER_BACKOFF_MULTIPLIER:2.0}
   commission:
     rate: ${PLATFORM_COMMISSION_RATE:0.05}
-  qrcode:
-    async-generation: true
-    size: 300
-    error-correction: M
-    storage:
-      type: s3
-      bucket: ${S3_BUCKET_NAME:myticketzm-qrcodes}
-      region: ${AWS_REGION:us-east-1}
-  refund:
-    cutoff-hours-before-event: 24
-    refund-policies:
-      - days-before: 30
-        percentage: 100
-      - days-before: 14
-        percentage: 80
-      - days-before: 7
-        percentage: 50
-      - days-before: 1
-        percentage: 0
-  features:
-    inventory-caching: true
-    async-qr-generation: true
-    payment-retry: true
-    fraud-detection: true
 
 resilience4j:
   circuitbreaker:
@@ -376,6 +401,17 @@ resilience4j:
         ignoreExceptions:
           - com.pml.booking.exception.BusinessValidationException
     instances:
+      # Guards the Redis revocation cache: while open, checks skip Redis and ask identity directly.
+      revocationCache:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 80
+        slow-call-duration-threshold: 250ms
+        minimum-number-of-calls: 10
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
       catalogService:
         baseConfig: default
         failureRateThreshold: 60
@@ -418,20 +454,15 @@ resilience4j:
         timeoutDuration: 10s
         cancelRunningFuture: true
     instances:
+      revocationCache:
+        timeout-duration: 250ms
+        cancel-running-future: true
       catalogService:
         baseConfig: default
         timeoutDuration: 15s
       pawaPayService:
         baseConfig: default
         timeoutDuration: 30s
-
-integrations:
-  catalog-service:
-    base-url: ${CATALOG_SERVICE_URL:http://catalog-service:8085}
-    timeout-seconds: 5
-  identity-service:
-    base-url: ${IDENTITY_SERVICE_URL:http://identity-service:8083}
-    timeout-seconds: 5
 
 notification:
   enabled: true
@@ -457,3 +488,22 @@ mongodb:
     fail-on-validation-error: ${MONGODB_VALIDATION_FAIL_ON_ERROR:true}
     schema-base-path: ${MONGODB_SCHEMA_BASE_PATH:mongodb/schemas}
     operation-timeout-ms: ${MONGODB_SCHEMA_TIMEOUT_MS:30000}
+
+# ==============================================================================
+# TOKEN REVOCATION
+# ==============================================================================
+# Every authenticated request is checked against the revocation records identity-service owns:
+# first the shared Redis cache, then identity's internal API. A revoked token is refused with
+# TOKEN_REVOKED. When neither answers, ordinary requests proceed and operations marked
+# @FailClosedOnRevocation are refused with REVOCATION_UNAVAILABLE.
+pml:
+  security:
+    revocation:
+      enabled: ${REVOCATION_ENABLED:true}
+      identity-url: ${services.identity.url}
+      # Tracks the realm's accessTokenLifespan (myticketzm-realm.json: 3600).
+      access-token-lifespan: ${ACCESS_TOKEN_LIFESPAN:1h}
+      clock-skew: 60s
+      cache-timeout: 250ms
+      durable-timeout: 2s
+      require-eviction-safe-cache: true

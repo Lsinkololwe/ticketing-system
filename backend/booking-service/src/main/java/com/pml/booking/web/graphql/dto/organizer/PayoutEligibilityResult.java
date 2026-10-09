@@ -3,7 +3,7 @@ package com.pml.booking.web.graphql.dto.organizer;
 import com.pml.booking.domain.PayoutEligibility;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -22,7 +22,7 @@ public record PayoutEligibilityResult(
         List<PayoutEligibility.Reason> reasons,
         BigDecimal availableAmount,
         String currency,
-        LocalDateTime opensAt,
+        Instant opensAt,
         BigDecimal minimumAmount
 ) {
     public static PayoutEligibilityResult from(PayoutEligibility eligibility) {

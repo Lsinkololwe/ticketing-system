@@ -1,11 +1,14 @@
 package com.pml.identity.web.rest;
 
-import com.pml.identity.dto.sync.KeycloakEventDto;
-import com.pml.identity.dto.sync.KeycloakUserDataDto;
-import com.pml.identity.dto.sync.SyncResponse;
-import com.pml.identity.domain.model.User;
-import com.pml.identity.repository.UserRepository;
-import com.pml.identity.service.UserSyncService;
+import com.pml.identity.config.KeycloakProperties;
+import com.pml.identity.security.revocation.KeycloakSessionRevoker;
+import com.pml.identity.web.rest.dto.KeycloakEventDto;
+import com.pml.identity.web.rest.dto.SyncResponse;
+import com.pml.identity.workflow.usersync.UserBackfillProcess;
+import com.pml.identity.workflow.usersync.UserSyncProcess;
+import com.pml.identity.workflow.usersync.UserSyncRules;
+import com.pml.identity.workflow.usersync.UserSyncWorkflow.Change;
+import com.pml.identity.workflow.usersync.UserSyncWorkflow.Kind;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,8 +21,9 @@ import reactor.core.publisher.Mono;
 /**
  * REST Controller for Keycloak synchronization webhooks.
  *
- * Endpoints are called by the Keycloak UserSyncEventListener to notify the
- * Identity Service of user changes in Keycloak.
+ * Endpoints are called by the Keycloak UserSyncEventListener (in both realms) to notify the
+ * Identity Service of user changes in Keycloak. The body is the slim event of CONTRACT 4.6; the
+ * full-profile {@code /user-data} endpoint and the unauthenticated-looking {@code /health} are gone.
  *
  * Security:
  * - All endpoints require internal service authentication
@@ -36,58 +40,16 @@ import reactor.core.publisher.Mono;
 @RequiredArgsConstructor
 public class KeycloakSyncController {
 
-    private final UserSyncService userSyncService;
-    private final UserRepository userRepository;
+    private final UserSyncProcess userSyncProcess;
+    private final UserBackfillProcess userBackfillProcess;
+    private final KeycloakProperties keycloak;
+    private final KeycloakSessionRevoker sessionRevoker;
 
     /**
-     * Sync a user with full data from Keycloak (OWASP Best Practice).
+     * A Keycloak event notification.
      *
-     * This endpoint receives complete user data from the Keycloak EventListener,
-     * eliminating the need for Identity Service to call back to Keycloak Admin API.
-     *
-     * Benefits:
-     * - No admin credentials needed in Identity Service
-     * - No extra round-trip to Keycloak
-     * - Reduced attack surface
-     *
-     * @param userData The full user data from Keycloak
-     * @return SyncResponse with the result
-     */
-    @PostMapping("/user-data")
-    @PreAuthorize("hasAnyAuthority('SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE')")
-    public Mono<ResponseEntity<SyncResponse>> syncUserWithData(@Valid @RequestBody KeycloakUserDataDto userData) {
-        log.info("Received user data sync for user: {} (event: {})",
-                userData.getId(), userData.getEventType());
-
-        return userSyncService.syncUserFromData(userData)
-                .map(user -> {
-                    SyncResponse response = SyncResponse.success(
-                            user.getId(),
-                            "SYNCED",
-                            "User synced successfully from Keycloak data"
-                    );
-                    return ResponseEntity.ok(response);
-                })
-                .onErrorResume(e -> {
-                    log.error("Failed to sync user {} from data: {}", userData.getId(), e.getMessage());
-                    return Mono.just(
-                            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                    .body(SyncResponse.error(
-                                            userData.getId(),
-                                            "Sync failed: " + e.getMessage()
-                                    ))
-                    );
-                });
-    }
-
-    /**
-     * Handle a Keycloak event notification.
-     *
-     * Generic endpoint for processing various Keycloak events.
-     * The event type determines what action is taken:
-     * - Sync events: Fetch user from Keycloak and update MongoDB
-     * - Login events: Update lastLoginAt timestamp
-     * - Delete events: Remove user from MongoDB
+     * <p>A delete, login or profile event is recorded as a signal to the user's workflow and answered
+     * with {@code 202}; an event nothing syncs is answered {@code 200} as skipped.
      *
      * @param event The Keycloak event data
      * @return SyncResponse with the result
@@ -95,90 +57,91 @@ public class KeycloakSyncController {
     @PostMapping("/event")
     @PreAuthorize("hasAnyAuthority('SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE')")
     public Mono<ResponseEntity<SyncResponse>> handleEvent(@Valid @RequestBody KeycloakEventDto event) {
-        log.info("Received Keycloak event: type={}, userId={}",
-                event.getEventType(), event.getUserId());
+        log.info("Received Keycloak event: type={}, userId={}, realm={}", event.getEventType(), event.getUserId(), event.getRealm());
 
-        return userSyncService.handleKeycloakEvent(event)
-                .map(response -> {
-                    if (response.isSuccess()) {
-                        return ResponseEntity.ok(response);
-                    } else {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-                    }
-                })
+        if (!UserSyncRules.knownRealm(event.getRealm(), keycloak.getRealm(), keycloak.getStaffRealm())) {
+            return Mono.just(ResponseEntity.ok(SyncResponse.skipped(event.getUserId(),
+                    "Realm not synced: " + event.getRealm())));
+        }
+        if (KeycloakSessionRevoker.endsSession(event.getEventType())) {
+            return revokeSession(event);
+        }
+        long timestamp = event.getTimestamp() == null ? 0L : event.getTimestamp();
+        return UserSyncRules.kindOf(event.getEventType())
+                .map(kind -> accepted(event.getUserId(), new Change(
+                        UserSyncRules.listenerEventId(event.getEventId(), event.getUserId(), event.getEventType(), timestamp),
+                        kind,
+                        UserSyncRules.registration(event.getEventType(), null),
+                        timestamp,
+                        event.getRealm())))
+                .orElseGet(() -> Mono.just(ResponseEntity.ok(SyncResponse.skipped(event.getUserId(),
+                        "Event type not handled: " + event.getEventType()))));
+    }
+
+    /**
+     * A Keycloak logout (or a refresh token the server refused) ends the SSO session, so its
+     * {@code sid} is revoked: every access token minted for it stops working at the gateway and in
+     * the services, while tokens of the user's other sessions are untouched. The write is an
+     * idempotent upsert and happens here, in the request, not in a workflow: the listener retries
+     * on a 5xx, and the revocation must not wait behind a queue. An event with no {@code sid}
+     * has nothing to revoke and is skipped, never widened to the whole user.
+     */
+    private Mono<ResponseEntity<SyncResponse>> revokeSession(KeycloakEventDto event) {
+        if (event.getSid() == null || event.getSid().isBlank()) {
+            return Mono.just(ResponseEntity.ok(SyncResponse.skipped(event.getUserId(),
+                    "No session id on " + event.getEventType())));
+        }
+        return sessionRevoker.revoke(event.getEventType(), event.getSid(), event.getRealm())
+                .map(written -> ResponseEntity.status(HttpStatus.ACCEPTED)
+                        .body(SyncResponse.success(event.getUserId(), "REVOKED", "Session revoked")))
                 .onErrorResume(e -> {
-                    log.error("Failed to handle event for user {}: {}", event.getUserId(), e.getMessage());
-                    return Mono.just(
-                            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                    .body(SyncResponse.error(
-                                            event.getUserId(),
-                                            "Event handling failed: " + e.getMessage()
-                                    ))
-                    );
+                    log.error("Keycloak {} for user {} could not be recorded as a revocation: {}",
+                            event.getEventType(), event.getUserId(), e.toString());
+                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(SyncResponse.error(event.getUserId(), "Revocation could not be recorded")));
+                });
+    }
+
+    private Mono<ResponseEntity<SyncResponse>> accepted(String userId, Change change) {
+        return userSyncProcess.accept(userId, change)
+                .thenReturn(ResponseEntity.status(HttpStatus.ACCEPTED)
+                        .body(SyncResponse.success(userId, "ACCEPTED", "Change recorded; the sync runs in the user's workflow")))
+                .onErrorResume(e -> {
+                    log.error("Keycloak change for user {} could not be recorded: {}", userId, e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(SyncResponse.error(userId, "Change could not be recorded")));
                 });
     }
 
     /**
-     * Sync all users from Keycloak to MongoDB.
+     * Re-syncs every Keycloak user, for recovery after a restore or to resolve drift.
      *
-     * Full synchronization operation for recovery scenarios:
-     * - Initial setup
-     * - Data recovery after MongoDB restore
-     * - Resolving sync drift
+     * <p>Answers {@code 202} once the {@code user-backfill} workflow's start is recorded; it pages
+     * through Keycloak and hands each user to their own {@code UserSyncWorkflow}. A backfill already
+     * running is reached rather than doubled.
      *
-     * Warning: This operation can be slow for large user bases.
-     * Consider running during maintenance windows.
-     *
-     * @return 202 Accepted with message (async operation)
+     * @return 202 when recorded, 503 when Temporal could not record it
      */
     @PostMapping("/all")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public Mono<ResponseEntity<SyncResponse>> syncAllUsers() {
         log.info("Received request to sync all users from Keycloak");
-
-        // Start async sync and return immediately
-        userSyncService.syncAllUsersFromKeycloak()
-                .subscribe(
-                        v -> log.info("Full sync completed successfully"),
-                        e -> log.error("Full sync failed: {}", e.getMessage())
-                );
-
-        return Mono.just(ResponseEntity
-                .status(HttpStatus.ACCEPTED)
-                .body(SyncResponse.builder()
-                        .success(true)
-                        .action("STARTED")
-                        .message("Full sync started. Check logs for progress.")
-                        .build()
-                ));
-    }
-
-    /**
-     * Health check endpoint for the sync service.
-     *
-     * Can be used by monitoring to verify the sync endpoint is available.
-     */
-    @GetMapping("/health")
-    public Mono<ResponseEntity<String>> health() {
-        return Mono.just(ResponseEntity.ok("Keycloak sync service is healthy"));
-    }
-
-    /**
-     * Get sync status for a specific user.
-     *
-     * Returns whether the user exists in MongoDB and when they were last synced.
-     * This endpoint only checks MongoDB - it does not trigger a sync.
-     *
-     * @param userId The Keycloak user ID (same as MongoDB document ID)
-     * @return User details if found
-     */
-    @GetMapping("/user/{userId}")
-    @PreAuthorize("hasAnyAuthority('SCOPE_internal-read', 'SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE')")
-    public Mono<ResponseEntity<User>> getUserSyncStatus(@PathVariable String userId) {
-        log.debug("Checking sync status for user: {}", userId);
-
-        return userRepository.findById(userId)
-                .map(ResponseEntity::ok)
-                .switchIfEmpty(Mono.just(ResponseEntity.notFound().build()));
+        return userBackfillProcess.start()
+                .thenReturn(ResponseEntity
+                        .status(HttpStatus.ACCEPTED)
+                        .body(SyncResponse.builder()
+                                .success(true)
+                                .action("STARTED")
+                                .message("Backfill recorded; progress is the user-backfill workflow's.")
+                                .build()))
+                .onErrorResume(e -> {
+                    log.error("Backfill could not be recorded: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(SyncResponse.builder()
+                                    .success(false)
+                                    .action("NOT_STARTED")
+                                    .message("Backfill could not be recorded")
+                                    .build()));
+                });
     }
 }

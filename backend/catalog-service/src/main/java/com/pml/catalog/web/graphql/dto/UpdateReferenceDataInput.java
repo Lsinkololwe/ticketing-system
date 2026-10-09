@@ -1,5 +1,6 @@
 package com.pml.catalog.web.graphql.dto;
 
+
 import com.pml.catalog.domain.enums.ReferenceType;
 import com.pml.shared.constants.WorkflowSemantic;
 
@@ -34,6 +35,6 @@ public record UpdateReferenceDataInput(
         /** Temporal validity, used by TAX_RATE. Previously unreachable: the resolver
          * hardcoded null for both, so a rate could be created with a validity window
          * and never corrected. */
-        java.time.LocalDateTime effectiveFrom,
-        java.time.LocalDateTime effectiveTo
+        java.time.Instant effectiveFrom,
+        java.time.Instant effectiveTo
 ) {}

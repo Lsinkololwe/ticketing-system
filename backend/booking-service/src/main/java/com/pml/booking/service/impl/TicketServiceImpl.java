@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -32,6 +31,10 @@ import java.util.UUID;
 public class TicketServiceImpl implements TicketService {
 
     private final TicketRepository ticketRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
+    private final com.pml.booking.service.BookingStore bookings;
 
     @Override
     public Mono<Ticket> findById(String id) {
@@ -79,43 +82,10 @@ public class TicketServiceImpl implements TicketService {
     }
 
     @Override
-    public Mono<Ticket> createTicket(Ticket ticket) {
-        log.info("Creating new ticket for event: {}", ticket.getEventId());
-        if (ticket.getTicketNumber() == null) {
-            ticket.setTicketNumber(Ticket.generateTicketNumber());
-        }
-        // ISSUED, not a pre-payment state: ET-TKT-001 R7 moved issuance inside
-        // the confirmation transaction, so a ticket document only ever exists
-        // for money that has already arrived.
-        ticket.setStatus(TicketStatus.ISSUED);
-        ticket.setCreatedAt(LocalDateTime.now());
-        ticket.setUpdatedAt(LocalDateTime.now());
-        return ticketRepository.save(ticket)
-                .doOnSuccess(t -> log.info("Ticket created: {}", t.getTicketNumber()));
-    }
-
-    @Override
-    public Mono<Ticket> updateTicket(String id, Ticket ticket) {
-        return ticketRepository.findById(id)
-                .flatMap(existing -> {
-                    existing.setEventTitle(ticket.getEventTitle());
-                    existing.setEventDate(ticket.getEventDate());
-                    existing.setTicketCategory(ticket.getTicketCategory());
-                    existing.setPrice(ticket.getPrice());
-                    existing.setStatus(ticket.getStatus());
-                    existing.setBuyerName(ticket.getBuyerName());
-                    existing.setBuyerEmail(ticket.getBuyerEmail());
-                    existing.setBuyerPhone(ticket.getBuyerPhone());
-                    existing.setUpdatedAt(LocalDateTime.now());
-                    return ticketRepository.save(existing);
-                });
-    }
-
-    @Override
     public Mono<Ticket> validateTicket(String ticketNumber) {
         return ticketRepository.findByTicketNumber(ticketNumber)
                 .flatMap(ticket -> transition(ticket, Action.VALIDATE, t -> {
-                    t.setValidatedAt(LocalDateTime.now());
+                    t.setValidatedAt(clock.instant());
                 }))
                 .doOnSuccess(t -> log.info("Ticket validated: {}", ticketNumber));
     }
@@ -124,7 +94,7 @@ public class TicketServiceImpl implements TicketService {
     public Mono<Ticket> refundTicket(String ticketNumber, String reason, String processedBy) {
         return ticketRepository.findByTicketNumber(ticketNumber)
                 .flatMap(ticket -> transition(ticket, Action.SETTLE_REFUND, t -> {
-                    t.setRefundedAt(LocalDateTime.now());
+                    t.setRefundedAt(clock.instant());
                     t.setRefundReason(reason);
                 }))
                 .doOnSuccess(t -> log.info("Ticket refunded: {}", ticketNumber));
@@ -142,37 +112,19 @@ public class TicketServiceImpl implements TicketService {
     public Mono<Ticket> cancelTicket(String ticketNumber, String reason, String processedBy) {
         return ticketRepository.findByTicketNumber(ticketNumber)
                 .flatMap(ticket -> transition(ticket, Action.CANCEL, t -> {
-                    t.setCancelledAt(LocalDateTime.now());
+                    t.setCancelledAt(clock.instant());
                     t.setCancellationReason(reason);
                 }))
+                .flatMap(cancelled -> bookings.ticketCancelled(cancelled.getReservationId()).thenReturn(cancelled))
                 .doOnSuccess(t -> log.info("Ticket cancelled: {}", ticketNumber));
     }
 
-    @Override
-    public Mono<Ticket> transferTicket(String ticketId, String newBuyerId, String reason) {
-        return ticketRepository.findById(ticketId)
-                // TRANSFER resolves back to ISSUED, not to TRANSFERRED: ET-TKT-002
-                // §4 keeps the ticket scannable under its new owner, and a ticket
-                // parked in TRANSFERRED would refuse at the gate.
-                .flatMap(ticket -> transition(ticket, Action.TRANSFER, t -> {
-                    t.setOriginalBuyerId(t.getBuyerId());
-                    t.setTransferredToId(newBuyerId);
-                    t.setBuyerId(newBuyerId);
-                    t.setTransferredAt(LocalDateTime.now());
-                    t.setTransferReason(reason);
-                }))
-                .doOnSuccess(t -> log.info("Ticket transferred: {} to {}", ticketId, newBuyerId));
-    }
-
     /**
-     * Apply one of ET-TKT-002 §4's transitions, or refuse.
+     * Apply one of the {@link TicketStateMachine} transitions, or refuse.
      *
-     * <p>Every status write on this class goes through here. Before, each method
-     * carried its own {@code if} chain and they disagreed: {@code cancelTicket}
-     * refused only three states by name and so would happily cancel an already
-     * expired ticket, while {@code transferTicket} listed two states and so
-     * refused a transfer that {@code refundTicket} would have allowed. The table
-     * is now the only opinion.
+     * <p>Every status write on this class goes through here. Per-method {@code if}
+     * chains drift apart — one refuses a state another allows, and a cancel slips
+     * through for an already expired ticket. The table is the only opinion.
      */
     private Mono<Ticket> transition(Ticket ticket, Action action, java.util.function.Consumer<Ticket> stamp) {
         TicketStatus to;
@@ -183,13 +135,8 @@ public class TicketServiceImpl implements TicketService {
         }
         ticket.setStatus(to);
         stamp.accept(ticket);
-        ticket.setUpdatedAt(LocalDateTime.now());
+        ticket.setUpdatedAt(clock.instant());
         return ticketRepository.save(ticket);
-    }
-
-    @Override
-    public Mono<Void> deleteTicket(String id) {
-        return ticketRepository.deleteById(id);
     }
 
     @Override
@@ -200,6 +147,16 @@ public class TicketServiceImpl implements TicketService {
     @Override
     public Mono<Long> countByBuyerId(String buyerId) {
         return ticketRepository.countByBuyerId(buyerId);
+    }
+
+    /** {@link TicketStatus#isSold()}'s states, derived rather than listed so this never drifts from it. */
+    private static final List<TicketStatus> SOLD_STATUSES = java.util.Arrays.stream(TicketStatus.values())
+            .filter(TicketStatus::isSold)
+            .toList();
+
+    @Override
+    public Mono<Long> countSoldByEventId(String eventId) {
+        return ticketRepository.countByEventIdAndStatusIn(eventId, SOLD_STATUSES);
     }
 
     // ========================================================================
@@ -263,7 +220,7 @@ public class TicketServiceImpl implements TicketService {
                         ticket.getMetadata().put("adminNotes", input.notes());
                     }
 
-                    ticket.setUpdatedAt(LocalDateTime.now());
+                    ticket.setUpdatedAt(clock.instant());
                     return ticketRepository.save(ticket);
                 })
                 .doOnSuccess(t -> log.info("Admin updated ticket: {}", ticketId));
@@ -277,7 +234,7 @@ public class TicketServiceImpl implements TicketService {
         return ticketRepository.findById(ticketId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + ticketId)))
                 .flatMap(ticket -> {
-                    // ET-TKT-002 R5: a validated ticket cannot be re-issued — it
+                    // A validated ticket cannot be re-issued — it
                     // has already been used — and neither can a terminal one.
                     if (!ticket.getStatus().isAdmissible()) {
                         return Mono.error(new TicketStateMachine.IllegalTransitionException(
@@ -293,13 +250,13 @@ public class TicketServiceImpl implements TicketService {
                         ticket.setBarcode(generateBarcodeData(ticket));
                     }
 
-                    ticket.setUpdatedAt(LocalDateTime.now());
+                    ticket.setUpdatedAt(clock.instant());
 
                     // Store regeneration info in metadata
                     if (ticket.getMetadata() == null) {
                         ticket.setMetadata(new java.util.HashMap<>());
                     }
-                    ticket.getMetadata().put("qrRegeneratedAt", LocalDateTime.now().toString());
+                    ticket.getMetadata().put("qrRegeneratedAt", clock.instant().toString());
 
                     return ticketRepository.save(ticket);
                 })
@@ -325,9 +282,9 @@ public class TicketServiceImpl implements TicketService {
                             }
 
                             ticket.setStatus(TicketStatus.CANCELLED);
-                            ticket.setCancelledAt(LocalDateTime.now());
+                            ticket.setCancelledAt(clock.instant());
                             ticket.setCancellationReason(reason);
-                            ticket.setUpdatedAt(LocalDateTime.now());
+                            ticket.setUpdatedAt(clock.instant());
 
                             // Store who cancelled it
                             if (ticket.getMetadata() == null) {
@@ -371,6 +328,6 @@ public class TicketServiceImpl implements TicketService {
     private String generateBarcodeData(Ticket ticket) {
         // Generate a unique barcode
         // In production, this would be a proper barcode format
-        return "BC-" + ticket.getTicketNumber() + "-" + System.currentTimeMillis();
+        return "BC-" + ticket.getTicketNumber() + "-" + clock.millis();
     }
 }

@@ -12,7 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -138,6 +140,16 @@ public class InternalRevocationController {
                         records.size(), request.reason()))
                 .map(records -> ResponseEntity.status(HttpStatus.CREATED)
                         .body(new LogoutResponse(true, records)));
+    }
+
+    /**
+     * Lifts one revocation (durable record and cache key), for operators: a user-level revocation made
+     * by mistake or by a since-fixed sign-out blocks every new token of that user until it expires.
+     */
+    @DeleteMapping("/{type}/{value}")
+    @PreAuthorize("hasAnyAuthority('SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE', 'ROLE_SYSTEM')")
+    public Mono<ResponseEntity<Void>> lift(@PathVariable RevocationType type, @PathVariable String value) {
+        return store.lift(type, value).thenReturn(ResponseEntity.noContent().<Void>build());
     }
 
     /**

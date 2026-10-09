@@ -9,8 +9,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
+import java.time.Instant;
 import java.util.Map;
 
 /**
@@ -98,7 +97,7 @@ public interface ChargebackService {
             BigDecimal chargebackFee,
             String currency,
             ChargebackReason reason,
-            LocalDateTime responseDeadline,
+            Instant responseDeadline,
             Map<String, String> gatewayMetadata
     );
 
@@ -119,33 +118,6 @@ public interface ChargebackService {
      * @return Updated chargeback record
      */
     Mono<ChargebackRecord> startReview(String chargebackId, String reviewedBy, String notes);
-
-    /**
-     * Gets dispute recommendation based on chargeback details.
-     *
-     * <p>Analyzes:</p>
-     * <ul>
-     *   <li>Chargeback reason (fraud vs. service issues)</li>
-     *   <li>Available evidence (ticket usage, attendance)</li>
-     *   <li>Historical win rates for similar cases</li>
-     *   <li>Cost-benefit of dispute vs. acceptance</li>
-     * </ul>
-     *
-     * @param chargebackId The chargeback ID
-     * @return Recommendation with reasoning
-     */
-    Mono<DisputeRecommendation> getDisputeRecommendation(String chargebackId);
-
-    /**
-     * Dispute recommendation result.
-     */
-    record DisputeRecommendation(
-            boolean shouldDispute,
-            double estimatedWinProbability,
-            List<String> reasons,
-            List<String> requiredEvidence,
-            List<String> availableEvidence
-    ) {}
 
     // ========================================================================
     // CHARGEBACK DECISIONS
@@ -215,7 +187,7 @@ public interface ChargebackService {
      * @param notes        Notes about the resolution
      * @return Updated chargeback record
      */
-    Mono<ChargebackRecord> recordWin(String chargebackId, LocalDateTime wonAt, String notes);
+    Mono<ChargebackRecord> recordWin(String chargebackId, Instant wonAt, String notes);
 
     /**
      * Records a dispute loss.
@@ -228,7 +200,7 @@ public interface ChargebackService {
      * @param notes        Notes about the resolution
      * @return Updated chargeback record
      */
-    Mono<ChargebackRecord> recordLoss(String chargebackId, LocalDateTime lostAt, String notes);
+    Mono<ChargebackRecord> recordLoss(String chargebackId, Instant lostAt, String notes);
 
     // ========================================================================
     // FUND RECOVERY
@@ -249,23 +221,6 @@ public interface ChargebackService {
      * @return Updated chargeback record with recovery details
      */
     Mono<ChargebackRecord> startRecovery(String chargebackId);
-
-    /**
-     * Attempts to recover funds from a specific source.
-     *
-     * <p>Used for manual recovery or when automatic recovery
-     * needs to skip certain sources.</p>
-     *
-     * @param chargebackId The chargeback ID
-     * @param fundSource   Source to recover from
-     * @param amount       Amount to recover
-     * @return Updated chargeback record
-     */
-    Mono<ChargebackRecord> recoverFromSource(
-            String chargebackId,
-            ChargebackFundSource fundSource,
-            BigDecimal amount
-    );
 
     /**
      * Records a recovery payment.
@@ -362,14 +317,6 @@ public interface ChargebackService {
      * @return All chargebacks with the specified recovery status
      */
     Flux<ChargebackRecord> findByRecoveryStatus(RecoveryStatus recoveryStatus);
-
-    /**
-     * Finds chargebacks with approaching response deadlines.
-     *
-     * @param withinHours Hours until deadline
-     * @return Chargebacks with deadlines within the specified hours
-     */
-    Flux<ChargebackRecord> findWithApproachingDeadline(int withinHours);
 
     /**
      * Finds chargebacks that need recovery action.

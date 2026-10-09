@@ -12,6 +12,7 @@
  */
 
 import { z } from 'zod';
+import type { DocumentStatus } from '../../../../types/graphql';
 
 // ==========================================
 // Sanitization Utilities (OWASP A03:2021)
@@ -46,31 +47,12 @@ function sanitizeOptionalText(str: string | undefined): string | undefined {
 // ==========================================
 
 /**
- * Document statuses
+ * Document statuses. Typed from the generated enum, so a value the schema lacks does not compile.
  */
-export const DOCUMENT_STATUSES = [
-  'PENDING',
-  'APPROVED',
-  'REJECTED',
-  'EXPIRED',
-] as const;
+export const DOCUMENT_STATUSES: readonly DocumentStatus[] = ['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED'];
 
-/**
- * Document types for KYC/KYB
- */
-export const DOCUMENT_TYPES = [
-  'ID_DOCUMENT',
-  'BUSINESS_LICENSE',
-  'TAX_CERTIFICATE',
-  'PACRA_CERTIFICATE',
-  'BANK_STATEMENT',
-  'UTILITY_BILL',
-  'PROOF_OF_ADDRESS',
-  'COMPANY_PROFILE',
-  'DIRECTOR_ID',
-  'SHAREHOLDER_AGREEMENT',
-  'OTHER',
-] as const;
+// Document TYPES are platform reference data (`KYB_DOCUMENT_TYPE`), read with `useReferenceOptions`.
+// There is no list of them here: a code the platform does not list is refused by `referenceCode(codes)`.
 
 /**
  * Accepted file extensions
@@ -108,9 +90,12 @@ export const MAX_FILE_SIZE_MB = 5;
 /**
  * Document type validation
  */
-export const documentTypeSchema = z.enum(DOCUMENT_TYPES, {
-  message: 'Please select a valid document type',
-});
+export function documentTypeSchema(listedCodes: readonly string[]) {
+  return z
+    .string({ error: 'Please select a valid document type' })
+    .min(1, 'Please select a valid document type')
+    .refine((code) => listedCodes.length === 0 || listedCodes.includes(code), 'Please select a valid document type');
+}
 
 /**
  * File validation schema
@@ -187,8 +172,8 @@ export type DocumentReviewFormData = z.infer<typeof documentReviewSchema>;
  * Document filter schema for admin list
  */
 export const documentFilterSchema = z.object({
-  status: z.enum(DOCUMENT_STATUSES).optional(),
-  documentType: z.enum(DOCUMENT_TYPES).optional(),
+  status: z.custom<DocumentStatus>((v) => typeof v === 'string' && (DOCUMENT_STATUSES as readonly string[]).includes(v)).optional(),
+  documentType: z.string().optional(),
   organizationId: z.string().optional(),
   uploadedFrom: z.string().optional(),
   uploadedTo: z.string().optional(),

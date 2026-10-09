@@ -1,24 +1,24 @@
 package com.pml.catalog.web.graphql.mutation;
 
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.catalog.domain.model.ApprovalEscalation;
 import com.pml.catalog.domain.model.ApprovalTimeline;
-import com.pml.catalog.domain.model.PlatformConfiguration;
-import com.pml.catalog.dto.AssignReviewerInput;
-import com.pml.catalog.dto.ResolveEscalationInput;
-import com.pml.catalog.service.ApprovalEscalationService;
-import com.pml.catalog.service.ApprovalTimelineService;
+import com.pml.catalog.web.graphql.dto.AssignReviewerInput;
+import com.pml.catalog.web.graphql.dto.ResolveEscalationInput;
 import com.pml.catalog.service.ApprovalWorkflowService;
 import com.pml.catalog.service.PlatformConfigurationService;
 import com.pml.catalog.web.graphql.dto.*;
-import com.pml.catalog.web.graphql.dto.EventMutationResponse;
+import com.pml.catalog.domain.model.Event;
+import com.pml.catalog.workflow.approval.EventApprovalProcess;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Approval Workflow mutations.
@@ -31,23 +31,27 @@ import reactor.core.publisher.Mono;
  * </ul>
  */
 @Slf4j
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class ApprovalWorkflowMutationResolver {
 
     private final PlatformConfigurationService configurationService;
-    private final ApprovalTimelineService timelineService;
-    private final ApprovalEscalationService escalationService;
     private final ApprovalWorkflowService workflowService;
+
+    /** Claims and change requests go through the event's review workflow. */
+    private final EventApprovalProcess approvals;
 
     // ==========================================
     // Platform Configuration Mutations
     // ==========================================
 
+    @FailClosedOnRevocation
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<PlatformConfigurationMutationResponse> updatePlatformConfiguration(
-            @InputArgument UpdatePlatformConfigurationInput input) {
+    public Mono<com.pml.catalog.domain.model.PlatformConfiguration> updatePlatformConfiguration(
+            @Valid @InputArgument UpdatePlatformConfigurationInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(adminId -> log.info("Mutation: updatePlatformConfiguration by admin: {}", adminId))
                 .flatMap(adminId -> configurationService.getConfiguration()
@@ -95,14 +99,14 @@ public class ApprovalWorkflowMutationResolver {
                             if (input.getAllowSelfApproval() != null) {
                                 existing.setAllowSelfApproval(input.getAllowSelfApproval());
                             }
+                            // The runtime rules: validated as a whole, then applied (ET-ADM-002-R1).
+                            com.pml.catalog.service.PlatformRulesUpdater.apply(existing, input);
 
                             return configurationService.updateConfiguration(existing, adminId);
                         }))
-                .map(config -> PlatformConfigurationMutationResponse.success(config, "Platform configuration updated successfully"))
-                .onErrorResume(e -> {
-                    log.error("Error updating platform configuration", e);
-                    return Mono.just(PlatformConfigurationMutationResponse.error(e.getMessage()));
-                });
+                // The schema returns PlatformConfiguration!, so a refusal propagates as a GraphQL error
+                // with its code rather than being folded into a response object the schema never declared.
+                .doOnError(e -> log.warn("Platform configuration update refused: {}", e.getMessage()));
     }
 
     // ==========================================
@@ -110,67 +114,48 @@ public class ApprovalWorkflowMutationResolver {
     // ==========================================
 
     /**
-     * Request changes to an event during the approval process.
-     * Moves the event to CHANGES_REQUESTED status.
+     * Request changes. The SLA clock stops until the organizer resubmits.
      * reviewerId is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventMutationResponse> requestEventChanges(
+    public Mono<Event> requestEventChanges(
             @InputArgument String eventId,
             @InputArgument String comments) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(reviewerId -> log.info("Mutation: requestEventChanges(eventId={}, reviewerId={})", eventId, reviewerId))
-                .flatMap(reviewerId -> workflowService.requestChanges(eventId, reviewerId, "Reviewer", comments)
-                        .map(timeline -> EventMutationResponse.success(null, "Changes requested successfully")))
-                .onErrorResume(e -> {
-                    log.error("Error requesting changes for event {}", eventId, e);
-                    return Mono.just(EventMutationResponse.error(e.getMessage()));
-                });
+                .flatMap(reviewerId -> approvals.requestChanges(eventId, reviewerId, comments));
     }
 
     // ==========================================
-    // Reviewer Assignment Mutations
+    // Reviewer Claim Mutations
     // ==========================================
 
     /**
-     * Assign reviewer to event.
-     * Note: input.reviewerId is the target reviewer (who will review), not the assigner.
-     * Assigner ID is extracted from JWT - OWASP A01:2021 compliance
+     * Claim the event for {@code input.reviewerId} for the claim lease. A claim held
+     * by somebody else is refused with its holder and expiry; the holder re-claiming extends it.
+     * The assigner's id is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineMutationResponse> assignEventReviewer(
-            @InputArgument AssignReviewerInput input) {
+    public Mono<ApprovalTimeline> assignEventReviewer(
+            @Valid @InputArgument AssignReviewerInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(assignerId -> log.info("Mutation: assignEventReviewer(eventId={}, reviewerId={}, assignedBy={})",
                         input.getEventId(), input.getReviewerId(), assignerId))
-                .flatMap(assignerId -> workflowService.assignReviewer(
-                                input.getEventId(),
-                                input.getReviewerId(),
-                                input.getReviewerName(),
-                                assignerId,
-                                input.getInternalNotes())
-                        .map(timeline -> ApprovalTimelineMutationResponse.success(timeline, "Reviewer assigned successfully")))
-                .onErrorResume(e -> {
-                    log.error("Error assigning reviewer", e);
-                    return Mono.just(ApprovalTimelineMutationResponse.error(e.getMessage()));
-                });
+                .flatMap(assignerId -> approvals.claim(input.getEventId(), input.getReviewerId(), assignerId));
     }
 
+    /** Release the claim held on the event; the item keeps its queue position. */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineMutationResponse> unassignEventReviewer(
+    public Mono<ApprovalTimeline> unassignEventReviewer(
             @InputArgument String eventId,
             @InputArgument String reason) {
-        log.info("Mutation: unassignEventReviewer(eventId={}, reason={})", eventId, reason);
-
-        return workflowService.unassignReviewer(eventId, reason)
-                .map(timeline -> ApprovalTimelineMutationResponse.success(timeline, "Reviewer unassigned successfully"))
-                .onErrorResume(e -> {
-                    log.error("Error unassigning reviewer", e);
-                    return Mono.just(ApprovalTimelineMutationResponse.error(e.getMessage()));
-                });
+        return SecurityContextUtils.requireCurrentUserId()
+                .doOnNext(actorId -> log.info("Mutation: unassignEventReviewer(eventId={}, actor={}, reason={})",
+                        eventId, actorId, reason))
+                .flatMap(actorId -> approvals.release(eventId, actorId));
     }
 
     // ==========================================
@@ -227,7 +212,7 @@ public class ApprovalWorkflowMutationResolver {
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<ApprovalEscalationMutationResponse> resolveEscalation(
-            @InputArgument ResolveEscalationInput input) {
+            @Valid @InputArgument ResolveEscalationInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(adminId -> log.info("Mutation: resolveEscalation(escalationId={}, adminId={}, action={})",
                         input.getEscalationId(), adminId, input.getAction()))

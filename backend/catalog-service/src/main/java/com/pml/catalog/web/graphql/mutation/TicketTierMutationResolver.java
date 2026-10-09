@@ -4,8 +4,6 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.CreateTicketTierInput;
-import com.pml.catalog.web.graphql.dto.DeleteMutationResponse;
-import com.pml.catalog.web.graphql.dto.TierMutationResponse;
 import com.pml.catalog.web.graphql.dto.UpdateTicketTierInput;
 import com.pml.catalog.domain.model.TicketTier;
 import com.pml.catalog.service.TicketTierService;
@@ -16,6 +14,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Ticket Tier Mutation Resolver
@@ -26,7 +26,9 @@ import java.util.List;
  * pricing strategies with multiple tiers.
  */
 @Slf4j
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class TicketTierMutationResolver {
 
@@ -37,17 +39,12 @@ public class TicketTierMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
-    public Mono<TierMutationResponse> createTicketTier(
+    public Mono<TicketTier> createTicketTier(
             @InputArgument String eventId,
-            @InputArgument CreateTicketTierInput input
+            @Valid @InputArgument CreateTicketTierInput input
     ) {
         log.info("Creating ticket tier {} for event {}", input.code(), eventId);
-        return tierService.createTier(eventId, input)
-                .map(tier -> TierMutationResponse.success(tier, "Ticket tier created successfully"))
-                .onErrorResume(e -> {
-                    log.error("Create ticket tier failed: {}", e.getMessage());
-                    return Mono.just(TierMutationResponse.error(e.getMessage()));
-                });
+        return tierService.createTier(eventId, input);
     }
 
     /**
@@ -55,17 +52,12 @@ public class TicketTierMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
-    public Mono<TierMutationResponse> updateTicketTier(
+    public Mono<TicketTier> updateTicketTier(
             @InputArgument String tierId,
-            @InputArgument UpdateTicketTierInput input
+            @Valid @InputArgument UpdateTicketTierInput input
     ) {
         log.info("Updating ticket tier {}", tierId);
-        return tierService.updateTier(tierId, input)
-                .map(tier -> TierMutationResponse.success(tier, "Ticket tier updated successfully"))
-                .onErrorResume(e -> {
-                    log.error("Update ticket tier failed: {}", e.getMessage());
-                    return Mono.just(TierMutationResponse.error(e.getMessage()));
-                });
+        return tierService.updateTier(tierId, input);
     }
 
     /**
@@ -73,14 +65,10 @@ public class TicketTierMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
-    public Mono<DeleteMutationResponse> deleteTicketTier(@InputArgument String tierId) {
+    public Mono<String> deleteTicketTier(@InputArgument String tierId) {
         log.info("Deleting ticket tier {}", tierId);
         return tierService.deleteTier(tierId)
-                .map(deleted -> DeleteMutationResponse.success("Ticket tier deleted successfully"))
-                .onErrorResume(e -> {
-                    log.error("Delete ticket tier failed: {}", e.getMessage());
-                    return Mono.just(DeleteMutationResponse.error(e.getMessage()));
-                });
+                .thenReturn(tierId);
     }
 
     /**
@@ -101,18 +89,9 @@ public class TicketTierMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
-    public Mono<TierMutationResponse> activateTicketTier(@InputArgument String tierId) {
+    public Mono<TicketTier> activateTicketTier(@InputArgument String tierId) {
         log.info("Activating ticket tier: {}", tierId);
-
-        return tierService.activateTier(tierId)
-                .map(tier -> TierMutationResponse.success(
-                        tier,
-                        "Ticket tier activated successfully"
-                ))
-                .onErrorResume(e -> {
-                    log.error("Activate ticket tier failed: {}", e.getMessage());
-                    return Mono.just(TierMutationResponse.error(e.getMessage()));
-                });
+        return tierService.activateTier(tierId);
     }
 
     /**
@@ -120,17 +99,8 @@ public class TicketTierMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
-    public Mono<TierMutationResponse> deactivateTicketTier(@InputArgument String tierId) {
+    public Mono<TicketTier> deactivateTicketTier(@InputArgument String tierId) {
         log.info("Deactivating ticket tier: {}", tierId);
-
-        return tierService.deactivateTier(tierId)
-                .map(tier -> TierMutationResponse.success(
-                        tier,
-                        "Ticket tier deactivated successfully"
-                ))
-                .onErrorResume(e -> {
-                    log.error("Deactivate ticket tier failed: {}", e.getMessage());
-                    return Mono.just(TierMutationResponse.error(e.getMessage()));
-                });
+        return tierService.deactivateTier(tierId);
     }
 }

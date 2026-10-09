@@ -1,106 +1,14 @@
 /**
- * MyTicketZM — Customer Ticketing App — Global Styles
- *
- * Brand context: "ticketing" — accent IRIS (indigo #5b5fc7) for identity
- * (wordmark, hero, links, focus, active nav), JADE for commerce (prices,
- * "Book now", sales progress, "paid"), COPPER for highlights/promos (featured
- * tags, capped at ~10% of any screen). Slate gray neutral.
- *
- * ---------------------------------------------------------------------------
- * THIS FILE IS DELIBERATELY THIN.
- *
- * Everything shared lives in the token layer imported below
- * (libs/shared/src/styles/design-tokens.css): the Google Font imports, the
- * copper scale, the pinned brand hex, the semantic role tokens, the type /
- * spacing / motion scales, the card + bento surface tokens, the mobile-money
- * provider colors, the Radix Themes font bridge, the global focus ring, the
- * reduced-motion block, and every `.ds-*` utility (plus the legacy `.amount`
- * / `.card-bento` / `.lift` / `.eyebrow` / `.momo-*` aliases).
- *
- * Only add a rule here if it is genuinely specific to the customer app.
- * Duplicating a shared token here creates a second source of truth and the
- * two WILL drift.
- * ---------------------------------------------------------------------------
- *
- * Type: the shared layer already sets --font-sans: Inter (body) and
- * --font-display: Space Grotesk. Per the spec, Space Grotesk is the ticketing
- * DISPLAY face — headings only — so this app needs no font override at all.
+ * Buyer app global styles. All measurements and colours come from the shared M3 token layer
+ * (libs/shared/src/styles); app rules below use var(--m3-*) only.
  */
+@import '../../../../libs/shared/src/styles/m3.css';
+@import './buyer.css';
 
-/* MyTicketZM Design System — shared token layer (source of truth).
-   Spec: docs/MYTICKETZM_DESIGN_SYSTEM.md */
-@import '../../../../libs/shared/src/styles/design-tokens.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* ===========================================================================
-   TICKETING-ONLY RULES
-   =========================================================================== */
-
-html {
-  scroll-behavior: smooth;
-}
-
-/* Event artwork and ticket QR blocks are the only fixed-luminance surfaces in
-   the app: they sit on top of photography, so their contrast cannot follow the
-   light/dark theme. Scrim + on-scrim ink are declared as tokens so no component
-   has to inline an rgba() literal. */
-:root {
-  --scrim-top: rgb(10 12 22 / 0.25);
-  --scrim-bottom: rgb(10 12 22 / 0.72);
-  --scrim-control: rgb(10 12 22 / 0.45);
-  --on-scrim: #ffffff;
-  --on-scrim-muted: rgb(255 255 255 / 0.85);
-  /* Paper white — the quiet-zone a QR code needs to stay scannable. */
-  --qr-paper: #ffffff;
-  --qr-ink: var(--gray-12);
-}
-
-/* Legibility scrim over event artwork. Top edge carries the status/action
-   chips, bottom edge carries the title. */
-.artwork-scrim {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    var(--scrim-top) 0%,
-    transparent 38%,
-    transparent 62%,
-    var(--scrim-bottom) 100%
-  );
-}
-
-/* Icon buttons that float on top of artwork. */
-.on-artwork {
-  background: var(--scrim-control);
-  color: var(--on-scrim);
-}
-
-/* Refresh affordance while events reload. */
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Mobile-money "check your phone" waiting state. */
-@keyframes momo-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.06);
-    opacity: 0.85;
-  }
-}
-
-.momo-waiting {
-  animation: momo-pulse 1.4s ease-in-out infinite;
+html,
+body {
+  margin: 0;
+  background: var(--m3-background);
+  color: var(--m3-on-surface);
+  font-family: var(--m3-font-body);
 }

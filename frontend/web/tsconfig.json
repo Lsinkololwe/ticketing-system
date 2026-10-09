@@ -4,12 +4,6 @@
   "files": [],
   "references": [
     {
-      "path": "./apps/ticketing"
-    },
-    {
-      "path": "./apps/admin"
-    },
-    {
       "path": "./libs/shared"
     }
   ],

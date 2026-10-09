@@ -7,7 +7,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.util.Collection;
 
 /**
  * Repository for EventEscrowAccount entities.
@@ -21,6 +21,17 @@ public interface EventEscrowAccountRepository extends ReactiveMongoRepository<Ev
     /**
      * Find escrow account by account number.
      */
+    /**
+     * An escrow account by id, restricted to the caller's organizations.
+     *
+     * <p>The boundary is the {@code IN} clause. {@code escrowTransactions(escrowAccountId, page)}
+     * is open to the ORGANIZER role, and the account id arrives from the client — so without
+     * this an organizer reads any event's money movements by id, which is every ticket sale,
+     * refund and payout of a competitor's festival.
+     */
+    Mono<EventEscrowAccount> findByIdAndOrganizationIdIn(
+            String id, java.util.Collection<String> organizationIds);
+
     Mono<EventEscrowAccount> findByAccountNumber(String accountNumber);
 
     /**
@@ -32,11 +43,11 @@ public interface EventEscrowAccountRepository extends ReactiveMongoRepository<Ev
     /**
      * Every escrow account belonging to an organization.
      *
-     * <p>ET-FIN-001 §Documents makes {@code organizationId} the tenant key, not
+     * <p>{@code organizationId} is the tenant key, not
      * {@code organizerId}. The difference is not cosmetic: an organizer is a
      * person and an organization is the account. Scoping money by the person who
      * happened to create the escrow means a finance colleague added to the team
-     * ({@code specs/organization/002-teams-and-invitations}) sees an empty
+     * sees an empty
      * dashboard and cannot be told why.
      *
      * <p>Filtering here is tenant SCOPING and is not, by itself, authorization.
@@ -50,7 +61,7 @@ public interface EventEscrowAccountRepository extends ReactiveMongoRepository<Ev
     Flux<EventEscrowAccount> findByOrganizationIdAndStatus(String organizationId, EscrowStatus status);
 
     /**
-     * @deprecated ET-FIN-001 scopes escrow by organization. Retained only for
+     * @deprecated Escrow is scoped by organization. Retained only for
      *     reporting paths that genuinely mean "what did this PERSON create",
      *     never for access decisions.
      */
@@ -67,12 +78,6 @@ public interface EventEscrowAccountRepository extends ReactiveMongoRepository<Ev
     Flux<EventEscrowAccount> findByStatus(EscrowStatus status);
 
     /**
-     * Find locked escrow accounts where hold period has passed.
-     * Used by scheduled job to transition to PAYOUT_ELIGIBLE.
-     */
-    Flux<EventEscrowAccount> findByStatusAndHoldUntilBefore(EscrowStatus status, LocalDateTime holdUntil);
-
-    /**
      * Find payout-eligible accounts for an organizer.
      * These are accounts where organizer can request payout.
      */
@@ -81,28 +86,9 @@ public interface EventEscrowAccountRepository extends ReactiveMongoRepository<Ev
     }
 
     /**
-     * Count active escrow accounts for an organizer.
-     */
-    Mono<Long> countByOrganizerIdAndStatus(String organizerId, EscrowStatus status);
-
-    /**
      * Check if escrow account exists for an event.
      */
     Mono<Boolean> existsByEventId(String eventId);
-
-    /**
-     * Check if account number exists.
-     */
-    Mono<Boolean> existsByAccountNumber(String accountNumber);
-
-    /**
-     * Find all escrow accounts with statuses in the given list.
-     * Used for reconciliation to filter active accounts.
-     *
-     * @param statuses List of statuses to include
-     * @return Flux of matching escrow accounts
-     */
-    Flux<EventEscrowAccount> findByStatusIn(java.util.Collection<EscrowStatus> statuses);
 
     /**
      * Find all escrow accounts excluding certain statuses.
@@ -112,4 +98,16 @@ public interface EventEscrowAccountRepository extends ReactiveMongoRepository<Ev
      * @return Flux of matching escrow accounts
      */
     Flux<EventEscrowAccount> findByStatusNotIn(java.util.Collection<EscrowStatus> statuses);
+
+    /**
+     * Escrow accounts belonging to any of the caller's organizations.
+     *
+     * <p>Contrast the {@code escrowAccounts} query, which is
+     * {@code hasAnyRole('ADMIN','FINANCE')} over {@code findAll()} — every account on the
+     * platform. That operation is the finance team's platform-wide view and is not a substitute
+     * for this one: an organizer must only ever see their own organizations' accounts.
+     *
+     * @param organizationIds the caller's active memberships; empty matches nothing
+     */
+    Flux<EventEscrowAccount> findByOrganizationIdIn(Collection<String> organizationIds);
 }

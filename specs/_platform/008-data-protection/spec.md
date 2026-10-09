@@ -37,6 +37,15 @@ minds and people are pressured. Thirty days is long enough to reconsider, short 
 a real commitment, and the execution is automatic so that it does not depend on somebody
 remembering.
 
+**Each erasure request is a workflow, and nothing polls for due requests.** An
+`ErasureWorkflow` addressed `erasure/{userId}` holds the grace period as timers — the seven-day
+reminder and `deletionScheduledFor` — accepts cancellation as an update, checks obligations as an
+activity and, when one is open, waits and re-checks rather than failing. Each erasure step is an
+idempotent activity, so a failure part-way resumes at the step that did not finish. Booking's and
+catalog's steps are their own idempotent internal erasure endpoints, called from identity's
+activities, because no service writes another's collections and there is no cross-service task
+queue ([ET-PLT-015](../015-durable-execution/) §4).
+
 **Financial records are retained for seven years and are exempt from erasure.** Journal
 entries, payments, payouts and reconciliation items are kept as a legal obligation. They are
 anonymised of personal identifiers where they carry any, and the amounts, dates and
@@ -69,6 +78,7 @@ timestamp, the mechanism and the version of the terms — is itself retained.
 - *A hand-written erasure routine.* A field added later is a field erasure misses, silently.
 - *Anonymising financial records.* The ledger cannot resolve a party and fails an audit.
 - *Synchronous subject access export.* A query that scans eight collections while somebody waits.
+- *A sweep for due erasures under a Redis lock.* It acts only while some pod runs it, and the grace period belongs to the request, not to a schedule that happens to find it.
 - *Keeping everything forever "just in case".* The finding an auditor writes up.
 
 ## 3. Requirements
@@ -108,10 +118,11 @@ throughout, and then execute without human action.
 - [ ] `requestAccountDeletion` sets `accountStatus = PENDING_DELETION` and `deletionScheduledFor` at `data.retention.grace` (P30D)
 - [ ] `cancelAccountDeletion` restores `ACTIVE` at any point before execution
 - [ ] The user is notified at the request, at seven days remaining, and at execution
-- [ ] A sweep under `lock:sweep:erasure` executes due erasures with no operator action
+- [ ] The request's `ErasureWorkflow` (`erasure/{userId}`, conflict policy `USE_EXISTING`) sleeps until `deletionScheduledFor` and executes with no operator action; no sweep, `@Scheduled` method or Redis lock exists for erasure
+- [ ] `cancelAccountDeletion` is an update on that workflow, refused once execution has begun
 - [ ] A user in `PENDING_DELETION` may still log in and use the platform — the request is not a suspension
-- [ ] Execution is idempotent and resumable; a failure part-way retries from where it stopped
-- [ ] An erasure blocked by an open obligation (R4) is reported to the user with the reason and re-attempted
+- [ ] Execution is idempotent and resumable: each step is an activity, and a worker killed part-way resumes at the step that did not finish, asserted by a time-skipping test and a replay of its history
+- [ ] An erasure blocked by an open obligation (R4) is reported to the user with the reason, and the workflow re-checks every `data.erasure.obligation-recheck` (P1D) until it closes
 
 ### ET-PLT-008-R4 · Financial and legal obligations survive erasure, honestly
 
@@ -145,13 +156,20 @@ WHEN a subject requests their data, THE SYSTEM SHALL assemble it asynchronously 
 it as a bounded download.
 
 **Acceptance**
-- [ ] `requestDataExport` creates a job; it does not return the data
+- [ ] `requestDataExport` starts a `DataExportWorkflow` (`data-export/{exportId}`); it does not return the data
 - [ ] The export covers every collection holding that subject's data, per §4
 - [ ] It is delivered as JSON via a presigned link valid for `data.export.link-ttl` (PT24H)
 - [ ] The export excludes another person's PII — a ticket transferred to somebody else shows the transfer, not the recipient's details
 - [ ] Generating it does not run on the request path and does not contend with purchases
 - [ ] A user may hold one open export request at a time
 - [ ] The request and the download are both audited
+
+> **Amended 2026-10-04 (D-43, D-46; F-044).** Sign-in consent: the account workflow ([ET-IDN-004](../../identity/004-accounts-and-contacts/)
+> R2) records `TERMS` (and `PRIVACY_POLICY`) grants with their version in `identity_consents` in the activating transaction. Two consent
+> collections therefore exist (`identity_consents` for sign-in grants, `identity_consent_records` for marketing and other purposes); merging
+> them is an open item in F-044. The inventory gains `identity_contacts.valueEncrypted` (DIRECT, released and anonymised at erasure) and
+> `valueMasked` (INDIRECT). **No personal data in workflow ids, search attributes, payloads or logs (D-46)**: they carry the account id
+> or a `contactKey` HMAC only. Erasure completion calls the account deletion hook ([ET-IDN-004](../../identity/004-accounts-and-contacts/) R7).
 
 ### ET-PLT-008-R7 · Consent is recorded with its provenance
 
@@ -175,7 +193,9 @@ WHERE consent is required, THE SYSTEM SHALL record when and how it was given.
 |---|---|---|---|
 | `identity_users.firstName`, `.lastName` | DIRECT | account life | anonymise |
 | `identity_users.email` | DIRECT | account life | anonymise |
-| `identity_users.phoneNumber` | DIRECT | account life | anonymise |
+| `identity_users.phoneNumber` | DIRECT | account life (legacy field; superseded by `identity_contacts`) | anonymise |
+| `identity_contacts.valueEncrypted` | DIRECT | account life; released on contact change or erasure | delete the value, keep the tombstone row without it |
+| `identity_contacts.valueHash`, `.valueMasked` | INDIRECT | as above | delete |
 | `identity_users.avatarUrl`, `.bio` | INDIRECT | account life | delete |
 | `identity_users.dateOfBirth` | SENSITIVE | account life | delete |
 | `identity_users.username` | DIRECT | account life | anonymise |
@@ -233,13 +253,13 @@ existing token.
 ### The erasure sequence
 
 ```
-1  requestAccountDeletion            → PENDING_DELETION, scheduled + P30D, user notified
-2  ...grace period...                  cancellable throughout; the account still works
-3  at T−7d                             reminder notification
-4  at T                               sweep claims it under lock:sweep:erasure
-5  check open obligations             unsettled payout · open chargeback · live future ticket
-                                      → defer, tell the user, re-attempt
-6  per inventory row, per service     apply the declared action
+1  requestAccountDeletion            → ErasureWorkflow starts: PENDING_DELETION, scheduled + P30D, user notified
+2  ...grace period...                  cancellable throughout by update; the account still works
+3  at T−7d                             workflow timer → reminder notification
+4  at T                               workflow timer → EXECUTING
+5  check open obligations (activity)  unsettled payout · open chargeback · live future ticket
+                                      → DEFERRED, tell the user, sleep P1D, re-check
+6  per inventory row, per service     one activity each; booking and catalog through their internal erasure endpoints
 7  identity_users                     → accountStatus = ERASED, erasedAt
 8  Keycloak                           delete the user
 9  assert                             Ledger.assertBalanced() unchanged
@@ -247,7 +267,17 @@ existing token.
 ```
 
 Step 5 is why erasure can be honest rather than silently partial. Step 10 is what the
-subject receives.
+subject receives. Every step after 4 is an activity, so a crash between steps resumes at the
+first unfinished one.
+
+### Workflows
+
+| Workflow | Id | Queue | Start and conflict | Updates | Timers |
+|---|---|---|---|---|---|
+| `ErasureWorkflow` | `erasure/{userId}` | `identity-onboarding` | `requestAccountDeletion`, Update-with-Start, `USE_EXISTING` | `cancel`, `expedite` | T−7d reminder, `scheduledFor`, obligation re-check P1D |
+| `DataExportWorkflow` | `data-export/{exportId}` | `identity-onboarding` | `requestDataExport`, `USE_EXISTING` | — | link expiry `PT24H` |
+
+Payloads carry the user id and export id only ([ET-PLT-015](../015-durable-execution/) R7).
 
 ### Open obligations that defer erasure
 
@@ -310,8 +340,8 @@ Subgraph `identity`.
 | `withdrawConsent(consentType)` | mutation | `AUTHENTICATED` | `ConsentRecord!` |
 | `executeErasure(userId)` | mutation | `SUPER_ADMIN` | `ErasureRequest!` `@tag(name: "admin")` |
 
-`executeErasure` runs the same idempotent job the sweep runs, for a request that needs
-expediting; it does not bypass the obligation checks.
+`executeErasure` sends the `expedite` update to the request's `ErasureWorkflow`, which ends the
+grace timer early; it does not bypass the obligation checks.
 
 ### Configuration
 
@@ -322,7 +352,7 @@ expediting; it does not bypass the obligation checks.
 | `data.retention.notifications` | `P180D` |
 | `data.retention.consent` | `P7Y` |
 | `data.export.link-ttl` | `PT24H` |
-| `data.erasure.sweep-interval` | `PT1H` |
+| `data.erasure.obligation-recheck` | `P1D` — how often a deferred erasure re-checks its obligations |
 | `PII_SUBJECT_SALT` | environment only, **never rotated** |
 
 ### Error codes
@@ -347,8 +377,8 @@ None introduced. A deferred erasure is a status, not an error.
 
 - [ ] **T3 · The request, the grace period, cancellation and the notifications**
   - requirements: R3
-  - files: `backend/identity-service/.../service/impl/ErasureServiceImpl.java`
-  - verify: a pending-deletion account still works; cancellation restores at any point
+  - files: `backend/identity-service/.../workflow/erasure/ErasureWorkflowImpl.java`, `.../workflow/erasure/ErasureProcess.java`
+  - verify: a pending-deletion account still works; cancellation restores at any point; time-skipping test of the grace, the reminder and execution; the history replays
   - parallel-safe: yes
   - depends: T2
 
@@ -361,8 +391,8 @@ None introduced. A deferred erasure is a status, not an error.
 
 - [ ] **T5 · The inventory-driven erasure job across all three services**
   - requirements: R2, R4
-  - files: `backend/*/src/main/java/com/pml/*/privacy/ErasureExecutor.java`
-  - verify: the trial balance is unchanged; a full purchase history still resolves
+  - files: `backend/identity-service/.../workflow/erasure/ErasureActivitiesImpl.java`, `backend/*/src/main/java/com/pml/*/privacy/ErasureExecutor.java`
+  - verify: the trial balance is unchanged; a full purchase history still resolves; a worker killed between two services' steps resumes without repeating a finished step's effect
   - parallel-safe: no — spans three services
   - depends: T4
 
@@ -375,7 +405,7 @@ None introduced. A deferred erasure is a status, not an error.
 
 - [ ] **T7 · Asynchronous export with a presigned link**
   - requirements: R6
-  - files: `backend/identity-service/.../service/impl/DataExportService.java`
+  - files: `backend/identity-service/.../workflow/export/DataExportWorkflowImpl.java`
   - verify: no third-party PII in the export; generation does not contend with purchases
   - parallel-safe: yes
   - depends: T1

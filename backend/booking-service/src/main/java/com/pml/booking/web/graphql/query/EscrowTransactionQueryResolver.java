@@ -3,18 +3,23 @@ package com.pml.booking.web.graphql.query;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
+import com.pml.booking.domain.model.EventEscrowAccount;
 import com.pml.booking.domain.model.StandaloneEscrowTransaction;
+import com.pml.booking.repository.EventEscrowAccountRepository;
 import com.pml.booking.service.EscrowTransactionService;
 import com.pml.booking.web.graphql.dto.EscrowTransactionOffsetPage;
 import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
 import com.pml.booking.web.graphql.dto.PaginationInfo;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 
@@ -48,6 +53,9 @@ import java.util.Objects;
 public class EscrowTransactionQueryResolver {
 
     private final EscrowTransactionService escrowTransactionService;
+
+    /** The tenant boundary for {@link #escrowTransactions}. */
+    private final EventEscrowAccountRepository escrowAccounts;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
@@ -93,21 +101,43 @@ public class EscrowTransactionQueryResolver {
     // ========================================================================
 
     /**
-     * Get escrow transactions by account with offset pagination.
-     * Schema: escrowTransactionsByAccount(escrowAccountId: String!, pagination: OffsetPaginationInput): EscrowTransactionOffsetPage!
+     * One escrow account's transactions.
+     * Schema: {@code escrowTransactions(escrowAccountId: String!, pagination: OffsetPaginationInput)}
+     *
+     * <h2>Open to organizers, so scoped to their tenant</h2>
+     * The query is reachable by the organizer whose money it is, not only by administrators.
+     *
+     * <p>Opening it to organizers without a tenant filter would be a cross-tenant leak:
+     * {@code escrowAccountId} arrives from the client, and every organizer would read
+     * any event's money movements by id — every ticket sale, refund and payout of a
+     * competitor's festival. So the account is located through {@link TenantGuard} first, and
+     * the transactions are listed only for an account the caller's organization owns. An
+     * administrator still reads across the platform, which is what {@code TenantGuard} does with
+     * a platform scope.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EscrowTransactionOffsetPage> escrowTransactionsByAccount(
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    public Mono<EscrowTransactionOffsetPage> escrowTransactions(
             @InputArgument String escrowAccountId,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: escrowTransactionsByAccount({})", escrowAccountId);
+        log.debug("GraphQL query: escrowTransactions({})", escrowAccountId);
         Objects.requireNonNull(escrowAccountId, "Escrow account ID is required");
 
-        return escrowTransactionService.findByEscrowAccountId(escrowAccountId)
+        return accountVisibleToCaller(escrowAccountId)
+                .flatMapMany(account -> escrowTransactionService.findByEscrowAccountId(escrowAccountId))
                 .collectList()
                 .map(transactions -> buildOffsetPage(transactions, pagination));
+    }
+
+    /** The escrow account, or {@code ESCROW_ACCOUNT_UNKNOWN} if it is not the caller's. */
+    private Mono<EventEscrowAccount> accountVisibleToCaller(String escrowAccountId) {
+        return CurrentTenantScope.get().flatMap(scope -> TenantGuard.locate(
+                scope,
+                escrowAccounts.findById(escrowAccountId),
+                organizationIds -> escrowAccounts.findByIdAndOrganizationIdIn(escrowAccountId, organizationIds),
+                ErrorCode.ESCROW_ACCOUNT_UNKNOWN,
+                "escrow account " + escrowAccountId));
     }
 
     // ========================================================================
@@ -134,7 +164,7 @@ public class EscrowTransactionQueryResolver {
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<BigDecimal> escrowBalanceAsOf(
             @InputArgument String escrowAccountId,
-            @InputArgument LocalDateTime asOf
+            @InputArgument Instant asOf
     ) {
         log.debug("GraphQL query: escrowBalanceAsOf({}, {})", escrowAccountId, asOf);
         Objects.requireNonNull(escrowAccountId, "Escrow account ID is required");

@@ -45,13 +45,6 @@ public enum PayoutReviewStatus {
     }
 
     /**
-     * Check if this status indicates active review is needed.
-     */
-    public boolean needsAttention() {
-        return this == PENDING_REVIEW || this == UNDER_REVIEW || this == ESCALATED;
-    }
-
-    /**
      * Check if review is complete.
      */
     public boolean isComplete() {

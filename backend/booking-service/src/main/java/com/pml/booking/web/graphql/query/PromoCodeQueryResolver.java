@@ -1,5 +1,6 @@
 package com.pml.booking.web.graphql.query;
 
+import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -33,6 +34,7 @@ import java.util.List;
 public class PromoCodeQueryResolver {
 
     private final PromoCodeService promoCodeService;
+    private final TenantReads tenantReads;
 
     /**
      * Get promo code by ID.
@@ -41,7 +43,7 @@ public class PromoCodeQueryResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
     public Mono<PromoCode> promoCode(@InputArgument String id) {
         log.debug("GraphQL query: promoCode({})", id);
-        return promoCodeService.findByCode(id); // Will be updated if we add findById
+        return tenantReads.promoCodeForCaller(id);
     }
 
     /**
@@ -51,14 +53,16 @@ public class PromoCodeQueryResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
     public Mono<PromoCode> promoCodeByCode(@InputArgument String code) {
         log.debug("GraphQL query: promoCodeByCode({})", code);
-        return promoCodeService.findByCode(code);
+        return tenantReads.promoCodeByCodeForCaller(code);
     }
 
     /**
      * Validate promo code during checkout.
-     * Mobile clients use this to check if a code is valid before payment.
+     * Mobile clients use this to check if a code is valid before payment. Signed-in callers
+     * only: an open endpoint answering "does this code exist" is a free guessing oracle.
      */
     @DgsQuery
+    @PreAuthorize("isAuthenticated()")
     public Mono<PromoCodeValidation> validatePromoCode(
             @InputArgument String code,
             @InputArgument String eventId,
@@ -104,7 +108,7 @@ public class PromoCodeQueryResolver {
      * that the requesting user is either the organizer or a team member with access.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
+    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN', #organizerId)")
     public Flux<PromoCode> organizerPromoCodes(@InputArgument String organizerId) {
         log.debug("GraphQL query: organizerPromoCodes({})", organizerId);
         return promoCodeService.findByOrganizerId(organizerId);

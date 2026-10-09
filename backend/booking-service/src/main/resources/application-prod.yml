@@ -13,6 +13,12 @@
 #  * Any secret that is still required is pulled from Azure Key Vault.
 # =====================================================================
 spring:
+  # Self-hosted Temporal: the platform's own Temporal frontend and namespace.
+  temporal:
+    connection:
+      target: ${TEMPORAL_ADDRESS}
+      enable-https: ${TEMPORAL_TLS_ENABLED:false}
+    namespace: ${TEMPORAL_NAMESPACE:ticketing}
   cloud:
     azure:
       credential:

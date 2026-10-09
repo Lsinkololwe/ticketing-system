@@ -1,45 +1,64 @@
 package com.pml.catalog.service.impl;
 
-import com.pml.catalog.dto.CursorPaginationInput;
-import com.pml.catalog.dto.EventConnection;
-import com.pml.catalog.dto.EventEdge;
-import com.pml.catalog.dto.PageableInput;
-import com.pml.catalog.dto.PagedResult;
-import com.pml.catalog.dto.PageInfo;
-import com.pml.catalog.event.domain.EventApprovedEvent;
-import com.pml.catalog.event.domain.EventCancelledEvent;
-import com.pml.catalog.event.domain.EventCompletedEvent;
-import com.pml.catalog.event.domain.EventCreatedEvent;
-import com.pml.catalog.event.domain.EventDeletedEvent;
-import com.pml.catalog.event.domain.EventPublishedEvent;
-import com.pml.catalog.event.domain.EventRejectedEvent;
-import com.pml.catalog.event.domain.EventRescheduledEvent;
-import com.pml.catalog.event.domain.EventSubmittedEvent;
+import com.pml.catalog.domain.model.EventFields;
+import com.pml.catalog.repository.TicketTierRepository;
+import com.pml.catalog.service.EventCategories;
+import com.pml.catalog.service.EventDetails;
+import com.pml.catalog.service.EventTierMirror;
+import com.pml.catalog.service.TicketTierFactory;
+import com.pml.catalog.service.VenueResolver;
+import com.pml.catalog.web.graphql.dto.CreateEventInput;
+import com.pml.catalog.web.graphql.dto.CreateTicketTierInput;
+import com.pml.catalog.web.graphql.dto.UpdateEventInput;
+import com.pml.shared.error.FieldViolation;
+import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.error.ValidationRefusal;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import reactor.core.publisher.Flux;
 import com.pml.catalog.domain.model.Event;
+import com.pml.catalog.exception.EventNotFoundException;
 import com.pml.catalog.exception.InvalidEventStateException;
 import com.pml.catalog.repository.EventRepository;
 import com.pml.catalog.service.EventService;
-import com.pml.catalog.util.CursorUtils;
+import com.pml.catalog.workflow.lifecycle.LifecycleRules;
 import com.pml.shared.constants.EventStatus;
+import com.pml.shared.error.DomainRefusal;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.event.EventEnvelopes;
+import com.pml.shared.event.EventType;
+import com.pml.shared.event.Outbox;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Set;
+import java.time.Instant;
+import java.util.Map;
 
 /**
- * Event Service Implementation with cursor-based pagination.
- * Publishes domain events via Spring Modulith for cross-service communication.
+ * Event lifecycle and discovery.
+ *
+ * <p>The four transitions other services act on — publish, cancel, complete and reschedule — stage
+ * their cross-service envelope in {@code catalog_outbox} inside the same transaction as the status
+ * change, so the event document and its announcement commit together.</p>
+ *
+ * <p>Those four, and unpublishing, are called from {@code EventLifecycleWorkflow}'s activities,
+ * which may retry, so each is safe to run twice: a retry that finds the event already where the
+ * transition leads returns it unchanged and stages no second envelope.</p>
  */
 @Slf4j
 @Service
@@ -47,7 +66,18 @@ import java.util.Set;
 public class EventServiceImpl implements EventService {
 
     private final EventRepository eventRepository;
-    private final ApplicationEventPublisher eventPublisher;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
+
+    /** Where the cross-service facts are staged. */
+    private final Outbox outbox;
+    private final TransactionalOperator transactionalOperator;
+    private final VenueResolver venues;
+    private final TicketTierFactory tierFactory;
+    private final TicketTierRepository tierRepository;
+    private final EventTierMirror tierMirror;
+    private final EventCategories categories;
 
     // ==========================================
     // Single Event Operations
@@ -58,60 +88,301 @@ public class EventServiceImpl implements EventService {
         return eventRepository.findById(id);
     }
 
+    /**
+     * An event as the caller is entitled to see it.
+     * OWASP A01:2021 · CWE-639.
+     *
+     * <h2>Why a public lookup filters</h2>
+     * {@code event(id: ID!)} sits in the schema's PUBLIC block. An unfiltered
+     * {@code findById} would let anybody holding an id read a rival's unannounced
+     * draft with its capacity and pricing, a rejected event with its
+     * {@code rejectionReason}, or a soft-deleted one with {@code deletedBy} and
+     * {@code deletionReason} attached — with no account at all.
+     *
+     * <h2>Published first, and only then tenancy</h2>
+     * The order matters for cost as well as correctness. A published event is the
+     * overwhelmingly common case and is answered by one indexed lookup, without
+     * resolving tenancy at all — so the public path stays free of the membership
+     * call {@code CurrentTenantScope} would otherwise trigger. Tenancy is consulted
+     * only when the public lookup misses, which is where the question "is this
+     * yours?" actually arises.
+     *
+     * <h2>Empty, not a refusal</h2>
+     * {@code event(id)} is nullable and has always answered {@code null} for an id
+     * that does not exist. Refusing instead would introduce exactly the distinction
+     * {@link com.pml.shared.error.TenantBoundary} exists to remove, so the
+     * {@code EVENT_UNKNOWN} refusal is caught and flattened to empty. The value of
+     * going through {@link TenantGuard} is undiminished: it still classifies the
+     * miss and still logs a confirmed cross-tenant reach as
+     * {@code securityIncident=true}, which is the half a bare
+     * {@code switchIfEmpty} could never give.
+     *
+     * <h2>An anonymous miss is not an incident</h2>
+     * The guard is skipped for a caller with no subject, and that is a deliberate
+     * second decision rather than an optimisation. Somebody following a stale link
+     * to an event that was never published is the ordinary traffic of a public
+     * catalogue; routing it through {@link TenantGuard} would label every one of those
+     * {@code securityIncident=true}, and an incident log that fires on ordinary
+     * traffic is one that gets muted, taking the real reaches with it. An
+     * anonymous caller also belongs to no organization, so there is no membership
+     * under which the event could have been theirs — nothing to classify, and one
+     * fewer query on the hottest public path. An <em>authenticated</em> caller with
+     * no memberships still goes through the guard: that one is worth seeing.
+     */
     @Override
-    @Transactional
-    public Mono<Event> createEvent(Event event) {
-        log.info("Creating new event: {}", event.getTitle());
-        event.setStatus(EventStatus.DRAFT);
-        event.setCreatedAt(LocalDateTime.now());
-        event.setUpdatedAt(LocalDateTime.now());
-        event.setAvailableTickets(event.getTotalCapacity());
-        event.setDeleted(false);
-        return eventRepository.save(event)
-                .doOnSuccess(e -> {
-                    log.info("Event created: {}", e.getId());
-                    // Publish domain event for cross-service communication
-                    EventCreatedEvent domainEvent = new EventCreatedEvent(
-                            e.getId(),
-                            e.getOrganizerId(),
-                            e.getOrganizationId(),
-                            e.getTitle(),
-                            e.getEventDateTime(),
-                            e.getTotalCapacity(),
-                            e.getCreatedBy()
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventCreatedEvent for event: {}", e.getId());
-                });
+    public Mono<Event> findVisibleById(String id) {
+        return eventRepository.findByIdAndPublishedTrueAndIsActiveTrue(id)
+                // A caller with no principal is shown an event only while it is PUBLISHED (ET-CAT-004-R13). The flag
+                // alone is not enough for them: a COMPLETED event keeps it, and a document whose flag and status
+                // disagree is never public. Anyone signed in keeps the broader view (a ticket holder's past event).
+                .filterWhen(event -> event.getStatus() == EventStatus.PUBLISHED
+                        ? Mono.just(true)
+                        : CurrentTenantScope.get().map(scope -> scope.subject() != null).onErrorReturn(false))
+                .switchIfEmpty(Mono.defer(() -> CurrentTenantScope.get()
+                        .filter(scope -> scope.subject() != null)
+                        .flatMap(scope -> TenantGuard.locate(
+                                scope,
+                                eventRepository.findById(id),
+                                organizationIds ->
+                                        eventRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                                ErrorCode.EVENT_UNKNOWN,
+                                "event " + id))
+                        // Only the boundary's own refusal is flattened. A membership lookup
+                        // that fails is a different thing and must stay an error — swallowing
+                        // it would answer "no such event" during an identity-service outage.
+                        .onErrorResume(
+                                refused -> refused instanceof DomainRefusal domain
+                                        && domain.errorCode() == ErrorCode.EVENT_UNKNOWN,
+                                refused -> Mono.empty())));
     }
 
     @Override
-    public Mono<Event> updateEvent(String id, Event event) {
-        return eventRepository.findById(id)
-                .flatMap(existing -> {
-                    existing.setTitle(event.getTitle());
-                    existing.setDescription(event.getDescription());
-                    existing.setCategoryId(event.getCategoryId());
-                    existing.setEventDateTime(event.getEventDateTime());
-                    existing.setEndDateTime(event.getEndDateTime());
-                    existing.setLocationId(event.getLocationId());
-                    existing.setLocationName(event.getLocationName());
-                    existing.setLocationAddress(event.getLocationAddress());
-                    existing.setTotalCapacity(event.getTotalCapacity());
-                    existing.setTicketCategories(event.getTicketCategories());
-                    existing.setBannerImageUrl(event.getBannerImageUrl());
-                    existing.setTags(event.getTags());
-                    existing.setUpdatedAt(LocalDateTime.now());
-                    return eventRepository.save(existing);
+    public Mono<Event> createEvent(CreateEventInput input, String actorId, String organizationId) {
+        Instant now = clock.instant();
+        Event event = Event.builder()
+                .organizerId(actorId)
+                .organizationId(organizationId)
+                .createdBy(actorId)
+                .status(EventStatus.DRAFT)
+                .published(false)
+                .soldTickets(0)
+                .featured(false)
+                .isActive(true)
+                .build();
+        EventDetails.apply(event, input);
+
+        List<CreateTicketTierInput> tiers = input.ticketTiers();
+        List<FieldViolation> violations = new ArrayList<>();
+        if (!tiers.isEmpty()) {
+            int sum = tiers.stream().mapToInt(CreateTicketTierInput::quantity).sum();
+            if (input.totalCapacity() != 0 && input.totalCapacity() != sum) {
+                violations.add(new FieldViolation("totalCapacity", "must equal the sum of the tier quantities"));
+            }
+            event.setTotalCapacity(sum);
+            event.setLowestTicketPrice(tiers.stream()
+                    .filter(tier -> !Boolean.TRUE.equals(tier.isHidden()))
+                    .map(CreateTicketTierInput::price)
+                    .min(Comparator.naturalOrder())
+                    .orElse(null));
+        }
+        violations.addAll(EventDetails.check(event, input.location() != null));
+        violations.addAll(EventDetails.checkStart(event, now));
+        violations.addAll(EventDetails.checkPublishAt(input.publishAt(), now));
+        Set<String> codes = new HashSet<>();
+        for (int i = 0; i < tiers.size(); i++) {
+            String path = "ticketTiers[" + i + "]";
+            if (!codes.add(tiers.get(i).code().toUpperCase(Locale.ROOT))) {
+                violations.add(new FieldViolation(path + ".code", "is already used by another tier of this event"));
+            }
+            violations.addAll(tierFactory.check(event, tiers.get(i), path));
+        }
+        return categories.isSelectable(input.categoryId()).flatMap(selectable -> {
+            if (!selectable) {
+                violations.add(new FieldViolation("categoryId", "is not an active event category"));
+            }
+            if (!violations.isEmpty()) {
+                return Mono.<Event>error(new ValidationRefusal(violations));
+            }
+            return write(input, event, tiers, organizationId, actorId, now);
+        });
+    }
+
+    private Mono<Event> write(CreateEventInput input, Event event, List<CreateTicketTierInput> tiers,
+                              String organizationId, String actorId, Instant now) {
+        Mono<Event> placed = input.location() == null
+                ? Mono.just(event)
+                : venues.resolve(input.location(), organizationId, actorId).map(venue -> {
+                    EventDetails.place(event, venue);
+                    return event;
                 });
+        return placed
+                .flatMap(draft -> {
+                    draft.setCreatedAt(now);
+                    draft.setUpdatedAt(now);
+                    draft.setAvailableTickets(draft.getTotalCapacity());
+                    draft.setDeleted(false);
+                    return eventRepository.save(draft);
+                })
+                .flatMap(saved -> Flux.range(0, tiers.size())
+                        .concatMap(i -> tierRepository.save(tierFactory.build(saved, tiers.get(i),
+                                tiers.get(i).sortOrder() != null ? tiers.get(i).sortOrder() : i, now)))
+                        .then(tierMirror.refresh(saved.getId())))
+                .as(transactionalOperator::transactional)
+                .doOnSuccess(created -> log.info("Event {} created with {} tier(s)", created.getId(), tiers.size()));
     }
 
     @Override
-    @Transactional
+    public Mono<Event> updateEvent(Event existing, UpdateEventInput input, String actorId, boolean platformAdmin) {
+        if (input.featured() != null && !platformAdmin) {
+            return Mono.error(new TranslatedRefusal(ErrorCode.ACTOR_NOT_PERMITTED,
+                    "Only a platform administrator features an event"));
+        }
+        EventStatus status = existing.getStatus();
+        if (status == EventStatus.COMPLETED || status == EventStatus.CANCELLED || existing.isDeleted()) {
+            return Mono.error(stateRefusal(existing, "a " + status + (existing.isDeleted() ? " deleted" : "")
+                    + " event cannot be edited"));
+        }
+        Instant now = clock.instant();
+        Event before = existing.toBuilder().build();
+        boolean hasTiers = existing.getTicketCategories() != null && !existing.getTicketCategories().isEmpty();
+        EventDetails.apply(existing, input);
+
+        List<FieldViolation> violations = new ArrayList<>();
+        if (input.totalCapacity() != null && hasTiers && input.totalCapacity() != before.getTotalCapacity()) {
+            violations.add(new FieldViolation("totalCapacity",
+                    "is the sum of the tiers; change a tier's quantity instead"));
+        }
+        Mono<Event> placed = input.location() == null
+                ? Mono.just(existing)
+                : venues.resolve(input.location(), existing.getOrganizationId(), actorId).map(venue -> {
+                    EventDetails.place(existing, venue);
+                    return existing;
+                });
+        Mono<Boolean> category = input.categoryId() == null || input.categoryId().equals(before.getCategoryId())
+                ? Mono.just(true)
+                : categories.isSelectable(input.categoryId());
+        return category.flatMap(selectable -> placed.map(edited -> {
+                    if (!selectable) {
+                        violations.add(new FieldViolation("categoryId", "is not an active event category"));
+                    }
+                    return edited;
+                }))
+                .flatMap(edited -> {
+                    violations.addAll(EventDetails.check(edited, edited.getLocationId() != null));
+                    if (input.eventDateTime() != null) {
+                        violations.addAll(EventDetails.checkStart(edited, now));
+                    }
+                    violations.addAll(EventDetails.checkPublishAt(input.publishAt(), now));
+                    if (!violations.isEmpty()) {
+                        return Mono.error(new ValidationRefusal(violations));
+                    }
+                    Set<String> material = EventFields.materialChanges(before, edited);
+                    if (!material.isEmpty()) {
+                        if (status == EventStatus.PUBLISHED) {
+                            return Mono.error(stateRefusal(edited, "a published event's " + material
+                                    + " change only by rescheduling or after unpublishing"));
+                        }
+                        if (status == EventStatus.PENDING_APPROVAL) {
+                            return Mono.error(stateRefusal(edited, "an event under review cannot change " + material));
+                        }
+                        if (status == EventStatus.APPROVED) {
+                            edited.setStatus(EventStatus.DRAFT);
+                            edited.setApprovedAt(null);
+                            edited.setApprovedBy(null);
+                            edited.setPublishScheduled(false);
+                        }
+                    }
+                    if (status == EventStatus.REJECTED) {
+                        edited.setStatus(EventStatus.DRAFT);
+                    }
+                    edited.setUpdatedAt(now);
+                    edited.setUpdatedBy(actorId);
+                    return eventRepository.save(edited);
+                })
+                .as(transactionalOperator::transactional);
+    }
+
+    @Override
+    public Mono<Event> duplicateEvent(Event original, String newTitle, String actorId, String organizationId) {
+        Instant now = clock.instant();
+        Event copy = original.toBuilder()
+                .id(null)
+                .version(null)
+                .title(newTitle)
+                .organizerId(actorId)
+                .organizationId(organizationId)
+                .createdBy(actorId)
+                .updatedBy(null)
+                .status(EventStatus.DRAFT)
+                .published(false)
+                .publishedAt(null)
+                .soldTickets(0)
+                .availableTickets(original.getTotalCapacity())
+                .ticketCategories(List.of())
+                .tags(null)
+                .featured(false)
+                .isActive(true)
+                .isDeleted(false)
+                .deletedAt(null)
+                .deletedBy(null)
+                .deletionReason(null)
+                .submittedForApprovalAt(null)
+                .approvalDeadline(null)
+                .isOverdue(false)
+                .assignedReviewerId(null)
+                .assignedReviewerName(null)
+                .approvedAt(null)
+                .approvedBy(null)
+                .rejectedAt(null)
+                .rejectedBy(null)
+                .rejectionReason(null)
+                .changesRequestedAt(null)
+                .changesRequestedBy(null)
+                .changesRequestedComments(null)
+                .submissionCount(0)
+                .previousStartsAt(null)
+                .rescheduleCount(0)
+                .publishAt(null)
+                .publishScheduled(false)
+                .cancellationReason(null)
+                .cancelledAt(null)
+                .grossSales(java.math.BigDecimal.ZERO)
+                .commissionAmount(java.math.BigDecimal.ZERO)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        return eventRepository.save(copy)
+                .flatMap(saved -> tierRepository.findByEventIdOrderBySortOrderAsc(original.getId())
+                        .concatMap(tier -> tierRepository.save(tier.toBuilder()
+                                .id(null)
+                                .version(null)
+                                .eventId(saved.getId())
+                                .organizationId(organizationId)
+                                .availableQuantity(tier.getQuantity())
+                                .reservedQuantity(0)
+                                .soldQuantity(0)
+                                .movements(new ArrayList<>())
+                                .createdAt(now)
+                                .updatedAt(now)
+                                .build()))
+                        .then(tierMirror.refresh(saved.getId())))
+                .as(transactionalOperator::transactional);
+    }
+
+    private static TranslatedRefusal stateRefusal(Event event, String why) {
+        return new TranslatedRefusal(ErrorCode.EVENT_STATE_INVALID, "Event " + event.getId() + ": " + why,
+                Map.of("currentStatus", event.getStatus().name()));
+    }
+
+    @Override
     public Mono<Event> publishEvent(String id) {
         return eventRepository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
                 .flatMap(event -> {
+                    if (event.getStatus() == EventStatus.PUBLISHED) {
+                        // A retried publication finds its own committed write, envelope included.
+                        return Mono.just(event);
+                    }
                     // STATE VALIDATION: Only APPROVED events can be published
                     if (event.getStatus() != EventStatus.APPROVED) {
                         return Mono.error(new InvalidEventStateException(
@@ -120,83 +391,81 @@ public class EventServiceImpl implements EventService {
                                 EventStatus.APPROVED.name()
                         ));
                     }
+                    if (event.getEventDateTime() == null) {
+                        return Mono.error(new InvalidEventStateException(
+                                "Event " + id + " has no start time and cannot be published"));
+                    }
                     event.setStatus(EventStatus.PUBLISHED);
                     event.setPublished(true);
-                    event.setPublishedAt(LocalDateTime.now());
-                    event.setUpdatedAt(LocalDateTime.now());
-                    return eventRepository.save(event);
+                    event.setPublishScheduled(false);
+                    event.setPublishedAt(clock.instant());
+                    event.setUpdatedAt(clock.instant());
+                    return eventRepository.save(event)
+                            .flatMap(saved -> stage(EventType.CATALOG_EVENT_PUBLISHED, saved, Map.of(
+                                    "eventId", saved.getId(),
+                                    "organizationId", tenantOf(saved),
+                                    "startsAt", saved.getEventDateTime().toString())));
                 })
-                .doOnSuccess(event -> {
-                    log.info("Event published: {}", id);
-                    // Publish domain event for cross-service communication
-                    EventPublishedEvent domainEvent = new EventPublishedEvent(
-                            event.getId(),
-                            event.getOrganizerId(),
-                            event.getOrganizerName(),
-                            event.getTitle(),
-                            event.getEventDateTime(),
-                            event.getEndDateTime(),
-                            event.getTotalCapacity(),
-                            "ZMW",
-                            new BigDecimal("0.05")
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventPublishedEvent for event: {}", id);
+                .as(transactionalOperator::transactional)
+                .doOnSuccess(event -> log.info("Event published: {}", id));
+    }
+
+    @Override
+    public Mono<Event> scheduleEventPublish(String id) {
+        // Reached only after EventWriteGuard.forWrite has located the event for the caller, or from the
+        // publish workflow acting as the system: neither has a tenant scope to filter by here.
+        return eventRepository.findById(id)
+                .switchIfEmpty(Mono.error(new EventNotFoundException(id)))
+                .flatMap(event -> {
+                    if (event.getStatus() != EventStatus.APPROVED) {
+                        return Mono.<Event>error(stateRefusal(event, "only an approved event is scheduled for publication"));
+                    }
+                    if (event.getPublishAt() == null || !event.getPublishAt().isAfter(clock.instant())) {
+                        return Mono.<Event>error(new ValidationRefusal(List.of(
+                                new FieldViolation("publishAt", "must be in the future to schedule a publication"))));
+                    }
+                    if (event.isPublishScheduled()) {
+                        return Mono.just(event);
+                    }
+                    event.setPublishScheduled(true);
+                    event.setUpdatedAt(clock.instant());
+                    return eventRepository.save(event);
+                });
+    }
+
+    @Override
+    public Mono<Event> clearPublishSchedule(String id) {
+        // Reached only after EventWriteGuard.forWrite has located the event for the caller, or from the
+        // publish workflow acting as the system: neither has a tenant scope to filter by here.
+        return eventRepository.findById(id)
+                .switchIfEmpty(Mono.error(new EventNotFoundException(id)))
+                .flatMap(event -> {
+                    if (!event.isPublishScheduled() && event.getPublishAt() == null) {
+                        return Mono.just(event);
+                    }
+                    event.setPublishScheduled(false);
+                    event.setPublishAt(null);
+                    event.setUpdatedAt(clock.instant());
+                    return eventRepository.save(event);
                 });
     }
 
     /**
-     * Submit event for approval.
-     * Transitions event from DRAFT to PENDING_APPROVAL.
-     *
-     * STATE VALIDATION: Only DRAFT or REJECTED events can be submitted for approval.
+     * Stages an outbox envelope about {@code event}. Called inside the transaction that saved the
+     * event, so the document and its envelope commit together.
      */
-    @Override
-    @Transactional
-    public Mono<Event> submitForApproval(String id) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
-                .flatMap(event -> {
-                    // STATE VALIDATION: Only DRAFT or REJECTED events can be submitted
-                    if (event.getStatus() != EventStatus.DRAFT && event.getStatus() != EventStatus.REJECTED) {
-                        return Mono.error(new InvalidEventStateException(
-                                String.format("Event %s cannot be submitted for approval. Current status: %s. " +
-                                        "Only DRAFT or REJECTED events can be submitted.",
-                                        id, event.getStatus())
-                        ));
-                    }
+    private Mono<Event> stage(EventType type, Event event, Map<String, Object> payload) {
+        return outbox.stage(EventEnvelopes.of(type, clock.instant(), event.getId(), payload))
+                .thenReturn(event);
+    }
 
-                    // Calculate approval deadline (e.g., 48 hours from submission)
-                    LocalDateTime approvalDeadline = LocalDateTime.now().plusHours(48);
-
-                    event.setStatus(EventStatus.PENDING_APPROVAL);
-                    event.setSubmittedForApprovalAt(LocalDateTime.now());
-                    event.setApprovalDeadline(approvalDeadline);
-                    event.setSubmissionCount(event.getSubmissionCount() + 1);
-                    event.setUpdatedAt(LocalDateTime.now());
-
-                    // Clear any previous rejection data
-                    event.setRejectedAt(null);
-                    event.setRejectedBy(null);
-                    event.setRejectionReason(null);
-
-                    return eventRepository.save(event);
-                })
-                .doOnSuccess(event -> {
-                    log.info("Event submitted for approval: {}", id);
-                    // Publish domain event for admin notification
-                    EventSubmittedEvent domainEvent = new EventSubmittedEvent(
-                            event.getId(),
-                            event.getOrganizerId(),
-                            event.getOrganizationId(),
-                            event.getTitle(),
-                            event.getEventDateTime(),
-                            event.getSubmissionCount(),
-                            event.getApprovalDeadline()
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventSubmittedEvent for event: {}", id);
-                });
+    /**
+     * The tenant an event's money belongs to. An event without an organization id is attributed to
+     * its organizer, so publication is never blocked on a missing tenant field.
+     */
+    private static String tenantOf(Event event) {
+        String organizationId = event.getOrganizationId();
+        return organizationId != null && !organizationId.isBlank() ? organizationId : event.getOrganizerId();
     }
 
     @Override
@@ -215,83 +484,37 @@ public class EventServiceImpl implements EventService {
         return cancelEventWithDetails(id, reason, true, true);
     }
 
-    /**
-     * Valid statuses from which an event can be cancelled.
-     */
-    private static final Set<EventStatus> CANCELLABLE_STATUSES = EnumSet.of(
-            EventStatus.DRAFT,
-            EventStatus.PENDING_APPROVAL,
-            EventStatus.APPROVED,
-            EventStatus.PUBLISHED
-    );
-
     @Override
-    @Transactional
     public Mono<Event> cancelEventWithDetails(String id, String reason, boolean notifyAttendees, boolean triggerRefunds) {
         return eventRepository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
                 .flatMap(event -> {
-                    // STATE VALIDATION: Only certain statuses can be cancelled
-                    if (!CANCELLABLE_STATUSES.contains(event.getStatus())) {
+                    if (event.getStatus() == EventStatus.CANCELLED) {
+                        // A retried cancellation finds its own committed write, envelope included.
+                        return Mono.just(event);
+                    }
+                    // Cancellation is legal from APPROVED and PUBLISHED only
+                    if (!LifecycleRules.CANCELLABLE.contains(event.getStatus())) {
                         return Mono.error(new InvalidEventStateException(
                                 String.format("Event %s cannot be cancelled. Current status: %s. Cancellation only allowed from: %s",
-                                        id, event.getStatus(), CANCELLABLE_STATUSES)
+                                        id, event.getStatus(), LifecycleRules.CANCELLABLE)
                         ));
                     }
                     event.setStatus(EventStatus.CANCELLED);
                     event.setActive(false);
-                    event.setUpdatedAt(LocalDateTime.now());
-                    return eventRepository.save(event);
+                    event.setPublishScheduled(false);
+                    // The collection's validator holds the reason to 1,000 characters.
+                    event.setCancellationReason(reason == null || reason.isBlank() ? null
+                            : reason.trim().substring(0, Math.min(1_000, reason.trim().length())));
+                    event.setCancelledAt(clock.instant());
+                    event.setUpdatedAt(clock.instant());
+                    return eventRepository.save(event)
+                            .flatMap(saved -> stage(EventType.CATALOG_EVENT_CANCELLED, saved, Map.of(
+                                    "eventId", saved.getId(),
+                                    "reason", reason == null || reason.isBlank() ? "UNSPECIFIED" : reason)));
                 })
-                .doOnSuccess(event -> {
-                    log.info("Event cancelled: {}", id);
-                    // Publish domain event for automatic refunds
-                    EventCancelledEvent domainEvent = new EventCancelledEvent(
-                            event.getId(),
-                            event.getOrganizerId(),
-                            event.getTitle(),
-                            event.getEventDateTime(),
-                            reason,
-                            "ORGANIZER",
-                            event.getSoldTickets()
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventCancelledEvent for event: {}", id);
-                });
-    }
-
-    @Override
-    @Transactional
-    public Mono<Event> approveEvent(String id) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
-                .flatMap(event -> {
-                    // STATE VALIDATION: Only PENDING_APPROVAL events can be approved
-                    if (event.getStatus() != EventStatus.PENDING_APPROVAL) {
-                        return Mono.error(new InvalidEventStateException(
-                                id,
-                                event.getStatus().name(),
-                                EventStatus.PENDING_APPROVAL.name()
-                        ));
-                    }
-                    event.setStatus(EventStatus.APPROVED);
-                    event.setApprovedAt(LocalDateTime.now());
-                    event.setUpdatedAt(LocalDateTime.now());
-                    return eventRepository.save(event);
-                })
-                .doOnSuccess(event -> {
-                    log.info("Event approved: {}", id);
-                    // Publish domain event
-                    EventApprovedEvent domainEvent = new EventApprovedEvent(
-                            event.getId(),
-                            event.getOrganizerId(),
-                            event.getTitle(),
-                            event.getApprovedBy() != null ? event.getApprovedBy() : "SYSTEM",
-                            ""
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventApprovedEvent for event: {}", id);
-                });
+                .as(transactionalOperator::transactional)
+                .doOnSuccess(event -> log.info("Event cancelled: {}", id));
     }
 
     /**
@@ -301,11 +524,14 @@ public class EventServiceImpl implements EventService {
      * STATE VALIDATION: Only PUBLISHED events can be completed.
      */
     @Override
-    @Transactional
     public Mono<Event> completeEvent(String id) {
         return eventRepository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
                 .flatMap(event -> {
+                    if (event.getStatus() == EventStatus.COMPLETED) {
+                        // A retried completion finds its own committed write, envelope included.
+                        return Mono.just(event);
+                    }
                     // STATE VALIDATION: Only PUBLISHED events can be completed
                     if (event.getStatus() != EventStatus.PUBLISHED) {
                         return Mono.error(new InvalidEventStateException(
@@ -315,24 +541,14 @@ public class EventServiceImpl implements EventService {
                         ));
                     }
                     event.setStatus(EventStatus.COMPLETED);
-                    event.setUpdatedAt(LocalDateTime.now());
-                    return eventRepository.save(event);
+                    event.setUpdatedAt(clock.instant());
+                    return eventRepository.save(event)
+                            .flatMap(saved -> stage(EventType.CATALOG_EVENT_COMPLETED, saved, Map.of(
+                                    "eventId", saved.getId(),
+                                    "completedAt", clock.instant().toString())));
                 })
-                .doOnSuccess(event -> {
-                    log.info("Event completed: {}", id);
-                    EventCompletedEvent domainEvent = new EventCompletedEvent(
-                            event.getId(),
-                            event.getOrganizerId(),
-                            event.getTitle(),
-                            event.getEventDateTime(),
-                            event.getSoldTickets(),
-                            event.getSoldTickets(),
-                            BigDecimal.ZERO,
-                            BigDecimal.ZERO
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventCompletedEvent for event: {}", id);
-                });
+                .as(transactionalOperator::transactional)
+                .doOnSuccess(event -> log.info("Event completed: {}", id));
     }
 
     @Override
@@ -342,7 +558,7 @@ public class EventServiceImpl implements EventService {
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
                 .flatMap(event -> {
                     event.setFeatured(featured);
-                    event.setUpdatedAt(LocalDateTime.now());
+                    event.setUpdatedAt(clock.instant());
                     return eventRepository.save(event);
                 })
                 .doOnSuccess(event -> {
@@ -367,10 +583,10 @@ public class EventServiceImpl implements EventService {
                     }
 
                     // Update the event with reminder tracking
-                    event.setUpdatedAt(LocalDateTime.now());
+                    event.setUpdatedAt(clock.instant());
 
-                    // TODO: Publish a notification event to send actual reminder
-                    // For now, we just log and return the event
+                    // The reminder is recorded in the log only; sending it to the organizer belongs to
+                    // the notification service's lifecycle triggers.
                     log.info("Publish reminder sent for event: {} to organizer: {}", eventId, event.getOrganizerId());
 
                     return eventRepository.save(event);
@@ -379,86 +595,77 @@ public class EventServiceImpl implements EventService {
     }
 
     /**
-     * Reschedule event to a new date/time.
-     * Publishes EventRescheduledEvent to open refund window for ticket holders.
+     * A PUBLISHED event moves to a new start, keeping its duration.
+     *
+     * <p>{@code previousStartsAt} and {@code rescheduleCount} are kept on the event, the count is
+     * capped at {@link LifecycleRules#MAX_RESCHEDULES}, and {@code catalog.EventRescheduled} is staged
+     * with the status change, from which booking opens the holders' refund window. A retry that finds
+     * the event already at {@code newDateTime} changes nothing and stages nothing.</p>
      */
-    @Transactional
-    public Mono<Event> rescheduleEvent(String id, LocalDateTime newDateTime, String reason) {
-        return eventRepository.findById(id)
-                .flatMap(event -> {
-                    LocalDateTime originalDateTime = event.getEventDateTime();
-                    event.setEventDateTime(newDateTime);
-                    event.setUpdatedAt(LocalDateTime.now());
-                    return eventRepository.save(event)
-                            .map(saved -> new Object[]{saved, originalDateTime});
-                })
-                .map(result -> {
-                    Event event = (Event) ((Object[]) result)[0];
-                    LocalDateTime original = (LocalDateTime) ((Object[]) result)[1];
-
-                    log.info("Event rescheduled: {} from {} to {}", id, original, event.getEventDateTime());
-                    EventRescheduledEvent domainEvent = new EventRescheduledEvent(
-                            event.getId(),
-                            event.getOrganizerId(),
-                            event.getTitle(),
-                            original,
-                            event.getEventDateTime(),
-                            original,
-                            event.getEndDateTime(),
-                            reason,
-                            event.getSoldTickets()
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventRescheduledEvent for event: {}", id);
-                    return event;
-                });
-    }
-
     @Override
-    @Transactional
-    public Mono<Event> rejectEvent(String id, String reason) {
+    public Mono<Event> rescheduleEvent(String id, Instant newDateTime, String reason) {
         return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
+                .switchIfEmpty(Mono.error(new EventNotFoundException(id)))
                 .flatMap(event -> {
-                    // STATE VALIDATION: Only PENDING_APPROVAL events can be rejected
-                    if (event.getStatus() != EventStatus.PENDING_APPROVAL) {
+                    if (event.getStatus() != EventStatus.PUBLISHED) {
                         return Mono.error(new InvalidEventStateException(
-                                id,
-                                event.getStatus().name(),
-                                EventStatus.PENDING_APPROVAL.name()
-                        ));
+                                id, String.valueOf(event.getStatus()), EventStatus.PUBLISHED.name()));
                     }
-                    event.setStatus(EventStatus.REJECTED);
-                    event.setRejectedAt(LocalDateTime.now());
-                    event.setRejectionReason(reason);
-                    event.setUpdatedAt(LocalDateTime.now());
-                    return eventRepository.save(event);
+                    if (newDateTime.equals(event.getEventDateTime())) {
+                        return Mono.just(event);
+                    }
+                    if (!LifecycleRules.canReschedule(event.getRescheduleCount())) {
+                        return Mono.error(new InvalidEventStateException(String.format(
+                                "Event %s has been rescheduled %d times; the limit is %d",
+                                id, event.getRescheduleCount(), LifecycleRules.MAX_RESCHEDULES)));
+                    }
+                    Instant originalDateTime = event.getEventDateTime();
+                    event.setPreviousStartsAt(originalDateTime);
+                    event.setEndDateTime(LifecycleRules.shiftedEnd(originalDateTime, event.getEndDateTime(), newDateTime));
+                    event.setEventDateTime(newDateTime);
+                    event.setRescheduleCount(event.getRescheduleCount() + 1);
+                    event.setUpdatedAt(clock.instant());
+                    return eventRepository.save(event)
+                            .flatMap(saved -> stage(EventType.CATALOG_EVENT_RESCHEDULED, saved, Map.of(
+                                    "eventId", saved.getId(),
+                                    "previousStartsAt", (originalDateTime != null ? originalDateTime : newDateTime).toString(),
+                                    "newStartsAt", newDateTime.toString())));
                 })
-                .doOnSuccess(event -> {
-                    log.info("Event rejected: {}, reason: {}", id, reason);
-                    // Publish domain event for rejection notification
-                    EventRejectedEvent domainEvent = new EventRejectedEvent(
-                            event.getId(),
-                            event.getOrganizerId(),
-                            event.getOrganizationId(),
-                            event.getTitle(),
-                            event.getRejectedBy() != null ? event.getRejectedBy() : "SYSTEM",
-                            reason
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventRejectedEvent for event: {}", id);
-                });
+                .as(transactionalOperator::transactional)
+                .doOnSuccess(event -> log.info("Event {} rescheduled to {} ({})", id, newDateTime, reason));
     }
 
+    /**
+     * PUBLISHED → APPROVED while nothing is sold.
+     *
+     * <p>The refusal carries the sold count. An event already back in APPROVED and unpublished is
+     * returned unchanged, so a retried activity is harmless.</p>
+     */
     @Override
-    public Mono<Event> updateSoldTickets(String id, int soldCount) {
+    public Mono<Event> unpublishEvent(String id, long soldCount) {
         return eventRepository.findById(id)
+                .switchIfEmpty(Mono.error(new EventNotFoundException(id)))
                 .flatMap(event -> {
-                    event.setSoldTickets(event.getSoldTickets() + soldCount);
-                    event.setAvailableTickets(event.getTotalCapacity() - event.getSoldTickets());
-                    event.setUpdatedAt(LocalDateTime.now());
+                    if (event.getStatus() == EventStatus.APPROVED && !event.isPublished()) {
+                        return Mono.just(event);
+                    }
+                    if (event.getStatus() != EventStatus.PUBLISHED) {
+                        return Mono.error(new InvalidEventStateException(
+                                id, String.valueOf(event.getStatus()), EventStatus.PUBLISHED.name()));
+                    }
+                    if (soldCount > 0) {
+                        return Mono.error(new TranslatedRefusal(ErrorCode.EVENT_STATE_INVALID,
+                                "an event with sold tickets is cancelled, not unpublished",
+                                Map.of("soldTickets", soldCount)));
+                    }
+                    event.setStatus(EventStatus.APPROVED);
+                    event.setPublished(false);
+                    event.setPublishedAt(null);
+                    event.setUpdatedAt(clock.instant());
                     return eventRepository.save(event);
-                });
+                })
+                .as(transactionalOperator::transactional)
+                .doOnSuccess(event -> log.info("Event unpublished: {}", id));
     }
 
     /**
@@ -504,29 +711,15 @@ public class EventServiceImpl implements EventService {
 
                     // Soft delete with audit trail
                     event.setDeleted(true);
-                    event.setDeletedAt(LocalDateTime.now());
+                    event.setDeletedAt(clock.instant());
                     event.setDeletedBy(deletedBy);
                     event.setDeletionReason(reason);
                     event.setActive(false);
-                    event.setUpdatedAt(LocalDateTime.now());
+                    event.setUpdatedAt(clock.instant());
 
                     return eventRepository.save(event);
                 })
-                .doOnSuccess(event -> {
-                    log.info("Event soft deleted: {}", id);
-                    // Publish domain event for cross-service cleanup
-                    EventDeletedEvent domainEvent = new EventDeletedEvent(
-                            event.getId(),
-                            event.getOrganizerId(),
-                            event.getOrganizationId(),
-                            event.getTitle(),
-                            event.getDeletedBy(),
-                            event.getDeletionReason(),
-                            event.getSoldTickets()
-                    );
-                    eventPublisher.publishEvent(domainEvent);
-                    log.info("Published EventDeletedEvent for event: {}", id);
-                })
+                .doOnSuccess(event -> log.info("Event soft deleted: {}", id))
                 .then();
     }
 
@@ -540,18 +733,8 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
-    public Flux<Event> findPublishedEvents() {
-        return eventRepository.findByPublishedTrueAndIsActiveTrue();
-    }
-
-    @Override
     public Flux<Event> searchEvents(String query) {
         return eventRepository.searchEvents(query);
-    }
-
-    @Override
-    public Flux<Event> findUpcomingEvents() {
-        return eventRepository.findByEventDateTimeAfterAndPublishedTrueAndIsActiveTrue(LocalDateTime.now());
     }
 
     @Override
@@ -562,26 +745,6 @@ public class EventServiceImpl implements EventService {
     @Override
     public Flux<Event> findEventsByCity(String city) {
         return eventRepository.findByCityAndPublishedTrueAndIsActiveTrue(city);
-    }
-
-    @Override
-    public Flux<Event> findEventsByDateRange(LocalDateTime startDate, LocalDateTime endDate) {
-        return eventRepository.findByEventDateTimeBetweenAndPublishedTrueAndIsActiveTrue(startDate, endDate);
-    }
-
-    @Override
-    public Flux<Event> findEventsByPriceRange(BigDecimal minPrice, BigDecimal maxPrice) {
-        return eventRepository.findByPriceRangeAndPublishedTrueAndIsActiveTrue(minPrice, maxPrice);
-    }
-
-    @Override
-    public Flux<Event> findFeaturedEvents() {
-        return eventRepository.findByFeaturedTrueAndPublishedTrueAndIsActiveTrue();
-    }
-
-    @Override
-    public Flux<Event> findFreeEvents() {
-        return eventRepository.findByIsFreeEventTrueAndPublishedTrueAndIsActiveTrue();
     }
 
     @Override
@@ -606,7 +769,7 @@ public class EventServiceImpl implements EventService {
 
     @Override
     public Flux<Event> findOverdueApprovalEvents() {
-        return eventRepository.findOverdueApprovalEvents(LocalDateTime.now());
+        return eventRepository.findOverdueApprovalEvents(clock.instant());
     }
 
     @Override
@@ -651,272 +814,5 @@ public class EventServiceImpl implements EventService {
     @Override
     public Mono<Long> countByStatus(EventStatus status) {
         return eventRepository.countByStatus(status);
-    }
-
-    // ==========================================
-    // Cursor-based Pagination Methods
-    // ==========================================
-
-    @Override
-    public Mono<EventConnection> findPublishedEventsCursor(CursorPaginationInput pagination) {
-        int limit = pagination.getLimit();
-        String afterId = CursorUtils.decodeCursor(pagination.getAfter());
-        Pageable pageable = PageRequest.of(0, limit + 1);
-
-        Flux<Event> eventsFlux;
-        if (afterId != null) {
-            eventsFlux = eventRepository.findPublishedEventsAfterCursor(afterId, pageable);
-        } else {
-            eventsFlux = eventRepository.findByPublishedTrueAndIsActiveTrueOrderByIdAsc(pageable);
-        }
-
-        return buildConnection(eventsFlux, limit, afterId != null);
-    }
-
-    @Override
-    public Mono<EventConnection> searchEventsCursor(String query, CursorPaginationInput pagination) {
-        int limit = pagination.getLimit();
-        String afterId = CursorUtils.decodeCursor(pagination.getAfter());
-        Pageable pageable = PageRequest.of(0, limit + 1);
-
-        Flux<Event> eventsFlux;
-        if (afterId != null) {
-            eventsFlux = eventRepository.searchEventsAfterCursor(query, afterId, pageable);
-        } else {
-            eventsFlux = eventRepository.searchEventsFirstPage(query, pageable);
-        }
-
-        return buildConnection(eventsFlux, limit, afterId != null);
-    }
-
-    @Override
-    public Mono<EventConnection> findUpcomingEventsCursor(CursorPaginationInput pagination) {
-        int limit = pagination.getLimit();
-        String afterId = CursorUtils.decodeCursor(pagination.getAfter());
-        Pageable pageable = PageRequest.of(0, limit + 1);
-        LocalDateTime now = LocalDateTime.now();
-
-        Flux<Event> eventsFlux;
-        if (afterId != null) {
-            eventsFlux = eventRepository.findUpcomingAfterCursor(now, afterId, pageable);
-        } else {
-            eventsFlux = eventRepository.findByEventDateTimeAfterAndPublishedTrueAndIsActiveTrueOrderByEventDateTimeAsc(now, pageable);
-        }
-
-        return buildConnection(eventsFlux, limit, afterId != null);
-    }
-
-    @Override
-    public Mono<EventConnection> findEventsByCategoryCursor(String category, CursorPaginationInput pagination) {
-        int limit = pagination.getLimit();
-        String afterId = CursorUtils.decodeCursor(pagination.getAfter());
-        Pageable pageable = PageRequest.of(0, limit + 1);
-
-        Flux<Event> eventsFlux;
-        if (afterId != null) {
-            eventsFlux = eventRepository.findByCategoryAfterCursor(category, afterId, pageable);
-        } else {
-            eventsFlux = eventRepository.findByCategoryIdAndPublishedTrueAndIsActiveTrueOrderByIdAsc(category, pageable);
-        }
-
-        return buildConnection(eventsFlux, limit, afterId != null);
-    }
-
-    @Override
-    public Mono<EventConnection> findEventsByCityCursor(String city, CursorPaginationInput pagination) {
-        int limit = pagination.getLimit();
-        String afterId = CursorUtils.decodeCursor(pagination.getAfter());
-        Pageable pageable = PageRequest.of(0, limit + 1);
-
-        Flux<Event> eventsFlux;
-        if (afterId != null) {
-            eventsFlux = eventRepository.findByCityAfterCursor(city, afterId, pageable);
-        } else {
-            eventsFlux = eventRepository.findByCityFirstPage(city, pageable);
-        }
-
-        return buildConnection(eventsFlux, limit, afterId != null);
-    }
-
-    @Override
-    public Mono<EventConnection> findEventsByDateRangeCursor(
-            LocalDateTime startDate, LocalDateTime endDate, CursorPaginationInput pagination) {
-        int limit = pagination.getLimit();
-        String afterId = CursorUtils.decodeCursor(pagination.getAfter());
-        Pageable pageable = PageRequest.of(0, limit + 1);
-
-        Flux<Event> eventsFlux;
-        if (afterId != null) {
-            eventsFlux = eventRepository.findByDateRangeAfterCursor(startDate, endDate, afterId, pageable);
-        } else {
-            eventsFlux = eventRepository.findByEventDateTimeBetweenAndPublishedTrueAndIsActiveTrueOrderByEventDateTimeAsc(
-                    startDate, endDate, pageable);
-        }
-
-        return buildConnection(eventsFlux, limit, afterId != null);
-    }
-
-    @Override
-    public Mono<EventConnection> findFeaturedEventsCursor(CursorPaginationInput pagination) {
-        int limit = pagination.getLimit();
-        String afterId = CursorUtils.decodeCursor(pagination.getAfter());
-        Pageable pageable = PageRequest.of(0, limit + 1);
-
-        Flux<Event> eventsFlux;
-        if (afterId != null) {
-            eventsFlux = eventRepository.findFeaturedAfterCursor(afterId, pageable);
-        } else {
-            eventsFlux = eventRepository.findByFeaturedTrueAndPublishedTrueAndIsActiveTrueOrderByIdAsc(pageable);
-        }
-
-        return buildConnection(eventsFlux, limit, afterId != null);
-    }
-
-    @Override
-    public Mono<EventConnection> findEventsByOrganizerCursor(String organizerId, CursorPaginationInput pagination) {
-        int limit = pagination.getLimit();
-        String afterId = CursorUtils.decodeCursor(pagination.getAfter());
-        Pageable pageable = PageRequest.of(0, limit + 1);
-
-        Flux<Event> eventsFlux;
-        if (afterId != null) {
-            eventsFlux = eventRepository.findByOrganizerAfterCursor(organizerId, afterId, pageable);
-        } else {
-            eventsFlux = eventRepository.findByOrganizerIdOrderByCreatedAtDesc(organizerId, pageable);
-        }
-
-        return buildConnection(eventsFlux, limit, afterId != null);
-    }
-
-    // ==========================================
-    // Admin Pagination Methods (Dashboard Tables)
-    // ==========================================
-
-    @Override
-    public Mono<PagedResult<Event>> findEventsAdmin(PageableInput pageable) {
-        Pageable springPageable = pageable.toPageable();
-
-        return Mono.zip(
-                eventRepository.findAllBy(springPageable).collectList(),
-                eventRepository.count()
-        ).map(tuple -> PagedResult.of(
-                tuple.getT1(),
-                springPageable.getPageNumber(),
-                springPageable.getPageSize(),
-                tuple.getT2()
-        ));
-    }
-
-    @Override
-    public Mono<PagedResult<Event>> findEventsByStatusAdmin(EventStatus status, PageableInput pageable) {
-        Pageable springPageable = pageable.toPageable();
-
-        return Mono.zip(
-                eventRepository.findByStatus(status, springPageable).collectList(),
-                eventRepository.countByStatus(status)
-        ).map(tuple -> PagedResult.of(
-                tuple.getT1(),
-                springPageable.getPageNumber(),
-                springPageable.getPageSize(),
-                tuple.getT2()
-        ));
-    }
-
-    @Override
-    public Mono<PagedResult<Event>> findDraftEventsAdmin(String organizerId, PageableInput pageable) {
-        Pageable springPageable = pageable.toPageable();
-
-        return Mono.zip(
-                eventRepository.findDraftEventsByOrganizer(organizerId, springPageable).collectList(),
-                eventRepository.countDraftEventsByOrganizer(organizerId)
-        ).map(tuple -> PagedResult.of(
-                tuple.getT1(),
-                springPageable.getPageNumber(),
-                springPageable.getPageSize(),
-                tuple.getT2()
-        ));
-    }
-
-    @Override
-    public Mono<PagedResult<Event>> findPendingApprovalEventsAdmin(PageableInput pageable) {
-        Pageable springPageable = pageable.toPageable();
-
-        return Mono.zip(
-                eventRepository.findPendingApprovalEvents(springPageable).collectList(),
-                eventRepository.countByStatus(EventStatus.PENDING_APPROVAL)
-        ).map(tuple -> PagedResult.of(
-                tuple.getT1(),
-                springPageable.getPageNumber(),
-                springPageable.getPageSize(),
-                tuple.getT2()
-        ));
-    }
-
-    @Override
-    public Mono<PagedResult<Event>> findOverdueApprovalEventsAdmin(PageableInput pageable) {
-        Pageable springPageable = pageable.toPageable();
-        LocalDateTime now = LocalDateTime.now();
-
-        return Mono.zip(
-                eventRepository.findOverdueApprovalEvents(now, springPageable).collectList(),
-                eventRepository.countOverdueApprovalEvents(now)
-        ).map(tuple -> PagedResult.of(
-                tuple.getT1(),
-                springPageable.getPageNumber(),
-                springPageable.getPageSize(),
-                tuple.getT2()
-        ));
-    }
-
-    @Override
-    public Mono<PagedResult<Event>> findApprovedNotPublishedEventsAdmin(PageableInput pageable) {
-        Pageable springPageable = pageable.toPageable();
-
-        return Mono.zip(
-                eventRepository.findApprovedNotPublishedEvents(springPageable).collectList(),
-                eventRepository.countApprovedNotPublished()
-        ).map(tuple -> PagedResult.of(
-                tuple.getT1(),
-                springPageable.getPageNumber(),
-                springPageable.getPageSize(),
-                tuple.getT2()
-        ));
-    }
-
-    // ==========================================
-    // Helper Methods
-    // ==========================================
-
-    /**
-     * Build EventConnection from Flux with pagination metadata.
-     * Fetches limit+1 items to determine hasNextPage.
-     */
-    private Mono<EventConnection> buildConnection(Flux<Event> eventsFlux, int limit, boolean hasPreviousPage) {
-        return eventsFlux.collectList().map(events -> {
-            boolean hasNextPage = events.size() > limit;
-
-            // Remove extra item used for hasNextPage check
-            List<Event> pageEvents = hasNextPage
-                    ? events.subList(0, limit)
-                    : events;
-
-            // Convert to edges
-            List<EventEdge> edges = pageEvents.stream()
-                    .map(EventEdge::from)
-                    .toList();
-
-            // Build page info
-            PageInfo pageInfo = PageInfo.builder()
-                    .hasNextPage(hasNextPage)
-                    .hasPreviousPage(hasPreviousPage)
-                    .startCursor(edges.isEmpty() ? null : edges.get(0).getCursor())
-                    .endCursor(edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor())
-                    .build();
-
-            return EventConnection.builder()
-                    .edges(edges)
-                    .pageInfo(pageInfo)
-                    .build();
-        });
     }
 }

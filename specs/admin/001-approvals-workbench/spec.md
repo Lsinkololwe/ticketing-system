@@ -98,7 +98,7 @@ claim if they do not act.
 - [ ] `claimReviewItem` assigns the item to the caller for `admin.review.claim-ttl` (PT30M)
 - [ ] A second reviewer claiming a held item is refused and told who holds it and until when
 - [ ] The claim is released by a decision, by an explicit release, or by expiry
-- [ ] A sweep under `lock:sweep:review-claims` expires stale claims
+- [ ] The event's `EventApprovalWorkflow` expires a stale claim by its lease timer — *amended 2026-09-13 under [D-21](../../ROADMAP.md): a durable timer replaces the sweep ([ET-PLT-015](../../_platform/015-durable-execution/))*
 - [ ] Claiming is idempotent — the holder re-claiming extends rather than fails
 - [ ] Two parallel claims produce exactly one holder, asserted under contention
 - [ ] An expired claim returns the item to the queue at its original position, not the back
@@ -128,6 +128,12 @@ IF an item's required inputs are incomplete, THEN THE SYSTEM SHALL not offer app
 - [ ] Reject and request-changes are always available — a reviewer is never trapped
 - [ ] The precondition check is the same one the decision mutation enforces; there is no second implementation
 - [ ] A test attempts approval with each precondition unmet and asserts a refusal naming it
+
+> **As built, 2026-09-18 — events.** `Event.approvalBlockers` (admin only) lists `NO_PUBLISHED_TIER`,
+> `NO_LOCATION` and `NO_CAPACITY` from `ApprovalRules.approvalBlockers` — the same function the
+> approve activity refuses with, so the two cannot disagree (`ApprovalAnnouncementRulesTest`,
+> `ApprovalAnnouncementTest`). The queue row does not show it yet: the admin approvals screen awaits
+> its Claude Design pass, so the third box stays open.
 
 ### ET-ADM-001-R5 · Every decision is one action with a recorded reason
 
@@ -265,12 +271,32 @@ its own type. Every field is `ADMIN` and `@tag(name: "admin")`.
 | `organizerApprovalQueue(page)` | query | identity | `OrganizationPage!` |
 | `eventApprovalQueue(page)` | query | catalog | `EventPage!` |
 | `approvalTimeline(subjectType, subjectId)` | query | catalog | `[ApprovalTimelineEntry!]!` |
-| `openEscalations(level, page)` | query | catalog | `ApprovalEscalationPage!` |
+| `activeEscalations(page)` | query | catalog | `ApprovalEscalationOffsetPage!` |
+| `myEscalations(page)` | query | catalog | `ApprovalEscalationOffsetPage!` |
+| `approvalTimelines(filter, page)` | query | catalog | `ApprovalTimelineOffsetPage!` |
+| `approvalTimelinesByOrganizer(organizerId, page)` | query | catalog | `ApprovalTimelineOffsetPage!` |
+| `pendingApprovalTimelines(page)` | query | catalog | `ApprovalTimelineOffsetPage!` |
+| `overdueApprovalTimelines(page)` | query | catalog | `ApprovalTimelineOffsetPage!` |
+| `overdueApprovalEvents(page)` | query | catalog | `EventOffsetPage!` |
 | `approvalMetrics(from, to)` | query | catalog | `ApprovalMetrics!` |
 | `myClaimedItems` | query | catalog | `[ReviewClaim!]!` |
 | `claimReviewItem(subjectType, subjectId)` | mutation | catalog | `ReviewClaim!` |
 | `releaseReviewItem(id)` | mutation | catalog | `Boolean!` |
 | `bulkApproveEvents(ids)` | mutation | catalog | `[BulkApprovalOutcome!]!` |
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** These rows were added when catalog's
+> `*OffsetPagination` / `*CursorPagination` twins were collapsed. `openEscalations` is renamed
+> `activeEscalations`: the operation ships under that name, and D-19 rules the shipped name
+> stands. The escalation and timeline queries all live in the **catalog** subgraph, which is why
+> they appear here with a `catalog` owner rather than in an identity spec.
+>
+> **Not merged, deliberately.** `eventApprovalQueue(page)` above and
+> `pendingApprovalEvents(page)` in [ET-CAT-001 §4](../../catalog/001-event-lifecycle/spec.md)
+> look like the same operation — both are the ADMIN queue of events awaiting approval, both from
+> catalog — and only one of them exists in the schema. They are left as two rows because deciding
+> they are one is a judgement about intent, not a fact the schema settles, and a wrong merge
+> silently deletes a queue an operator depends on.
+
 
 The decision mutations themselves live in their owning specs' subgraphs and are listed in
 §4's decision surface; this spec adds only the workbench operations.
@@ -278,12 +304,16 @@ The decision mutations themselves live in their owning specs' subgraphs and are 
 `BulkApprovalOutcome` carries `eventId`, `approved` and, when skipped, the rule that
 excluded it — so a reviewer sees exactly why an event was left behind.
 
-### Sweeps
+### Timers
 
-| Sweep | Lock | Interval | Purpose |
-|---|---|---|---|
-| claim expiry | `lock:sweep:review-claims` | `PT5M` | R2 |
-| SLA escalation | `lock:sweep:approval-sla` | `PT15M` | R3 |
+*Amended 2026-09-13 under [D-21](../../ROADMAP.md).* Claim expiry and SLA escalation are durable timers
+inside each item's `EventApprovalWorkflow` ([ET-PLT-015](../../_platform/015-durable-execution/)); no sweep
+or sweep lock exists for them.
+
+| Timer | Duration | Purpose |
+|---|---|---|
+| claim lease | `PT30M` | R2 |
+| SLA escalation | `PT24H`, escalating at 1×, 2×, 4×; paused while changes are requested | R3 |
 
 ### Configuration
 
@@ -314,9 +344,9 @@ None introduced. `DOCUMENT_REQUIRED`, `ORGANIZATION_STATE_INVALID` and
   - parallel-safe: yes — one service per agent
   - depends: —
 
-- [ ] **T2 · Claims: the unique index, the TTL, the expiry sweep**
+- [ ] **T2 · Claims: the unique index and the lease timer**
   - requirements: R2
-  - files: `backend/catalog-service/.../domain/model/ReviewClaim.java`, `.../scheduler/`
+  - files: `backend/catalog-service/.../workflow/approval/EventApprovalWorkflowImpl.java`, `.../workflow/approval/ApprovalRules.java`
   - verify: two parallel claims yield one holder; an expired claim keeps its queue position
   - parallel-safe: no
   - depends: T1

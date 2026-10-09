@@ -1,6 +1,6 @@
 package com.pml.booking.infrastructure.client;
 
-import com.pml.shared.dto.UserSummaryDto;
+import com.pml.shared.security.InternalServiceWebClients;
 import com.pml.shared.dto.authorization.AuthorizationRequest;
 import com.pml.shared.dto.authorization.AuthorizationResult;
 import lombok.extern.slf4j.Slf4j;
@@ -30,42 +30,9 @@ public class IdentityServiceClient {
     private final WebClient webClient;
 
     public IdentityServiceClient(
-            WebClient.Builder webClientBuilder,
+            InternalServiceWebClients clients,
             @Value("${services.identity.url:http://localhost:8083}") String identityServiceUrl) {
-        this.webClient = webClientBuilder.baseUrl(identityServiceUrl).build();
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // ORGANIZATION MEMBERSHIP VALIDATION (OWASP A01:2021)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Check if a user is an active member of an organization.
-     *
-     * <p>Used for query resolver authorization to ensure users can only
-     * access data from organizations they belong to.</p>
-     *
-     * @param userId User ID (from JWT)
-     * @param organizationId Organization ID to check membership for
-     * @return Mono with membership check response
-     */
-    public Mono<MembershipCheckResponse> checkOrganizationMembership(String userId, String organizationId) {
-        log.debug("Checking organization membership: userId={}, orgId={}", userId, organizationId);
-
-        return webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/api/internal/authorization/check-organization-membership")
-                        .queryParam("userId", userId)
-                        .queryParam("organizationId", organizationId)
-                        .build())
-                .retrieve()
-                .bodyToMono(MembershipCheckResponse.class)
-                .doOnSuccess(result -> log.debug("Membership check result: isMember={}, role={}",
-                        result.isMember(), result.role()))
-                .onErrorResume(e -> {
-                    log.error("Failed to check organization membership: {}", e.getMessage());
-                    return Mono.just(MembershipCheckResponse.notMember());
-                });
+        this.webClient = clients.to(identityServiceUrl);
     }
 
     /**
@@ -157,35 +124,15 @@ public class IdentityServiceClient {
                 });
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // RESPONSE DTOs
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Response for organization membership check.
-     */
-    public record MembershipCheckResponse(
-            boolean isMember,
-            boolean isActive,
-            String role,
-            String organizationId
-    ) {
-        public static MembershipCheckResponse notMember() {
-            return new MembershipCheckResponse(false, false, null, null);
-        }
-    }
-
     /**
      * Response for same organization check.
      */
     public record SharedOrganizationResponse(
             boolean sharesOrganization,
-            String sharedOrganizationId,
-            String requestingUserRole,
-            String targetUserRole
+            String sharedOrganizationId
     ) {
         public static SharedOrganizationResponse noSharedOrganization() {
-            return new SharedOrganizationResponse(false, null, null, null);
+            return new SharedOrganizationResponse(false, null);
         }
     }
 
@@ -201,93 +148,79 @@ public class IdentityServiceClient {
      */
     public record OrganizationMembershipInfo(
             String organizationId,
-            String organizationName,
             String role,
-            boolean isOwner,
             boolean isActive
     ) {}
 
-    /**
-     * Get user summary by ID
-     */
-    public Mono<UserSummaryDto> getUserById(String userId) {
-        log.debug("Fetching user from identity service: {}", userId);
+    // ─────────────────────────────────────────────────────────────────────────
+    // FINANCE LEAD ESCALATIONS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** The active finance leads' email addresses. An unreachable identity service is an error, so the escalating activity retries. */
+    public reactor.core.publisher.Flux<com.pml.booking.infrastructure.client.dto.FinanceLeadContact> financeLeadContacts() {
         return webClient.get()
-                .uri("/api/internal/users/{id}", userId)
+                .uri("/api/internal/finance-leads/contacts")
                 .retrieve()
-                .bodyToMono(UserSummaryDto.class)
-                .doOnSuccess(user -> log.debug("User fetched successfully: {}", userId))
-                .doOnError(error -> log.error("Failed to fetch user: {}", userId, error));
+                .bodyToFlux(com.pml.booking.infrastructure.client.dto.FinanceLeadContact.class);
     }
 
-    /**
-     * Get user by email
-     */
-    public Mono<UserSummaryDto> getUserByEmail(String email) {
-        log.debug("Fetching user by email from identity service: {}", email);
-        return webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/api/internal/users/by-email")
-                        .queryParam("email", email)
-                        .build())
-                .retrieve()
-                .bodyToMono(UserSummaryDto.class)
-                .doOnSuccess(user -> log.debug("User fetched successfully by email: {}", email))
-                .doOnError(error -> log.error("Failed to fetch user by email: {}", email, error));
-    }
-
-    /**
-     * Validate user token
-     */
-    public Mono<TokenValidationResponse> validateToken(String token) {
-        log.debug("Validating token with identity service");
+    /** Asks identity to WhatsApp every finance lead; identity deduplicates on the discriminator, so a retry sends nothing new. */
+    public Mono<Void> notifyFinanceLeads(String templateKey, String discriminator, String subjectId) {
         return webClient.post()
-                .uri("/api/internal/users/validate-token")
-                .bodyValue(new TokenValidationRequest(token))
+                .uri("/api/internal/finance-leads/notifications")
+                .bodyValue(java.util.Map.of("templateKey", templateKey, "discriminator", discriminator, "subjectId", subjectId))
                 .retrieve()
-                .bodyToMono(TokenValidationResponse.class)
-                .doOnSuccess(response -> log.debug("Token validation result: {}", response.valid()))
-                .doOnError(error -> log.error("Failed to validate token", error));
+                .toBodilessEntity()
+                .then();
     }
 
-    public record TokenValidationRequest(String token) {}
+    // ─────────────────────────────────────────────────────────────────────────
+    // NOTIFICATIONS AND CONTACT LOOKUP (identity owns contacts and delivery)
+    // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Response for token validation.
-     *
-     * <p>Multi-role support: The {@code roles} field contains all user roles.</p>
+     * Asks identity to send one templated notification to one account's verified contact. Identity picks
+     * the channel, deduplicates on {@code discriminator} (a retry sends nothing new) and answers with a
+     * receipt that carries the destination masked.
      */
-    public record TokenValidationResponse(
-            boolean valid,
-            String userId,
-            java.util.Set<String> roles
-    ) {
-        /**
-         * Check if user has a specific role.
-         *
-         * @param role the role to check (e.g., "ORGANIZER", "ADMIN")
-         * @return true if user has the role
-         */
-        public boolean hasRole(String role) {
-            return roles != null && roles.contains(role);
-        }
+    public Mono<com.pml.booking.infrastructure.client.dto.NotificationReceipt> notifyUser(
+            String templateKey, String discriminator, String userId, java.util.Map<String, Object> params) {
+        return webClient.post()
+                .uri("/api/internal/notifications/users")
+                .bodyValue(java.util.Map.of("templateKey", templateKey, "discriminator", discriminator,
+                        "userId", userId, "params", params))
+                .retrieve()
+                .bodyToMono(com.pml.booking.infrastructure.client.dto.NotificationReceipt.class);
+    }
 
-        /**
-         * Check if user is an organizer.
-         *
-         * @return true if user has ORGANIZER role
-         */
-        public boolean isOrganizer() {
-            return hasRole("ORGANIZER");
-        }
+    /**
+     * Asks identity to send one message to a set of accounts (the holders of an event's tickets). The
+     * request carries ids only; identity resolves each account's verified contact and masks nothing it
+     * returns beyond the count.
+     */
+    public Mono<com.pml.booking.infrastructure.client.dto.NotificationReceipt> notifyUsers(
+            String templateKey, String discriminator, java.util.Collection<String> userIds,
+            java.util.Map<String, Object> params) {
+        return webClient.post()
+                .uri("/api/internal/notifications/users/batch")
+                .bodyValue(java.util.Map.of("templateKey", templateKey, "discriminator", discriminator,
+                        "userIds", userIds, "params", params))
+                .retrieve()
+                .bodyToMono(com.pml.booking.infrastructure.client.dto.NotificationReceipt.class);
+    }
 
-        /**
-         * Check if user is an admin.
-         *
-         * @return true if user has ADMIN or SUPER_ADMIN role
-         */
-        public boolean isAdmin() {
-            return hasRole("ADMIN") || hasRole("SUPER_ADMIN");
-        }
+    /**
+     * Resolves a verified contact (a WhatsApp number or an email) to an account, or empty. Identity
+     * answers with a display name reduced to first name and initial and the contact masked, never the
+     * account's profile.
+     */
+    public Mono<com.pml.booking.infrastructure.client.dto.UserLookup> lookupByContact(String channel, String value) {
+        return webClient.post()
+                .uri("/api/internal/users/lookup")
+                .bodyValue(java.util.Map.of("channel", channel, "value", value))
+                .retrieve()
+                .bodyToMono(com.pml.booking.infrastructure.client.dto.UserLookup.class)
+                .onErrorResume(org.springframework.web.reactive.function.client.WebClientResponseException.NotFound.class,
+                        unknown -> Mono.empty());
     }
 }

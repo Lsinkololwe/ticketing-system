@@ -1,5 +1,7 @@
 package com.pml.identity.config;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ResourceLoader;
@@ -65,39 +67,48 @@ public class MongoSchemaValidationConfig extends com.pml.shared.config.MongoSche
         // =========================================================================
         // USER & ORGANIZATION COLLECTIONS
         // =========================================================================
-        schemas.put("users", "users-schema.json");
-        schemas.put("organizations", "organizations-schema.json");
-        schemas.put("organization_members", "organization-members-schema.json");
+        schemas.put(IdentityCollections.USERS, "users-schema.json");
+        schemas.put(IdentityCollections.ORGANIZATIONS, "organizations-schema.json");
+        schemas.put(IdentityCollections.ORGANIZATION_MEMBERS, "organization-members-schema.json");
+
+        // =========================================================================
+        // ACCOUNTS, CONTACTS & AUDIT (ET-IDN-004)
+        // =========================================================================
+        schemas.put(IdentityCollections.CONTACTS, "contacts-schema.json");
+        schemas.put(IdentityCollections.CONSENTS, "consents-schema.json");
+        schemas.put(IdentityCollections.ACCOUNT_EVENTS, "account-events-schema.json");
+        schemas.put(IdentityCollections.AUDIT_LOGS, "audit-logs-schema.json");
+        schemas.put(IdentityCollections.SYSTEM_ALERTS, "system-alerts-schema.json");
+        schemas.put(IdentityCollections.ANNOUNCEMENTS, "announcements-schema.json");
+        schemas.put(IdentityCollections.TOKEN_REVOCATIONS, "token-revocations-schema.json");
 
         // =========================================================================
         // PERMISSIONS & RBAC COLLECTIONS
         // =========================================================================
-        schemas.put("permissions", "permissions-schema.json");
-        schemas.put("role_permissions", "role-permissions-schema.json");
 
         // =========================================================================
         // TEAM & COLLABORATION COLLECTIONS
         // =========================================================================
-        schemas.put("team_invitations", "team-invitations-schema.json");
-        schemas.put("ownership_transfers", "ownership-transfers-schema.json");
-        schemas.put("event_access_grants", "event-access-grants-schema.json");
+        schemas.put(IdentityCollections.TEAM_INVITATIONS, "team-invitations-schema.json");
+        schemas.put(IdentityCollections.OWNERSHIP_TRANSFERS, "ownership-transfers-schema.json");
+        schemas.put(IdentityCollections.EVENT_ACCESS_GRANTS, "event-access-grants-schema.json");
 
         // =========================================================================
         // VERIFICATION & DOCUMENTS COLLECTIONS
         // =========================================================================
-        schemas.put("verification_documents", "verification-documents-schema.json");
+        schemas.put(IdentityCollections.VERIFICATION_DOCUMENTS, "verification-documents-schema.json");
 
         // =========================================================================
         // NOTIFICATION COLLECTIONS
         // =========================================================================
-        schemas.put("notifications", "notifications-schema.json");
-        schemas.put("notification_preferences", "notification-preferences-schema.json");
-        schemas.put("event_reminders", "event-reminders-schema.json");
+        schemas.put(IdentityCollections.NOTIFICATIONS, "notifications-schema.json");
+        schemas.put(IdentityCollections.NOTIFICATION_PREFERENCES, "notification-preferences-schema.json");
+        schemas.put(IdentityCollections.EVENT_REMINDERS, "event-reminders-schema.json");
 
         // =========================================================================
         // DEVICE & SESSION COLLECTIONS
         // =========================================================================
-        schemas.put("user_devices", "user-devices-schema.json");
+        schemas.put(IdentityCollections.USER_DEVICES, "user-devices-schema.json");
 
         log.info("Identity Service: Configured {} collection schemas for validation", schemas.size());
         return schemas;

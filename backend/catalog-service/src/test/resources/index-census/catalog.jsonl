@@ -1,0 +1,42 @@
+{"collection": "catalog_approval_escalations", "key": {"escalatedTo": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_escalations", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_escalations", "key": {"nextReminderAt": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_escalations", "key": {"status": 1, "escalatedTo": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_escalations", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"assignedReviewerId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"currentStatus": 1, "slaDeadline": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"currentStatus": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"eventId": 1}, "unique": true, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"hasActiveEscalation": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"isOverdue": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"organizerId": 1, "currentStatus": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"slaDeadline": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_approval_timelines", "key": {"submittedAt": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_categories", "key": {"code": 1}, "unique": true, "sparse": false}
+{"collection": "catalog_categories", "key": {"name": 1}, "unique": true, "sparse": false}
+{"collection": "catalog_cities", "key": {"country": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_cities", "key": {"name": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_cities", "key": {"provinceId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"_fts": "text", "_ftsx": 1}, "unique": false, "sparse": false, "weights": {"description": 1, "title": 5}}
+{"collection": "catalog_events", "key": {"assignedReviewerId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"categoryId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"cityName": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"createdBy": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"deletedBy": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"eventDateTime": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"isDeleted": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"isFreeEvent": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"organizerId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_events", "key": {"updatedBy": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_provinces", "key": {"country": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_provinces", "key": {"name": 1}, "unique": true, "sparse": false}
+{"collection": "catalog_reference_data", "key": {"type": 1, "code": 1}, "unique": true, "sparse": false}
+{"collection": "catalog_reference_data", "key": {"type": 1, "isActive": 1, "displayOrder": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_reference_data", "key": {"type": 1, "parentCode": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_ticket_tiers", "key": {"eventId": 1, "code": 1}, "unique": true, "sparse": false}
+{"collection": "catalog_ticket_tiers", "key": {"eventId": 1, "isActive": 1, "sortOrder": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_ticket_tiers", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "catalog_ticket_tiers", "key": {"organizationId": 1}, "unique": false, "sparse": false}

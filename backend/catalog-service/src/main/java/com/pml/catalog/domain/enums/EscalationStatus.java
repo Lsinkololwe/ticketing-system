@@ -34,15 +34,6 @@ public enum EscalationStatus {
         return description;
     }
 
-    public static EscalationStatus fromCode(String code) {
-        for (EscalationStatus status : values()) {
-            if (status.code.equals(code)) {
-                return status;
-            }
-        }
-        return null;
-    }
-
     /**
      * Check if the escalation is still active and needs attention
      */

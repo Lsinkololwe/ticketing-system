@@ -9,14 +9,17 @@
 
 import { useQuery, useMutation } from '@apollo/client/react';
 import type {
-  Ticket,
-  TicketEdge,
   TicketStatus,
-  TicketReservation,
   ReserveTicketsInput,
   PayReservationInput,
-  PaymentInitiationResponse,
-  CursorPaginationInput,
+  ReserveTicketsMutation,
+  ReserveTicketsMutationVariables,
+  PayReservationMutation,
+  PayReservationMutationVariables,
+  GetReservationQuery,
+  GetReservationQueryVariables,
+  GetMyTicketsQuery,
+  GetMyTicketsQueryVariables,
 } from '../../../types/graphql';
 import {
   RESERVE_TICKETS,
@@ -28,8 +31,8 @@ import {
 /** Hold seats for an event (opens the payment window). */
 export function useReserveTickets() {
   const [mutate, { data, loading, error, reset }] = useMutation<
-    { reserveTickets: TicketReservation },
-    { input: ReserveTicketsInput }
+    ReserveTicketsMutation,
+    ReserveTicketsMutationVariables
   >(RESERVE_TICKETS);
 
   const reserveTickets = (input: ReserveTicketsInput) => mutate({ variables: { input } });
@@ -42,12 +45,12 @@ export function useReserveTickets() {
  * Returns the initiation outcome, never tickets. `success` here means the
  * provider accepted the request and the buyer's handset should be ringing — not
  * that money moved. Watch the reservation with `useReservation` for the real
- * outcome (ET-TKT-001 §4).
+ * outcome.
  */
 export function usePayReservation() {
   const [mutate, { data, loading, error, reset }] = useMutation<
-    { payReservation: PaymentInitiationResponse },
-    { input: PayReservationInput }
+    PayReservationMutation,
+    PayReservationMutationVariables
   >(PAY_RESERVATION);
 
   const payReservation = (input: PayReservationInput) => mutate({ variables: { input } });
@@ -60,8 +63,8 @@ export function usePayReservation() {
  */
 export function useReservation(id: string | null | undefined, pollMs = 0) {
   const { data, loading, error, startPolling, stopPolling } = useQuery<
-    { reservation: TicketReservation | null },
-    { id: string }
+    GetReservationQuery,
+    GetReservationQueryVariables
   >(GET_RESERVATION, {
     variables: { id: id ?? '' },
     skip: !id,
@@ -79,28 +82,27 @@ export interface MyTicketsOptions {
   skip?: boolean;
 }
 
+/** One row of the buyer's ticket list — the `GetMyTickets` selection. */
+export type MyTicketRow =
+  GetMyTicketsQuery['ticketsByBuyerCursorPagination']['edges'][number]['node'];
+
 /** The signed-in buyer's tickets (My Tickets page). */
 export function useMyTickets({ buyerId, status, size = 50, skip }: MyTicketsOptions) {
-  const { data, loading, error, refetch } = useQuery<
+  const { data, loading, error, refetch } = useQuery<GetMyTicketsQuery, GetMyTicketsQueryVariables>(
+    GET_MY_TICKETS,
     {
-      ticketsByBuyerCursorPagination: {
-        edges: TicketEdge[];
-        totalCount: number | null;
-      };
-    },
-    { buyerId: string; status?: TicketStatus; pagination: CursorPaginationInput }
-  >(GET_MY_TICKETS, {
-    variables: {
-      buyerId: buyerId ?? '',
-      status,
-      pagination: { first: size, after: null, last: null, before: null },
-    },
-    skip: skip || !buyerId,
-    fetchPolicy: 'cache-and-network',
-  });
+      variables: {
+        buyerId: buyerId ?? '',
+        status: status ?? null,
+        pagination: { first: size, after: null, last: null, before: null },
+      },
+      skip: skip || !buyerId,
+      fetchPolicy: 'cache-and-network',
+    }
+  );
 
   const connection = data?.ticketsByBuyerCursorPagination;
-  const tickets = (connection?.edges ?? []).map((edge) => edge.node) as Ticket[];
+  const tickets = (connection?.edges ?? []).map((edge) => edge.node);
   return {
     tickets,
     totalCount: connection?.totalCount ?? tickets.length,

@@ -1,12 +1,10 @@
 package com.pml.gateway.config;
 
-import com.pml.shared.security.KeycloakJwtAuthenticationConverter;
-import com.pml.shared.security.MultiIssuerJwtResolver;
+import com.pml.shared.security.PlatformResourceServer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
@@ -64,7 +62,7 @@ import java.util.List;
 @EnableWebFluxSecurity
 public class GatewaySecurityConfig {
 
-    @Value("${keycloak.client-id:api-gateway}")
+    @Value("${keycloak.client-id:myticketzm-api-gateway}")
     private String keycloakClientId;
 
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8084/realms/myticketzm}")
@@ -72,14 +70,18 @@ public class GatewaySecurityConfig {
 
     /**
      * Additional trusted realm issuers (comma-separated), e.g. the platform-admin realm
-     * {@code http://localhost:8084/realms/myticketzm-admin}. Empty by default — when unset the
-     * gateway keeps the plain single-issuer {@code .jwt(...)} path. Set this to enable the
-     * admin-realm split (tokens are then validated per their {@code iss} claim).
+     * {@code http://localhost:8084/realms/myticketzm-admin}, which {@code application.yml}
+     * supplies by default. Tokens are validated per their {@code iss} claim; one from any other
+     * issuer is rejected.
      */
     @Value("${keycloak.trusted-issuers:}")
     private String trustedIssuersCsv;
 
-    /** Optional expected audiences (comma-separated) enforced on the {@code aud} claim. */
+    /**
+     * Audiences required in the {@code aud} claim (comma-separated). Blank disables the check,
+     * which {@link PlatformResourceServer} logs at WARN — see there for why it is not defaulted
+     * to a client id.
+     */
     @Value("${keycloak.expected-audiences:}")
     private String expectedAudiencesCsv;
 
@@ -142,25 +144,13 @@ public class GatewaySecurityConfig {
                         .anyExchange().authenticated()
                 )
 
-                // Configure as OAuth2 Resource Server (validates JWTs)
-                .oauth2ResourceServer(oauth2 -> {
-                    List<String> issuers = MultiIssuerJwtResolver.mergeIssuers(issuerUri, trustedIssuersCsv);
-                    if (issuers.size() > 1) {
-                        // Admin-realm split enabled: validate per the token's `iss` claim.
-                        oauth2.authenticationManagerResolver(
-                                MultiIssuerJwtResolver.forIssuers(
-                                        issuers,
-                                        keycloakClientId,
-                                        MultiIssuerJwtResolver.csv(expectedAudiencesCsv)));
-                    } else {
-                        // Default single-issuer path (unchanged).
-                        // Custom converter extracts Keycloak realm/client roles into authorities
-                        // (e.g. ROLE_ADMIN, ROLE_ORGANIZER).
-                        oauth2.jwt(jwt -> jwt
-                                .jwtAuthenticationConverter(
-                                        KeycloakJwtAuthenticationConverter.reactiveConverter(keycloakClientId)));
-                    }
-                })
+                // Configure as OAuth2 Resource Server (validates JWTs).
+                //
+                // This is a second line of defence, not the boundary. `/graphql/**` above is
+                // permitAll, so the requests that carry the platform's traffic are not
+                // authenticated here at all — each subgraph validates the same token itself.
+                .oauth2ResourceServer(PlatformResourceServer.jwt(
+                        issuerUri, trustedIssuersCsv, keycloakClientId, expectedAudiencesCsv))
                 .build();
     }
 

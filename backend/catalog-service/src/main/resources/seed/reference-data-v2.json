@@ -1,0 +1,1712 @@
+{
+ "version": 2,
+ "description": "Onboarding, access, communication and reporting vocabularies; corrected Zambian mobile-money prefixes; KYB document codes aligned with identity; the 116 districts of Zambia. Countries are generated from libphonenumber at apply time.",
+ "generated": [
+  "COUNTRY"
+ ],
+ "rows": [
+  {
+   "type": "ORGANIZER_TYPE",
+   "code": "INDIVIDUAL",
+   "name": "Individual",
+   "displayOrder": 0,
+   "description": "Promoting events in your own name",
+   "metadata": {}
+  },
+  {
+   "type": "ORGANIZER_TYPE",
+   "code": "BUSINESS",
+   "name": "Business",
+   "displayOrder": 1,
+   "description": "A registered company or partnership",
+   "metadata": {}
+  },
+  {
+   "type": "ORGANIZER_TYPE",
+   "code": "NON_PROFIT",
+   "name": "Non-profit",
+   "displayOrder": 2,
+   "description": "A registered NGO or trust",
+   "metadata": {}
+  },
+  {
+   "type": "ORGANIZER_TYPE",
+   "code": "GOVERNMENT",
+   "name": "Government",
+   "displayOrder": 3,
+   "description": "A ministry, council or agency",
+   "metadata": {}
+  },
+  {
+   "type": "ORGANIZER_TYPE",
+   "code": "EDUCATIONAL",
+   "name": "Educational",
+   "displayOrder": 4,
+   "description": "A school, college or university",
+   "metadata": {}
+  },
+  {
+   "type": "ORGANIZER_TYPE",
+   "code": "COMMUNITY",
+   "name": "Community",
+   "displayOrder": 5,
+   "description": "A club, association or group",
+   "metadata": {}
+  },
+  {
+   "type": "ORGANIZER_TYPE",
+   "code": "RELIGIOUS",
+   "name": "Religious",
+   "displayOrder": 6,
+   "description": "A church or faith organisation",
+   "metadata": {}
+  },
+  {
+   "type": "BUSINESS_TYPE",
+   "code": "SOLE_PROPRIETORSHIP",
+   "name": "Sole proprietorship",
+   "displayOrder": 0,
+   "description": "A business name registered with PACRA by one owner",
+   "metadata": {
+    "requiredDocuments": [
+     "NATIONAL_ID",
+     "TAX_CERTIFICATE"
+    ]
+   }
+  },
+  {
+   "type": "BUSINESS_TYPE",
+   "code": "PARTNERSHIP",
+   "name": "Partnership",
+   "displayOrder": 1,
+   "description": "A business name registered with PACRA by two or more partners",
+   "metadata": {
+    "requiredDocuments": [
+     "NATIONAL_ID",
+     "TAX_CERTIFICATE",
+     "PARTNERSHIP_AGREEMENT"
+    ]
+   }
+  },
+  {
+   "type": "BUSINESS_TYPE",
+   "code": "LIMITED_COMPANY",
+   "name": "Limited company",
+   "displayOrder": 2,
+   "description": "A private or public company incorporated with PACRA",
+   "metadata": {
+    "requiredDocuments": [
+     "NATIONAL_ID",
+     "TAX_CERTIFICATE",
+     "CERTIFICATE_OF_INCORPORATION"
+    ]
+   }
+  },
+  {
+   "type": "BUSINESS_TYPE",
+   "code": "NGO",
+   "name": "NGO",
+   "displayOrder": 3,
+   "description": "A non-governmental organisation registered with the NGO Board or the Registrar of Societies",
+   "metadata": {
+    "requiredDocuments": [
+     "NATIONAL_ID",
+     "TAX_CERTIFICATE",
+     "NGO_REGISTRATION"
+    ]
+   }
+  },
+  {
+   "type": "BUSINESS_TYPE",
+   "code": "GOVERNMENT",
+   "name": "Government",
+   "displayOrder": 4,
+   "description": "A ministry, council or statutory body",
+   "metadata": {
+    "requiredDocuments": [
+     "NATIONAL_ID",
+     "AUTHORISATION_LETTER"
+    ]
+   }
+  },
+  {
+   "type": "BUSINESS_TYPE",
+   "code": "INDIVIDUAL",
+   "name": "Individual",
+   "displayOrder": 5,
+   "description": "Not registered as a business; trading in your own name",
+   "metadata": {
+    "requiredDocuments": [
+     "NATIONAL_ID",
+     "TAX_CERTIFICATE"
+    ]
+   }
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "NATIONAL_ID",
+   "name": "National ID",
+   "displayOrder": 0,
+   "description": "Government-issued photo ID (NRC or passport)",
+   "metadata": {
+    "appliesTo": "ALL"
+   }
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "TAX_CERTIFICATE",
+   "name": "Tax certificate",
+   "displayOrder": 1,
+   "description": "ZRA tax clearance certificate",
+   "metadata": {
+    "appliesTo": "ALL"
+   }
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "CERTIFICATE_OF_INCORPORATION",
+   "name": "Certificate of incorporation",
+   "displayOrder": 2,
+   "description": "PACRA registration certificate",
+   "metadata": {
+    "appliesTo": "LIMITED_COMPANY"
+   }
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "PARTNERSHIP_AGREEMENT",
+   "name": "Partnership agreement",
+   "displayOrder": 3,
+   "description": "Signed partnership deed",
+   "metadata": {
+    "appliesTo": "PARTNERSHIP"
+   }
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "NGO_REGISTRATION",
+   "name": "NGO registration",
+   "displayOrder": 4,
+   "description": "NGO Board or Registrar of Societies certificate",
+   "metadata": {
+    "appliesTo": "NGO"
+   }
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "AUTHORISATION_LETTER",
+   "name": "Authorisation letter",
+   "displayOrder": 5,
+   "description": "Letter on official letterhead",
+   "metadata": {
+    "appliesTo": "GOVERNMENT"
+   }
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "PROOF_OF_ADDRESS",
+   "name": "Proof of address",
+   "displayOrder": 6,
+   "description": "Utility bill or lease agreement",
+   "metadata": {
+    "appliesTo": "ALL"
+   }
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "BANK_STATEMENT",
+   "name": "Bank statement",
+   "displayOrder": 7,
+   "description": "Statement showing the account name",
+   "metadata": {
+    "appliesTo": "ALL"
+   }
+  },
+  {
+   "type": "MOBILE_MONEY_OPERATOR",
+   "code": "MTN",
+   "name": "MTN Mobile Money",
+   "displayOrder": 0,
+   "metadata": {
+    "providerCode": "MTN_MOMO_ZMB",
+    "msisdnPrefixes": [
+     "26096",
+     "26076"
+    ]
+   }
+  },
+  {
+   "type": "MOBILE_MONEY_OPERATOR",
+   "code": "AIRTEL",
+   "name": "Airtel Money",
+   "displayOrder": 1,
+   "metadata": {
+    "providerCode": "AIRTEL_OAPI_ZMB",
+    "msisdnPrefixes": [
+     "26097",
+     "26077"
+    ]
+   }
+  },
+  {
+   "type": "MOBILE_MONEY_OPERATOR",
+   "code": "ZAMTEL",
+   "name": "Zamtel Kwacha",
+   "displayOrder": 2,
+   "metadata": {
+    "providerCode": "ZAMTEL_ZMB",
+    "msisdnPrefixes": [
+     "26095",
+     "26055"
+    ]
+   }
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "GENERAL",
+   "name": "General admission",
+   "displayOrder": 0,
+   "description": "Standard entry",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "PRE_SALE",
+   "name": "Pre-sale",
+   "displayOrder": 1,
+   "description": "Early access price before general sale",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "VIP",
+   "name": "VIP",
+   "displayOrder": 2,
+   "description": "Premium access and amenities",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "VVIP",
+   "name": "VVIP",
+   "displayOrder": 3,
+   "description": "Top-tier access and amenities",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "PREMIUM",
+   "name": "Premium",
+   "displayOrder": 4,
+   "description": "Enhanced seating or access",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "EARLY_BIRD",
+   "name": "Early bird",
+   "displayOrder": 5,
+   "description": "Discounted for early buyers",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "STUDENT",
+   "name": "Student",
+   "displayOrder": 6,
+   "description": "For students with a valid ID",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "SENIOR",
+   "name": "Senior",
+   "displayOrder": 7,
+   "description": "For senior citizens",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "GROUP",
+   "name": "Group",
+   "displayOrder": 8,
+   "description": "Discounted for groups",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "CORPORATE",
+   "name": "Corporate",
+   "displayOrder": 9,
+   "description": "For companies and corporate tables",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "SPONSOR",
+   "name": "Sponsor",
+   "displayOrder": 10,
+   "description": "Allocated to sponsors",
+   "metadata": {}
+  },
+  {
+   "type": "TICKET_TIER_CATEGORY",
+   "code": "FREE",
+   "name": "Free",
+   "displayOrder": 11,
+   "description": "No charge",
+   "metadata": {}
+  },
+  {
+   "type": "ORGANIZATION_ROLE",
+   "code": "OWNER",
+   "name": "Owner",
+   "displayOrder": 0,
+   "description": "Full control, billing, payouts, ownership. Exactly one per organization.",
+   "metadata": {
+    "invitable": false
+   }
+  },
+  {
+   "type": "ORGANIZATION_ROLE",
+   "code": "ADMIN",
+   "name": "Admin",
+   "displayOrder": 1,
+   "description": "Runs the organization day to day: events, team, bookings and (if allowed) payouts.",
+   "metadata": {
+    "invitable": true
+   }
+  },
+  {
+   "type": "ORGANIZATION_ROLE",
+   "code": "MANAGER",
+   "name": "Manager",
+   "displayOrder": 2,
+   "description": "Creates and publishes events, tiers and promo codes; sells and checks in.",
+   "metadata": {
+    "invitable": true
+   }
+  },
+  {
+   "type": "ORGANIZATION_ROLE",
+   "code": "MARKETER",
+   "name": "Marketer",
+   "displayOrder": 3,
+   "description": "Analytics and promo codes. No access to bookings or finance.",
+   "metadata": {
+    "invitable": true
+   }
+  },
+  {
+   "type": "ORGANIZATION_ROLE",
+   "code": "CONTRIBUTOR",
+   "name": "Contributor",
+   "displayOrder": 4,
+   "description": "Views attendees and checks guests in at the gate.",
+   "metadata": {
+    "invitable": true
+   }
+  },
+  {
+   "type": "EVENT_ROLE",
+   "code": "EVENT_OWNER",
+   "name": "Event owner",
+   "displayOrder": 0,
+   "description": "Full control of one event, including cancel and refunds.",
+   "metadata": {
+    "invitable": false
+   }
+  },
+  {
+   "type": "EVENT_ROLE",
+   "code": "EVENT_ADMIN",
+   "name": "Event admin",
+   "displayOrder": 1,
+   "description": "Edit the event, grant event roles and issue refunds.",
+   "metadata": {
+    "invitable": true
+   }
+  },
+  {
+   "type": "EVENT_ROLE",
+   "code": "EDITOR",
+   "name": "Editor",
+   "displayOrder": 2,
+   "description": "Edit details, tiers and promo codes.",
+   "metadata": {
+    "invitable": true
+   }
+  },
+  {
+   "type": "EVENT_ROLE",
+   "code": "CHECK_IN",
+   "name": "Check-in",
+   "displayOrder": 3,
+   "description": "Scan and admit tickets at the gate.",
+   "metadata": {
+    "invitable": true
+   }
+  },
+  {
+   "type": "EVENT_ROLE",
+   "code": "VIEWER",
+   "name": "Viewer",
+   "displayOrder": 4,
+   "description": "Read-only view of the event and its sales.",
+   "metadata": {
+    "invitable": true
+   }
+  },
+  {
+   "type": "NOTIFICATION_CHANNEL",
+   "code": "WHATSAPP",
+   "name": "WhatsApp",
+   "displayOrder": 0,
+   "description": "Tickets and updates by WhatsApp",
+   "metadata": {
+    "preferenceKey": "whatsappEnabled"
+   }
+  },
+  {
+   "type": "NOTIFICATION_CHANNEL",
+   "code": "SMS",
+   "name": "SMS",
+   "displayOrder": 1,
+   "description": "Text messages to your phone",
+   "metadata": {
+    "preferenceKey": "smsEnabled"
+   }
+  },
+  {
+   "type": "NOTIFICATION_CHANNEL",
+   "code": "PUSH",
+   "name": "Push notifications",
+   "displayOrder": 2,
+   "description": "Notifications on this device",
+   "metadata": {
+    "preferenceKey": "pushEnabled"
+   }
+  },
+  {
+   "type": "NOTIFICATION_CHANNEL",
+   "code": "EMAIL",
+   "name": "Email",
+   "displayOrder": 3,
+   "description": "Messages to your email address",
+   "metadata": {
+    "preferenceKey": "emailEnabled"
+   }
+  },
+  {
+   "type": "NOTIFICATION_CHANNEL",
+   "code": "IN_APP",
+   "name": "In-app",
+   "displayOrder": 4,
+   "description": "The notifications list in the app",
+   "metadata": {
+    "preferenceKey": "inAppEnabled"
+   }
+  },
+  {
+   "type": "NOTIFICATION_CATEGORY",
+   "code": "TICKET",
+   "name": "Ticket notifications",
+   "displayOrder": 0,
+   "description": "Bookings, tickets and transfers. Always on.",
+   "metadata": {
+    "preferenceKey": "ticketNotifications",
+    "locked": true
+   }
+  },
+  {
+   "type": "NOTIFICATION_CATEGORY",
+   "code": "EVENT_REMINDER",
+   "name": "Event reminders",
+   "displayOrder": 1,
+   "description": "A reminder before events you manage or have tickets for",
+   "metadata": {
+    "preferenceKey": "eventReminders",
+    "locked": false
+   }
+  },
+  {
+   "type": "NOTIFICATION_CATEGORY",
+   "code": "EVENT_UPDATE",
+   "name": "Event updates",
+   "displayOrder": 2,
+   "description": "Changes to time, venue or lineup, approvals and cancellations",
+   "metadata": {
+    "preferenceKey": "eventUpdates",
+    "locked": false
+   }
+  },
+  {
+   "type": "NOTIFICATION_CATEGORY",
+   "code": "PAYMENT",
+   "name": "Payment notifications",
+   "displayOrder": 3,
+   "description": "Payments, refunds, receipts and payouts. Always on.",
+   "metadata": {
+    "preferenceKey": "paymentNotifications",
+    "locked": true
+   }
+  },
+  {
+   "type": "NOTIFICATION_CATEGORY",
+   "code": "TEAM",
+   "name": "Team notifications",
+   "displayOrder": 4,
+   "description": "Invitations to organizations and role changes",
+   "metadata": {
+    "preferenceKey": "teamNotifications",
+    "locked": false
+   }
+  },
+  {
+   "type": "NOTIFICATION_CATEGORY",
+   "code": "MARKETING",
+   "name": "Marketing emails",
+   "displayOrder": 5,
+   "description": "News and offers",
+   "metadata": {
+    "preferenceKey": "marketingEmails",
+    "locked": false
+   }
+  },
+  {
+   "type": "NOTIFICATION_CATEGORY",
+   "code": "SYSTEM",
+   "name": "System announcements",
+   "displayOrder": 6,
+   "description": "Maintenance and service notices",
+   "metadata": {
+    "preferenceKey": "systemAnnouncements",
+    "locked": false
+   }
+  },
+  {
+   "type": "REPORT_PERIOD",
+   "code": "7d",
+   "name": "Last 7 days",
+   "displayOrder": 0,
+   "metadata": {
+    "days": 7,
+    "bucket": "DAY"
+   }
+  },
+  {
+   "type": "REPORT_PERIOD",
+   "code": "30d",
+   "name": "Last 30 days",
+   "displayOrder": 1,
+   "metadata": {
+    "days": 30,
+    "bucket": "DAY"
+   }
+  },
+  {
+   "type": "REPORT_PERIOD",
+   "code": "90d",
+   "name": "Last 90 days",
+   "displayOrder": 2,
+   "metadata": {
+    "days": 90,
+    "bucket": "WEEK"
+   }
+  },
+  {
+   "type": "REPORT_PERIOD",
+   "code": "12m",
+   "name": "Last 12 months",
+   "displayOrder": 3,
+   "metadata": {
+    "days": 365,
+    "bucket": "MONTH"
+   }
+  },
+  {
+   "type": "BANK",
+   "code": "BOC",
+   "name": "Bank of China Zambia",
+   "displayOrder": 12,
+   "metadata": {
+    "swift": "BKCHZMLU"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHIBOMBO",
+   "name": "Chibombo",
+   "displayOrder": 100,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHISAMBA",
+   "name": "Chisamba",
+   "displayOrder": 101,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHITAMBO",
+   "name": "Chitambo",
+   "displayOrder": 102,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "ITEZHI_TEZHI",
+   "name": "Itezhi-Tezhi",
+   "displayOrder": 103,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUANO",
+   "name": "Luano",
+   "displayOrder": 104,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MKUSHI",
+   "name": "Mkushi",
+   "displayOrder": 105,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MUMBWA",
+   "name": "Mumbwa",
+   "displayOrder": 106,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "NGABWE",
+   "name": "Ngabwe",
+   "displayOrder": 107,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SERENJE",
+   "name": "Serenje",
+   "displayOrder": 108,
+   "parentType": "PROVINCE",
+   "parentCode": "CEN",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHILILABOMBWE",
+   "name": "Chililabombwe",
+   "displayOrder": 109,
+   "parentType": "PROVINCE",
+   "parentCode": "CB",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KALULUSHI",
+   "name": "Kalulushi",
+   "displayOrder": 110,
+   "parentType": "PROVINCE",
+   "parentCode": "CB",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUFWANYAMA",
+   "name": "Lufwanyama",
+   "displayOrder": 111,
+   "parentType": "PROVINCE",
+   "parentCode": "CB",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MASAITI",
+   "name": "Masaiti",
+   "displayOrder": 112,
+   "parentType": "PROVINCE",
+   "parentCode": "CB",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MPONGWE",
+   "name": "Mpongwe",
+   "displayOrder": 113,
+   "parentType": "PROVINCE",
+   "parentCode": "CB",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHADIZA",
+   "name": "Chadiza",
+   "displayOrder": 114,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHASEFU",
+   "name": "Chasefu",
+   "displayOrder": 115,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHIPANGALI",
+   "name": "Chipangali",
+   "displayOrder": 116,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KASENENGWA",
+   "name": "Kasenengwa",
+   "displayOrder": 117,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KATETE",
+   "name": "Katete",
+   "displayOrder": 118,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUMEZI",
+   "name": "Lumezi",
+   "displayOrder": 119,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUNDAZI",
+   "name": "Lundazi",
+   "displayOrder": 120,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUSANGAZI",
+   "name": "Lusangazi",
+   "displayOrder": 121,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MAMBWE",
+   "name": "Mambwe",
+   "displayOrder": 122,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "NYIMBA",
+   "name": "Nyimba",
+   "displayOrder": 123,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "PETAUKE",
+   "name": "Petauke",
+   "displayOrder": 124,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SINDA",
+   "name": "Sinda",
+   "displayOrder": 125,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "VUBWI",
+   "name": "Vubwi",
+   "displayOrder": 126,
+   "parentType": "PROVINCE",
+   "parentCode": "EAS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHEMBE",
+   "name": "Chembe",
+   "displayOrder": 127,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHIENGI",
+   "name": "Chiengi",
+   "displayOrder": 128,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHIFUNABULI",
+   "name": "Chifunabuli",
+   "displayOrder": 129,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHIPILI",
+   "name": "Chipili",
+   "displayOrder": 130,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KAWAMBWA",
+   "name": "Kawambwa",
+   "displayOrder": 131,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUNGA",
+   "name": "Lunga",
+   "displayOrder": 132,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MILENGE",
+   "name": "Milenge",
+   "displayOrder": 133,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MWANSABOMBWE",
+   "name": "Mwansabombwe",
+   "displayOrder": 134,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MWENSE",
+   "name": "Mwense",
+   "displayOrder": 135,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "NCHELENGE",
+   "name": "Nchelenge",
+   "displayOrder": 136,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SAMFYA",
+   "name": "Samfya",
+   "displayOrder": 137,
+   "parentType": "PROVINCE",
+   "parentCode": "LUA",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHILANGA",
+   "name": "Chilanga",
+   "displayOrder": 138,
+   "parentType": "PROVINCE",
+   "parentCode": "LUS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHIRUNDU",
+   "name": "Chirundu",
+   "displayOrder": 139,
+   "parentType": "PROVINCE",
+   "parentCode": "LUS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUANGWA",
+   "name": "Luangwa",
+   "displayOrder": 140,
+   "parentType": "PROVINCE",
+   "parentCode": "LUS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "RUFUNSA",
+   "name": "Rufunsa",
+   "displayOrder": 141,
+   "parentType": "PROVINCE",
+   "parentCode": "LUS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SHIBUYUNJI",
+   "name": "Shibuyunji",
+   "displayOrder": 142,
+   "parentType": "PROVINCE",
+   "parentCode": "LUS",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHAMA",
+   "name": "Chama",
+   "displayOrder": 143,
+   "parentType": "PROVINCE",
+   "parentCode": "MUC",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "ISOKA",
+   "name": "Isoka",
+   "displayOrder": 144,
+   "parentType": "PROVINCE",
+   "parentCode": "MUC",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KANCHIBIYA",
+   "name": "Kanchibiya",
+   "displayOrder": 145,
+   "parentType": "PROVINCE",
+   "parentCode": "MUC",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LAVUSHIMANDA",
+   "name": "Lavushimanda",
+   "displayOrder": 146,
+   "parentType": "PROVINCE",
+   "parentCode": "MUC",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MAFINGA",
+   "name": "Mafinga",
+   "displayOrder": 147,
+   "parentType": "PROVINCE",
+   "parentCode": "MUC",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "NAKONDE",
+   "name": "Nakonde",
+   "displayOrder": 148,
+   "parentType": "PROVINCE",
+   "parentCode": "MUC",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SHIWANGANDU",
+   "name": "Shiwang'andu",
+   "displayOrder": 149,
+   "parentType": "PROVINCE",
+   "parentCode": "MUC",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHILUBI",
+   "name": "Chilubi",
+   "displayOrder": 150,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KAPUTA",
+   "name": "Kaputa",
+   "displayOrder": 151,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUNTE",
+   "name": "Lunte",
+   "displayOrder": 152,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUPOSOSHI",
+   "name": "Lupososhi",
+   "displayOrder": 153,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUWINGU",
+   "name": "Luwingu",
+   "displayOrder": 154,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MBALA",
+   "name": "Mbala",
+   "displayOrder": 155,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MPOROKOSO",
+   "name": "Mporokoso",
+   "displayOrder": 156,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MPULUNGU",
+   "name": "Mpulungu",
+   "displayOrder": 157,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MUNGWI",
+   "name": "Mungwi",
+   "displayOrder": 158,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "NSAMA",
+   "name": "Nsama",
+   "displayOrder": 159,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SENGA_HILL",
+   "name": "Senga Hill",
+   "displayOrder": 160,
+   "parentType": "PROVINCE",
+   "parentCode": "NOR",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHAVUMA",
+   "name": "Chavuma",
+   "displayOrder": 161,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "IKELENGE",
+   "name": "Ikelenge",
+   "displayOrder": 162,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KABOMPO",
+   "name": "Kabompo",
+   "displayOrder": 163,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KALUMBILA",
+   "name": "Kalumbila",
+   "displayOrder": 164,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KASEMPA",
+   "name": "Kasempa",
+   "displayOrder": 165,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MANYINGA",
+   "name": "Manyinga",
+   "displayOrder": 166,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MUFUMBWE",
+   "name": "Mufumbwe",
+   "displayOrder": 167,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MUSHINDAMO",
+   "name": "Mushindamo",
+   "displayOrder": 168,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MWINILUNGA",
+   "name": "Mwinilunga",
+   "displayOrder": 169,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "ZAMBEZI",
+   "name": "Zambezi",
+   "displayOrder": 170,
+   "parentType": "PROVINCE",
+   "parentCode": "NW",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "CHIKANKATA",
+   "name": "Chikankata",
+   "displayOrder": 171,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "GWEMBE",
+   "name": "Gwembe",
+   "displayOrder": 172,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KALOMO",
+   "name": "Kalomo",
+   "displayOrder": 173,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KAZUNGULA",
+   "name": "Kazungula",
+   "displayOrder": 174,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "NAMWALA",
+   "name": "Namwala",
+   "displayOrder": 175,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "PEMBA",
+   "name": "Pemba",
+   "displayOrder": 176,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SIAVONGA",
+   "name": "Siavonga",
+   "displayOrder": 177,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SINAZONGWE",
+   "name": "Sinazongwe",
+   "displayOrder": 178,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "ZIMBA",
+   "name": "Zimba",
+   "displayOrder": 179,
+   "parentType": "PROVINCE",
+   "parentCode": "SOU",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KALABO",
+   "name": "Kalabo",
+   "displayOrder": 180,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "KAOMA",
+   "name": "Kaoma",
+   "displayOrder": 181,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LIMULUNGA",
+   "name": "Limulunga",
+   "displayOrder": 182,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUAMPA",
+   "name": "Luampa",
+   "displayOrder": 183,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "LUKULU",
+   "name": "Lukulu",
+   "displayOrder": 184,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MITETE",
+   "name": "Mitete",
+   "displayOrder": 185,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MULOBEZI",
+   "name": "Mulobezi",
+   "displayOrder": 186,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "MWANDI",
+   "name": "Mwandi",
+   "displayOrder": 187,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "NALOLO",
+   "name": "Nalolo",
+   "displayOrder": 188,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "NKEYEMA",
+   "name": "Nkeyema",
+   "displayOrder": 189,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SENANGA",
+   "name": "Senanga",
+   "displayOrder": 190,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SESHEKE",
+   "name": "Sesheke",
+   "displayOrder": 191,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SHANGOMBO",
+   "name": "Shang'ombo",
+   "displayOrder": 192,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SIKONGO",
+   "name": "Sikongo",
+   "displayOrder": 193,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  },
+  {
+   "type": "CITY",
+   "code": "SIOMA",
+   "name": "Sioma",
+   "displayOrder": 194,
+   "parentType": "PROVINCE",
+   "parentCode": "WES",
+   "metadata": {
+    "kind": "DISTRICT"
+   }
+  }
+ ],
+ "retire": [
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "NRC"
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "PASSPORT"
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "DRIVERS_LICENSE"
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "PACRA_CERT"
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "ZRA_TPIN"
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "BUSINESS_LICENSE"
+  },
+  {
+   "type": "KYB_DOCUMENT_TYPE",
+   "code": "DIRECTORS_ID"
+  }
+ ]
+}

@@ -10,5 +10,6 @@ public record EscrowAccountFilterInput(
         String organizerId,
         String eventId,
         EscrowStatus status,
-        String currency
+        String currency,
+        Boolean hasBalance
 ) {}

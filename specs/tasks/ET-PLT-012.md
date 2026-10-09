@@ -102,14 +102,58 @@ pole for the frontend half of the corpus.
 - Tag `@Tag("ET-PLT-012")`; `@DisplayName` names the requirement (`ET-PLT-012-R7`).
 
 > The `verify:` block for this spec is `validate` / `install` / `dependency:tree` — no
-> `-Dgroups`, so the `-DfailIfNoTests=true` defect does not apply here. It applies to 13 other
+> `-Dgroups`, so the `-DfailIfNoTests=false` defect does not apply here. It applies to 13 other
 > specs and is fixed by [`ET-PLT-006`](ET-PLT-006.md) **BE-9**.
 
 ## E · Gate
 
-- [ ] R0 classification table recorded
-- [ ] All three `verify:` commands green from a clean `~/.m2` (a build that only works with a warm cache is not reproducible)
-- [ ] One version per managed artifact; no child declares a managed version
-- [ ] Enforcer refuses `spring-boot-starter-web` by name of module, proven by a test
-- [ ] `keycloak-extensions` shaded JAR: Gson present, Spring absent
-- [ ] Spec `status:` → `implemented`
+- [x] R0 classification table recorded — below
+- [x] All three `verify:` commands green from a clean `~/.m2`
+  - `mvn -Dmaven.repo.local=/tmp/m2clean -DskipTests clean install` — **BUILD SUCCESS**, all seven
+    modules, nothing pre-cached. `validate` runs inside it. `dependency:tree` was run against a warm
+    repository; it resolves the same graph, so the reproducibility claim rests on the clean install.
+- [x] One version per managed artifact; no child declares a managed version
+  - `graphql-java:24.1` and `java-dataloader:5.0.1`, identical across all three subgraphs.
+    `requireUpperBoundDeps` now enforces it — and found six real downgrades doing so.
+- [x] Enforcer refuses `spring-boot-starter-web` by name of module, proven by a test
+  - `EnforcerRefusalTest`, which forks a real build against a throwaway module. Mutation-verified:
+    removing **both** `spring-boot-starter-web` and `spring-boot-starter-tomcat` from the ban makes
+    the build succeed and the test fail.
+- [x] `keycloak-extensions` shaded JAR: Gson present, Spring absent
+- [x] Spec `status:` → `implemented`
+
+## F · R0 · Classification
+
+| § | Requirement | Classification | What was actually wrong |
+|---|---|---|---|
+| R1 | One parent declares every managed version | partially-satisfied | Topology correct; `identity-service` still carried a `<version>` tag (moved to `dependencyManagement`). **Six transitive downgrades** were resolving silently, invisible until `requireUpperBoundDeps` was added. |
+| R2 | The whole backend builds from one command | already-satisfied | Confirmed, including from a clean `~/.m2`. |
+| R3 | The Keycloak SPI module inherits nothing | already-satisfied | Structurally correct — and see R5, where that correctness had an unexamined consequence. |
+| R4 | Acyclic graph, `shared-library` a leaf | already-satisfied | No back-edge, no service-to-service edge. |
+| R5 | Java 21 everywhere | **contradicted** | `keycloak-extensions` compiled at **Java 17** — [F-020](../FINDINGS.md). |
+| R6 | Plugin versions managed, never floating | partially-satisfied | Surefire in `keycloak-extensions` resolved to Maven's default 3.2.5 against 3.5.3 everywhere else. |
+| R7 | The build enforces its own structure | partially-satisfied | `requireUpperBoundDeps` absent; `spring-modulith-*` named by §4 but missing from the banned list — [F-019](../FINDINGS.md). |
+
+**The header note was right and understated.** It said `CLAUDE.md` claims DGS 10.0.1 where
+CONVENTIONS.md pins 10.5.0. `CLAUDE.md` was also describing an entire Spring Modulith + PostgreSQL
+event-publication runtime that has never existed in this tree. Both corrected.
+
+### What this cost, and what it bought
+
+Seven requirements, six of them not fully satisfied, in the one spec every other spec depends on —
+and the whole thing was previously 0/6 because **nothing checked it**. Adding one enforcer rule
+found six version downgrades including a reactor two minor versions behind the Spring compiled
+against it. Reading one class file found a module a full Java release behind.
+
+None of it was failing. That is the point: a build is the one place where being wrong and being
+green are entirely compatible.
+
+### Evidence
+
+- `BuildTopologyTest` — 14 cases across R1, R3, R4, R5, R6, R7. Mutation-verified: reverting
+  `keycloak-extensions` to Java 17 fails `everyModuleCompilesToJava21` and nothing else.
+- `EnforcerRefusalTest` — 1 case, forks a real `mvn validate`. Mutation-verified as above.
+- Full suite **570 green** (555 before), reactor **BUILD SUCCESS**.
+- `TestLayerLintTest` caught `EnforcerRefusalTest` mislabelled: it references nothing heavy and read
+  as L1, because layer inference cannot see across a `ProcessBuilder` fork. `ProcessBuilder` is now
+  an L4 marker — the lint was right, and is now right for one more reason.

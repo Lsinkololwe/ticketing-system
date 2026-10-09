@@ -18,6 +18,14 @@ import java.util.List;
  */
 public interface TicketTierService {
 
+    /*
+     * This interface does not move availability. InventoryServiceImpl owns every hold and sale:
+     * each is a single findAndModify with an $expr guard and $inc, so the check and the write are
+     * one atomic step. Reading availableQuantity into Java, comparing it and writing it back loses
+     * writes under contention — the property that decides whether a venue oversells — so no
+     * second path for adjusting inventory belongs here.
+     */
+
     /**
      * Find ticket tier by ID
      *
@@ -70,23 +78,7 @@ public interface TicketTierService {
      */
     Flux<TicketTier> reorderTiers(String eventId, List<String> tierIds);
 
-    /**
-     * Decrement available quantity (when ticket sold)
-     *
-     * @param tierId Tier ID
-     * @param quantity Quantity to decrement
-     * @return Updated tier
-     */
-    Mono<TicketTier> decrementAvailability(String tierId, int quantity);
 
-    /**
-     * Increment available quantity (when ticket refunded)
-     *
-     * @param tierId Tier ID
-     * @param quantity Quantity to increment
-     * @return Updated tier
-     */
-    Mono<TicketTier> incrementAvailability(String tierId, int quantity);
 
     /**
      * Activate a ticket tier (make it available for purchase)
@@ -103,4 +95,19 @@ public interface TicketTierService {
      * @return Updated tier
      */
     Mono<TicketTier> deactivateTier(String tierId);
+
+    /**
+     * The tier if the caller may see it: anyone sees an active, visible tier of a published event;
+     * a member of the owning organization sees any of its tiers. Otherwise empty.
+     */
+    Mono<TicketTier> findVisibleToCaller(String tierId);
+
+    /**
+     * The event's tiers the caller may see. Hidden tiers, and the tiers of an event that is not
+     * published, are listed only to a member of the owning organization; anyone else gets none.
+     */
+    Flux<TicketTier> findForCaller(String eventId, boolean includeHidden);
+
+    /** Active tiers with seats left, for a published event only. */
+    Flux<TicketTier> findAvailableForPurchase(String eventId);
 }

@@ -5,7 +5,6 @@
  * the gate's own attendance figures. All resolved by booking-service.
  *
  * @see backend/booking-service/src/main/resources/graphql/schema.graphqls
- * @see specs/ticketing/003-validation-and-checkin/spec.md
  */
 
 import { gql } from '@apollo/client';
@@ -23,8 +22,8 @@ import { gql } from '@apollo/client';
  */
 export const EVENT_TICKET_HOLDERS = gql`
   query EventTicketHolders($eventId: String!, $pagination: OffsetPaginationInput) {
-    ticketsByEventOffsetPagination(eventId: $eventId, pagination: $pagination) {
-      content {
+    ticketsByEvent(eventId: $eventId, pagination: $pagination) {
+      data {
         id
         ticketNumber
         buyerName
@@ -34,9 +33,11 @@ export const EVENT_TICKET_HOLDERS = gql`
         purchaseDate
         validatedAt
       }
-      totalElements
-      totalPages
-      hasNext
+      pagination {
+        totalElements
+        totalPages
+        hasNext
+      }
     }
   }
 `;
@@ -109,61 +110,3 @@ export const CHECK_IN_SUMMARY = gql`
   }
 `;
 
-/** Most recent admissions, newest first. Bounded at 100 server-side. */
-export const RECENT_CHECK_INS = gql`
-  query RecentCheckIns($eventId: ID!, $limit: Int) {
-    recentCheckIns(eventId: $eventId, limit: $limit) {
-      id
-      ticketId
-      ticketNumber
-      method
-      scannedBy
-      deviceId
-      recordedAt
-      reason
-    }
-  }
-`;
-
-/**
- * Scans that were refused.
- *
- * For an offline duplicate this is the only record that a second person was
- * admitted, which is why it is a screen and not a log line.
- */
-export const CHECK_IN_CONFLICTS = gql`
-  query CheckInConflicts($eventId: ID!, $pagination: OffsetPaginationInput) {
-    checkInConflicts(eventId: $eventId, pagination: $pagination) {
-      content {
-        id
-        ticketId
-        presentedCode
-        type
-        method
-        scannedBy
-        deviceId
-        scannedAt
-        detectedAt
-        originalCheckInAt
-        status
-        reviewNote
-        reviewedAt
-      }
-      totalElements
-      page
-      size
-    }
-  }
-`;
-
-/** Annotates a conflict. Never deletes it — the count is the finding. */
-export const REVIEW_CONFLICT = gql`
-  mutation ReviewConflict($id: ID!, $note: String!) {
-    reviewConflict(id: $id, note: $note) {
-      id
-      status
-      reviewNote
-      reviewedAt
-    }
-  }
-`;

@@ -1,0 +1,56 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Consents Schema",
+    "description": "Consent granted by an account per purpose and version (com.pml.identity.domain.model.Consent)",
+    "required": [
+      "accountId",
+      "purpose",
+      "version",
+      "grantedAt"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data type hint"
+      },
+      "_id": {
+        "bsonType": [
+          "string",
+          "objectId"
+        ]
+      },
+      "accountId": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "purpose": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 50
+      },
+      "version": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 50
+      },
+      "grantedAt": {
+        "bsonType": "date"
+      },
+      "source": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 50
+      },
+      "withdrawnAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  }
+}

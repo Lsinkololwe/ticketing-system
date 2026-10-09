@@ -4,7 +4,6 @@ import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import reactor.core.publisher.Mono;
 
 /**
@@ -76,6 +75,22 @@ public final class KeycloakJwtAuthenticationConverter {
     }
 
     /**
+     * Converter whose authentication name is the application user id ({@code accountId} claim,
+     * else {@code sub}) so that {@code Authentication.getName()} matches {@code User._id}.
+     */
+    private static Converter<Jwt, AbstractAuthenticationToken> identityConverter(String clientId) {
+        KeycloakGrantedAuthoritiesConverter authorities = new KeycloakGrantedAuthoritiesConverter(clientId);
+        return jwt -> {
+            String name = AccountIdentity.userIdOf(jwt);
+            if (name == null) {
+                name = jwt.getClaimAsString(PRINCIPAL_CLAIM_NAME);
+            }
+            return new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(
+                    jwt, authorities.convert(jwt), name);
+        };
+    }
+
+    /**
      * Creates a reactive JWT authentication converter for Keycloak tokens.
      *
      * <p>Use this for Spring WebFlux (reactive) applications.</p>
@@ -96,35 +111,7 @@ public final class KeycloakJwtAuthenticationConverter {
      * @return Configured reactive converter adapter
      */
     public static Converter<Jwt, Mono<AbstractAuthenticationToken>> reactiveConverter(String clientId) {
-        JwtAuthenticationConverter servletConverter = servletConverter(clientId);
-        return new ReactiveJwtAuthenticationConverterAdapter(servletConverter);
-    }
-
-    /**
-     * Creates a custom configured reactive converter with specific options.
-     *
-     * @param clientId           Keycloak client ID (can be null)
-     * @param extractRealmRoles  Whether to extract realm-level roles
-     * @param extractClientRoles Whether to extract client-level roles
-     * @param extractScopes      Whether to extract scopes
-     * @return Configured reactive converter adapter
-     */
-    public static Converter<Jwt, Mono<AbstractAuthenticationToken>> reactiveConverterWithOptions(
-            String clientId,
-            boolean extractRealmRoles,
-            boolean extractClientRoles,
-            boolean extractScopes) {
-
-        KeycloakGrantedAuthoritiesConverter authoritiesConverter =
-                new KeycloakGrantedAuthoritiesConverter(clientId);
-        authoritiesConverter.setExtractRealmRoles(extractRealmRoles);
-        authoritiesConverter.setExtractClientRoles(extractClientRoles);
-        authoritiesConverter.setExtractScopes(extractScopes);
-
-        JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
-        jwtConverter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
-        jwtConverter.setPrincipalClaimName(PRINCIPAL_CLAIM_NAME);
-
-        return new ReactiveJwtAuthenticationConverterAdapter(jwtConverter);
+        Converter<Jwt, AbstractAuthenticationToken> converter = identityConverter(clientId);
+        return jwt -> Mono.justOrEmpty(converter.convert(jwt));
     }
 }

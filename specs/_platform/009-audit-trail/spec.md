@@ -175,7 +175,13 @@ IF an audit write fails, THEN THE SYSTEM SHALL complete the action and raise an 
 | `AUDIT_TRAIL_READ` | — | no | this spec R5 |
 | `AUDIT_TRAIL_EXPORTED` | — | **yes** | this spec R5 |
 | `USER_SUSPENDED` | user | **yes** | [ET-IDN-002](../../identity/002-keycloak-user-sync/) |
-| `PHONE_NUMBER_CHANGED` | user | no | [ET-IDN-002](../../identity/002-keycloak-user-sync/) R6 |
+| `CONTACT_CHANGED` | account | no | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R5 — replaces `PHONE_NUMBER_CHANGED`; records contact type and masked values only |
+| `ACCOUNT_MERGED` | account | **yes** | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R6 — names both ids |
+| `ACCOUNT_DELETED` | account | no | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R7 — the tombstone step of an erasure |
+| `ACCOUNT_ADOPTED` | account | no | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R4 — a Keycloak user adopted into an account |
+| `ACCOUNT_REPAIRED` | account | no | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R4 — a security heal (`enabled`, roles) of drift class D4/D5 |
+| `SIGN_IN_REFUSED` | account | no | [ET-IDN-001](../../identity/001-phone-otp-identity/) R6/R7 — suspended, merging, locked, or staff in the contact flow; never records a code |
+| `STAFF_SIGNED_IN` | account | no | [ET-IDN-001](../../identity/001-phone-otp-identity/) R7 — platform staff in `myticketzm-admin`; buyer sign-ins are Keycloak events, not audit rows |
 | `ROLE_GRANTED` / `ROLE_REVOKED` | user | **yes** | [ET-PLT-007](../007-security-and-authorization/) |
 
 **Financial** — 7-year retention.
@@ -217,7 +223,9 @@ IF an audit write fails, THEN THE SYSTEM SHALL complete the action and raise an 
 | `BULK_EVENT_APPROVAL` | events | **yes** | [ET-ADM-001](../../admin/001-approvals-workbench/) R6 |
 | `ALERT_ACKNOWLEDGED` | alert | no | [ET-ADM-005](../../admin/005-observability-and-health/) R8 |
 
-**Fifty actions.** Nothing else is audited.
+**Fifty actions as first written, plus the identity actions added 2026-10-04 (F-044): `PHONE_NUMBER_CHANGED` is replaced by `CONTACT_CHANGED`, and `ACCOUNT_MERGED`, `ACCOUNT_DELETED`, `ACCOUNT_ADOPTED`, `ACCOUNT_REPAIRED`, `SIGN_IN_REFUSED`, `STAFF_SIGNED_IN` are added (56 in all).** Nothing else is audited.
+
+**No personal data in audit rows or in ids (D-46).** `subjectId` is the account id; `previousValue` and `newValue` for contact actions hold masked values; the audit write never receives a raw contact, a code, a proof or a login handle.
 
 ### The row
 
@@ -288,12 +296,16 @@ Financial actions are visible only to `FINANCE` and above; the filter silently e
 for a plain `ADMIN` rather than refusing, so an ordinary admin sees a complete operational
 trail without knowing what they cannot see.
 
-### Sweeps
+### Schedules
 
-| Sweep | Lock | Cadence | Purpose |
-|---|---|---|---|
-| chain verification | `lock:sweep:audit-verify` | daily | sample and verify |
-| retention purge | `lock:sweep:audit-purge` | weekly | R6, with checkpoints |
+Recurring audit work is a Temporal Schedule starting `AuditMaintenanceWorkflow` on
+`identity-onboarding` ([ET-PLT-015](../015-durable-execution/) §4). Overlap policy `SKIP` is the
+mutex; no Redis lock exists.
+
+| Schedule | Runs | Cadence (UTC) | Overlap | Purpose |
+|---|---|---|---|---|
+| `audit-verify` | `AuditMaintenanceWorkflow(VERIFY)` | daily 03:00 | `SKIP` | sample and verify |
+| `audit-purge` | `AuditMaintenanceWorkflow(PURGE)` | weekly, Sunday 04:00 | `SKIP` | R6, one batch per activity, continued as new from the last checkpoint |
 
 ### Configuration
 
@@ -348,7 +360,7 @@ None introduced. An audit failure is an alert, not a client error.
 
 - [ ] **T6 · Class-based retention, the purge and the checkpoint**
   - requirements: R6
-  - files: `backend/identity-service/.../scheduler/AuditPurgeSweeper.java`
+  - files: `backend/identity-service/.../workflow/audit/AuditMaintenanceWorkflowImpl.java`, `.../workflow/audit/AuditSchedules.java`
   - verify: the chain verifies from a checkpoint after a purge
   - parallel-safe: yes
   - depends: T3
@@ -382,3 +394,13 @@ Deliberately never in scope: **auditing every mutation** (unsearchable, and a wr
 amplification nobody budgeted), **append-only by convention** (the people who can violate it
 are the people it is about), and **failing an action when its audit write fails** (losing a
 payout to protect a log entry).
+
+---
+
+## Amendment, 2026-10-04 — reading the trail
+
+### ET-PLT-009-R9 · The audit query
+
+**Acceptance**
+- [ ] `auditLogs(filter, pagination)` is ADMIN or SUPER_ADMIN and filters by time range, action, actor, resource and status; rows carry ids and non-personal metadata only
+- [ ] Administrator actions added by the 2026-10-04 amendments (commission, payout-account review, suspension, deletion requests, session revocation, alert acknowledgement, announcements) each write an audit row with the actor

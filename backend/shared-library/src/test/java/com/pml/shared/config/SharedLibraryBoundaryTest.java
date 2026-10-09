@@ -15,7 +15,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ET-PLT-001 R5 — {@code shared-library} carries contracts, not services.
+ * {@code shared-library} carries contracts, not services.
  *
  * <h2>Why a source scan rather than a context assertion</h2>
  * A stereotype in a library is invisible from inside the library: it only becomes a bean when
@@ -24,14 +24,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @Service} added here silently appears in all three — and a context test on this
  * module would not see it at all.
  *
- * <p>Hence lint-as-test: scan the source. ROADMAP lists R5 as asserted by this spec
- * <em>and by lint</em>, and this is the lint half.
+ * <p>Hence lint-as-test: scan the source.
  *
  * <h2>What replaces the stereotype</h2>
  * A library contributes beans through an {@code @AutoConfiguration} that the application can
  * override or exclude — an explicit offer rather than an implicit consequence of someone
  * else's scan. See {@link SharedPersistenceSupportAutoConfiguration}.
  */
+@Tag("L1")
 @Tag("ET-PLT-001")
 @DisplayName("ET-PLT-001-R5 · shared-library declares no service stereotypes")
 class SharedLibraryBoundaryTest {
@@ -52,7 +52,7 @@ class SharedLibraryBoundaryTest {
      *
      * <p>{@code AuthDirectiveAutoConfiguration} declares a nested {@code @DgsComponent} whose
      * only job is to register the {@code @auth} directive in DGS runtime wiring.
-     * {@code graphql/auth.graphqls} is explicitly on R5's allowlist, and this class is the
+     * {@code graphql/auth.graphqls} is explicitly on the shared-library allowlist, and this class is the
      * mechanism that makes that schema file work — a cross-cutting contract, not business
      * logic. It is contributed through an {@code @AutoConfiguration}, so it is an explicit
      * offer rather than a consequence of someone else's component scan.

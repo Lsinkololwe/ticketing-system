@@ -3,7 +3,6 @@ package com.pml.booking.service;
 import com.pml.booking.domain.enums.ReconciliationItemStatus;
 import com.pml.booking.domain.enums.ReconciliationStatus;
 import com.pml.booking.domain.enums.ReconciliationType;
-import com.pml.booking.domain.model.ReconciliationItem;
 import com.pml.booking.domain.model.ReconciliationRun;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -96,24 +95,6 @@ public interface ReconciliationService {
             String runBy
     );
 
-    /**
-     * Starts a gateway reconciliation from a settlement file.
-     *
-     * <p>Parses the settlement file and initiates reconciliation.</p>
-     *
-     * @param reconciliationDate The date to reconcile
-     * @param settlementFileContent Settlement file content (CSV or JSON)
-     * @param fileFormat           File format ("csv" or "json")
-     * @param runBy                User/system starting the run
-     * @return Created reconciliation run
-     */
-    Mono<ReconciliationRun> startGatewayReconciliationFromFile(
-            LocalDate reconciliationDate,
-            String settlementFileContent,
-            String fileFormat,
-            String runBy
-    );
-
     // ========================================================================
     // BANK RECONCILIATION
     // ========================================================================
@@ -190,8 +171,7 @@ public interface ReconciliationService {
             BigDecimal recordedBalance,
             BigDecimal calculatedBalance,
             BigDecimal variance,
-            boolean isBalanced,
-            List<String> discrepancyDetails
+            boolean isBalanced
     ) {}
 
     // ========================================================================
@@ -391,40 +371,6 @@ public interface ReconciliationService {
             String resolvedBy
     );
 
-    /**
-     * Resolves multiple items at once.
-     *
-     * @param runId       The reconciliation run ID
-     * @param resolutions Map of external ID to resolution
-     * @param resolvedBy  User resolving the items
-     * @return Updated reconciliation run
-     */
-    Mono<ReconciliationRun> resolveItems(
-            String runId,
-            Map<String, String> resolutions,
-            String resolvedBy
-    );
-
-    /**
-     * Creates an adjustment journal entry for a reconciliation item.
-     *
-     * <p>Used when the discrepancy requires a ledger correction.</p>
-     *
-     * @param runId           The reconciliation run ID
-     * @param externalId      The external record ID
-     * @param adjustmentAmount Amount to adjust
-     * @param description     Adjustment description
-     * @param approvedBy      Admin approving the adjustment
-     * @return Created journal entry ID
-     */
-    Mono<String> createAdjustmentEntry(
-            String runId,
-            String externalId,
-            BigDecimal adjustmentAmount,
-            String description,
-            String approvedBy
-    );
-
     // ========================================================================
     // RUN MANAGEMENT
     // ========================================================================
@@ -450,17 +396,6 @@ public interface ReconciliationService {
      * @return Failed reconciliation run
      */
     Mono<ReconciliationRun> failRun(String runId, String reason);
-
-    /**
-     * Cancels a reconciliation run.
-     *
-     * <p>Used when the run needs to be restarted with corrected data.</p>
-     *
-     * @param runId  The run ID
-     * @param reason Cancellation reason
-     * @return Cancelled reconciliation run
-     */
-    Mono<ReconciliationRun> cancelRun(String runId, String reason);
 
     // ========================================================================
     // QUERIES
@@ -515,24 +450,6 @@ public interface ReconciliationService {
      */
     Flux<ReconciliationRun> findRequiringReview();
 
-    /**
-     * Finds unmatched items across all runs.
-     *
-     * @param status Item status to filter by
-     * @return All unresolved items with the specified status
-     */
-    Flux<ReconciliationItemWithRun> findItemsByStatus(ReconciliationItemStatus status);
-
-    /**
-     * Reconciliation item with its parent run context.
-     */
-    record ReconciliationItemWithRun(
-            String runId,
-            ReconciliationType runType,
-            LocalDate reconciliationDate,
-            ReconciliationItem item
-    ) {}
-
     // ========================================================================
     // STATISTICS & REPORTING
     // ========================================================================
@@ -585,7 +502,6 @@ public interface ReconciliationService {
             int itemCount,
             int matchedCount,
             int unmatchedCount,
-            int resolvedCount,
             BigDecimal expectedTotal,
             BigDecimal actualTotal,
             BigDecimal variance,
@@ -602,26 +518,8 @@ public interface ReconciliationService {
             String internalId,
             BigDecimal externalAmount,
             BigDecimal internalAmount,
-            ReconciliationItemStatus status,
-            int daysPending
+            ReconciliationItemStatus status
     ) {}
-
-    // ========================================================================
-    // AUTOMATED SCHEDULING
-    // ========================================================================
-
-    /**
-     * Processes scheduled reconciliations.
-     *
-     * <p>Called by scheduler to run daily reconciliations:</p>
-     * <ul>
-     *   <li>Gateway reconciliation (after settlement time)</li>
-     *   <li>Escrow reconciliation (end of day)</li>
-     * </ul>
-     *
-     * @return Number of runs started
-     */
-    Mono<Integer> processScheduledReconciliations();
 
     /**
      * Sends alerts for reconciliations requiring attention.

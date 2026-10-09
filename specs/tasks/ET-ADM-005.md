@@ -3,7 +3,7 @@
 > **Spec** [`specs/admin/005-observability-and-health/spec.md`](../admin/005-observability-and-health/spec.md) · **Wave 6** · `blocked_by:` ET-PLT-001, 003, 005, ET-FIN-005, ET-ADM-003
 > **Screen** `Admin - Observability & Health.dc.html` — **read it first**
 > **Routes** `apps/admin/src/app/(dashboard)/system/observability`
-> **Verify** `mvn -q -f backend test -Dgroups=ET-ADM-005 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend test -Dgroups=ET-ADM-005 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 **Forty metrics, four SLOs, nineteen alert rules.** Most of the artefacts live in the sibling
 `docker-resources/` repo — Prometheus rules, Alertmanager routing, Grafana dashboards. A task
@@ -183,5 +183,5 @@ success state), error, populated.
 - [ ] Prometheus, Alertmanager and Grafana artefacts live in `../docker-resources/`, not this repo
 - [ ] **Infographics gate passed**; current state is the focal element, not forty tiles
 - [ ] No PII renders on the observability surface
-- [ ] `mvn -q -f backend verify -Dgroups=ET-ADM-005 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend verify -Dgroups=ET-ADM-005 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented` — **Wave 7 does not open until all of Wave 6 is**

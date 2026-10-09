@@ -34,7 +34,7 @@ export const MY_FINANCE_OVERVIEW = gql`
 
 export const MY_TRANSACTIONS = gql`
   query MyTransactions($filter: OrganizerTransactionFilterInput, $pagination: OffsetPaginationInput) {
-    myTransactionsOffsetPagination(filter: $filter, pagination: $pagination) {
+    myTransactions(filter: $filter, pagination: $pagination) {
       content {
         id
         type
@@ -59,7 +59,7 @@ export const MY_TRANSACTIONS = gql`
 
 export const PAYOUTS_BY_ORGANIZER = gql`
   query PayoutsByOrganizer($organizerId: String!, $pagination: OffsetPaginationInput) {
-    payoutRequestsByOrganizerOffsetPagination(organizerId: $organizerId, pagination: $pagination) {
+    payoutRequestsByOrganizer(organizerId: $organizerId, pagination: $pagination) {
       data {
         id
         requestId
@@ -116,25 +116,10 @@ export const BANK_ACCOUNTS_BY_ORGANIZER = gql`
 export const CREATE_PAYOUT_REQUEST = gql`
   mutation CreatePayoutRequest($input: CreatePayoutRequestInput!) {
     createPayoutRequest(input: $input) {
-      success
-      message
-      errors
-      data {
-        id
-        requestId
-        status
-        requestedAmount
-      }
-    }
-  }
-`;
-
-export const CANCEL_PAYOUT_REQUEST = gql`
-  mutation CancelPayoutRequest($payoutRequestId: ID!, $reason: String!) {
-    cancelPayoutRequest(payoutRequestId: $payoutRequestId, reason: $reason) {
-      success
-      message
-      errors
+      id
+      requestId
+      status
+      requestedAmount
     }
   }
 `;
@@ -142,12 +127,7 @@ export const CANCEL_PAYOUT_REQUEST = gql`
 export const CREATE_BANK_ACCOUNT = gql`
   mutation CreateBankAccount($input: CreateBankAccountInput!) {
     createBankAccount(input: $input) {
-      success
-      message
-      errors
-      data {
-        id
-      }
+      id
     }
   }
 `;
@@ -155,36 +135,22 @@ export const CREATE_BANK_ACCOUNT = gql`
 export const UPDATE_BANK_ACCOUNT = gql`
   mutation UpdateBankAccount($id: ID!, $input: UpdateBankAccountInput!) {
     updateBankAccount(id: $id, input: $input) {
-      success
-      message
-      errors
-      data {
-        id
-      }
+      id
     }
   }
 `;
 
 export const DELETE_BANK_ACCOUNT = gql`
   mutation DeleteBankAccount($id: ID!) {
-    deleteBankAccount(id: $id) {
-      success
-      message
-      errors
-    }
+    deleteBankAccount(id: $id)
   }
 `;
 
 export const SET_DEFAULT_BANK_ACCOUNT = gql`
   mutation SetDefaultBankAccount($id: ID!) {
     setDefaultBankAccount(id: $id) {
-      success
-      message
-      errors
-      data {
-        id
-        isDefault
-      }
+      id
+      isDefault
     }
   }
 `;

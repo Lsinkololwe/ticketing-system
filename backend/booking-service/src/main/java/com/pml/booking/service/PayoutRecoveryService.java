@@ -1,5 +1,7 @@
 package com.pml.booking.service;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.model.PayoutRequest;
 import com.pml.booking.repository.PayoutRequestRepository;
 import com.pml.booking.web.graphql.dto.stats.PayoutIssueTypeStats;
@@ -19,7 +21,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,6 +39,9 @@ import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
 public class PayoutRecoveryService {
 
     private final PayoutRequestRepository payoutRequestRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final ReactiveMongoTemplate mongoTemplate;
 
     private static final int MAX_RETRY_COUNT = 3;
@@ -100,54 +106,29 @@ public class PayoutRecoveryService {
     }
 
     /**
-     * Resume a stuck payout request.
-     */
-    public Mono<PayoutRequest> resumePayoutRequest(String payoutRequestId) {
-        return payoutRequestRepository.findById(payoutRequestId)
-                .switchIfEmpty(payoutRequestRepository.findByRequestId(payoutRequestId))
-                .flatMap(payoutRequest -> {
-                    if (!payoutRequest.isStuck()) {
-                        return Mono.error(new IllegalStateException(
-                                "Payout request is not stuck. Current status: " + payoutRequest.getStatus()));
-                    }
-
-                    if (!payoutRequest.canResume()) {
-                        return Mono.error(new IllegalStateException(
-                                "Payout request cannot be resumed. Max retries reached: " + payoutRequest.getRetryCount()));
-                    }
-
-                    payoutRequest.resume();
-                    return payoutRequestRepository.save(payoutRequest);
-                });
-    }
-
-    /**
      * Mark a payout request for review.
      */
     public Mono<PayoutRequest> markForReview(String payoutRequestId, String issueType, String notes) {
         return payoutRequestRepository.findById(payoutRequestId)
                 .switchIfEmpty(payoutRequestRepository.findByRequestId(payoutRequestId))
                 .flatMap(payoutRequest -> {
-                    payoutRequest.markForReview(issueType, notes);
+                    payoutRequest.markForReview(issueType, notes, clock.instant());
                     return payoutRequestRepository.save(payoutRequest);
                 });
     }
 
     /**
-     * Resolve a payout issue.
+     * Records how an operator resolved a payout's review issue.
+     *
+     * <p>A review annotation only. A payout's destination and status change through its
+     * {@code PayoutWorkflow} — a retry, or a new request to a verified account — never here.
      */
     public Mono<PayoutRequest> resolveIssue(String payoutRequestId, String resolutionType,
-                                            String resolvedBy, String notes, String newBankAccountId) {
+                                            String resolvedBy, String notes) {
         return payoutRequestRepository.findById(payoutRequestId)
                 .switchIfEmpty(payoutRequestRepository.findByRequestId(payoutRequestId))
                 .flatMap(payoutRequest -> {
-                    payoutRequest.resolveIssue(resolutionType, resolvedBy, notes);
-
-                    // If bank account was updated, update the reference
-                    if (newBankAccountId != null && !newBankAccountId.isBlank()) {
-                        payoutRequest.setBankAccountId(newBankAccountId);
-                    }
-
+                    payoutRequest.resolveIssue(resolutionType, resolvedBy, notes, clock.instant());
                     return payoutRequestRepository.save(payoutRequest);
                 });
     }
@@ -159,22 +140,8 @@ public class PayoutRecoveryService {
         return payoutRequestRepository.findById(payoutRequestId)
                 .switchIfEmpty(payoutRequestRepository.findByRequestId(payoutRequestId))
                 .flatMap(payoutRequest -> {
-                    payoutRequest.escalate(reason);
+                    payoutRequest.escalate(reason, clock.instant());
                     return payoutRequestRepository.save(payoutRequest);
-                });
-    }
-
-    /**
-     * Bulk retry failed payout requests.
-     */
-    public Flux<PayoutRequest> bulkRetryFailedPayouts(List<String> payoutRequestIds) {
-        return Flux.fromIterable(payoutRequestIds)
-                .flatMap(id -> payoutRequestRepository.findById(id)
-                        .switchIfEmpty(payoutRequestRepository.findByRequestId(id)))
-                .filter(payout -> payout.canRetry())
-                .flatMap(payout -> {
-                    payout.markForRetry("Bulk retry initiated");
-                    return payoutRequestRepository.save(payout);
                 });
     }
 
@@ -186,7 +153,7 @@ public class PayoutRecoveryService {
                 .flatMap(id -> payoutRequestRepository.findById(id)
                         .switchIfEmpty(payoutRequestRepository.findByRequestId(id)))
                 .flatMap(payout -> {
-                    payout.markForReview(issueType, notes);
+                    payout.markForReview(issueType, notes, clock.instant());
                     return payoutRequestRepository.save(payout);
                 });
     }
@@ -230,7 +197,7 @@ public class PayoutRecoveryService {
     }
 
     private Mono<Long> countRecentlyResolved() {
-        LocalDateTime since = LocalDateTime.now().minusDays(7);
+        Instant since = clock.instant().minus(Duration.ofDays(7));
         return payoutRequestRepository.countByResolvedAtAfter(since);
     }
 
@@ -245,7 +212,7 @@ public class PayoutRecoveryService {
                 project("total")
         );
 
-        return mongoTemplate.aggregate(aggregation, "booking_payout_requests", AmountResult.class)
+        return mongoTemplate.aggregate(aggregation, BookingCollections.PAYOUT_REQUESTS, AmountResult.class)
                 .next()
                 .map(result -> result.getTotal() != null ? result.getTotal() : BigDecimal.ZERO)
                 .defaultIfEmpty(BigDecimal.ZERO);
@@ -260,7 +227,7 @@ public class PayoutRecoveryService {
                 project("count", "totalAmount").and("_id").as("issueType")
         );
 
-        return mongoTemplate.aggregate(aggregation, "booking_payout_requests", IssueTypeCount.class)
+        return mongoTemplate.aggregate(aggregation, BookingCollections.PAYOUT_REQUESTS, IssueTypeCount.class)
                 .collectList()
                 .flatMap(counts -> {
                     int total = counts.stream().mapToInt(IssueTypeCount::getCount).sum();

@@ -12,13 +12,10 @@ import java.util.List;
  * minutes away and fails roughly one time in six.
  */
 public record PaymentInitiationResponse(
-        boolean success,
-        String message,
         String paymentIntentId,
         String transactionRef,
         String paymentStatus,
-        String reservationId,
-        List<String> errors
+        String reservationId
 ) {
 
     /** The prompt is out. Watch the reservation for the actual outcome. */
@@ -27,12 +24,10 @@ public record PaymentInitiationResponse(
                                                     String paymentStatus,
                                                     String reservationId) {
         return new PaymentInitiationResponse(
-                true,
-                "Payment prompt sent. Approve it on your phone to receive your tickets.",
-                paymentIntentId, transactionRef, paymentStatus, reservationId, List.of());
+                paymentIntentId, transactionRef, paymentStatus, reservationId);
     }
 
     public static PaymentInitiationResponse error(String message) {
-        return new PaymentInitiationResponse(false, message, null, null, null, null, List.of(message));
+        return new PaymentInitiationResponse(null, null, null, null);
     }
 }

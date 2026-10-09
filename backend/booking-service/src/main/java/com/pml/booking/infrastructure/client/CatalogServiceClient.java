@@ -1,5 +1,6 @@
 package com.pml.booking.infrastructure.client;
 
+import com.pml.shared.security.InternalServiceWebClients;
 import com.pml.booking.infrastructure.client.dto.*;
 import com.pml.shared.dto.EventSummaryDto;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -7,10 +8,8 @@ import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientRequestException;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -43,11 +42,9 @@ public class CatalogServiceClient {
     private final WebClient webClient;
 
     public CatalogServiceClient(
-            WebClient.Builder webClientBuilder,
-            @Value("${services.catalog.url:http://localhost:8081}") String catalogServiceUrl) {
-        this.webClient = webClientBuilder
-                .baseUrl(catalogServiceUrl)
-                .build();
+            InternalServiceWebClients clients,
+            @Value("${services.catalog.url:http://localhost:8085}") String catalogServiceUrl) {
+        this.webClient = clients.to(catalogServiceUrl);
     }
 
     /**
@@ -76,48 +73,6 @@ public class CatalogServiceClient {
         return Mono.empty();
     }
 
-    /**
-     * Get ticket category for an event
-     */
-    public Mono<EventSummaryDto.TicketCategoryDto> getTicketCategory(String eventId, String categoryCode) {
-        log.debug("Fetching ticket category {} for event: {}", categoryCode, eventId);
-        return webClient.get()
-                .uri("/api/internal/events/{id}/categories/{code}", eventId, categoryCode)
-                .retrieve()
-                .bodyToMono(EventSummaryDto.TicketCategoryDto.class)
-                .doOnSuccess(cat -> log.debug("Category fetched successfully: {}/{}", eventId, categoryCode))
-                .doOnError(error -> log.error("Failed to fetch category: {}/{}", eventId, categoryCode, error));
-    }
-
-    /**
-     * Update sold tickets count for an event
-     */
-    public Mono<Void> updateSoldTickets(String eventId, int count) {
-        log.debug("Updating sold tickets for event: {} by {}", eventId, count);
-        return webClient.put()
-                .uri("/api/internal/events/{id}/sold-tickets", eventId)
-                .bodyValue(new UpdateSoldTicketsRequest(count))
-                .retrieve()
-                .bodyToMono(Void.class)
-                .doOnSuccess(v -> log.debug("Sold tickets updated for event: {}", eventId))
-                .doOnError(error -> log.error("Failed to update sold tickets: {}", eventId, error));
-    }
-
-    /**
-     * Check if event is available for purchase
-     */
-    public Mono<Boolean> isEventAvailable(String eventId) {
-        log.debug("Checking event availability: {}", eventId);
-        return webClient.get()
-                .uri("/api/internal/events/{id}/available", eventId)
-                .retrieve()
-                .bodyToMono(Boolean.class)
-                .doOnSuccess(available -> log.debug("Event {} availability: {}", eventId, available))
-                .doOnError(error -> log.error("Failed to check availability: {}", eventId, error));
-    }
-
-    public record UpdateSoldTicketsRequest(int count) {}
-
     // ========================================================================
     // INVENTORY MANAGEMENT OPERATIONS
     // ========================================================================
@@ -141,24 +96,46 @@ public class CatalogServiceClient {
     public Mono<InventoryReservationResult> reserveInventory(String tierId, int quantity, String reservationId) {
         log.debug("Reserving {} tickets for tier {} (reservation: {})", quantity, tierId, reservationId);
 
+        // exchangeToMono, not retrieve().onStatus(...). The distinction this makes is the whole
+        // point of the method:
+        //
+        //   4xx — a BUSINESS answer. Catalog returns 409 with a well-formed
+        //         InventoryReservationResult when a tier cannot satisfy the request. "Sold out" is
+        //         the platform working, and it must reach the caller as success=false. It must NOT
+        //         reach the circuit breaker: tiers sell out during an on-sale, which is precisely
+        //         when opening the breaker would fail every OTHER reservation too.
+        //
+        //   5xx — an INFRASTRUCTURE failure. Raised, so the breaker counts it and the fallback
+        //         returns a refusal. Failing closed here is deliberate: reserving against
+        //         inventory nobody confirmed is how a venue oversells.
+        //
+        // The previous form read the 409 body, logged it, and then returned Mono.empty() from the
+        // onStatus handler. An empty handler suppresses the error, so WebClient continued to a body
+        // that had already been consumed, doOnSuccess ran with null, and an ordinary sold-out threw
+        // a NullPointerException the breaker counted as a failure.
         return webClient.post()
                 .uri("/api/internal/inventory/tiers/{tierId}/reserve", tierId)
                 .bodyValue(new InventoryReservationRequest(quantity, reservationId))
-                .retrieve()
-                .onStatus(HttpStatusCode::is4xxClientError, response ->
-                        response.bodyToMono(InventoryReservationResult.class)
-                                .flatMap(result -> {
-                                    log.warn("Reservation failed for tier {}: {}", tierId, result.errorMessage());
-                                    return Mono.just(result);
-                                })
-                                .then(Mono.empty())
-                )
-                .bodyToMono(InventoryReservationResult.class)
-                .doOnSuccess(result -> {
+                .exchangeToMono(response -> {
+                    if (response.statusCode().is5xxServerError()) {
+                        return response.releaseBody().then(Mono.error(new IllegalStateException(
+                                "catalog returned " + response.statusCode()
+                                        + " reserving tier " + tierId)));
+                    }
+                    return response.bodyToMono(InventoryReservationResult.class)
+                            // A 4xx with no parseable body is still a refusal, not a success. The
+                            // switchIfEmpty is what stops an unreadable response becoming a
+                            // reservation against inventory nobody checked.
+                            .switchIfEmpty(Mono.fromSupplier(() -> InventoryReservationResult.failure(
+                                    tierId, "catalog returned " + response.statusCode()
+                                            + " with no readable body")));
+                })
+                .doOnNext(result -> {
                     if (result.success()) {
                         log.debug("Inventory reserved for tier {}: {} tickets", tierId, quantity);
                     } else {
-                        log.warn("Inventory reservation failed for tier {}: {}", tierId, result.errorMessage());
+                        log.warn("Inventory reservation refused for tier {}: {}",
+                                tierId, result.errorMessage());
                     }
                 });
     }
@@ -280,7 +257,7 @@ public class CatalogServiceClient {
 
         return webClient.post()
                 .uri("/api/internal/inventory/tiers/{tierId}/restore", tierId)
-                .bodyValue(new InventoryRestoreRequest(quantity, reason, null))
+                .bodyValue(new InventoryRestoreRequest(quantity, reason))
                 .retrieve()
                 .bodyToMono(InventoryOperationResult.class)
                 .doOnSuccess(result -> {

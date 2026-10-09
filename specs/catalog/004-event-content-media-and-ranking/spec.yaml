@@ -1,0 +1,100 @@
+id: ET-CAT-004
+title: Event page content, the image library, hidden tiers and the ranked feed
+status: in-progress
+area: CAT
+service: catalog-service
+subgraph: catalog
+owner: lazarous
+created: 2026-10-04
+priority: must
+wave: 2
+blocked_by: [ET-CAT-001, ET-CAT-002, ET-CAT-003]
+conformance: "organizer event editor and buyer event page · admin media moderation"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/catalog/001-event-lifecycle/spec.md
+  - specs/catalog/002-ticket-tiers-and-inventory/spec.md
+  - specs/catalog/003-locations-and-reference-data/spec.md
+  - specs/_platform/005-error-contract/spec.md
+  - specs/_platform/015-durable-execution/spec.md
+
+persistence:
+  collections:
+    - catalog_media
+    - catalog_events        # new optional fields; see spec.md §4
+    - catalog_ticket_tiers  # category
+  indexes:
+    - "catalog_events {status,publishedAt desc} compound"
+    - "catalog_events {status,lowestTicketPrice,eventDateTime} compound"
+    - "catalog_events {status,lowestTicketPrice desc,eventDateTime} compound"
+    - "catalog_events {status,soldTickets desc,eventDateTime} compound"
+    - "catalog_events {organizationId,createdAt desc,_id desc} compound"
+    - "catalog_media {fileKey} unique"
+    - "catalog_media {organizationId,createdAt desc,_id desc} compound"
+    - "catalog_media {kind,status,createdAt desc} compound"
+    - "catalog_media {kind,purpose,categoryCode,active} compound"
+  redis_keys:
+    - "rl:tier-unlock:{userId}:{eventId}  STRING  PT15M  — failed-guess counter for hidden-tier access codes"
+    - "rl:catalog:public-graphql:{clientAddress}  STRING  PT1M  — signed-out GraphQL request counter (R13)"
+
+workflows:
+  - "EventPublishScheduleWorkflow  event-publish/{eventId}  catalog-lifecycle  USE_EXISTING via signal-with-start; signals reschedule, cancel; timer to publishAt"
+schedules: []
+
+events:
+  module: []
+  bus: []          # every change here is a write inside catalog; no new cross-service fact
+  consumes: []
+  topics: []
+
+graphql:
+  schema: backend/catalog-service/src/main/resources/graphql/schema.graphqls
+  queries:
+    - "discoverEvents(filter, pagination, sort)   PUBLIC        EventConnection!   # sort: SOONEST NEWEST PRICE_ASC PRICE_DESC POPULAR"
+    - "trendingEvents(first)                      PUBLIC        [Event!]!"
+    - "recommendedEvents(basedOnEventIds, first)  CUSTOMER      [EventRecommendation!]!"
+    - "myEventsConnection(filter, pagination)     ORGANIZER     EventConnection!"
+    - "myMedia(filter, pagination)                ORGANIZER     MediaAssetConnection!"
+    - "stockImages(filter, pagination)            ORGANIZER     StockImageConnection!"
+    - "mediaAssets(filter, pagination)            ADMIN         MediaAssetOffsetPage!"
+  mutations:
+    - "unlockTierWithAccessCode(eventId, accessCode)  CUSTOMER   TicketTier!"
+    - "cancelScheduledPublish(eventId)                ORGANIZER  Event!"
+    - "uploadMedia(input)                             ORGANIZER  MediaAsset!"
+    - "updateMedia(id, input)                         ORGANIZER  MediaAsset!"
+    - "deleteMedia(id)                                ORGANIZER  ID!"
+    - "flagMedia(id, reason)                          ADMIN      MediaAsset!"
+    - "removeMedia(id, reason)                        ADMIN      MediaAsset!"
+    - "restoreMedia(id)                               ADMIN      MediaAsset!"
+    - "overrideEventBanner(eventId, mediaId, reason)  ADMIN      Event!"
+    - "uploadStockImage(input)                        ADMIN      StockImage!"
+    - "updateStockImage(id, input)                    ADMIN      StockImage!"
+    - "deleteStockImage(id)                           ADMIN      ID!"
+
+rest:
+  - "POST /api/v1/media         multipart: file, title, altText, eventId   ORGANIZER  201 {id,url,fileName,contentType,sizeBytes,status}"
+  - "POST /api/v1/media/stock   multipart: file, purpose, categoryCode, title, altText   ADMIN   201 {...}"
+  - "GET  /media/files/{key}    PUBLIC   the picture, while moderation has not removed it"
+  - "POST /api/internal/tiers/{tierId}/access-code/verify   INTERNAL   {valid}   # booking asks before it reserves a hidden tier"
+
+errors:
+  - MEDIA_UNKNOWN
+  - MEDIA_STATE_INVALID
+
+config:
+  file-storage.type: local | s3
+  catalog.media.public-base-url: http://localhost:8085
+  catalog.media.max-assets-per-organization: 500
+  catalog.tier.unlock.max-attempts: 5
+  catalog.tier.unlock.window: PT15M
+
+# ---- executable predicate: run verbatim by the verify stage ----
+verify:
+  - mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-004 -DfailIfNoTests=false
+  - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
+
+risks:
+  - "The GraphQL upload carries the picture as base64 (5 MB cap, about 6.7 MB of text) and the gateway's GraphQL ceiling is 1 MB, so through the gateway only small pictures fit that path; the multipart endpoint is the way for the rest, and the gateway has no route to it yet."
+  - "Event sales totals (soldTickets, grossSales, commissionAmount) are moved by a second write after the tier's conditional update. A crash between the two leaves them off by one sale until the next tier write recomputes soldTickets; grossSales and commissionAmount have no recompute because the ledger in booking is their only source."
+  - "Each sale bumps the event's version so an organizer's stale save cannot write old totals back; an edit during a hot on-sale can therefore fail with an optimistic-lock conflict and need a retry."
+  - "A removed image stops being served at the origin at once, but a CDN in front keeps it for the response's one-hour max-age."

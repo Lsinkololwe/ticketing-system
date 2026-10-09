@@ -41,10 +41,10 @@ the whole order, with the ticket count and a link. Coalescing is on the reservat
 short window, because the events arrive within milliseconds of each other but not
 simultaneously.
 
-**Mass sends are jobs with a rate, not loops.** Cancelling an event with ten thousand
-holders is a batched job at a configured rate, resumable, with progress. A loop publishing
-ten thousand notification events saturates the queue, the providers rate-limit, and the
-retry sweep then re-attempts thousands of throttled sends.
+**Mass sends are workflows with a rate, not loops.** Cancelling an event with ten thousand
+holders is a `MassSendWorkflow` sending batches at a configured rate by timer, resumable, with
+progress, pausable by update. A loop starting ten thousand notifications at once saturates the
+queue, the providers rate-limit, and each message's own retries then multiply the throttled sends.
 
 **Every actor has an hourly bound, and transactional messages are exempt from suppression
 but not from ordering.** A user cannot receive more than `notification.per-user-hourly-cap`
@@ -52,8 +52,8 @@ optional messages an hour. Transactional messages are never suppressed by the ca
 when the cap is exceeded, optional messages are dropped rather than queued, because a
 reminder delivered three hours late is noise.
 
-**Reminders are scheduled state, not a cron scanning every event.** Each ticket gets
-reminder rows at 24 hours and 1 hour before `startsAt`. A reschedule moves them; a
+**Reminders are durable timers, not a cron scanning every event.** Each ticket gets
+reminder rows at 24 hours and 1 hour before `startsAt`, each carried by a `ReminderWorkflow` timer. A reschedule moves them; a
 cancellation deletes them; a refund deletes them. Scanning every event on every tick
 re-derives the same answer thousands of times and gets it wrong the moment a date changes.
 
@@ -65,7 +65,7 @@ digest; only exceptional facts — a payout, a chargeback, a cancellation — ar
 
 - *Each capability calling the notification service where it likes.* Nobody can answer what the platform sends.
 - *One message per ticket in a multi-ticket order.* A four-ticket purchase sends four confirmations and a payment receipt.
-- *A loop over ticket holders for a mass send.* Saturates the queue and triggers provider rate limits, which the retry sweep then amplifies.
+- *A loop over ticket holders for a mass send.* Saturates the queue and triggers provider rate limits, which per-message retries then amplify.
 - *A cron scanning every event for reminders.* Re-derives the same answer thousands of times and is wrong the moment a date moves.
 - *Per-sale notifications to organizers.* A selling event becomes a denial of service against its own organizer.
 - *Queueing optional messages past the cap.* A reminder delivered three hours late is noise.
@@ -81,7 +81,7 @@ call the notification service directly.
 - [ ] Every row names the triggering event, the template key, the category and the recipient
 - [ ] No service outside the notification module calls `NotificationService.send`
 - [ ] Every template key in the registry exists in [ET-NTF-001](../001-notification-transport/) §4
-- [ ] Every triggering event exists in [ET-PLT-003](../../_platform/003-event-contract/) §4 or is a declared module event
+- [ ] Every triggering event exists in [ET-PLT-003](../../_platform/003-event-contract/) §4 or is a step of a workflow in [ET-PLT-015](../../_platform/015-durable-execution/) §4
 - [ ] Adding a message changes this spec's §4 in the same commit as the trigger
 - [ ] A test asserts the set of templates actually sent equals the registry
 
@@ -135,7 +135,7 @@ THE SYSTEM SHALL schedule reminders per ticket and SHALL update them when the ev
 - [ ] `catalog.EventCancelled` deletes every reminder for that event
 - [ ] A refunded or transferred-away ticket deletes the sender's reminders; a claimed transfer creates the recipient's
 - [ ] A reminder whose scheduled time is already past when created is dropped, not sent late
-- [ ] The dispatch sweep claims due reminders under a lock and is idempotent
+- [ ] Each reminder's `ReminderWorkflow` fires at its offset and is idempotent — its send carries the key `reminder:{ticketId}:{offset}`; no dispatch sweep or lock exists
 - [ ] A test reschedules an event forward and backward and asserts the reminders track it
 
 ### ET-NTF-002-R6 · Organizers receive digests, not a message per sale
@@ -194,8 +194,9 @@ the event payload.
 | 15 | organization rejected | `organization.rejected` | `ORGANIZATION` | applicant |
 | 16 | changes requested | `organization.changes-requested` | `ORGANIZATION` | applicant |
 | 17 | `identity.OrganizationSuspended` | `organization.suspended` | `ORGANIZATION` | owner |
-| 18 | event approved | `event.approved` | `ORGANIZATION` | submitter |
-| 19 | event rejected | `event.rejected` | `ORGANIZATION` | submitter |
+| 18 | event approved — catalog's approval workflow, `POST /api/internal/notifications/approvals` | `event.approved` | `ORGANIZATION` | the event's organizer |
+| 19 | event rejected — as row 18 | `event.rejected` | `ORGANIZATION` | the event's organizer |
+| 19a | changes requested on an event — as row 18 | `event.changes-requested` | `ORGANIZATION` | the event's organizer |
 | 20 | `InvitationCreatedEvent` | `team.invitation` | `TEAM_INVITE` | invitee |
 | 21 | `TeamMemberJoinedEvent` | `team.accepted` | `TEAM_INVITE` | inviter |
 | 22 | `identity.MemberRoleChanged` | `team.role-changed` | `TEAM_INVITE` | the member |
@@ -213,9 +214,11 @@ the event payload.
 | # | Triggering fact | Template | Category | Recipient |
 |---|---|---|---|---|
 | 31 | `OrganizationSubmittedEvent` | `admin.application-pending` | `ORGANIZATION` | the approvals queue |
-| 32 | `EventSubmittedEvent` | `admin.event-pending` | `ORGANIZATION` | the approvals queue |
+| 32 | an event submitted or resubmitted — as row 18 | `admin.event-pending` | `ORGANIZATION` | every active platform `ADMIN` (ROADMAP D-36) |
+| 33 | a chargeback undecided 24 h before its deadline — booking's `POST /api/internal/finance-leads/notifications` | `finance.chargeback-undecided` | `PAYOUT` | every `FINANCE_LEAD` holder (ROADMAP D-32) |
+| 34 | a refund waiting 2 and 5 days for approval — booking's `POST /api/internal/finance-leads/notifications` | `finance.refund-waiting` | `PAYOUT` | every `FINANCE_LEAD` holder (ROADMAP D-32) |
 
-**Thirty-two rows.** No other message exists. Rows 7 and 8 are mass sends (R3); rows 12, 13
+**Thirty-four rows.** No other message exists. Rows 7 and 8 are mass sends (R3); rows 12, 13
 and 30 are scheduled (R5, R6).
 
 `otp.login` is deliberately absent — it is requested directly by
@@ -254,8 +257,8 @@ again.
 | transfer claimed | `CANCELLED` for the sender, created for the recipient |
 | scheduled time already past at creation | `SKIPPED` |
 
-Dispatch is a sweep under `lock:sweep:reminder-dispatch` every minute, claiming
-`SCHEDULED` rows whose `scheduledFor` has passed.
+Dispatch is the reminder's `ReminderWorkflow` (`reminder/{reminderId}`, `identity-notify`): it
+sleeps to each offset, a reschedule wakes it to recompute, and a moment already past is dropped.
 
 ### Mass send
 
@@ -309,13 +312,15 @@ Subgraph `identity`.
 `triggerRegistry` returns the §4 table as data, so an operator can answer *what does this
 platform send* without reading a spec.
 
-### Sweeps
+### Workflows and Schedules
 
-| Sweep | Lock | Interval | Purpose |
-|---|---|---|---|
-| reminder dispatch | `lock:sweep:reminder-dispatch` | `PT1M` | R5 |
-| mass send | `lock:sweep:mass-send` | `PT10S` | R3, rated |
-| digest | `lock:sweep:organizer-digest` | hourly, fires at the local digest hour | R6 |
+| Mechanism | Id | Queue | Cadence | Purpose |
+|---|---|---|---|---|
+| `ReminderWorkflow` | `reminder/{reminderId}` | `identity-notify` | timers at −24 h and −1 h | R5 |
+| `MassSendWorkflow` | `mass-send/{massSendId}` | `identity-notify` | a batch at the configured rate, then a timer; `pause` and `resume` updates | R3, rated |
+| Schedule `organizer-digest` → `OrganizerDigestWorkflow` | `organizer-digest/scheduled` | `identity-notify` | hourly, digesting organizers whose local digest hour it is; overlap `SKIP` | R6 |
+
+`pauseMassSend` and `resumeMassSend` are updates on the mass send's workflow.
 
 ### Configuration
 
@@ -364,16 +369,16 @@ caller.
   - parallel-safe: yes
   - depends: T1
 
-- [ ] **T5 · Reminder rows, their lifecycle consumers and the dispatch sweep**
+- [ ] **T5 · Reminder rows, their lifecycle consumers and the reminder workflow**
   - requirements: R5
-  - files: `backend/identity-service/.../service/impl/EventReminderService.java`
+  - files: `backend/identity-service/.../service/impl/EventReminderService.java`, `.../workflow/reminder/ReminderWorkflowImpl.java`
   - verify: reminders track a reschedule in both directions; a past-due creation skips
   - parallel-safe: yes
   - depends: T1
 
 - [ ] **T6 · The organizer digest and its empty-digest suppression**
   - requirements: R6
-  - files: `backend/identity-service/.../scheduler/OrganizerDigestSweeper.java`
+  - files: `backend/identity-service/.../workflow/digest/OrganizerDigestWorkflowImpl.java`
   - verify: 500 sales yield one digest; no activity yields none
   - parallel-safe: yes
   - depends: T1

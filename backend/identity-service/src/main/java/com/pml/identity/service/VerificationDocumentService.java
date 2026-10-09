@@ -92,9 +92,4 @@ public interface VerificationDocumentService {
      * Delete document
      */
     Mono<Void> delete(String documentId);
-
-    /**
-     * Delete all documents for organization
-     */
-    Mono<Void> deleteByOrganization(String organizationId);
 }

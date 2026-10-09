@@ -3,7 +3,7 @@ package com.pml.booking.web.graphql.dto;
 import com.pml.booking.domain.enums.ChargebackReason;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Input for receiving a chargeback from a payment provider.
@@ -37,7 +37,7 @@ public record ReceiveChargebackInput(
     BigDecimal chargebackFee,
     String currency,
     ChargebackReason reason,
-    LocalDateTime responseDeadline
+    Instant responseDeadline
 ) {
     /**
      * Constructor with validation.

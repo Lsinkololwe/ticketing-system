@@ -1,16 +1,13 @@
 package com.pml.identity.repository;
 
+import java.util.Collection;
 import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.domain.model.EventAccessGrant;
-import com.pml.identity.domain.valueobject.EventRole;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.mongodb.repository.Query;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.time.Instant;
 
 /**
  * Event Access Grant Repository
@@ -29,11 +26,6 @@ public interface EventAccessGrantRepository extends ReactiveMongoRepository<Even
     Mono<Boolean> existsByUserIdAndEventId(String userId, String eventId);
 
     /**
-     * Check if user has active access to event
-     */
-    Mono<Boolean> existsByUserIdAndEventIdAndStatus(String userId, String eventId, AccessGrantStatus status);
-
-    /**
      * Find all grants for an event
      */
     Flux<EventAccessGrant> findByEventId(String eventId);
@@ -44,18 +36,17 @@ public interface EventAccessGrantRepository extends ReactiveMongoRepository<Even
     Flux<EventAccessGrant> findByEventId(String eventId, Pageable pageable);
 
     /**
-     * Find grants for an event by status
-     */
-    Flux<EventAccessGrant> findByEventIdAndStatus(String eventId, AccessGrantStatus status);
-
-    /**
-     * Find grants for an event by status with pagination
-     */
-    Flux<EventAccessGrant> findByEventIdAndStatus(String eventId, AccessGrantStatus status, Pageable pageable);
-
-    /**
      * Find all grants for a user
      */
+    /**
+     * Every grant one user holds for one organization's events.
+     *
+     * <p>Scoped to the organization rather than the user, because a member removed from one
+     * organization keeps whatever access they hold in another — revoking by user alone would
+     * take access they were never removed from.
+     */
+    Flux<EventAccessGrant> findByUserIdAndOrganizationId(String userId, String organizationId);
+
     Flux<EventAccessGrant> findByUserId(String userId);
 
     /**
@@ -68,48 +59,12 @@ public interface EventAccessGrantRepository extends ReactiveMongoRepository<Even
      */
     Flux<EventAccessGrant> findByOrganizationId(String organizationId);
 
-    /**
-     * Find event owner
-     */
-    Mono<EventAccessGrant> findByEventIdAndEventRole(String eventId, EventRole eventRole);
+    Mono<EventAccessGrant> findByIdAndUserId(String id, String userId);
 
-    /**
-     * Find grants by role for an event
-     */
-    Flux<EventAccessGrant> findByEventIdAndEventRoleAndStatus(
-            String eventId,
-            EventRole eventRole,
-            AccessGrantStatus status
-    );
+    Mono<EventAccessGrant> findByIdAndOrganizationIdIn(String id, Collection<String> organizationIds);
 
-    /**
-     * Count grants for an event
-     */
-    Mono<Long> countByEventId(String eventId);
+    Flux<EventAccessGrant> findByEventIdAndOrganizationIdIn(String eventId, Collection<String> organizationIds);
 
-    /**
-     * Count active grants for an event
-     */
-    Mono<Long> countByEventIdAndStatus(String eventId, AccessGrantStatus status);
-
-    /**
-     * Find expired grants (for cleanup)
-     */
-    @Query("{ 'status': 'ACTIVE', 'expiresAt': { $lt: ?0, $ne: null } }")
-    Flux<EventAccessGrant> findExpiredGrants(Instant now);
-
-    /**
-     * Delete all grants for an event
-     */
-    Mono<Void> deleteByEventId(String eventId);
-
-    /**
-     * Delete all grants for an organization
-     */
-    Mono<Void> deleteByOrganizationId(String organizationId);
-
-    /**
-     * Find active grants that have expired
-     */
-    Flux<EventAccessGrant> findByStatusAndExpiresAtBefore(AccessGrantStatus status, Instant expiresAt);
+    Flux<EventAccessGrant> findByUserIdAndEventIdAndOrganizationIdIn(String userId, String eventId,
+                                                                     Collection<String> organizationIds);
 }

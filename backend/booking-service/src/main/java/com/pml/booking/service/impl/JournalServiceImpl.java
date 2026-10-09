@@ -1,25 +1,24 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.constants.PlatformTime;
+
 import com.pml.booking.domain.enums.JournalEntryStatus;
 import com.pml.booking.domain.enums.JournalEntryType;
 import com.pml.booking.domain.model.JournalEntry;
 import com.pml.booking.domain.model.JournalLine;
-import com.pml.booking.event.domain.JournalEntryPostedEvent;
 import com.pml.booking.exception.UnbalancedJournalEntryException;
 import com.pml.booking.repository.JournalEntryRepository;
 import com.pml.booking.service.ChartOfAccountsService;
 import com.pml.booking.service.JournalService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,8 +52,10 @@ import java.util.stream.Collectors;
 public class JournalServiceImpl implements JournalService {
 
     private final JournalEntryRepository journalRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final ChartOfAccountsService chartOfAccountsService;
-    private final ApplicationEventPublisher eventPublisher;
 
     private static final DateTimeFormatter ENTRY_NUMBER_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM");
@@ -67,8 +68,8 @@ public class JournalServiceImpl implements JournalService {
     @Transactional
     public Mono<JournalEntry> createEntry(
             String correlationId,
-            LocalDateTime entryDate,
-            LocalDateTime effectiveDate,
+            Instant entryDate,
+            Instant effectiveDate,
             String description,
             JournalEntryType type,
             List<JournalLine> lines,
@@ -88,8 +89,8 @@ public class JournalServiceImpl implements JournalService {
                     JournalEntry entry = JournalEntry.builder()
                             .entryNumber(entryNumber)
                             .correlationId(correlationId)
-                            .entryDate(entryDate.toLocalDate())
-                            .effectiveDate(effectiveDate != null ? effectiveDate.toLocalDate() : entryDate.toLocalDate())
+                            .entryDate(PlatformTime.dateAt(entryDate))
+                            .effectiveDate(effectiveDate != null ? PlatformTime.dateAt(effectiveDate) : PlatformTime.dateAt(entryDate))
                             .description(description)
                             .type(type)
                             .lines(new ArrayList<>(lines))
@@ -116,7 +117,7 @@ public class JournalServiceImpl implements JournalService {
     @Transactional
     public Mono<JournalEntry> createAndPostEntry(
             String correlationId,
-            LocalDateTime entryDate,
+            Instant entryDate,
             String description,
             JournalEntryType type,
             List<JournalLine> lines,
@@ -145,25 +146,12 @@ public class JournalServiceImpl implements JournalService {
                     // Validate entry can be posted
                     return validateEntry(entry)
                             .then(Mono.defer(() -> {
-                                entry.post(postedBy);
+                                entry.post(postedBy, clock.instant());
                                 return journalRepository.save(entry)
-                                        .doOnSuccess(posted -> {
-                                            log.info("Journal entry posted: {} at {}",
-                                                    posted.getEntryNumber(), posted.getPostedAt());
-                                            // Publish event for downstream consumers
-                                            eventPublisher.publishEvent(JournalEntryPostedEvent.of(posted));
-                                        });
+                                        .doOnSuccess(posted -> log.info("Journal entry posted: {} at {}",
+                                                posted.getEntryNumber(), posted.getPostedAt()));
                             }));
                 });
-    }
-
-    @Override
-    @Transactional
-    public Mono<JournalEntry> postEntryByNumber(String entryNumber, String postedBy) {
-        return journalRepository.findByEntryNumber(entryNumber)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException(
-                        "Journal entry not found: " + entryNumber)))
-                .flatMap(entry -> postEntry(entry.getId(), postedBy));
     }
 
     // ========================================================================
@@ -190,14 +178,14 @@ public class JournalServiceImpl implements JournalService {
                                 "Entry already reversed by: " + originalEntry.getReversedByEntryId()));
                     }
 
-                    return generateEntryNumber(LocalDateTime.now())
+                    return generateEntryNumber(clock.instant())
                             .flatMap(reversalNumber -> {
                                 // Create reversal entry with generated entry number
                                 JournalEntry reversalEntry = originalEntry.createReversal(
                                         reversalNumber,
                                         reason,
                                         reversedBy
-                                );
+                                , PlatformTime.dateAt(clock.instant()));
 
                                 // Save reversal entry
                                 return journalRepository.save(reversalEntry)
@@ -206,7 +194,7 @@ public class JournalServiceImpl implements JournalService {
                                             originalEntry.markReversed(
                                                     savedReversal.getId(),
                                                     reversedBy
-                                            );
+                                            , clock.instant());
 
                                             // Save original with reversed status
                                             return journalRepository.save(originalEntry)
@@ -219,15 +207,6 @@ public class JournalServiceImpl implements JournalService {
                                         });
                             });
                 });
-    }
-
-    @Override
-    @Transactional
-    public Mono<JournalEntry> reverseEntryByNumber(String entryNumber, String reason, String reversedBy) {
-        return journalRepository.findByEntryNumber(entryNumber)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException(
-                        "Journal entry not found: " + entryNumber)))
-                .flatMap(entry -> reverseEntry(entry.getId(), reason, reversedBy));
     }
 
     // ========================================================================
@@ -284,8 +263,8 @@ public class JournalServiceImpl implements JournalService {
     // ========================================================================
 
     @Override
-    public Mono<String> generateEntryNumber(LocalDateTime entryDate) {
-        String prefix = "JE-" + entryDate.format(ENTRY_NUMBER_FORMAT) + "-";
+    public Mono<String> generateEntryNumber(Instant entryDate) {
+        String prefix = "JE-" + PlatformTime.format(entryDate, ENTRY_NUMBER_FORMAT) + "-";
 
         // Find the highest entry number for this month
         return journalRepository.findFirstByEntryNumberStartingWithOrderByEntryNumberDesc(prefix)
@@ -330,18 +309,5 @@ public class JournalServiceImpl implements JournalService {
                 .collect(Collectors.toList());
 
         return chartOfAccountsService.validateAccountCodes(accountCodes);
-    }
-
-    /**
-     * Calculates the running balance impact for each line.
-     * Used for account statement generation.
-     *
-     * @param lines Journal lines
-     * @return Lines with balance impact calculated
-     */
-    private List<JournalLine> calculateBalanceImpacts(List<JournalLine> lines) {
-        // This would be used for statement generation
-        // Each line's impact depends on the account's normal balance
-        return lines;
     }
 }

@@ -1,6 +1,6 @@
 package com.pml.booking.infrastructure.gateway;
 
-import com.pml.booking.infrastructure.gateway.domain.MobileNetwork;
+import com.pml.booking.infrastructure.gateway.model.MobileNetwork;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -56,31 +56,11 @@ public class GatewayProperties {
         return primaryProviders.getOrDefault(network.name(), "pawapay");
     }
 
-    /**
-     * Set the primary provider for a mobile network.
-     *
-     * @param network    Mobile network
-     * @param providerId Provider ID
-     */
-    public void setPrimaryProvider(MobileNetwork network, String providerId) {
-        primaryProviders.put(network.name(), providerId);
-    }
-
     @Data
     public static class Fallback {
         /**
          * Whether to attempt fallback to other providers when primary is unavailable.
          */
         private boolean enabled = true;
-
-        /**
-         * Maximum number of fallback providers to try.
-         */
-        private int maxRetries = 2;
-
-        /**
-         * Timeout in milliseconds for provider health checks.
-         */
-        private long healthCheckTimeoutMs = 5000;
     }
 }

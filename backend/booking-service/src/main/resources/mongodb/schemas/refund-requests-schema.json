@@ -43,7 +43,7 @@
       },
       "organizerId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "OWASP A03 - ObjectId pattern validation"
       },
       "organizationId": {
@@ -53,7 +53,7 @@
       },
       "buyerId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "OWASP A03 - ObjectId pattern validation"
       },
       "requestId": {
@@ -85,7 +85,8 @@
           "PROCESSING",
           "COMPLETED",
           "FAILED",
-          "REJECTED"
+          "REJECTED",
+          "CANCELLED"
         ],
         "description": "OWASP A04 - Enum constraint for status"
       },
@@ -96,7 +97,13 @@
           "EVENT_CANCELLED",
           "DUPLICATE_CHARGE",
           "FRAUD",
-          "OTHER"
+          "OTHER",
+          "USER_REQUESTED",
+          "ADMIN_INITIATED",
+          "SYSTEM_AUTOMATIC",
+          "TICKET_EXPIRED",
+          "FULL",
+          "PARTIAL"
         ],
         "description": "OWASP A04 - Enum constraint for request type"
       },
@@ -209,6 +216,20 @@
           "null"
         ],
         "maxLength": 100
+      },
+      "commissionShare": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "escrowDebit": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "minimum": 0
       },
       "originalTicketPrice": {
         "bsonType": [

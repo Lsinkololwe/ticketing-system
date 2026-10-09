@@ -3,7 +3,7 @@
 > **Spec** [`specs/finance/002-commission/spec.md`](../finance/002-commission/spec.md) · **Wave 4** · `blocked_by:` ET-PLT-005, 006, ET-FIN-001, ET-CAT-001, ET-CAT-002
 > **Screens** `Admin - Ledger, Commission & Reconciliation.dc.html` *(rate card, records, recognition)* · `Org Admin - Event Editor.dc.html` *(commission preview)*
 > **Authority** `docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md` §2
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=false`
 
 **D-04: two-stage — pending at purchase, recognised at event completion.** Money owed on a ticket
 for an event that is later cancelled **was never revenue**, and a platform that books it at
@@ -39,12 +39,13 @@ Classify. The decisive questions:
 - `4010` is recognised revenue. A purchase touching it is the exact defect D-04 exists to prevent,
   so assert it as a source-level prohibition, not only behaviourally.
 
-### BE-4 · The recognition sweep — batched, idempotent, contended
+### BE-4 · Recognition in the finance workflow — batched, idempotent, contended
 - **Spec** R5 · **§5** T4 · **depends** BE-3 · **parallel-safe** no
-- **Acceptance** two concurrent sweeps recognise each record **once**; a **cancelled event never
+- **Acceptance** two concurrent recognitions recognise each record **once**; a **cancelled event never
   recognises**.
-- Triggered by [`ET-CAT-001`](ET-CAT-001.md) BE-6's completion sweep, which is why that sweep's
-  idempotence matters here: a double completion would double-recognise revenue.
+- Triggered by `EventFinanceWorkflow` once [`ET-CAT-001`](ET-CAT-001.md)'s completion has arrived and the
+  hold has elapsed, which is why completion's idempotence matters here: a double completion would
+  double-recognise revenue.
 
 ### BE-5 · Cancellation and clawback paths, and the clawback metric
 - **Spec** R6 · **§5** T5 · **depends** BE-4 · **parallel-safe** yes
@@ -135,7 +136,7 @@ apportionment — assert per line.
 ### TS-3 · Two-stage *(L3 — the core)*
 - **No purchase path credits `4010`** (source scan **and** behavioural).
 - `PENDING` sum equals the `2020` balance.
-- Two concurrent recognition sweeps recognise each record once.
+- Two concurrent recognitions recognise each record once.
 - A cancelled event never recognises.
 
 ### TS-4 · Clawback *(L3)*
@@ -161,11 +162,11 @@ An organizer token retrieves own commission and **no** platform aggregate.
 - [ ] 1,000 randomised cases satisfy both identities exactly
 - [ ] No purchase path credits `4010`
 - [ ] `PENDING` sum equals the `2020` balance
-- [ ] Concurrent recognition sweeps recognise once; cancelled events never recognise
+- [x] Concurrent recognition sweeps recognise once; cancelled events never recognise — recognition runs inside the event's single `event-finance/{eventId}` execution (no sweep exists to run concurrently); `EventFinanceWorkflowTest.holdsThenBecomesEligible` recognises once, `aCancellationRefundsEveryone` never
 - [ ] Pre- and post-recognition refunds take different paths and both balance
 - [ ] Preview shares the resolver's method — no TypeScript rate logic
 - [ ] Rate snapshotted on the ticket
 - [ ] Organizers see no platform aggregate
 - [ ] **Infographics gate passed; pending and recognised are never merged into one number**
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

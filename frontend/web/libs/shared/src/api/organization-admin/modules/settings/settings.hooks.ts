@@ -13,7 +13,15 @@ import {
   UPDATE_NOTIFICATION_PREFERENCES,
   UPDATE_PROFILE,
 } from './settings.queries';
-import type { NotificationPreferences } from '../../../../types/graphql';
+import type {
+  UpdateUserInput,
+  MyNotificationPreferencesQuery,
+  MyNotificationPreferencesQueryVariables,
+  UpdateNotificationPreferencesMutation,
+  UpdateNotificationPreferencesMutationVariables,
+  UpdateMyProfileMutation,
+  UpdateMyProfileMutationVariables,
+} from '../../../../types/graphql';
 
 /**
  * The caller's notification preferences.
@@ -27,9 +35,10 @@ export function useMyNotificationPreferences(options?: {
   fetchPolicy?: FetchPolicy;
   skip?: boolean;
 }) {
-  const { data, loading, error, refetch } = useQuery<{
-    myNotificationPreferences: NotificationPreferences | null;
-  }>(MY_NOTIFICATION_PREFERENCES, {
+  const { data, loading, error, refetch } = useQuery<
+    MyNotificationPreferencesQuery,
+    MyNotificationPreferencesQueryVariables
+  >(MY_NOTIFICATION_PREFERENCES, {
     fetchPolicy: options?.fetchPolicy ?? 'cache-and-network',
     errorPolicy: 'all',
     skip: options?.skip ?? false,
@@ -67,13 +76,37 @@ export interface NotificationPreferencesPatch {
  * not know about cannot be reset by saving this form.
  */
 export function useUpdateNotificationPreferences() {
-  const [mutate, { loading }] = useMutation<{
-    updateNotificationPreferences: NotificationPreferences | null;
-  }>(UPDATE_NOTIFICATION_PREFERENCES);
+  const [mutate, { loading }] = useMutation<
+    UpdateNotificationPreferencesMutation,
+    UpdateNotificationPreferencesMutationVariables
+  >(UPDATE_NOTIFICATION_PREFERENCES);
 
   const updatePreferences = async (patch: NotificationPreferencesPatch) => {
     try {
-      const result = await mutate({ variables: { input: patch } });
+      const result = await mutate({
+        variables: {
+          input: {
+            emailEnabled: patch.emailEnabled ?? null,
+            smsEnabled: patch.smsEnabled ?? null,
+            whatsappEnabled: patch.whatsappEnabled ?? null,
+            pushEnabled: patch.pushEnabled ?? null,
+            inAppEnabled: patch.inAppEnabled ?? null,
+            ticketNotifications: patch.ticketNotifications ?? null,
+            eventReminders: patch.eventReminders ?? null,
+            eventUpdates: patch.eventUpdates ?? null,
+            paymentNotifications: patch.paymentNotifications ?? null,
+            teamNotifications: patch.teamNotifications ?? null,
+            marketingEmails: patch.marketingEmails ?? null,
+            systemAnnouncements: patch.systemAnnouncements ?? null,
+            // This app exposes no controls for quiet hours, reminder lead time
+            // or timezone, so those keys are always sent as "leave unchanged".
+            quietHoursEnd: null,
+            quietHoursStart: null,
+            reminderHoursBefore: null,
+            timezone: null,
+          },
+        },
+      });
       return { success: !!result.data?.updateNotificationPreferences, error: null as string | null };
     } catch (error) {
       return {
@@ -87,31 +120,29 @@ export function useUpdateNotificationPreferences() {
 }
 
 /**
- * Fields this app will write to a user profile.
- *
- * The server types `updateProfile`'s input as `JSON`, so nothing at the schema
- * level constrains what can be sent. This interface is that constraint — widen
- * it here deliberately rather than passing an arbitrary object at a call site.
- *
- * Note `jobTitle` is absent: `User` has no such field, so collecting it would
- * discard it on save.
+ * Fields this app writes to a user profile — the subset of `UpdateUserInput`
+ * this screen collects. `jobTitle` is deliberately absent: `User` has no such
+ * field, so collecting it would discard it on save.
  */
-export interface ProfilePatch {
-  firstName?: string;
-  lastName?: string;
-  phoneNumber?: string;
-  gender?: string;
-}
+export type ProfilePatch = Partial<Pick<UpdateUserInput, 'firstName' | 'lastName' | 'gender'>>;
 
 export function useUpdateProfile() {
-  const [mutate, { loading }] = useMutation<{
-    updateProfile: { id: string; firstName: string; lastName: string; fullName: string } | null;
-  }>(UPDATE_PROFILE);
+  const [mutate, { loading }] = useMutation<UpdateMyProfileMutation, UpdateMyProfileMutationVariables>(
+    UPDATE_PROFILE
+  );
 
   const updateProfile = async (patch: ProfilePatch) => {
     try {
-      const result = await mutate({ variables: { input: patch } });
-      return { success: !!result.data?.updateProfile, error: null as string | null };
+      const result = await mutate({
+        variables: {
+          input: {
+            firstName: patch.firstName ?? null,
+            lastName: patch.lastName ?? null,
+            gender: patch.gender ?? null,
+          },
+        },
+      });
+      return { success: !!result.data?.updateMyProfile, error: null as string | null };
     } catch (error) {
       return {
         success: false,

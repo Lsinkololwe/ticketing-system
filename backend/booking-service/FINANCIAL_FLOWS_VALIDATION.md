@@ -1,5 +1,7 @@
 # PML Event Ticketing Platform - Financial Flows Validation Guide
 
+> **Process mechanics (ROADMAP D-21).** Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 ## Purpose
 
 This document provides detailed step-by-step flows for every financial scenario in the platform. Each flow includes:

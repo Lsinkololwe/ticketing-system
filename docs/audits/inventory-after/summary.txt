@@ -1,0 +1,19 @@
+specs: 407 names; jacoco: shared-library=yes, identity-service=yes, catalog-service=yes, booking-service=yes, api-gateway=yes, keycloak-extensions=no
+methods  shared-library       GAP=141  KEEP_ACCESSOR=19  KEEP_ENTRY=109  KEEP_MANUAL=2  LIVE=219  TEST_ONLY=6
+methods  identity-service     GAP=642  KEEP_ACCESSOR=21  KEEP_ENTRY=363  KEEP_MANUAL=20  KEEP_SPEC=5  LIVE=184  TEST_ONLY=2
+methods  catalog-service      GAP=396  KEEP_ACCESSOR=20  KEEP_ENTRY=345  LIVE=150  TEST_ONLY=2
+methods  booking-service      GAP=1247  KEEP_ACCESSOR=98  KEEP_ENTRY=553  LIVE=384
+methods  api-gateway          GAP=19  KEEP_ENTRY=23
+methods  keycloak-extensions  KEEP_ACCESSOR=17  KEEP_ENTRY=49  LIVE=68
+types    shared-library       KEEP_BEAN=2  KEEP_ENTRY=29  KEEP_MANUAL=2  LIVE=140
+types    identity-service     KEEP_BEAN=23  KEEP_ENTRY=57  KEEP_MANUAL=5  LIVE=239
+types    catalog-service      KEEP_BEAN=20  KEEP_ENTRY=36  LIVE=174
+types    booking-service      KEEP_BEAN=32  KEEP_ENTRY=70  KEEP_MANUAL=1  LIVE=439
+types    api-gateway          KEEP_BEAN=6  KEEP_ENTRY=7  LIVE=1
+types    keycloak-extensions  LIVE=14
+config   shared-library       
+config   identity-service     BOUND=55
+config   catalog-service      BOUND=38
+config   booking-service      BOUND=86
+config   api-gateway          BOUND=13
+config   keycloak-extensions  

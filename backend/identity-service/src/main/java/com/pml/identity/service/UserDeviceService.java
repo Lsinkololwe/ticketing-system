@@ -25,7 +25,7 @@ public interface UserDeviceService {
      * @param deviceId the device ID
      * @return Mono containing true if unregistered successfully
      */
-    Mono<Boolean> unregisterDevice(String deviceId);
+    Mono<Boolean> unregisterDevice(String userId, String deviceId);
 
     /**
      * Find all devices for a user.
@@ -34,12 +34,4 @@ public interface UserDeviceService {
      * @return Flux of devices
      */
     Flux<UserDevice> findByUserId(String userId);
-
-    /**
-     * Update the last active timestamp for a device.
-     *
-     * @param deviceToken the device token
-     * @return Mono containing the updated device
-     */
-    Mono<UserDevice> updateLastActive(String deviceToken);
 }

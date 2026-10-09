@@ -38,6 +38,22 @@ public class MobileMoneyAccount {
     @Builder.Default
     private boolean verified = false;
 
+    /** Why an administrator rejected the account; cleared when the owner replaces it. */
+    private String rejectionReason;
+
+    /** An administrator has frozen payouts to this account; it stays on file. */
+    @Builder.Default
+    private boolean suspended = false;
+
+    private String suspendedReason;
+
+    /** When the verification test deposit was sent; null until it is. */
+    private java.time.Instant testDepositSentAt;
+
+    /** How many wrong test-deposit amounts the owner may still enter. */
+    @Builder.Default
+    private int verificationAttemptsLeft = 3;
+
     /**
      * Get masked phone number for display
      */

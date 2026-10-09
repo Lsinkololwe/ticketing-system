@@ -107,8 +107,7 @@ public interface OrganizerDashboardService {
     //
     // These four back the dashboard's data-viz tiles. Each returns raw counts
     // and denominators rather than pre-computed percentages, so the client can
-    // print the denominator beside every rate. The chart contract they satisfy
-    // is frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md.
+    // print the denominator beside every rate.
     // ========================================================================
 
     /**

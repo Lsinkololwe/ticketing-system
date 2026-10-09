@@ -5,10 +5,9 @@
  * result/variable typing is provided by the codegen'd schema types in
  * `libs/shared/src/types/graphql` — do NOT redefine those types here.
  *
- * IMPORTANT: customer-facing browsing MUST use the PUBLIC *cursor* queries.
- * The offset-pagination variants (`publishedEventsOffsetPagination`, etc.) are
- * gated `@auth(requires: ORGANIZER/ADMIN)` on the backend and return FORBIDDEN
- * for anonymous/CUSTOMER visitors — so the public cursor queries are used here.
+ * IMPORTANT: customer-facing browsing MUST use PUBLIC queries only. Events come from
+ * `discoverEvents` (cursor-paged) and categories from the bounded `categories` list;
+ * both are open to anonymous visitors.
  *
  * @see backend catalog-service schema.graphqls
  * @see libs/shared/src/types/graphql/index.ts (run `npm run codegen` to refresh)
@@ -82,33 +81,10 @@ export const EVENT_DETAIL_FIELDS = gql`
 // Queries (public, cursor pagination)
 // ==========================================
 
-/** Published events for public browsing (public cursor pagination). */
+/** Published events for public browsing: the unfiltered discovery feed, cursor-paged. */
 export const GET_PUBLISHED_EVENTS = gql`
   query GetPublishedEvents($pagination: CursorPaginationInput) {
-    publishedEventsCursorPagination(pagination: $pagination) {
-      edges {
-        node {
-          ...EventCardFields
-        }
-      }
-      pageInfo {
-        totalElements
-        totalPages
-        currentPage
-        pageSize
-        hasNext
-        hasPrevious
-        endCursor
-      }
-    }
-  }
-  ${EVENT_CARD_FIELDS}
-`;
-
-/** Upcoming published events (public cursor pagination). */
-export const GET_UPCOMING_EVENTS = gql`
-  query GetUpcomingEvents($pagination: CursorPaginationInput) {
-    upcomingEventsCursorPagination(pagination: $pagination) {
+    discoverEvents(filter: {}, pagination: $pagination) {
       edges {
         node {
           ...EventCardFields
@@ -138,21 +114,15 @@ export const GET_EVENT_BY_ID = gql`
   ${EVENT_DETAIL_FIELDS}
 `;
 
-/** Active event categories for filtering (public cursor pagination). */
+/** Active event categories for filtering: a bounded public list, returned whole. */
 export const GET_ACTIVE_EVENT_CATEGORIES = gql`
-  query GetActiveEventCategories($pagination: CursorPaginationInput) {
-    activeEventCategoriesCursorPagination(pagination: $pagination) {
-      edges {
-        node {
-          id
-          name
-          code
-          eventCount
-        }
-      }
-      pageInfo {
-        totalElements
-      }
+  query GetActiveEventCategories {
+    categories {
+      id
+      name
+      code
+      eventCount
+      imageUrl
     }
   }
 `;

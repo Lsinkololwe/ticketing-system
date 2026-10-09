@@ -7,7 +7,6 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
 import java.util.Collection;
 
 /**
@@ -40,6 +39,17 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
      */
     Mono<PaymentAttempt> findByDepositId(String depositId);
 
+    /** The row for the provider call made under {@code providerReference}; unique per row. */
+    Mono<PaymentAttempt> findByProviderReference(String providerReference);
+
+    /**
+     * Find every attempt made against one payment intent, newest first.
+     *
+     * @param paymentIntentId the intent's id
+     * @return the rows behind {@code paymentAttempts(intentId)}
+     */
+    Flux<PaymentAttempt> findByPaymentIntentIdOrderByCreatedAtDesc(String paymentIntentId);
+
     /**
      * Find by human-readable attempt number.
      *
@@ -55,14 +65,6 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
      * @return Payment attempts with this correlation ID
      */
     Flux<PaymentAttempt> findByCorrelationId(String correlationId);
-
-    /**
-     * Find by PawaPay's transaction ID (set after COMPLETED).
-     *
-     * @param providerTransactionId PawaPay's internal transaction ID
-     * @return The payment attempt or empty
-     */
-    Mono<PaymentAttempt> findByProviderTransactionId(String providerTransactionId);
 
     // ========================================================================
     // BUSINESS ENTITY QUERIES
@@ -130,14 +132,6 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
     Flux<PaymentAttempt> findByStatus(PaymentAttemptStatus status);
 
     /**
-     * Find by multiple statuses.
-     *
-     * @param statuses Collection of statuses to match
-     * @return Payment attempts with any of these statuses
-     */
-    Flux<PaymentAttempt> findByStatusIn(Collection<PaymentAttemptStatus> statuses);
-
-    /**
      * Count by status.
      *
      * @param status The status to count
@@ -154,36 +148,6 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
      */
     Mono<Long> countByEventIdAndStatus(String eventId, PaymentAttemptStatus status);
 
-    // ========================================================================
-    // POLLING & RECOVERY QUERIES (Critical for missed webhooks)
-    // ========================================================================
-
-    /**
-     * Find payments needing polling (webhook may have been missed).
-     * <p>
-     * Use case: Scheduled job polls PawaPay for payments stuck in
-     * PENDING_APPROVAL or PROCESSING without receiving a webhook.
-     * </p>
-     *
-     * @param status The status to check (PENDING_APPROVAL, PROCESSING)
-     * @return Payment attempts needing polling
-     */
-    Flux<PaymentAttempt> findByStatusAndWebhookProcessedFalse(PaymentAttemptStatus status);
-
-    /**
-     * Find payments needing polling that haven't been polled recently.
-     *
-     * @param statuses Statuses to check
-     * @param webhookProcessed Whether webhook was processed
-     * @param lastPolledBefore Only poll if last poll was before this time
-     * @return Payment attempts to poll
-     */
-    Flux<PaymentAttempt> findByStatusInAndWebhookProcessedAndLastPolledAtBeforeOrLastPolledAtIsNull(
-            Collection<PaymentAttemptStatus> statuses,
-            boolean webhookProcessed,
-            Instant lastPolledBefore
-    );
-
     /**
      * Find payments eligible for retry.
      *
@@ -192,42 +156,6 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
      * @return Retriable payment attempts
      */
     Flux<PaymentAttempt> findByStatusAndRetryCountLessThan(PaymentAttemptStatus status, int maxRetries);
-
-    /**
-     * Find payments ready for retry (retry time has passed).
-     *
-     * @param status The status
-     * @param maxRetries Maximum retry count
-     * @param now Current time
-     * @return Payment attempts ready for retry
-     */
-    Flux<PaymentAttempt> findByStatusAndRetryCountLessThanAndNextRetryAtBefore(
-            PaymentAttemptStatus status, int maxRetries, Instant now);
-
-    // ========================================================================
-    // EXPIRATION QUERIES
-    // ========================================================================
-
-    /**
-     * Find expired payments that haven't been marked as such.
-     * <p>
-     * Use case: Scheduled job marks expired payments (15-minute timeout).
-     * </p>
-     *
-     * @param statuses Statuses that can expire (CREATED, PENDING_APPROVAL)
-     * @param expiresAt Expiration threshold
-     * @return Expired payment attempts
-     */
-    Flux<PaymentAttempt> findByStatusInAndExpiresAtBefore(Collection<PaymentAttemptStatus> statuses, Instant expiresAt);
-
-    /**
-     * Find payments created in a time range.
-     *
-     * @param start Start of range
-     * @param end End of range
-     * @return Payment attempts in this range
-     */
-    Flux<PaymentAttempt> findByCreatedAtBetween(Instant start, Instant end);
 
     // ========================================================================
     // FULFILLMENT QUERIES
@@ -246,59 +174,12 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
     Flux<PaymentAttempt> findByStatusAndFulfilled(PaymentAttemptStatus status, boolean fulfilled);
 
     /**
-     * Find payments without verification before fulfillment.
-     * <p>
-     * Use case: Audit query for OWASP compliance check.
-     * </p>
-     *
-     * @param fulfilled Whether fulfilled
-     * @param verified Whether verified
-     * @return Unverified fulfilled payments (should be empty!)
-     */
-    Flux<PaymentAttempt> findByFulfilledAndVerifiedBeforeFulfillment(boolean fulfilled, boolean verified);
-
-    // ========================================================================
-    // REVIEW & INVESTIGATION QUERIES
-    // ========================================================================
-
-    /**
-     * Find payments with specific review status.
-     *
-     * @param reviewStatus The review status
-     * @return Payment attempts with this review status
-     */
-    Flux<PaymentAttempt> findByReviewStatus(String reviewStatus);
-
-    /**
      * Count by review status.
      *
      * @param reviewStatus The review status
      * @return Count of payment attempts
      */
     Mono<Long> countByReviewStatus(String reviewStatus);
-
-    // ========================================================================
-    // RECONCILIATION QUERIES
-    // ========================================================================
-
-    /**
-     * Find completed payments in a date range for reconciliation.
-     *
-     * @param status COMPLETED status
-     * @param start Start of range
-     * @param end End of range
-     * @return Completed payment attempts
-     */
-    Flux<PaymentAttempt> findByStatusAndCreatedAtBetween(
-            PaymentAttemptStatus status, Instant start, Instant end);
-
-    /**
-     * Find by provider status (for matching with gateway settlement).
-     *
-     * @param providerStatus PawaPay's status (COMPLETED, FAILED, etc.)
-     * @return Payment attempts with this provider status
-     */
-    Flux<PaymentAttempt> findByProviderStatus(String providerStatus);
 
     // ========================================================================
     // STATISTICS QUERIES
@@ -320,15 +201,4 @@ public interface PaymentAttemptRepository extends ReactiveMongoRepository<Paymen
      * @return Count of payments by this buyer
      */
     Mono<Long> countByBuyerId(String buyerId);
-
-    /**
-     * Check if buyer has any successful payment for a ticket.
-     *
-     * @param reservationId The ticket ID
-     * @param buyerId The buyer ID
-     * @param statuses Successful statuses
-     * @return Whether a successful payment exists
-     */
-    Mono<Boolean> existsByReservationIdAndBuyerIdAndStatusIn(
-            String reservationId, String buyerId, Collection<PaymentAttemptStatus> statuses);
 }

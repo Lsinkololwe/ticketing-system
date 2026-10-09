@@ -1,5 +1,7 @@
 # Backend vs Frontend Gap Analysis Report
 
+> **SUPERSEDED — pre-spec document, kept for reference only.** Replaced by `specs/` (see `specs/README.md`, `specs/RECONCILIATION.md` and the open items index in `specs/FINDINGS.md`). Findings here pre-date the specs and later fixes; do not quote them as current.
+
 **Generated**: 2026-03-26
 **Purpose**: Compare frontend stub types/hooks against actual backend GraphQL schema implementations
 

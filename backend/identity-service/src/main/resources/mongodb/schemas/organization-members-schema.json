@@ -38,17 +38,19 @@
         "bsonType": "array",
         "items": {
           "bsonType": "string",
+          "pattern": "^[a-z_]+:[a-z_]+$",
           "maxLength": 100
         },
-        "description": "Permissions added to role defaults"
+        "description": "Permission codes (module:action) added to the role's"
       },
       "deniedPermissions": {
         "bsonType": "array",
         "items": {
           "bsonType": "string",
+          "pattern": "^[a-z_]+:[a-z_]+$",
           "maxLength": 100
         },
-        "description": "Permissions explicitly revoked"
+        "description": "Permission codes (module:action) withheld even when the role carries them"
       },
       "status": {
         "enum": [

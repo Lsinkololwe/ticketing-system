@@ -1,23 +1,24 @@
 package com.pml.catalog.domain.model;
 
+import com.pml.catalog.persistence.CatalogCollections;
+
 import com.pml.catalog.domain.enums.ReferenceType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -34,15 +35,8 @@ import java.util.Map;
  * (see {@code ReferenceMetadataValidator}) and guarded at the collection level by
  * {@code reference-data-schema.json}.</p>
  */
-@Document(collection = "reference_data")
-@CompoundIndexes({
-        // One code per type — the core uniqueness contract
-        @CompoundIndex(name = "type_code_unique", def = "{'type': 1, 'code': 1}", unique = true),
-        // The dropdown query: active rows of a type, ordered
-        @CompoundIndex(name = "type_active_order", def = "{'type': 1, 'isActive': 1, 'displayOrder': 1}"),
-        // Hierarchy lookups (cities within a province, genres within a category)
-        @CompoundIndex(name = "type_parent", def = "{'type': 1, 'parentCode': 1}")
-})
+@Document(collection = CatalogCollections.REFERENCE_DATA)
+@TypeAlias("reference_data")
 @Data
 @Builder
 @NoArgsConstructor
@@ -128,9 +122,9 @@ public class ReferenceData {
 
     // ── Temporal validity (optional — used by TAX_RATE etc.) ──────────────────
 
-    private LocalDateTime effectiveFrom;
+    private Instant effectiveFrom;
 
-    private LocalDateTime effectiveTo;
+    private Instant effectiveTo;
 
     // ── Per-type payload ──────────────────────────────────────────────────────
 
@@ -145,10 +139,10 @@ public class ReferenceData {
     // ── Audit ─────────────────────────────────────────────────────────────────
 
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @CreatedBy
     private String createdBy;

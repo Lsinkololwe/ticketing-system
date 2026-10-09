@@ -570,15 +570,15 @@ dead_lettering_on_message_expiration = <span class="s">true</span>
       <p class="lead">The Event Ticketing System is a set of Spring Boot microservices (<b>catalog-service</b>, <b>booking-service</b>, <b>identity-service</b>) using Netflix DGS for GraphQL and <b>Spring Cloud Stream</b> with the <b>Azure Service Bus binder</b> for messaging. It runs a deliberate <b>two-tier event model</b>.</p>
       <div class="grid2">
         <div class="card pad">
-          <h3 class="subhead" style="margin-top:0">Tier 1 — Intra-service <span class="pill on">Modulith + PostgreSQL</span></h3>
-          <p style="font-size:13px;color:var(--ink-soft);margin:0">Events <em>within</em> a single service use <b>Spring Modulith</b>, persisted to a PostgreSQL <span class="mono">event_publication</span> table before the listener runs. This gives guaranteed local delivery and auto-republish on restart. It never touches Service Bus.</p>
+          <h3 class="subhead" style="margin-top:0">Tier 1 — Intra-service <span class="pill on">Temporal + MongoDB outbox</span></h3>
+          <p style="font-size:13px;color:var(--ink-soft);margin:0">Within one service, a process runs as a <b>Temporal workflow</b>, and a fact for other services is staged in the service's MongoDB outbox (<span class="mono">*_outbox</span>) in the same transaction as the write; a drain then publishes it to Service Bus.</p>
         </div>
         <div class="card pad">
           <h3 class="subhead" style="margin-top:0">Tier 2 — Cross-service <span class="pill info">Cloud Stream → Service Bus</span></h3>
           <p style="font-size:13px;color:var(--ink-soft);margin:0">Events <em>between</em> services travel over <b>Spring Cloud Stream → Azure Service Bus topics</b>. This is where namespaces, topics, subscriptions, peek-lock, retry and DLQ from Part 1 all apply.</p>
         </div>
       </div>
-      <div class="callout info"><b>Why the split?</b> Modulith needs a blocking JDBC driver for its guaranteed local outbox, but the services are reactive (MongoDB). Rather than compromise, in-process events use the reliable PostgreSQL outbox, while anything crossing a service boundary rides the durable, fan-out-capable Service Bus. Right tool for each distance.</div>
+      <div class="callout info"><b>Why the split?</b> Inside a service, a process is a Temporal workflow and a fact is staged in the service's MongoDB outbox in the same transaction as the write — no blocking driver and no second database. Anything crossing a service boundary rides the durable, fan-out-capable Service Bus. Right tool for each distance.</div>
     </section>
 
     <section id="binder">

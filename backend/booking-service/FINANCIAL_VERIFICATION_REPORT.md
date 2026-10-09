@@ -1,5 +1,7 @@
 # Financial Engine Verification Report
 
+> **Process mechanics (ROADMAP D-21).** Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 **Document Version**: 2.0
 **Generated**: April 20, 2026
 **Previous Version**: 1.0 (April 14, 2026)

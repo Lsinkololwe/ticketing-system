@@ -8,7 +8,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
 /**
- * Ensures the single {@code platform_configuration} document exists at startup.
+ * Ensures the single {@code catalog_platform_configuration} document exists at startup.
  *
  * <p>Catalog owns this document. Its repository seeds a default lazily on first read, but
  * other services (e.g. identity, when creating an organization) depend on it being present.

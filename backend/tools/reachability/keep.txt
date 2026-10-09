@@ -1,0 +1,11 @@
+# Symbols the inventory would call dead that are kept on purpose, each with its reason.
+# Format: Type  or  Type#method, then "#" and the reason. Reviewed 2026-09-19.
+
+BoundedRetry                    # ET-PLT-002 BE-7: the platform's bounded, jittered retry for version conflicts; tested, no production write uses it yet (a gap, reported)
+HttpDurableRevocationStore      # ET-IDN-003 (approved): the durable store catalog and booking bind once revocation is enabled outside identity
+BookingStatusSemanticStampers   # holder class; its nested @Component entity callbacks are live
+AuditLog                        # ET-PLT-009: the identity_audit_logs document the audit trail spec owns; its old repository matched no spec query and went
+FileUploadError                 # the Java counterpart of schema type FileUploadError (identity schema)
+FileUploadErrorCode             # the Java counterpart of schema enum FileUploadErrorCode
+PermissionResolutionService#hasEventPermission      # ET-ORG-003 (approved): the event-scope check /api/internal/permissions/resolve will serve
+PermissionResolutionServiceImpl#hasEventPermission  # as above

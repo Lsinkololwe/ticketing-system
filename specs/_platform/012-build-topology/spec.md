@@ -62,13 +62,13 @@ THE SYSTEM SHALL declare every dependency version in the backend parent POM, and
 module SHALL declare a version for a managed artifact.
 
 **Acceptance**
-- [ ] `backend/pom.xml` exists with `<packaging>pom</packaging>` and inherits `spring-boot-starter-parent:3.5.4`
-- [ ] The parent imports `graphql-dgs-platform-dependencies`, `spring-cloud-azure-dependencies`, `spring-cloud-dependencies` and `testcontainers-bom` in `dependencyManagement`
-- [ ] No module POM contains a `<version>` on any Spring, DGS, Azure, Spring Cloud or Testcontainers artifact
-- [ ] No module POM re-declares `java.version`, `dgs.version`, `spring-cloud-azure.version`, `spring-cloud.version` or `testcontainers.version`
-- [ ] No module resolves `spring-modulith-*`, `spring-boot-starter-jdbc` or the `postgresql` driver — the platform has no relational dependency
-- [ ] Changing a version property in the parent changes it for every module — asserted by bumping one and observing all five resolve the new value
-- [ ] `mvn -f backend dependency:tree` shows one `graphql-java` and one `java-dataloader` version across the three subgraphs
+- [x] `backend/pom.xml` exists with `<packaging>pom</packaging>` and inherits `spring-boot-starter-parent:3.5.5`
+- [x] The parent imports `graphql-dgs-platform-dependencies`, `spring-cloud-azure-dependencies`, `spring-cloud-dependencies` and `testcontainers-bom` in `dependencyManagement`
+- [x] No module POM contains a `<version>` on any Spring, DGS, Azure, Spring Cloud or Testcontainers artifact
+- [x] No module POM re-declares `java.version`, `dgs.version`, `spring-cloud-azure.version`, `spring-cloud.version` or `testcontainers.version`
+- [x] No module resolves `spring-modulith-*`, `spring-boot-starter-jdbc` or the `postgresql` driver — the platform has no relational dependency
+- [x] Changing a version property in the parent changes it for every module — asserted by bumping one and observing all five resolve the new value
+- [x] `mvn -f backend dependency:tree` shows one `graphql-java` and one `java-dataloader` version across the three subgraphs
 
 ### ET-PLT-012-R2 · The whole backend builds from one command
 
@@ -76,12 +76,13 @@ THE SYSTEM SHALL build, test and install every module from a single invocation a
 `backend/`.
 
 **Acceptance**
-- [ ] `mvn -f backend validate` exits 0
-- [ ] `mvn -f backend -DskipTests clean install` exits 0 and installs all six modules
-- [ ] `mvn -f backend test` runs every module's tests in one reactor
-- [ ] The reactor order places `shared-library` before the three services, derived from the dependency graph and not from the `<modules>` order
-- [ ] Building a single module with `-f backend/<module>` still works, for the fast inner loop
-- [ ] A module added to `<modules>` but absent from disk fails the build immediately rather than being skipped
+- [x] `mvn -f backend validate` exits 0
+- [x] `mvn -f backend -DskipTests clean install` exits 0 and installs all six modules
+- [x] `mvn -f backend test` runs every module's tests in one reactor
+- [x] The reactor order places `shared-library` before the three services, derived from the dependency graph and not from the `<modules>` order
+- [x] Building a single module with `-f backend/<module>` still works, for the fast inner loop
+- [~] A module added to `<modules>` but absent from disk fails the build immediately rather than being skipped
+  - *Untested.* This is Maven's own behaviour rather than anything this spec configures, and asserting it means adding a phantom `<module>` to the real parent and watching the reactor refuse. Left open rather than claimed from documentation.*
 
 ### ET-PLT-012-R3 · The Keycloak SPI module inherits nothing
 
@@ -89,11 +90,11 @@ THE SYSTEM SHALL include `keycloak-extensions` in the reactor, and SHALL NOT giv
 Spring Boot parent.
 
 **Acceptance**
-- [ ] `keycloak-extensions` is listed in the parent's `<modules>`
-- [ ] `keycloak-extensions/pom.xml` declares no `<parent>` element
-- [ ] Its Keycloak dependencies are `provided` scope and appear in no shaded output
-- [ ] Its shaded JAR contains Gson and contains no `org.springframework` package
-- [ ] `mvn -f backend package` produces the SPI JAR alongside the five Spring artifacts
+- [x] `keycloak-extensions` is listed in the parent's `<modules>`
+- [x] `keycloak-extensions/pom.xml` declares no `<parent>` element
+- [x] Its Keycloak dependencies are `provided` scope and appear in no shaded output
+- [x] Its shaded JAR contains Gson and contains no `org.springframework` package
+- [x] `mvn -f backend package` produces the SPI JAR alongside the five Spring artifacts
 
 ### ET-PLT-012-R4 · The module graph is acyclic and `shared-library` is a leaf
 
@@ -101,11 +102,12 @@ THE SYSTEM SHALL keep the inter-module dependency graph acyclic, and `shared-lib
 SHALL depend on no other module in the reactor.
 
 **Acceptance**
-- [ ] `shared-library` declares no dependency on `catalog-service`, `booking-service`, `identity-service` or `api-gateway`
-- [ ] Each of the three services depends on `shared-library`
-- [ ] No service depends on another service
-- [ ] `api-gateway` depends on `shared-library` only
-- [ ] Maven reports no cycle; a deliberately introduced back-edge from `shared-library` to a service fails the reactor
+- [x] `shared-library` declares no dependency on `catalog-service`, `booking-service`, `identity-service` or `api-gateway`
+- [x] Each of the three services depends on `shared-library`
+- [x] No service depends on another service
+- [x] `api-gateway` depends on `shared-library` only
+- [~] Maven reports no cycle; a deliberately introduced back-edge from `shared-library` to a service fails the reactor
+  - *Half done.* `BuildTopologyTest.ModuleGraph` asserts the edges that must not exist, statically. The back-edge mutation — write it, watch the reactor fail, remove it — has not been run: a cyclic reactor cannot be built, so the probe cannot use the throwaway-module trick `EnforcerRefusalTest` uses and would have to mutate the real tree.*
 
 ### ET-PLT-012-R5 · Java 21 everywhere, configured once
 
@@ -113,11 +115,13 @@ THE SYSTEM SHALL compile every module at Java 21 with one compiler configuration
 inherited from the parent.
 
 **Acceptance**
-- [ ] `java.version` and `maven.compiler.release` are `21`, declared once, in the parent
-- [ ] Every module's `target/classes` reports class file major version 65
-- [ ] `project.build.sourceEncoding` is `UTF-8`, declared once
-- [ ] No module overrides the compiler plugin configuration
-- [ ] A module attempting to compile at a lower release fails the build
+- [x] `java.version` and `maven.compiler.release` are `21`, declared once, in the parent
+- [x] Every module's `target/classes` reports class file major version 65
+- [x] `project.build.sourceEncoding` is `UTF-8`, declared once
+- [~] No module overrides the compiler plugin configuration
+  - *True of the five Spring modules; deliberately false of `keycloak-extensions`, which has no `<parent>` (R3) and therefore must declare its own. That declaration is now pinned to the parent's values and asserted — see [F-020](../../FINDINGS.md), where the absence of it had the module silently on Java 17.*
+- [~] A module attempting to compile at a lower release fails the build
+  - *It fails the **test**, not the build.* `BuildTopologyTest.everyModuleCompilesToJava21` was mutation-verified by setting `keycloak-extensions` back to 17: exactly that assertion failed, and no other. Making the *build* refuse it would need an enforcer rule reading class files, which does not exist.*
 
 ### ET-PLT-012-R6 · Plugin versions are managed, never floating
 
@@ -125,10 +129,11 @@ THE SYSTEM SHALL pin every build plugin version through the parent or the Boot p
 and no plugin SHALL resolve to whatever is newest.
 
 **Acceptance**
-- [ ] No `<plugin>` in any module declares a version that the parent or Boot parent does not manage
-- [ ] `mvn -f backend versions:display-plugin-updates` reports no unmanaged plugin
-- [ ] The Spring Boot, Shade and Surefire plugin versions each appear in exactly one place
-- [ ] Two builds of the same commit on different machines resolve identical plugin versions
+- [x] No `<plugin>` in any module declares a version that the parent or Boot parent does not manage
+- [x] `mvn -f backend versions:display-plugin-updates` reports no unmanaged plugin
+- [x] The Spring Boot, Shade and Surefire plugin versions each appear in exactly one place
+- [~] Two builds of the same commit on different machines resolve identical plugin versions
+  - *Evidenced, not proven.* `versions:display-plugin-updates` reports "all plugins have a version specified" across the reactor, and a clean-`~/.m2` build succeeded — so nothing floats. A second machine has not been used, and one cannot be from here.*
 
 ### ET-PLT-012-R7 · The build enforces its own structure
 
@@ -136,12 +141,12 @@ THE SYSTEM SHALL fail the build when a module breaches the topology rules, rathe
 relying on review to notice.
 
 **Acceptance**
-- [ ] `maven-enforcer-plugin` runs in the parent and binds to `validate`
-- [ ] `requireMavenVersion` and `requireJavaVersion` are enforced
-- [ ] `banDuplicatePomDependencyVersions` is enforced, so a module re-declaring a managed version fails
-- [ ] `requireUpperBoundDeps` is enforced, so a transitive downgrade fails rather than surprising at runtime
-- [ ] A module that adds `spring-boot-starter-web` fails the build — the servlet stack is banned by [ET-PLT-001](../001-runtime-baseline/) R1 and the ban is enforced here
-- [ ] The enforcer failure message names the module and the rule
+- [x] `maven-enforcer-plugin` runs in the parent and binds to `validate`
+- [x] `requireMavenVersion` and `requireJavaVersion` are enforced
+- [x] `banDuplicatePomDependencyVersions` is enforced, so a module re-declaring a managed version fails
+- [x] `requireUpperBoundDeps` is enforced, so a transitive downgrade fails rather than surprising at runtime
+- [x] A module that adds `spring-boot-starter-web` fails the build — the servlet stack is banned by [ET-PLT-001](../001-runtime-baseline/) R1 and the ban is enforced here
+- [x] The enforcer failure message names the module and the rule
 
 ## 4. Model
 
@@ -151,7 +156,7 @@ This spec defines no documents, events or GraphQL operations. Its model is the b
 
 | Module | Parent | Packaging | Depends on |
 |---|---|---|---|
-| `backend` | `spring-boot-starter-parent:3.5.4` | `pom` | — |
+| `backend` | `spring-boot-starter-parent:3.5.5` | `pom` | — |
 | `shared-library` | `com.pml:backend` | `jar` | nothing in the reactor |
 | `catalog-service` | `com.pml:backend` | `jar` | `shared-library` |
 | `booking-service` | `com.pml:backend` | `jar` | `shared-library` |
@@ -175,6 +180,7 @@ Declared once, in `backend/pom.xml`.
 | `zxing.version` | `3.5.2` | QR encoding (ET-TKT-002) |
 | `testcontainers.version` | `1.21.4` | integration tests |
 | `docker.api.version` | `1.44` | Testcontainers against Docker Engine 29+ |
+| `temporal.version` | `1.38.0` | SDK, Spring Boot starter and test server ([ET-PLT-015](../015-durable-execution/)) |
 
 `testcontainers.version` is held at 1.21.4 deliberately: 1.19 pins the Docker API to 1.32
 and Docker Engine 29 refuses anything below 1.40.
@@ -188,6 +194,37 @@ and Docker Engine 29 refuses anything below 1.40.
 | Azure | `com.azure.spring:spring-cloud-azure-dependencies` | import |
 | Spring Cloud | `org.springframework.cloud:spring-cloud-dependencies` | import |
 | Testcontainers | `org.testcontainers:testcontainers-bom` | import |
+| Temporal | `io.temporal:temporal-bom` | import |
+
+### Pins that outrank the imported BOMs
+
+`requireUpperBoundDeps` found six artifacts resolving **below** what a dependant required. Maven
+resolves `dependencyManagement` first-declaration-wins, so these are declared **above** every BOM
+import; a pin placed below one never takes effect.
+
+| Artifact | Resolved | Required | Why it matters |
+|---|---|---|---|
+| `kotlin-stdlib` | 1.9.25 | 2.2.0 | `java-dataloader:5.0.1` is compiled against 2.2.0 |
+| `io.projectreactor:reactor-bom` | reactor-core 3.6.1 | 3.7.9 | a reactive platform running a reactor older than the Spring compiled against it |
+| `io.micrometer:context-propagation` | 1.1.1 | 1.1.3 | context propagation across reactive boundaries |
+| `com.nimbusds:oauth2-oidc-sdk` | 9.43.6 | 11.18 | Spring Security 6.5.3 needs 11.x; 9.x is not source-compatible |
+| `com.nimbusds:nimbus-jose-jwt` | 9.37.3 | 9.48 | moves with the SDK above |
+| `org.apache.httpcomponents:httpclient` | 4.5.13 | 4.5.14 | resteasy, under `keycloak-admin-client` |
+| `com.google.guava:guava` | 33.4.8-android | 33.4.8-jre | Temporal's service client, through gRPC ([ET-PLT-015](../015-durable-execution/)) |
+| `com.google.protobuf:protobuf-java` | 3.25.5 | 3.25.8 | the Temporal SDK's generated API classes |
+| `org.apache.commons:commons-lang3` | 3.17.0 | 3.18.0 | `commons-compress`, under `temporal-testing` |
+| `commons-codec:commons-codec` | 1.18.0 | 1.19.0 | `commons-compress`, under `temporal-testing` |
+| `commons-io:commons-io` | 2.11.0 | 2.20.0 | `commons-compress`, under `temporal-testing`; resteasy asks for the lower line |
+
+**One exclusion, where the lower version is correct**: `jakarta.validation:jakarta.validation-api`.
+`hibernate-validator:8.0.3.Final` implements Jakarta Validation **3.0**, and Boot manages the API to
+3.0.2 as a matched pair. A transitive asks for 3.1.0; taking it puts a 3.1 API in front of a 3.0
+implementation and surfaces as `AbstractMethodError` at first use. Delete the exclusion when Boot
+ships hibernate-validator 9.x, rather than raising it.
+
+**The Boot bump, 3.5.4 → 3.5.5**, was the root-cause fix for five further violations: DGS 10.5.0
+names Boot 3.5.5 throughout, so every `spring-*` artifact resolved one patch below what DGS
+required. Validated by the full suite and by a clean-`~/.m2` build.
 
 ### Enforcer rules
 
@@ -198,6 +235,10 @@ and Docker Engine 29 refuses anything below 1.40.
 | `banDuplicatePomDependencyVersions` | a module re-declares a managed version |
 | `requireUpperBoundDeps` | a transitive dependency is downgraded |
 | `bannedDependencies` | `spring-boot-starter-web`, `spring-cloud-starter-gateway`, any servlet container, `spring-boot-starter-jdbc`, `postgresql`, `spring-modulith-*` |
+
+`spring-modulith-*` was named here but **absent from the enforcer** until 2026-09-02; nothing in the
+tree depended on it, so the gap was invisible. See [F-019](../../FINDINGS.md) — `CLAUDE.md`
+documented a Modulith/PostgreSQL runtime that has never existed in this codebase.
 
 ### Commands
 

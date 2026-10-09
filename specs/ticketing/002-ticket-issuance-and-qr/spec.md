@@ -1,6 +1,34 @@
 # ET-TKT-002 · Ticket issuance, the QR identity and delivery
 
+> **Amended 2026-10-05 (bookings, resend, holder messaging).**
+> - **Bookings.** Every purchase has a durable `Booking` with a human number `BK-<year>-<8 digits>` drawn from a per-year Mongo counter
+>   (unique index), staged at checkout with the order contact (name, email, phone: optional, typed once and never overwritten) and enriched when the
+>   hold exists. Tickets carry `bookingId` and `bookingNumber`. Queries: `booking(id)` (buyer owner, organizer of the event's organization, or admin),
+>   `bookingsByBuyer(buyerId?)` (a buyer sees only their own; admin may pass any), `bookingsByOrganizer(filter, pagination)` (own organization only).
+>   The status is derived from stored facts (`BookingRules`), including `PARTIALLY_REFUNDED`, `REFUNDED` and `PAID_AFTER_EXPIRY_AUTO_REFUNDED`.
+> - **resendTicket.** The holder only; re-delivers the same QR to the holder's verified contact through the notification service; at most
+>   `booking.ticket.resend-limit` (5) per ticket per day (Redis), refusal `RATE_LIMITED`.
+> - **messageTicketHolders(eventId, subject, message).** Organizer of the event's organization only; one message to every current holder of a valid ticket,
+>   subject 3-80 and message 10-500 characters, control characters stripped, at most 5000 recipients, rate-limited per event; sent through the
+>   notification service in batches of 200 and audited. Returns the number of recipients; holder contact details are never returned.
+> - **Sales analytics.** `salesOverTime(eventId, from, to, bucket)` (HOUR/DAY/WEEK, Lusaka-time buckets, empty buckets present as zero, bounded range) and
+>   `purchasesByDayAndHour` for the organizer's own events.
+> Tests: `BookingOperationsRulesTest` (L1).
+>
+> **Verified 2026-10-05 (integration tests `TicketResendTest`, `HolderMessagingTest`, `ReadsScopingTest`).** As built, `resendTicket` is allowed to the ticket's
+> holder, to an attendee-list reader of the event (an organizer's team, the prototype's Bookings tab needs it) and to platform staff; anybody else is told
+> `TICKET_UNKNOWN`, exactly as for an invented id. It is capped at 3 per ticket and 30 per caller per hour (Redis; a down limiter refuses). It sends no QR
+> and no raw contact: the notification names the ticket and event and goes to the *current holder's* verified contact, resolved by identity. `messageTicketHolders`
+> reaches the holders of ISSUED/VALIDATED tickets of the event (a ticket in an open transfer is skipped), at most 5000, 3 per event, 10 per sender and 30 per organization
+> per day, the organizer is told only a count, and `deliveredCount` is what identity says it reached (`PARTIAL`/`FAILED` otherwise).
+
 > **Conformance** · V3 §4.1 purchase journey · US Part III §16 US-BUY-002 · US Part III §18 scanner stories
+
+> **Amended 2026-10-04 (D-39, D-40, D-41; F-044).** Each ticket has **one fixed QR**, issued with the ticket and never rotated (D-40).
+> Delivery is **WhatsApp and email** (no SMS). **R5 below is superseded**: there is no signature-rotating re-issue; a lost or shared
+> QR is handled by re-sending the same QR, by the gate fallback (ticket code plus holder ID, [ET-TKT-003](../003-validation-and-checkin/)),
+> and by **first scan wins**: a second presentation of the same ticket is refused as already used. The human-readable ticket code is
+> still not a credential on its own.
 
 ## 1. Capability
 
@@ -40,7 +68,7 @@ Per-event derivation means a scanner app can be issued exactly the key for the e
 working, and a leaked key compromises one event rather than the platform. The master key
 never leaves the server.
 
-**Re-issue rotates the signature and invalidates the old QR immediately.** The ticket keeps
+**Superseded 2026-10-04 (D-40): the QR is fixed and never rotated; there is no re-issue that kills an old QR.** *Original text:* **Re-issue rotates the signature and invalidates the old QR immediately.** The ticket keeps
 its id, its reference and its history; `issuedAt` moves and the signature changes. A buyer
 who lost their phone gets a working ticket, and whoever has the old phone does not. This is
 the property that makes re-issue safe enough to offer self-service.
@@ -138,7 +166,15 @@ and admission SHALL NOT be possible on it alone.
 - [ ] The reference appears on the ticket, in delivery messages and in support tooling
 - [ ] A test asserts that presenting a valid reference with no signature is refused
 
-### ET-TKT-002-R5 · Re-issue rotates the signature and kills the old QR
+### ET-TKT-002-R5 · ~~Re-issue rotates the signature and kills the old QR~~ — superseded: the QR is fixed; re-send replaces re-issue
+
+**Replacement acceptance (2026-10-04)**
+- [ ] The payload of a ticket is identical for the ticket's whole life; `issuedAt` and the signature never change after issuance
+- [ ] `resendTicket` (owner only) re-delivers the **same** QR on WhatsApp or email, rate-limited per ticket to `booking.ticket.resend-limit` (5 per day), and writes a delivery attempt row
+- [ ] A second presentation of a ticket already `VALIDATED` is refused with `TICKET_ALREADY_VALIDATED`: **first scan wins**
+- [ ] The `reissueTicket` operation and `issueCount` rotation are removed; an operator who must stop a lost ticket cancels it, and the buyer is issued a new ticket id with a new fixed QR
+
+**Original acceptance, retained for history only**
 
 WHEN a ticket is re-issued, THE SYSTEM SHALL generate a new payload and SHALL cause the
 previous one to fail verification.
@@ -159,7 +195,8 @@ fails, THEN THE SYSTEM SHALL retain the ticket and retry.
 
 **Acceptance**
 - [ ] Delivery is triggered by `booking.TicketPurchased`, after commit — never inside the confirmation transaction
-- [ ] Channels attempted are in-app (always), then WhatsApp, SMS and email per the buyer's preferences ([ET-NTF-001](../../notification/001-notification-transport/))
+- [ ] Channels attempted are in-app (always), then WhatsApp and email per the buyer's contact and preferences; **SMS is not a channel (D-39)**; no message contains a sign-in link ([ET-NTF-001](../../notification/001-notification-transport/))
+- [ ] Delivery runs as `TicketDeliveryWorkflow` (`ticket-delivery/{ticketId}`, [ET-PLT-015](../../_platform/015-durable-execution/)); when no channel confirms, the ticket remains available in-app and at the gate by ticket code plus ID
 - [ ] A failure on every channel leaves the ticket valid and visible in the app, and raises a notification failure, not a purchase failure
 - [ ] Delivery attempts are recorded against the ticket with channel, outcome and timestamp
 - [ ] A buyer can re-send delivery themselves, rate-limited
@@ -176,9 +213,18 @@ owned by exactly one spec.
 - [ ] `REFUNDED`, `CANCELLED` and `EXPIRED` are terminal
 - [ ] A transition from a terminal state is refused with `TICKET_STATE_INVALID` carrying `currentStatus`
 - [ ] A test drives all `(status, transition)` pairs
-- [ ] `EXPIRED` is reached by a sweep after the event completes without the ticket being validated — it is a reporting outcome, not a punishment, and does not affect refund eligibility
+- [ ] `EXPIRED` is reached through the event's `TicketExpiryWorkflow`, 24 h after `catalog.EventCompleted`, for tickets never validated — a reporting outcome, not a punishment, and it does not affect refund eligibility
 
 ## 4. Model
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 1 operation name below adopts the
+> shipped name: `eventTickets` → `ticketsByEvent`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
 
 ### The document
 
@@ -229,7 +275,7 @@ ticket can be displayed offline from local storage.
 | `REFUND_PENDING` | refund settles | `REFUNDED` | [ET-FIN-004](../../finance/004-refunds-and-chargebacks/) |
 | `REFUND_PENDING` | refund refused | back to previous | [ET-FIN-004](../../finance/004-refunds-and-chargebacks/) |
 | `ISSUED` | event cancelled | `CANCELLED` | [ET-CAT-001](../../catalog/001-event-lifecycle/) |
-| `ISSUED` | event completed, never scanned | `EXPIRED` | this spec's sweep |
+| `ISSUED` | event completed, never scanned | `EXPIRED` | this spec's `TicketExpiryWorkflow` |
 
 `REFUNDED`, `CANCELLED` and `EXPIRED` are terminal. `TRANSFERRED` is a marker on the
 **source** ticket's history rather than a resting state — the ticket itself returns to
@@ -251,7 +297,7 @@ Subgraph `booking`. Every field carries `@auth` explicitly.
 | `ticket(id)` | query | `AUTHENTICATED` | `Ticket` |
 | `ticketByReference(reference)` | query | `ORGANIZER` | `Ticket` |
 | `myTickets(status, first, after)` | query | `AUTHENTICATED` | `TicketConnection!` |
-| `eventTickets(eventId, status, page)` | query | `ORGANIZER` | `TicketPage!` `@tag(name: "admin")` |
+| `ticketsByEvent(eventId, status, page)` | query | `ORGANIZER` | `TicketPage!` `@tag(name: "admin")` |
 | `ticketQrPayload(id)` | query | `AUTHENTICATED` | `String!` |
 | `reissueTicket(id)` | mutation | `AUTHENTICATED` | `Ticket!` |
 | `resendTicketDelivery(id, channel)` | mutation | `AUTHENTICATED` | `Boolean!` |
@@ -267,15 +313,16 @@ to an actor holding `ticket:scan` on that event.
 
 | Tier | Name | When | Consumers |
 |---|---|---|---|
-| module | `TicketIssuedEvent` | issuance | delivery |
-| module | `TicketReissuedEvent` | re-issue | delivery, audit |
-| bus | `booking.TicketPurchased` v1 | after confirmation commits | catalog → counters; identity → deliver |
+| bus | `booking.TicketPurchased` v1 | staged in the confirmation transaction | catalog → counters; identity → deliver |
 
-### Sweeps
+Delivery and the re-issue audit row are steps of the purchase workflow and of `reissueTicket`,
+not in-memory events.
 
-| Sweep | Lock | When | Purpose |
-|---|---|---|---|
-| expiry | `lock:sweep:ticket-expiry` | on `catalog.EventCompleted` + 24 h | `ISSUED` → `EXPIRED` for unscanned tickets |
+### Workflows
+
+| Workflow | Id | Queue | Started by | Timer and step |
+|---|---|---|---|---|
+| `TicketExpiryWorkflow` | `ticket-expiry/{eventId}` | `booking-finance` | booking's catalog-events consumer on `catalog.EventCompleted`, `USE_EXISTING` | sleeps 24 h past `completedAt`, then moves unscanned `ISSUED` tickets to `EXPIRED` in batches by compare-and-set, continuing as new per batch |
 
 ### Configuration
 
@@ -342,10 +389,10 @@ to an actor holding `ticket:scan` on that event.
   - parallel-safe: yes
   - depends: T2
 
-- [ ] **T8 · The expiry sweep on event completion**
+- [ ] **T8 · The expiry workflow on event completion**
   - requirements: R7
-  - files: `backend/booking-service/.../scheduler/TicketExpirySweeper.java`
-  - verify: unscanned tickets expire 24 h after completion; refund eligibility is unaffected
+  - files: `backend/booking-service/.../workflow/ticket/TicketExpiryWorkflowImpl.java`
+  - verify: a time-skipping test expires unscanned tickets 24 h after completion; refund eligibility is unaffected; the history replays
   - parallel-safe: yes
   - depends: T1
 

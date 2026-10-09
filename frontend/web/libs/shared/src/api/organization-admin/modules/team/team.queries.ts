@@ -64,26 +64,6 @@ export const REMOVE_MEMBER = gql`
   }
 `;
 
-/** Suspend a member without removing them. */
-export const SUSPEND_MEMBER = gql`
-  mutation SuspendMember($memberId: ID!, $reason: String) {
-    suspendMember(memberId: $memberId, reason: $reason) {
-      id
-      status
-    }
-  }
-`;
-
-/** Reverse a suspension. */
-export const REACTIVATE_MEMBER = gql`
-  mutation ReactivateMember($memberId: ID!) {
-    reactivateMember(memberId: $memberId) {
-      id
-      status
-    }
-  }
-`;
-
 /**
  * Invite one person to the organization.
  *

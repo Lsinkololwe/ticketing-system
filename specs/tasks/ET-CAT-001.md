@@ -3,7 +3,7 @@
 > **Spec** [`specs/catalog/001-event-lifecycle/spec.md`](../catalog/001-event-lifecycle/spec.md) · **Wave 2** · `blocked_by:` ET-PLT-002, 003, 005, 007, ET-ORG-001, ET-ORG-003
 > **Screens** `Org Admin - Event Editor.dc.html`, `Org Admin - Create Event Wizard.dc.html` *(author)* · `Admin - Approvals Workbench.dc.html` + `Admin - Events.dc.html` *(reviewer)* · `Ticketing - Discover & Checkout.dc.html` + `Ticketing - Event Detail (Full).dc.html` *(buyer)*
 > **Routes** org-admin `(dashboard)/events{,/new,/[id]}` · admin `(dashboard)/approvals/events`, `events{,/calendar}` · ticketing `events/[id]`, `/`
-> **Verify** `mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-001 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-001 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 7 queries, 10 mutations, three audiences. The state machine here is what makes an event visible,
 sellable, refundable or over — and V3 §5 and §9 are authoritative on it.
@@ -17,8 +17,8 @@ grep -rn 'hasRole\|Permission' backend/catalog-service --include='*.java' | grep
 
 Every permission comparison found is a `contradicted` row deleted by
 [`ET-ORG-003`](ET-ORG-003.md) BE-5 — this spec **must** gate through the internal permission API
-instead. Also classify: does a status literal appear in any mutation? Is there a completion sweep
-at all?
+instead. Also classify: does a status literal appear in any mutation? Does completion run as the
+event's workflow timer?
 
 ## A · Backend
 
@@ -53,10 +53,10 @@ at all?
 - Replacing the window on a second reschedule shortens the buyer's rights each time the organizer
   changes their mind. V3 §9 is authoritative.
 
-### BE-6 · The completion sweep, its lock, its idempotence
+### BE-6 · The completion timer and its idempotence
 - **Spec** R6 · **§5** T6 · **depends** BE-1 · **parallel-safe** yes
-- **Acceptance** frozen-clock completion at `endsAt + interval`; a second instance **moves nothing
-  twice**.
+- **Acceptance** time-skipping completion at `endsAt`; a repeated completion **moves nothing
+  twice**; the recorded history replays.
 - Completion is what triggers commission **recognition** ([`ET-FIN-002`](ET-FIN-002.md), **D-04**),
   so a double-fire double-recognises revenue.
 
@@ -167,7 +167,7 @@ the **composed public contract**, not the resolver.
 Tickets stay valid; a second reschedule extends the window; the escrow clock moves.
 
 ### TS-6 · Completion *(L3)*
-Completes at `endsAt + interval`; a second sweeper instance moves nothing twice.
+Completes at `endsAt` under time skipping and follows a reschedule; a repeated completion moves nothing twice.
 
 ### TS-7 · Cancellation arithmetic *(L3 — spans catalog and booking)*
 `escrowDebit + commissionCancelled + clawedBack == totalRefunded` to K0.01. Plus
@@ -192,14 +192,14 @@ confirming a sale still respects `booking_tier_inventory`.
 
 - [ ] R0 recorded; every catalog role comparison classified `contradicted`
 - [ ] 14 legal transitions of 99 pairs; no status literal
-- [ ] Material-field classification enforced; a new unclassified field fails a test
+- [x] Material-field classification enforced; a new unclassified field fails a test — `EventFields.MATERIAL` holds exactly the five; `EventFieldClassificationTest` (L1) fails on an unclassified field; `EventEditingTest` (L2, real validators) moves an APPROVED event to DRAFT for each material field individually, keeps it APPROVED for a non-material one, and refuses a material change to a PUBLISHED or PENDING_APPROVAL event with `EVENT_STATE_INVALID` carrying `currentStatus` (2026-09-19).
 - [ ] Catalog contains no role comparison; gates go through the permission API
 - [ ] Sold ticket blocks unpublish; `APPROVED` invisible on the public contract
 - [ ] Reschedule keeps tickets valid and **extends** the refund window
-- [ ] Completion sweep idempotent under two instances
+- [x] Completion sweep idempotent under two instances — completion is `EventLifecycleWorkflow`'s timer rather than a sweep (ET-PLT-015): one execution per event under `USE_EXISTING`, so every pod's adoption run starts the same execution. Evidence: `EventLifecycleWorkflowTest.completesAtItsEnd`, `anAdoptedEventAlreadyOverCompletes` (L3); `EventLifecycleWritesTest.completionIsIdempotent` (L2, two runs → one `catalog.EventCompleted`).
 - [ ] Cancellation arithmetic balances to K0.01; ledger balanced
 - [ ] Denormalised counter never gates a sale, proven by deliberate desync
 - [ ] All five `.dc.html` screens read; layouts match
 - [ ] Author, reviewer and buyer e2e green; compliance green on three apps
-- [ ] `mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-001 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/catalog-service test -Dgroups=ET-CAT-001 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

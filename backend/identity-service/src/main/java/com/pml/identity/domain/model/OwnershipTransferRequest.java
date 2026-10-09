@@ -1,16 +1,16 @@
 package com.pml.identity.domain.model;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.identity.domain.enums.TransferStatus;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -42,14 +42,12 @@ import java.time.Instant;
  * - Only current owner can initiate transfer
  * - New owner must be existing ADMIN member
  */
-@Document(collection = "ownership_transfers")
+@Document(collection = IdentityCollections.OWNERSHIP_TRANSFERS)
+@TypeAlias("ownership_transfers")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "org_status_idx", def = "{'organizationId': 1, 'status': 1}")
-})
 public class OwnershipTransferRequest {
 
     @Id
@@ -59,7 +57,6 @@ public class OwnershipTransferRequest {
      * Organization being transferred
      */
     @NotBlank(message = "Organization ID is required")
-    @Indexed
     private String organizationId;
 
     /**
@@ -83,7 +80,6 @@ public class OwnershipTransferRequest {
      * Unique token for acceptance link
      */
     @NotBlank(message = "Transfer token is required")
-    @Indexed(unique = true)
     private String transferToken;
 
     /**
@@ -96,7 +92,6 @@ public class OwnershipTransferRequest {
      * When the transfer request expires
      */
     @NotNull(message = "Expiry date is required")
-    @Indexed
     private Instant expiresAt;
 
     /**
@@ -118,16 +113,16 @@ public class OwnershipTransferRequest {
     /**
      * Check if transfer request is still valid
      */
-    public boolean isValid() {
+    public boolean isValid(Instant now) {
         return status == TransferStatus.PENDING &&
                expiresAt != null &&
-               expiresAt.isAfter(Instant.now());
+               expiresAt.isAfter(now);
     }
 
     /**
      * Check if transfer has expired
      */
-    public boolean isExpired() {
-        return expiresAt != null && expiresAt.isBefore(Instant.now());
+    public boolean isExpired(Instant now) {
+        return expiresAt != null && expiresAt.isBefore(now);
     }
 }

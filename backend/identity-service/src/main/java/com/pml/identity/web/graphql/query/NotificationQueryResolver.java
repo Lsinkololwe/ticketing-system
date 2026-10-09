@@ -21,7 +21,7 @@ import java.util.List;
 
 /**
  * GraphQL Query Resolver for Notification operations.
- * Handles notification-related queries with both offset and cursor pagination.
+ * Handles notification-related queries with cursor pagination.
  */
 @Slf4j
 @DgsComponent
@@ -35,53 +35,23 @@ public class NotificationQueryResolver {
     // OFFSET PAGINATION QUERIES (Admin Tables)
     // ========================================================================
 
-    /**
-     * Get my notifications with offset pagination.
-     * Schema: myNotificationsOffsetPagination(type: NotificationType, status: NotificationStatus, pagination: OffsetPaginationInput): NotificationOffsetPage!
-     */
-    @DgsQuery
-    @PreAuthorize("isAuthenticated()")
-    public Mono<NotificationOffsetPage> myNotificationsOffsetPagination(
-            @InputArgument NotificationType type,
-            @InputArgument NotificationStatus status,
-            @InputArgument OffsetPaginationInput pagination
-    ) {
-        return SecurityContextUtils.getCurrentUserId()
-                .doOnNext(userId -> log.debug("GraphQL query: myNotificationsOffsetPagination(type={}, status={})", type, status))
-                .flatMap(userId -> {
-                    Flux<Notification> notificationFlux = notificationService.findByUserId(userId)
-                            .filter(notification -> {
-                                if (type != null && notification.getType() != type) {
-                                    return false;
-                                }
-                                if (status != null && notification.getStatus() != status) {
-                                    return false;
-                                }
-                                return true;
-                            });
-
-                    return buildOffsetPage(notificationFlux, pagination);
-                })
-                .defaultIfEmpty(NotificationOffsetPage.empty());
-    }
-
     // ========================================================================
     // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
     // ========================================================================
 
     /**
      * Get my notifications with cursor pagination (mobile/infinite scroll).
-     * Schema: myNotificationsCursorPagination(type: NotificationType, status: NotificationStatus, pagination: CursorPaginationInput): NotificationConnection!
+     * Schema: myNotifications(type: NotificationType, status: NotificationStatus, pagination: CursorPaginationInput): NotificationConnection!
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<NotificationConnection> myNotificationsCursorPagination(
+    public Mono<NotificationConnection> myNotifications(
             @InputArgument NotificationType type,
             @InputArgument NotificationStatus status,
             @InputArgument CursorPaginationInput pagination
     ) {
         return SecurityContextUtils.getCurrentUserId()
-                .doOnNext(userId -> log.debug("GraphQL query: myNotificationsCursorPagination(type={}, status={})", type, status))
+                .doOnNext(userId -> log.debug("GraphQL query: myNotifications(type={}, status={})", type, status))
                 .flatMap(userId -> {
                     Flux<Notification> notificationFlux = notificationService.findByUserId(userId)
                             .filter(notification -> {
@@ -130,43 +100,6 @@ public class NotificationQueryResolver {
         return SecurityContextUtils.getCurrentUserId()
                 .doOnNext(userId -> log.debug("GraphQL query: myNotificationPreferences (userId={})", userId))
                 .flatMap(preferencesService::getOrCreateDefault);
-    }
-
-    // ========================================================================
-    // HELPER METHODS
-    // ========================================================================
-
-    /**
-     * Build NotificationOffsetPage from a Flux of notifications.
-     */
-    private Mono<NotificationOffsetPage> buildOffsetPage(Flux<Notification> notificationFlux, OffsetPaginationInput pagination) {
-        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
-        int limit = p.getLimit();
-        int offset = p.getOffset();
-
-        return notificationFlux.collectList()
-                .map(allNotifications -> {
-                    int totalCount = allNotifications.size();
-                    int totalPages = (int) Math.ceil((double) totalCount / limit);
-                    boolean hasNextPage = (offset + limit) < totalCount;
-                    boolean hasPreviousPage = p.page() > 0;
-
-                    List<Notification> paginatedNotifications = allNotifications.stream()
-                            .skip(offset)
-                            .limit(limit)
-                            .toList();
-
-                    PageInfo pageInfo = PageInfo.forOffset(
-                            totalCount,
-                            limit,
-                            p.page(),
-                            totalPages,
-                            hasNextPage,
-                            hasPreviousPage
-                    );
-
-                    return new NotificationOffsetPage(paginatedNotifications, pageInfo);
-                });
     }
 
     /**

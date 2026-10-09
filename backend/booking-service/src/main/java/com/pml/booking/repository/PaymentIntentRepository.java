@@ -24,19 +24,14 @@ public interface PaymentIntentRepository extends ReactiveMongoRepository<Payment
     Mono<PaymentIntent> findByIdempotencyKey(String idempotencyKey);
 
     /**
-     * Find by our internal transaction reference.
+     * Find by the platform reference sent to the provider as its deposit id.
      */
-    Mono<PaymentIntent> findByTransactionRef(String transactionRef);
-
-    /**
-     * Find by pawaPay's transaction ID.
-     */
-    Mono<PaymentIntent> findByProviderTransactionId(String providerTransactionId);
+    Mono<PaymentIntent> findByDepositId(String depositId);
 
     /**
      * Find the intent paying for a reservation.
      *
-     * <p>ET-TKT-001 R8's recovery sweep reads this: the saga's whole state is the
+     * <p>The purchase workflow reads this: a purchase's durable state is the
      * reservation's status plus this intent's, and a reservation still
      * {@code HELD} whose intent is terminal is precisely the case a crash leaves
      * behind.
@@ -64,22 +59,7 @@ public interface PaymentIntentRepository extends ReactiveMongoRepository<Payment
     Flux<PaymentIntent> findByStatusAndExpiresAtBefore(PaymentStatus status, Instant expiresBefore);
 
     /**
-     * Find pending payments older than threshold (for timeout processing).
-     */
-    Flux<PaymentIntent> findByStatusInAndExpiresAtBefore(Iterable<PaymentStatus> statuses, Instant expiresBefore);
-
-    /**
      * Count successful payments for an event.
      */
     Mono<Long> countByEventIdAndStatus(String eventId, PaymentStatus status);
-
-    /**
-     * Count payments by user and status.
-     */
-    Mono<Long> countByUserIdAndStatus(String userId, PaymentStatus status);
-
-    /**
-     * Check if idempotency key exists.
-     */
-    Mono<Boolean> existsByIdempotencyKey(String idempotencyKey);
 }

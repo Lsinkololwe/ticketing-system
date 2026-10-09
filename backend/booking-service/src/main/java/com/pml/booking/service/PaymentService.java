@@ -44,25 +44,6 @@ public interface PaymentService {
     Mono<PaymentIntent> initiatePayment(String paymentIntentId);
 
     /**
-     * Handle webhook callback from pawaPay.
-     * Updates payment status based on provider response.
-     *
-     * @param depositId The pawaPay deposit ID
-     * @param status    The final status (COMPLETED, FAILED)
-     * @param providerTransactionId Provider's transaction reference
-     * @param failureCode Optional failure code
-     * @param failureMessage Optional failure message
-     * @return Updated payment intent
-     */
-    Mono<PaymentIntent> handlePaymentCallback(
-            String depositId,
-            String status,
-            String providerTransactionId,
-            String failureCode,
-            String failureMessage
-    );
-
-    /**
      * Check payment status by polling pawaPay API.
      * Used as fallback when webhook is not received.
      *
@@ -104,13 +85,4 @@ public interface PaymentService {
      */
     Flux<PaymentIntent> findByEventId(String eventId);
 
-    /**
-     * Find expired payment intents for cleanup.
-     */
-    Flux<PaymentIntent> findExpiredPayments();
-
-    /**
-     * Process expired payments (mark as expired).
-     */
-    Mono<Long> processExpiredPayments();
 }

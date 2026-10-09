@@ -12,12 +12,11 @@ public record PayoutSummaryResult(
         long processingPayoutRequests,
         long completedPayoutRequests,
         long failedPayoutRequests,
-        long rejectedPayoutRequests,
         BigDecimal totalPayoutAmount
 ) {
     public static PayoutSummaryResult empty() {
         return new PayoutSummaryResult(
-                0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                0L, 0L, 0L, 0L, 0L, 0L,
                 BigDecimal.ZERO
         );
     }

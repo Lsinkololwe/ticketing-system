@@ -1,7 +1,5 @@
 package com.pml.booking.web.graphql.dto;
 
-import com.pml.shared.constants.PayoutRequestStatus;
-
 import java.time.OffsetDateTime;
 
 /**
@@ -10,7 +8,10 @@ import java.time.OffsetDateTime;
 public record PayoutRequestFilterInput(
         String organizerId,
         String eventId,
-        PayoutRequestStatus status,
+        String escrowAccountId,
+        // A status name, ON_HOLD included: a hold overlays the stored status, so the filter reads the effective one
+        String status,
+        com.pml.shared.constants.PayoutMethod payoutMethod,
         OffsetDateTime startDate,
         OffsetDateTime endDate
 ) {}

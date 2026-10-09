@@ -18,6 +18,8 @@ public enum ReferenceType {
     LANGUAGE("Languages", ReferenceGroup.GEOGRAPHY),
     TIMEZONE("Timezones", ReferenceGroup.GEOGRAPHY),
     PROVINCE("Provinces", ReferenceGroup.GEOGRAPHY),
+    /** A city within a {@code PROVINCE} (its parent). Venues and the discovery city filter name one. */
+    CITY("Cities", ReferenceGroup.GEOGRAPHY),
 
     // ── Payments ──────────────────────────────────────────────────────────────
     MOBILE_MONEY_OPERATOR("Mobile Money Operators", ReferenceGroup.PAYMENTS),
@@ -28,9 +30,30 @@ public enum ReferenceType {
     EVENT_CATEGORY("Event Categories", ReferenceGroup.EVENTS),
     MUSIC_GENRE("Music Genres", ReferenceGroup.EVENTS),
     AGE_RESTRICTION("Age Restrictions", ReferenceGroup.EVENTS),
+    /** The tier categories an organizer files a ticket tier under (mirrors the {@code TierCategory} API enum). */
+    TICKET_TIER_CATEGORY("Ticket Tier Categories", ReferenceGroup.EVENTS),
 
     // ── KYB / Onboarding ──────────────────────────────────────────────────────
     KYB_DOCUMENT_TYPE("Verification Document Types", ReferenceGroup.KYB),
+    /** Who is applying: individual, business, non-profit ... (mirrors identity's {@code OrganizationType}). */
+    ORGANIZER_TYPE("Organizer Types", ReferenceGroup.KYB),
+    /**
+     * The legal form a business is registered as (mirrors identity's {@code BusinessType}). Carries the
+     * document codes that form must supply, so the onboarding wizard asks for exactly what a review needs.
+     */
+    BUSINESS_TYPE("Legal Business Types", ReferenceGroup.KYB),
+
+    // ── Roles & access ────────────────────────────────────────────────────────
+    /** Organization roles with the plain-language description shown wherever one is picked. */
+    ORGANIZATION_ROLE("Organization Roles", ReferenceGroup.ACCESS),
+    EVENT_ROLE("Event Roles", ReferenceGroup.ACCESS),
+
+    // ── Communication ─────────────────────────────────────────────────────────
+    NOTIFICATION_CHANNEL("Notification Channels", ReferenceGroup.COMMUNICATION),
+    NOTIFICATION_CATEGORY("Notification Categories", ReferenceGroup.COMMUNICATION),
+
+    // ── Reporting ─────────────────────────────────────────────────────────────
+    REPORT_PERIOD("Report Periods", ReferenceGroup.REPORTING),
 
     // ── Operations (reason codes) ─────────────────────────────────────────────
     CANCELLATION_REASON("Event Cancellation Reasons", ReferenceGroup.OPERATIONS),
@@ -96,17 +119,13 @@ public enum ReferenceType {
      * The <em>vocabulary</em> of every workflow type is configurable: an
      * administrator adds a status, gives it a meaning, and code recognises it
      * immediately. The <em>graph</em> is a different question. Three types have
-     * their transitions fixed by a specification and enforced by a table in
-     * Java:
+     * their transitions fixed and enforced by a table in Java:
      *
      * <ul>
-     *   <li>{@code TICKET_STATUS} — {@code TicketStateMachine}, ET-TKT-002 §4,
-     *       whose R7 states that no spec may introduce a transition its table
-     *       does not have</li>
-     *   <li>{@code RESERVATION_STATUS} — {@code ReservationStateMachine},
-     *       ET-TKT-001 R6</li>
-     *   <li>{@code EVENT_STATUS} — {@code EventLifecycleServiceImpl}'s table,
-     *       ET-CAT-001</li>
+     *   <li>{@code TICKET_STATUS} — {@code TicketStateMachine}, whose table is
+     *       the complete set of ticket transitions; nothing else may add one</li>
+     *   <li>{@code RESERVATION_STATUS} — {@code ReservationStateMachine}</li>
+     *   <li>{@code EVENT_STATUS} — {@code EventLifecycleServiceImpl}'s table</li>
      * </ul>
      *
      * <p>Letting {@code allowedTransitions} be edited for these would create two
@@ -153,6 +172,9 @@ public enum ReferenceType {
         KYB("KYB & Onboarding"),
         OPERATIONS("Operations"),
         FINANCE("Finance"),
+        ACCESS("Roles & Access"),
+        COMMUNICATION("Communication"),
+        REPORTING("Reporting"),
         WORKFLOW("Workflow & Statuses");
 
         private final String label;

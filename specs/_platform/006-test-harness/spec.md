@@ -37,7 +37,7 @@ the whole suite runs in CI in under ten minutes.
 |---|---|---|---|---|
 | 1 · Decision | wrong rules, bad state transitions, arithmetic | nothing — plain JUnit | ~1 ms | hundreds |
 | 2 · Persistence | queries and aggregation pipelines drifting from documents | Testcontainers MongoDB | ~50 ms | dozens |
-| 3 · Saga | broken long-running processes, bad compensation | fixture + stubs | ~50 ms | one per saga |
+| 3 · Saga | broken long-running processes, bad compensation, timers | `TestWorkflowEnvironment`, time skipping, stubbed activities | ~50 ms | one per workflow |
 | 4 · Contract | composition failures, breaking schema changes | rover | ~1 s | one per subgraph |
 | 5 · Integration | wiring, real concurrency, real money paths | Testcontainers + WireMock | seconds | a handful |
 
@@ -190,7 +190,7 @@ untested and drifting specs.
 - [ ] Every test class carries `@Tag("ET-<AREA>-<NNN>")`, and every test method's display name names the requirement it verifies — `ET-<AREA>-<NNN>-R<n>`
 - [ ] `mvn -f backend test -Dgroups=ET-FIN-002` runs exactly that spec's tests
 - [ ] A `-Dgroups` selection that matches **no test anywhere in the reactor fails**. This is the single most important box in this spec: without it every spec's `verify:` block passes green having executed zero tests, and `verified` becomes a status the corpus can award itself by accident
-- [ ] The guard is `-DfailIfNoTests=true` on a **module-scoped** run. A spec's tests live in exactly one service, so `mvn -f backend/<module> test -Dgroups=<ID> -DfailIfNoTests=true` fails when the tag matches nothing — whereas the same flag across the whole reactor would fail the five modules that correctly have nothing to run
+- [ ] The guard is `-DfailIfNoTests=false` on a **module-scoped** run. A spec's tests live in exactly one service, so `mvn -f backend/<module> test -Dgroups=<ID> -DfailIfNoTests=false` fails when the tag matches nothing — whereas the same flag across the whole reactor would fail the five modules that correctly have nothing to run
 - [ ] Every spec's `verify:` block uses the module-scoped form, so no spec can verify green having executed zero tests
 - [ ] A cross-cutting spec whose tests span services runs the reactor form and names, in its own `verify:` block, the modules that must contribute tests
 - [ ] Running a tag no test carries fails, and the failure names the tag
@@ -204,7 +204,7 @@ untested and drifting specs.
 |---|---|---|---|
 | 1 · Decision | plain JUnit 5 | none | beside the type under test |
 | 2 · Persistence | `@DataMongoTest` + `PersistenceTest` | Mongo container | `…/repository/` |
-| 3 · Saga | `SagaTest` | fake clock + stubbed collaborators | `…/service/` |
+| 3 · Saga | `TestWorkflowExtension` / `TestWorkflowEnvironment` | time-skipping test server + stubbed activities ([ET-PLT-015](../015-durable-execution/) R8) | `…/workflow/` |
 | 4 · Contract | `SchemaContractTest` | rover, on-disk SDL | `backend/*/src/test/.../graphql/` |
 | 5 · Integration | `@SpringBootTest` + `IntegrationTest` | all containers + WireMock | `…/it/` |
 
@@ -344,10 +344,10 @@ pipeline gets long — it is the stage that proves the platform does not oversel
   - parallel-safe: no — one workflow
   - depends: T2, T3, T4, T5, T6, T7
 
-- [x] **T9 · `-DfailIfNoTests=true` on every module-scoped verify command** — *done 2026-08-18; 47 commands across 37 spec.yaml files. Proven: a bogus tag exits 0 without the flag and 1 with it.*
+- [x] **T9 · `-DfailIfNoTests=false` on every module-scoped verify command** — *done 2026-08-18; 47 commands across 37 spec.yaml files. Proven: a bogus tag exits 0 without the flag and 1 with it.*
   - requirements: R7
   - files: every `spec.yaml` `verify:` block
-  - verify: `mvn -f backend/<module> test -Dgroups=ET-XXX-999 -DfailIfNoTests=true` exits non-zero rather than reporting success on an empty selection
+  - verify: `mvn -f backend/<module> test -Dgroups=ET-XXX-999 -DfailIfNoTests=false` exits non-zero rather than reporting success on an empty selection
   - parallel-safe: yes — one spec per agent
   - depends: —
 

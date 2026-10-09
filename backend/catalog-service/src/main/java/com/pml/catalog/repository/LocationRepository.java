@@ -16,13 +16,6 @@ import reactor.core.publisher.Flux;
 @Repository
 public interface LocationRepository extends ReactiveMongoRepository<Location, String> {
 
-    // ==========================================
-    // Cursor-based pagination (for mobile infinite scroll)
-    // ==========================================
-
-    // First page queries
-    Flux<Location> findByIsActiveTrueOrderByIdAsc(Pageable pageable);
-
     @Query("{ 'cityName': { '$regex': ?0, '$options': 'i' }, 'isActive': true }")
     Flux<Location> findByCityFirstPage(String city, Pageable pageable);
 
@@ -31,17 +24,4 @@ public interface LocationRepository extends ReactiveMongoRepository<Location, St
 
     @Query("{ 'isActive': true, '$or': [ { 'name': { '$regex': ?0, '$options': 'i' } }, { 'address': { '$regex': ?0, '$options': 'i' } }, { 'cityName': { '$regex': ?0, '$options': 'i' } } ] }")
     Flux<Location> searchLocationsFirstPage(String query, Pageable pageable);
-
-    // After cursor queries
-    @Query("{ 'isActive': true, '_id': { '$gt': ?0 } }")
-    Flux<Location> findLocationsAfterCursor(String afterId, Pageable pageable);
-
-    @Query("{ 'cityName': { '$regex': ?0, '$options': 'i' }, 'isActive': true, '_id': { '$gt': ?1 } }")
-    Flux<Location> findByCityAfterCursor(String city, String afterId, Pageable pageable);
-
-    @Query("{ 'country': { '$regex': ?0, '$options': 'i' }, 'isActive': true, '_id': { '$gt': ?1 } }")
-    Flux<Location> findByCountryAfterCursor(String country, String afterId, Pageable pageable);
-
-    @Query("{ 'isActive': true, '_id': { '$gt': ?1 }, '$or': [ { 'name': { '$regex': ?0, '$options': 'i' } }, { 'address': { '$regex': ?0, '$options': 'i' } }, { 'cityName': { '$regex': ?0, '$options': 'i' } } ] }")
-    Flux<Location> searchLocationsAfterCursor(String query, String afterId, Pageable pageable);
 }

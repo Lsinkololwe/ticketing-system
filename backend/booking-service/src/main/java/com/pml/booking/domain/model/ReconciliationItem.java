@@ -264,22 +264,10 @@ public class ReconciliationItem {
      * @param resolution Description of how it was resolved
      * @param resolvedBy User who resolved it
      */
-    public void resolve(String resolution, String resolvedBy) {
+    public void resolve(String resolution, String resolvedBy, Instant now) {
         this.resolution = resolution;
         this.resolvedBy = resolvedBy;
-        this.resolvedAt = Instant.now();
-    }
-
-    /**
-     * Marks this item as resolved with an adjustment journal entry.
-     *
-     * @param resolution Description of resolution
-     * @param resolvedBy User who resolved it
-     * @param journalEntryId ID of adjustment journal entry
-     */
-    public void resolveWithAdjustment(String resolution, String resolvedBy, String journalEntryId) {
-        resolve(resolution, resolvedBy);
-        this.adjustmentJournalEntryId = journalEntryId;
+        this.resolvedAt = now;
     }
 
     // ========================================================================

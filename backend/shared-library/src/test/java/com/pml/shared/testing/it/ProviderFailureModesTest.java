@@ -23,13 +23,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The six provider failure modes of ET-PLT-006 R6, each with a named stub and a test.
+ * The six provider failure modes, each with a named stub and a test.
  *
  * <p>These are the cases that break the money. A provider that answers correctly is not
  * interesting; a provider that resets the connection after receiving a payment request is,
  * because the platform then cannot know whether the money moved — and every ambiguity in
- * ET-PAY-001, ET-PAY-002 and ET-ADM-003 descends from exactly that.
+ * payment intents, callbacks and transaction recovery descends from exactly that.
  */
+@Tag("L5")
 @Tag("ET-PLT-006")
 @DisplayName("ET-PLT-006-R6 · external providers are stubbed, failure-first")
 class ProviderFailureModesTest {
@@ -97,8 +98,8 @@ class ProviderFailureModesTest {
         Providers.Callbacks.deliverTwice(url, """
                 {"depositId":"dep-1","status":"COMPLETED"}""");
 
-        // Two deliveries reached the receiver. Idempotency is the platform's job
-        // (ET-PAY-002 R2) — the harness's job is to make the double delivery happen.
+        // Two deliveries reached the receiver. Idempotency is the platform's job;
+        // the harness's job is to make the double delivery happen.
         providers.server().verify(2, postRequestedFor(urlPathEqualTo("/platform/webhook")));
     }
 
@@ -135,7 +136,7 @@ class ProviderFailureModesTest {
         HttpResponse<String> response = get("/deposits/dep-1");
 
         assertThat(response.body()).contains("PENDING");
-        // ET-PAY-001 R5: while the outcome is unknown, hold. Releasing the seat or
+        // While the outcome is unknown, hold. Releasing the seat or
         // refunding here is worse than a wait and an operator's attention, because
         // the money may still arrive.
     }

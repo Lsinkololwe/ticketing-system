@@ -80,6 +80,9 @@ public class EventEntityFetcher {
     public Mono<Event> fetchEvent(Map<String, Object> values) {
         String id = (String) values.get("id");
         log.debug("Federation: Resolving Event entity with id={}", id);
-        return eventService.findById(id);
+        // The same visibility rule as event(id). _entities resolves a
+        // caller-supplied key just as a root query does, so leaving it on findById
+        // would close the front door and leave the federation one open.
+        return eventService.findVisibleById(id);
     }
 }

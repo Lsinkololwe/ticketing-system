@@ -2,7 +2,6 @@ package com.pml.identity.web.graphql.dto.organization;
 
 import com.pml.identity.domain.enums.BusinessType;
 import com.pml.identity.domain.enums.OrganizationType;
-import com.pml.identity.domain.valueobject.SocialLinks;
 import lombok.Builder;
 
 /**
@@ -12,12 +11,11 @@ import lombok.Builder;
  * when ready for payouts.
  *
  * <h2>Why registration and tax details are collected here</h2>
- * This record previously excluded {@code businessType}, {@code taxId} and
- * {@code businessRegistrationNumber} — "NO registration/tax details". That is no
- * longer tenable: {@code businessType} determines which verification documents
- * the applicant must supply (spec ET-ORG-001 §4), so it has to be known before
+ * This record carries {@code businessType}, {@code taxId} and
+ * {@code businessRegistrationNumber} because {@code businessType} determines which
+ * verification documents the applicant must supply, so it has to be known before
  * the documents step can render at all, and it is what
- * {@link com.pml.identity.domain.RequiredDocuments} keys off when
+ * {@link com.pml.identity.domain.valueobject.RequiredDocuments} keys off when
  * {@code submitForReview} checks completeness.
  *
  * <p>All three remain optional on the input. Which of them are actually
@@ -78,7 +76,7 @@ public record OrganizationApplicationInput(
 
     /**
      * Legal business type. Drives the required verification document set
-     * (spec ET-ORG-001 §4) — a sole proprietor is never asked for a certificate
+     * — a sole proprietor is never asked for a certificate
      * of incorporation.
      */
     BusinessType businessType,

@@ -32,7 +32,7 @@
       },
       "organizerId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "OWASP A03 - ObjectId pattern validation"
       },
       "organizerName": {
@@ -94,20 +94,6 @@
         "bsonType": "decimal",
         "minimum": 0
       },
-      "platformFee": {
-        "bsonType": [
-          "decimal",
-          "null"
-        ],
-        "minimum": 0
-      },
-      "processingFee": {
-        "bsonType": [
-          "decimal",
-          "null"
-        ],
-        "minimum": 0
-      },
       "taxAmount": {
         "bsonType": [
           "decimal",
@@ -152,6 +138,7 @@
         "enum": [
           "BANK_TRANSFER",
           "MOBILE_MONEY",
+          "CHEQUE",
           null
         ]
       },
@@ -266,6 +253,70 @@
           "array",
           "null"
         ]
+      },
+      "idempotencyKey": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "onHold": {
+        "bsonType": [
+          "bool",
+          "null"
+        ]
+      },
+      "holdReason": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 1000
+      },
+      "heldBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "heldAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "releasedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "releasedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "journalEntryId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "ET-FIN-003 \u00a74 \u00b7 the journal entry that moved the escrow for the current attempt"
+      },
+      "reversalEntryId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "ET-FIN-003 R6 \u00b7 the reversing entry, when the attempt's transfer failed"
+      },
+      "failureCategory": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "ET-FIN-003 R7 \u00b7 the provider or refusal code that ended the last attempt"
       },
       "issueType": {
         "bsonType": [

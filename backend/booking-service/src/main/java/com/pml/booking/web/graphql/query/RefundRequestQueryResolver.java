@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.*;
+import com.pml.booking.security.CallerScope;
 
 /**
  * GraphQL Query Resolver for Refund Request Operations.
@@ -34,6 +35,7 @@ public class RefundRequestQueryResolver {
 
     private final RefundService refundService;
     private final TicketService ticketService;
+    private final com.pml.booking.service.RefundReads refundReads;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
@@ -75,7 +77,7 @@ public class RefundRequestQueryResolver {
     public Flux<RefundRequest> refundRequestsByTicket(@InputArgument String ticketId) {
         log.debug("GraphQL query: refundRequestsByTicket({})", ticketId);
         Objects.requireNonNull(ticketId, "Ticket ID is required");
-        return refundService.findByTicketId(ticketId).flux();
+        return refundService.findAllByTicketId(ticketId);
     }
 
     // ========================================================================
@@ -84,15 +86,15 @@ public class RefundRequestQueryResolver {
 
     /**
      * Search refund requests with offset pagination.
-     * Schema: refundRequestsOffsetPagination(filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+     * Schema: refundRequests(filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<RefundRequestOffsetPage> refundRequestsOffsetPagination(
+    public Mono<RefundRequestOffsetPage> refundRequests(
             @InputArgument RefundRequestFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: refundRequestsOffsetPagination");
+        log.debug("GraphQL query: refundRequests");
         Objects.requireNonNull(filter, "Filter is required");
 
         // findAll(), not findPendingRefunds(): this is the admin table for every
@@ -104,15 +106,15 @@ public class RefundRequestQueryResolver {
 
     /**
      * Get refund requests by buyer with offset pagination.
-     * Schema: refundRequestsByBuyerOffsetPagination(buyerId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+     * Schema: refundRequestsByBuyer(buyerId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or #buyerId == authentication.principal.subject")
-    public Mono<RefundRequestOffsetPage> refundRequestsByBuyerOffsetPagination(
+    public Mono<RefundRequestOffsetPage> refundRequestsByBuyer(
             @InputArgument String buyerId,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: refundRequestsByBuyerOffsetPagination(buyerId={})", buyerId);
+        log.debug("GraphQL query: refundRequestsByBuyer(buyerId={})", buyerId);
         Objects.requireNonNull(buyerId, "Buyer ID is required");
 
         return buildOffsetPage(refundService.findByBuyerId(buyerId), pagination);
@@ -120,98 +122,49 @@ public class RefundRequestQueryResolver {
 
     /**
      * Get refund requests by event with offset pagination.
-     * Schema: refundRequestsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+     * Schema: refundRequestsByEvent(eventId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
-    public Mono<RefundRequestOffsetPage> refundRequestsByEventOffsetPagination(
+    public Mono<RefundRequestOffsetPage> refundRequestsByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: refundRequestsByEventOffsetPagination(eventId={})", eventId);
+        log.debug("GraphQL query: refundRequestsByEvent(eventId={})", eventId);
         Objects.requireNonNull(eventId, "Event ID is required");
 
         return buildOffsetPage(refundService.findByEventId(eventId), pagination);
     }
 
     /**
-     * Get pending refund requests with offset pagination.
-     * Schema: pendingRefundRequestsOffsetPagination(pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+     * An organization's refund inbox: the requests raised against its events, in the database.
+     * Schema: refundRequestsByOrganizer(organizationId: ID, filter, pagination): RefundRequestOffsetPage!
+     *
+     * <p>Authorization is the organization membership in the token plus {@code ticket:refund} in
+     * identity; platform staff may omit the organization and read across all of them.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<RefundRequestOffsetPage> pendingRefundRequestsOffsetPagination(
+    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    public Mono<RefundRequestOffsetPage> refundRequestsByOrganizer(
+            @InputArgument String organizationId,
+            @InputArgument RefundRequestFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: pendingRefundRequestsOffsetPagination");
+        return refundReads.byOrganizer(organizationId, filter, pagination)
+                .map(slice -> new RefundRequestOffsetPage(slice.data(), slice.pagination()));
+    }
+
+    /**
+     * Get pending refund requests with offset pagination.
+     * Schema: pendingRefundRequests(pagination: OffsetPaginationInput): RefundRequestOffsetPage!
+     */
+    @DgsQuery
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    public Mono<RefundRequestOffsetPage> pendingRefundRequests(
+            @InputArgument OffsetPaginationInput pagination
+    ) {
+        log.debug("GraphQL query: pendingRefundRequests");
         return buildOffsetPage(refundService.findPendingRefunds(), pagination);
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Search refund requests with cursor pagination.
-     * Schema: refundRequestsCursorPagination(filter: RefundRequestFilterInput!, pagination: CursorPaginationInput): RefundRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<RefundRequestConnection> refundRequestsCursorPagination(
-            @InputArgument RefundRequestFilterInput filter,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: refundRequestsCursorPagination");
-        Objects.requireNonNull(filter, "Filter is required");
-
-        // See refundRequestsOffsetPagination — same query, cursor-paginated.
-        Flux<RefundRequest> refundFlux = applyFilters(refundService.findAll(), filter);
-        return buildCursorConnection(refundFlux, pagination);
-    }
-
-    /**
-     * Get refund requests by buyer with cursor pagination.
-     * Schema: refundRequestsByBuyerCursorPagination(buyerId: String!, pagination: CursorPaginationInput): RefundRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or #buyerId == authentication.principal.subject")
-    public Mono<RefundRequestConnection> refundRequestsByBuyerCursorPagination(
-            @InputArgument String buyerId,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: refundRequestsByBuyerCursorPagination(buyerId={})", buyerId);
-        Objects.requireNonNull(buyerId, "Buyer ID is required");
-
-        return buildCursorConnection(refundService.findByBuyerId(buyerId), pagination);
-    }
-
-    /**
-     * Get refund requests by event with cursor pagination.
-     * Schema: refundRequestsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): RefundRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
-    public Mono<RefundRequestConnection> refundRequestsByEventCursorPagination(
-            @InputArgument String eventId,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: refundRequestsByEventCursorPagination(eventId={})", eventId);
-        Objects.requireNonNull(eventId, "Event ID is required");
-
-        return buildCursorConnection(refundService.findByEventId(eventId), pagination);
-    }
-
-    /**
-     * Get pending refund requests with cursor pagination.
-     * Schema: pendingRefundRequestsCursorPagination(pagination: CursorPaginationInput): RefundRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<RefundRequestConnection> pendingRefundRequestsCursorPagination(
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: pendingRefundRequestsCursorPagination");
-        return buildCursorConnection(refundService.findPendingRefunds(), pagination);
     }
 
     // ========================================================================
@@ -247,18 +200,16 @@ public class RefundRequestQueryResolver {
 
         return ticketService.findById(ticketId)
                 .flatMap(ticket -> {
-                    if (!isRefundableStatus(ticket.getStatus())) {
+                    if (!com.pml.booking.domain.RefundEligibility.of(ticket).eligible()) {
                         return Mono.just(false);
                     }
-
-                    return refundService.findByTicketId(ticketId)
-                            .map(existingRequest -> {
-                                RefundRequestStatus status = existingRequest.getStatus();
-                                return status != RefundRequestStatus.PENDING &&
-                                        status != RefundRequestStatus.APPROVED &&
-                                        status != RefundRequestStatus.PROCESSING;
-                            })
-                            .defaultIfEmpty(true);
+                    // A request still in flight blocks another; a settled or refused one does not.
+                    return refundService.findAllByTicketId(ticketId)
+                            .filter(existing -> existing.getStatus() == RefundRequestStatus.PENDING
+                                    || existing.getStatus() == RefundRequestStatus.APPROVED
+                                    || existing.getStatus() == RefundRequestStatus.PROCESSING)
+                            .hasElements()
+                            .map(inFlight -> !inFlight);
                 })
                 .defaultIfEmpty(false);
     }
@@ -306,49 +257,6 @@ public class RefundRequestQueryResolver {
                     return new RefundRequestOffsetPage(paginatedData, paginationInfo);
                 });
     }
-
-    private Mono<RefundRequestConnection> buildCursorConnection(Flux<RefundRequest> refundFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : new CursorPaginationInput(20, null, null, null);
-        int limit = p.getLimit();
-
-        return refundFlux.collectList()
-                .map(allRefunds -> {
-                    int totalCount = allRefunds.size();
-
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allRefunds.size(); i++) {
-                            if (allRefunds.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    List<RefundRequest> pageData = allRefunds.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageData.isEmpty()) {
-                        return RefundRequestConnection.empty();
-                    }
-
-                    List<RefundRequestEdge> edges = pageData.stream()
-                            .map(RefundRequestEdge::of)
-                            .toList();
-
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.of(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new RefundRequestConnection(edges, pageInfo, totalCount);
-                });
-    }
-
     private Flux<RefundRequest> applyFilters(Flux<RefundRequest> refunds, RefundRequestFilterInput filter) {
         if (filter == null) {
             return refunds;
@@ -449,5 +357,24 @@ public class RefundRequestQueryResolver {
 
     private boolean isRefundableStatus(TicketStatus status) {
         return status != null && status.isRefundable();
+    }
+
+    /**
+     * The caller's own refund requests. OWASP A01:2021.
+     *
+     * <p>Subject-scoped, not tenant-scoped: any authenticated caller may ask, so the
+     * question is "my refunds" for a buyer, not "my organization's". The buyer id comes from the
+     * token and there is deliberately no argument to override it — which is the difference from
+     * {@code refundRequestsByBuyer(buyerId)}, where the client names whose refunds to return.
+     */
+    @DgsQuery
+    @PreAuthorize("isAuthenticated()")
+    public Mono<RefundRequestOffsetPage> myRefundRequests(
+            @InputArgument OffsetPaginationInput pagination
+    ) {
+        log.debug("GraphQL query: myRefundRequests");
+
+        return CallerScope.subject()
+                .flatMap(buyerId -> buildOffsetPage(refundService.findByBuyerId(buyerId), pagination));
     }
 }

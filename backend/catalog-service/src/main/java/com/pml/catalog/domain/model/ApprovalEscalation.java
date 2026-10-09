@@ -1,19 +1,20 @@
 package com.pml.catalog.domain.model;
 
+import com.pml.catalog.persistence.CatalogCollections;
+
 import com.pml.catalog.domain.enums.EscalationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * ApprovalEscalation Model
@@ -21,8 +22,8 @@ import java.time.LocalDateTime;
  * Tracks auto-escalation events when SLA is breached.
  * Supports reminder tracking and escalation resolution.
  */
-@Document(collection = "approval_escalations")
-@CompoundIndex(name = "status_escalatedTo_idx", def = "{'status': 1, 'escalatedTo': 1}")
+@Document(collection = CatalogCollections.APPROVAL_ESCALATIONS)
+@TypeAlias("approval_escalations")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -35,7 +36,6 @@ public class ApprovalEscalation {
     /**
      * Event ID this escalation is for
      */
-    @Indexed
     private String eventId;
 
     /**
@@ -50,13 +50,18 @@ public class ApprovalEscalation {
     /**
      * Current status of the escalation
      */
-    @Indexed
     private EscalationStatus status;
 
     /**
      * Reason for escalation (e.g., "SLA breach - 24 hours overdue")
      */
     private String reason;
+
+    /**
+     * The SLA level this escalation records: 1 at the SLA, 2 at twice it, 3 at four
+     * times. Zero for an escalation an operator raised by hand.
+     */
+    private int level;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // TIMING
@@ -66,17 +71,17 @@ public class ApprovalEscalation {
      * When the escalation was triggered
      */
     @CreatedDate
-    private LocalDateTime triggeredAt;
+    private Instant triggeredAt;
 
     /**
      * When a senior admin acknowledged the escalation
      */
-    private LocalDateTime acknowledgedAt;
+    private Instant acknowledgedAt;
 
     /**
      * When the escalation was resolved
      */
-    private LocalDateTime resolvedAt;
+    private Instant resolvedAt;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // ACTORS
@@ -85,7 +90,6 @@ public class ApprovalEscalation {
     /**
      * User ID of the senior admin this was escalated to
      */
-    @Indexed
     private String escalatedTo;
 
     /**
@@ -145,13 +149,12 @@ public class ApprovalEscalation {
     /**
      * When the last reminder was sent
      */
-    private LocalDateTime lastReminderAt;
+    private Instant lastReminderAt;
 
     /**
      * When the next reminder should be sent
      */
-    @Indexed
-    private LocalDateTime nextReminderAt;
+    private Instant nextReminderAt;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // SLA CONTEXT
@@ -165,25 +168,13 @@ public class ApprovalEscalation {
     /**
      * The SLA deadline that was missed
      */
-    private LocalDateTime slaDeadline;
+    private Instant slaDeadline;
 
     /**
      * Last modified timestamp
      */
     @LastModifiedDate
-    private LocalDateTime updatedAt;
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // CALCULATED PROPERTIES
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /**
-     * Calculate current hours overdue
-     */
-    public int getCurrentHoursOverdue() {
-        if (slaDeadline == null) return hoursOverdue;
-        return (int) Duration.between(slaDeadline, LocalDateTime.now()).toHours();
-    }
+    private Instant updatedAt;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // DOMAIN METHODS
@@ -192,9 +183,9 @@ public class ApprovalEscalation {
     /**
      * Acknowledge the escalation
      */
-    public void acknowledge(String adminId, String adminName, String notes) {
+    public void acknowledge(String adminId, String adminName, String notes, Instant now) {
         this.status = EscalationStatus.ACKNOWLEDGED;
-        this.acknowledgedAt = LocalDateTime.now();
+        this.acknowledgedAt = now;
         this.acknowledgedBy = adminId;
         this.acknowledgedByName = adminName;
         if (notes != null) {
@@ -205,36 +196,12 @@ public class ApprovalEscalation {
     /**
      * Resolve the escalation
      */
-    public void resolve(String adminId, String adminName, String notes) {
+    public void resolve(String adminId, String adminName, String notes, Instant now) {
         this.status = EscalationStatus.RESOLVED;
-        this.resolvedAt = LocalDateTime.now();
+        this.resolvedAt = now;
         this.resolvedBy = adminId;
         this.resolvedByName = adminName;
         this.resolutionNotes = notes;
-    }
-
-    /**
-     * Mark the escalation as expired
-     */
-    public void expire() {
-        this.status = EscalationStatus.EXPIRED;
-    }
-
-    /**
-     * Record a reminder was sent
-     */
-    public void recordReminderSent(int reminderIntervalHours) {
-        this.remindersSent++;
-        this.lastReminderAt = LocalDateTime.now();
-        this.nextReminderAt = LocalDateTime.now().plusHours(reminderIntervalHours);
-    }
-
-    /**
-     * Check if a reminder is due
-     */
-    public boolean isReminderDue() {
-        if (nextReminderAt == null) return false;
-        return LocalDateTime.now().isAfter(nextReminderAt);
     }
 
     /**
@@ -253,10 +220,9 @@ public class ApprovalEscalation {
      */
     public static ApprovalEscalation create(String eventId, String eventTitle,
                                             String escalatedTo, String escalatedToName,
-                                            String reason, LocalDateTime slaDeadline,
+                                            String reason, Instant slaDeadline,
                                             String originalReviewerId, String originalReviewerName,
-                                            int reminderIntervalHours) {
-        LocalDateTime now = LocalDateTime.now();
+                                            int reminderIntervalHours, Instant now) {
         int hoursOverdue = (int) Duration.between(slaDeadline, now).toHours();
 
         return ApprovalEscalation.builder()
@@ -271,7 +237,7 @@ public class ApprovalEscalation {
                 .originalReviewerName(originalReviewerName)
                 .hoursOverdue(hoursOverdue)
                 .slaDeadline(slaDeadline)
-                .nextReminderAt(now.plusHours(reminderIntervalHours))
+                .nextReminderAt(now.plus(Duration.ofHours(reminderIntervalHours)))
                 .build();
     }
 }

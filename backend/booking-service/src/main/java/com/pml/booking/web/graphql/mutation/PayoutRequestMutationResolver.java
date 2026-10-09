@@ -1,595 +1,254 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.Permission;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.booking.web.graphql.dto.ApprovePayoutRequestMutationResponse;
-import com.pml.booking.web.graphql.dto.BulkPayoutOperationResponse;
-import com.pml.booking.web.graphql.dto.CreatePayoutRequestInput;
-import com.pml.booking.web.graphql.dto.CreatePayoutRequestMutationResponse;
-import com.pml.booking.web.graphql.dto.PayoutRequestMutationResponse;
-import com.pml.booking.web.graphql.dto.ProcessPayoutRequestMutationResponse;
-import com.pml.booking.web.graphql.dto.RejectPayoutRequestMutationResponse;
 import com.pml.booking.domain.model.PayoutRequest;
+import com.pml.booking.exception.BusinessValidationException;
 import com.pml.booking.infrastructure.client.IdentityServiceClient;
-import com.pml.booking.service.BankAccountService;
-import com.pml.booking.service.PayoutEligibilityService;
 import com.pml.booking.service.PayoutRecoveryService;
 import com.pml.booking.service.PayoutRequestService;
+import com.pml.booking.web.graphql.dto.BulkPayoutOperationResponse;
+import com.pml.booking.web.graphql.dto.CreatePayoutRequestInput;
+import com.pml.booking.workflow.payout.PayoutProcess;
 import com.pml.shared.constants.PayoutRequestStatus;
 import com.pml.shared.dto.authorization.AuthorizationRequest;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TranslatedRefusal;
 import com.pml.shared.security.SecurityContextUtils;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /**
- * GraphQL Mutation Resolver for Payout Request Operations
+ * GraphQL mutations for payout requests.
  *
- * <p>Handles payout request lifecycle including creation, approval, rejection,
- * and processing. Implements the platform's payout policy workflow.</p>
+ * <p>Every state change goes through {@link PayoutProcess} to the request's payout workflow, which
+ * owns the sequence, the dual-control check and the settlement steps. The resolver authenticates,
+ * authorizes and reads the result back; it never writes a payout status itself.
  *
  * <h2>OWASP Compliance</h2>
  * <ul>
- *   <li>A01:2021 - Broken Access Control: All actor IDs extracted from JWT</li>
+ *   <li>A01:2021 - Broken Access Control: all actor ids come from the JWT</li>
  * </ul>
  */
 @Slf4j
 @DgsComponent
+@FailClosedOnRevocation
+@Validated
 @RequiredArgsConstructor
 public class PayoutRequestMutationResolver {
 
     private final PayoutRequestService payoutRequestService;
-    private final BankAccountService bankAccountService;
+    private final TenantReads tenantReads;
     private final PayoutRecoveryService payoutRecoveryService;
     private final IdentityServiceClient identityServiceClient;
-    private final PayoutEligibilityService payoutEligibilityService;
+    private final PayoutProcess payoutProcess;
 
-    /**
-     * Create a payout request (organizer).
-     * User ID extracted from JWT.
-     */
+    /** Create a payout request (organizer). */
     @DgsMutation
-    @PreAuthorize("isAuthenticated() and (#input.organizerId == authentication.principal.subject or hasAnyRole('ADMIN', 'FINANCE'))")
-    public Mono<CreatePayoutRequestMutationResponse> createPayoutRequest(
-            @InputArgument CreatePayoutRequestInput input
-    ) {
+    @PreAuthorize("isAuthenticated()")
+    public Mono<PayoutRequest> createPayoutRequest(@Valid @InputArgument CreatePayoutRequestInput input) {
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.info("Creating payout request for organizer: {} by: {}",
-                        input.organizerId(), userId))
-                // Organization-lifecycle gate (OWASP A01:2021): defer to identity-service, which
-                // evaluates the organizer's authority AND their organization's status. A pending or
-                // unapproved organization cannot request payouts, regardless of who initiates it.
-                // Keyed to the organizer (owner), so an ADMIN/FINANCE actor acting on their behalf
-                // is still bound by the organizer's org status.
-                .flatMap(userId -> identityServiceClient.checkAuthorization(
+                .doOnNext(userId -> log.info("Creating payout request for organizer: {} by: {}", input.organizerId(), userId))
+                .zipWith(isPlatformStaff())
+                // Identity decides, for the organization the organizer owns: a team member needs
+                // payout:request there (an admin holds it only when the owner has switched it on),
+                // and platform staff acting on the organizer's behalf are held to the organizer's
+                // own authority. Either way the organization's status must permit payouts.
+                .flatMap(callerAndStaff -> identityServiceClient.checkAuthorization(
                                 AuthorizationRequest.builder()
-                                        .userId(input.organizerId())
+                                        .userId(callerAndStaff.getT2() ? input.organizerId() : callerAndStaff.getT1())
                                         .organizationOwnerId(input.organizerId())
-                                        .requiredPermission("PAYOUT_REQUEST")
+                                        .requiredPermission(Permission.PAYOUT_REQUEST.code())
                                         .build())
-                        .flatMap(authz -> {
-                            if (!authz.isAuthorized()) {
-                                log.warn("Payout request denied for organizer {}: {}",
-                                        input.organizerId(), authz.getReason());
-                                return Mono.just(new CreatePayoutRequestMutationResponse(
-                                        false,
-                                        "Payout not permitted: " + authz.getReason(),
-                                        null,
-                                        List.of(authz.getReason()),
-                                        null));
-                            }
-                            return createPayoutRequestForAuthorized(input, userId);
-                        }))
-                .onErrorResume(SecurityException.class, e -> Mono.just(new CreatePayoutRequestMutationResponse(
-                        false, "Authentication required", null, List.of("Please log in"), null)))
-                .onErrorResume(e -> {
-                    log.error("Create payout request failed: {}", e.getMessage());
-                    return Mono.just(new CreatePayoutRequestMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null));
+                        .map(authz -> reactor.util.function.Tuples.of(callerAndStaff.getT1(), authz)))
+                .flatMap(callerAndAuthz -> {
+                    String userId = callerAndAuthz.getT1();
+                    var authz = callerAndAuthz.getT2();
+                    if (!authz.isAuthorized()) {
+                        log.warn("Payout request denied for organizer {}: {}", input.organizerId(), authz.getReason());
+                        return Mono.error(new BusinessValidationException("Payout not permitted: " + authz.getReason()));
+                    }
+                    return replayOrRequest(input, userId);
                 });
     }
 
+    /** Whether the caller holds a platform role that acts on organizers' behalf. */
+    private static Mono<Boolean> isPlatformStaff() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(context -> context.getAuthentication() != null && context.getAuthentication().getAuthorities().stream()
+                        .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority())
+                                || "ROLE_FINANCE".equals(authority.getAuthority())))
+                .defaultIfEmpty(false);
+    }
+
     /**
-     * Build and persist a payout request after authorization has passed.
+     * A retried create — double-click, dropped connection, refresh — returns the payout that already
+     * exists for its idempotency key. Replay is answered before the workflow is reached, so a replay
+     * of a legitimately created payout is never refused because its own execution is open.
      */
-    private Mono<CreatePayoutRequestMutationResponse> createPayoutRequestForAuthorized(
-            CreatePayoutRequestInput input, String userId) {
-        // Idempotency check FIRST.
-        //
-        // A retried create — double-click, dropped connection, browser refresh —
-        // must return the payout that already exists, not a second one for the
-        // same money. The unique sparse index on idempotencyKey is the real
-        // guarantee; this lookup exists so the caller gets their original
-        // request back rather than a duplicate-key error to interpret.
-        //
-        // Required by specs/finance/003-payouts-and-settlement.
-        if (input.idempotencyKey() != null && !input.idempotencyKey().isBlank()) {
-            return payoutRequestService.findByIdempotencyKey(input.idempotencyKey())
-                    .map(existing -> {
-                        log.info("Idempotent replay of payout request {} for key {}",
-                                existing.getRequestId(), input.idempotencyKey());
-                        return new CreatePayoutRequestMutationResponse(
-                                true, "Payout request already created", existing, List.of(), null);
-                    })
-                    .switchIfEmpty(Mono.defer(() -> checkEligibilityThenSave(input, userId)));
+    private Mono<PayoutRequest> replayOrRequest(CreatePayoutRequestInput input, String userId) {
+        if (input.idempotencyKey() == null || input.idempotencyKey().isBlank()) {
+            return payoutProcess.request(input, userId);
         }
+        return payoutRequestService.findByIdempotencyKey(input.idempotencyKey())
+                .doOnNext(existing -> log.info("Idempotent replay of payout request {} for key {}",
+                        existing.getRequestId(), input.idempotencyKey()))
+                .switchIfEmpty(Mono.defer(() -> payoutProcess.request(input, userId)));
+    }
 
-        return checkEligibilityThenSave(input, userId);
+    /** Freezes a payout before any money moves; approval, retry and settlement wait for the release. */
+    @DgsMutation
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    public Mono<PayoutRequest> holdPayoutRequest(@InputArgument String payoutRequestId, @InputArgument String reason) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(actor -> payoutProcess.hold(payoutRequestId, actor, reason));
+    }
+
+    @DgsMutation
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    public Mono<PayoutRequest> releasePayoutHold(@InputArgument String payoutRequestId, @InputArgument String note) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(actor -> payoutProcess.release(payoutRequestId, actor, note));
+    }
+
+    /** Approve a payout request; the approver must not be the requester. */
+    @DgsMutation
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    public Mono<PayoutRequest> approvePayoutRequest(@InputArgument String payoutRequestId, @InputArgument String notes) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(approverId -> payoutProcess.approve(payoutRequestId, approverId, notes));
+    }
+
+    @DgsMutation
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    public Mono<PayoutRequest> rejectPayoutRequest(@InputArgument String payoutRequestId, @InputArgument String rejectionReason) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(rejectedBy -> payoutProcess.reject(payoutRequestId, rejectedBy, rejectionReason));
     }
 
     /**
-     * Re-evaluate eligibility at the moment of the write.
-     *
-     * <p>The organizer's screen already evaluated it, but that was a screen and
-     * this is the money. Minutes pass between the two, and in that window a
-     * chargeback can arrive or a concurrent request can take the balance — so
-     * the UI's answer is a courtesy and this one is the control.
-     *
-     * <p>Ordered AFTER the idempotency check on purpose: a replay of a payout
-     * that was legitimately created must return the original, not be refused
-     * because the balance it already claimed is now gone.
-     *
-     * <p>Required by ET-FIN-003 R1, which specifies the same evaluation at
-     * request and again at approval.
-     */
-    private Mono<CreatePayoutRequestMutationResponse> checkEligibilityThenSave(
-            CreatePayoutRequestInput input, String userId) {
-        return payoutEligibilityService
-                .evaluateForEscrow(input.escrowAccountId(), input.organizerId())
-                .flatMap(eligibility -> {
-                    if (!eligibility.eligible()) {
-                        log.warn("Payout refused for organizer {} on escrow {}: {}",
-                                input.organizerId(), input.escrowAccountId(), eligibility.reasons());
-                        return Mono.just(new CreatePayoutRequestMutationResponse(
-                                false,
-                                eligibility.describeFirstFailure(),
-                                null,
-                                eligibility.reasons().stream().map(Enum::name).toList(),
-                                null));
-                    }
-
-                    // A partial withdrawal is refused rather than silently
-                    // scaled. ET-FIN-003 takes the whole balance or none: a
-                    // partial invites a fee structure and an argument about
-                    // which tickets' money was withdrawn.
-                    if (input.requestedAmount() != null
-                            && input.requestedAmount().compareTo(eligibility.availableAmount()) != 0) {
-                        return Mono.just(new CreatePayoutRequestMutationResponse(
-                                false,
-                                "A payout must be for the full available balance of "
-                                        + eligibility.availableAmount() + " " + eligibility.currency() + ".",
-                                null,
-                                List.of("PARTIAL_PAYOUT_NOT_SUPPORTED"),
-                                null));
-                    }
-
-                    return buildAndSavePayout(input, userId);
-                });
-    }
-
-    private Mono<CreatePayoutRequestMutationResponse> buildAndSavePayout(
-            CreatePayoutRequestInput input, String userId) {
-        return bankAccountService.findById(input.bankAccountId())
-                        .flatMap(bankAccount -> {
-                            // Calculate fees (platform takes 5% + ZMW 10 processing fee)
-                            BigDecimal platformFee = input.requestedAmount()
-                                    .multiply(new BigDecimal("0.05"));
-                            BigDecimal processingFee = new BigDecimal("10.00");
-                            BigDecimal settledAmount = input.requestedAmount()
-                                    .subtract(platformFee)
-                                    .subtract(processingFee);
-
-                            PayoutRequest payoutRequest = PayoutRequest.builder()
-                                    .requestId("PAY-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
-                                    .idempotencyKey(input.idempotencyKey())
-                                    .organizerId(input.organizerId())
-                                    .eventId(input.eventId())
-                                    .escrowAccountId(input.escrowAccountId())
-                                    .bankAccountId(input.bankAccountId())
-                                    .bankAccountName(bankAccount.getAccountHolderName())
-                                    .bankName(bankAccount.getBankName())
-                                    .accountNumber(bankAccount.getAccountNumber())
-                                    .requestedAmount(input.requestedAmount())
-                                    .platformFee(platformFee)
-                                    .processingFee(processingFee)
-                                    .settledAmount(settledAmount)
-                                    .currency(input.currency() != null ? input.currency() : "ZMW")
-                                    .status(PayoutRequestStatus.PENDING)
-                                    .payoutMethod(input.payoutMethod())
-                                    .requestedAt(LocalDateTime.now())
-                                    .requestedById(userId)
-                                    .notes(input.notes())
-                                    .metadata(input.metadata())
-                                    .build();
-
-                            // statusSemantic is stamped on the write path by
-                            // StatusSemanticStamper, not here. Doing it at the
-                            // creation site covered only the first status and
-                            // left every later transition carrying the meaning
-                            // the row was born with.
-                            return payoutRequestService.save(payoutRequest);
-                        })
-                        .map(request -> new CreatePayoutRequestMutationResponse(
-                                true, "Payout request created successfully", request, List.of(), null
-                        ))
-                        .switchIfEmpty(Mono.just(new CreatePayoutRequestMutationResponse(
-                                false, "Bank account not found", null, List.of("Bank account not found"), null
-                        )))
-                        // Two concurrent requests carrying the same key: one
-                        // wins the unique index, the other lands here. Return
-                        // the winner rather than surfacing a database error.
-                        .onErrorResume(DuplicateKeyException.class, error -> {
-                            if (input.idempotencyKey() == null || input.idempotencyKey().isBlank()) {
-                                return Mono.error(error);
-                            }
-                            log.info("Concurrent duplicate for idempotency key {} — returning the winner",
-                                    input.idempotencyKey());
-                            return payoutRequestService.findByIdempotencyKey(input.idempotencyKey())
-                                    .map(existing -> new CreatePayoutRequestMutationResponse(
-                                            true, "Payout request already created", existing, List.of(), null));
-                        });
-    }
-
-    /**
-     * Approve a payout request.
-     * Approver ID extracted from JWT.
+     * Settlement begins when a request is approved, so there is nothing left to start by hand. The
+     * operation answers with the request when it is already settling and refuses otherwise.
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<ApprovePayoutRequestMutationResponse> approvePayoutRequest(
-            @InputArgument String payoutRequestId,
-            @InputArgument String notes
-    ) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(approverId -> log.info("Approving payout request: {} by: {}", payoutRequestId, approverId))
-                .flatMap(approverId -> payoutRequestService.findById(payoutRequestId)
-                        .flatMap(request -> {
-                            if (request.getStatus() != PayoutRequestStatus.PENDING) {
-                                return Mono.just(new ApprovePayoutRequestMutationResponse(
-                                        false, "Payout request is not in PENDING status", request,
-                                        List.of("Invalid status for approval"), null));
-                            }
-                            PayoutRequest updated = request.toBuilder()
-                                    .status(PayoutRequestStatus.APPROVED)
-                                    .approvedAt(LocalDateTime.now())
-                                    .approvedBy(approverId)
-                                    .notes(notes)
-                                    .build();
-                            return payoutRequestService.save(updated)
-                                    .map(r -> new ApprovePayoutRequestMutationResponse(
-                                            true, "Payout request approved successfully", r, List.of(), null));
-                        })
-                        .switchIfEmpty(Mono.just(new ApprovePayoutRequestMutationResponse(
-                                false, "Payout request not found", null,
-                                List.of("Payout request not found"), null))))
-                .onErrorResume(e -> {
-                    log.error("Approve payout request failed: {}", e.getMessage());
-                    return Mono.just(new ApprovePayoutRequestMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
+    public Mono<PayoutRequest> processPayoutRequest(@InputArgument String payoutRequestId) {
+        return payoutProcess.current(payoutRequestId)
+                .flatMap(request -> request.getStatus() == PayoutRequestStatus.PROCESSING
+                        ? Mono.just(request)
+                        : Mono.error(new TranslatedRefusal(ErrorCode.PAYOUT_STATE_INVALID,
+                                "settlement begins when the request is approved; this request is " + request.getStatus())));
     }
 
-    /**
-     * Reject a payout request.
-     * Rejector ID extracted from JWT.
-     */
+    /** Finance confirms a manual bank transfer with the bank's reference. */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<RejectPayoutRequestMutationResponse> rejectPayoutRequest(
-            @InputArgument String payoutRequestId,
-            @InputArgument String rejectionReason
-    ) {
+    public Mono<PayoutRequest> completePayoutRequest(@InputArgument String payoutRequestId, @InputArgument String bankReference) {
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(rejectedBy -> log.info("Rejecting payout request: {} by: {} reason: {}",
-                        payoutRequestId, rejectedBy, rejectionReason))
-                .flatMap(rejectedBy -> payoutRequestService.findById(payoutRequestId)
-                        .flatMap(request -> {
-                            if (request.getStatus().isFinal()) {
-                                return Mono.just(new RejectPayoutRequestMutationResponse(
-                                        false, "Payout request is already in a final status", request,
-                                        List.of("Cannot reject a finalized payout request"), null));
-                            }
-                            PayoutRequest updated = request.toBuilder()
-                                    .status(PayoutRequestStatus.REJECTED)
-                                    .rejectedAt(LocalDateTime.now())
-                                    .rejectedBy(rejectedBy)
-                                    .rejectionReason(rejectionReason)
-                                    .build();
-                            return payoutRequestService.save(updated)
-                                    .map(r -> new RejectPayoutRequestMutationResponse(
-                                            true, "Payout request rejected", r, List.of(), null));
-                        })
-                        .switchIfEmpty(Mono.just(new RejectPayoutRequestMutationResponse(
-                                false, "Payout request not found", null,
-                                List.of("Payout request not found"), null))))
-                .onErrorResume(e -> {
-                    log.error("Reject payout request failed: {}", e.getMessage());
-                    return Mono.just(new RejectPayoutRequestMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
+                .flatMap(completedBy -> payoutProcess.confirmTransfer(payoutRequestId, completedBy, bankReference));
     }
 
-    /**
-     * Process a payout request.
-     * Processor ID extracted from JWT.
-     */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<ProcessPayoutRequestMutationResponse> processPayoutRequest(
-            @InputArgument String payoutRequestId
-    ) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(processedBy -> log.info("Processing payout request: {} by: {}",
-                        payoutRequestId, processedBy))
-                .flatMap(processedBy -> payoutRequestService.findById(payoutRequestId)
-                        .flatMap(request -> {
-                            if (request.getStatus() != PayoutRequestStatus.APPROVED) {
-                                return Mono.just(new ProcessPayoutRequestMutationResponse(
-                                        false, "Payout request must be APPROVED before processing", request,
-                                        List.of("Invalid status for processing"), null));
-                            }
-                            PayoutRequest updated = request.toBuilder()
-                                    .status(PayoutRequestStatus.PROCESSING)
-                                    .processedBy(processedBy)
-                                    .build();
-                            return payoutRequestService.save(updated)
-                                    .map(r -> new ProcessPayoutRequestMutationResponse(
-                                            true, "Payout request is being processed", r, List.of(), null));
-                        })
-                        .switchIfEmpty(Mono.just(new ProcessPayoutRequestMutationResponse(
-                                false, "Payout request not found", null,
-                                List.of("Payout request not found"), null))))
-                .onErrorResume(e -> {
-                    log.error("Process payout request failed: {}", e.getMessage());
-                    return Mono.just(new ProcessPayoutRequestMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
-    }
-
-    /**
-     * Complete a payout request after successful bank transfer.
-     * Completer ID extracted from JWT.
-     */
-    @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestMutationResponse> completePayoutRequest(
-            @InputArgument String payoutRequestId,
-            @InputArgument String bankReference
-    ) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(completedBy -> log.info("Completing payout request: {} with bank reference: {} by: {}",
-                        payoutRequestId, bankReference, completedBy))
-                .flatMap(completedBy -> payoutRequestService.complete(payoutRequestId, bankReference, completedBy)
-                        .map(p -> PayoutRequestMutationResponse.success(p, "Payout request completed successfully"))
-                        .doOnSuccess(r -> log.info("Payout request {} completed with bank ref: {}",
-                                payoutRequestId, bankReference)))
-                .onErrorResume(e -> {
-                    log.error("Complete payout request failed: {}", e.getMessage());
-                    return Mono.just(PayoutRequestMutationResponse.error(e.getMessage()));
-                });
-    }
-
-    /**
-     * Cancel a payout request.
-     * Canceller ID extracted from JWT.
-     */
-    @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @payoutSecurityService.isPayoutRequestOwner(#payoutRequestId, authentication)")
-    public Mono<RejectPayoutRequestMutationResponse> cancelPayoutRequest(
-            @InputArgument String payoutRequestId,
-            @InputArgument String reason
-    ) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(cancelledBy -> log.info("Cancelling payout request: {} by: {} reason: {}",
-                        payoutRequestId, cancelledBy, reason))
-                .flatMap(cancelledBy -> payoutRequestService.findById(payoutRequestId)
-                        .flatMap(request -> {
-                            if (!request.getStatus().canBeCancelled()) {
-                                return Mono.just(new RejectPayoutRequestMutationResponse(
-                                        false, "Payout request cannot be cancelled in current status", request,
-                                        List.of("Cannot cancel payout request in " + request.getStatus() + " status"), null));
-                            }
-                            PayoutRequest updated = request.toBuilder()
-                                    .status(PayoutRequestStatus.CANCELLED)
-                                    .rejectedAt(LocalDateTime.now())
-                                    .rejectedBy(cancelledBy)
-                                    .rejectionReason(reason)
-                                    .build();
-                            return payoutRequestService.save(updated)
-                                    .map(r -> new RejectPayoutRequestMutationResponse(
-                                            true, "Payout request cancelled", r, List.of(), null));
-                        })
-                        .switchIfEmpty(Mono.just(new RejectPayoutRequestMutationResponse(
-                                false, "Payout request not found", null,
-                                List.of("Payout request not found"), null))))
-                .onErrorResume(e -> {
-                    log.error("Cancel payout request failed: {}", e.getMessage());
-                    return Mono.just(new RejectPayoutRequestMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    public Mono<PayoutRequest> cancelPayoutRequest(@InputArgument String payoutRequestId, @InputArgument String reason) {
+        return tenantReads.payoutRequestForCaller(payoutRequestId)
+                .then(SecurityContextUtils.requireCurrentUserId())
+                .flatMap(cancelledBy -> payoutProcess.cancel(payoutRequestId, cancelledBy, reason));
     }
 
     // ========================================================================
     // PAYOUT RECOVERY MUTATIONS (Admin Dashboard)
     // ========================================================================
 
-    /**
-     * Resume a payout request.
-     * Schema: resumePayoutRequest(payoutRequestId: ID!): PayoutRequestMutationResponse!
-     */
+    /** A stuck or failed payout is re-driven through its workflow's retry, never by setting a status. */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestMutationResponse> resumePayoutRequest(
-            @InputArgument String payoutRequestId
-    ) {
-        log.info("Resuming payout request: {}", payoutRequestId);
-        return payoutRecoveryService.resumePayoutRequest(payoutRequestId)
-                .map(p -> PayoutRequestMutationResponse.success(p, "Payout request resumed successfully"))
-                .doOnSuccess(r -> log.info("Payout request {} resumed successfully", payoutRequestId))
-                .onErrorResume(e -> {
-                    log.error("Failed to resume payout request {}: {}", payoutRequestId, e.getMessage());
-                    return Mono.just(PayoutRequestMutationResponse.error(e.getMessage()));
-                });
+    public Mono<PayoutRequest> resumePayoutRequest(@InputArgument String payoutRequestId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(actorId -> payoutProcess.retry(payoutRequestId, actorId));
     }
 
-    /**
-     * Mark a payout request for review.
-     * Schema: markPayoutForReview(payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String): PayoutRequestMutationResponse!
-     */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestMutationResponse> markPayoutForReview(
-            @InputArgument String payoutRequestId,
-            @InputArgument String issueType,
-            @InputArgument String notes
-    ) {
+    public Mono<PayoutRequest> markPayoutForReview(@InputArgument String payoutRequestId,
+                                                   @InputArgument String issueType,
+                                                   @InputArgument String notes) {
         log.info("Marking payout {} for review with issue type: {}", payoutRequestId, issueType);
-        return payoutRecoveryService.markForReview(payoutRequestId, issueType, notes)
-                .map(p -> PayoutRequestMutationResponse.success(p, "Payout marked for review"))
-                .doOnSuccess(r -> log.info("Payout {} marked for review", payoutRequestId))
-                .onErrorResume(e -> {
-                    log.error("Failed to mark payout {} for review: {}", payoutRequestId, e.getMessage());
-                    return Mono.just(PayoutRequestMutationResponse.error(e.getMessage()));
-                });
+        return payoutRecoveryService.markForReview(payoutRequestId, issueType, notes);
     }
 
-    /**
-     * Resolve a payout issue.
-     * Schema: resolvePayoutIssue(payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!, newBankAccountId: ID): PayoutRequestMutationResponse!
-     */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestMutationResponse> resolvePayoutIssue(
-            @InputArgument String payoutRequestId,
-            @InputArgument String resolutionType,
-            @InputArgument String notes,
-            @InputArgument String newBankAccountId
-    ) {
+    public Mono<PayoutRequest> resolvePayoutIssue(@InputArgument String payoutRequestId,
+                                                  @InputArgument String resolutionType,
+                                                  @InputArgument String notes) {
         log.info("Resolving payout issue {} with resolution type: {}", payoutRequestId, resolutionType);
-        return payoutRecoveryService.resolveIssue(payoutRequestId, resolutionType, null, notes, newBankAccountId)
-                .map(p -> PayoutRequestMutationResponse.success(p, "Payout issue resolved"))
-                .doOnSuccess(r -> log.info("Payout issue {} resolved", payoutRequestId))
-                .onErrorResume(e -> {
-                    log.error("Failed to resolve payout issue {}: {}", payoutRequestId, e.getMessage());
-                    return Mono.just(PayoutRequestMutationResponse.error(e.getMessage()));
-                });
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(resolvedBy -> payoutRecoveryService.resolveIssue(payoutRequestId, resolutionType, resolvedBy, notes));
     }
 
-    /**
-     * Bulk retry failed payout requests.
-     * Schema: bulkRetryFailedPayouts(payoutRequestIds: [ID!]!): BulkPayoutOperationResponse!
-     */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<BulkPayoutOperationResponse> bulkRetryFailedPayouts(
-            @InputArgument List<String> payoutRequestIds
-    ) {
-        log.info("Bulk retrying {} failed payouts", payoutRequestIds.size());
-        return payoutRecoveryService.bulkRetryFailedPayouts(payoutRequestIds)
-                .collectList()
-                .map(processedPayouts -> {
-                    List<String> processedIds = processedPayouts.stream()
-                            .map(PayoutRequest::getId)
-                            .toList();
-                    List<String> failedPayoutIds = new ArrayList<>(payoutRequestIds);
-                    failedPayoutIds.removeAll(processedIds);
-
-                    return BulkPayoutOperationResponse.builder()
-                            .success(true)
-                            .message("Bulk retry completed")
-                            .processedCount(processedPayouts.size())
-                            .failedCount(failedPayoutIds.size())
-                            .processedPayouts(processedPayouts)
-                            .failedPayoutIds(failedPayoutIds)
-                            .errors(List.of())
-                            .build();
-                })
-                .doOnSuccess(r -> log.info("Bulk retry completed: {} processed, {} failed",
-                        r.getProcessedCount(), r.getFailedCount()));
+    public Mono<BulkPayoutOperationResponse> bulkRetryFailedPayouts(@InputArgument List<String> payoutRequestIds) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(actorId -> Flux.fromIterable(payoutRequestIds)
+                        .concatMap(id -> payoutProcess.retry(id, actorId)
+                                .onErrorResume(refused -> {
+                                    log.info("Payout {} not retried: {}", id, refused.getMessage());
+                                    return Mono.empty();
+                                }))
+                        .collectList())
+                .map(processed -> bulkResponse(payoutRequestIds, processed));
     }
 
-    /**
-     * Bulk mark payout requests for review.
-     * Schema: bulkMarkPayoutsForReview(payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String): BulkPayoutOperationResponse!
-     */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<BulkPayoutOperationResponse> bulkMarkPayoutsForReview(
-            @InputArgument List<String> payoutRequestIds,
-            @InputArgument String issueType,
-            @InputArgument String notes
-    ) {
+    public Mono<BulkPayoutOperationResponse> bulkMarkPayoutsForReview(@InputArgument List<String> payoutRequestIds,
+                                                                      @InputArgument String issueType,
+                                                                      @InputArgument String notes) {
         log.info("Bulk marking {} payouts for review with issue type: {}", payoutRequestIds.size(), issueType);
         return payoutRecoveryService.bulkMarkForReview(payoutRequestIds, issueType, notes)
                 .collectList()
-                .map(processedPayouts -> {
-                    List<String> processedIds = processedPayouts.stream()
-                            .map(PayoutRequest::getId)
-                            .toList();
-                    List<String> failedPayoutIds = new ArrayList<>(payoutRequestIds);
-                    failedPayoutIds.removeAll(processedIds);
-
-                    return BulkPayoutOperationResponse.builder()
-                            .success(true)
-                            .message("Bulk mark for review completed")
-                            .processedCount(processedPayouts.size())
-                            .failedCount(failedPayoutIds.size())
-                            .processedPayouts(processedPayouts)
-                            .failedPayoutIds(failedPayoutIds)
-                            .errors(List.of())
-                            .build();
-                })
-                .doOnSuccess(r -> log.info("Bulk mark for review completed: {} processed, {} failed",
-                        r.getProcessedCount(), r.getFailedCount()));
+                .map(processed -> bulkResponse(payoutRequestIds, processed));
     }
 
-    /**
-     * Escalate a payout request.
-     * Schema: escalatePayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequestMutationResponse!
-     */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestMutationResponse> escalatePayoutRequest(
-            @InputArgument String payoutRequestId,
-            @InputArgument String reason
-    ) {
+    public Mono<PayoutRequest> escalatePayoutRequest(@InputArgument String payoutRequestId, @InputArgument String reason) {
         log.info("Escalating payout request: {} with reason: {}", payoutRequestId, reason);
-        return payoutRecoveryService.escalatePayoutRequest(payoutRequestId, reason)
-                .map(p -> PayoutRequestMutationResponse.success(p, "Payout request escalated"))
-                .doOnSuccess(r -> log.info("Payout request {} escalated", payoutRequestId))
-                .onErrorResume(e -> {
-                    log.error("Failed to escalate payout request {}: {}", payoutRequestId, e.getMessage());
-                    return Mono.just(PayoutRequestMutationResponse.error(e.getMessage()));
-                });
+        return payoutRecoveryService.escalatePayoutRequest(payoutRequestId, reason);
     }
 
-    /**
-     * Retry a single failed payout request.
-     * Schema: retryPayoutRequest(payoutRequestId: ID!): PayoutRequestMutationResponse!
-     */
+    /** Retry a failed payout request: at most three attempts in all. */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestMutationResponse> retryPayoutRequest(
-            @InputArgument String payoutRequestId
-    ) {
-        log.info("Retrying payout request: {}", payoutRequestId);
-        return payoutRecoveryService.bulkRetryFailedPayouts(List.of(payoutRequestId))
-                .next()
-                .map(p -> PayoutRequestMutationResponse.success(p, "Payout request queued for retry"))
-                .switchIfEmpty(Mono.just(PayoutRequestMutationResponse.error("Payout request not found or not retryable")))
-                .doOnSuccess(r -> log.info("Payout request {} retry result: {}", payoutRequestId, r.success()))
-                .onErrorResume(e -> {
-                    log.error("Failed to retry payout request {}: {}", payoutRequestId, e.getMessage());
-                    return Mono.just(PayoutRequestMutationResponse.error(e.getMessage()));
-                });
+    public Mono<PayoutRequest> retryPayoutRequest(@InputArgument String payoutRequestId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(actorId -> payoutProcess.retry(payoutRequestId, actorId));
+    }
+
+    private static BulkPayoutOperationResponse bulkResponse(List<String> requested, List<PayoutRequest> processed) {
+        List<String> processedIds = processed.stream().map(PayoutRequest::getId).toList();
+        List<String> failedPayoutIds = new ArrayList<>(requested);
+        failedPayoutIds.removeAll(processedIds);
+        return BulkPayoutOperationResponse.builder()
+                .processedCount(processed.size())
+                .failedCount(failedPayoutIds.size())
+                .processedPayouts(processed)
+                .failedPayoutIds(failedPayoutIds)
+                .build();
     }
 }

@@ -1,5 +1,9 @@
 package com.pml.catalog.domain.model;
 
+import com.pml.shared.constants.Money;
+
+import com.pml.catalog.persistence.CatalogCollections;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -7,15 +11,14 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import org.springframework.data.annotation.Version;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -35,17 +38,24 @@ import java.util.List;
  *               RESTORED → AVAILABLE
  * </pre>
  */
-@Document(collection = "ticket_tiers")
+@Document(collection = CatalogCollections.TICKET_TIERS)
+@TypeAlias("ticket_tiers")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndex(name = "event_code_idx", def = "{'eventId': 1, 'code': 1}", unique = true)
-@CompoundIndex(name = "event_active_sort_idx", def = "{'eventId': 1, 'isActive': 1, 'sortOrder': 1}")
 public class TicketTier {
 
     @Id
     private String id;
+
+    /**
+     * Every monetary field carries a currency sibling. Launch is ZMW-only
+     * and the field still exists: adding a second currency later becomes a data
+     * migration rather than an audit of which amounts meant what.
+     */
+    @Builder.Default
+    private String currency = Money.DEFAULT_CURRENCY;
 
     /**
      * Optimistic locking version field.
@@ -58,7 +68,6 @@ public class TicketTier {
     /**
      * Event ID this tier belongs to
      */
-    @Indexed
     private String eventId;
 
     /**
@@ -67,7 +76,6 @@ public class TicketTier {
      *
      * OWASP A01:2021 Compliance: Used for tenant isolation in authorization.
      */
-    @Indexed
     private String organizationId;
 
     /**
@@ -124,6 +132,42 @@ public class TicketTier {
     private int soldQuantity = 0;
 
     /**
+     * The holds and sales applied to this tier, one entry per reservation.
+     *
+     * <p>Kept in the tier document so that every movement is one conditional atomic update on one
+     * document: the entry and the counters change together without a multi-document transaction. A
+     * transaction per hold on a shared tier document aborts on write conflicts under on-sale
+     * contention. An entry is removed when its hold is released; a committed entry stays, so a
+     * replayed commit and a reversal after a commit can both be recognised.</p>
+     *
+     * <p>Bounded by the number of reservations that hold or bought this tier. At roughly 70 bytes an
+     * entry that stays well inside MongoDB's 16 MB document limit for any venue this platform sells.</p>
+     */
+    @Builder.Default
+    private List<InventoryMovement> movements = new java.util.ArrayList<>();
+
+    /** One reservation's seats on this tier. */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class InventoryMovement {
+        /** The reservation holding or having bought these seats. */
+        private String reservationId;
+        /** Seats held or sold for that reservation. */
+        private int quantity;
+        /** {@code HELD} or {@code COMMITTED}. */
+        private String state;
+        /** What booking reported for the sale, so reversing the sale reverses the same money. */
+        private BigDecimal grossAmount;
+        private BigDecimal commissionAmount;
+
+        public InventoryMovement(String reservationId, int quantity, String state) {
+            this(reservationId, quantity, state, null, null);
+        }
+    }
+
+    /**
      * Maximum tickets per order (null = unlimited)
      */
     private Integer maxPerOrder;
@@ -153,12 +197,12 @@ public class TicketTier {
     /**
      * When sales start for this tier (null = immediately)
      */
-    private LocalDateTime salesStartAt;
+    private Instant salesStartAt;
 
     /**
      * When sales end for this tier (null = until event)
      */
-    private LocalDateTime salesEndAt;
+    private Instant salesEndAt;
 
     /**
      * Early bird price (special pricing before earlyBirdEndsAt)
@@ -168,7 +212,7 @@ public class TicketTier {
     /**
      * When early bird pricing ends
      */
-    private LocalDateTime earlyBirdEndsAt;
+    private Instant earlyBirdEndsAt;
 
     /**
      * Whether this tier is hidden from public listings
@@ -181,24 +225,27 @@ public class TicketTier {
      */
     private String accessCode;
 
+    /** What kind of ticket this is. A tier written before categories existed reads as GENERAL. */
+    private com.pml.shared.constants.TicketCategory category;
+
     /**
      * When this tier was created
      */
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     /**
      * When this tier was last updated
      */
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     /**
      * Get the current applicable price (early bird if active, otherwise regular price)
      *
      * @return Current price
      */
-    public BigDecimal getCurrentPrice() {
+    public BigDecimal getCurrentPrice(Instant now) {
         if (earlyBirdPrice != null && earlyBirdEndsAt != null
-                && LocalDateTime.now().isBefore(earlyBirdEndsAt)) {
+                && now.isBefore(earlyBirdEndsAt)) {
             return earlyBirdPrice;
         }
         return price;
@@ -209,27 +256,10 @@ public class TicketTier {
      *
      * @return true if early bird pricing applies
      */
-    public boolean isEarlyBirdActive() {
+    public boolean isEarlyBirdActive(Instant now) {
         return earlyBirdPrice != null
                 && earlyBirdEndsAt != null
-                && LocalDateTime.now().isBefore(earlyBirdEndsAt);
-    }
-
-    /**
-     * Check if this tier is currently on sale
-     *
-     * @return true if tier is available for purchase
-     */
-    public boolean isOnSale() {
-        if (!isActive || availableQuantity <= 0) {
-            return false;
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        boolean afterStart = salesStartAt == null || now.isAfter(salesStartAt);
-        boolean beforeEnd = salesEndAt == null || now.isBefore(salesEndAt);
-
-        return afterStart && beforeEnd;
+                && now.isBefore(earlyBirdEndsAt);
     }
 
     /**
@@ -252,17 +282,6 @@ public class TicketTier {
     }
 
     /**
-     * Check if requested quantity is truly available for reservation.
-     * Accounts for both active status and reserved inventory.
-     *
-     * @param requestedQuantity Number of tickets requested
-     * @return true if quantity can be reserved
-     */
-    public boolean hasTrueAvailableQuantity(int requestedQuantity) {
-        return isActive && getTrueAvailableQuantity() >= requestedQuantity;
-    }
-
-    /**
      * Validate that inventory invariant is maintained.
      * quantity = availableQuantity + soldQuantity
      * availableQuantity >= reservedQuantity
@@ -281,11 +300,11 @@ public class TicketTier {
      *
      * @return Savings amount (null if no original price set)
      */
-    public BigDecimal getSavings() {
+    public BigDecimal getSavings(Instant now) {
         if (originalPrice == null) {
             return null;
         }
-        return originalPrice.subtract(getCurrentPrice());
+        return originalPrice.subtract(getCurrentPrice(now));
     }
 
     /**
@@ -293,16 +312,21 @@ public class TicketTier {
      *
      * @return Discount percentage (null if no original price set)
      */
-    public Integer getDiscountPercentage() {
+    public Integer getDiscountPercentage(Instant now) {
         if (originalPrice == null || originalPrice.compareTo(BigDecimal.ZERO) == 0) {
             return null;
         }
-        BigDecimal savings = getSavings();
+        BigDecimal savings = getSavings(now);
         if (savings == null) {
             return null;
         }
         return savings.multiply(BigDecimal.valueOf(100))
-                .divide(originalPrice, 0, BigDecimal.ROUND_HALF_UP)
+                .divide(originalPrice, 0, java.math.RoundingMode.HALF_UP)
                 .intValue();
+    }
+
+    /** The tier's category; {@code GENERAL} when none was chosen. */
+    public com.pml.shared.constants.TicketCategory getCategory() {
+        return category == null ? com.pml.shared.constants.TicketCategory.GENERAL : category;
     }
 }

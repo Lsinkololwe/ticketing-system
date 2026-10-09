@@ -28,12 +28,18 @@
         "description": "URL-friendly event identifier"
       },
       "description": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 10000,
         "description": "Event description"
       },
       "shortDescription": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 500,
         "description": "Short description for listings"
       },
@@ -47,12 +53,18 @@
         "description": "OWASP A01 - Tenant isolation: Organization that owns this event"
       },
       "categoryId": {
-        "bsonType": ["string", "null"],
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "Event category reference"
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[A-Za-z0-9_./+-]{1,60}$",
+        "description": "The reference-data EVENT_CATEGORY code the event is filed under"
       },
       "locationId": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-fA-F0-9]{24}$",
         "description": "Venue/location reference"
       },
@@ -65,7 +77,9 @@
           "CANCELLED",
           "POSTPONED",
           "COMPLETED",
-          "ARCHIVED"
+          "ARCHIVED",
+          "CHANGES_REQUESTED",
+          "REJECTED"
         ],
         "description": "OWASP A04 - Valid event status"
       },
@@ -82,7 +96,10 @@
         "description": "Event start date and time"
       },
       "endDateTime": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "Event end date and time"
       },
       "timezone": {
@@ -114,7 +131,10 @@
             "maxLength": 100
           },
           "postalCode": {
-            "bsonType": ["string", "null"],
+            "bsonType": [
+              "string",
+              "null"
+            ],
             "maxLength": 20
           },
           "coordinates": {
@@ -145,7 +165,12 @@
               "pattern": "^https?://.*"
             },
             "type": {
-              "enum": ["COVER", "THUMBNAIL", "GALLERY", "BANNER"]
+              "enum": [
+                "COVER",
+                "THUMBNAIL",
+                "GALLERY",
+                "BANNER"
+              ]
             },
             "alt": {
               "bsonType": "string",
@@ -159,7 +184,11 @@
         "bsonType": "array",
         "items": {
           "bsonType": "object",
-          "required": ["name", "price", "quantity"],
+          "required": [
+            "name",
+            "price",
+            "quantity"
+          ],
           "properties": {
             "id": {
               "bsonType": "string"
@@ -169,7 +198,10 @@
               "maxLength": 200
             },
             "description": {
-              "bsonType": ["string", "null"],
+              "bsonType": [
+                "string",
+                "null"
+              ],
               "maxLength": 1000
             },
             "price": {
@@ -192,10 +224,16 @@
               "maximum": 100
             },
             "salesStartAt": {
-              "bsonType": ["date", "null"]
+              "bsonType": [
+                "date",
+                "null"
+              ]
             },
             "salesEndAt": {
-              "bsonType": ["date", "null"]
+              "bsonType": [
+                "date",
+                "null"
+              ]
             }
           }
         },
@@ -218,7 +256,13 @@
       },
       "currency": {
         "bsonType": "string",
-        "enum": ["ZMW", "USD", "EUR", "GBP", "ZAR"],
+        "enum": [
+          "ZMW",
+          "USD",
+          "EUR",
+          "GBP",
+          "ZAR"
+        ],
         "description": "Event currency"
       },
       "isFeatured": {
@@ -238,29 +282,52 @@
         "description": "Event tags for search"
       },
       "ageRestriction": {
-        "bsonType": ["string", "null"],
-        "enum": ["ALL_AGES", "13+", "16+", "18+", "21+", null],
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "ALL_AGES",
+          "13+",
+          "16+",
+          "18+",
+          "21+",
+          null
+        ],
         "description": "Age restriction"
       },
       "refundPolicy": {
         "enum": [
+          "FLEXIBLE",
+          "MODERATE",
+          "STRICT",
+          "NO_REFUNDS",
           "FULL_REFUND",
           "PARTIAL_REFUND",
           "NO_REFUND",
           "CUSTOM"
         ],
-        "description": "Refund policy"
+        "description": "Refund policy: a platform refund policy code (legacy codes still accepted)"
       },
       "publishedAt": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "When event was published"
       },
       "cancelledAt": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "When event was cancelled"
       },
       "cancellationReason": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "maxLength": 1000,
         "description": "Reason for cancellation"
       },
@@ -272,15 +339,78 @@
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"]
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "createdBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "description": "Creator user ID"
       },
       "updatedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "description": "Last updater user ID"
+      },
+      "tagline": { "bsonType": ["string", "null"], "maxLength": 100 },
+      "doorsOpenAt": { "bsonType": ["date", "null"] },
+      "bannerAltText": { "bsonType": ["string", "null"], "maxLength": 200 },
+      "faqs": {
+        "bsonType": ["array", "null"],
+        "maxItems": 20,
+        "items": {
+          "bsonType": "object",
+          "properties": {
+            "question": { "bsonType": "string", "maxLength": 200 },
+            "answer": { "bsonType": "string", "maxLength": 2000 }
+          }
+        }
+      },
+      "runningOrder": {
+        "bsonType": ["array", "null"],
+        "maxItems": 40,
+        "items": {
+          "bsonType": "object",
+          "properties": {
+            "time": { "bsonType": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+            "title": { "bsonType": "string", "maxLength": 200 }
+          }
+        }
+      },
+      "gettingThere": { "bsonType": ["string", "null"], "maxLength": 1000 },
+      "parkingInfo": { "bsonType": ["string", "null"], "maxLength": 1000 },
+      "bagPolicy": { "bsonType": ["string", "null"], "maxLength": 1000 },
+      "checkoutSettings": {
+        "bsonType": ["object", "null"],
+        "properties": {
+          "maxTicketsPerOrder": { "bsonType": ["int", "null"], "minimum": 1, "maximum": 100 },
+          "collectHolderNames": { "bsonType": ["bool", "null"] },
+          "extraQuestion": { "bsonType": ["string", "null"], "maxLength": 200 }
+        }
+      },
+      "publishAt": { "bsonType": ["date", "null"] },
+      "publishScheduled": { "bsonType": ["bool", "null"] },
+      "grossSales": { "bsonType": ["decimal", "double", "int", "long", "null"] },
+      "commissionAmount": { "bsonType": ["decimal", "double", "int", "long", "null"] },
+      "cityId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "lowestTicketPrice": {
+        "bsonType": [
+          "decimal",
+          "double",
+          "null"
+        ],
+        "minimum": 0
       }
     },
     "additionalProperties": true

@@ -1,5 +1,7 @@
 # Ticket Reservation Flow - OWASP & Data Integrity Analysis Report
 
+> **Historical analysis (ROADMAP D-21).** The reservation and payment flow now runs as `PurchaseWorkflow` (ET-TKT-001). Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 **Analysis Date**: 2026-04-23
 **Scope**: Ticket reservation, payment processing, and inventory management
 **Target Load**: Thousands of concurrent ticket buyers

@@ -169,8 +169,6 @@ public interface PlatformAccountService {
      * Result of a transfer operation.
      */
     record TransferResult(
-            PlatformAccount fromAccount,
-            PlatformAccount toAccount,
             BigDecimal amount
     ) {}
 
@@ -202,20 +200,6 @@ public interface PlatformAccountService {
      */
     Mono<Boolean> hasSufficientBalance(PlatformAccountType accountType, BigDecimal amount);
 
-    // ========================================================================
-    // RESERVE MANAGEMENT
-    // ========================================================================
-
-    /**
-     * Checks if the reserve account needs replenishment.
-     *
-     * <p>Reserve should maintain minimum balance (configurable percentage of GMV).</p>
-     *
-     * @param minimumBalance Minimum required balance
-     * @return Shortfall amount (0 if sufficient)
-     */
-    Mono<BigDecimal> getReserveShortfall(BigDecimal minimumBalance);
-
     /**
      * Attempts to recover funds from reserve for a chargeback.
      *
@@ -224,22 +208,6 @@ public interface PlatformAccountService {
      * @return Updated reserve account, or error if insufficient funds
      */
     Mono<PlatformAccount> recoverFromReserve(String chargebackId, BigDecimal amount);
-
-    /**
-     * Records a replenishment of the reserve account.
-     *
-     * <p>Can be funded from:</p>
-     * <ul>
-     *   <li>Commission revenue</li>
-     *   <li>Manual bank transfer</li>
-     * </ul>
-     *
-     * @param amount    Amount to add
-     * @param source    Source description
-     * @param reference Reference ID
-     * @return Updated reserve account
-     */
-    Mono<PlatformAccount> replenishReserve(BigDecimal amount, String source, String reference);
 
     // ========================================================================
     // RECONCILIATION
@@ -254,20 +222,4 @@ public interface PlatformAccountService {
      * @return Operating account balance
      */
     Mono<BigDecimal> getOperatingBalanceForReconciliation();
-
-    /**
-     * Records an adjustment to correct reconciliation discrepancies.
-     *
-     * @param accountType The account type
-     * @param adjustment  Positive or negative adjustment
-     * @param reason      Reason for adjustment
-     * @param approvedBy  Admin who approved the adjustment
-     * @return Updated account
-     */
-    Mono<PlatformAccount> recordReconciliationAdjustment(
-            PlatformAccountType accountType,
-            BigDecimal adjustment,
-            String reason,
-            String approvedBy
-    );
 }

@@ -1,0 +1,51 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Media Schema",
+    "description": "An uploaded image: an organization's own, or one of the platform's stock images (com.pml.catalog.domain.model.MediaAsset)",
+    "required": ["kind", "fileKey", "fileName", "contentType", "status"],
+    "properties": {
+      "_class": { "bsonType": "string" },
+      "_id": { "bsonType": "objectId" },
+      "version": { "bsonType": ["long", "int", "null"] },
+      "kind": { "enum": ["ORGANIZER_UPLOAD", "STOCK"] },
+      "organizationId": { "bsonType": ["string", "null"], "description": "OWASP A01 - tenant isolation; null for a stock image" },
+      "uploadedBy": { "bsonType": ["string", "null"] },
+      "eventId": { "bsonType": ["string", "null"] },
+      "fileKey": { "bsonType": "string", "maxLength": 500 },
+      "fileName": { "bsonType": "string", "maxLength": 255 },
+      "contentType": { "enum": ["image/jpeg", "image/png", "image/webp"] },
+      "sizeBytes": { "bsonType": ["long", "int"], "minimum": 1 },
+      "checksum": { "bsonType": ["string", "null"], "maxLength": 128 },
+      "title": { "bsonType": ["string", "null"], "maxLength": 120 },
+      "altText": { "bsonType": ["string", "null"], "maxLength": 200 },
+      "status": { "enum": ["ACTIVE", "FLAGGED", "REMOVED"] },
+      "purpose": { "enum": ["EVENT_COVER", "CATEGORY_TILE", null] },
+      "categoryCode": { "bsonType": ["string", "null"], "maxLength": 60 },
+      "active": { "bsonType": ["bool", "null"] },
+      "flaggedReason": { "bsonType": ["string", "null"], "maxLength": 1000 },
+      "flaggedBy": { "bsonType": ["string", "null"] },
+      "flaggedAt": { "bsonType": ["date", "null"] },
+      "removedReason": { "bsonType": ["string", "null"], "maxLength": 1000 },
+      "removedBy": { "bsonType": ["string", "null"] },
+      "removedAt": { "bsonType": ["date", "null"] },
+      "moderationLog": {
+        "bsonType": ["array", "null"],
+        "items": {
+          "bsonType": "object",
+          "properties": {
+            "action": { "enum": ["FLAG", "REMOVE", "RESTORE", "BANNER_OVERRIDE"] },
+            "actorId": { "bsonType": ["string", "null"] },
+            "reason": { "bsonType": ["string", "null"], "maxLength": 1000 },
+            "at": { "bsonType": ["date", "null"] }
+          }
+        }
+      },
+      "deleted": { "bsonType": ["bool", "null"] },
+      "deletedAt": { "bsonType": ["date", "null"] },
+      "createdAt": { "bsonType": ["date", "null"] },
+      "updatedAt": { "bsonType": ["date", "null"] }
+    },
+    "additionalProperties": false
+  }
+}

@@ -1,5 +1,22 @@
 # Keycloak Phone OTP Authenticator - Technical Implementation Guide
 
+> ## Superseded in part: 2026-10-04 redesign
+>
+> Authoritative sources: [`specs/identity/001-phone-otp-identity`](../specs/identity/001-phone-otp-identity/spec.md) (ET-IDN-001, now *Contact-OTP*),
+> [`specs/identity/004-accounts-and-contacts`](../specs/identity/004-accounts-and-contacts/spec.md) and its binding
+> [`CONTRACT.md`](../specs/identity/004-accounts-and-contacts/CONTRACT.md), decisions **D-38..D-50** in [`specs/ROADMAP.md`](../specs/ROADMAP.md), finding **F-044**.
+> The text below is kept as history and is **not** rewritten; where it disagrees with the specs, the specs win (specs/README precedence).
+>
+> What changed (read this before the guide below):
+> - **Contacts, not just phones.** The identity is a verified **WhatsApp number or email**. International WhatsApp numbers are accepted (country allowlist); **SMS is dropped** (D-39) and is neither primary nor fallback. Wherever this guide says "WhatsApp or SMS", read "WhatsApp or email".
+> - **The plugin never creates users.** The `findOrCreateUser` / `addUser` / `user_<last8>` logic in this guide is **replaced**: accounts are created identity-first by `AccountEnsureWorkflow` (D-43) with `username = <account id>`; the authenticator only loads that user and fails with a generic error if it is missing or disabled. It also does not grant roles and does not set `phone_number` / `phone_verified` attributes.
+> - **The code is verified by identity-service**, in checkout (D-44), and Keycloak's authenticator redeems a one-time **login handle** (HANDOFF mode, `login_hint`) or runs SCREEN mode. The class is `ContactOtpAuthenticator`; the old `PhoneOtpAuthenticator` and `/api/internal/otp/*` endpoints are deleted.
+> - **Limits**: 6 digits, 5 minutes, **5 tries** (not 3), 15-minute lock, 60 s resend cooldown, plus per-contact/IP/device/country/day limits. The "Max Attempts: 3" line in section 14 is superseded.
+> - **No unauthenticated mode**: the client refuses to start without `IDENTITY_CLIENT_ID` / `IDENTITY_CLIENT_SECRET`; the code is never logged and the channel is never read from the form.
+> - **Realms**: `myticketzm` (buyers, organizers) and `myticketzm-admin` (staff, password plus second factor); the guide's `event-ticketing` realm is historical. Staff are not in this flow; there is no `SCANNER` role (event staff are event-scoped grants).
+> - **Tokens**: Keycloak is the only token issuer; the buyer app keeps tokens in a server-side session (D-45). Roles and `accountType` are never taken from user-editable attributes.
+
+
 ## Document Information
 
 | Field | Value |
@@ -39,7 +56,7 @@
 The Phone OTP Authenticator is a custom Keycloak SPI (Service Provider Interface) that enables passwordless authentication via phone number and OTP (One-Time Password) verification. Users can authenticate by:
 
 1. Entering their phone number
-2. Receiving an OTP via WhatsApp or SMS
+2. Receiving an OTP via WhatsApp or email (SMS dropped, D-39)
 3. Entering the OTP code to complete authentication
 
 ### 1.2 Why Use Keycloak SPI?
@@ -488,7 +505,7 @@ public class PhoneOtpAuthenticator implements Authenticator {
 
         if (result.isValid()) {
             // Find existing user or create new one
-            UserModel user = findOrCreateUser(context, phoneNumber);
+            UserModel user = findOrCreateUser(context, phoneNumber); // SUPERSEDED 2026-10-04: the plugin must NOT create users; load by username = accountId (see banner)
             if (user != null) {
                 context.setUser(user);
                 context.success();  // Authentication complete!
@@ -1669,7 +1686,7 @@ In Keycloak Admin Console:
 
 1. **Rate Limiting**: 1-minute cooldown between OTP requests
 2. **OTP Expiry**: 5-minute TTL in Redis
-3. **Max Attempts**: 3 attempts before lockout
+3. **Max Attempts**: ~~3 attempts before lockout~~ superseded 2026-10-04: **5 tries, then a 15-minute lock** (ET-IDN-001 R3)
 4. **Phone Normalization**: E.164 format validation
 5. **Secure Transport**: HTTPS in production
 6. **Token Caching**: Client credentials tokens cached securely

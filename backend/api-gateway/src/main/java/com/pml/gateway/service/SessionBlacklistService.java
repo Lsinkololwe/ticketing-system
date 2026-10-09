@@ -1,12 +1,11 @@
 package com.pml.gateway.service;
 
+import com.pml.shared.security.revocation.RevocationKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
-
-import java.time.Duration;
 
 /**
  * Service for checking and managing session/token blacklist in Redis.
@@ -46,9 +45,6 @@ public class SessionBlacklistService {
     private final ReactiveRedisTemplate<String, String> redisTemplate;
 
     // Unified Redis key prefixes - shared across all services and frontends
-    private static final String TOKEN_BLACKLIST_PREFIX = "pml:blacklist:";
-    private static final String SESSION_BLACKLIST_PREFIX = "pml:session:";
-    private static final String USER_REVOCATION_PREFIX = "pml:revoked:";
 
     /**
      * Checks if a token is blacklisted by its JTI (JWT ID).
@@ -68,7 +64,7 @@ public class SessionBlacklistService {
             return Mono.just(false);
         }
 
-        String key = TOKEN_BLACKLIST_PREFIX + jti;
+        String key = RevocationKeys.token(jti);
         return redisTemplate.hasKey(key)
                 .doOnNext(blacklisted -> {
                     if (blacklisted) {
@@ -92,7 +88,7 @@ public class SessionBlacklistService {
             return Mono.just(false);
         }
 
-        String key = SESSION_BLACKLIST_PREFIX + sid;
+        String key = RevocationKeys.session(sid);
         return redisTemplate.hasKey(key)
                 .doOnNext(blacklisted -> {
                     if (blacklisted) {
@@ -116,7 +112,7 @@ public class SessionBlacklistService {
             return Mono.just(false);
         }
 
-        String key = USER_REVOCATION_PREFIX + sub;
+        String key = RevocationKeys.user(sub);
         return redisTemplate.hasKey(key)
                 .doOnNext(blacklisted -> {
                     if (blacklisted) {
@@ -125,24 +121,6 @@ public class SessionBlacklistService {
                 })
                 .onErrorResume(error -> {
                     log.warn("[Blacklist] Redis unavailable, allowing request: {}", error.getMessage());
-                    return Mono.just(false);
-                });
-    }
-
-    /**
-     * Checks if either session OR user is blacklisted.
-     *
-     * @param sid Session ID (may be null)
-     * @param sub Subject/User ID (may be null)
-     * @return Mono<Boolean> true if either is blacklisted
-     */
-    public Mono<Boolean> isBlacklisted(String sid, String sub) {
-        return isSessionBlacklisted(sid)
-                .zipWith(isUserBlacklisted(sub), (sessionBlacklisted, userBlacklisted) ->
-                        sessionBlacklisted || userBlacklisted
-                )
-                .onErrorResume(error -> {
-                    log.warn("[Blacklist] Check failed, allowing request: {}", error.getMessage());
                     return Mono.just(false);
                 });
     }
@@ -180,30 +158,6 @@ public class SessionBlacklistService {
             log.warn("[Blacklist] Comprehensive check failed, allowing request: {}", error.getMessage());
             return Mono.just(false);
         });
-    }
-
-    /**
-     * Adds a session to the blacklist.
-     * Called by back-channel logout handler when Keycloak sends logout notification.
-     *
-     * @param sid Session ID to blacklist
-     * @param ttl Time to live (should match access token lifetime)
-     * @return Mono<Boolean> true if successfully blacklisted
-     */
-    public Mono<Boolean> blacklistSession(String sid, Duration ttl) {
-        if (sid == null || sid.isBlank()) {
-            return Mono.just(false);
-        }
-
-        String key = SESSION_BLACKLIST_PREFIX + sid;
-        return redisTemplate.opsForValue()
-                .set(key, "revoked", ttl)
-                .doOnSuccess(success -> log.info("[Blacklist] Session blacklisted: {}, TTL: {}",
-                        maskValue(sid), ttl))
-                .onErrorResume(error -> {
-                    log.error("[Blacklist] Failed to blacklist session: {}", error.getMessage());
-                    return Mono.just(false);
-                });
     }
 
     /**

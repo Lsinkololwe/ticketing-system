@@ -60,8 +60,7 @@ public record CreatePayoutRequestInput(
     /**
      * Client-supplied key that makes retrying this request safe.
      *
-     * <p>Required by {@code specs/finance/003-payouts-and-settlement}. Without
-     * it a retried create — a double-click, a dropped connection, a browser
+     * <p>Without it a retried create — a double-click, a dropped connection, a browser
      * refresh — produces a SECOND payout for the same money.
      *
      * <p>Optional at the schema level so existing callers keep compiling, but

@@ -110,6 +110,7 @@ public class UserEntityFetcher {
         }
         String firstName = user.getFirstName() != null ? user.getFirstName() : "";
         String lastName = user.getLastName() != null ? user.getLastName() : "";
-        return (firstName + " " + lastName).trim();
+        String name = (firstName + " " + lastName).trim();
+        return name.isEmpty() && user.getDisplayName() != null ? user.getDisplayName() : name;
     }
 }

@@ -14,8 +14,7 @@ import java.time.LocalDate;
  * <p>Backs the dashboard's revenue trend tile. The series is intentionally
  * built from <em>complete</em> calendar months only: a partial current month
  * renders as a short column and reads as a collapse in revenue, which is a
- * distortion the chart spec explicitly forbids. See
- * {@code frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md} §B1.
+ * distortion a revenue trend must never show.
  */
 @Data
 @Builder

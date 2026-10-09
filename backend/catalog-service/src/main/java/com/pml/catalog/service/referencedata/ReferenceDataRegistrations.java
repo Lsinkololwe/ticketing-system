@@ -60,15 +60,15 @@ public final class ReferenceDataRegistrations {
 
     private static void registerAll() {
 
-        // ET-TKT-002 R7's seven. There is no INITIAL row any more: a ticket
-        // cannot exist before payment since ET-TKT-001 R7 moved issuance inside
-        // the confirmation transaction, so ISSUED is the first state there is.
+        // The ticket states. There is no INITIAL row: a ticket cannot exist
+        // before payment, because issuance happens inside the confirmation
+        // transaction, so ISSUED is the first state there is.
         ReferenceDataSource.register(ReferenceType.TICKET_STATUS, TicketStatus.class, Map.of(
                 "ISSUED", SUCCEEDED,
                 // Admitted at the gate. Still a good ticket: refunds and
-                // reporting treat it as a completed sale (ET-TKT-003 R8).
+                // reporting treat it as a completed sale.
                 "VALIDATED", SUCCEEDED,
-                // Never rested in — §4 returns a transferred ticket to ISSUED
+                // Never rested in — a transfer returns the ticket to ISSUED
                 // under its new owner — but declared, so the picker offers it.
                 "TRANSFERRED", SUCCEEDED,
                 // A person is waiting on this one.
@@ -130,7 +130,7 @@ public final class ReferenceDataRegistrations {
                 "CANCELLED", CANCELLED
         ));
 
-        // ET-FIN-001 R4's five, and only those.
+        // The five escrow states, and only those.
         ReferenceDataSource.register(ReferenceType.ESCROW_STATUS, EscrowStatus.class, Map.of(
                 // Open and taking money. Nobody is being waited on.
                 "ACTIVE", IN_PROGRESS,
@@ -164,8 +164,8 @@ public final class ReferenceDataRegistrations {
                 "PENDING_DELETION", CANCELLED
         ));
 
-        // ET-TKT-001 R6's five. This one is the purchase saga's ONLY state, so
-        // its semantics are what a post-crash recovery sweep reads.
+        // The five reservation states. With the payment intent's, this is a purchase's only
+        // durable state, so its semantics are what a resumed purchase workflow reads.
         ReferenceDataSource.register(ReferenceType.RESERVATION_STATUS, ReservationStatus.class, Map.of(
                 // Where every reservation starts, and the only non-terminal one.
                 "HELD", INITIAL,

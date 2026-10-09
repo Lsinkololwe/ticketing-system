@@ -8,13 +8,13 @@ import java.util.List;
  * Offset-based pagination for Chargeback Records.
  *
  * @param data List of chargebacks for the current page
- * @param paginationInfo Pagination metadata
+ * @param pagination Pagination metadata
  *
  * @since 1.0.0
  */
 public record ChargebackOffsetPage(
     List<ChargebackRecord> data,
-    PaginationInfo paginationInfo
+    PaginationInfo pagination
 ) {
     /**
      * Create an empty page.

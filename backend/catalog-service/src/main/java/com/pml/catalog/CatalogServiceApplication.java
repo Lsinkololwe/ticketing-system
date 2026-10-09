@@ -4,7 +4,6 @@ import com.pml.shared.config.MongoSchemaValidationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
 
 /**
@@ -26,16 +25,16 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
  * - event_reminders, approval_timelines
  *
  * Event Integration:
- * - Spring Modulith for domain event publication
+ * - A transactional outbox in MongoDB for domain event publication
+ *   (com.pml.shared.event.Outbox — there is no Spring Modulith here)
  * - MongoDB Event Publication Registry for transactional outbox
  * - Azure Service Bus for cross-service messaging
  *
  * Scaling: 2 pods (moderate traffic, read-heavy workload)
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.pml.catalog", "com.pml.shared"})
 @EnableReactiveMongoRepositories
 @EnableConfigurationProperties(MongoSchemaValidationProperties.class)
-@ComponentScan(basePackages = {"com.pml.catalog", "com.pml.shared"})
 public class CatalogServiceApplication {
 
     public static void main(String[] args) {

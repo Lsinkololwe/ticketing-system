@@ -2,79 +2,133 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Ticket Tiers Schema - OWASP Compliant",
-    "description": "Embedded ticket tier pricing within events (note: not a standalone collection)",
+    "description": "A standalone pricing tier for an event's tickets, one document per tier (com.pml.catalog.domain.model.TicketTier)",
     "required": [
+      "eventId",
+      "code",
       "name",
       "price",
-      "totalQuantity",
-      "availableQuantity"
+      "quantity"
     ],
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
-      "id": {
-        "bsonType": [
-          "string",
-          "null"
-        ]
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "currency": {
+        "bsonType": ["string", "null"]
+      },
+      "version": {
+        "bsonType": ["long", "int", "null"],
+        "description": "Optimistic-locking version"
+      },
+      "eventId": {
+        "bsonType": "string"
+      },
+      "organizationId": {
+        "bsonType": ["string", "null"],
+        "description": "OWASP A01 - tenant isolation, denormalized from Event"
+      },
+      "code": {
+        "bsonType": "string",
+        "description": "Unique per event, e.g. VIP, GA, EARLY_BIRD"
       },
       "name": {
         "bsonType": "string",
         "minLength": 1,
-        "maxLength": 100,
-        "description": "Tier name (e.g., VIP, General Admission, Early Bird)"
+        "maxLength": 100
       },
       "description": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "maxLength": 500
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
       },
       "price": {
-        "bsonType": "decimal",
+        "bsonType": ["decimal", "double", "int", "long"],
         "minimum": 0,
-        "description": "OWASP A04 - Non-negative price"
+        "description": "OWASP A04 - non-negative price"
       },
-      "totalQuantity": {
+      "originalPrice": {
+        "bsonType": ["decimal", "double", "int", "long", "null"]
+      },
+      "quantity": {
         "bsonType": "int",
-        "minimum": 1,
-        "description": "Total tickets available for this tier"
+        "minimum": 1
       },
       "availableQuantity": {
-        "bsonType": "int",
-        "minimum": 0,
-        "description": "Remaining tickets available"
+        "bsonType": ["int", "null"],
+        "minimum": 0
+      },
+      "reservedQuantity": {
+        "bsonType": ["int", "null"],
+        "minimum": 0
+      },
+      "soldQuantity": {
+        "bsonType": ["int", "null"],
+        "minimum": 0
+      },
+      "movements": {
+        "bsonType": ["array", "null"],
+        "description": "ET-CAT-002 R2 · one InventoryMovement entry per reservation hold or sale",
+        "items": {
+          "bsonType": "object",
+          "properties": {
+            "reservationId": { "bsonType": ["string", "null"] },
+            "quantity": { "bsonType": ["int", "null"] },
+            "state": { "bsonType": ["string", "null"], "enum": ["HELD", "COMMITTED", null] }
+          }
+        }
       },
       "maxPerOrder": {
-        "bsonType": [
-          "int",
-          "null"
-        ],
-        "minimum": 1,
-        "description": "Maximum tickets per order"
+        "bsonType": ["int", "null"],
+        "minimum": 1
       },
-      "saleStartDate": {
-        "bsonType": [
-          "date",
-          "null"
-        ],
-        "description": "When sales open for this tier"
+      "minPerOrder": {
+        "bsonType": ["int", "null"],
+        "minimum": 1
       },
-      "saleEndDate": {
-        "bsonType": [
-          "date",
-          "null"
-        ],
-        "description": "When sales close for this tier"
+      "benefits": {
+        "bsonType": ["array", "null"],
+        "items": {
+          "bsonType": "string"
+        }
+      },
+      "sortOrder": {
+        "bsonType": ["int", "null"]
       },
       "isActive": {
-        "bsonType": [
-          "bool",
-          "null"
-        ]
+        "bsonType": ["bool", "null"]
+      },
+      "salesStartAt": {
+        "bsonType": ["date", "null"]
+      },
+      "salesEndAt": {
+        "bsonType": ["date", "null"]
+      },
+      "earlyBirdPrice": {
+        "bsonType": ["decimal", "double", "int", "long", "null"],
+        "description": "F-023 · special pricing while now is before earlyBirdEndsAt"
+      },
+      "earlyBirdEndsAt": {
+        "bsonType": ["date", "null"]
+      },
+      "isHidden": {
+        "bsonType": ["bool", "null"]
+      },
+      "accessCode": {
+        "bsonType": ["string", "null"]
+      },
+      "category": {
+        "enum": ["GENERAL", "PRE_SALE", "VIP", "VVIP", "PREMIUM", "EARLY_BIRD", "STUDENT", "SENIOR", "GROUP", "CORPORATE", "SPONSOR", "FREE", null],
+        "description": "ET-CAT-004 · what kind of ticket the tier is; a tier without one is GENERAL"
+      },
+      "createdAt": {
+        "bsonType": ["date", "null"]
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
       }
     },
     "additionalProperties": false

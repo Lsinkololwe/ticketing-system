@@ -312,18 +312,4 @@ public class FinancialDataValidator {
         }
         return amount >= minimum && amount > 0;
     }
-
-    /**
-     * Validate commission rate.
-     * Should be between 0% and 100% (0.0 - 1.0).
-     *
-     * @param rate the rate to validate
-     * @return true if valid
-     */
-    public static boolean isValidCommissionRate(Double rate) {
-        if (rate == null) {
-            return false;
-        }
-        return rate >= 0.0 && rate <= 1.0;
-    }
 }

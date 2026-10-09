@@ -1,9 +1,9 @@
 package com.pml.booking.web.graphql.federation;
 
+import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsEntityFetcher;
 import com.pml.booking.domain.model.Ticket;
-import com.pml.booking.service.TicketService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
@@ -59,7 +59,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class TicketEntityFetcher {
 
-    private final TicketService ticketService;
+    private final TenantReads tenantReads;
 
     /**
      * Resolve a Ticket entity by its key fields.
@@ -81,6 +81,6 @@ public class TicketEntityFetcher {
     public Mono<Ticket> fetchTicket(Map<String, Object> values) {
         String id = (String) values.get("id");
         log.debug("Federation: Resolving Ticket entity with id={}", id);
-        return ticketService.findById(id);
+        return tenantReads.ticketForCaller(id);
     }
 }

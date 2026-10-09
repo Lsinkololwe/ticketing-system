@@ -9,7 +9,7 @@ package com.pml.booking.exception;
  */
 public class ReservationNotFoundException extends RuntimeException {
 
-    /** ET-PLT-005's row for this failure. */
+    /** The error code for this failure. */
     public static final String CODE = "RESERVATION_UNKNOWN";
 
     private final String reservationId;

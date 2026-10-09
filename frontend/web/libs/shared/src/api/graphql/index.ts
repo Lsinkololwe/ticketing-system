@@ -43,8 +43,7 @@
 // Apollo Client Factory
 export {
   type GraphQLClientConfig,
-  type TokenGetter,
-  createGraphQLClient,
+  createBffGraphQLClient,
   type ApolloErrorType,
   categorizeApolloError,
   handleGraphQLError,

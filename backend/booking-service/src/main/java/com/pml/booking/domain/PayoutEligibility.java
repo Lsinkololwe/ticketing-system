@@ -1,12 +1,10 @@
 package com.pml.booking.domain;
 
-import com.pml.shared.constants.EscrowStatus;
-import com.pml.booking.domain.model.EventEscrowAccount;
+import com.pml.shared.constants.PlatformTime;
 
+import com.pml.shared.constants.EscrowStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,9 +12,8 @@ import java.util.List;
  * Whether an organizer may draw a payout from one event's escrow, and if not, why.
  *
  * <h2>Why this is a value object with a static method</h2>
- * ET-FIN-003 R1 requires that all conditions be "evaluated by one method over
- * values, testable at layer 1", and that the same method run at request AND
- * again at approval. Days pass between those two moments and a chargeback can
+ * All conditions are evaluated by one method over plain values, testable at
+ * layer 1, and the same method runs at request AND again at approval. Days pass between those two moments and a chargeback can
  * arrive in the window — a single check at request approves a payout against
  * money that has since been claimed back.
  *
@@ -29,8 +26,6 @@ import java.util.List;
  * whether to wait four days or resolve a dispute. A boolean tells them neither,
  * and a single "first failure" hides the second reason they will hit the moment
  * they fix the first.
- *
- * @see <a href="file:../../../../../../specs/finance/003-payouts-and-settlement/spec.md">ET-FIN-003</a>
  */
 public record PayoutEligibility(
         boolean eligible,
@@ -39,7 +34,7 @@ public record PayoutEligibility(
         BigDecimal availableAmount,
         String currency,
         /** When the hold elapses. Null once it has, or when there is no escrow. */
-        LocalDateTime opensAt,
+        Instant opensAt,
         /** The floor a balance must clear, so the client can say how far short it is. */
         BigDecimal minimumAmount
 ) {
@@ -70,7 +65,7 @@ public record PayoutEligibility(
         /**
          * A payout request for this escrow is already open.
          *
-         * <p>Not one of the spec's four conditions, which are about the money.
+         * <p>Not one of the four money conditions.
          * It is included because it is a real reason the button cannot be
          * pressed, and the alternative — an enabled button whose request the
          * server then rejects — is worse than a disabled one that says why.
@@ -91,7 +86,7 @@ public record PayoutEligibility(
      */
     public static PayoutEligibility evaluate(
             EscrowStatus escrowStatus,
-            LocalDateTime lockUntil,
+            Instant lockUntil,
             BigDecimal balance,
             long openDisputeCount,
             boolean hasOpenRequest,
@@ -101,7 +96,6 @@ public record PayoutEligibility(
         List<Reason> failures = new ArrayList<>();
         BigDecimal amount = balance == null ? BigDecimal.ZERO : balance;
         BigDecimal floor = minimum == null ? BigDecimal.ZERO : minimum;
-        LocalDateTime nowLocal = LocalDateTime.ofInstant(now, ZoneOffset.UTC);
 
         if (escrowStatus == null) {
             // Nothing else can be evaluated: every remaining condition is a
@@ -136,7 +130,7 @@ public record PayoutEligibility(
             failures.add(Reason.ESCROW_SUSPENDED);
         }
 
-        boolean holdPending = lockUntil != null && lockUntil.isAfter(nowLocal);
+        boolean holdPending = lockUntil != null && lockUntil.isAfter(now);
         if (holdPending) {
             failures.add(Reason.HOLD_NOT_ELAPSED);
         }
@@ -171,7 +165,7 @@ public record PayoutEligibility(
             case NO_ESCROW_ACCOUNT -> "No escrow account is available for this event.";
             case EVENT_NOT_COMPLETED -> "The event has not finished yet.";
             case HOLD_NOT_ELAPSED -> "The hold period has not elapsed"
-                    + (opensAt == null ? "." : ", it opens on " + opensAt.toLocalDate() + ".");
+                    + (opensAt == null ? "." : ", it opens on " + PlatformTime.dateAt(opensAt) + ".");
             case OPEN_DISPUTES -> "There is an open dispute against this event.";
             case ESCROW_SUSPENDED -> "This event's funds are on hold pending review by the platform.";
             case BELOW_MINIMUM -> "The balance is below the " + minimumAmount + " " + currency + " minimum.";

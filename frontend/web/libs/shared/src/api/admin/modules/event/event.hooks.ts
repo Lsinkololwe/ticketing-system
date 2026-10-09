@@ -11,11 +11,20 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery } from '@apollo/client/react';
 import type {
-  Event,
-  EventCategory,
-  EventStats,
   EventStatus,
-  Location,
+  AdminEventsQuery,
+  AdminEventsQueryVariables,
+  EventStatsQuery,
+  AdminEventCategoriesQuery,
+  AdminEventCategoriesQueryVariables,
+  AdminLocationsQuery,
+  AdminLocationsQueryVariables,
+  ApproveEventMutation,
+  ApproveEventMutationVariables,
+  RejectEventMutation,
+  RejectEventMutationVariables,
+  RequestEventChangesMutation,
+  RequestEventChangesMutationVariables,
 } from '../../../../types/graphql';
 import {
   ADMIN_EVENTS,
@@ -26,15 +35,13 @@ import {
   REJECT_EVENT,
   REQUEST_EVENT_CHANGES,
 } from './event.queries';
+import type { OffsetPageInfo } from '../../../../types/pageInfo';
 
-export interface EventPageInfo {
-  totalCount: number;
-  pageSize: number;
-  currentPage: number;
-  totalPages: number;
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-}
+/**
+ * Page metadata for this surface, with the field set taken from the generated
+ * schema type rather than re-declared — see `types/pageInfo`.
+ */
+export type EventPageInfo = OffsetPageInfo;
 
 /** Catalog's flat page → the shared shape. */
 interface FlatPage<T> {
@@ -71,8 +78,11 @@ export interface UseAdminEventsOptions {
   size?: number;
 }
 
+/** The row shape this screen actually selects — see `ADMIN_EVENTS`. */
+export type AdminEventRow = AdminEventsQuery['events']['content'][number];
+
 export interface UseAdminEventsResult {
-  events: Event[];
+  events: AdminEventRow[];
   pageInfo: EventPageInfo;
   loading: boolean;
   error?: Error;
@@ -81,13 +91,30 @@ export interface UseAdminEventsResult {
 
 export function useAdminEvents(options: UseAdminEventsOptions = {}): UseAdminEventsResult {
   const size = options.size ?? DEFAULT_SIZE;
-  const { data, loading, error, refetch } = useQuery<{
-    eventsOffsetPagination: FlatPage<Event>;
-  }>(ADMIN_EVENTS, {
+  const { data, loading, error, refetch } = useQuery<AdminEventsQuery, AdminEventsQueryVariables>(
+    ADMIN_EVENTS,
+    {
     variables: {
+      // The server declares this filter non-null, so an unfiltered view sends
+      // an object of nulls for every field this screen does not expose rather
+      // than omitting the argument.
       filter: {
         status: options.status ?? null,
         searchQuery: options.searchQuery || null,
+        approvedNotPublished: null,
+        categoryId: null,
+        cityId: null,
+        country: null,
+        createdAfter: null,
+        createdBefore: null,
+        daysSinceApprovalMax: null,
+        daysSinceApprovalMin: null,
+        eventDateAfter: null,
+        eventDateBefore: null,
+        organizerId: null,
+        overdue: null,
+        published: null,
+        statuses: null,
       },
       pagination: {
         page: options.page ?? 0,
@@ -100,7 +127,10 @@ export function useAdminEvents(options: UseAdminEventsOptions = {}): UseAdminEve
     errorPolicy: 'all',
   });
 
-  const page = data?.eventsOffsetPagination;
+  // `errorPolicy: 'all'` makes Apollo type `data` as deeply partial, since a
+  // partial GraphQL response is possible alongside errors. Absent an error,
+  // the response matches the query exactly, so the read site trusts that.
+  const page = data?.events as AdminEventsQuery['events'] | undefined;
 
   return {
     events: page?.content ?? [],
@@ -113,15 +143,18 @@ export function useAdminEvents(options: UseAdminEventsOptions = {}): UseAdminEve
   };
 }
 
+/** The stats shape this screen actually selects — see `EVENT_STATS`. */
+export type AdminEventStats = EventStatsQuery['eventStats'];
+
 export interface UseEventStatsResult {
-  stats: EventStats | null;
+  stats: AdminEventStats | null;
   loading: boolean;
   error?: Error;
   refetch: () => void;
 }
 
 export function useEventStats(): UseEventStatsResult {
-  const { data, loading, error, refetch } = useQuery<{ eventStats: EventStats }>(EVENT_STATS, {
+  const { data, loading, error, refetch } = useQuery<EventStatsQuery>(EVENT_STATS, {
     fetchPolicy: 'cache-and-network',
     errorPolicy: 'all',
   });
@@ -140,8 +173,21 @@ export function useEventStats(): UseEventStatsResult {
 // CATEGORIES
 // =============================================================================
 
+/**
+ * One category row. `id` is the reference-data row's id (what the writers take); events refer to a category by its
+ * `code`. `eventCount` is known for active categories only, so an inactive one reads `null`, not 0.
+ */
+export interface AdminEventCategoryRow {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  eventCount: number | null;
+}
+
 export interface UseEventCategoriesResult {
-  categories: EventCategory[];
+  categories: AdminEventCategoryRow[];
   pageInfo: EventPageInfo;
   loading: boolean;
   error?: Error;
@@ -152,14 +198,15 @@ export function useAdminEventCategories(
   options: { page?: number; size?: number } = {}
 ): UseEventCategoriesResult {
   const size = options.size ?? 50;
-  const { data, loading, error, refetch } = useQuery<{
-    eventCategoriesOffsetPagination: FlatPage<EventCategory>;
-  }>(ADMIN_EVENT_CATEGORIES, {
+  const { data, loading, error, refetch } = useQuery<
+    AdminEventCategoriesQuery,
+    AdminEventCategoriesQueryVariables
+  >(ADMIN_EVENT_CATEGORIES, {
     variables: {
       pagination: {
         page: options.page ?? 0,
         size,
-        sortBy: 'sortOrder',
+        sortBy: 'displayOrder',
         sortDirection: 'ASC',
       },
     },
@@ -167,10 +214,19 @@ export function useAdminEventCategories(
     errorPolicy: 'all',
   });
 
-  const page = data?.eventCategoriesOffsetPagination;
+  const page = data?.referenceDataAll;
+  const counts = new Map((data?.categories ?? []).map((c) => [c.code, c.eventCount ?? null] as const));
+  const categories: AdminEventCategoryRow[] = (page?.content ?? []).map((row) => ({
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    description: row.description ?? null,
+    isActive: row.isActive,
+    eventCount: counts.get(row.code) ?? null,
+  }));
 
   return {
-    categories: page?.content ?? [],
+    categories,
     pageInfo: normalise(page, size),
     loading,
     error: error as Error | undefined,
@@ -184,8 +240,11 @@ export function useAdminEventCategories(
 // LOCATIONS
 // =============================================================================
 
+/** The row shape this screen actually selects — see `ADMIN_LOCATIONS`. */
+export type AdminLocationRow = AdminLocationsQuery['locations']['edges'][number]['node'];
+
 export interface UseAdminLocationsResult {
-  locations: Location[];
+  locations: AdminLocationRow[];
   totalCount: number;
   loading: boolean;
   error?: Error;
@@ -194,18 +253,16 @@ export interface UseAdminLocationsResult {
 
 /** Cursor-paged; catalog exposes no offset variant for locations. */
 export function useAdminLocations(options: { first?: number } = {}): UseAdminLocationsResult {
-  const { data, loading, error, refetch } = useQuery<{
-    locationsCursorPagination: {
-      edges: { node: Location }[];
-      pageInfo: { hasNextPage: boolean | null; endCursor: string | null; totalCount: number | null };
-    };
-  }>(ADMIN_LOCATIONS, {
-    variables: { pagination: { first: options.first ?? 50 } },
+  const { data, loading, error, refetch } = useQuery<
+    AdminLocationsQuery,
+    AdminLocationsQueryVariables
+  >(ADMIN_LOCATIONS, {
+    variables: { pagination: { first: options.first ?? 50, after: null, before: null, last: null } },
     fetchPolicy: 'cache-and-network',
     errorPolicy: 'all',
   });
 
-  const conn = data?.locationsCursorPagination;
+  const conn = data?.locations as AdminLocationsQuery['locations'] | undefined;
 
   return {
     locations: conn?.edges?.map((e) => e.node) ?? [],
@@ -228,19 +285,21 @@ export interface EventDecisionResult {
   errors: string[];
 }
 
-interface Envelope {
-  success: boolean;
-  message: string | null;
-  errors: string[];
+/**
+ * None of the three decision mutations return a success envelope — each just
+ * returns the event's new `{ id, status }` (see `ApproveEventMutation` et al.
+ * in the generated types). Apollo rejects the promise on a GraphQL error
+ * (default `errorPolicy: 'none'`), so "resolved with the row back" is the
+ * actual success signal, and a caught error is the actual failure signal.
+ */
+function decided(id: string | undefined, fallback: string): EventDecisionResult {
+  if (!id) return { success: false, message: fallback, errors: [fallback] };
+  return { success: true, message: null, errors: [] };
 }
 
-function envelopeOf(payload: Envelope | undefined, fallback: string): EventDecisionResult {
-  if (!payload) return { success: false, message: fallback, errors: [fallback] };
-  return {
-    success: payload.success,
-    message: payload.message ?? null,
-    errors: payload.errors ?? [],
-  };
+function refused(error: unknown, fallback: string): EventDecisionResult {
+  const message = error instanceof Error ? error.message : fallback;
+  return { success: false, message, errors: [message] };
 }
 
 export interface UseEventDecisionsResult {
@@ -253,50 +312,62 @@ export interface UseEventDecisionsResult {
 export function useEventDecisions(): UseEventDecisionsResult {
   const refetchStats = [{ query: EVENT_STATS }];
 
-  const [approveMutation, approveState] = useMutation(APPROVE_EVENT, {
+  const [approveMutation, approveState] = useMutation<
+    ApproveEventMutation,
+    ApproveEventMutationVariables
+  >(APPROVE_EVENT, {
     refetchQueries: refetchStats,
     awaitRefetchQueries: true,
   });
-  const [rejectMutation, rejectState] = useMutation(REJECT_EVENT, {
+  const [rejectMutation, rejectState] = useMutation<
+    RejectEventMutation,
+    RejectEventMutationVariables
+  >(REJECT_EVENT, {
     refetchQueries: refetchStats,
     awaitRefetchQueries: true,
   });
-  const [changesMutation, changesState] = useMutation(REQUEST_EVENT_CHANGES, {
+  const [changesMutation, changesState] = useMutation<
+    RequestEventChangesMutation,
+    RequestEventChangesMutationVariables
+  >(REQUEST_EVENT_CHANGES, {
     refetchQueries: refetchStats,
     awaitRefetchQueries: true,
   });
 
   const approve = useCallback(
     async (eventId: string, comments?: string) => {
-      const { data } = await approveMutation({
-        variables: { eventId, comments: comments ?? null },
-      });
-      return envelopeOf(
-        (data as { approveEvent?: Envelope } | undefined)?.approveEvent,
-        'The server did not confirm the approval.'
-      );
+      try {
+        const { data } = await approveMutation({
+          variables: { eventId, comments: comments ?? null },
+        });
+        return decided(data?.approveEvent.id, 'The server did not confirm the approval.');
+      } catch (error) {
+        return refused(error, 'The server did not confirm the approval.');
+      }
     },
     [approveMutation]
   );
 
   const reject = useCallback(
     async (eventId: string, comments: string) => {
-      const { data } = await rejectMutation({ variables: { eventId, comments } });
-      return envelopeOf(
-        (data as { rejectEvent?: Envelope } | undefined)?.rejectEvent,
-        'The server did not confirm the rejection.'
-      );
+      try {
+        const { data } = await rejectMutation({ variables: { eventId, comments } });
+        return decided(data?.rejectEvent.id, 'The server did not confirm the rejection.');
+      } catch (error) {
+        return refused(error, 'The server did not confirm the rejection.');
+      }
     },
     [rejectMutation]
   );
 
   const requestChanges = useCallback(
     async (eventId: string, comments: string) => {
-      const { data } = await changesMutation({ variables: { eventId, comments } });
-      return envelopeOf(
-        (data as { requestEventChanges?: Envelope } | undefined)?.requestEventChanges,
-        'The server did not confirm the request.'
-      );
+      try {
+        const { data } = await changesMutation({ variables: { eventId, comments } });
+        return decided(data?.requestEventChanges.id, 'The server did not confirm the request.');
+      } catch (error) {
+        return refused(error, 'The server did not confirm the request.');
+      }
     },
     [changesMutation]
   );

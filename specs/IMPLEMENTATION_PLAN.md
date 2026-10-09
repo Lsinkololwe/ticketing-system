@@ -1,4 +1,4 @@
-# Implementation plan · 41 specs, backend + frontend + tests
+# Implementation plan · 42 specs, backend + frontend + tests
 
 The execution layer over [`specs/`](README.md). Every task here is a **vertical slice of one
 spec**: the backend that satisfies its EARS requirements, the subgraph half that exposes them,
@@ -50,14 +50,24 @@ hand-written types. Both are the failure modes this order exists to prevent.
 
 ## 3 · Wave −1 · What must be true before task one
 
-All 41 specs are `approved`. Of the preconditions below, **P1, P4 and P7 are cleared**; **P2 and P3
-remain open and still block every slice.**
+> **Status as of 2026-10-03.** The corpus is 42 specs (plus the template). By `spec.yaml` header, **8 are
+> `implemented`** (ET-PLT-001, 002, 003, 004, 005, 006, 012, 015 — Wave 0, closed in
+> [F-041](FINDINGS.md#f-041--closing-wave-0-what-the-last-three-platform-specs-found-when-actually-run)),
+> **34 are `approved`**, and **none is `verified`**. The text below was written when all 42 were `approved`
+> and is kept as history; where it disagrees with this paragraph, this paragraph wins. P2 (the backend test
+> harness, ET-PLT-006) is superseded by that spec being `implemented`. P3 (frontend test foundation) is
+> **no longer a blocker**: every Track F0 row (F0-1 to F0-7) is marked done in §4. What the frontend still
+> owes is listed in the [open items index](FINDINGS.md#open-items-index) (OI-25). Live status is each
+> spec's `spec.yaml` and its task-file gates; open defects are in the index.
+
+Original statement (2026-08-31): all 42 specs were `approved`; P1, P4 and P7 were cleared; P2 and P3 were
+open.
 
 | # | Precondition | Why it blocks everything |
 |---|---|---|
-| ~~**P1**~~ ✅ | ~~Fix the 47 `verify:` predicates that omit `-DfailIfNoTests=true`~~ — **done**: 47 commands across 37 files; proven by a bogus tag exiting 0 without the flag and 1 with it | 13 specs, including most of Wave 0, run `mvn -Dgroups=<ID>` with no such guard. A tag matching nothing exits 0, so the spec verifies green having executed nothing — the exact failure [README §Traceability](README.md#traceability) names as *"worse than not running them, because it looks like proof."* Combined with P2 this reports the whole corpus green today. |
-| **P2** ⛔ | Build the backend test harness — **`ET-PLT-006`** | `find backend -path '*/src/test/*' -name '*.java'` returns **zero**. There is no `Persistence.assertNothingPersisted`, no `Inventory.assertConserved`, no `Ledger.assertBalanced`, no frozen `Clock` — yet acceptance boxes across the corpus cite them by name. Until this lands, *no spec can reach `verified`.* |
-| **P3** ⛔ | Build the frontend test foundation — **Track F0** below | `apps/*/e2e` holds `auth.setup.ts` and a Microcks harness and **no `.spec.ts` at all**; `apps/ticketing` has no Playwright config. Zero frontend tests exist. |
+| ~~**P1**~~ ✅ | ~~Fix the 47 `verify:` predicates that omit `-DfailIfNoTests=false`~~ — **done**: 47 commands across 37 files; proven by a bogus tag exiting 0 without the flag and 1 with it | 13 specs, including most of Wave 0, run `mvn -Dgroups=<ID>` with no such guard. A tag matching nothing exits 0, so the spec verifies green having executed nothing — the exact failure [README §Traceability](README.md#traceability) names as *"worse than not running them, because it looks like proof."* Combined with P2 this reports the whole corpus green today. |
+| ~~**P2**~~ ⚠️ | Build the backend test harness — **`ET-PLT-006`** — **substantially built; re-measure before treating it as a blocker** | Written when `find backend -path '*/src/test/*' -name '*.java'` returned **zero**. As of **2026-08-31** it returns **79**, and `shared-library/src/test/java/com/pml/shared/testing/` holds `Harness`, `TestClock`, `Concurrency`, `Persistence`, `Inventory`, `Ledger`, `Providers`, `MongoReplicaSet`, `MongoStandalone`, `RedisNode`, BlockHound integration and a stub JWT issuer, plus six `it/` suites. `mvn -f backend test` is green — 325 tests — with `ContentionTest` at 39 s and `TransactionRealityTest` at 9.6 s against a real replica set. Five classes carry `@Tag("ET-PLT-006")`. Its 12 gate boxes are nonetheless **all unticked**, which is the *"finishing and not saying so"* failure [README §Status lifecycle](README.md#status-lifecycle) names. See [RECONCILIATION.md](RECONCILIATION.md#1--et-plt-006-is-built-and-its-task-file-says-it-is-not) — walk the gate and tick what holds, rather than rebuilding it. |
+| ~~**P3**~~ ✅ *(superseded 2026-10-03: Track F0 rows F0-1 to F0-7 are done, see §4)* | Build the frontend test foundation — **Track F0** below | `apps/*/e2e` holds `auth.setup.ts` and a Microcks harness and **no `.spec.ts` at all**; `apps/ticketing` has no Playwright config. Zero frontend tests exist. |
 
 The smaller repairs, now closed:
 
@@ -69,12 +79,23 @@ The smaller repairs, now closed:
   `approved`. ET-PLT-013's approval carries the **amendment to ET-ORG-003 R6** with it: its
   30-constant enum is superseded by the flat `module:action` catalogue, and ET-ORG-003's decision
   table must be re-run unchanged as the regression guard.
-- **P6** — `ROADMAP.md` line 84 describes `ET-ORG-001` as *"six states"*. The spec's §4 defines
-  **nine** states, ten actions, 100 pairs, 15 legal. The spec wins ([README §Precedence](README.md#precedence));
-  correct the roadmap row. Left alone, an implementer who reads the index and not the spec builds
-  the wrong state machine — and it is the state machine three other specs gate on.
+- ~~**P6**~~ ✅ — `ROADMAP.md:87` now reads *"**nine states**"*, matching ET-ORG-001 §4 (nine
+  states, ten actions, 100 pairs, 15 legal). Verified 2026-08-31; this row was stale.
 
-### Reconciliation is a real gate, and it is currently being skipped
+### Reconciliation — the mechanical half is done
+
+**[`RECONCILIATION.md`](RECONCILIATION.md) · measured 2026-08-31.** Every §4 name the corpus
+declares — collection, GraphQL operation, error code, event wire name — is now classified against
+the tree, with per-spec evidence in [`specs/reconciliation/ET-*.md`](reconciliation/). The
+headline: **the data model was built to the specs and the graph surface was not** — 42 of 67
+collections are `@Document`-bound and none is absent, while only 87 of 291 operations (30%)
+conform to §4, 61 are `contradicted` and 143 absent.
+
+What is **not** done is the §3 requirement read — whether the names that exist behave as the
+requirements demand. That remains open on all 42 specs, and no spec may advance to `implemented`
+on presence evidence alone.
+
+### Why the gate was skipped, and what it costs
 
 [README §Reconciliation](README.md#reconciliation) makes reconciliation the pass that runs
 *before* implementation planning: classify every requirement as `already-satisfied`,
@@ -94,13 +115,92 @@ Independent of the backend waves — start it in parallel with Wave 0.
 
 | Task | What | Acceptance |
 |---|---|---|
-| **F0-1** | Playwright project for `apps/ticketing` — config, `data-brand="ticketing"` fixture, iris accent | `nx e2e ticketing` runs and reports 0 tests, not a config error |
-| **F0-2** | **org-admin auth harness.** Per [frontend-quality §4](../.claude/skills/frontend-quality/SKILL.md), org-admin has none, and `page.route` cannot intercept a Server Component's fetch — mocking there silently does nothing | An org-admin spec authenticates as an `ORGANIZER` against the real realm and reaches `(dashboard)/dashboard` |
-| **F0-3** | Extend the Microcks container setup (`e2e/global-setup.ts`, fixed host port, `MICROCKS_PORT`) to admin and ticketing | Three apps share one container-backed mock path |
-| **F0-4** | **Apollo-driven surfaces need a real schema.** Microcks returns 500 on any GraphQL query containing fragments, so Apollo Client traffic cannot be mocked through it. Stand up a Testcontainers-backed subgraph fixture for those surfaces | An Apollo-driven screen's e2e passes against a container speaking the real schema, not a stub |
-| **F0-5** | Design-system compliance suite — token-only assertions (no hex, no `px`, three fonts, closed prop sets, correct `data-brand`) extended to all three apps | `npm run e2e:compliance` green across admin, org-admin, ticketing |
-| **F0-6** | Shared error-UI primitives: `extensions.errorCode` drives the message, `retryable` drives whether a retry is offered, `TOKEN_REVOKED` signs the user out rather than retrying | Every code in [`ET-PLT-005`](_platform/005-error-contract/) §4 maps to a rendered state |
-| **F0-7** | Currency + status formatters — `K 125,430` (Kwacha symbol, space, tabular Fira Code), humanised statuses (`PENDING_REVIEW` → "Pending Review"). Never `ZMW`, never `$`, never a raw enum | Unit-tested; compliance suite asserts no raw enum reaches the DOM |
+| **F0-1** ✅ | Playwright project for `apps/ticketing` — config, `data-brand="ticketing"` fixture, iris accent | `nx e2e ticketing` runs and reports 0 tests, not a config error |
+| **F0-2** ✅ | **org-admin auth harness.** Per [frontend-quality §4](../.claude/skills/frontend-quality/SKILL.md), org-admin has none, and `page.route` cannot intercept a Server Component's fetch — mocking there silently does nothing | An org-admin spec authenticates as an `ORGANIZER` against the real realm and reaches `(dashboard)/dashboard` |
+| **F0-3** ✅ | Extend the Microcks container setup (`e2e/global-setup.ts`, fixed host port, `MICROCKS_PORT`) to admin and ticketing | Three apps share one container-backed mock path |
+| **F0-4** ✅ | **Apollo-driven surfaces need a real schema.** Microcks returns 500 on any GraphQL query containing fragments, so Apollo Client traffic cannot be mocked through it. Stand up a Testcontainers-backed subgraph fixture for those surfaces | An Apollo-driven screen's e2e passes against a container speaking the real schema, not a stub |
+| **F0-5** ✅ | Design-system compliance suite — token-only assertions (no hex, no `px`, three fonts, closed prop sets, correct `data-brand`) extended to all three apps | `npm run e2e:compliance` green across admin, org-admin, ticketing |
+| **F0-6** ✅ | Shared error-UI primitives: `extensions.errorCode` drives the message, `retryable` drives whether a retry is offered, `TOKEN_REVOKED` signs the user out rather than retrying | Every code in [`ET-PLT-005`](_platform/005-error-contract/) §4 maps to a rendered state |
+| **F0-7** ✅ | Currency + status formatters — `K 125,430` (Kwacha symbol, space, tabular Fira Code), humanised statuses (`PENDING_REVIEW` → "Pending Review"). Never `ZMW`, never `$`, never a raw enum | **Done 2026-08-19** — moved to `libs/shared`, 24 unit tests, `npm run test:shared`. The DOM half stays open until F0-5 |
+
+### F0-7 notes *(2026-08-19)*
+
+The formatters existed, in `apps/admin/src/lib/format.ts`, with **no tests** — and the whole
+frontend had none: zero `.test.ts` and zero `.spec.ts` files across three apps. Moved to
+`libs/shared` so org-admin and ticketing reach the same implementation, and covered by 24 tests
+run from `npm run test:shared`.
+
+The tests assert the three rules a screen cannot restate for itself, each of which fails as
+working software rather than as a crash: currency never renders `ZMW` or `$` whatever the locale
+data says; an enum never reaches the DOM in SCREAMING_SNAKE; and an absent value renders as an em
+dash rather than `undefined` or `NaN`. Mutation-verified — rendering currency the way `en-ZM`
+would fails 5 tests, and letting one unmapped enum through fails 4.
+
+**A trap found on the way, worth knowing before any other frontend work.** `libs/shared` is a
+TypeScript *composite* project: the apps typecheck against `libs/shared/dist/**/*.d.ts`, not
+`src`. That bundle was **five days stale**, so the new export produced
+`TS2305: has no exported member` in eight files while the export was plainly there. Rebuild with
+`npx tsc -p libs/shared/tsconfig.lib.json` — do not delete `dist`, which turns 14 errors into 43
+`TS6305`.
+
+Rebuilding it also surfaced **two genuine pre-existing type errors** in
+`apps/admin/src/lib/auth/` (`TS2883`, `TS4023` — better-auth inference not portable) that the old
+bundle had been reporting as clean. Left as found: unrelated to this task, and untouched by it.
+
+### Track F0 batch · what running it actually found *(2026-08-19)*
+
+All seven tasks are done. Each turned up a defect rather than being scaffolding, and three of
+those were facades — things that reported success while asserting nothing.
+
+**The suites that proved nothing.** `libs/shared/src/__tests__/compliance/index.ts` re-exported
+**three files that do not exist**; both `apps/*/e2e/compliance/` directories were **empty**; and
+before F0-1 there were **zero** `.spec.ts` files in the entire frontend. `npm run e2e:compliance`
+and `npm run test:compliance` therefore passed by having nothing to run. The replacement carries a
+guard against exactly that: a test asserting each app contributes more than five scanned files, so
+a broken glob fails instead of reading as compliance.
+
+**The customer app was not browsable signed out — fixed.** `/`, `/events` and `/auth/login` all
+redirected to `localhost:8084/realms/myticketzm/...`, while the design specifies discovery as
+public. `curl` returned the app correctly, so it was client-side on hydration and invisible to any
+SSR-only check.
+
+The cause was `onLoad: 'check-sso'` with `checkLoginIframe: false` and **no
+`silentCheckSsoRedirectUri`** — keycloak-js then performs its `prompt=none` SSO probe as a
+top-level redirect instead of in a hidden iframe. `apps/ticketing/public/silent-check-sso.html`
+already existed and was simply never referenced; the shared provider deletes the option when it is
+not passed. One line, and the probe moves into an iframe.
+
+**It is not a relaxation of auth, and that is asserted.** `public-vs-guarded.spec.ts` checks both
+halves in one file: `/` and `/events` reachable anonymously, `/my-tickets` still demanding a
+session. "Stop redirecting" and "stop requiring a session" look identical on a public page and
+differ only on a private one — the comfortable fix is the one that browses beautifully and serves
+someone else's tickets to whoever asks. Six specs pass.
+
+**A fixture bug this exposed.** With the redirect gone, the accent assertion still failed reading
+`--accent-9` as empty. The app was correct: Radix Themes emits the resolved accent on its own
+`.radix-themes` container, not on `<html>`. Reading `documentElement` returns empty on a perfectly
+good page and reads as "the token sheet failed to load", which sends you after the wrong bug. The
+fixture now reads the palette from `<html>` and the resolved accent from the Theme container.
+
+**684 raw `px` values** across the three apps — admin 119, org-admin 520, ticketing 45 — against
+the design system's own ban. Frozen as per-app ratchets that may only fall. Raw hex, by contrast,
+is **0 everywhere** and frozen there, so it is a guarantee rather than a debt.
+
+**Microcks' fragment limit is now measured, not folklore.** `microcks-limits.spec.ts` asserts a
+plain query succeeds and the same query through a fragment does not — and it is written so that
+if Microcks ever gains fragment support, the test fails and someone gets to delete a container.
+
+**F0-4 is built and proven, and currently has nothing to point at.** The subgraph fixture runs
+`graphql-js` against the SDL the service publishes, in a container: it answers fragments and
+rejects a field the schema lacks, which is what separates it from the stub the skill forbids. But
+`useQuery`/`useMutation` appear **nowhere** in either app — every surface is Server Components
+issuing plain queries — so there is no Apollo-driven screen to prove it against yet. The fixture
+is ready for the first one.
+
+**F0-2's gap was not the auth harness.** org-admin already had a 74-line one; what it had no spec
+proving it worked. The missing piece was that signing in is necessary and not sufficient: the
+onboarding guard routes anyone without an ACTIVE organization into the application flow, so the
+spec has to drive the Microcks state before navigating.
 
 ## 5 · Test layers, and what each is allowed to prove
 
@@ -127,7 +227,7 @@ cheap and catches exactly that. It does **not** substitute for an L3 container t
 - [ ] `R0` recorded: every §3 requirement classified against existing code
 - [ ] Every §3 acceptance box ticked, each backed by a test tagged with the spec ID
 - [ ] No name outside §4 introduced — no invented collection, index, event, operation or code
-- [ ] `mvn -q -f backend verify -Dgroups=<ET-ID> -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend verify -Dgroups=<ET-ID> -DfailIfNoTests=false` green
 - [ ] `compose-supergraph.sh --static` green; `npm run codegen` clean and committed
 - [ ] Every operation the UI calls appears in `docs/FRONTEND_GRAPHQL_CONTRACT.md` with a role the caller holds
 - [ ] The `.dc.html` screen was read and the implementation matches its structure
@@ -178,13 +278,14 @@ screen for them is a defect, not diligence.
 | [ET-CAT-001](tasks/ET-CAT-001.md) | Event lifecycle — eight states, approval, publish, reschedule, cancel | `Org Admin - Event Editor` + `Create Event Wizard`, `Admin - Approvals Workbench`, `Ticketing - Discover` | PLT-002, 003, 005, 007, ORG-001, 003 |
 | [ET-CAT-002](tasks/ET-CAT-002.md) | Tiers, capacity, sales windows, purchase limits, promo codes | `Org Admin - Event Editor` | PLT-002, 003, 005, CAT-001 |
 | [ET-PLT-014](tasks/ET-PLT-014.md) | **Reference data engine** — enum-derived rows, workflow semantics, admin-owned lookups | `Admin - Transactions & System` | PLT-002, 004, 005 |
+| [ET-PLT-015](tasks/ET-PLT-015.md) | **Durable execution** — Temporal workflows, task queues, determinism, the reactive boundary | — | PLT-001, 003, 012 |
 | [ET-CAT-003](tasks/ET-CAT-003.md) | Provinces, cities, venues, categories, discovery and search | `Ticketing - Discover`, `Admin - Transactions & System` (reference data), `Org Admin - Event Editor` (venue) | PLT-002, 004, 005, CAT-001 |
 
 ### Wave 3 · The purchase loop
 
 | Spec | Capability | FE | Blocked by |
 |---|---|---|---|
-| [ET-TKT-001](tasks/ET-TKT-001.md) | Reservation, atomic hold, TTL expiry, purchase saga | `Ticketing - Discover & Checkout` | PLT-002, 003, 005, 006, 007, CAT-002 |
+| [ET-TKT-001](tasks/ET-TKT-001.md) | Reservation, atomic hold, ten-minute expiry, purchase workflow | `Ticketing - Discover & Checkout` | PLT-002, 003, 005, 006, 007, CAT-002 |
 | [ET-PAY-001](tasks/ET-PAY-001.md) | Payment intents, provider port, PawaPay adapter, idempotency | *checkout payment step only* | PLT-002, 003, 005, 007, TKT-001 |
 | [ET-PAY-002](tasks/ET-PAY-002.md) | Webhook signature, replay defence, confirmation path | — *(operator surface is ADM-003's drawer)* | PLT-002, 005, 007, TKT-001, PAY-001 |
 | [ET-TKT-002](tasks/ET-TKT-002.md) | Ticket issuance, QR signing, delivery, re-issue | `Ticketing - My Tickets` | PLT-002, 005, 007, TKT-001, ORG-003 |
@@ -195,7 +296,7 @@ screen for them is a defect, not diligence.
 | Spec | Capability | FE | Blocked by |
 |---|---|---|---|
 | [ET-FIN-002](tasks/ET-FIN-002.md) | Two-stage commission, rate resolution, recognition | `Admin - Ledger…` + `Org Admin - Event Editor` (preview) | PLT-005, 006, FIN-001, CAT-001, 002 |
-| [ET-FIN-003](tasks/ET-FIN-003.md) | Payout eligibility, request lifecycle, bank accounts, settlement saga | `Admin - Finance` + `Org Admin - Events & Finance` | PLT-005, 007, FIN-001, 002, PAY-001, ORG-003 |
+| [ET-FIN-003](tasks/ET-FIN-003.md) | Payout eligibility, request lifecycle, bank accounts, payout workflow | `Admin - Finance` + `Org Admin - Events & Finance` | PLT-005, 007, FIN-001, 002, PAY-001, ORG-003 |
 | [ET-FIN-004](tasks/ET-FIN-004.md) | Refund policy and fees, cancellation refunds, chargebacks | `Admin - Ledger…` + `Ticketing - My Tickets` (quote) | PLT-005, 007, FIN-001, 002, 003, CAT-001, TKT-002 |
 | [ET-FIN-005](tasks/ET-FIN-005.md) | Provider reconciliation, ledger-to-balance proof, financial close | `Admin - Ledger, Commission & Reconciliation` | PLT-005, FIN-001…004, PAY-002 |
 

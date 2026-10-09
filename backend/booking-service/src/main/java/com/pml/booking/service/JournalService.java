@@ -8,7 +8,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -77,8 +77,8 @@ public interface JournalService {
      */
     Mono<JournalEntry> createEntry(
             String correlationId,
-            LocalDateTime entryDate,
-            LocalDateTime effectiveDate,
+            Instant entryDate,
+            Instant effectiveDate,
             String description,
             JournalEntryType type,
             List<JournalLine> lines,
@@ -103,7 +103,7 @@ public interface JournalService {
      */
     Mono<JournalEntry> createAndPostEntry(
             String correlationId,
-            LocalDateTime entryDate,
+            Instant entryDate,
             String description,
             JournalEntryType type,
             List<JournalLine> lines,
@@ -138,15 +138,6 @@ public interface JournalService {
      */
     Mono<JournalEntry> postEntry(String entryId, String postedBy);
 
-    /**
-     * Posts a journal entry by entry number.
-     *
-     * @param entryNumber The entry number (e.g., JE-2024-03-00001)
-     * @param postedBy    User/system posting the entry
-     * @return Posted journal entry
-     */
-    Mono<JournalEntry> postEntryByNumber(String entryNumber, String postedBy);
-
     // ========================================================================
     // ENTRY REVERSAL
     // ========================================================================
@@ -169,16 +160,6 @@ public interface JournalService {
      * @return The reversal journal entry (new entry)
      */
     Mono<JournalEntry> reverseEntry(String entryId, String reason, String reversedBy);
-
-    /**
-     * Reverses a journal entry by entry number.
-     *
-     * @param entryNumber The entry number to reverse
-     * @param reason      Reason for reversal
-     * @param reversedBy  User/system reversing the entry
-     * @return The reversal journal entry
-     */
-    Mono<JournalEntry> reverseEntryByNumber(String entryNumber, String reason, String reversedBy);
 
     // ========================================================================
     // ENTRY QUERIES
@@ -269,7 +250,7 @@ public interface JournalService {
      * @param entryDate The entry date (used for year/month)
      * @return Generated entry number
      */
-    Mono<String> generateEntryNumber(LocalDateTime entryDate);
+    Mono<String> generateEntryNumber(Instant entryDate);
 
     // ========================================================================
     // VALIDATION

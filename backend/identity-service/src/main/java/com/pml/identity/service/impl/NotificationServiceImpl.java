@@ -1,6 +1,5 @@
 package com.pml.identity.service.impl;
 
-import com.pml.identity.web.graphql.dto.SendNotificationInput;
 import com.pml.identity.domain.model.Notification;
 import com.pml.identity.domain.enums.NotificationChannel;
 import com.pml.identity.domain.model.NotificationPreferences;
@@ -16,7 +15,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,47 +28,17 @@ import java.util.List;
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationRepository notificationRepository;
+
+    /**
+     * Every timestamp comes from here.
+     *
+     * <p>An inline {@code clock.instant()} makes a time-dependent branch untestable: a reminder
+     * that fires at its scheduled minute can only be checked by waiting for that minute to
+     * arrive. With an injected clock the test moves time instead.</p>
+     */
+    private final java.time.Clock clock;
     private final NotificationPreferencesRepository preferencesRepository;
     private final UserDeviceRepository deviceRepository;
-
-    @Override
-    public Mono<Notification> createNotification(SendNotificationInput input) {
-        log.debug("Creating notification for user {} of type {}", input.userId(), input.type());
-
-        Notification notification = Notification.builder()
-            .userId(input.userId())
-            .type(input.type())
-            .title(input.title())
-            .body(input.body())
-            .data(input.data())
-            .channels(input.channels())
-            .status(NotificationStatus.PENDING)
-            .createdAt(LocalDateTime.now())
-            .build();
-
-        return notificationRepository.save(notification)
-            .flatMap(this::sendToChannels);
-    }
-
-    @Override
-    public Mono<Integer> sendBulkNotification(List<String> userIds, SendNotificationInput input) {
-        log.debug("Sending bulk notification to {} users", userIds.size());
-
-        return Flux.fromIterable(userIds)
-            .flatMap(userId -> {
-                SendNotificationInput userInput = new SendNotificationInput(
-                    userId,
-                    input.type(),
-                    input.title(),
-                    input.body(),
-                    input.data(),
-                    input.channels()
-                );
-                return createNotification(userInput);
-            })
-            .count()
-            .map(Long::intValue);
-    }
 
     @Override
     public Flux<Notification> findByUserId(String userId, int limit, int offset, boolean unreadOnly) {
@@ -105,13 +73,13 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public Mono<Notification> markAsRead(String notificationId) {
+    public Mono<Notification> markAsRead(String userId, String notificationId) {
         log.debug("Marking notification {} as read", notificationId);
 
-        return notificationRepository.findById(notificationId)
+        return notificationRepository.findByIdAndUserId(notificationId, userId)
             .flatMap(notification -> {
                 if (notification.getReadAt() == null) {
-                    notification.setReadAt(LocalDateTime.now());
+                    notification.setReadAt(clock.instant());
                     notification.setStatus(NotificationStatus.READ);
                     return notificationRepository.save(notification);
                 }
@@ -126,7 +94,7 @@ public class NotificationServiceImpl implements NotificationService {
         return notificationRepository.findByUserIdAndReadAtIsNullOrderByCreatedAtDesc(
             userId, PageRequest.of(0, 1000))
             .flatMap(notification -> {
-                notification.setReadAt(LocalDateTime.now());
+                notification.setReadAt(clock.instant());
                 notification.setStatus(NotificationStatus.READ);
                 return notificationRepository.save(notification);
             })
@@ -135,10 +103,11 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public Mono<Boolean> deleteNotification(String notificationId) {
+    public Mono<Boolean> deleteNotification(String userId, String notificationId) {
         log.debug("Deleting notification {}", notificationId);
 
-        return notificationRepository.deleteById(notificationId)
+        // Always true on success: whether the id was unknown or someone else's must not be observable.
+        return notificationRepository.deleteByIdAndUserId(notificationId, userId)
             .thenReturn(true)
             .onErrorReturn(false);
     }
@@ -164,7 +133,7 @@ public class NotificationServiceImpl implements NotificationService {
                 return Flux.merge(sends)
                     .then(Mono.just(notification.toBuilder()
                         .status(NotificationStatus.SENT)
-                        .sentAt(LocalDateTime.now())
+                        .sentAt(clock.instant())
                         .build()))
                     .flatMap(notificationRepository::save);
             })

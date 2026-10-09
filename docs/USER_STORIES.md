@@ -1,5 +1,7 @@
 # User Stories Documentation - Event Ticketing Platform
 
+> **Process mechanics (ROADMAP D-21).** The stories stay authoritative on roles and behaviour; Part IV's saga orchestration is realised as Temporal workflows. Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 **Document Version:** 3.0
 **Last Updated:** 2026-03-18
 **Authors:** Platform Engineering Team
@@ -18,7 +20,7 @@ This document provides comprehensive user stories and technical specifications f
 3. **Staged Organizer Onboarding**: Progressive access based on verification status
 4. **Keycloak Integration**: Centralized identity with synchronized MongoDB profiles
 
-**Architecture Context:** 3-microservice design (Catalog, Booking, Identity) using MongoDB, Spring Modulith Events, and GraphQL Federation 2.
+**Architecture Context:** 3-microservice design (Catalog, Booking, Identity) using MongoDB, a transactional outbox with Temporal workflows, and GraphQL Federation 2.
 
 ---
 

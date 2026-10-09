@@ -1,19 +1,19 @@
 package com.pml.catalog.domain.model;
 
+import com.pml.catalog.persistence.CatalogCollections;
+
 import com.pml.catalog.domain.valueobject.TimelineEvent;
 import com.pml.shared.constants.EventStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,9 +29,8 @@ import java.util.List;
  * - Escalation reference
  * - Iteration tracking for changes-requested flow
  */
-@Document(collection = "approval_timelines")
-@CompoundIndex(name = "status_deadline_idx", def = "{'currentStatus': 1, 'slaDeadline': 1}")
-@CompoundIndex(name = "organizer_status_idx", def = "{'organizerId': 1, 'currentStatus': 1}")
+@Document(collection = CatalogCollections.APPROVAL_TIMELINES)
+@TypeAlias("approval_timelines")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -44,7 +43,6 @@ public class ApprovalTimeline {
     /**
      * Event ID this timeline belongs to (1:1 relationship)
      */
-    @Indexed(unique = true)
     private String eventId;
 
     /**
@@ -55,7 +53,6 @@ public class ApprovalTimeline {
     /**
      * Organizer who submitted the event
      */
-    @Indexed
     private String organizerId;
 
     /**
@@ -70,13 +67,11 @@ public class ApprovalTimeline {
     /**
      * Current approval status of the event
      */
-    @Indexed
     private EventStatus currentStatus;
 
     /**
      * Currently assigned reviewer (null if unassigned)
      */
-    @Indexed
     private String assignedReviewerId;
 
     /**
@@ -101,25 +96,22 @@ public class ApprovalTimeline {
     /**
      * When the event was first submitted for approval
      */
-    @Indexed
-    private LocalDateTime submittedAt;
+    private Instant submittedAt;
 
     /**
      * Calculated SLA deadline based on platform configuration
      */
-    @Indexed
-    private LocalDateTime slaDeadline;
+    private Instant slaDeadline;
 
     /**
      * When the event was actually approved (null if not yet approved)
      */
-    private LocalDateTime actualApprovalAt;
+    private Instant actualApprovalAt;
 
     /**
      * Whether the approval is overdue (past SLA deadline)
      */
     @Builder.Default
-    @Indexed
     private boolean isOverdue = false;
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -135,7 +127,6 @@ public class ApprovalTimeline {
      * Whether there is an active escalation for this timeline
      */
     @Builder.Default
-    @Indexed
     private boolean hasActiveEscalation = false;
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -168,7 +159,7 @@ public class ApprovalTimeline {
      * When the last activity occurred
      */
     @LastModifiedDate
-    private LocalDateTime lastActivityAt;
+    private Instant lastActivityAt;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // CALCULATED PROPERTIES
@@ -177,43 +168,8 @@ public class ApprovalTimeline {
     /**
      * Same as slaDeadline for API clarity
      */
-    public LocalDateTime getExpectedApprovalAt() {
+    public Instant getExpectedApprovalAt() {
         return slaDeadline;
-    }
-
-    /**
-     * Calculate total processing time in hours
-     */
-    public Integer getTotalProcessingTimeHours() {
-        if (submittedAt == null) return null;
-
-        LocalDateTime endTime = actualApprovalAt != null ? actualApprovalAt : LocalDateTime.now();
-        return (int) Duration.between(submittedAt, endTime).toHours();
-    }
-
-    /**
-     * Calculate hours until SLA deadline (negative if overdue)
-     */
-    public Integer getHoursUntilDeadline() {
-        if (slaDeadline == null) return null;
-        if (actualApprovalAt != null) return null; // Already approved
-
-        return (int) Duration.between(LocalDateTime.now(), slaDeadline).toHours();
-    }
-
-    /**
-     * Calculate SLA compliance percentage (time used vs total SLA time)
-     */
-    public Float getSlaCompliancePercentage() {
-        if (submittedAt == null || slaDeadline == null) return null;
-
-        long totalSlaHours = Duration.between(submittedAt, slaDeadline).toHours();
-        if (totalSlaHours <= 0) return 100.0f;
-
-        LocalDateTime endTime = actualApprovalAt != null ? actualApprovalAt : LocalDateTime.now();
-        long usedHours = Duration.between(submittedAt, endTime).toHours();
-
-        return Math.min(100.0f, (float) usedHours / totalSlaHours * 100);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -242,64 +198,67 @@ public class ApprovalTimeline {
     /**
      * Record a submission
      */
-    public void recordSubmission(String organizerId, String organizerName, LocalDateTime slaDeadline) {
-        this.submittedAt = LocalDateTime.now();
+    public void recordSubmission(String organizerId, String organizerName, Instant slaDeadline, Instant now) {
+        this.submittedAt = now;
         this.slaDeadline = slaDeadline;
         this.currentStatus = EventStatus.PENDING_APPROVAL;
         this.submissionCount++;
 
-        addTimelineEvent(TimelineEvent.submission(eventId, organizerId, organizerName));
+        addTimelineEvent(TimelineEvent.submission(eventId, organizerId, organizerName, now));
     }
 
     /**
      * Record a resubmission after changes
      */
-    public void recordResubmission(String organizerId, String organizerName, LocalDateTime newSlaDeadline) {
+    public void recordResubmission(String organizerId, String organizerName, Instant newSlaDeadline,
+                                   Instant now) {
         this.slaDeadline = newSlaDeadline;
         this.currentStatus = EventStatus.PENDING_APPROVAL;
         this.submissionCount++;
         this.currentIteration++;
         this.isOverdue = false;
 
-        addTimelineEvent(TimelineEvent.resubmission(eventId, organizerId, organizerName));
+        addTimelineEvent(TimelineEvent.resubmission(eventId, organizerId, organizerName, now));
     }
 
     /**
      * Record approval
      */
-    public void recordApproval(String reviewerId, String reviewerName, String comments) {
+    public void recordApproval(String reviewerId, String reviewerName, String comments, Instant now) {
         this.currentStatus = EventStatus.APPROVED;
-        this.actualApprovalAt = LocalDateTime.now();
+        this.actualApprovalAt = now;
 
-        addTimelineEvent(TimelineEvent.approval(eventId, reviewerId, reviewerName, comments));
+        addTimelineEvent(TimelineEvent.approval(eventId, reviewerId, reviewerName, comments, now));
     }
 
     /**
      * Record rejection
      */
-    public void recordRejection(String reviewerId, String reviewerName, String comments) {
+    public void recordRejection(String reviewerId, String reviewerName, String comments, Instant now) {
         this.currentStatus = EventStatus.REJECTED;
 
-        addTimelineEvent(TimelineEvent.rejection(eventId, reviewerId, reviewerName, comments));
+        addTimelineEvent(TimelineEvent.rejection(eventId, reviewerId, reviewerName, comments, now));
     }
 
     /**
      * Record changes requested
      */
-    public void recordChangesRequested(String reviewerId, String reviewerName, String comments) {
+    public void recordChangesRequested(String reviewerId, String reviewerName, String comments,
+                                       Instant now) {
         this.currentStatus = EventStatus.CHANGES_REQUESTED;
 
-        addTimelineEvent(TimelineEvent.changesRequested(eventId, reviewerId, reviewerName, comments));
+        addTimelineEvent(TimelineEvent.changesRequested(eventId, reviewerId, reviewerName, comments, now));
     }
 
     /**
      * Assign reviewer
      */
-    public void assignReviewer(String adminId, String adminName, String reviewerId, String reviewerName) {
+    public void assignReviewer(String adminId, String adminName, String reviewerId,
+                               String reviewerName, Instant now) {
         this.assignedReviewerId = reviewerId;
         this.assignedReviewerName = reviewerName;
 
-        addTimelineEvent(TimelineEvent.assignment(eventId, adminId, adminName, reviewerId, reviewerName));
+        addTimelineEvent(TimelineEvent.assignment(eventId, adminId, adminName, reviewerId, reviewerName, now));
     }
 
     /**
@@ -313,11 +272,11 @@ public class ApprovalTimeline {
     /**
      * Mark as escalated
      */
-    public void markEscalated(String escalationId, String escalatedToName, String reason) {
+    public void markEscalated(String escalationId, String escalatedToName, String reason, Instant now) {
         this.escalationId = escalationId;
         this.hasActiveEscalation = true;
 
-        addTimelineEvent(TimelineEvent.escalation(eventId, escalatedToName, reason));
+        addTimelineEvent(TimelineEvent.escalation(eventId, escalatedToName, reason, now));
     }
 
     /**
@@ -326,17 +285,6 @@ public class ApprovalTimeline {
     public void resolveEscalation() {
         this.hasActiveEscalation = false;
         // Keep escalationId for history
-    }
-
-    /**
-     * Check and update overdue status
-     */
-    public boolean checkAndUpdateOverdueStatus() {
-        if (slaDeadline != null && LocalDateTime.now().isAfter(slaDeadline)) {
-            this.isOverdue = true;
-            return true;
-        }
-        return false;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

@@ -140,7 +140,7 @@ public class PlatformAccountServiceImpl implements PlatformAccountService {
 
         return debit(fromType, amount, reference, "Transfer out: " + description)
                 .flatMap(fromAccount -> credit(toType, amount, reference, "Transfer in: " + description)
-                        .map(toAccount -> new TransferResult(fromAccount, toAccount, amount)))
+                        .map(toAccount -> new TransferResult(amount)))
                 .doOnSuccess(result -> log.info("Transfer completed: {} from {} to {}",
                         amount, fromType, toType));
     }
@@ -167,19 +167,6 @@ public class PlatformAccountServiceImpl implements PlatformAccountService {
                 .map(balance -> balance.compareTo(amount) >= 0);
     }
 
-    // ========================================================================
-    // RESERVE MANAGEMENT
-    // ========================================================================
-
-    @Override
-    public Mono<BigDecimal> getReserveShortfall(BigDecimal minimumBalance) {
-        return getBalance(PlatformAccountType.RESERVE)
-                .map(balance -> {
-                    BigDecimal shortfall = minimumBalance.subtract(balance);
-                    return shortfall.compareTo(BigDecimal.ZERO) > 0 ? shortfall : BigDecimal.ZERO;
-                });
-    }
-
     @Override
     @Transactional
     public Mono<PlatformAccount> recoverFromReserve(String chargebackId, BigDecimal amount) {
@@ -193,19 +180,6 @@ public class PlatformAccountServiceImpl implements PlatformAccountService {
         );
     }
 
-    @Override
-    @Transactional
-    public Mono<PlatformAccount> replenishReserve(BigDecimal amount, String source, String reference) {
-        log.info("Replenishing reserve with {} from {}", amount, source);
-
-        return credit(
-                PlatformAccountType.RESERVE,
-                amount,
-                reference,
-                "Reserve replenishment from: " + source
-        );
-    }
-
     // ========================================================================
     // RECONCILIATION
     // ========================================================================
@@ -213,25 +187,5 @@ public class PlatformAccountServiceImpl implements PlatformAccountService {
     @Override
     public Mono<BigDecimal> getOperatingBalanceForReconciliation() {
         return getBalance(PlatformAccountType.OPERATING);
-    }
-
-    @Override
-    @Transactional
-    public Mono<PlatformAccount> recordReconciliationAdjustment(
-            PlatformAccountType accountType,
-            BigDecimal adjustment,
-            String reason,
-            String approvedBy
-    ) {
-        log.info("Recording reconciliation adjustment of {} for {} account: {}",
-                adjustment, accountType, reason);
-
-        if (adjustment.compareTo(BigDecimal.ZERO) > 0) {
-            return credit(accountType, adjustment, "RECON-ADJ-" + System.currentTimeMillis(),
-                    "Reconciliation adjustment (approved by " + approvedBy + "): " + reason);
-        } else {
-            return debit(accountType, adjustment.abs(), "RECON-ADJ-" + System.currentTimeMillis(),
-                    "Reconciliation adjustment (approved by " + approvedBy + "): " + reason);
-        }
     }
 }

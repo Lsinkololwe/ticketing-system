@@ -1,159 +1,165 @@
-# ET-IDN-001 · Phone-OTP passwordless identity — tasks
+# ET-IDN-001 · Contact-OTP passwordless identity — tasks
 
 > **Spec** [`specs/identity/001-phone-otp-identity/spec.md`](../identity/001-phone-otp-identity/spec.md) · **Wave 1** · `blocked_by:` ET-PLT-005, ET-PLT-007
-> **Screen** `Login - Phone OTP & Admin MFA.dc.html` — **read it before writing UI**
-> **Routes** `apps/ticketing/src/app/auth/page.tsx`, `auth/callback/page.tsx`; `apps/organization-admin/src/app/login/page.tsx`; admin login
-> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=true` · `mvn -q -f backend/keycloak-extensions package`
+> **Contract** [`CONTRACT.md`](../identity/004-accounts-and-contacts/CONTRACT.md) — binding wire contract; change it first if an implementation must deviate
+> **Screen** `Login - Phone OTP & Admin MFA.dc.html` — **read it before writing UI**; the buyer flow is now a step inside checkout (D-38, D-44)
+> **Routes** buyer app `apps/ticketing` server routes `/api/identity/*`, `/api/auth/start`, `/api/auth/callback`; `apps/organization-admin/src/app/login/page.tsx`; admin login
+> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=false` · `mvn -q -f backend/keycloak-extensions package`
 
-WhatsApp is primary in-market and carries the OTP that **is** the login mechanism (**D-15**); SMS
-is its fallback. The whole customer app depends on this working on a handset with a flaky
-connection.
+Redesigned 2026-10-04 (D-38..D-50, F-044). WhatsApp and email carry the code (**D-39**; SMS is dropped);
+the code is typed in checkout and verified by identity-service; Keycloak remains the only token issuer
+(**D-44**); the plugin never creates users (**D-43**).
 
 ## R0 · Reconcile *(do this first)*
 
-`backend/keycloak-extensions/` already contains `PhoneOtpAuthenticator`,
-`PhoneOtpAuthenticatorFactory`, `OtpServiceClient`, FreeMarker templates and SPI registration;
-identity-service has `InternalOtpController`. Much of this is `partially-satisfied`.
+Measured 2026-10-04 by code review of `keycloak-extensions` and `identity-service`. Evidence is the
+review, not an executing test: **no test exists** for `OtpService`, `InternalOtpController` or
+`MessagingService`, so no row below can be `already-satisfied`.
 
-Check specifically, because these are the requirements existing code most often misses:
-- Is the OTP stored **HMAC'd**, or in plaintext in Redis? Plaintext is `contradicted`.
-- Is verification **constant-time**? A `String.equals` comparison is a timing oracle.
-- Are cooldown (60 s), attempt limit and lockout (15 min) all present, or only cooldown?
-- Does any log line, at any level, contain the code?
+| Req | Class | Evidence (code review facts) | Action |
+|---|---|---|---|
+| R1 contact normalisation | `partially-satisfied` | phone only, `+260` default applied to anything; no email; no country allowlist; no mobile-type check | rewrite as `ContactNormalizer` (BE-1) |
+| R2 generate and deliver | `contradicted` | code stored in plain text at `otp:phone:<e164>`; Twilio body unencoded; no provider timeouts; the WhatsApp-to-SMS fallback never fires; no email provider; the channel is trusted from the form | delete and rebuild (BE-2, BE-4) |
+| R3 throttle, attempts, lock | `contradicted` | 3 tries instead of 5; no lock; check-then-act races; resend link in the page is dead; no per-IP/device/country limits | rebuild as one Lua script (BE-2, BE-3) |
+| R4 leaks nothing | `contradicted` | `String.equals` comparison; phone number in the URL; controller returns bare enums and 500s instead of problem documents; no logging test | rebuild; add no-oracle and no-log tests (BE-2, BE-5, BE-6, TS-4) |
+| R5 Keycloak only issuer | `contradicted` | `OtpServiceClient` sends unauthenticated when credentials are missing; `PhoneOtpMutationResolver` returns a service-account token as the buyer token (a second token path); `KeycloakAuthService` password paths | delete both paths; authenticator fails closed (BE-7, BE-8) |
+| R6 one contact, one account | `contradicted` | `PhoneOtpAuthenticator` creates users (`addUser`, username `user_<last8>`) and grants `CUSTOMER`; `KeycloakService` finds users by email and adopts on 409; `users-schema` requires email and names; duplicate email indexes (partial plus a plain unique at `IdentityIndexInitializer` L283) | creation moves to ET-IDN-004; username = account id (BE-8) |
+| R7 privileged not contact-only | `absent` | `AccountTypeRoleMapper` lets registrants choose `ORGANIZER`; the admin realm has no `user-sync` listener; realm user profile requires email and names; docs still name a `SCANNER` role | realm as code, two realms (BE-9) |
+
+Also re-check, because they are the usual misses: any log line (any level) containing a code or an
+Authorization value; every place that still reads `otp:`-prefixed keys; every caller of the deleted
+`/api/internal/otp/*` and of the GraphQL operations `requestPhoneOtp, verifyPhoneOtp, login,
+register, refreshToken, validateToken` (deleted, no shim).
 
 ## A · Backend
 
-### BE-1 · `PhoneNumbers` normalisation in `shared-library`, against `ZM`
-- **Spec** R1 · **§5** T1 · **depends** R0 · **parallel-safe** no *(both the SPI and identity-service depend on it)*
-- **Acceptance** the four representations of one number normalise identically
-  (`0977…`, `260977…`, `+260977…`, `+260 977 …`); invalid numbers refuse with
-  `PHONE_NUMBER_INVALID`.
-- It lives in `shared-library` because the Keycloak SPI and identity-service must agree. Two
-  normalisers means one number becomes two accounts.
+### BE-1 · `ContactNormalizer` and `contactKey` in `shared-library`
+- **Spec** R1 · **§5** T1 · **depends** R0 · **parallel-safe** no *(the plugin and identity-service both depend on it)*
+- **Acceptance** five phone representations converge; `regionHint`; the `ZM` assumption only for 10 digits
+  starting `0`; non-mobile and non-allowlisted countries refuse with `CONTACT_INVALID`; emails
+  trimmed, lower-cased, NFC, max 254; `contactKey` is `HMAC-SHA256(hash-key, TYPE:normalized)` hex.
+- Two normalisers means one contact becomes two accounts.
 
-### BE-2 · `OtpService` — HMAC storage, constant-time verify, cooldown, attempts, lockout
+### BE-2 · `ChallengeService` — HMAC storage, one Lua verify, cooldown, attempts, lock
 - **Spec** R2, R3, R4 · **§5** T2 · **depends** BE-1 · **parallel-safe** no
-- **Acceptance** frozen-clock boundary tests at **4:59 / 5:01** (expiry), **59 s / 61 s**
-  (cooldown), **14:59 / 15:01** (lockout) — using [`ET-PLT-006`](ET-PLT-006.md) `TestClock`.
-- Both sides of each boundary. A test that only checks "expired after 6 minutes" passes on an
-  implementation that expires after 30 seconds.
+- **Acceptance** frozen-clock boundary tests at **4:59 / 5:01**, **59 s / 61 s**, **14:59 / 15:01** using
+  [`ET-PLT-006`](ET-PLT-006.md) `TestClock`; 50 parallel wrong guesses consume exactly 5 attempts; the
+  lock is mirrored to `identity_account_events` and survives a Redis flush; the stored value is not the code (read Redis).
 
-### BE-3 · Delivery — WhatsApp primary, SMS fallback, refuse when both fail
-- **Spec** R2 · **§5** T3 · **depends** BE-2 · **parallel-safe** yes
-- **Acceptance** a WireMock WhatsApp **503** falls back to SMS and reports `deliveredVia: SMS`;
-  both failing **refuses** rather than silently succeeding.
-- Reporting success when nothing was sent leaves the user staring at a code entry box forever.
+### BE-3 · Limits per contact, IP, device, country, day
+- **Spec** R3 · **§5** T3 · **depends** BE-2 · **parallel-safe** yes
+- **Acceptance** each scope refuses at its configured threshold with `OTP_RATE_LIMITED` and `retryAfterSeconds`;
+  the client IP comes from the trusted-proxy chain ([`ET-PLT-011`](ET-PLT-011.md)) and a spoofed header does not move the counter.
 
-### BE-4 · The four internal endpoints, scope-gated, with problem documents
-- **Spec** R2, R3, R4 · **§5** T4 · **depends** BE-2 · **parallel-safe** yes
-- `request`, `verify`, `status/{phone}`, `DELETE /{phone}` — scope-gated per
-  [`ET-PLT-007`](ET-PLT-007.md) R5.
-- **Acceptance** 401/403/200 per path; **an unregistered number is indistinguishable from a
-  registered one**. Otherwise the endpoint is a free "is this person a user?" oracle.
+### BE-4 · Delivery — WhatsApp template and email; no SMS
+- **Spec** R2 · **§5** T4 · **depends** BE-2 · **parallel-safe** yes
+- **Acceptance** WireMock 503 and a timeout each yield `OTP_DELIVERY_FAILED`, delete the challenge and leave no live code;
+  a disabled channel yields `NOTIFICATION_CHANNEL_UNAVAILABLE`; the response names the channel used;
+  the code is encoded in the provider body; the capture bean exists only under `local`/`test`.
 
-### BE-5 · The no-logging assertion
-- **Spec** R4 · **§5** T5 · **depends** BE-2 · **parallel-safe** yes
-- **Acceptance** a full request-and-verify cycle captures logs containing **no code, at any
-  level** — including DEBUG and TRACE, which is where it always ends up.
+### BE-5 · The five internal endpoints, scope-gated, with problem documents
+- **Spec** R2, R3, R4, R6 · **§5** T5 · **depends** BE-2 · **parallel-safe** yes
+- `challenges`, `challenges/verify`, `accounts/ensure`, `handles/redeem`, `accounts/{id}/status` ([`CONTRACT.md`](../identity/004-accounts-and-contacts/CONTRACT.md) §4);
+  scope-gated per [`ET-PLT-007`](ET-PLT-007.md) R5; no contact value in any URL.
+- **Acceptance** 401/403/200 per path; a registered and an unregistered contact (phone and email) are indistinguishable in body, status and latency band; the old `/api/internal/otp/*` routes return 404.
 
-### BE-6 · `PhoneOtpAuthenticator`, factory, client, templates, SPI registration
-- **Spec** R5 · **§5** T6 · **depends** BE-1, BE-4 · **parallel-safe** no
-- Fat JAR shading Gson, Spring-free ([`ET-PLT-012`](ET-PLT-012.md) BE-4).
-- **Acceptance** the JAR loads in Keycloak and the authenticator appears in the flow editor.
+### BE-6 · The no-logging assertion
+- **Spec** R4 · **§5** T6 · **depends** BE-2 · **parallel-safe** yes
+- **Acceptance** a full challenge-and-verify cycle captures logs containing **no code, at any level**, including provider request dumps.
 
-### BE-7 · Find-or-create with a deterministic username; the concurrent-login test
-- **Spec** R6 · **§5** T7 · **depends** BE-6 · **parallel-safe** no
-- **Acceptance** two concurrent verifications of one number produce **exactly one** user. Two
-  users for one phone number is unrecoverable without a manual merge.
+### BE-7 · `proof`, `handle` and `ensure`
+- **Spec** R5, R6 · **§5** T7 · **depends** BE-2, [`ET-IDN-004`](ET-IDN-004.md) BE-3 · **parallel-safe** no
+- **Acceptance** a replayed proof returns the same answer and starts no second workflow; a handle redeems once (GETDEL); `ACCOUNT_SUSPENDED` and `ACCOUNT_MERGING` refuse; the service-account-token-as-buyer-token path and `KeycloakAuthService` password paths are deleted.
 
-### BE-8 · Bind `phone-otp-browser`; exclude privileged roles; require MFA for them
-- **Spec** R5, R7 · **§5** T8 · **depends** BE-6 · **parallel-safe** no *(shared realm export with [`ET-PLT-007`](ET-PLT-007.md) BE-1)*
-- **Acceptance** an `ADMIN` **cannot** complete the phone-only flow.
-- SIM-swap is a real attack in-market. Phone-only is right for a buyer and wrong for someone who
-  can approve a payout.
+### BE-8 · `ContactOtpAuthenticator`, factory, `IdentityClient`, templates
+- **Spec** R5, R6 · **§5** T8 · **depends** BE-1, BE-5 · **parallel-safe** no
+- Fat JAR shading Gson, Spring-free ([`ET-PLT-012`](ET-PLT-012.md) BE-4). Modes HANDOFF and SCREEN.
+- **Acceptance** the JAR loads and the authenticator appears in the flow editor; startup fails when `IDENTITY_*` or `KEYCLOAK_TOKEN_URL` is blank; a missing or disabled user fails with a generic error and **no user is created**; the channel is never read from the form.
+
+### BE-9 · Realm as code — two realms, flows, listener in both, staff excluded
+- **Spec** R5, R7 · **§5** T9 · **depends** BE-8 · **parallel-safe** no *(shared realm export with [`ET-PLT-007`](ET-PLT-007.md) BE-1; the file lives in the sibling `docker-resources` repository)*
+- **Acceptance** `myticketzm` binds `contact-browser`, `myticketzm-admin` binds password plus second factor; `user-sync` is enabled in both; the user profile makes `email`, `firstName`, `lastName` optional; no registration page lets a user pick an account type (`AccountTypeRoleMapper` removed); an `ADMIN` cannot complete the contact flow.
 
 ## B · Contract
 
-`subgraph: null` — this spec's surface is the Keycloak flow and the internal REST API, not
-GraphQL. No `GQL-*` task.
+`subgraph: null` — the surface is the Keycloak flow and the internal REST API. No `GQL-*` task. The
+wire contract is [`CONTRACT.md`](../identity/004-accounts-and-contacts/CONTRACT.md); change it first
+if an implementation must deviate.
 
-## C · Frontend — `Login - Phone OTP & Admin MFA.dc.html`
+## C · Frontend — buyer app, checkout step
 
-**Read the screen first** (`DesignSync get_file`). It is the layout contract: field order,
-resend affordance, timer placement, error copy position.
+**Read the screen first** (`DesignSync get_file`) for layout; the step now lives inside checkout.
 
-### FE-1 · Phone entry step
-- **depends** BE-8, F0 · **parallel-safe** no
-- E.164 input defaulting to `+260`; channel selection (WhatsApp default, SMS alternative).
-- `Input` props are a closed set — `placeholder, value, onChange, type, size, variant, icon,
-  error, style`, `variant` ∈ `outline|filled`. Anything else is a break.
-- Touch targets ≥ 44px; `type="tel"` for the numeric keypad; label bound with `for`.
-- **testids** `phone-input`, `channel-whatsapp`, `channel-sms`, `request-otp-submit`
+### FE-1 · Contact entry
+- **depends** BE-5, F0 · **parallel-safe** no
+- One field accepting a phone number or an email; the channel is shown, never chosen by a hidden field; country picker or `+` prefix; `type` follows the value.
+- Touch targets >= 44px; label bound with `for`; `Input` props are a closed set.
+- **testids** `contact-input`, `request-code-submit`
 
-### FE-2 · OTP verification step
+### FE-2 · Code entry inside checkout
 - **depends** FE-1 · **parallel-safe** no
-- Six-digit input, numeric keyboard, auto-submit on the sixth digit, visible countdown to expiry,
-  resend enabled at 60 s.
-- The countdown must derive from the server's expiry, not a client timer started on render — a
-  backgrounded mobile browser throttles timers and the user is told they have time they do not.
+- Six digits, numeric keyboard, auto-submit on the sixth, countdown derived from the server's `expiresInSeconds`, resend enabled at `resendAfterSeconds`, a visible "use email instead" when WhatsApp delivery fails.
+- Server routes only (`/api/identity/challenge|verify|ensure`); the browser never holds a token.
 - **testids** `otp-input`, `otp-countdown`, `otp-resend`, `otp-submit`
 
-### FE-3 · Refusal states, wired to the registry
+### FE-3 · Refusal states
 - **depends** FE-2, [`ET-PLT-005`](ET-PLT-005.md) FE-1 · **parallel-safe** yes
-- `OTP_INVALID`, `OTP_EXPIRED`, `OTP_COOLDOWN_ACTIVE`, `OTP_ATTEMPTS_EXHAUSTED`,
-  `PHONE_NUMBER_INVALID` — each a distinct, actionable message. Lockout says **when** it lifts.
-- Errors render **beside the field**, not as a page banner.
+- `OTP_INVALID` (with attempts left), `OTP_EXPIRED`, `OTP_COOLDOWN_ACTIVE`, `OTP_LOCKED` (when it lifts), `OTP_RATE_LIMITED`, `OTP_DELIVERY_FAILED`, `CONTACT_INVALID`, `ACCOUNT_SUSPENDED` — each its own message beside the field.
 - **testids** `otp-error-<code>`
 
-### FE-4 · Admin MFA path
-- **depends** BE-8 · **parallel-safe** yes
-- Admin sign-in does **not** offer phone-only. The screen shows the MFA step instead.
-- **Acceptance** an `ADMIN` cannot reach the phone-only flow from the UI **or** by URL.
+### FE-4 · Session handover
+- **depends** BE-7, BE-8 · **parallel-safe** no
+- `ensure` -> `GET /api/auth/start` (PKCE, `state`, `login_hint=<handle>`) -> `GET /api/auth/callback` requires `status == ACTIVE` before setting the HttpOnly cookie; a 202 PROVISIONING answer polls with `retryAfterSeconds`.
+- **Acceptance** no token, handle or code reaches `localStorage`, the page's JavaScript, analytics or logs.
 
-### FE-5 · Three apps, three brands, one flow
-- ticketing → iris, Space Grotesk headings; org-admin and admin → teal, Inter.
-- Currency and status formatters from **F0-7**. No emoji. Sentence case.
-- **Acceptance** compliance suite green on all three.
+### FE-5 · Staff sign-in
+- **depends** BE-9 · **parallel-safe** yes
+- Admin and organizer-admin sign-in show password plus second factor; the contact flow is not offered. An `ADMIN` cannot reach it from the UI or by URL.
+
+### FE-6 · Three apps, three brands
+- ticketing -> iris, Space Grotesk; org-admin and admin -> teal, Inter. No emoji. Sentence case. Compliance suite green on all three.
+
+### FE-7 · Profile "Sign-in contacts" — **status: built and schema-aligned with CONTRACT section 14, Vitest green; not yet run against the live backend**
+- **Spec** R8 · cross-link [`ET-IDN-004`](ET-IDN-004.md) R3, R5 · **depends** ET-IDN-004 BE-1 · **parallel-safe** yes
+- `/profile`, `SignInContacts`, `ContactFlowDialog`, reducer `flow.ts`, BFF `/api/profile/contacts[/{action}]`, typed server client `lib/server/contacts.ts`.
+- **Tests (Vitest, `apps/ticketing/src/__tests__/`)** `contacts-routes.test.ts` (resend passes challengeId or changeId+target, masked-only, OTP_RATE_LIMITED, list masked/whitelisted, 401, CSRF origin and header, add-request leaks no raw value, input validation, change-request two challenges, `OTP_INVALID`/`OTP_LOCKED`/`OTP_EXPIRED`/`CONTACT_ALREADY_CLAIMED`/`LAST_VERIFIED_CONTACT` mapping, claimed-by-other indistinguishable from a lost race, last-verified removal refused, 202 pending with retry-after, 503 and 401) · `contact-flow.test.ts` (phases, wrong code with attempts, lock seconds, expiry, lost claim, blocked removal, pending, network) · `SignInContacts.test.tsx` (list rendering, other-kind add, session redirect, load error, set primary, add success, wrong code alert, locked countdown, expired, neutral claimed wording, 202 poll, network failure, local validation, two-code change, last-verified block, server refusal, removal, no raw value in storage/URL; describe `send code again` with fake timers: countdown then enabled and announced, resend resets countdown and clears the field, no double submit, OTP_RATE_LIMITED re-arm, OTP_LOCKED, OTP_EXPIRED, CONTACT_UNKNOWN, network error, expired code offers resend and start over, separate resend per code in a change). `resendContactCode` matches the landed schema (`challengeId` or `changeId` + `target` NEW|CURRENT).
+- **testids** `sign-in-contacts`, `contacts-list`, `contact-<id>`, `contact-add-email`, `contact-add-whatsapp`, `contact-flow-code`, `contact-flow-primary-code`, `contact-flow-error`, `contact-flow-blocked`, `contact-flow-pending`
+
+### FE-8 · `/terms` and `/privacy` — **status: built (draft text); legal review open**
+- **Spec** R9 · **parallel-safe** yes · the pages carry a visible draft banner; `identify-terms` links to both.
+
+### FE-9 · Buyer-app server design recorded — **status: done** (spec §4 "The buyer app server"; custom opaque session, CSRF guard, CSP nonce, `accountId` claim handling).
 
 ## D · Tests
 
-### TS-1 · Normalisation *(L1)* — four representations converge; invalid refuses.
+### TS-1 · Normalisation *(L1)* — representations converge; email; allowlist; refusals.
 
-### TS-2 · OTP lifecycle *(L1 + L3)*
-- Frozen-clock boundaries: 4:59/5:01, 59 s/61 s, 14:59/15:01 — **both sides of each**.
-- HMAC at rest: the stored value is not the code. Assert by reading Redis, not by trusting the API.
-- Constant-time verification.
-- **L3** with a Redis container: attempts exhaust into lockout; lockout lifts on schedule.
+### TS-2 · Challenge lifecycle *(L1 + L3, Redis container)*
+- Frozen-clock boundaries, both sides of each. HMAC at rest read from Redis. Constant-time verify.
+- 50 concurrent guesses consume exactly 5 attempts; attempts exhaust into a lock that lifts on schedule and survives a Redis flush.
 
-### TS-3 · Delivery *(L3, WireMock)* — WhatsApp 503 → SMS, `deliveredVia: SMS`; both fail → refuse.
+### TS-3 · Delivery *(L3, WireMock + capture bean)* — 503, timeout, disabled channel; encoding of the code in the provider body.
 
-### TS-4 · Privacy *(L3)*
-- No code in logs at any level.
-- Registered and unregistered numbers are indistinguishable in body **and** status.
+### TS-4 · Privacy *(L3)* — no code in logs at any level; registered vs unregistered indistinguishable for phone and email.
 
-### TS-5 · SPI *(L3, Keycloak Testcontainer)*
-- JAR loads; authenticator appears; two concurrent verifications → one user; `ADMIN` cannot
-  complete phone-only.
+### TS-5 · SPI *(L3, Keycloak Testcontainer)* — JAR loads; HANDOFF with a valid, a replayed and an expired handle; missing user does not create one; `ADMIN` refused; startup refuses without credentials.
 
-### TS-6 · Frontend *(L5, Playwright)*
-- Loading, empty, error, populated for both steps.
-- Auto-submit on the sixth digit; resend disabled before 60 s and enabled after.
-- Each refusal code renders its own message beside the field.
-- Countdown survives a tab backgrounding — the case a client-only timer fails.
-- **Use the F0-4 Testcontainers fixture** for Apollo-driven parts; Microcks 500s on fragments.
+### TS-6 · Frontend *(L5, Playwright)* — loading, empty, error, populated; auto-submit; resend gated; each refusal code beside the field; countdown survives tab backgrounding. Use the F0-4 Testcontainers fixture.
 
 ## E · Gate
 
-- [ ] R0 recorded; HMAC-at-rest, constant-time compare and lockout each classified honestly
-- [ ] Four phone representations normalise identically
+- [ ] R0 recorded; every requirement classified against the code review facts, none claimed `already-satisfied` without an executing test
+- [ ] Phone (five forms) and email normalise to one `contactKey`; allowlist and mobile-type enforced
 - [ ] Both sides of all three frozen-clock boundaries asserted
-- [ ] OTP HMAC'd at rest, verified in constant time, absent from logs at every level
-- [ ] WhatsApp → SMS fallback proven; both-fail refuses
-- [ ] Unregistered numbers indistinguishable
-- [ ] Two concurrent verifications produce one user
-- [ ] `ADMIN` cannot complete the phone-only flow, from UI or URL
-- [ ] `Login - Phone OTP & Admin MFA.dc.html` read; layout matches
-- [ ] Playwright covers loading/empty/error/populated by `data-testid`
-- [ ] Compliance suite green on all three apps
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=true` green
-- [ ] Spec `status:` → `implemented`
+- [ ] Code HMAC'd at rest, verified by one Lua script in constant time, absent from logs at every level
+- [ ] 50 concurrent guesses consume exactly 5 attempts; the lock survives a Redis flush
+- [ ] Limits per contact, IP, device and country refuse with `OTP_RATE_LIMITED`; IP from the trusted chain only
+- [ ] WhatsApp and email delivery proven; failure and timeout refuse with `OTP_DELIVERY_FAILED` and leave no live code; no SMS code path remains
+- [ ] Registered and unregistered contacts indistinguishable
+- [ ] The authenticator never creates a user; a replayed handle fails; the plugin refuses to start without credentials
+- [ ] No service-account token is returned as a buyer token; the old `/api/internal/otp/*` and GraphQL authentication operations are gone
+- [ ] `ADMIN` cannot complete the contact flow, from UI or URL; `user-sync` listener enabled in both realms
+- [ ] Profile "Sign-in contacts" (R8) and the draft legal pages (R9) pass their Vitest suites and work against the live GraphQL operations of ET-IDN-004 (currently schema-aligned only, not run against the backend)
+- [ ] Playwright covers loading/empty/error/populated by `data-testid`; compliance suite green on all three apps
+- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=false` green
+- [ ] Spec `status:` -> `implemented`

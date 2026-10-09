@@ -1,26 +1,23 @@
 package com.pml.booking.service.impl;
 
-import com.pml.booking.domain.enums.AccountType;
+import com.pml.shared.constants.PlatformTime;
 import com.pml.booking.domain.enums.BalanceDirection;
 import com.pml.booking.domain.enums.JournalEntryType;
-import com.pml.booking.domain.model.ChartOfAccountsEntry;
 import com.pml.booking.domain.model.JournalEntry;
 import com.pml.booking.domain.model.JournalLine;
 import com.pml.booking.repository.ChartOfAccountsRepository;
 import com.pml.booking.repository.JournalEntryRepository;
 import com.pml.booking.service.AccountingService;
-import com.pml.booking.service.ChartOfAccountsService;
 import com.pml.booking.service.JournalService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,7 +76,9 @@ import java.util.Map;
 public class AccountingServiceImpl implements AccountingService {
 
     private final JournalService journalService;
-    private final ChartOfAccountsService chartOfAccountsService;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final ChartOfAccountsRepository accountsRepository;
     private final JournalEntryRepository journalRepository;
 
@@ -114,9 +113,9 @@ public class AccountingServiceImpl implements AccountingService {
 
     // EXPENSES (Normal Balance: DEBIT)
     private static final String GATEWAY_FEES_EXPENSE = "5010";     // Gateway processing costs
-    private static final String CHARGEBACK_LOSS = "5020";          // Chargeback amounts (unused alias)
     private static final String CHARGEBACK_FEES_EXPENSE = "5030";  // Gateway chargeback penalty
     private static final String BAD_DEBT_EXPENSE = "5040";         // Unrecoverable write-offs
+    private static final String VERIFICATION_EXPENSE = "5050";     // Micro-deposits that verify bank accounts
 
     // ========================================================================
     // TICKET SALE OPERATIONS
@@ -220,7 +219,7 @@ public class AccountingServiceImpl implements AccountingService {
 
         return journalService.createAndPostEntry(
                 paymentIntentId,
-                LocalDateTime.now(),
+                clock.instant(),
                 description,
                 JournalEntryType.STANDARD,
                 lines,
@@ -327,7 +326,7 @@ public class AccountingServiceImpl implements AccountingService {
 
         return journalService.createAndPostEntry(
                 refundRequestId,
-                LocalDateTime.now(),
+                clock.instant(),
                 description,
                 JournalEntryType.STANDARD,
                 lines,
@@ -431,7 +430,7 @@ public class AccountingServiceImpl implements AccountingService {
 
         return journalService.createAndPostEntry(
                 payoutRequestId,
-                LocalDateTime.now(),
+                clock.instant(),
                 "Organizer payout: " + payoutRequestId,
                 JournalEntryType.STANDARD,
                 lines,
@@ -503,8 +502,72 @@ public class AccountingServiceImpl implements AccountingService {
 
         return journalService.createAndPostEntry(
                 payoutRequestId + "-DISB",
-                LocalDateTime.now(),
+                clock.instant(),
                 "Payout disbursement: " + payoutRequestId,
+                JournalEntryType.STANDARD,
+                lines,
+                "SYSTEM",
+                metadata
+        );
+    }
+
+    @Override
+    public Mono<JournalEntry> recordVerificationDeposit(String depositId, String bankAccountId, BigDecimal amount, String currency) {
+        String correlationId = "verification-deposit:" + depositId;
+        String description = "Verification deposit: " + bankAccountId;
+        return journalRepository.findByCorrelationId(correlationId).next()
+                .switchIfEmpty(Mono.defer(() -> journalService.createAndPostEntry(
+                        correlationId,
+                        clock.instant(),
+                        "Bank account verification deposit: " + bankAccountId,
+                        JournalEntryType.STANDARD,
+                        List.of(
+                                JournalLine.debit(VERIFICATION_EXPENSE, "Account Verification Costs", amount, description),
+                                creditOperatingBank(amount, description)),
+                        "SYSTEM",
+                        Map.of("bankAccountId", bankAccountId, "transactionType", "VERIFICATION_DEPOSIT"))));
+    }
+
+    @Override
+    public Mono<JournalEntry> reverseVerificationDeposit(String depositId, String reason) {
+        return journalRepository.findByCorrelationId("verification-deposit:" + depositId)
+                .filter(entry -> entry.getReversalOfEntryId() == null)
+                .next()
+                .flatMap(entry -> entry.getReversedByEntryId() != null
+                        ? journalRepository.findById(entry.getReversedByEntryId())
+                        : journalService.reverseEntry(entry.getId(), reason, "SYSTEM"));
+    }
+
+    @Override
+    @Transactional
+    public Mono<JournalEntry> recordPayoutReversal(
+            String correlationId,
+            String eventId,
+            String organizerId,
+            BigDecimal payoutAmount,
+            BigDecimal payoutFee,
+            String currency
+    ) {
+        log.info("Recording payout reversal: correlation={}, event={}, amount={}", correlationId, eventId, payoutAmount);
+
+        String description = "Payout reversal: " + correlationId;
+        BigDecimal fee = payoutFee != null ? payoutFee : BigDecimal.ZERO;
+        List<JournalLine> lines = new java.util.ArrayList<>();
+        lines.add(debitPayoutsPayable(payoutAmount, description));
+        if (hasValue(fee)) {
+            lines.add(debitFeeRevenue(fee, description));
+        }
+        lines.add(creditEventEscrow(eventId, payoutAmount.add(fee), description));
+
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("eventId", eventId);
+        metadata.put("organizerId", organizerId);
+        metadata.put("transactionType", "PAYOUT_REVERSAL");
+
+        return journalService.createAndPostEntry(
+                correlationId,
+                clock.instant(),
+                description,
                 JournalEntryType.STANDARD,
                 lines,
                 "SYSTEM",
@@ -579,84 +642,8 @@ public class AccountingServiceImpl implements AccountingService {
 
         return journalService.createAndPostEntry(
                 refundRequestId + "-DISB",
-                LocalDateTime.now(),
+                clock.instant(),
                 "Refund disbursement: " + refundRequestId,
-                JournalEntryType.STANDARD,
-                lines,
-                "SYSTEM",
-                metadata
-        );
-    }
-
-    // ========================================================================
-    // COMMISSION OPERATIONS
-    // ========================================================================
-
-    /**
-     * Records commission being earned (revenue recognition).
-     *
-     * <h3>Business Flow</h3>
-     * <p>Event completed + hold period passed. Commission moves from deferred to earned.</p>
-     *
-     * <h3>Accounting Entry</h3>
-     * <pre>
-     * ┌────────────────────────────────────────────────────────────────────────┐
-     * │ COMMISSION EARNED: K10 deferred → K10 revenue                          │
-     * ├────────────────────────────────────────────────────────────────────────┤
-     * │                                                                        │
-     * │   DEBITS (Releasing deferred):                                         │
-     * │   ────────────────────────────                                         │
-     * │   DR Deferred Commission (2031)    K10.00  [OUT - deferred reduced]    │
-     * │                                                                        │
-     * │   CREDITS (Recognizing revenue):                                       │
-     * │   ──────────────────────────────                                       │
-     * │      CR Commission Revenue (4010)  K10.00  [IN - revenue recognized]   │
-     * │                                                                        │
-     * │   Result: Commission now officially earned as revenue                  │
-     * └────────────────────────────────────────────────────────────────────────┘
-     * </pre>
-     *
-     * @param commissionRecordId Commission record ID (correlation)
-     * @param eventId            Event ID
-     * @param amount             Commission amount
-     * @param currency           Currency code
-     * @return The posted journal entry
-     */
-    @Override
-    @Transactional
-    public Mono<JournalEntry> recordCommissionEarned(
-            String commissionRecordId,
-            String eventId,
-            BigDecimal amount,
-            String currency
-    ) {
-        log.info("Recording commission earned: commission={}, event={}, amount={}",
-                commissionRecordId, eventId, amount);
-
-        String description = "Commission earned: " + commissionRecordId;
-
-        // ========================================================================
-        // DEBIT: Deferred Commission (LIABILITY)
-        // Moving commission from deferred (pending) state
-        // Liability decreases = DEBIT = Money OUT
-        //
-        // CREDIT: Commission Revenue (REVENUE)
-        // Recognizing commission as earned revenue
-        // Revenue increases = CREDIT = Money IN
-        // ========================================================================
-        List<JournalLine> lines = List.of(
-                debitDeferredCommission(amount, description),
-                creditCommissionRevenue(amount, description)
-        );
-
-        Map<String, String> metadata = new HashMap<>();
-        metadata.put("eventId", eventId);
-        metadata.put("transactionType", "COMMISSION_EARNED");
-
-        return journalService.createAndPostEntry(
-                commissionRecordId,
-                LocalDateTime.now(),
-                "Commission earned for event: " + eventId,
                 JournalEntryType.STANDARD,
                 lines,
                 "SYSTEM",
@@ -746,7 +733,7 @@ public class AccountingServiceImpl implements AccountingService {
 
         return journalService.createAndPostEntry(
                 commissionRecordId + "-CLAWBACK",
-                LocalDateTime.now(),
+                clock.instant(),
                 "Commission clawback: " + commissionRecordId,
                 JournalEntryType.ADJUSTMENT,
                 lines,
@@ -865,7 +852,7 @@ public class AccountingServiceImpl implements AccountingService {
 
         return journalService.createAndPostEntry(
                 chargebackId + "-RCVD",
-                LocalDateTime.now(),
+                clock.instant(),
                 description,
                 JournalEntryType.STANDARD,
                 lines,
@@ -1007,7 +994,7 @@ public class AccountingServiceImpl implements AccountingService {
 
         return journalService.createAndPostEntry(
                 correlationId,
-                LocalDateTime.now(),
+                clock.instant(),
                 "Chargeback recovery from " + fundSource + ": " + chargebackId,
                 JournalEntryType.STANDARD,
                 lines,
@@ -1067,7 +1054,7 @@ public class AccountingServiceImpl implements AccountingService {
             BigDecimal grossAmount,
             BigDecimal feeAmount,
             BigDecimal netAmount,
-            LocalDateTime settlementDate,
+            Instant settlementDate,
             String bankReference,
             String currency
     ) {
@@ -1122,7 +1109,7 @@ public class AccountingServiceImpl implements AccountingService {
 
     @Override
     public Mono<BigDecimal> getAccountBalance(String accountCode) {
-        return getAccountBalanceAsOf(accountCode, LocalDate.now());
+        return getAccountBalanceAsOf(accountCode, PlatformTime.dateAt(clock.instant()));
     }
 
     @Override
@@ -1148,43 +1135,6 @@ public class AccountingServiceImpl implements AccountingService {
                             });
                 })
                 .defaultIfEmpty(BigDecimal.ZERO);
-    }
-
-    @Override
-    public Flux<AccountBalance> getTrialBalance(LocalDate asOfDate) {
-        LocalDate effectiveDate = asOfDate != null ? asOfDate : LocalDate.now();
-
-        return accountsRepository.findByIsActiveTrue()
-                .flatMap(account -> getAccountBalanceAsOf(account.getAccountCode(), effectiveDate)
-                        .map(balance -> {
-                            BalanceDirection normalBalance = account.getNormalBalance();
-                            BigDecimal debitBalance = BigDecimal.ZERO;
-                            BigDecimal creditBalance = BigDecimal.ZERO;
-
-                            if (normalBalance == BalanceDirection.DEBIT) {
-                                if (balance.compareTo(BigDecimal.ZERO) >= 0) {
-                                    debitBalance = balance;
-                                } else {
-                                    creditBalance = balance.abs();
-                                }
-                            } else {
-                                if (balance.compareTo(BigDecimal.ZERO) >= 0) {
-                                    creditBalance = balance;
-                                } else {
-                                    debitBalance = balance.abs();
-                                }
-                            }
-
-                            return new AccountBalance(
-                                    account.getAccountCode(),
-                                    account.getAccountName(),
-                                    account.getAccountType().name(),
-                                    debitBalance,
-                                    creditBalance,
-                                    balance
-                            );
-                        }))
-                .filter(ab -> ab.netBalance().compareTo(BigDecimal.ZERO) != 0);
     }
 
     // ========================================================================
@@ -1455,12 +1405,11 @@ public class AccountingServiceImpl implements AccountingService {
     }
 
     /**
-     * CREDIT Commission Revenue (4010) - REVENUE.
-     * <p>Use when: Commission becomes earned (after event + hold period)</p>
-     * <p>Effect: Increases revenue (money IN)</p>
+     * DEBIT Fee Revenue - REVENUE.
+     * <p>Use when: A payout whose fee was recognised is reversed</p>
      */
-    private JournalLine creditCommissionRevenue(BigDecimal amount, String description) {
-        return JournalLine.credit(COMMISSION_REVENUE, "Commission Revenue", amount, description);
+    private JournalLine debitFeeRevenue(BigDecimal amount, String description) {
+        return JournalLine.debit(FEE_REVENUE, "Payout Processing Fee Revenue", amount, description);
     }
 
     /**

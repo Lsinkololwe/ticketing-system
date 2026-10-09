@@ -18,8 +18,8 @@ import java.util.List;
 @AllArgsConstructor
 public class TicketStats {
     private int totalTickets;
-    // One counter per resting state of ET-TKT-002 R7. TRANSFERRED has none:
-    // §4 returns a transferred ticket to ISSUED under its new owner.
+    // One counter per resting ticket state. TRANSFERRED has none: a transfer
+    // returns the ticket to ISSUED under its new owner.
     private int issuedTickets;
     private int validatedTickets;
     private int refundPendingTickets;

@@ -18,6 +18,15 @@ public interface PlatformConfigurationRepository extends ReactiveMongoRepository
      */
     default Mono<PlatformConfiguration> getConfiguration() {
         return findById(PlatformConfiguration.DEFAULT_ID)
-                .switchIfEmpty(Mono.defer(() -> save(PlatformConfiguration.createDefault())));
+                .switchIfEmpty(Mono.defer(() -> save(PlatformConfiguration.createDefault())))
+                .flatMap(config -> {
+                    // A document written before the rules section existed gets the documented
+                    // starting values once; after that an administrator owns them.
+                    if (config.getRules() == null) {
+                        config.setRules(com.pml.shared.config.model.PlatformRulesSection.defaults());
+                        return save(config);
+                    }
+                    return Mono.just(config);
+                });
     }
 }

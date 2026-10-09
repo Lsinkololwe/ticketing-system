@@ -13,36 +13,41 @@
 
 import { useQuery } from '@apollo/client/react';
 import type {
-  Event,
-  EventEdge,
-  EventCategory,
-  EventCategoryEdge,
-  City,
-  PageInfo,
   CursorPaginationInput,
+  GetPublishedEventsQuery,
+  GetPublishedEventsQueryVariables,
+  GetEventByIdQuery,
+  GetEventByIdQueryVariables,
+  GetActiveEventCategoriesQuery,
+  GetActiveEventCategoriesQueryVariables,
+  GetCitiesWithEventsQuery,
+  GetCitiesWithEventsQueryVariables,
 } from '../../../types/graphql';
 import {
   GET_PUBLISHED_EVENTS,
-  GET_UPCOMING_EVENTS,
   GET_EVENT_BY_ID,
   GET_ACTIVE_EVENT_CATEGORIES,
   GET_CITIES_WITH_EVENTS,
 } from './events.consumer.queryDefinitions';
+import type { FlatPageInfo } from '../../../types/pageInfo';
 
-export interface EventPageInfo {
-  totalElements: number;
-  totalPages: number;
-  pageNumber: number;
-  pageSize: number;
-  hasNext: boolean;
-  hasPrevious: boolean;
-  endCursor: string | null;
-}
+/**
+ * Page metadata for this surface, with the field set taken from the generated
+ * schema type rather than re-declared — see `types/pageInfo`.
+ */
+export type EventPageInfo = FlatPageInfo;
 
-interface EventConnectionResult {
-  edges: EventEdge[];
-  pageInfo: PageInfo;
-}
+/** One row of the published-events list — the `EventCardFields` selection. */
+export type PublishedEventRow =
+  GetPublishedEventsQuery['discoverEvents']['edges'][number]['node'];
+
+/** The full detail shape returned by `event(id)` — includes ticket tiers. */
+export type EventDetail = NonNullable<GetEventByIdQuery['event']>;
+
+/** One ticket tier of an event's detail — the `ticketTiers` selection. */
+export type TicketTierRow = NonNullable<EventDetail['ticketTiers']>[number];
+
+type EventConnectionResult = GetPublishedEventsQuery['discoverEvents'];
 
 export interface EventListOptions {
   /** Page size (maps to cursor `first`). */
@@ -71,7 +76,7 @@ const EMPTY_PAGE_INFO: EventPageInfo = {
   endCursor: null,
 };
 
-function normalisePageInfo(pageInfo?: PageInfo): EventPageInfo {
+function normalisePageInfo(pageInfo?: EventConnectionResult['pageInfo']): EventPageInfo {
   if (!pageInfo) return EMPTY_PAGE_INFO;
   return {
     totalElements: pageInfo.totalElements ?? 0,
@@ -94,34 +99,20 @@ function connectionToList(connection?: EventConnectionResult) {
 /** Published events for public browsing. */
 export function usePublishedEvents(opts?: EventListOptions) {
   const { data, loading, error, refetch } = useQuery<
-    { publishedEventsCursorPagination: EventConnectionResult },
-    { pagination: CursorPaginationInput }
+    GetPublishedEventsQuery,
+    GetPublishedEventsQueryVariables
   >(GET_PUBLISHED_EVENTS, {
     variables: { pagination: toCursorPagination(opts) },
     skip: opts?.skip,
     fetchPolicy: 'cache-and-network',
   });
 
-  return { ...connectionToList(data?.publishedEventsCursorPagination), loading, error, refetch };
-}
-
-/** Upcoming published events. */
-export function useUpcomingEvents(opts?: EventListOptions) {
-  const { data, loading, error, refetch } = useQuery<
-    { upcomingEventsCursorPagination: EventConnectionResult },
-    { pagination: CursorPaginationInput }
-  >(GET_UPCOMING_EVENTS, {
-    variables: { pagination: toCursorPagination(opts) },
-    skip: opts?.skip,
-    fetchPolicy: 'cache-and-network',
-  });
-
-  return { ...connectionToList(data?.upcomingEventsCursorPagination), loading, error, refetch };
+  return { ...connectionToList(data?.discoverEvents), loading, error, refetch };
 }
 
 /** A single event by id (detail + booking pages). */
 export function useEvent(id: string | undefined) {
-  const { data, loading, error, refetch } = useQuery<{ event: Event | null }, { id: string }>(
+  const { data, loading, error, refetch } = useQuery<GetEventByIdQuery, GetEventByIdQueryVariables>(
     GET_EVENT_BY_ID,
     {
       variables: { id: id ?? '' },
@@ -131,27 +122,27 @@ export function useEvent(id: string | undefined) {
   return { event: data?.event ?? null, loading, error, refetch };
 }
 
-type EventCategoryOption = Pick<EventCategory, 'id' | 'name' | 'code' | 'eventCount'>;
+/** One row of the active-categories filter list. */
+export type EventCategoryOption = GetActiveEventCategoriesQuery['categories'][number];
 
-/** Active event categories for the filter panel (public cursor query). */
+/** Active event categories for the filter panel (a bounded public list). */
 export function useActiveEventCategories() {
-  const { data, loading, error } = useQuery<{
-    activeEventCategoriesCursorPagination: { edges: EventCategoryEdge[] };
-  }>(GET_ACTIVE_EVENT_CATEGORIES, {
-    variables: { pagination: { first: 100, after: null, last: null, before: null } },
-  });
-  const categories: EventCategoryOption[] = (
-    data?.activeEventCategoriesCursorPagination.edges ?? []
-  ).map((edge) => edge.node);
+  const { data, loading, error } = useQuery<
+    GetActiveEventCategoriesQuery,
+    GetActiveEventCategoriesQueryVariables
+  >(GET_ACTIVE_EVENT_CATEGORIES);
+  const categories: EventCategoryOption[] = data?.categories ?? [];
   return { categories, loading, error };
 }
 
-type CityOption = Pick<City, 'id' | 'name' | 'province'>;
+/** One row of the cities-with-events filter list. */
+export type CityOption = GetCitiesWithEventsQuery['citiesWithEvents'][number];
 
 /** Cities that currently have events (city filter — public). */
 export function useCitiesWithEvents() {
-  const { data, loading, error } = useQuery<{ citiesWithEvents: CityOption[] }>(
-    GET_CITIES_WITH_EVENTS
-  );
+  const { data, loading, error } = useQuery<
+    GetCitiesWithEventsQuery,
+    GetCitiesWithEventsQueryVariables
+  >(GET_CITIES_WITH_EVENTS);
   return { cities: data?.citiesWithEvents ?? [], loading, error };
 }

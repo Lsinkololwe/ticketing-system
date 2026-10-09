@@ -1,7 +1,7 @@
 package com.pml.catalog.service.impl;
 
 import com.pml.catalog.domain.model.ApprovalEscalation;
-import com.pml.catalog.dto.*;
+import com.pml.catalog.web.graphql.dto.*;
 import com.pml.catalog.repository.ApprovalEscalationRepository;
 import com.pml.catalog.service.ApprovalEscalationService;
 import lombok.RequiredArgsConstructor;
@@ -12,10 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.stream.Collectors;
-
+import java.time.Instant;
 /**
  * Implementation of ApprovalEscalationService.
  * Provides escalation management operations.
@@ -26,6 +23,16 @@ import java.util.stream.Collectors;
 public class ApprovalEscalationServiceImpl implements ApprovalEscalationService {
 
     private final ApprovalEscalationRepository escalationRepository;
+
+    /**
+     * Acknowledgement, resolution and reminder times are stamped from here.
+     *
+     * <p>Reading the wall clock inside the domain model would put every SLA boundary out of reach
+     * of a test: whether an escalation created one hour past its deadline records one hour
+     * overdue, and whether a reminder is due the minute before its interval elapses, are both
+     * assertions that need a controllable clock.</p>
+     */
+    private final java.time.Clock clock;
 
     // ==========================================
     // Single Escalation Operations
@@ -57,7 +64,7 @@ public class ApprovalEscalationServiceImpl implements ApprovalEscalationService 
         return escalationRepository.findById(escalationId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Escalation not found: " + escalationId)))
                 .flatMap(escalation -> {
-                    escalation.acknowledge(adminId, adminName, notes);
+                    escalation.acknowledge(adminId, adminName, notes, clock.instant());
                     return escalationRepository.save(escalation);
                 })
                 .doOnSuccess(e -> log.info("Escalation acknowledged: {}", escalationId));
@@ -70,7 +77,7 @@ public class ApprovalEscalationServiceImpl implements ApprovalEscalationService 
         return escalationRepository.findById(escalationId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Escalation not found: " + escalationId)))
                 .flatMap(escalation -> {
-                    escalation.resolve(adminId, adminName, resolutionNotes);
+                    escalation.resolve(adminId, adminName, resolutionNotes, clock.instant());
                     return escalationRepository.save(escalation);
                 })
                 .doOnSuccess(e -> log.info("Escalation resolved: {}", escalationId));
@@ -79,7 +86,7 @@ public class ApprovalEscalationServiceImpl implements ApprovalEscalationService 
     @Override
     @Transactional
     public Mono<ApprovalEscalation> createEscalation(String eventId, String eventTitle, String escalateTo,
-                                                      String escalateToName, String reason, LocalDateTime slaDeadline,
+                                                      String escalateToName, String reason, Instant slaDeadline,
                                                       String originalReviewerId, String originalReviewerName,
                                                       int reminderIntervalHours) {
         log.info("Creating escalation for event: {} to: {}", eventId, escalateTo);
@@ -92,7 +99,8 @@ public class ApprovalEscalationServiceImpl implements ApprovalEscalationService 
                 slaDeadline,
                 originalReviewerId,
                 originalReviewerName,
-                reminderIntervalHours
+                reminderIntervalHours,
+                clock.instant()
         );
         return escalationRepository.save(escalation)
                 .doOnSuccess(e -> log.info("Escalation created: {} for event: {}", e.getId(), eventId));
@@ -125,39 +133,6 @@ public class ApprovalEscalationServiceImpl implements ApprovalEscalationService 
                 .zipWith(escalationRepository.countActiveByEscalatedTo(adminId))
                 .map(tuple -> ApprovalEscalationOffsetPage.of(tuple.getT1(), pageNumber, pageSize, tuple.getT2()));
     }
-
-    // ==========================================
-    // Cursor Pagination Queries
-    // ==========================================
-
-    @Override
-    public Mono<ApprovalEscalationConnection> findActiveCursorPagination(CursorPaginationInput pagination) {
-        int first = pagination != null && pagination.getFirst() != null ? pagination.getFirst() : 20;
-        String afterCursor = pagination != null ? pagination.getAfter() : null;
-        Pageable pageable = PageRequest.of(0, first + 1);
-
-        return (afterCursor != null
-                ? escalationRepository.findActiveAfterCursor(afterCursor, pageable)
-                : escalationRepository.findActiveFirstPage(pageable))
-                .collectList()
-                .zipWith(escalationRepository.countActive())
-                .map(tuple -> buildConnection(tuple.getT1(), tuple.getT2(), first, afterCursor));
-    }
-
-    @Override
-    public Mono<ApprovalEscalationConnection> findByAdminCursorPagination(String adminId, CursorPaginationInput pagination) {
-        int first = pagination != null && pagination.getFirst() != null ? pagination.getFirst() : 20;
-        String afterCursor = pagination != null ? pagination.getAfter() : null;
-        Pageable pageable = PageRequest.of(0, first + 1);
-
-        return (afterCursor != null
-                ? escalationRepository.findForAdminAfterCursor(adminId, afterCursor, pageable)
-                : escalationRepository.findForAdminFirstPage(adminId, pageable))
-                .collectList()
-                .zipWith(escalationRepository.countActiveByEscalatedTo(adminId))
-                .map(tuple -> buildConnection(tuple.getT1(), tuple.getT2(), first, afterCursor));
-    }
-
     // ==========================================
     // Count Operations
     // ==========================================
@@ -165,40 +140,5 @@ public class ApprovalEscalationServiceImpl implements ApprovalEscalationService 
     @Override
     public Mono<Long> countActive() {
         return escalationRepository.countActive();
-    }
-
-    @Override
-    public Mono<Long> countByAdmin(String adminId) {
-        return escalationRepository.countActiveByEscalatedTo(adminId);
-    }
-
-    // ==========================================
-    // Helper Methods
-    // ==========================================
-
-    private ApprovalEscalationConnection buildConnection(List<ApprovalEscalation> items, long totalCount,
-                                                         int first, String afterCursor) {
-        boolean hasNextPage = items.size() > first;
-        if (hasNextPage) {
-            items = items.subList(0, first);
-        }
-
-        List<ApprovalEscalationEdge> edges = items.stream()
-                .map(ApprovalEscalationEdge::of)
-                .collect(Collectors.toList());
-
-        String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();
-        String endCursor = edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor();
-
-        return ApprovalEscalationConnection.builder()
-                .edges(edges)
-                .pageInfo(PageInfo.builder()
-                        .hasNextPage(hasNextPage)
-                        .hasPreviousPage(afterCursor != null)
-                        .startCursor(startCursor)
-                        .endCursor(endCursor)
-                        .build())
-                .totalCount((int) totalCount)
-                .build();
     }
 }

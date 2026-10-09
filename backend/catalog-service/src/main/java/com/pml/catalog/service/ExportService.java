@@ -1,8 +1,8 @@
 package com.pml.catalog.service;
 
 import com.pml.catalog.domain.enums.ExportFormat;
-import com.pml.catalog.dto.EventFilterInput;
-import com.pml.catalog.dto.ReportExportDto;
+import com.pml.catalog.web.graphql.dto.EventFilterInput;
+import com.pml.catalog.web.graphql.dto.ReportExportDto;
 import reactor.core.publisher.Mono;
 
 /**

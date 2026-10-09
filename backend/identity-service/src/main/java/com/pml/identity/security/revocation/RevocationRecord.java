@@ -1,11 +1,13 @@
 package com.pml.identity.security.revocation;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import com.pml.shared.security.revocation.RevocationType;
 
@@ -27,7 +29,8 @@ import java.time.Instant;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "token_revocations")
+@Document(collection = IdentityCollections.TOKEN_REVOCATIONS)
+@TypeAlias("token_revocations")
 public class RevocationRecord {
 
     /** {@code TYPE:value} — see {@link RevocationType#documentId(String)}. */
@@ -51,7 +54,6 @@ public class RevocationRecord {
      * When every token this revocation could match has expired. Set to at least the
      * access-token lifespan past {@code revokedAt}.
      */
-    @Indexed(expireAfter = "0s")
     private Instant expiresAt;
 
     /** True when this record still covers tokens that could be presented now. */

@@ -57,8 +57,8 @@ date. What rescheduling does produce is a **refund window**: seven days from the
 notification, unconditional and at 100%, regardless of the event's normal refund policy.
 Somebody who bought for a Saturday in March did not agree to a Tuesday in April.
 
-**Completion is a sweep, not an organizer action.** An event is `COMPLETED` when its
-`endsAt` has passed, detected by a scheduled sweep under a lock. Leaving completion to the
+**Completion is a timer, not an organizer action.** An event is `COMPLETED` when its
+`endsAt` has passed, fired by its `EventLifecycleWorkflow`'s durable timer. Leaving completion to the
 organizer would mean an organizer who never presses the button never triggers commission
 recognition or the payout hold clock — which is a strong incentive not to press it.
 
@@ -130,6 +130,11 @@ to `DRAFT`.
 - [ ] A test asserts each material field individually triggers the return, and each non-material field does not
 - [ ] Adding a field to `Event` fails a test until it is classified
 
+> **Amended 2026-09-19.** While an event is `PENDING_APPROVAL`, a material change is refused with
+> `EVENT_STATE_INVALID`: the reviewer decides on what they were shown. Editing a `REJECTED` event is a
+> revision and returns it to `DRAFT` (transition 5). `COMPLETED`, `CANCELLED` and deleted events are
+> not editable. `featured` is set by a platform administrator only.
+
 ### ET-CAT-001-R4 · Publishing is reversible only while nothing is sold
 
 WHILE an event is `PUBLISHED`, THE SYSTEM SHALL permit unpublishing only when no ticket
@@ -164,12 +169,12 @@ WHEN an event's `endsAt` has passed, THE SYSTEM SHALL move it to `COMPLETED` wit
 organizer action.
 
 **Acceptance**
-- [ ] A scheduled sweep under `lock:sweep:event-completion` moves every `PUBLISHED` event whose `endsAt` is past to `COMPLETED`
-- [ ] The sweep claims rows with a bounded batch and is idempotent — a second instance moves nothing twice
+- [ ] The event's `EventLifecycleWorkflow` (`event/{eventId}`) sleeps until `endsAt` and moves it to `COMPLETED` — *amended 2026-09-13 under [D-21](../../ROADMAP.md): a durable timer per event replaces the sweep and its lock ([ET-PLT-015](../../_platform/015-durable-execution/))*
+- [ ] Completion is idempotent — a retried or duplicated completion moves nothing twice and stages one `catalog.EventCompleted`
 - [ ] `completedAt` is set from the `Clock`, and `catalog.EventCompleted` is emitted carrying `eventId` and `completedAt`
 - [ ] No organizer-facing mutation moves an event to `COMPLETED`
-- [ ] The sweep's interval is `catalog.completion.sweep-interval` and a frozen-clock test asserts an event completes at `endsAt + interval` at the latest
-- [ ] An event cancelled before its `endsAt` is never swept
+- [ ] A time-skipping test asserts an event completes at `endsAt`, and a reschedule moves the timer
+- [ ] An event cancelled before its `endsAt` is never completed
 
 ### ET-CAT-001-R7 · Cancellation refunds everyone and closes the escrow
 
@@ -219,7 +224,8 @@ expose an organization's own events to its members.
 | `totalCapacity` | `int` | **yes** | sum of tier capacities |
 | `status` | `EventStatus` | — | the eight states |
 | `visibility` | `EventVisibility` | no | `PUBLIC`, `UNLISTED` |
-| `refundPolicy` | `RefundPolicy` | no | [ET-FIN-004](../../finance/004-refunds-and-chargebacks/) |
+| `refundPolicy` | `String` | no — required to publish | the code of an active platform refund policy ([ET-ADM-002 §4](../../admin/002-platform-configuration/), amended 2026-09-19); [ET-FIN-004](../../finance/004-refunds-and-chargebacks/) |
+| `refundPolicyVersion` | `int` | set at publish | the policy's version in force when the event was published — the schedule its buyers are refunded under |
 | `submittedAt`, `approvedAt`, `publishedAt`, `completedAt`, `cancelledAt` | `Instant` | — | |
 | `reviewedById`, `reviewReason` | `String` | — | |
 | `cancellationReason` | `String` | — | |
@@ -244,7 +250,7 @@ expose an organization's own events to its members.
 | 7 | `APPROVED` | `publishEvent` | `PUBLISHED` | organizer |
 | 8 | `PUBLISHED` | `unpublishEvent` | `APPROVED` | organizer, zero sold only |
 | 9 | `PUBLISHED` | `rescheduleEvent` | `PUBLISHED` | organizer |
-| 10 | `PUBLISHED` | `completeEvent` | `COMPLETED` | **system sweep** |
+| 10 | `PUBLISHED` | `completeEvent` | `COMPLETED` | **the lifecycle workflow's timer** |
 | 11 | `PUBLISHED` | `cancelEvent` | `CANCELLED` | organizer / admin |
 | 12 | `APPROVED` | `cancelEvent` | `CANCELLED` | organizer / admin |
 | 13 | `DRAFT` | `deleteEvent` | `DELETED` | organizer |
@@ -292,12 +298,17 @@ Subgraph `catalog`. Every field carries `@auth` explicitly.
 | Operation | Kind | `@auth` | Returns |
 |---|---|---|---|
 | `event(id)` | query | `PUBLIC` | `Event` |
-| `events(filter, first, after)` | query | `PUBLIC` | `EventConnection!` |
+| `events(filter, page)` | query | `ADMIN` | `EventOffsetPage!` |
 | `eventsByCategory(categoryId, first, after)` | query | `PUBLIC` | `EventConnection!` |
 | `eventsByCity(cityId, first, after)` | query | `PUBLIC` | `EventConnection!` |
 | `searchEvents(query, filter, first, after)` | query | `PUBLIC` | `EventConnection!` |
 | `myOrganizationEvents(organizationId, status, page)` | query | `ORGANIZER` | `EventPage!` |
-| `eventsPendingApproval(page)` | query | `ADMIN` | `EventPage!` |
+| `pendingApprovalEvents(page)` | query | `ADMIN` | `EventOffsetPage!` |
+| `eventsByStatus(status, page)` | query | `ADMIN` | `EventOffsetPage!` |
+| `draftEvents(organizerId, page)` | query | `ORGANIZER` | `EventOffsetPage!` |
+| `cancelledEvents(page)` | query | `ADMIN` | `EventOffsetPage!` |
+| `completedEvents(page)` | query | `ADMIN` | `EventOffsetPage!` |
+| `approvedNotPublishedEvents(page)` | query | `ADMIN` | `EventOffsetPage!` |
 | `createEvent(input)` | mutation | `ORGANIZER` | `Event!` |
 | `updateEvent(id, input)` | mutation | `ORGANIZER` | `Event!` |
 | `submitEventForApproval(id)` | mutation | `ORGANIZER` | `Event!` |
@@ -308,6 +319,24 @@ Subgraph `catalog`. Every field carries `@auth` explicitly.
 | `rescheduleEvent(input)` | mutation | `ORGANIZER` | `Event!` |
 | `cancelEvent(id, reason)` | mutation | `ORGANIZER` | `Event!` |
 | `deleteEvent(id)` | mutation | `ORGANIZER` | `Boolean!` |
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** The six admin and organizer event
+> tables above were added when their `*OffsetPagination` / `*CursorPagination` twins were
+> collapsed: each existed in the schema under a suffixed name, and D-19 rules that the shipped
+> name stands and §4 adopts it.
+>
+> **One conflict is left open, deliberately.** This §4 previously declared
+> `events(filter, first, after)` as a `PUBLIC` `EventConnection!` — the public discovery feed.
+> No such operation exists: the only shipped `events` is `@auth(requires: ADMIN)`, and the row
+> now records that. So the platform has **no public event-discovery query**, and the name
+> `events` is taken by an admin table. Restoring the public feed means either re-gating the
+> admin operation — a security change, not a rename — or giving the public feed a different
+> name. Neither is a collapse decision, and inventing one here would have hidden a missing
+> product surface behind a tidy-looking schema.
+
+> **Amended 2026-09-19.** `discoverEvents(filter, pagination): EventConnection!` is the public
+> discovery feed: `PUBLISHED` events whose `endsAt` is in the future, narrowed by the five filters of
+> [ET-CAT-003](../003-locations-and-reference-data/) R4, capped per R5.
 
 `Event` is catalog's `@key(fields: "id")` type; identity extends it with `accessGrants` and
 booking with `tickets`, `ticketsSold`, `grossRevenue` and `escrowAccount`
@@ -322,11 +351,18 @@ booking with `tickets`, `ticketsSold`, `grossRevenue` and `escrowAccount`
 | bus | `catalog.EventRescheduled` v1 | transition 9 | booking → refund window; identity → notify holders |
 | bus | `catalog.EventCancelled` v1 | transitions 11, 12 | booking → mass refund; identity → notify holders |
 | bus | `catalog.EventCompleted` v1 | transition 10 | booking → recognise commission, open payout window; identity → notify |
-| module | `EventSubmittedEvent` | transition 2 | the approval queue ([ET-ADM-001](../../admin/001-approvals-workbench/)) |
-| module | `EventDecidedEvent` | transitions 3, 4 | notify the organizer |
-
 All four bus rows are §4 registry rows of
-[ET-PLT-003](../../_platform/003-event-contract/).
+[ET-PLT-003](../../_platform/003-event-contract/), each staged in the transaction that makes it
+true. Submission starts the event's `EventApprovalWorkflow`
+([ET-ADM-001](../../admin/001-approvals-workbench/)) and a decision notifies the organizer from that
+workflow's activity; neither is an in-memory event.
+
+### Workflows
+
+| Workflow | Id | Queue | Start | Updates | Timer |
+|---|---|---|---|---|---|
+| `EventLifecycleWorkflow` | `event/{eventId}` | `catalog-lifecycle` | `publishEvent`, Update-with-Start, `USE_EXISTING`; `EventLifecycleAdoptionRunner` at boot | `reschedule`, `cancel`, `unpublish` | `endsAt`, or `startsAt + P1D` when no end is declared → `completeEvent` |
+| `EventApprovalWorkflow` | `event-approval/{eventId}` | `catalog-lifecycle` | `submitEventForApproval`, Update-with-Start | [ET-ADM-001](../../admin/001-approvals-workbench/) | [ET-ADM-001](../../admin/001-approvals-workbench/) |
 
 ### Consumed events
 
@@ -346,13 +382,11 @@ R4's unpublish check queries booking rather than reading it.
 | Key | TTL | Purpose | Authority |
 |---|---|---|---|
 | `cache:event:{eventId}` | 300 s | discovery read-through | `catalog_events` |
-| `lock:sweep:event-completion` | 30 s | the R6 sweep mutex | — |
 
 ### Configuration
 
 | Property | Value |
 |---|---|
-| `catalog.completion.sweep-interval` | `PT15M` |
 | `catalog.reschedule.refund-window` | `P7D` |
 | `catalog.event.max-reschedules` | 3 |
 | `catalog.event.min-lead-time` | `PT24H` — between publish and `startsAt` |
@@ -399,10 +433,10 @@ R4's unpublish check queries booking rather than reading it.
   - parallel-safe: yes
   - depends: T4
 
-- [ ] **T6 · The completion sweep, its lock and its idempotence**
+- [ ] **T6 · The completion timer and its idempotence**
   - requirements: R6
-  - files: `backend/catalog-service/.../scheduler/EventCompletionSweeper.java`
-  - verify: a frozen-clock test completes at `endsAt + interval`; a second instance moves nothing twice
+  - files: `backend/catalog-service/.../workflow/lifecycle/EventLifecycleWorkflowImpl.java`
+  - verify: a time-skipping test completes at `endsAt` and follows a reschedule; a repeated completion moves nothing twice; the history replays
   - parallel-safe: yes
   - depends: T1
 

@@ -4,7 +4,6 @@ import com.pml.booking.domain.ReservationStateMachine;
 import com.pml.booking.domain.ReservationTransitions;
 import com.pml.booking.domain.model.Ticket;
 import com.pml.booking.domain.model.TicketReservation;
-import com.pml.booking.event.domain.TicketPurchasedEvent;
 import com.pml.booking.exception.ReservationExpiredException;
 import com.pml.booking.exception.ReservationNotFoundException;
 import com.pml.booking.infrastructure.client.CatalogServiceClient;
@@ -16,54 +15,49 @@ import com.pml.booking.service.EscrowService;
 import com.pml.booking.service.PurchaseService;
 import com.pml.shared.constants.ReservationStatus;
 import com.pml.shared.constants.TicketStatus;
+import com.pml.shared.event.EventEnvelopes;
+import com.pml.shared.event.EventType;
+import com.pml.shared.event.Outbox;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
- * ET-TKT-001 R7's confirmation: one transaction, or none of it.
+ * Purchase confirmation: tickets, escrow, commission and status commit together, or none do.
  *
- * <h2>What changed, and why it was worth changing</h2>
- * Until now a ticket was written in {@code PENDING_PAYMENT} <em>before</em> the
- * buyer was charged, and the payment callback flipped its status. That produced
- * a row in {@code booking_tickets} for money the platform had not received —
- * counted by the organiser's sales figures, visible in the buyer's wallet, and
- * indistinguishable at a glance from a ticket that was actually paid for. Every
- * abandoned checkout left one behind.
+ * <p>Nothing exists until the money does. The reservation holds the inventory; tickets are written
+ * inside the same transaction that credits the escrow, records the commission, moves the reservation
+ * to {@code CONFIRMED} and stages one {@code booking.TicketPurchased} per ticket in the outbox. If any
+ * part of that fails, none of it happened.
  *
- * <p>Here nothing exists until the money does. The reservation holds the
- * inventory; the ticket is written inside the same transaction that credits the
- * escrow and records the commission. If any part of that fails, none of it
- * happened.
+ * <h2>Why the catalog commit runs before the transaction</h2>
+ * The catalog is another service. A network call inside a MongoDB transaction holds locks for a round
+ * trip and is not rolled back with it, so the commit runs first. It is idempotent per reservation at
+ * the catalog: if the local transaction then fails, the reservation is still {@code HELD}, and the
+ * retry — an activity retry or a repeated provider answer — commits again as a no-op before it
+ * writes the tickets.
  *
  * <h2>Why the reservation is claimed first</h2>
  * The compare-and-set from {@code HELD} to {@code CONFIRMED} runs <em>before</em>
- * the tickets are written, not after as a naive reading of the spec's sketch
- * suggests. Two provider callbacks for one payment are ordinary, and if both
+ * the tickets are written, not after as a naive ordering would have it. Two provider callbacks for one payment are ordinary, and if both
  * checked the status before either wrote, both would pass the check and both
  * would issue tickets. Claiming first makes the second caller lose the race
  * while the first still holds the document, and the transaction means a claim
  * whose follow-up work fails is rolled back with it.
  *
  * <h2>Why the transaction is explicit</h2>
- * {@link TransactionalOperator} rather than {@code @Transactional}: this service
- * shares a context with Spring Modulith's JDBC transaction manager, which is
- * {@code @Primary}. An annotation would silently bind the money-moving code to
- * the Postgres manager and MongoDB would never see a transaction at all — the
- * kind of failure that looks like nothing is wrong until a partial confirmation
- * survives a crash.
- *
- * @see <a href="file:../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001</a>
+ * {@link TransactionalOperator} rather than {@code @Transactional}, so the boundary sits visibly on
+ * the exact operators it covers and cannot quietly widen to include the catalog call.
  */
 @Slf4j
 @Service
@@ -71,13 +65,16 @@ import java.util.UUID;
 public class PurchaseServiceImpl implements PurchaseService {
 
     private final TicketReservationRepository reservationRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final TicketRepository ticketRepository;
     private final ReservationTransitions transitions;
     private final EscrowService escrowService;
     private final CommissionService commissionService;
     private final AccountingService accountingService;
     private final CatalogServiceClient catalogServiceClient;
-    private final ApplicationEventPublisher eventPublisher;
+    private final Outbox outbox;
     private final TransactionalOperator transactionalOperator;
 
     @Override
@@ -109,14 +106,14 @@ public class PurchaseServiceImpl implements PurchaseService {
     private Mono<List<Ticket>> confirmHeld(TicketReservation reservation,
                                            String paymentIntentId,
                                            String providerTxnId) {
-        if (reservation.isExpired()) {
+        if (reservation.isExpired(clock.instant())) {
             // The money arrived after the hold lapsed. The inventory went back
             // and may have been sold to someone else, so issuing tickets here
             // would oversell. The payment has to be refunded instead.
             return Mono.error(new ReservationExpiredException(reservation.getId()));
         }
 
-        return transitions.compareAndSetFromHeld(
+        Mono<List<Ticket>> confirmation = transitions.compareAndSetFromHeld(
                         reservation.getId(), ReservationStateMachine.Action.CONFIRM, null)
                 .flatMap(claimed -> {
                     if (!claimed) {
@@ -124,22 +121,23 @@ public class PurchaseServiceImpl implements PurchaseService {
                         // write. Their tickets are the real ones.
                         return alreadyConfirmed(reservation);
                     }
-                    return commitInventory(reservation)
-                            .then(issueTickets(reservation, paymentIntentId, providerTxnId))
+                    return issueTickets(reservation, paymentIntentId, providerTxnId)
                             .flatMap(tickets -> recordFinancials(reservation, tickets, paymentIntentId)
-                                    .thenReturn(tickets))
-                            .doOnNext(tickets -> publishPurchased(reservation, tickets, paymentIntentId, providerTxnId));
+                                    .then(stagePurchased(reservation, tickets))
+                                    .thenReturn(tickets));
                 })
                 .as(transactionalOperator::transactional);
+
+        return commitInventory(reservation).then(confirmation);
     }
 
     /**
-     * Moves the tier counters from reserved to sold.
+     * Moves the tier counters from reserved to sold, outside the transaction.
      *
-     * <p>Done first because it is the step most likely to refuse: the catalog is
-     * a separate service and the only participant that can tell us the inventory
-     * is not what we think it is. Discovering that after writing tickets would
-     * mean rolling back work that has already been announced.
+     * <p>First because it is the step most likely to refuse: the catalog is the only participant that
+     * can say the inventory is not what booking believes. The catalog records the commit against this
+     * reservation, so calling it again for the same reservation changes nothing — which is what makes
+     * running it before the transaction, and again on a retry, safe.
      */
     private Mono<Void> commitInventory(TicketReservation reservation) {
         return Flux.fromIterable(reservation.getItems())
@@ -153,7 +151,7 @@ public class PurchaseServiceImpl implements PurchaseService {
                 .then();
     }
 
-    /** One row per seat. ET-TKT-002 is explicit that a ticket has no quantity field. */
+    /** One row per seat: a ticket has no quantity field. */
     private Mono<List<Ticket>> issueTickets(TicketReservation reservation,
                                             String paymentIntentId,
                                             String providerTxnId) {
@@ -175,6 +173,8 @@ public class PurchaseServiceImpl implements PurchaseService {
                 .ticketNumber(Ticket.generateTicketNumber())
                 .eventId(reservation.getEventId())
                 .reservationId(reservation.getId())
+                .bookingId(reservation.getId())
+                .bookingNumber(reservation.getBookingNumber())
                 .ticketTierId(item.getTicketTierId())
                 .ticketCategoryCode(item.getTicketTierId())
                 .ticketCategoryName(item.getTierName())
@@ -190,7 +190,7 @@ public class PurchaseServiceImpl implements PurchaseService {
                 .netAmount(commissionService.calculateNetAmount(price))
                 .qrCode(UUID.randomUUID().toString())
                 .paymentReference(providerTxnId != null ? providerTxnId : paymentIntentId)
-                .purchaseDate(LocalDateTime.now())
+                .purchaseDate(clock.instant())
                 .isActive(true)
                 .build();
     }
@@ -199,9 +199,9 @@ public class PurchaseServiceImpl implements PurchaseService {
      * Escrow credit, commission record and journal entries — per ticket.
      *
      * <p>Per ticket rather than once for the reservation because refunds are per
-     * ticket (ET-FIN-004 debits a single seat's net). A single reservation-sized
+     * ticket (a refund debits a single seat's net). A single reservation-sized
      * credit would leave every partial refund without a matching credit line, and
-     * ET-FIN-005's reconciliation walks those pairs.
+     * reconciliation walks those pairs.
      */
     private Mono<Void> recordFinancials(TicketReservation reservation,
                                         List<Ticket> tickets,
@@ -232,41 +232,25 @@ public class PurchaseServiceImpl implements PurchaseService {
     }
 
     /**
-     * Published inside the transaction, on purpose.
+     * One {@code booking.TicketPurchased} per ticket, staged inside the confirmation transaction.
      *
-     * <p>Spring Modulith writes the publication row with the same commit, so the
-     * event cannot survive a rollback and cannot be lost by one. The bus is
-     * reached from the listener that consumes it, after commit — never from in
-     * here (ET-PLT-003 §2).
+     * <p>The tickets and their announcement commit together: the outbox drain
+     * publishes the envelopes after commit, and a rollback leaves no envelope promising tickets that
+     * do not exist. The payload is identifiers only — no buyer name, email or phone crosses the bus.</p>
      */
-    private void publishPurchased(TicketReservation reservation,
-                                  List<Ticket> tickets,
-                                  String paymentIntentId,
-                                  String providerTxnId) {
-        for (Ticket ticket : tickets) {
-            eventPublisher.publishEvent(new TicketPurchasedEvent(
-                    ticket.getId(),
-                    ticket.getTicketNumber(),
-                    ticket.getEventId(),
-                    ticket.getEventTitle(),
-                    ticket.getBuyerId(),
-                    ticket.getBuyerName() != null ? ticket.getBuyerName() : "Unknown",
-                    ticket.getBuyerEmail(),
-                    ticket.getBuyerPhone() != null ? ticket.getBuyerPhone() : "",
-                    reservation.getOrganizerId(),
-                    ticket.getTicketCategoryCode(),
-                    ticket.getTicketCategoryName(),
-                    1,
-                    ticket.getPrice(),
-                    ticket.getPrice(),
-                    ticket.getCommissionAmount(),
-                    ticket.getCommissionRate(),
-                    ticket.getNetAmount(),
-                    ticket.getCurrency(),
-                    null,
-                    providerTxnId,
-                    paymentIntentId));
-        }
+    private Mono<Void> stagePurchased(TicketReservation reservation, List<Ticket> tickets) {
+        Instant now = clock.instant();
+        return Flux.fromIterable(tickets)
+                .concatMap(ticket -> outbox.stage(EventEnvelopes.of(
+                        EventType.BOOKING_TICKET_PURCHASED,
+                        now,
+                        reservation.getId(),
+                        Map.of("ticketId", ticket.getId(),
+                                "eventId", ticket.getEventId(),
+                                "tierId", ticket.getTicketTierId(),
+                                "ownerId", ticket.getBuyerId(),
+                                "quantity", 1))))
+                .then();
     }
 
     @Override
@@ -278,8 +262,8 @@ public class PurchaseServiceImpl implements PurchaseService {
                 .flatMap(reservation -> {
                     if (reservation.getStatus() != ReservationStatus.HELD) {
                         // Already resolved. Not an error: the TTL index, the
-                        // sweep and a failed-payment callback all reach the same
-                        // row, and the spec requires every release path to be a
+                        // expiry timer and a failed-payment callback all reach the same
+                        // row, and every release path has to be a
                         // no-op the second time.
                         log.debug("Reservation {} was already {} — release is a no-op",
                                 reservationId, reservation.getStatus());

@@ -274,6 +274,7 @@ enum UserType {
     ADMIN         # Platform administrator
     SUPER_ADMIN   # Super administrator with full system access
     FINANCE       # Finance team member for payouts and reconciliation
+    FINANCE_LEAD  # Receives chargeback and refund escalations; held together with FINANCE
 }
 
 # User account status
@@ -284,6 +285,21 @@ enum AccountStatus {
     SUSPENDED             # Suspended by admin
     PENDING_VERIFICATION  # Awaiting email/phone verification
     PENDING_DELETION      # GDPR deletion requested
+}
+
+# Lifecycle of an account (ET-IDN-004, CONTRACT 2)
+enum AccountState {
+    PROVISIONING   # A contact is claimed; the sign-in identity is not finished
+    ACTIVE         # May sign in
+    SUSPENDED      # Out of circulation until an administrator lifts it
+    MERGED         # Folded into another account
+    DELETED        # Removed; contacts released
+}
+
+# The kinds of contact an account can hold. A phone contact is a WhatsApp number.
+enum ContactType {
+    WHATSAPP
+    EMAIL
 }
 
 # ============================================================================
@@ -550,6 +566,7 @@ enum NotificationStatus {
     READ        # Read by user
     FAILED      # Delivery failed
     EXPIRED     # Notification expired
+    SUPPRESSED  # Not sent: an optional category, channel or quiet hours the recipient chose
 }
 
 # Reminder status
@@ -601,12 +618,16 @@ type User @key(fields: "id") {
     # Core Identity (synced with Keycloak)
     # PUBLIC - Basic profile information
     # ─────────────────────────────────────────────────────────────────────
-    username: String!               # Unique username
-    # ADMIN - Email is PII, only visible to admins or the user themselves
+    # Absent for a buyer account: a buyer is identified by contacts, not by a name or an address
+    username: String                # Unique username (Keycloak username; the account id for a buyer)
+    # ADMIN - Email is PII, only visible to admins or the user themselves. Staff and legacy accounts only;
+    # a buyer's email is a contact (see `contacts`), masked.
     # @shareable allows booking-service to @provides this from cached Ticket data
-    email: String! @shareable @tag(name: "admin")
-    firstName: String!
-    lastName: String!
+    email: String @shareable @tag(name: "admin")
+    firstName: String
+    lastName: String
+    # How the person is greeted; optional
+    displayName: String
     # @shareable allows booking-service to @provides this from cached Ticket data
     fullName: String! @shareable    # Computed: firstName + lastName
     # ADMIN - Phone number is PII
@@ -633,6 +654,15 @@ type User @key(fields: "id") {
     roles: [UserType!]! @tag(name: "admin")
 
     accountStatus: AccountStatus! @tag(name: "admin")
+
+    # Lifecycle of the account (ET-IDN-004). `accountStatus` is the legacy view of the same fact.
+    status: AccountState! @tag(name: "admin")
+
+    # The contact the person prefers to be reached on
+    preferredChannel: ContactType @tag(name: "mobile")
+
+    # The contacts the account holds, masked. Visible to the account's holder and to administrators.
+    contacts: [Contact!]! @tag(name: "mobile")
 
     # ─────────────────────────────────────────────────────────────────────
     # Verification Status
@@ -687,6 +717,135 @@ type User @key(fields: "id") {
     lastActiveAt: DateTime @tag(name: "admin")
     createdAt: DateTime! @tag(name: "admin")
     updatedAt: DateTime @tag(name: "admin")
+
+    # Why an administrator suspended / locked the account. Administrators only; null otherwise.
+    suspendReason: String @tag(name: "admin")
+    lockReason: String @tag(name: "admin")
+
+    # Set while the person's own deletion request is open; cancelAccountDeletion works until deletionScheduledFor
+    deletionRequestedAt: DateTime
+    deletionScheduledFor: DateTime
+}
+
+# A verified WhatsApp number or email the account owns. Only the masked value is ever exposed
+# (for example +260 97* ***123 or j***@gmail.com); the value itself stays encrypted in storage.
+type Contact {
+    id: ID!
+    type: ContactType!
+    valueMasked: String!
+    verifiedAt: DateTime
+    primary: Boolean!
+    createdAt: DateTime
+}
+
+# ---------------------------------------------------------------------------
+# Contact management (ET-IDN-004 R3, R5). Everything acts on the caller's own account.
+# Only masked values are ever returned.
+# ---------------------------------------------------------------------------
+
+# What a contact change does
+enum ContactChangeKind {
+    ADD       # a new verified contact joins the account
+    CHANGE    # one contact is replaced by another of the same type
+    REMOVE    # a contact is released (never the last verified one)
+    PRIMARY   # another verified contact becomes the primary one
+}
+
+# A code was sent to a contact
+type ContactCodeSent {
+    challengeId: ID!
+    contactType: ContactType!
+    # where the code went, masked
+    maskedContact: String!
+    expiresInSeconds: Int!
+    resendAfterSeconds: Int!
+}
+
+# A contact change was opened: one code went to the new contact, one to the current primary contact
+type ContactChangeRequested {
+    changeId: ID!
+    newContact: ContactCodeSent!
+    currentContact: ContactCodeSent!
+    expiresAt: DateTime!
+}
+
+# COMPLETED: done, contacts as they now are. APPLYING: verified and finishing in the background;
+# ask myContacts again in a moment. Nothing is lost either way.
+enum ContactChangeStatus {
+    APPLYING
+    COMPLETED
+}
+
+type ContactChangeResult {
+    changeId: ID!
+    kind: ContactChangeKind!
+    status: ContactChangeStatus!
+    contacts: [Contact!]!
+}
+
+# A change waiting for its codes (or finishing)
+type PendingContactChange {
+    changeId: ID!
+    kind: ContactChangeKind!
+    newContactMasked: String
+    expiresAt: DateTime!
+    # the code sent to the current primary contact was already accepted
+    currentContactVerified: Boolean!
+    attemptsRemaining: Int!
+}
+
+type MyContacts {
+    contacts: [Contact!]!
+    pendingChange: PendingContactChange
+}
+
+input RequestContactAddInput {
+    type: ContactType!
+    value: String!
+    regionHint: String
+}
+
+input ConfirmContactAddInput {
+    challengeId: ID!
+    code: String!
+}
+
+input RequestContactChangeInput {
+    contactId: ID!
+    type: ContactType!
+    value: String!
+    regionHint: String
+}
+
+input ConfirmContactChangeInput {
+    changeId: ID!
+    newContactCode: String!
+    # required until it has been accepted once
+    currentContactCode: String
+}
+
+input ConfirmContactRemovalInput {
+    challengeId: ID!
+    code: String!
+}
+
+# Which code of an open change to send again
+enum ContactCodeTarget {
+    NEW       # the code sent to the contact being added or switched to
+    CURRENT   # the code sent to the current primary contact
+}
+
+# Name the challenge of an add, removal or primary switch, or the open change with a target
+input ResendContactCodeInput {
+    challengeId: ID
+    changeId: ID
+    target: ContactCodeTarget
+}
+
+input SetPrimaryContactInput {
+    contactId: ID!
+    challengeId: ID!
+    code: String!
 }
 
 # Social login connection
@@ -709,7 +868,7 @@ type SocialConnection {
 # 3. Admin approves/rejects → APPROVED/CHANGES_REQUESTED/REJECTED
 # 4. User can create DRAFT events during approval process
 # ORGANIZER/ADMIN - Organizers manage their organizations, admins oversee all
-type Organization @key(fields: "id") @tag(name: "organizer") @tag(name: "admin") {
+type Organization @key(fields: "id") @tag(name: "organizer") {
     id: ID!
 
     # ─────────────────────────────────────────────────────────────────────
@@ -782,6 +941,15 @@ type Organization @key(fields: "id") @tag(name: "organizer") @tag(name: "admin")
     kybSubmittedAt: DateTime
 
     # ─────────────────────────────────────────────────────────────────────
+    # Commission, suspension and deletion (visible to the organization's members and to administrators)
+    # ─────────────────────────────────────────────────────────────────────
+    commissionRate: Float           # Percentage this organization is charged (5 = 5%); null until configured
+    suspensionReason: String        # Why an administrator suspended it; null when not suspended
+    suspendedAt: DateTime
+    deletionRequestedAt: DateTime   # Set while a deletion request is open
+    deletionScheduledFor: DateTime  # End of the grace period; cancelOrganizationDeletion works until then
+
+    # ─────────────────────────────────────────────────────────────────────
     # Team Members
     # ─────────────────────────────────────────────────────────────────────
     members: [OrganizationMember!]
@@ -832,7 +1000,7 @@ type Organization @key(fields: "id") @tag(name: "organizer") @tag(name: "admin")
 
 # Organization member - links User to Organization with a role
 # ORGANIZER - Team management for organization owners and admins
-type OrganizationMember @tag(name: "organizer") @tag(name: "admin") {
+type OrganizationMember @tag(name: "organizer") {
     id: ID!
 
     # ─────────────────────────────────────────────────────────────────────
@@ -874,18 +1042,44 @@ type OrganizationMember @tag(name: "organizer") @tag(name: "admin") {
     lastActiveAt: DateTime
     createdAt: DateTime!
     updatedAt: DateTime
+
+    # Masked contact details, for the organization's owners and admins (and platform administrators)
+    # only; null for everyone else.
+    contactEmailMasked: String
+    contactPhoneMasked: String
 }
 
 # Team invitation for pending members
 # ORGANIZER - Team invitation management
-type TeamInvitation @tag(name: "organizer") @tag(name: "admin") {
+"""
+What the holder of an invitation link is shown before they accept.
+
+ET-ORG-002 §4 · exactly five fields, and the narrowness is the requirement rather than a
+convenience. The invitation token is a bearer credential: it arrives by email or WhatsApp and
+is forwarded, screenshotted and pasted into group chats. Everything reachable by it is
+reachable by whoever the link reached, so this type answers only what a stranger needs in
+order to decide whether to accept — which organization, in what role, from whom, until when.
+
+Deliberately absent: `invitationToken` (the credential itself), `email` and `phoneNumber`
+(the invitee's contact details, which a forwarded link would otherwise disclose), `invitedById`,
+`message`, and the invitation's own id.
+"""
+type InvitationPreview {
+    organizationName: String!
+    organizationLogoUrl: String
+    proposedRole: OrganizationRole!
+    inviterDisplayName: String!
+    expiresAt: DateTime!
+}
+
+type TeamInvitation @tag(name: "organizer") {
     id: ID!
 
     # ─────────────────────────────────────────────────────────────────────
     # Invitee Information
     # ─────────────────────────────────────────────────────────────────────
-    email: String!                  # Email to send invitation
-    phoneNumber: String             # Optional phone number
+    email: String                   # Email to send the invitation to; null for a phone invitation
+    phoneNumber: String             # WhatsApp number to send the invitation to; null for an email invitation
     inviteeName: String             # Optional name of invitee
 
     # ─────────────────────────────────────────────────────────────────────
@@ -931,7 +1125,7 @@ type TeamInvitation @tag(name: "organizer") @tag(name: "admin") {
 # Proposed event access in an invitation (output type)
 # Mirrors EventAccessInput but for reading, not writing
 # ORGANIZER - Part of team invitation workflow
-type EventAccessProposal @tag(name: "organizer") @tag(name: "admin") {
+type EventAccessProposal @tag(name: "organizer") {
     eventId: ID!
     role: EventRole!
     expiresAt: DateTime
@@ -941,7 +1135,7 @@ type EventAccessProposal @tag(name: "organizer") @tag(name: "admin") {
 # Allows granting specific users access to specific events
 # Overrides organization-level role for that event
 # ORGANIZER - Event access management for team
-type EventAccessGrant @key(fields: "id") @tag(name: "organizer") @tag(name: "admin") {
+type EventAccessGrant @key(fields: "id") @tag(name: "organizer") {
     id: ID!
 
     # ─────────────────────────────────────────────────────────────────────
@@ -1012,7 +1206,14 @@ type OwnershipTransferRequest {
     # Transfer Details
     # ─────────────────────────────────────────────────────────────────────
     reason: String
-    transferToken: String!          # Token for new owner to accept
+
+    # F-011 · `transferToken` is deliberately NOT a field here.
+    #
+    # It is the bearer half of the two-party handshake this spec describes, and it travels to
+    # the named recipient by notification. Nothing reads it back: acceptance and decline both
+    # take it as an *argument* (see ConfirmOwnershipTransferInput), and the server looks the
+    # transfer up by it. A credential only its recipient needs has no reason to be readable
+    # through the graph, and exposing it here made it readable by anyone holding a transfer id.
 
     # ─────────────────────────────────────────────────────────────────────
     # Status
@@ -1059,8 +1260,8 @@ type OrganizationSettings {
     # ─────────────────────────────────────────────────────────────────────
     # Permission Settings
     # ─────────────────────────────────────────────────────────────────────
-    managersCanRequestPayouts: Boolean!
-    marketersCanViewFinancials: Boolean!
+    managersCanViewFinancials: Boolean!   # Managers see revenue, escrow and commission figures
+    adminsCanRequestPayouts: Boolean!     # Admins may request payouts; the owner always may
 
     # ─────────────────────────────────────────────────────────────────────
     # Notification Settings
@@ -1113,6 +1314,12 @@ type PayoutBankDetails {
     accountHolderName: String
     accountType: String             # CHECKING, SAVINGS, BUSINESS
     verified: Boolean!
+    status: PayoutAccountStatus!
+    rejectionReason: String
+    suspended: Boolean!
+    suspendedReason: String
+    testDepositSentAt: DateTime
+    verificationAttemptsLeft: Int!
 }
 
 # Mobile money account for payouts (Zambia: MTN, Airtel, Zamtel)
@@ -1122,6 +1329,237 @@ type MobileMoneyAccount {
     maskedPhoneNumber: String       # +260****1234
     accountHolderName: String
     verified: Boolean!
+    status: PayoutAccountStatus!
+    rejectionReason: String
+    suspended: Boolean!
+    suspendedReason: String
+    testDepositSentAt: DateTime
+    verificationAttemptsLeft: Int!
+}
+
+# ============================================================================
+# PLATFORM RULES (readable by any signed-in caller; no personal data)
+# ============================================================================
+# The values organizers and buyers must obey. Administrators edit them through catalog's
+# updatePlatformConfiguration; this is the read side for everyone else. Commission figures are
+# percentages (5 = 5%). Reference lists (banks, categories, cities, cancellation reasons, KYB
+# document types) are catalog reference data: use catalog's `referenceData(type:)`.
+type PlatformRules {
+    version: Int!                       # Bumped on every save; compare it to show a 'New' chip
+    updatedAt: DateTime
+    updatedBy: String                   # Display name of the administrator
+    currency: String!
+    commissionDefault: Float!           # Platform default, percent
+    commissionRate: Float               # What applies to the caller's organization (its own, else the default)
+    minimumPayout: BigDecimal
+    reservationHoldMinutes: Int!
+    reservationGraceMinutes: Int!
+    escrowHoldDays: Int!
+    refundCutoffHours: Int!
+    maxTicketsPerBooking: Int!
+    rescheduleLimit: Int!
+    refundPolicies: [RulesRefundPolicy!]!
+    approval: PlatformRulesApproval!
+}
+
+# The signed-out subset of PlatformRules (ET-ADM-002-R10): what a buyer needs before signing in.
+# Readable WITHOUT a token, rate limited per client address. Nothing about commission, payouts,
+# escrow, approval or administrators; use `platformRules` (signed in) for those.
+type PublicPlatformRules {
+    version: Int!
+    updatedAt: DateTime
+    currency: String!
+    reservationHoldMinutes: Int!
+    reservationGraceMinutes: Int!
+    maxTicketsPerBooking: Int!
+    refundCutoffHours: Int!
+    rescheduleLimit: Int!
+    refundPolicies: [RulesRefundPolicy!]!
+}
+
+type RulesRefundPolicy {
+    code: String!                       # FLEXIBLE | MODERATE | STRICT | NO_REFUNDS
+    label: String!
+    summary: String!
+    rules: [RulesRefundTier!]!
+}
+
+type RulesRefundTier {
+    daysBefore: Int!
+    percent: Int!
+}
+
+type PlatformRulesApproval {
+    slaHours: Int!
+    warnHours: Int!
+    autoEscalation: Boolean!
+    escalationDelayHours: Int!
+    requireCommentsOnRejection: Boolean!
+    requireCommentsOnChangesRequested: Boolean!
+    allowSelfApproval: Boolean!
+}
+
+# ============================================================================
+# PLATFORM OPERATIONS: health, alerts, announcements
+# ============================================================================
+enum ServiceStatus {
+    UP
+    DOWN
+}
+
+type ServiceHealth @tag(name: "admin") {
+    name: String!                   # mongodb | redis | keycloak | a configured downstream service
+    status: ServiceStatus!
+    latencyMillis: Long!
+    checkedAt: DateTime!
+    detail: String                  # A category such as "timeout"; never an address
+}
+
+enum AlertSeverity {
+    INFO
+    WARNING
+    CRITICAL
+}
+
+enum AlertStatus {
+    OPEN
+    ACKNOWLEDGED
+    RESOLVED
+}
+
+type SystemAlert @tag(name: "admin") {
+    id: ID!
+    source: String!
+    key: String!
+    severity: AlertSeverity!
+    title: String!
+    message: String
+    status: AlertStatus!
+    occurrences: Int!               # How many times the condition was reported while open
+    raisedAt: DateTime!
+    lastSeenAt: DateTime
+    acknowledgedAt: DateTime
+    acknowledgedBy: ID
+    resolvedAt: DateTime
+}
+
+enum AnnouncementSegment {
+    ALL
+    ORGANIZERS
+    BUYERS
+    STAFF
+}
+
+type SystemAnnouncement {
+    id: ID!
+    title: String!
+    message: String!
+    segment: AnnouncementSegment!
+    severity: AlertSeverity!
+    startsAt: DateTime!             # A future time means it is scheduled
+    endsAt: DateTime
+    cancelledAt: DateTime
+    createdAt: DateTime!
+}
+
+input BroadcastInput {
+    title: String!
+    message: String!
+    segment: AnnouncementSegment = ALL
+    severity: AlertSeverity = INFO
+    startsAt: DateTime              # Omit to publish now
+    endsAt: DateTime
+}
+
+# One live login session of the caller
+type AccountSession {
+    id: ID!
+    ipAddress: String
+    startedAt: DateTime
+    lastAccessAt: DateTime
+    clients: [String!]!
+    current: Boolean!               # The session making this request
+}
+
+enum GrowthBucket {
+    DAY
+    WEEK                            # weeks start on Monday
+    MONTH
+}
+
+type GrowthPoint @tag(name: "admin") {
+    bucketStart: DateTime!          # Start of the bucket in the platform's time zone (Africa/Lusaka)
+    newUsers: Int!
+    cumulative: Int!
+}
+
+input AuditLogFilterInput {
+    from: DateTime
+    to: DateTime
+    action: String
+    actorId: ID
+    resourceType: String
+    resourceId: ID
+    status: String
+    # Also list account events (OTP locks, merges ...) that are not audit rows
+    includeAccountEvents: Boolean
+}
+
+type AuditLogEntry @tag(name: "admin") {
+    id: ID!
+    source: String!                 # AUDIT | ACCOUNT_EVENT
+    action: String!
+    actorId: ID
+    subjectId: ID
+    resourceType: String
+    resourceId: ID
+    status: String
+    at: DateTime
+    metadata: JSON
+}
+
+type AuditLogEntryOffsetPage @tag(name: "admin") {
+    content: [AuditLogEntry!]!
+    pageInfo: PageInfo!
+}
+
+# Where a payout account is in review
+enum PayoutAccountStatus {
+    NONE
+    PENDING
+    VERIFIED
+    REJECTED
+    SUSPENDED
+}
+
+# One organization's payout account as the admin review table shows it (numbers masked)
+type PayoutAccountRecord @tag(name: "admin") {
+    organizationId: ID!
+    organizationName: String!
+    organizationSlug: String!
+    method: PayoutMethod!
+    status: PayoutAccountStatus!
+    bankName: String
+    accountNumberMasked: String
+    accountHolderName: String
+    network: MobileMoneyProvider
+    phoneMasked: String
+    rejectionReason: String
+    suspendedReason: String
+    testDepositSentAt: DateTime
+    verificationAttemptsLeft: Int!
+    updatedAt: DateTime
+}
+
+type PayoutAccountRecordOffsetPage @tag(name: "admin") {
+    content: [PayoutAccountRecord!]!
+    pageInfo: PageInfo!
+}
+
+input PayoutAccountFilterInput {
+    status: PayoutAccountStatus
+    method: PayoutMethod
+    search: String
 }
 
 # Payout configuration for an organization
@@ -1268,7 +1706,6 @@ type EventReminder {
     eventTitle: String
     eventDateTime: DateTime
     reminderAt: DateTime!
-    minutesBefore: Int!
 
     # Delivery
     channels: [NotificationChannel!]
@@ -1287,131 +1724,54 @@ type EventReminder {
 # SECTION 11: PERMISSION TYPES
 # ============================================================================
 
-# Permission definition
+# A permission from the platform's catalogue. The catalogue is fixed in software and changes only
+# with a release; there is nothing to create, edit or delete.
 type Permission {
-    id: ID!
-    name: String!                   # Human-readable name
-    code: String!                   # System code (e.g., EVENT_CREATE)
-    description: String
-    category: String                # ORGANIZATION, EVENT, FINANCIAL, etc.
-    scope: PermissionScope!         # Where this permission applies
-    active: Boolean!
-    createdAt: DateTime!
-    updatedAt: DateTime
+    code: String!                   # module:action, e.g. event:create
+    module: String!                 # the part before the colon, e.g. event
+    description: String!
+    scope: PermissionScope!         # where the permission is held
 }
 
 enum PermissionScope {
-    PLATFORM            # Platform-wide permission
-    ORGANIZATION        # Organization-scoped permission
-    EVENT               # Event-scoped permission
+    PLATFORM            # held through a platform role
+    ORGANIZATION        # held through organization membership
+    EVENT               # held on one event, through membership or an event access grant
 }
 
-# Role with its default permissions
+# A role and the permissions it carries.
 type RolePermissions {
-    role: String!                   # Role name
-    scope: PermissionScope!         # Role scope
-    permissions: [Permission!]!     # Default permissions for this role
-    inheritedFrom: [String!]        # Roles this inherits from
+    role: String!                   # e.g. MANAGER, EVENT_ADMIN, FINANCE
+    scope: PermissionScope!
+    permissions: [Permission!]!     # carried in every organization
+    switchable: [Permission!]!      # carried only where the organization's owner has switched it on
 }
 
-# Effective permissions for a user in a context
+# What a user may do in a context, and which step decided it: PLATFORM, EVENT, ORGANIZATION or NONE.
 type EffectivePermissions {
     userId: ID!
     organizationId: ID
     eventId: ID
-    permissions: [String!]!         # List of permission codes
-    role: String                    # Applicable role
-    source: String                  # Where permissions come from
+    permissions: [String!]!         # permission codes
+    role: String                    # the event role when a grant decided, else the organization role
+    source: String
+}
+
+# What the signed-in user's platform roles allow, before any organization or event is involved.
+type MyPermissions {
+    roles: [String!]!
+    permissions: [String!]!         # permission codes
 }
 
 # ============================================================================
 # SECTION 12: AUTHENTICATION TYPES
 # ============================================================================
-
-type AuthPayload {
-    success: Boolean!
-    message: String
-    user: User
-    accessToken: String
-    refreshToken: String
-    expiresIn: Int
-    tokenType: String
-}
-
-# Token validation response
-type TokenValidation {
-    valid: Boolean!
-    userId: String
-    email: String
-    roles: [String!]
-}
-
-# User registration input
-# All new users are automatically assigned the CUSTOMER role by default
-input RegisterInput {
-    email: String!
-    password: String!
-    username: String
-    firstName: String
-    lastName: String
-    phoneNumber: String
-}
-
-type OtpResponse {
-    success: Boolean!
-    message: String
-    expiresAt: DateTime
-    cooldownSeconds: Int
-    attemptsRemaining: Int
-}
-
-type TwoFactorSetupResponse {
-    success: Boolean!
-    message: String
-    secret: String                  # For AUTHENTICATOR_APP
-    qrCodeUrl: String               # QR code for authenticator
-    backupCodes: [String!]          # One-time backup codes
-}
+# None. Keycloak signs people in; the password, registration, refresh and validation
+# payloads were removed with their mutations (ET-IDN-004).
 
 # ============================================================================
 # SECTION 13: STATISTICS TYPES
 # ============================================================================
-
-type OrganizerStatistics {
-    organizerId: ID!
-    organizationId: ID
-    totalEvents: Int!
-    activeEvents: Int!
-    completedEvents: Int!
-    cancelledEvents: Int!
-    totalTicketsSold: Int!
-    totalRevenue: BigDecimal!
-    pendingPayouts: BigDecimal!
-    completedPayouts: BigDecimal!
-    averageRating: Float
-    totalReviews: Int!
-    period: String
-}
-
-type PlatformStatistics {
-    totalUsers: Int!
-    totalOrganizers: Int!
-    totalOrganizations: Int!
-    pendingOrganizerApplications: Int!
-    totalEvents: Int!
-    totalTicketsSold: Int!
-    totalRevenue: BigDecimal!
-    activeUsers30Days: Int!
-    period: String
-}
-
-type TeamStatistics {
-    organizationId: ID!
-    totalMembers: Int!
-    activeMembers: Int!
-    pendingInvitations: Int!
-    membersByRole: JSON
-}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # USER STATISTICS (Admin Dashboard)
@@ -1555,30 +1915,6 @@ type EventAccessGrantOffsetPage {
 # Used for infinite scroll, mobile apps, and real-time feeds.
 # https://relay.dev/graphql/connections.htm
 
-# User cursor pagination
-type UserConnection {
-    edges: [UserEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type UserEdge {
-    cursor: String!
-    node: User!
-}
-
-# Organization cursor pagination
-type OrganizationConnection {
-    edges: [OrganizationEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type OrganizationEdge {
-    cursor: String!
-    node: Organization!
-}
-
 # Notification cursor pagination
 type NotificationConnection {
     edges: [NotificationEdge!]!
@@ -1591,73 +1927,26 @@ type NotificationEdge {
     node: Notification!
 }
 
-# OrganizationMember cursor pagination
-type OrganizationMemberConnection {
-    edges: [OrganizationMemberEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type OrganizationMemberEdge {
-    cursor: String!
-    node: OrganizationMember!
-}
-
-# TeamInvitation cursor pagination
-type TeamInvitationConnection {
-    edges: [TeamInvitationEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type TeamInvitationEdge {
-    cursor: String!
-    node: TeamInvitation!
-}
-
-# Organization Application Cursor Pagination (Approval Queue)
-type OrganizationApplicationConnection {
-    edges: [OrganizationApplicationEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type OrganizationApplicationEdge {
-    cursor: String!
-    node: Organization!
-}
-
-# EventAccessGrant cursor pagination
-type EventAccessGrantConnection {
-    edges: [EventAccessGrantEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type EventAccessGrantEdge {
-    cursor: String!
-    node: EventAccessGrant!
-}
-
 # ============================================================================
 # SECTION 15: INPUT TYPES - USER & PROFILE
 # ============================================================================
 
+# Creates a platform staff user. Buyers are never created this way.
 input CreateUserInput {
     email: String!
-    phoneNumber: PhoneNumber
     firstName: String!
     lastName: String!
     password: String
-    # All new users get CUSTOMER role by default. Use grantRoleToUser mutation to add additional roles.
+    # Mobile number of the staff member (normalised; a number that does not parse refuses the call)
+    phoneNumber: String
+    # Granted on top of the base CUSTOMER role; omit for a plain account
+    role: UserType
 }
 
 input UpdateUserInput {
     firstName: String
     lastName: String
-    phoneNumber: PhoneNumber
-    # ISO-3166 alpha-2 country of phoneNumber (e.g. "ZM")
-    phoneCountry: String
+    displayName: String
     gender: String
 }
 
@@ -1678,29 +1967,6 @@ input UpdateNotificationPreferencesInput {
     quietHoursStart: String
     quietHoursEnd: String
     timezone: String
-}
-
-input SetupTwoFactorInput {
-    method: TwoFactorMethod!
-    phoneNumber: String             # Required for SMS
-    email: String                   # Required for EMAIL
-}
-
-input VerifyTwoFactorInput {
-    code: String!
-    method: TwoFactorMethod!
-}
-
-input SocialAuthInput {
-    provider: SocialProvider!
-    accessToken: String!
-    idToken: String
-}
-
-input RequestAccountDeletionInput {
-    reason: String
-    feedback: String
-    confirmPassword: String         # For security verification
 }
 
 # ============================================================================
@@ -1747,13 +2013,6 @@ type DocumentUploadUrlResponse {
 }
 
 # Response for document upload
-type VerificationDocumentUploadResponse {
-    success: Boolean!
-    message: String
-    document: VerificationDocument
-    errors: [FileUploadError!]
-}
-
 # File upload validation error
 type FileUploadError {
     field: String!
@@ -1807,17 +2066,37 @@ input UpdateOrganizationInput {
     description: String
     logoUrl: String
     bannerUrl: String
+    tagline: String
+    website: String
+    socialLinks: SocialLinksInput
+    # The identity fields below are accepted only while the application is DRAFT or CHANGES_REQUESTED
+    businessType: BusinessType
+    taxId: String
+    businessRegistrationNumber: String
+    yearEstablished: Int
+    businessPhone: String
+    businessEmail: String
+    businessAddress: BusinessAddressInput
+}
+
+input BusinessAddressInput {
+    addressLine1: String
+    addressLine2: String
+    city: String
+    province: String
+    postalCode: String
+    country: String
+    countryCode: String
 }
 
 input UpdateOrganizationSettingsInput {
-    organizationId: ID!
     defaultEventVisibility: String
     requireEventApproval: Boolean
     allowMembersToInvite: Boolean
     inviteRequiresApproval: Boolean
     maxTeamMembers: Int
-    managersCanRequestPayouts: Boolean
-    marketersCanViewFinancials: Boolean
+    managersCanViewFinancials: Boolean
+    adminsCanRequestPayouts: Boolean
     notifyOwnerOnMemberJoin: Boolean
     notifyOwnerOnEventCreated: Boolean
     notifyOwnerOnPayoutRequest: Boolean
@@ -1903,7 +2182,7 @@ input TransferOwnershipInput {
 
 input ConfirmOwnershipTransferInput {
     transferToken: String!
-    confirmationCode: String!       # 2FA code
+    confirmationCode: String!       # the code requestOwnershipTransferCode sent to the nominee
 }
 
 input GrantEventAccessInput {
@@ -2033,117 +2312,19 @@ input RegisterDeviceInput {
     appVersion: String
 }
 
-input CreateEventReminderInput {
-    eventId: ID!
-    ticketId: ID!
-    minutesBefore: Int!
-    channels: [NotificationChannel!]
-}
-
-input SendNotificationInput {
-    userId: ID!
-    type: NotificationType!
-    title: String!
-    body: String!
-    imageUrl: String
-    actionUrl: String
-    data: JSON
-    channels: [NotificationChannel!]!
-    priority: String
-    scheduledAt: DateTime
-}
-
 # ============================================================================
 # SECTION 19: MUTATION RESPONSE TYPES
 # ============================================================================
 
 # Generic mutation response
-type MutationResponse {
-    success: Boolean!
-    message: String
-    code: String
-}
-
 # User-related responses
-type UserMutationResponse {
-    success: Boolean!
-    message: String
-    user: User
-}
-
 # Organization responses
-type OrganizationMutationResponse {
-    success: Boolean!
-    message: String
-    organization: Organization
-}
-
 # Member responses
-type MemberMutationResponse {
-    success: Boolean!
-    message: String
-    member: OrganizationMember
-}
-
 # Invitation responses
-type InvitationMutationResponse {
-    success: Boolean!
-    message: String
-    invitation: TeamInvitation
-}
-
-type BulkInvitationResponse {
-    success: Boolean!
-    message: String
-    sentCount: Int!
-    failedCount: Int!
-    invitations: [TeamInvitation!]
-    errors: [BulkOperationError!]
-}
-
 # Event access responses
-type EventAccessMutationResponse {
-    success: Boolean!
-    message: String
-    accessGrant: EventAccessGrant
-}
-
-type BulkAccessGrantResponse {
-    success: Boolean!
-    message: String
-    grantedCount: Int!
-    failedCount: Int!
-    grants: [EventAccessGrant!]
-    errors: [BulkOperationError!]
-}
-
 # Ownership transfer response
-type OwnershipTransferResponse {
-    success: Boolean!
-    message: String
-    transfer: OwnershipTransferRequest
-}
-
 # Document responses
-type DocumentMutationResponse {
-    success: Boolean!
-    message: String
-    document: VerificationDocument
-}
-
 # Notification responses
-type NotificationMutationResponse {
-    success: Boolean!
-    message: String
-    notification: Notification
-}
-
-type DeviceMutationResponse {
-    success: Boolean!
-    message: String
-    device: UserDevice
-}
-
 # ============================================================================
 # SECTION 19b: ADDITIONAL INPUT TYPES
 # These input types are used by resolver-style mutations
@@ -2151,16 +2332,28 @@ type DeviceMutationResponse {
 
 input SetEventReminderInput {
     ticketId: ID!
-    minutesBefore: Int!
+    # ET-NTF-002 R5 · the event's real start, so the two fixed offsets (T-24h, T-1h) fire against
+    # it rather than against the moment this mutation was called.
+    eventStartsAt: DateTime!
 }
 
 input InviteMemberInput {
-    email: String!
+    # At least one of email and phoneNumber; a phone invitation is sent by WhatsApp
+    email: String
     phoneNumber: String
     inviteeName: String
     role: OrganizationRole!
     message: String
     eventAccessGrants: [EventAccessGrantInput!]
+}
+
+# One person's access in a bulk grant; the event is the mutation's eventId argument.
+input BulkEventAccessGrantInput {
+    userId: ID!
+    role: EventRole!
+    customPermissions: [String!]
+    reason: String
+    expiresAt: DateTime
 }
 
 input EventAccessGrantInput {
@@ -2171,30 +2364,6 @@ input EventAccessGrantInput {
     expiresAt: DateTime
 }
 
-# ============================================================================
-# SECTION 19c: PHONE OTP RESPONSE TYPES
-# ============================================================================
-
-type OtpRequestResponse {
-    success: Boolean!
-    message: String
-    expiresIn: Int!
-}
-
-type PhoneAuthPayload {
-    success: Boolean!
-    message: String
-    accessToken: String
-    refreshToken: String
-    user: User
-}
-
-type ReminderMutationResponse {
-    success: Boolean!
-    message: String
-    reminder: EventReminder
-}
-
 # Error type for bulk operations
 type BulkOperationError {
     index: Int!
@@ -2203,18 +2372,20 @@ type BulkOperationError {
     code: String
 }
 
-
 # ============================================================================
 # SECTION 21: QUERY TYPE
 # Tags indicate which clients should include these queries in their operations
 # ============================================================================
 
 type Query {
+    # The caller's own contacts (masked) and the change waiting for its codes, if any
+    myContacts: MyContacts! @tag(name: "mobile")
+
     # ─────────────────────────────────────────────────────────────────────
     # User Queries
     # ─────────────────────────────────────────────────────────────────────
     # MOBILE - Get current authenticated user's profile
-    me: User @tag(name: "mobile")
+    me: User
 
     # ADMIN - Get user by ID for user management
     user(id: ID!): User @tag(name: "admin")
@@ -2226,20 +2397,12 @@ type Query {
     userByPhone(phoneNumber: String!): User @tag(name: "admin")
 
     # ADMIN - Search users with offset pagination for admin tables
-    usersOffsetPagination(
+    users(
         search: String
         role: UserType
         accountStatus: AccountStatus
         pagination: OffsetPaginationInput
     ): UserOffsetPage! @tag(name: "admin")
-
-    # ADMIN - Search users with cursor pagination
-    usersCursorPagination(
-        search: String
-        role: UserType
-        accountStatus: AccountStatus
-        pagination: CursorPaginationInput
-    ): UserConnection! @tag(name: "admin")
 
     # ADMIN - User statistics for admin dashboard
     userStats: UserStats @tag(name: "admin")
@@ -2264,20 +2427,19 @@ type Query {
     """
     Count users who have a specific role.
     """
-    usersCountByRole(role: UserType!): Long! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Organization Queries
     # ORGANIZER - Manage own organization, ADMIN - Manage all organizations
     # ─────────────────────────────────────────────────────────────────────
     # ORGANIZER/ADMIN - Get organization by ID
-    organization(id: ID!): Organization @tag(name: "organizer") @tag(name: "admin")
+    organization(id: ID!): Organization @tag(name: "organizer")
 
     # ORGANIZER/ADMIN - Get organization by slug
-    organizationBySlug(slug: String!): Organization @tag(name: "organizer") @tag(name: "admin")
+    organizationBySlug(slug: String!): Organization @tag(name: "organizer")
 
     # ORGANIZER - Get organization by owner ID
-    organizationByOwnerId(ownerId: ID!): Organization @tag(name: "organizer") @tag(name: "admin")
+    organizationByOwnerId(ownerId: ID!): Organization @tag(name: "organizer")
 
     # ORGANIZER - Get organizations I belong to (for dashboard switcher)
     myOrganizations: [Organization!]! @tag(name: "organizer")
@@ -2286,20 +2448,59 @@ type Query {
     myOwnedOrganization: Organization @tag(name: "organizer")
 
     # ADMIN - Search organizations with offset pagination for admin tables
-    organizationsOffsetPagination(
+    organizations(
         search: String
         status: OrganizationStatus
         verified: Boolean
+        kybStatus: KybStatus
         pagination: OffsetPaginationInput
     ): OrganizationOffsetPage! @tag(name: "admin")
 
-    # ADMIN - Search organizations with cursor pagination
-    organizationsCursorPagination(
-        search: String
-        status: OrganizationStatus
-        verified: Boolean
-        pagination: CursorPaginationInput
-    ): OrganizationConnection! @tag(name: "admin")
+    # The caller's own live sessions (the one making this request is marked current)
+    mySessions: [AccountSession!]!
+
+    # ADMIN - Platform staff accounts (staff realm), filtered by name/email and role
+    staffAccounts(search: String, role: UserType, pagination: OffsetPaginationInput): UserOffsetPage! @tag(name: "admin")
+
+    # ADMIN - The audit trail: administrator actions and account lifecycle, with no personal data
+    auditLogs(filter: AuditLogFilterInput, pagination: OffsetPaginationInput): AuditLogEntryOffsetPage! @tag(name: "admin")
+
+    # ADMIN - New accounts per day/week/month across [from, to), with the running total
+    userGrowthSeries(from: DateTime!, to: DateTime!, bucket: GrowthBucket = DAY, role: UserType): [GrowthPoint!]! @tag(name: "admin")
+
+    # ADMIN - Probes MongoDB, Redis, Keycloak and the configured services now; also opens/closes their alerts
+    serviceHealth: [ServiceHealth!]! @tag(name: "admin")
+
+    # ADMIN - Operational alerts, newest activity first
+    systemAlerts(status: AlertStatus, severity: AlertSeverity): [SystemAlert!]! @tag(name: "admin")
+
+    # ADMIN - Every announcement, newest first
+    systemAnnouncements: [SystemAnnouncement!]! @tag(name: "admin")
+
+    # Any signed-in caller - announcements live now for the caller's segments
+    myAnnouncements: [SystemAnnouncement!]!
+
+    # Any signed-in caller - the runtime rules organizers and buyers obey
+    platformRules: PlatformRules!
+
+    # PUBLIC (no sign-in) - the buyer-facing subset of the rules; refunds, holds, ticket limits
+    publicPlatformRules: PublicPlatformRules! @auth(requires: PUBLIC)
+
+    # ORGANIZER - The organization the caller belongs to, by active membership (works for every role)
+    myOrganization: Organization @tag(name: "organizer")
+
+    # ORGANIZER - Every event-access grant in an organization (members of it, and administrators)
+    organizationEventAccessGrants(
+        organizationId: ID!
+        status: AccessGrantStatus
+        pagination: OffsetPaginationInput
+    ): EventAccessGrantOffsetPage! @tag(name: "organizer")
+
+    # ADMIN - Payout accounts on file with their review state (numbers masked)
+    bankAccounts(
+        filter: PayoutAccountFilterInput
+        pagination: OffsetPaginationInput
+    ): PayoutAccountRecordOffsetPage! @tag(name: "admin")
 
     # ORGANIZER - Check if slug is available
     isSlugAvailable(slug: String!): Boolean! @tag(name: "organizer")
@@ -2312,20 +2513,12 @@ type Query {
     # ORGANIZER - Team management for organization owners/admins
     # ─────────────────────────────────────────────────────────────────────
     # ORGANIZER - Get organization members with offset pagination
-    organizationMembersOffsetPagination(
+    organizationMembers(
         organizationId: ID!
         role: OrganizationRole
         status: MemberStatus
         pagination: OffsetPaginationInput
     ): OrganizationMemberOffsetPage! @tag(name: "organizer")
-
-    # ORGANIZER - Get organization members with cursor pagination
-    organizationMembersCursorPagination(
-        organizationId: ID!
-        role: OrganizationRole
-        status: MemberStatus
-        pagination: CursorPaginationInput
-    ): OrganizationMemberConnection! @tag(name: "organizer")
 
     # ORGANIZER - Get specific member
     organizationMember(organizationId: ID!, userId: ID!): OrganizationMember @tag(name: "organizer")
@@ -2338,19 +2531,13 @@ type Query {
     # ORGANIZER - Team invitation management
     # ─────────────────────────────────────────────────────────────────────
     # ORGANIZER - Get pending invitations for organization with offset pagination
-    pendingInvitationsOffsetPagination(
+    pendingInvitations(
         organizationId: ID!
         pagination: OffsetPaginationInput
     ): TeamInvitationOffsetPage! @tag(name: "organizer")
 
-    # ORGANIZER - Get pending invitations with cursor pagination
-    pendingInvitationsCursorPagination(
-        organizationId: ID!
-        pagination: CursorPaginationInput
-    ): TeamInvitationConnection! @tag(name: "organizer")
-
     # PUBLIC - Get invitation by token (for acceptance page - anyone with link)
-    invitationByToken(token: String!): TeamInvitation
+    invitationByToken(token: String!): InvitationPreview @auth(requires: PUBLIC)
 
     # ORGANIZER - Get my pending invitations (invites sent to me)
     myPendingInvitations: [TeamInvitation!]! @tag(name: "organizer")
@@ -2363,18 +2550,11 @@ type Query {
     eventAccessGrant(id: ID!): EventAccessGrant @tag(name: "organizer")
 
     # ORGANIZER - Get event access grants for an event with offset pagination
-    eventAccessGrantsOffsetPagination(
+    eventAccessGrants(
         eventId: ID!
         status: AccessGrantStatus
         pagination: OffsetPaginationInput
     ): EventAccessGrantOffsetPage! @tag(name: "organizer")
-
-    # ORGANIZER - Get event access grants with cursor pagination
-    eventAccessGrantsCursorPagination(
-        eventId: ID!
-        status: AccessGrantStatus
-        pagination: CursorPaginationInput
-    ): EventAccessGrantConnection! @tag(name: "organizer")
 
     # ORGANIZER - Get user's access to a specific event
     userEventAccess(userId: ID!, eventId: ID!): EventAccessGrant @tag(name: "organizer")
@@ -2411,33 +2591,20 @@ type Query {
     # Permission Queries
     # ORGANIZER - Permission checks for UI rendering
     # ─────────────────────────────────────────────────────────────────────
-    # ADMIN - Get permission by ID
-    permission(id: ID!): Permission @tag(name: "admin")
-
-    # ADMIN - Get permission by name
-    permissionByName(name: String!): Permission @tag(name: "admin")
-
-    # ADMIN - Get all active permissions
+    # ADMIN - The whole permission catalogue
     permissions: [Permission!]! @tag(name: "admin")
 
-    # ADMIN - Get permissions by category
-    permissionsByCategory(category: String!): [Permission!]! @tag(name: "admin")
+    # ADMIN - One permission by its code
+    permission(code: String!): Permission @tag(name: "admin")
 
-    # ADMIN - Get permissions assigned to a role
-    rolePermissions(roleId: String!): [Permission!]! @tag(name: "admin")
+    # ADMIN - What a role carries: a platform role, an organization role or an event role
+    rolePermissions(role: String!): RolePermissions @tag(name: "admin")
 
-    # Get current user's permissions based on their JWT roles
+    # The signed-in user's platform permissions, as codes
     currentUserPermissions: [String!]!
 
-    # ORGANIZER - Check if user has permission
-    hasOrganizationPermission(organizationId: ID!, permission: String!): Boolean! @tag(name: "organizer")
-    hasEventPermission(eventId: ID!, permission: String!): Boolean! @tag(name: "organizer")
-
-    # ORGANIZER - Get my role in organization
-    myOrganizationRole(organizationId: ID!): OrganizationRole @tag(name: "organizer")
-
-    # ORGANIZER - Get my role for event
-    myEventRole(eventId: ID!): EventRole @tag(name: "organizer")
+    # The signed-in user's platform roles and permissions
+    myPermissions: MyPermissions!
 
     # ORGANIZER - Get my effective permissions
     myEffectivePermissions(
@@ -2445,25 +2612,16 @@ type Query {
         eventId: ID
     ): EffectivePermissions! @tag(name: "organizer")
 
-    # ADMIN - Get all permissions with optional scope filter
-    allPermissions(scope: PermissionScope): [Permission!]! @tag(name: "admin")
-
     # ─────────────────────────────────────────────────────────────────────
     # ─────────────────────────────────────────────────────────────────────
     # Organization Queries (Approval Queue)
     # ADMIN - Organization approval queue and management
     # ─────────────────────────────────────────────────────────────────────
     # ADMIN - Get organization applications with offset pagination for admin queue
-    organizationApplicationsOffsetPagination(
+    organizationApplications(
         status: OrganizationStatus
         pagination: OffsetPaginationInput
     ): OrganizationApplicationOffsetPage! @tag(name: "admin")
-
-    # ADMIN - Get organization applications with cursor pagination
-    organizationApplicationsCursorPagination(
-        status: OrganizationStatus
-        pagination: CursorPaginationInput
-    ): OrganizationApplicationConnection! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Verification Document Queries
@@ -2494,22 +2652,16 @@ type Query {
     # Notification Queries
     # MOBILE - User notification management
     # ─────────────────────────────────────────────────────────────────────
-    # MOBILE - Get my notifications with offset pagination
-    myNotificationsOffsetPagination(
-        type: NotificationType
-        status: NotificationStatus
-        pagination: OffsetPaginationInput
-    ): NotificationOffsetPage! @tag(name: "mobile")
 
     # MOBILE - Get my notifications with cursor pagination (mobile/infinite scroll)
-    myNotificationsCursorPagination(
+    myNotifications(
         type: NotificationType
         status: NotificationStatus
         pagination: CursorPaginationInput
-    ): NotificationConnection! @tag(name: "mobile")
+    ): NotificationConnection!
 
     # MOBILE - Get unread notification count (for badge)
-    unreadNotificationCount: Int! @tag(name: "mobile")
+    unreadNotificationCount: Int!
 
     # MOBILE - Get my notification preferences
     myNotificationPreferences: NotificationPreferences @tag(name: "mobile")
@@ -2532,14 +2684,7 @@ type Query {
     # Statistics Queries
     # ORGANIZER - Own stats, ADMIN - Platform stats
     # ─────────────────────────────────────────────────────────────────────
-    # ORGANIZER/ADMIN - Get organizer statistics
-    organizerStatistics(organizerId: ID!): OrganizerStatistics @tag(name: "organizer") @tag(name: "admin")
 
-    # ADMIN - Get platform statistics (admin dashboard)
-    platformStatistics: PlatformStatistics @tag(name: "admin")
-
-    # ORGANIZER - Get team statistics for organization
-    teamStatistics(organizationId: ID!): TeamStatistics @tag(name: "organizer")
 }
 
 # ============================================================================
@@ -2549,51 +2694,69 @@ type Query {
 
 type Mutation {
     # ─────────────────────────────────────────────────────────────────────
-    # Authentication - Core auth operations
+    # Authentication
+    # Keycloak signs people in (the browser flow with the contact authenticator) and the app server
+    # holds their tokens. The only operation left here is ending a session.
     # ─────────────────────────────────────────────────────────────────────
-    # Login with email and password
-    login(email: String!, password: String!): AuthPayload!
-
-    # Register a new user
-    register(input: RegisterInput!): User!
-
-    # Refresh access token using refresh token
-    refreshToken(refreshToken: String!): AuthPayload!
-
-    # Logout and invalidate session
+    # Logout: revokes the caller's token and session and ends the Keycloak session
     logout: Boolean!
 
-    # Validate a token and get its claims
-    validateToken(token: String!): TokenValidation!
+    # ─────────────────────────────────────────────────────────────────────
+    # Contacts (buyer, own account). Every change is proved by a code. A change, a removal and a
+    # primary switch are authorised by a fresh code to the CURRENT primary contact.
+    # ─────────────────────────────────────────────────────────────────────
+    # Send a code to a contact the account wants to add
+    requestContactAdd(input: RequestContactAddInput!): ContactCodeSent! @tag(name: "mobile")
+    # Prove the new contact; it joins the account
+    confirmContactAdd(input: ConfirmContactAddInput!): ContactChangeResult! @tag(name: "mobile")
+    # Replace a contact: a code goes to the new contact and one to the current primary contact
+    requestContactChange(input: RequestContactChangeInput!): ContactChangeRequested! @tag(name: "mobile")
+    # Present both codes; the new contact is claimed before the old one is released
+    confirmContactChange(input: ConfirmContactChangeInput!): ContactChangeResult! @tag(name: "mobile")
+    # Abandon an open change
+    cancelContactChange(changeId: ID!): Boolean! @tag(name: "mobile")
+    # Send a code to the current primary contact to authorise removing a contact
+    requestContactRemoval(contactId: ID!): ContactCodeSent! @tag(name: "mobile")
+    confirmContactRemoval(input: ConfirmContactRemovalInput!): ContactChangeResult! @tag(name: "mobile")
+    # Send a code to the current primary contact to authorise another contact becoming primary
+    requestPrimaryContact(contactId: ID!): ContactCodeSent! @tag(name: "mobile")
+    setPrimaryContact(input: SetPrimaryContactInput!): ContactChangeResult! @tag(name: "mobile")
+    # Send a pending code again. Allowed once identity.contact.resend-after (default 5 minutes) has passed since it
+    # was last sent; earlier is OTP_RATE_LIMITED with retryAfterSeconds. The new code REPLACES the old one and has a
+    # NEW challengeId - use it from now on. An open change keeps its 48-hour expiry and its attempt budget.
+    resendContactCode(input: ResendContactCodeInput!): ContactCodeSent! @tag(name: "mobile")
 
     # ─────────────────────────────────────────────────────────────────────
     # User Management
     # MOBILE - Self-service profile management
     # ─────────────────────────────────────────────────────────────────────
     # MOBILE - Update my profile
-    updateMyProfile(input: UpdateUserInput!): UserMutationResponse! @tag(name: "mobile")
-
-    # MOBILE - Two-factor authentication setup
-    setupTwoFactor(input: SetupTwoFactorInput!): TwoFactorSetupResponse! @tag(name: "mobile")
-    verifyTwoFactor(input: VerifyTwoFactorInput!): MutationResponse! @tag(name: "mobile")
-    disableTwoFactor(confirmationCode: String!): MutationResponse! @tag(name: "mobile")
-
-    # MOBILE - Social login and account linking
-    socialAuth(input: SocialAuthInput!): AuthPayload! @tag(name: "mobile")
-    linkSocialAccount(input: SocialAuthInput!): MutationResponse! @tag(name: "mobile")
-    unlinkSocialAccount(provider: SocialProvider!): MutationResponse! @tag(name: "mobile")
-
-    # MOBILE - Account deletion (GDPR)
-    requestAccountDeletion(input: RequestAccountDeletionInput!): MutationResponse! @tag(name: "mobile")
-    cancelAccountDeletion: MutationResponse! @tag(name: "mobile")
+    updateMyProfile(input: UpdateUserInput!): User!
 
     # ADMIN - User management
-    createUser(input: CreateUserInput!): UserMutationResponse! @tag(name: "admin")
-    updateUser(id: ID!, input: UpdateUserInput!): UserMutationResponse! @tag(name: "admin")
-    suspendUser(id: ID!, reason: String!): MutationResponse! @tag(name: "admin")
-    unsuspendUser(id: ID!): MutationResponse! @tag(name: "admin")
-    lockUser(id: ID!, reason: String!): MutationResponse! @tag(name: "admin")
-    unlockUser(id: ID!): MutationResponse! @tag(name: "admin")
+    createUser(input: CreateUserInput!): User! @tag(name: "admin")
+
+    # ADMIN - Soft-delete an account (status DELETED, Keycloak disabled, sessions ended); never a hard delete
+    deleteUser(id: ID!): User! @tag(name: "admin")
+
+    # ADMIN - Mark an alert as seen
+    acknowledgeAlert(id: ID!): SystemAlert! @tag(name: "admin")
+
+    # ADMIN - Publish an announcement to a segment, now or scheduled (startsAt in the future)
+    broadcastNotification(input: BroadcastInput!): SystemAnnouncement! @tag(name: "admin")
+    cancelAnnouncement(id: ID!): SystemAnnouncement! @tag(name: "admin")
+
+    # The caller asks for their own account to be deleted after a 30-day grace period; cancellable until then
+    requestAccountDeletion(reason: String): User!
+    cancelAccountDeletion: User!
+
+    # End one of the caller's own sessions
+    revokeSession(sessionId: ID!): Boolean!
+    updateUser(id: ID!, input: UpdateUserInput!): User! @tag(name: "admin")
+    suspendUser(id: ID!, reason: String!): User! @tag(name: "admin")
+    unsuspendUser(id: ID!): User! @tag(name: "admin")
+    lockUser(id: ID!, reason: String!): Boolean! @tag(name: "admin")
+    unlockUser(id: ID!): Boolean! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Role Management (Multi-Role Support)
@@ -2604,19 +2767,19 @@ type Mutation {
     A user can have multiple roles (e.g., CUSTOMER + ORGANIZER).
     The CUSTOMER role is the base role that all users have.
     """
-    addUserRole(userId: ID!, role: UserType!): UserMutationResponse! @tag(name: "admin")
+    addUserRole(userId: ID!, role: UserType!): User! @tag(name: "admin")
 
     """
     Remove a role from a user.
     Note: The CUSTOMER role cannot be removed as it is the base role.
     """
-    removeUserRole(userId: ID!, role: UserType!): UserMutationResponse! @tag(name: "admin")
+    removeUserRole(userId: ID!, role: UserType!): User! @tag(name: "admin")
 
     """
     Set all roles for a user (replaces existing roles).
     The roles set must include CUSTOMER.
     """
-    setUserRoles(userId: ID!, roles: [UserType!]!): UserMutationResponse! @tag(name: "admin")
+    setUserRoles(userId: ID!, roles: [UserType!]!): User! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Progressive Onboarding (Industry Standard)
@@ -2667,7 +2830,21 @@ type Mutation {
     Changes status from PENDING_REVIEW to APPROVED.
     Organization can now publish events.
     """
-    approveOrganization(id: ID!): Organization @tag(name: "admin")
+    approveOrganization(id: ID!, commissionRate: Float): Organization @tag(name: "admin")
+
+    # ADMIN - Charge this organization its own commission (percentage, 0 to 50), replacing the platform default
+    setOrganizationCommissionRate(organizationId: ID!, rate: Float!, reason: String): Organization @tag(name: "admin")
+
+    # ADMIN/FINANCE - Reject the payout account on file; the owner sees the reason
+    rejectPayoutAccount(organizationId: ID!, reason: String!): Organization @tag(name: "admin")
+    rejectBankAccount(organizationId: ID!, reason: String!): Organization @tag(name: "admin")
+    # ADMIN/FINANCE - Freeze payouts to the account without removing it, and lift the freeze
+    suspendBankAccount(organizationId: ID!, reason: String!): Organization @tag(name: "admin")
+    reinstateBankAccount(organizationId: ID!): Organization @tag(name: "admin")
+
+    # ORGANIZER (owner) - Ask for the organization to be deleted; recoverable until deletionScheduledFor
+    requestOrganizationDeletion(organizationId: ID!, reason: String): Organization @tag(name: "organizer")
+    cancelOrganizationDeletion(organizationId: ID!): Organization @tag(name: "organizer")
 
     """
     Request changes to an organization application.
@@ -2782,7 +2959,7 @@ type Mutation {
     acceptInvitation(token: String!): OrganizationMember @tag(name: "organizer")
 
     # ORGANIZER - Decline invitation (by invitee)
-    declineInvitation(token: String!): TeamInvitation @tag(name: "organizer")
+    declineInvitation(token: String!): Boolean! @tag(name: "organizer")
 
     # ORGANIZER - Update member role
     updateMemberRole(memberId: ID!, input: UpdateMemberRoleInput!): OrganizationMember @tag(name: "organizer")
@@ -2810,6 +2987,8 @@ type Mutation {
     cancelOwnershipTransfer(organizationId: ID!): OwnershipTransferRequest @tag(name: "organizer")
 
     # ORGANIZER - Accept ownership transfer (new owner)
+    # Sends the nominee a one-time code to their verified phone; accepting requires it.
+    requestOwnershipTransferCode(token: String!): Boolean! @tag(name: "organizer")
     acceptOwnershipTransfer(token: String!, confirmationCode: String!): OwnershipTransferRequest @tag(name: "organizer")
 
     # ORGANIZER - Decline ownership transfer (new owner)
@@ -2819,14 +2998,12 @@ type Mutation {
     # Event Access Management
     # ORGANIZER - Event-level access control for team members
     # ─────────────────────────────────────────────────────────────────────
-    # ORGANIZER - Create event owner (internal)
-    createEventOwner(eventId: ID!, organizationId: ID!): EventAccessGrant @tag(name: "internal")
 
     # ORGANIZER - Grant event access
     grantEventAccess(eventId: ID!, organizationId: ID!, userId: ID!, role: EventRole!, customPermissions: [String!], reason: String, expiresAt: DateTime): EventAccessGrant @tag(name: "organizer")
 
     # ORGANIZER - Bulk grant event access
-    bulkGrantEventAccess(eventId: ID!, organizationId: ID!, grants: [EventAccessGrantInput!]!): [EventAccessGrant!] @tag(name: "organizer")
+    bulkGrantEventAccess(eventId: ID!, organizationId: ID!, grants: [BulkEventAccessGrantInput!]!): [EventAccessGrant!] @tag(name: "organizer")
 
     # ORGANIZER - Update event access
     updateEventAccess(accessId: ID!, newRole: EventRole, customPermissions: [String!], expiresAt: DateTime): EventAccessGrant @tag(name: "organizer")
@@ -2839,22 +3016,16 @@ type Mutation {
     # MOBILE - User notification management
     # ─────────────────────────────────────────────────────────────────────
     # MOBILE - Mark notification as read
-    markNotificationRead(notificationId: ID!): Notification @tag(name: "mobile")
+    markNotificationRead(notificationId: ID!): Notification
 
     # MOBILE - Mark all notifications as read
-    markAllNotificationsRead: Int! @tag(name: "mobile")
+    markAllNotificationsRead: Int!
 
     # MOBILE - Delete notification
-    deleteNotification(notificationId: ID!): Boolean! @tag(name: "mobile")
+    deleteNotification(notificationId: ID!): Boolean!
 
     # MOBILE - Update notification preferences
     updateNotificationPreferences(input: UpdateNotificationPreferencesInput!): NotificationPreferences @tag(name: "mobile")
-
-    # ADMIN - Send notification (admin/system)
-    sendNotification(input: SendNotificationInput!): Notification @tag(name: "admin")
-
-    # ADMIN - Send bulk notification
-    sendBulkNotification(userIds: [ID!]!, input: SendNotificationInput!): Int! @tag(name: "admin")
 
     # ─────────────────────────────────────────────────────────────────────
     # Device Management
@@ -2882,9 +3053,6 @@ type Mutation {
     # ADMIN - Update organization status
     updateOrganizationStatus(id: ID!, status: OrganizationStatus!): Organization @tag(name: "admin")
 
-    # ORGANIZER - Transfer ownership (alternative method)
-    transferOrganizationOwnership(organizationId: ID!, newOwnerId: ID!): OrganizationMember @tag(name: "organizer")
-
     # ─────────────────────────────────────────────────────────────────────
     # NOTE: Organizer Profile mutations have been merged into Organization
     # See Organization Onboarding mutations:
@@ -2895,60 +3063,6 @@ type Mutation {
     # - requestOrganizationChanges
     # - rejectOrganization
     # ─────────────────────────────────────────────────────────────────────
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Permission Management
-    # ─────────────────────────────────────────────────────────────────────
-    # ADMIN - Create permission
-    createPermission(name: String!, description: String, category: String): Permission @tag(name: "admin")
-
-    # ADMIN - Update permission
-    updatePermission(id: ID!, name: String, description: String, category: String): Permission @tag(name: "admin")
-
-    # ADMIN - Delete permission
-    deletePermission(id: ID!): Boolean! @tag(name: "admin")
-
-    # ADMIN - Assign permission to role
-    assignPermissionToRole(roleId: ID!, permissionId: ID!): Boolean! @tag(name: "admin")
-
-    # ADMIN - Remove permission from role
-    removePermissionFromRole(roleId: ID!, permissionId: ID!): Boolean! @tag(name: "admin")
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Phone OTP Authentication
-    # ─────────────────────────────────────────────────────────────────────
-    # MOBILE - Request phone OTP
-    requestPhoneOtp(phoneNumber: String!, channel: String): OtpRequestResponse! @tag(name: "mobile")
-
-    # MOBILE - Verify phone OTP
-    verifyPhoneOtp(phoneNumber: String!, otp: String!): PhoneAuthPayload! @tag(name: "mobile")
-
-    # ─────────────────────────────────────────────────────────────────────
-    # User Profile & Verification
-    # ─────────────────────────────────────────────────────────────────────
-    # MOBILE - Send email verification
-    sendEmailVerification: Boolean! @tag(name: "mobile")
-
-    # MOBILE - Verify email
-    verifyEmail(token: String!): User @tag(name: "mobile")
-
-    # MOBILE - Sync email verification status
-    syncEmailVerificationStatus: User @tag(name: "mobile")
-
-    # MOBILE - Update profile
-    updateProfile(input: JSON!): User @tag(name: "mobile")
-
-    # MOBILE - Change password
-    changePassword(oldPassword: String!, newPassword: String!): Boolean! @tag(name: "mobile")
-
-    # MOBILE - Reset password
-    resetPassword(email: String!): Boolean! @tag(name: "mobile")
-
-    # MOBILE - Send phone verification
-    sendPhoneVerification: Boolean! @tag(name: "mobile")
-
-    # MOBILE - Verify phone
-    verifyPhone(code: String!): User @tag(name: "mobile")
 
     # ADMIN - Deactivate user
     deactivateUser(id: ID!): Boolean! @tag(name: "admin")
@@ -2961,7 +3075,7 @@ type Mutation {
     # Secure file upload workflow with OWASP compliance
     # ─────────────────────────────────────────────────────────────────────
     # ORGANIZER - Upload verification document (with file validation)
-    uploadVerificationDocument(input: UploadVerificationDocumentInput!): VerificationDocumentUploadResponse! @tag(name: "organizer")
+    uploadVerificationDocument(input: UploadVerificationDocumentInput!): VerificationDocument! @tag(name: "organizer")
 
     # ORGANIZER - Request presigned upload URL (alternative flow)
     requestDocumentUploadUrl(input: RequestUploadUrlInput!): DocumentUploadUrlResponse! @tag(name: "organizer")

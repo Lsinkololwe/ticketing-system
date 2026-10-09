@@ -46,7 +46,7 @@ the database rather than an invariant somebody remembered.
 directly, including for administrators. That gives every membership a provenance —
 `invitedById`, a token, an acceptance timestamp — which is what a support conversation
 about *who gave this person access* needs. The one exception is the `OWNER` row, created by
-[ET-ORG-001](../001-organizer-onboarding/)'s approval saga, and it is an exception because
+[ET-ORG-001](../001-organizer-onboarding/)'s approval workflow, and it is an exception because
 there is nobody to invite them.
 
 **Invitations carry a token, expire in seven days, and are removed by a TTL index.** The
@@ -78,8 +78,8 @@ the same operation, or a removed member keeps scanner access to a specific event
 
 **The Keycloak mirror is best-effort and reconciled.** Every membership change attempts the
 corresponding group write. A failure does not fail the mutation — MongoDB is the authority
-and authorization does not read groups — but it does record drift, and a reconciliation
-sweep repairs it. The alternative, failing a role change because Keycloak is restarting,
+and authorization does not read groups — but it does record drift, and the
+`identity-group-mirror-repair` Schedule's repair run fixes it within a minute. The alternative, failing a role change because Keycloak is restarting,
 trades a real capability for a mirror nobody reads.
 
 **Rejected alternatives**
@@ -130,7 +130,7 @@ accepted invitation, and no mutation SHALL create one directly.
 
 **Acceptance**
 - [ ] No GraphQL mutation creates an `identity_organization_members` row other than `acceptInvitation`
-- [ ] The `OWNER` row is created only by [ET-ORG-001](../001-organizer-onboarding/)'s approval saga, and that path is named in a comment saying why it is the exception
+- [ ] The `OWNER` row is created only by [ET-ORG-001](../001-organizer-onboarding/)'s approval workflow, and that path is named in a comment saying why it is the exception
 - [ ] Every membership carries `invitedById`, `joinedAt` and the invitation it came from
 - [ ] `inviteTeamMember` requires `OWNER` or `ADMIN` of that organization, and an `ACTIVE` organization
 - [ ] Inviting somebody who is already an active member is refused with `MEMBER_ALREADY_EXISTS`
@@ -188,6 +188,7 @@ within the transfer window before either role changes.
 - [ ] The transfer is a document in `identity_ownership_transfers` with its own token, `expiresAt` from `identity.transfer.ttl` (P3D), and status `PENDING`
 - [ ] No role changes at initiation
 - [ ] `confirmOwnershipTransfer` may be called only by the nominee, and it changes both roles — nominee to `OWNER`, previous owner to `ADMIN` — in one transaction
+- [x] Confirmation also requires a one-time code sent to the nominee's verified phone (`requestOwnershipTransferCode(token)`): scoped to the transfer and nominee, separate from login codes, single-use, 10-minute lifetime, three wrong attempts lock it (`OTP_ATTEMPTS_EXHAUSTED`), one request per 60 s (`OTP_COOLDOWN_ACTIVE`); a caller who is not the nominee is refused before any attempt is counted (added 2026-09-19, F-038)
 - [ ] `cancelOwnershipTransfer` is available to the initiating owner while `PENDING`
 - [ ] An expired transfer changes nothing and is refused
 - [ ] `identity_organizations.ownerId` and `identity_users.primaryOrganizationId` are updated in the same transaction as the roles
@@ -202,8 +203,8 @@ later.
 **Acceptance**
 - [ ] Creating, changing or removing a membership attempts the corresponding add or remove on `/organizations/{slug}/{role-group}`
 - [ ] A Keycloak failure is logged with the organization and user, does not fail the mutation, and marks the membership `mirrorPending`
-- [ ] A scheduled sweep under `lock:sweep:group-mirror` reconciles Keycloak's groups to MongoDB and clears the marker
-- [ ] The sweep is one-directional: MongoDB wins, always; a group membership with no MongoDB row is removed
+- [ ] The `identity-group-mirror-repair` Temporal Schedule (every `PT60S`, overlap `SKIP`) starts `GroupMirrorRepair`, which reconciles Keycloak's groups to MongoDB and clears the marker; no Redis lock exists
+- [ ] The repair is one-directional: MongoDB wins, always; a group membership with no MongoDB row is removed
 - [ ] No authorization decision anywhere reads a Keycloak group — asserted by a lint check for group claims in decision code
 - [ ] The count of pending mirrors is a metric and alerts when it stays non-zero
 
@@ -315,7 +316,7 @@ cannot be silently repointed at a different role.
 └── contributors
 ```
 
-Created by [ET-ORG-001](../001-organizer-onboarding/)'s saga step 5. Written from MongoDB
+Created by [ET-ORG-001](../001-organizer-onboarding/)'s workflow step 5. Written from MongoDB
 by this spec. **Read by no authorization decision, ever.**
 
 ### GraphQL
@@ -342,6 +343,7 @@ Subgraph `identity`. Every field carries `@auth` explicitly.
 | `removeMember(organizationId, memberId)` | mutation | `ORGANIZER` | `OrganizationMember!` |
 | `leaveOrganization(organizationId)` | mutation | `AUTHENTICATED` | `Boolean!` |
 | `initiateOwnershipTransfer(input)` | mutation | `ORGANIZER` | `OwnershipTransfer!` |
+| `requestOwnershipTransferCode(token)` | mutation | `AUTHENTICATED` | `Boolean!` |
 | `confirmOwnershipTransfer(token)` | mutation | `AUTHENTICATED` | `Organization!` |
 | `cancelOwnershipTransfer(id)` | mutation | `ORGANIZER` | `OwnershipTransfer!` |
 
@@ -359,18 +361,16 @@ never sufficient ([ET-PLT-007](../../_platform/007-security-and-authorization/) 
 |---|---|---|---|
 | bus | `identity.MemberRoleChanged` v1 | `updateMemberRole`, transfer confirmation | catalog, booking → invalidate |
 | bus | `identity.MemberRemoved` v1 | removal, departure | catalog, booking → invalidate |
-| module | `TeamMemberJoinedEvent` | acceptance | notify the inviter and the owner |
-| module | `InvitationCreatedEvent` | invitation, resend | send the invitation |
-| module | `OwnershipTransferredEvent` | confirmation | notify both parties |
+
 
 Both bus rows are session-keyed on `organizationId`
-([ET-PLT-003 §4](../../_platform/003-event-contract/)).
+([ET-PLT-003 §4](../../_platform/003-event-contract/)). Joining, invitation and ownership messages are
+`NotificationWorkflow` requests; the ownership hand-over itself is `OwnershipTransferWorkflow`
+([ET-PLT-015](../../_platform/015-durable-execution/) §4). None is an in-memory event.
 
 ### Redis keys
 
-| Key | TTL | Purpose |
-|---|---|---|
-| `lock:sweep:group-mirror` | 30 s | the R8 reconciliation mutex |
+None. The mirror repair's mutex is its Schedule's overlap policy.
 
 ### Configuration
 
@@ -438,10 +438,10 @@ Both bus rows are session-keyed on `organizationId`
   - parallel-safe: no
   - depends: T6
 
-- [ ] **T8 · The Keycloak mirror, `mirrorPending`, the reconciliation sweep**
+- [ ] **T8 · The Keycloak mirror, `mirrorPending`, the repair Schedule**
   - requirements: R8
-  - files: `backend/identity-service/.../infrastructure/keycloak/`, `.../scheduler/`
-  - verify: a Keycloak outage does not fail a role change; the sweep repairs both directions
+  - files: `backend/identity-service/.../infrastructure/keycloak/`, `.../workflow/mirror/`
+  - verify: a Keycloak outage does not fail a role change; the repair run fixes both directions
   - parallel-safe: yes
   - depends: T6
 
@@ -456,7 +456,7 @@ Both bus rows are session-keyed on `organizationId`
 
 | Capability | Spec |
 |---|---|
-| The organization's own lifecycle and the approval saga | [ET-ORG-001](../001-organizer-onboarding/) |
+| The organization's own lifecycle and the approval workflow | [ET-ORG-001](../001-organizer-onboarding/) |
 | The permission catalogue, resolution order, event access grants | [ET-ORG-003](../003-permission-resolution/) |
 | Realm roles, `@auth`, token validation, tenant scoping | [ET-PLT-007](../../_platform/007-security-and-authorization/) |
 | Sending the invitation on email, SMS or WhatsApp | [ET-NTF-001](../../notification/001-notification-transport/), [ET-NTF-002](../../notification/002-lifecycle-triggers/) |
@@ -468,3 +468,27 @@ Deliberately never in scope: **a direct `addMember` mutation** (removes provenan
 memberships most likely to be questioned), **unilateral or administrator-driven ownership
 transfer** (hands a business to somebody who has not agreed to receive it), and **reading
 organization role from Keycloak groups** (stale for a token lifetime after every change).
+
+---
+
+## Amendment, 2026-10-04 — invitations by phone, member contacts, organization-wide grants
+
+### ET-ORG-002-R9 · Invite by WhatsApp number
+
+WHEN an inviter names an email, a WhatsApp number or both, THE SYSTEM SHALL create one invitation addressed to what was named.
+
+**Acceptance**
+- [ ] `InviteMemberInput.email` is optional; an invitation needs at least one of email and `phoneNumber`
+- [ ] The number is normalised to E.164 before it is stored, matched and superseded on; a number that does not parse is refused with `CONTACT_INVALID`
+- [ ] A phone-only invitation is delivered on WhatsApp through the existing notification chain
+- [ ] Acceptance requires the caller to be the addressee: by the account's own fields, or by owning the verified contact (WhatsApp or email) the invitation was sent to; anyone else is refused with `INVITATION_NOT_ADDRESSED_TO_CALLER`
+- [ ] A re-invitation to the same number supersedes the live one in the same transaction
+- [ ] `myPendingInvitations` includes invitations sent to the caller's verified WhatsApp numbers
+
+### ET-ORG-002-R10 · Member contacts and organization-wide grants
+
+**Acceptance**
+- [ ] `OrganizationMember.contactEmailMasked` / `contactPhoneMasked` return the masked verified contacts to the organization's owners and admins and to platform administrators, and null to everyone else
+- [ ] `organizationEventAccessGrants(organizationId)` returns every grant in the organization to its members and to platform administrators, and nothing to anyone else
+
+**Tests** `TeamInvitationPhoneTest` (L2)

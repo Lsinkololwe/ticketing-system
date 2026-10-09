@@ -63,13 +63,6 @@ public enum KybStatus {
     }
 
     /**
-     * Check if KYB is in a state that allows editing
-     */
-    public boolean canEditKyb() {
-        return this == NOT_STARTED || this == IN_PROGRESS || this == CHANGES_REQUESTED;
-    }
-
-    /**
      * Check if KYB can be submitted for review
      */
     public boolean canSubmitForReview() {

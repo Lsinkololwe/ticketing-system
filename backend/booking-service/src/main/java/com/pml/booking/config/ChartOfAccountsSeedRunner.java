@@ -42,6 +42,7 @@ import org.springframework.stereotype.Component;
  * ├── 5020 - Chargeback Losses
  * ├── 5030 - Chargeback Fees
  * ├── 5040 - Bad Debt Expense
+ * ├── 5050 - Account Verification Costs
  * </pre>
  *
  * <h2>Configuration</h2>

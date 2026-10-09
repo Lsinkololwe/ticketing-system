@@ -24,7 +24,7 @@ what exists, which is a much smaller and differently-shaped surface.**
 | `confirmBankVerification(id, amt)` | **no** |
 
 **0 of 7 present.** What exists instead:
-`payoutRequestsByOrganizerOffsetPagination`, `bankAccountsByOrganizer`,
+`payoutRequestsByOrganizer`, `bankAccountsByOrganizer`,
 `createPayoutRequest`, `cancelPayoutRequest`, plus the CRUD bank-account
 mutations. Same intent, different names and shapes.
 

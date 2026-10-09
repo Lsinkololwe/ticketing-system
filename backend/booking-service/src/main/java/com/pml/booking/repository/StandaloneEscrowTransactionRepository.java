@@ -10,7 +10,6 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -91,35 +90,6 @@ public interface StandaloneEscrowTransactionRepository
             TransactionType type
     );
 
-    /**
-     * Find transactions by escrow account and category.
-     *
-     * @param escrowAccountId The escrow account ID
-     * @param category Transaction category (TICKET_SALE, REFUND, PAYOUT, etc.)
-     * @return Flux of matching transactions
-     */
-    Flux<StandaloneEscrowTransaction> findByEscrowAccountIdAndCategory(
-            String escrowAccountId,
-            String category
-    );
-
-    /**
-     * Count transactions for an escrow account.
-     *
-     * @param escrowAccountId The escrow account ID
-     * @return Mono<Long> count of transactions
-     */
-    Mono<Long> countByEscrowAccountId(String escrowAccountId);
-
-    /**
-     * Count transactions by type for an escrow account.
-     *
-     * @param escrowAccountId The escrow account ID
-     * @param type Transaction type
-     * @return Mono<Long> count
-     */
-    Mono<Long> countByEscrowAccountIdAndType(String escrowAccountId, TransactionType type);
-
     // ========================================================================
     // REFERENCE LOOKUPS (Business Entity Links)
     // ========================================================================
@@ -145,22 +115,6 @@ public interface StandaloneEscrowTransactionRepository
     Mono<StandaloneEscrowTransaction> findByPaymentIntentId(String paymentIntentId);
 
     /**
-     * Find transaction by refund request ID.
-     *
-     * @param refundRequestId The refund request ID
-     * @return Mono containing the transaction if found
-     */
-    Mono<StandaloneEscrowTransaction> findByRefundRequestId(String refundRequestId);
-
-    /**
-     * Find transaction by payout request ID.
-     *
-     * @param payoutRequestId The payout request ID
-     * @return Mono containing the transaction if found
-     */
-    Mono<StandaloneEscrowTransaction> findByPayoutRequestId(String payoutRequestId);
-
-    /**
      * Find transaction by chargeback ID.
      *
      * @param chargebackId The chargeback record ID
@@ -178,19 +132,6 @@ public interface StandaloneEscrowTransactionRepository
      */
     Flux<StandaloneEscrowTransaction> findByJournalEntryId(String journalEntryId);
 
-    // ========================================================================
-    // TIME RANGE QUERIES
-    // ========================================================================
-
-    /**
-     * Find transactions within a time range.
-     *
-     * @param startTime Start of time range (inclusive)
-     * @param endTime End of time range (inclusive)
-     * @return Flux of transactions within the range
-     */
-    Flux<StandaloneEscrowTransaction> findByTimestampBetween(Instant startTime, Instant endTime);
-
     /**
      * Find transactions for an account within a time range.
      *
@@ -203,18 +144,6 @@ public interface StandaloneEscrowTransactionRepository
             String escrowAccountId,
             Instant startTime,
             Instant endTime
-    );
-
-    /**
-     * Find the most recent transaction for an escrow account.
-     *
-     * <p>Useful for getting the current balance without querying the escrow document.</p>
-     *
-     * @param escrowAccountId The escrow account ID
-     * @return Mono containing the most recent transaction
-     */
-    Mono<StandaloneEscrowTransaction> findFirstByEscrowAccountIdOrderByTimestampDesc(
-            String escrowAccountId
     );
 
     // ========================================================================
@@ -250,36 +179,6 @@ public interface StandaloneEscrowTransactionRepository
             TransactionType type
     );
 
-    /**
-     * Sum transaction amounts by escrow account and category.
-     *
-     * <p>Returns AggregationResult wrapper to avoid Java 21+ module reflection issues.</p>
-     *
-     * @param escrowAccountId The escrow account ID
-     * @param category Transaction category
-     * @return Mono<AggregationResult> containing total amount
-     */
-    @Aggregation(pipeline = {
-        "{ $match: { escrowAccountId: ?0, category: ?1 } }",
-        "{ $group: { _id: null, total: { $sum: '$amount' } } }",
-        "{ $project: { _id: 0, total: 1 } }"
-    })
-    Mono<AggregationResult> sumAmountByEscrowAccountIdAndCategory(
-            String escrowAccountId,
-            String category
-    );
-
-    /**
-     * Count transactions by category for an escrow account.
-     *
-     * <p>Useful for dashboard statistics.</p>
-     *
-     * @param escrowAccountId The escrow account ID
-     * @param category Transaction category
-     * @return Mono<Long> count
-     */
-    Mono<Long> countByEscrowAccountIdAndCategory(String escrowAccountId, String category);
-
     // ========================================================================
     // CATEGORY QUERIES
     // ========================================================================
@@ -290,74 +189,6 @@ public interface StandaloneEscrowTransactionRepository
      * @return Flux of ticket sale transactions
      */
     Flux<StandaloneEscrowTransaction> findByCategory(String category);
-
-    /**
-     * Find ticket sales for an escrow account.
-     *
-     * @param escrowAccountId The escrow account ID
-     * @return Flux of ticket sale transactions
-     */
-    default Flux<StandaloneEscrowTransaction> findTicketSalesByEscrowAccountId(
-            String escrowAccountId
-    ) {
-        return findByEscrowAccountIdAndCategory(
-                escrowAccountId,
-                StandaloneEscrowTransaction.CATEGORY_TICKET_SALE
-        );
-    }
-
-    /**
-     * Find refunds for an escrow account.
-     *
-     * @param escrowAccountId The escrow account ID
-     * @return Flux of refund transactions
-     */
-    default Flux<StandaloneEscrowTransaction> findRefundsByEscrowAccountId(
-            String escrowAccountId
-    ) {
-        return findByEscrowAccountIdAndCategory(
-                escrowAccountId,
-                StandaloneEscrowTransaction.CATEGORY_REFUND
-        );
-    }
-
-    /**
-     * Find payouts for an escrow account.
-     *
-     * @param escrowAccountId The escrow account ID
-     * @return Flux of payout transactions
-     */
-    default Flux<StandaloneEscrowTransaction> findPayoutsByEscrowAccountId(
-            String escrowAccountId
-    ) {
-        return findByEscrowAccountIdAndCategory(
-                escrowAccountId,
-                StandaloneEscrowTransaction.CATEGORY_PAYOUT
-        );
-    }
-
-    // ========================================================================
-    // HELPER METHODS FOR BALANCE CALCULATION
-    // ========================================================================
-
-    /**
-     * Calculate the expected balance for an escrow account.
-     *
-     * <p>Convenience method combining credit and debit sums.</p>
-     *
-     * @param escrowAccountId The escrow account ID
-     * @return Mono<BigDecimal> calculated balance (credits - debits)
-     */
-    default Mono<BigDecimal> calculateBalanceByEscrowAccountId(String escrowAccountId) {
-        return Mono.zip(
-                sumAmountByEscrowAccountIdAndType(escrowAccountId, TransactionType.CREDIT)
-                        .map(AggregationResult::getTotal)
-                        .defaultIfEmpty(BigDecimal.ZERO),
-                sumAmountByEscrowAccountIdAndType(escrowAccountId, TransactionType.DEBIT)
-                        .map(AggregationResult::getTotal)
-                        .defaultIfEmpty(BigDecimal.ZERO)
-        ).map(tuple -> tuple.getT1().subtract(tuple.getT2()));
-    }
 
     // ========================================================================
     // RECONCILIATION QUERIES

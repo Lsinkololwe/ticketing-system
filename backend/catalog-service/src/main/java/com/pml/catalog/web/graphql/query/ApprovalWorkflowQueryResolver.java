@@ -6,7 +6,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.domain.model.ApprovalEscalation;
 import com.pml.catalog.domain.model.ApprovalTimeline;
 import com.pml.catalog.domain.model.PlatformConfiguration;
-import com.pml.catalog.dto.*;
+import com.pml.catalog.web.graphql.dto.*;
 import com.pml.catalog.service.ApprovalEscalationService;
 import com.pml.catalog.service.ApprovalTimelineService;
 import com.pml.catalog.service.ApprovalWorkflowService;
@@ -16,8 +16,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
-
-import java.util.List;
 
 /**
  * GraphQL Query Resolver for Approval Workflow queries.
@@ -63,76 +61,37 @@ public class ApprovalWorkflowQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineOffsetPage> approvalTimelinesOffsetPagination(
+    public Mono<ApprovalTimelineOffsetPage> approvalTimelines(
             @InputArgument ApprovalTimelineFilterInput filter,
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: approvalTimelinesOffsetPagination");
+        log.debug("GraphQL query: approvalTimelines");
         return timelineService.findTimelinesOffsetPagination(filter, pagination);
     }
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineOffsetPage> approvalTimelinesByOrganizerOffsetPagination(
+    public Mono<ApprovalTimelineOffsetPage> approvalTimelinesByOrganizer(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: approvalTimelinesByOrganizerOffsetPagination(organizerId={})", organizerId);
+        log.debug("GraphQL query: approvalTimelinesByOrganizer(organizerId={})", organizerId);
         return timelineService.findByOrganizerOffsetPagination(organizerId, pagination);
     }
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineOffsetPage> pendingApprovalTimelinesOffsetPagination(
+    public Mono<ApprovalTimelineOffsetPage> pendingApprovalTimelines(
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: pendingApprovalTimelinesOffsetPagination");
+        log.debug("GraphQL query: pendingApprovalTimelines");
         return timelineService.findPendingOffsetPagination(pagination);
     }
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineOffsetPage> overdueApprovalTimelinesOffsetPagination(
+    public Mono<ApprovalTimelineOffsetPage> overdueApprovalTimelines(
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: overdueApprovalTimelinesOffsetPagination");
+        log.debug("GraphQL query: overdueApprovalTimelines");
         return timelineService.findOverdueOffsetPagination(pagination);
     }
-
-    // ==========================================
-    // Cursor Pagination Queries
-    // ==========================================
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineConnection> approvalTimelinesCursorPagination(
-            @InputArgument ApprovalTimelineFilterInput filter,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: approvalTimelinesCursorPagination");
-        return timelineService.findTimelinesCursorPagination(filter, pagination);
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineConnection> approvalTimelinesByOrganizerCursorPagination(
-            @InputArgument String organizerId,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: approvalTimelinesByOrganizerCursorPagination(organizerId={})", organizerId);
-        return timelineService.findByOrganizerCursorPagination(organizerId, pagination);
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineConnection> pendingApprovalTimelinesCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: pendingApprovalTimelinesCursorPagination");
-        return timelineService.findPendingCursorPagination(pagination);
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalTimelineConnection> overdueApprovalTimelinesCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: overdueApprovalTimelinesCursorPagination");
-        return timelineService.findOverdueCursorPagination(pagination);
-    }
-
     // ==========================================
     // Escalation Queries
     // ==========================================
@@ -146,9 +105,9 @@ public class ApprovalWorkflowQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalEscalationOffsetPage> activeEscalationsOffsetPagination(
+    public Mono<ApprovalEscalationOffsetPage> activeEscalations(
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: activeEscalationsOffsetPagination");
+        log.debug("GraphQL query: activeEscalations");
         return escalationService.findActiveOffsetPagination(pagination);
     }
 
@@ -158,34 +117,12 @@ public class ApprovalWorkflowQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalEscalationOffsetPage> myEscalationsOffsetPagination(
+    public Mono<ApprovalEscalationOffsetPage> myEscalations(
             @InputArgument OffsetPaginationInput pagination) {
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(adminId -> log.debug("GraphQL query: myEscalationsOffsetPagination(adminId={})", adminId))
+                .doOnNext(adminId -> log.debug("GraphQL query: myEscalations(adminId={})", adminId))
                 .flatMap(adminId -> escalationService.findByAdminOffsetPagination(adminId, pagination));
     }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalEscalationConnection> activeEscalationsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: activeEscalationsCursorPagination");
-        return escalationService.findActiveCursorPagination(pagination);
-    }
-
-    /**
-     * Get escalations assigned to the current admin (cursor pagination).
-     * adminId is extracted from JWT - OWASP A01:2021 compliance
-     */
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApprovalEscalationConnection> myEscalationsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(adminId -> log.debug("GraphQL query: myEscalationsCursorPagination(adminId={})", adminId))
-                .flatMap(adminId -> escalationService.findByAdminCursorPagination(adminId, pagination));
-    }
-
     // ==========================================
     // Statistics Query
     // ==========================================

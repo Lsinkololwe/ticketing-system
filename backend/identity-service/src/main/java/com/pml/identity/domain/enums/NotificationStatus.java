@@ -27,5 +27,11 @@ public enum NotificationStatus {
     /**
      * Notification failed to send or deliver
      */
-    FAILED
+    FAILED,
+
+    /**
+     * Not sent, because the recipient switched off this optional category, every channel it could
+     * use, or it fell in their quiet hours. Recorded rather than dropped, with the reason.
+     */
+    SUPPRESSED
 }

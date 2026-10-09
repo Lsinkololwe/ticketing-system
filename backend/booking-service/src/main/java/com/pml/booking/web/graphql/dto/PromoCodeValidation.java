@@ -42,14 +42,4 @@ public class PromoCodeValidation {
                 .discountAmount(discountAmount)
                 .build();
     }
-
-    /**
-     * Factory method for an invalid promo code.
-     */
-    public static PromoCodeValidation invalid(String errorMessage) {
-        return PromoCodeValidation.builder()
-                .valid(false)
-                .errorMessage(errorMessage)
-                .build();
-    }
 }

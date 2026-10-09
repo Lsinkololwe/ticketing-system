@@ -1,5 +1,7 @@
 package com.pml.booking.service;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.web.graphql.dto.stats.TicketCategoryStats;
 import com.pml.booking.web.graphql.dto.stats.TicketStats;
 import com.pml.booking.web.graphql.dto.stats.TicketStatusStats;
@@ -7,21 +9,17 @@ import com.pml.booking.domain.model.Ticket;
 import com.pml.shared.constants.TicketStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.ConvertOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-
 import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
 
 /**
@@ -104,7 +102,7 @@ public class TicketStatsService {
 
         Aggregation aggregation = newAggregation(operations);
 
-        return mongoTemplate.aggregate(aggregation, "tickets", StatusAggResult.class)
+        return mongoTemplate.aggregate(aggregation, BookingCollections.TICKETS, StatusAggResult.class)
                 .collectList()
                 .map(results -> {
                     int total = results.stream().mapToInt(StatusAggResult::getCount).sum();
@@ -162,7 +160,7 @@ public class TicketStatsService {
                 sort(Sort.Direction.DESC, "count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "tickets", CategoryAggResult.class)
+        return mongoTemplate.aggregate(aggregation, BookingCollections.TICKETS, CategoryAggResult.class)
                 .collectList()
                 .map(results -> {
                     int total = results.stream().mapToInt(CategoryAggResult::getCount).sum();
@@ -197,7 +195,7 @@ public class TicketStatsService {
 
         Aggregation aggregation = newAggregation(operations);
 
-        return mongoTemplate.aggregate(aggregation, "tickets", Ticket.class)
+        return mongoTemplate.aggregate(aggregation, BookingCollections.TICKETS, Ticket.class)
                 .collectList();
     }
 

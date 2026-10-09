@@ -14,16 +14,14 @@ import java.math.BigDecimal;
 public record TransactionSummaryResult(
         long totalTransactions,
         long pendingTransactions,
-        long processingTransactions,
         long completedTransactions,
         long failedTransactions,
-        long cancelledTransactions,
         BigDecimal totalVolume,
         BigDecimal totalCommissions
 ) {
     public static TransactionSummaryResult empty() {
         return new TransactionSummaryResult(
-                0L, 0L, 0L, 0L, 0L, 0L,
+                0L, 0L, 0L, 0L,
                 BigDecimal.ZERO, BigDecimal.ZERO
         );
     }

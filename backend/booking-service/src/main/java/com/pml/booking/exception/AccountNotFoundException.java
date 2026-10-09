@@ -69,19 +69,6 @@ public class AccountNotFoundException extends RuntimeException {
         this.accountCode = null;
     }
 
-    /**
-     * Static factory for creating exception from account code lookup.
-     *
-     * @param accountCode The account code that was not found
-     * @return New AccountNotFoundException
-     */
-    public static AccountNotFoundException forAccountCode(String accountCode) {
-        return new AccountNotFoundException(
-                accountCode,
-                "Ensure the account exists in the Chart of Accounts."
-        );
-    }
-
     // Getter
 
     public String getAccountCode() {

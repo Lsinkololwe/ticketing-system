@@ -1,5 +1,7 @@
 package com.pml.identity.service;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.identity.domain.enums.AccountStatus;
 import com.pml.identity.web.graphql.dto.stats.UserStats;
 import com.pml.identity.web.graphql.dto.stats.UserStatusStats;
@@ -34,6 +36,9 @@ public class UserStatsService {
 
     private final ReactiveMongoTemplate mongoTemplate;
 
+
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     /**
      * Compute comprehensive user statistics using MongoDB aggregation.
      *
@@ -111,7 +116,7 @@ public class UserStatsService {
                 sort(Sort.Direction.DESC, "count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "users", TypeAggResult.class)
+        return mongoTemplate.aggregate(aggregation, IdentityCollections.USERS, TypeAggResult.class)
                 .collectList()
                 .map(results -> {
                     int total = results.stream().mapToInt(TypeAggResult::getCount).sum();
@@ -146,7 +151,7 @@ public class UserStatsService {
                 sort(Sort.Direction.DESC, "count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "users", TypeAggResult.class)
+        return mongoTemplate.aggregate(aggregation, IdentityCollections.USERS, TypeAggResult.class)
                 .collectList()
                 .map(results -> {
                     int total = results.stream().mapToInt(TypeAggResult::getCount).sum();
@@ -182,7 +187,7 @@ public class UserStatsService {
                 count().as("count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "users", CountResult.class)
+        return mongoTemplate.aggregate(aggregation, IdentityCollections.USERS, CountResult.class)
                 .singleOrEmpty()
                 .map(CountResult::getCount)
                 .defaultIfEmpty(0);
@@ -197,7 +202,7 @@ public class UserStatsService {
                 count().as("count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "users", CountResult.class)
+        return mongoTemplate.aggregate(aggregation, IdentityCollections.USERS, CountResult.class)
                 .singleOrEmpty()
                 .map(CountResult::getCount)
                 .defaultIfEmpty(0);
@@ -207,7 +212,7 @@ public class UserStatsService {
      * Get count of new users registered this month.
      */
     private Mono<Integer> getNewUsersThisMonthCount() {
-        LocalDateTime startOfMonth = LocalDateTime.now()
+        LocalDateTime startOfMonth = LocalDateTime.now(clock)
                 .with(TemporalAdjusters.firstDayOfMonth())
                 .withHour(0).withMinute(0).withSecond(0).withNano(0);
 
@@ -216,7 +221,7 @@ public class UserStatsService {
                 count().as("count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "users", CountResult.class)
+        return mongoTemplate.aggregate(aggregation, IdentityCollections.USERS, CountResult.class)
                 .singleOrEmpty()
                 .map(CountResult::getCount)
                 .defaultIfEmpty(0);
@@ -226,7 +231,7 @@ public class UserStatsService {
      * Get count of new users registered this week.
      */
     private Mono<Integer> getNewUsersThisWeekCount() {
-        LocalDateTime startOfWeek = LocalDateTime.now()
+        LocalDateTime startOfWeek = LocalDateTime.now(clock)
                 .with(java.time.DayOfWeek.MONDAY)
                 .withHour(0).withMinute(0).withSecond(0).withNano(0);
 
@@ -235,7 +240,7 @@ public class UserStatsService {
                 count().as("count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "users", CountResult.class)
+        return mongoTemplate.aggregate(aggregation, IdentityCollections.USERS, CountResult.class)
                 .singleOrEmpty()
                 .map(CountResult::getCount)
                 .defaultIfEmpty(0);
@@ -245,12 +250,12 @@ public class UserStatsService {
      * Get count of users registered last month (for growth calculation).
      */
     private Mono<Integer> getLastMonthUsersCount() {
-        LocalDateTime startOfLastMonth = LocalDateTime.now()
+        LocalDateTime startOfLastMonth = LocalDateTime.now(clock)
                 .minusMonths(1)
                 .with(TemporalAdjusters.firstDayOfMonth())
                 .withHour(0).withMinute(0).withSecond(0).withNano(0);
 
-        LocalDateTime endOfLastMonth = LocalDateTime.now()
+        LocalDateTime endOfLastMonth = LocalDateTime.now(clock)
                 .with(TemporalAdjusters.firstDayOfMonth())
                 .minusDays(1)
                 .withHour(23).withMinute(59).withSecond(59).withNano(999999999);
@@ -260,7 +265,7 @@ public class UserStatsService {
                 count().as("count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "users", CountResult.class)
+        return mongoTemplate.aggregate(aggregation, IdentityCollections.USERS, CountResult.class)
                 .singleOrEmpty()
                 .map(CountResult::getCount)
                 .defaultIfEmpty(0);

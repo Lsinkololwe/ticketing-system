@@ -2,6 +2,12 @@
 
 > **Conformance** · PDI Phase 5 payment idempotency · V3 §3.2 fund flow · V3 §8 payment integration
 
+> **Amended 2026-10-04 (D-42, D-38; F-044).** **Mobile money only — there are no cards** and no card-shaped field, provider or
+> state anywhere in the intent. The **payer's mobile-money number is entered at payment and is separate from the buyer's contact**:
+> a buyer may sign in with an email, or with one WhatsApp number, and pay from another subscriber's wallet. The payer number is
+> never used to identify, merge or contact the account. A reservation precedes payment and exists only for a verified, ACTIVE
+> buyer ([ET-TKT-001](../../ticketing/001-reservation-and-hold/) R9).
+
 ## 1. Capability
 
 Every ticket this platform sells is paid for from a mobile-money wallet on a handset in
@@ -106,6 +112,17 @@ key.
 - [ ] The intent is written and **committed** before the provider is called
 - [ ] The intent records `reservationId`, `amount`, `currency`, `msisdn`, `provider`, `status`, `idempotencyKey`
 
+### ET-PAY-001-R8 · Payer number is independent of the buyer's contact; no cards *(added 2026-10-04)*
+
+THE SYSTEM SHALL accept only mobile-money instruments and SHALL treat the payer number as payment data, not identity.
+
+**Acceptance**
+- [ ] `initiatePayment` accepts a mobile-money `msisdn` and no card number, token, PAN or card-provider field; a schema test finds none
+- [ ] The intent's `msisdn` may differ from every contact of the buyer's account; the payment succeeds and the account is unchanged
+- [ ] The payer `msisdn` is encrypted at rest as a DIRECT PII field ([ET-PLT-008](../../_platform/008-data-protection/)), masked in logs and receipts, and excluded from workflow ids and search attributes
+- [ ] A refund returns to the original payer number, not to a contact
+- [ ] Receipts and ticket messages go to the buyer's contact channels ([ET-NTF-001](../../notification/001-notification-transport/)), never to the payer number unless it is also a contact
+
 ### ET-PAY-001-R2 · Six states, and only one of them releases the seat
 
 THE SYSTEM SHALL admit exactly the six intent states of §4, and only `FAILED` and
@@ -139,7 +156,7 @@ WHEN a payment is initiated, THE SYSTEM SHALL derive the mobile-money operator f
 MSISDN, and IF it cannot, THEN THE SYSTEM SHALL refuse before calling the provider.
 
 **Acceptance**
-- [ ] The MSISDN is normalised to E.164 by `shared-library`'s `PhoneNumbers` ([ET-IDN-001](../../identity/001-phone-otp-identity/) R1)
+- [ ] The MSISDN is normalised to E.164 by the same `shared-library` contact normaliser ([ET-IDN-001](../../identity/001-phone-otp-identity/) R1, `regionHint` `ZM` for local `0…` numbers), but it is **not** hashed into a contact, never stored in `identity_contacts`, and never creates or changes an account
 - [ ] Zambian prefixes map deterministically to `MTN`, `AIRTEL` and `ZAMTEL` in one declared table
 - [ ] An unroutable number is refused with `MSISDN_PROVIDER_UNSUPPORTED` carrying `supportedProviders`, and no intent is created
 - [ ] The buyer is never asked to select their network
@@ -149,16 +166,16 @@ MSISDN, and IF it cannot, THEN THE SYSTEM SHALL refuse before calling the provid
 ### ET-PAY-001-R5 · A pending payment is polled, then escalated — never assumed failed
 
 WHILE an intent is `PENDING`, THE SYSTEM SHALL poll the provider on a backoff schedule, and
-IF it is still pending past the limit, THEN THE SYSTEM SHALL escalate it with the inventory
-still held.
+IF it is still pending past the limit, THEN THE SYSTEM SHALL escalate it and keep polling,
+never assuming it failed.
 
 **Acceptance**
-- [ ] A poll sweep under `lock:sweep:payment-poll` queries the provider for every `PENDING` intent on the §4 backoff schedule
+- [ ] The reservation's `PurchaseWorkflow` polls the provider for its `PENDING` intent — 10 s doubling to 5 min, hourly once escalated ([ET-TKT-001](../../ticketing/001-reservation-and-hold/) R8); no sweep or lock exists
 - [ ] Polling stops at the first terminal answer
 - [ ] An intent still `PENDING` past `booking.payment.max-pending` (PT30M) is flagged `needsReview` and surfaced to [ET-ADM-003](../../admin/003-transaction-recovery/)
-- [ ] An escalated intent does **not** release its reservation
+- [ ] An escalated intent keeps being polled; its seats return at the reservation's expiry plus the seat grace, and a success verified after that is escalated as `PAID_AFTER_EXPIRY` for refund
 - [ ] No exception, timeout or connection failure transitions an intent to `FAILED`
-- [ ] A test simulates a provider that never answers and asserts the intent is escalated, the seat is still held, and no refund is attempted
+- [ ] A time-skipping test simulates a provider that never answers and asserts the intent is escalated and never marked `FAILED`, and that no refund is attempted without a verified success
 - [ ] The count of intents past `max-pending` is a metric and alerts
 
 ### ET-PAY-001-R6 · The amount is verified at every step
@@ -189,6 +206,35 @@ timeout, from a contained adapter.
 
 ## 4. Model
 
+> **Reconciliation note, 2026-09-01 — `paymentAttempts` · **absent**, and the reason is a model gap.**
+>
+> **Corrected 2026-09-01.** This was first classified `contradicted` and grouped with F-001's
+> caller-scoped reads, on the strength of its candidates all being `paymentAttemptsBy*` forms.
+> That was wrong, and re-reading §4 against the model shows why: this operation is declared
+> `ADMIN` and keyed by **`intentId`**, so tenant scoping was never the question.
+>
+> **`PaymentAttempt` carries no link to a `PaymentIntent` at all** — no `intentId`, no
+> `paymentIntentId`, and no finder. The document records `organizationId`, `organizerId` and
+> `buyerId` and nothing that ties an attempt to the intent it was an attempt at. So §4 asks for a
+> query over a relationship the model does not record, and the six shipped
+> `paymentAttemptsBy{Buyer,Event,Reservation,Status}` variants are not near-misses of it; they
+> answer different questions entirely.
+>
+> Classified **`absent`**. Satisfying it means adding the linkage first, which is a §4 model change
+> in this spec, not a rename and not an F-001 conversion.
+> Six `paymentAttemptsBy*` variants, every one taking a caller-supplied id, against §4's single
+> admin-scoped `paymentAttempts(intentId)`. Neither a rename nor a collapse settles it; the scoping
+> does. Deferred to F-001's read-path conversion.
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 2 operation names below adopt the
+> shipped names: `cancelPayment` → `cancelPaymentAttempt`, `initiatePayment` → `initiatePaymentAttempt`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
+
 ### Documents
 
 `booking_payment_intents`
@@ -215,7 +261,7 @@ timeout, from a contained adapter.
 | Field | Type | Notes |
 |---|---|---|
 | `_id`, `paymentIntentId` | `String` | |
-| `attemptType` | `AttemptType` | `COLLECT`, `POLL`, `REFUND` |
+| `attemptType` | `AttemptType` | `COLLECT`, `REFUND`, `PAYOUT`, `VERIFICATION` — every provider call, collections and money sent out alike, is one row keyed by the reference sent to the provider; `refundRequestId`, `payoutRequestId` and `bankAccountId` link a row to what it paid |
 | `providerReference` | `String` | unique sparse |
 | `providerStatusRaw`, `providerMessageRaw` | `String` | **logged, never returned** |
 | `mappedStatus` | `PaymentStatus` | the translation |
@@ -316,8 +362,8 @@ Subgraph `booking`. Every field carries `@auth` explicitly.
 |---|---|---|---|
 | `paymentIntent(id)` | query | `AUTHENTICATED` | `PaymentIntent` |
 | `paymentIntentForReservation(reservationId)` | query | `AUTHENTICATED` | `PaymentIntent` |
-| `initiatePayment(input)` | mutation | `CUSTOMER` | `PaymentIntent!` |
-| `cancelPayment(id)` | mutation | `CUSTOMER` | `PaymentIntent!` |
+| `initiatePaymentAttempt(input)` | mutation | `CUSTOMER` | `PaymentIntent!` |
+| `cancelPaymentAttempt(id)` | mutation | `CUSTOMER` | `PaymentIntent!` |
 | `paymentAttempts(intentId)` | query | `ADMIN` | `[PaymentAttempt!]!` `@tag(name: "admin")` |
 
 ```graphql
@@ -336,18 +382,17 @@ or `providerReference` outside the `@tag(name: "admin")` attempt type.
 
 | Tier | Name | When | Consumers |
 |---|---|---|---|
-| module | `PaymentSubmittedEvent` | state 2 | metrics |
-| module | `PaymentCompletedEvent` | state 5 | confirmation ([ET-TKT-001](../../ticketing/001-reservation-and-hold/)) |
-| module | `PaymentFailedEvent` | states 6, 7 | release |
-| bus | `booking.PaymentCompleted` v1 | after commit | identity → receipt |
-| bus | `booking.PaymentFailed` v1 | after commit | identity → notify |
+| bus | `booking.PaymentCompleted` v1 | staged with the verified outcome | identity → receipt |
+| bus | `booking.PaymentFailed` v1 | staged with the verified outcome | identity → notify |
+
+Confirmation and release are the purchase workflow's next steps after a verified outcome
+([ET-TKT-001](../../ticketing/001-reservation-and-hold/)), not listeners on in-memory events.
 
 ### Redis keys
 
 | Key | TTL | Purpose |
 |---|---|---|
 | `idem:{key}` | 24 h | [ET-PLT-007](../../_platform/007-security-and-authorization/) §4 |
-| `lock:sweep:payment-poll` | 30 s | the R5 poll mutex |
 
 ### Configuration
 
@@ -401,14 +446,14 @@ rows of [ET-PLT-005 §4](../../_platform/005-error-contract/) introduced by this
 - [ ] **T5 · `initiatePayment`: commit the intent, then call, outside any transaction**
   - requirements: R1, R6, R7
   - files: `backend/booking-service/.../service/impl/PaymentServiceImpl.java`
-  - verify: no `StreamBridge.send` appears inside a `@Transactional` method, no module boundary uses a bare `@EventListener`, and no `@TransactionalEventListener(AFTER_COMMIT)` rethrows a delivery failure; no `@Transactional` reaches the port
+  - verify: the outbox row commits with the intent's transition and nothing else reaches the bus; no `@Transactional` reaches the port
   - parallel-safe: no
   - depends: T3
 
-- [ ] **T6 · The poll sweep, the backoff, and the escalation that holds the seat**
+- [ ] **T6 · The purchase workflow's polls, the backoff, and the escalation**
   - requirements: R5
-  - files: `backend/booking-service/.../scheduler/PaymentPollSweeper.java`
-  - verify: a never-answering provider escalates with the seat still held and no refund attempted
+  - files: `backend/booking-service/.../workflow/purchase/PurchaseWorkflowImpl.java`, `.../workflow/purchase/PurchaseRules.java`
+  - verify: a never-answering provider escalates, is polled hourly, and is never marked failed; the history replays
   - parallel-safe: yes
   - depends: T5
 

@@ -124,10 +124,30 @@
             "description": "OWASP A04 - enum constraint"
           },
           "minimumPayoutAmount": {
-            "bsonType": "double",
+            "bsonType": [
+              "decimal",
+              "double"
+            ],
             "minimum": 0,
-            "description": "Default minimum payout amount in ZMW"
+            "description": "Default minimum payout amount in ZMW. Money is written as Decimal128; double is accepted only for documents written before the money migration."
           }
+        },
+        "additionalProperties": false
+      },
+      "rules": {
+        "bsonType": "object",
+        "description": "Runtime rules organizers and buyers obey (ET-ADM-002): holds, escrow, refund cutoff and policies",
+        "properties": {
+          "_class": {"bsonType": "string"},
+          "reservationHoldMinutes": {"bsonType": "int", "minimum": 1, "maximum": 120},
+          "reservationGraceMinutes": {"bsonType": "int", "minimum": 0, "maximum": 60},
+          "escrowHoldDays": {"bsonType": "int", "minimum": 0, "maximum": 90},
+          "refundCutoffHours": {"bsonType": "int", "minimum": 0, "maximum": 720},
+          "maxTicketsPerBooking": {"bsonType": "int", "minimum": 1, "maximum": 50},
+          "rescheduleLimit": {"bsonType": "int", "minimum": 0, "maximum": 20},
+          "currency": {"bsonType": "string", "pattern": "^[A-Z]{3}$"},
+          "refundPolicies": {"bsonType": "object"},
+          "version": {"bsonType": ["int", "long"], "minimum": 1}
         },
         "additionalProperties": false
       },

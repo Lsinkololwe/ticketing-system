@@ -1,5 +1,6 @@
 package com.pml.booking.repository;
 
+import java.util.Collection;
 import com.pml.booking.domain.model.PromoCode;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.stereotype.Repository;
@@ -30,11 +31,6 @@ public interface PromoCodeRepository extends ReactiveMongoRepository<PromoCode, 
     Flux<PromoCode> findByOrganizerId(String organizerId);
 
     /**
-     * Find all active promo codes for an event.
-     */
-    Flux<PromoCode> findByEventIdAndIsActiveTrue(String eventId);
-
-    /**
      * Check if a promo code exists for a given code.
      */
     Mono<Boolean> existsByCodeIgnoreCase(String code);
@@ -43,4 +39,8 @@ public interface PromoCodeRepository extends ReactiveMongoRepository<PromoCode, 
      * Find a promo code by code and event ID (for validation).
      */
     Mono<PromoCode> findByCodeIgnoreCaseAndEventId(String code, String eventId);
+
+    Mono<PromoCode> findByIdAndOrganizationIdIn(String id, Collection<String> organizationIds);
+
+    Mono<PromoCode> findByCodeIgnoreCaseAndOrganizationIdIn(String code, Collection<String> organizationIds);
 }

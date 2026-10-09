@@ -4,20 +4,17 @@ import com.pml.booking.domain.enums.EscrowTransactionCategory;
 import com.pml.booking.domain.enums.EscrowTransactionType;
 import com.pml.booking.domain.model.StandaloneEscrowTransaction;
 import com.pml.booking.domain.model.StandaloneEscrowTransaction.TransactionType;
-import com.pml.booking.repository.EventEscrowAccountRepository;
 import com.pml.booking.repository.StandaloneEscrowTransactionRepository;
 import com.pml.booking.repository.dto.AggregationResult;
 import com.pml.booking.service.EscrowTransactionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 
 /**
@@ -50,91 +47,6 @@ import java.time.ZoneId;
 public class EscrowTransactionServiceImpl implements EscrowTransactionService {
 
     private final StandaloneEscrowTransactionRepository transactionRepository;
-    private final EventEscrowAccountRepository escrowAccountRepository;
-
-    // ========================================================================
-    // TRANSACTION RECORDING
-    // ========================================================================
-
-    @Override
-    @Transactional
-    public Mono<StandaloneEscrowTransaction> recordCredit(
-            String escrowAccountId,
-            BigDecimal amount,
-            EscrowTransactionCategory category,
-            String ticketId,
-            String paymentIntentId,
-            String description,
-            String journalEntryId
-    ) {
-        log.info("Recording credit of {} to escrow {}: {}", amount, escrowAccountId, description);
-
-        return calculateBalance(escrowAccountId)
-                .defaultIfEmpty(BigDecimal.ZERO)
-                .flatMap(currentBalance -> {
-                    BigDecimal newBalance = currentBalance.add(amount);
-
-                    StandaloneEscrowTransaction transaction = StandaloneEscrowTransaction.credit(
-                            escrowAccountId,
-                            amount,
-                            newBalance,
-                            category,
-                            ticketId,
-                            paymentIntentId,
-                            description
-                    );
-                    transaction.setJournalEntryId(journalEntryId);
-
-                    return transactionRepository.save(transaction)
-                            .doOnSuccess(saved -> log.info(
-                                    "Escrow credit recorded: {} balance now {}",
-                                    saved.getId(), saved.getBalanceAfter()));
-                });
-    }
-
-    @Override
-    @Transactional
-    public Mono<StandaloneEscrowTransaction> recordDebit(
-            String escrowAccountId,
-            BigDecimal amount,
-            EscrowTransactionCategory category,
-            String referenceId,
-            String description,
-            String journalEntryId
-    ) {
-        log.info("Recording debit of {} from escrow {}: {}", amount, escrowAccountId, description);
-
-        return calculateBalance(escrowAccountId)
-                .defaultIfEmpty(BigDecimal.ZERO)
-                .flatMap(currentBalance -> {
-                    BigDecimal newBalance = currentBalance.subtract(amount);
-
-                    StandaloneEscrowTransaction transaction = StandaloneEscrowTransaction.debit(
-                            escrowAccountId,
-                            amount,
-                            newBalance,
-                            category,
-                            referenceId,
-                            description
-                    );
-                    transaction.setJournalEntryId(journalEntryId);
-
-                    return transactionRepository.save(transaction)
-                            .doOnSuccess(saved -> log.info(
-                                    "Escrow debit recorded: {} balance now {}",
-                                    saved.getId(), saved.getBalanceAfter()));
-                });
-    }
-
-    @Override
-    @Transactional
-    public Mono<StandaloneEscrowTransaction> recordTransaction(StandaloneEscrowTransaction transaction) {
-        log.info("Recording escrow transaction: {} {} {}",
-                transaction.getType(), transaction.getAmount(), transaction.getEscrowAccountId());
-
-        return transactionRepository.save(transaction)
-                .doOnSuccess(saved -> log.info("Escrow transaction recorded: {}", saved.getId()));
-    }
 
     // ========================================================================
     // TRANSACTION QUERIES
@@ -148,18 +60,6 @@ public class EscrowTransactionServiceImpl implements EscrowTransactionService {
     @Override
     public Flux<StandaloneEscrowTransaction> findByEscrowAccountId(String escrowAccountId) {
         return transactionRepository.findByEscrowAccountIdOrderByTimestampDesc(escrowAccountId);
-    }
-
-    @Override
-    public Flux<StandaloneEscrowTransaction> findByEscrowAccountIdAndDateRange(
-            String escrowAccountId,
-            LocalDateTime startDate,
-            LocalDateTime endDate
-    ) {
-        Instant startInstant = startDate.atZone(ZoneId.systemDefault()).toInstant();
-        Instant endInstant = endDate.atZone(ZoneId.systemDefault()).toInstant();
-        return transactionRepository.findByEscrowAccountIdAndTimestampBetween(
-                escrowAccountId, startInstant, endInstant);
     }
 
     @Override
@@ -204,7 +104,7 @@ public class EscrowTransactionServiceImpl implements EscrowTransactionService {
     }
 
     @Override
-    public Mono<BigDecimal> calculateBalanceAsOf(String escrowAccountId, LocalDateTime asOfDate) {
+    public Mono<BigDecimal> calculateBalanceAsOf(String escrowAccountId, Instant asOfDate) {
         Instant startInstant = Instant.EPOCH;
         Instant endInstant = asOfDate.atZone(ZoneId.systemDefault()).toInstant();
 
@@ -242,13 +142,6 @@ public class EscrowTransactionServiceImpl implements EscrowTransactionService {
                 .defaultIfEmpty(BigDecimal.ZERO);
     }
 
-    @Override
-    public Mono<BigDecimal> sumByCategory(String escrowAccountId, EscrowTransactionCategory category) {
-        return transactionRepository.sumAmountByEscrowAccountIdAndCategory(escrowAccountId, category.name())
-                .map(AggregationResult::getTotal)
-                .defaultIfEmpty(BigDecimal.ZERO);
-    }
-
     // ========================================================================
     // RECONCILIATION
     // ========================================================================
@@ -256,45 +149,5 @@ public class EscrowTransactionServiceImpl implements EscrowTransactionService {
     @Override
     public Flux<StandaloneEscrowTransaction> findUnlinkedTransactions() {
         return transactionRepository.findByJournalEntryIdIsNull();
-    }
-
-    @Override
-    @Transactional
-    public Mono<StandaloneEscrowTransaction> linkToJournalEntry(String transactionId, String journalEntryId) {
-        log.info("Linking transaction {} to journal entry {}", transactionId, journalEntryId);
-
-        return transactionRepository.findById(transactionId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException(
-                        "Transaction not found: " + transactionId)))
-                .flatMap(transaction -> {
-                    transaction.setJournalEntryId(journalEntryId);
-                    return transactionRepository.save(transaction);
-                })
-                .doOnSuccess(updated -> log.info("Transaction linked to journal entry"));
-    }
-
-    @Override
-    public Mono<Boolean> verifyBalanceConsistency(String escrowAccountId) {
-        log.info("Verifying balance consistency for escrow: {}", escrowAccountId);
-
-        return Mono.zip(
-                // Get balance from EventEscrowAccount
-                escrowAccountRepository.findById(escrowAccountId)
-                        .map(account -> account.getCurrentBalance())
-                        .defaultIfEmpty(BigDecimal.ZERO),
-                // Calculate balance from transactions
-                calculateBalance(escrowAccountId)
-        ).map(tuple -> {
-            BigDecimal recordedBalance = tuple.getT1();
-            BigDecimal calculatedBalance = tuple.getT2();
-            boolean isConsistent = recordedBalance.compareTo(calculatedBalance) == 0;
-
-            if (!isConsistent) {
-                log.warn("Balance inconsistency for escrow {}: recorded={}, calculated={}",
-                        escrowAccountId, recordedBalance, calculatedBalance);
-            }
-
-            return isConsistent;
-        });
     }
 }

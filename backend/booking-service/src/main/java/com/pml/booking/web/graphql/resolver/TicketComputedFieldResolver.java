@@ -23,6 +23,22 @@ public class TicketComputedFieldResolver {
     /**
      * Resolve PaymentInfo.status - convert enum to String for GraphQL.
      */
+    /** What can still be refunded on this seat: the price less what has already come back. */
+    @DgsData(parentType = "Ticket", field = "refundableAmount")
+    public java.math.BigDecimal refundableAmount(DgsDataFetchingEnvironment dfe) {
+        Ticket ticket = dfe.getSource();
+        if (ticket.getStatus() == null || !ticket.getStatus().isRefundable()) {
+            return java.math.BigDecimal.ZERO;
+        }
+        return BookingFieldResolver.remaining(ticket);
+    }
+
+    @DgsData(parentType = "Ticket", field = "transferPending")
+    public boolean transferPending(DgsDataFetchingEnvironment dfe) {
+        Ticket ticket = dfe.getSource();
+        return ticket.getActiveTransferId() != null;
+    }
+
     @DgsData(parentType = "PaymentInfo", field = "status")
     public String paymentInfoStatus(DgsDataFetchingEnvironment dfe) {
         Ticket.PaymentInfo paymentInfo = dfe.getSource();

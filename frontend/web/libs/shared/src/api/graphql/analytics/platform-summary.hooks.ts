@@ -16,20 +16,23 @@
  */
 
 import { useQuery } from '@apollo/client/react';
-import type { PlatformSummary } from '../../../types/graphql';
+import type { PlatformSummaryQuery, PlatformSummaryQueryVariables } from '../../../types/graphql';
 import { PLATFORM_SUMMARY } from './platform-summary.queries';
 
+export type PlatformSummaryData = PlatformSummaryQuery['platformSummary'];
+
 export interface UsePlatformSummaryResult {
-  summary: PlatformSummary | null;
+  summary: PlatformSummaryData | null;
   loading: boolean;
   error?: Error;
   refetch: () => void;
 }
 
 export function usePlatformSummary(): UsePlatformSummaryResult {
-  const { data, loading, error, refetch } = useQuery<{
-    platformSummary: PlatformSummary;
-  }>(PLATFORM_SUMMARY, {
+  const { data, loading, error, refetch } = useQuery<
+    PlatformSummaryQuery,
+    PlatformSummaryQueryVariables
+  >(PLATFORM_SUMMARY, {
     fetchPolicy: 'cache-and-network',
     // A dashboard tile that silently shows nothing because one federated
     // subgraph is down is worse than one that shows what resolved.

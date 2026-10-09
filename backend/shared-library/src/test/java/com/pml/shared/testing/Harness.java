@@ -5,11 +5,11 @@ import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 /**
  * Holds the {@link ReactiveMongoTemplate} the assertion helpers read through.
  *
- * <p>The corpus writes its acceptance boxes in the short form —
+ * <p>Tests call the helpers in the short form —
  * {@code Persistence.assertNothingPersisted("booking_reservations")},
  * {@code Inventory.assertConserved(tierId)}, {@code Ledger.assertBalanced()} —
- * because that is what belongs in a spec: the claim, not the plumbing. This is
- * the plumbing, bound once per test class.
+ * so a test reads as the claim, not the plumbing. This is the plumbing, bound
+ * once per test class.
  *
  * <p>Every helper also takes an explicit template, so a test that talks to two
  * databases never has to reach through this.

@@ -6,16 +6,12 @@ import com.pml.booking.repository.PromoCodeRepository;
 import com.pml.booking.service.PromoCodeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -29,7 +25,9 @@ import java.util.List;
 public class PromoCodeServiceImpl implements PromoCodeService {
 
     private final PromoCodeRepository promoCodeRepository;
-    private final ReactiveMongoTemplate mongoTemplate;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
 
     @Override
     public Mono<PromoCode> validatePromoCode(
@@ -44,14 +42,14 @@ public class PromoCodeServiceImpl implements PromoCodeService {
             .switchIfEmpty(Mono.error(new IllegalArgumentException("Promo code not found")))
             .flatMap(promoCode -> {
                 // Validate promo code is currently valid
-                if (!promoCode.isCurrentlyValid()) {
+                if (!promoCode.isCurrentlyValid(clock.instant())) {
                     if (!promoCode.isActive()) {
                         return Mono.error(new IllegalStateException("Promo code is inactive"));
                     }
                     if (promoCode.hasReachedUsageLimit()) {
                         return Mono.error(new IllegalStateException("Promo code usage limit reached"));
                     }
-                    LocalDateTime now = LocalDateTime.now();
+                    Instant now = clock.instant();
                     if (now.isBefore(promoCode.getValidFrom())) {
                         return Mono.error(new IllegalStateException("Promo code not yet valid"));
                     }
@@ -82,7 +80,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     }
 
     @Override
-    public Mono<PromoCode> createPromoCode(CreatePromoCodeInput input, String organizerId) {
+    public Mono<PromoCode> createPromoCode(CreatePromoCodeInput input, String organizerId, String organizationId) {
         log.info("Creating promo code: {} for organizer: {}", input.code(), organizerId);
 
         // Check if code already exists
@@ -96,6 +94,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
                     .code(input.code().toUpperCase())
                     .eventId(input.eventId())
                     .organizerId(organizerId)
+                    .organizationId(organizationId)
                     .discountType(input.discountType())
                     .discountValue(input.discountValue())
                     .maxUses(input.maxUses())
@@ -106,7 +105,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
                     .maxDiscountAmount(input.maxDiscountAmount())
                     .applicableTiers(input.applicableTiers())
                     .isActive(true)
-                    .createdAt(LocalDateTime.now())
+                    .createdAt(clock.instant())
                     .build();
 
                 return promoCodeRepository.save(promoCode);
@@ -152,22 +151,6 @@ public class PromoCodeServiceImpl implements PromoCodeService {
                 promoCode.setActive(false);
                 return promoCodeRepository.save(promoCode);
             });
-    }
-
-    @Override
-    public Mono<PromoCode> incrementUsage(String id) {
-        log.debug("Incrementing usage for promo code: {}", id);
-
-        Query query = new Query(Criteria.where("id").is(id));
-        Update update = new Update().inc("currentUses", 1);
-
-        return mongoTemplate.findAndModify(query, update, PromoCode.class)
-            .switchIfEmpty(Mono.error(new IllegalArgumentException("Promo code not found")));
-    }
-
-    @Override
-    public Mono<PromoCode> findByCode(String code) {
-        return promoCodeRepository.findByCodeIgnoreCase(code);
     }
 
     @Override

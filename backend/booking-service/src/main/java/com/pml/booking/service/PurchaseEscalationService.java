@@ -14,9 +14,9 @@ import java.math.BigDecimal;
  * Hands a purchase to a human, once.
  *
  * <h2>Why raising twice must be harmless</h2>
- * Both callers are sweeps. The recovery sweep runs every thirty seconds and will
- * meet the same stuck reservation on every tick until somebody deals with it; a
- * duplicate provider callback can re-raise the same late payment. If each
+ * The purchase workflow escalates when a payment stays pending past its limit, and
+ * an activity retry or a duplicate provider callback can raise the same problem
+ * again. If each
  * attempt created a row, one stuck purchase would become a hundred queue entries
  * overnight and the queue would stop being read — which is the same outcome as
  * having no escalation at all, arrived at more slowly.
@@ -31,6 +31,9 @@ import java.math.BigDecimal;
 public class PurchaseEscalationService {
 
     private final PurchaseEscalationRepository escalations;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
 
     /**
      * Records that a purchase needs an operator, unless it already has been.
@@ -63,7 +66,7 @@ public class PurchaseEscalationService {
                                 "ESCALATED to ET-ADM-003: reservation {} — {} ({}). "
                                         + "This needs an operator; nothing else will resolve it.",
                                 reservationId, reason, detail))
-                        // Two sweep instances can reach the switchIfEmpty at
+                        // Two concurrent raises can reach the switchIfEmpty at
                         // once. The index refuses the second write, and losing
                         // that race means the escalation exists, which is what
                         // the caller wanted.
@@ -77,7 +80,7 @@ public class PurchaseEscalationService {
                 .flatMap(escalation -> {
                     escalation.setResolved(true);
                     escalation.setResolvedBy(resolvedBy);
-                    escalation.setResolvedAt(java.time.LocalDateTime.now());
+                    escalation.setResolvedAt(clock.instant());
                     escalation.setResolution(resolution);
                     return escalations.save(escalation);
                 });

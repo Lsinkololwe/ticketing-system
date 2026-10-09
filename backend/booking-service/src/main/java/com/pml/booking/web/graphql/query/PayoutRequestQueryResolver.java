@@ -1,5 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
+import com.pml.booking.security.TenantReads;
+import java.time.Duration;
+
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -19,6 +22,8 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
+import com.pml.booking.security.CallerScope;
+import com.pml.shared.error.ErrorCode;
 
 /**
  * GraphQL Query Resolver for Payout Request Operations.
@@ -43,6 +48,10 @@ import java.util.Objects;
 public class PayoutRequestQueryResolver {
 
     private final PayoutRequestService payoutRequestService;
+    private final TenantReads tenantReads;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final PayoutRecoveryService payoutRecoveryService;
 
     // ========================================================================
@@ -54,11 +63,11 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRequest(id: ID!): PayoutRequest
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @payoutSecurityService.isPayoutRequestOwner(#id, authentication)")
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
     public Mono<PayoutRequest> payoutRequest(@InputArgument String id) {
         log.debug("GraphQL query: payoutRequest(id={})", id);
         Objects.requireNonNull(id, "Payout request ID is required");
-        return payoutRequestService.findById(id);
+        return tenantReads.payoutRequestForCaller(id);
     }
 
     /**
@@ -66,11 +75,11 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRequestByRequestId(requestId: String!): PayoutRequest
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @payoutSecurityService.isPayoutRequestOwnerByRequestId(#requestId, authentication)")
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
     public Mono<PayoutRequest> payoutRequestByRequestId(@InputArgument String requestId) {
         log.debug("GraphQL query: payoutRequestByRequestId({})", requestId);
         Objects.requireNonNull(requestId, "Request ID is required");
-        return payoutRequestService.findByRequestId(requestId);
+        return tenantReads.payoutRequestByRequestIdForCaller(requestId);
     }
 
     // ========================================================================
@@ -79,15 +88,15 @@ public class PayoutRequestQueryResolver {
 
     /**
      * Search payout requests with offset pagination.
-     * Schema: payoutRequestsOffsetPagination(filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: payoutRequests(filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestOffsetPage> payoutRequestsOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> payoutRequests(
             @InputArgument PayoutRequestFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: payoutRequestsOffsetPagination");
+        log.debug("GraphQL query: payoutRequests");
         Objects.requireNonNull(filter, "Filter is required");
 
         Flux<PayoutRequest> payoutFlux = applyFilters(payoutRequestService.findAll(), filter);
@@ -96,17 +105,17 @@ public class PayoutRequestQueryResolver {
 
     /**
      * Get payout requests by organizer with offset pagination.
-     * Schema: payoutRequestsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: payoutRequestsByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      *
      * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService for multi-tenant isolation.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.canViewFinancialData(#organizerId, authentication)")
-    public Mono<PayoutRequestOffsetPage> payoutRequestsByOrganizerOffsetPagination(
+    @PreAuthorize("@organizationSecurityService.rolesOrFinancialView(authentication, 'ADMIN,FINANCE', #organizerId)")
+    public Mono<PayoutRequestOffsetPage> payoutRequestsByOrganizer(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: payoutRequestsByOrganizerOffsetPagination(organizerId={})", organizerId);
+        log.debug("GraphQL query: payoutRequestsByOrganizer(organizerId={})", organizerId);
         Objects.requireNonNull(organizerId, "Organizer ID is required");
 
         return buildOffsetPage(payoutRequestService.findByOrganizerId(organizerId), pagination);
@@ -114,15 +123,15 @@ public class PayoutRequestQueryResolver {
 
     /**
      * Get payout requests by event with offset pagination.
-     * Schema: payoutRequestsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: payoutRequestsByEvent(eventId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
-    public Mono<PayoutRequestOffsetPage> payoutRequestsByEventOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> payoutRequestsByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: payoutRequestsByEventOffsetPagination(eventId={})", eventId);
+        log.debug("GraphQL query: payoutRequestsByEvent(eventId={})", eventId);
         Objects.requireNonNull(eventId, "Event ID is required");
 
         return buildOffsetPage(payoutRequestService.findByEventId(eventId), pagination);
@@ -130,109 +139,28 @@ public class PayoutRequestQueryResolver {
 
     /**
      * Get pending payout requests with offset pagination.
-     * Schema: pendingPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: pendingPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestOffsetPage> pendingPayoutRequestsOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> pendingPayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: pendingPayoutRequestsOffsetPagination");
+        log.debug("GraphQL query: pendingPayoutRequests");
         return buildOffsetPage(payoutRequestService.findByStatus(PayoutRequestStatus.PENDING), pagination);
     }
 
     /**
      * Get failed payout requests with offset pagination.
-     * Schema: failedPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: failedPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestOffsetPage> failedPayoutRequestsOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> failedPayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: failedPayoutRequestsOffsetPagination");
+        log.debug("GraphQL query: failedPayoutRequests");
         return buildOffsetPage(payoutRequestService.findByStatus(PayoutRequestStatus.FAILED), pagination);
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Search payout requests with cursor pagination.
-     * Schema: payoutRequestsCursorPagination(filter: PayoutRequestFilterInput!, pagination: CursorPaginationInput): PayoutRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestConnection> payoutRequestsCursorPagination(
-            @InputArgument PayoutRequestFilterInput filter,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: payoutRequestsCursorPagination");
-        Objects.requireNonNull(filter, "Filter is required");
-
-        Flux<PayoutRequest> payoutFlux = applyFilters(payoutRequestService.findAll(), filter);
-        return buildCursorConnection(payoutFlux, pagination);
-    }
-
-    /**
-     * Get payout requests by organizer with cursor pagination.
-     * Schema: payoutRequestsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): PayoutRequestConnection!
-     *
-     * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService for multi-tenant isolation.</p>
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.canViewFinancialData(#organizerId, authentication)")
-    public Mono<PayoutRequestConnection> payoutRequestsByOrganizerCursorPagination(
-            @InputArgument String organizerId,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: payoutRequestsByOrganizerCursorPagination(organizerId={})", organizerId);
-        Objects.requireNonNull(organizerId, "Organizer ID is required");
-
-        return buildCursorConnection(payoutRequestService.findByOrganizerId(organizerId), pagination);
-    }
-
-    /**
-     * Get payout requests by event with cursor pagination.
-     * Schema: payoutRequestsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): PayoutRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
-    public Mono<PayoutRequestConnection> payoutRequestsByEventCursorPagination(
-            @InputArgument String eventId,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: payoutRequestsByEventCursorPagination(eventId={})", eventId);
-        Objects.requireNonNull(eventId, "Event ID is required");
-
-        return buildCursorConnection(payoutRequestService.findByEventId(eventId), pagination);
-    }
-
-    /**
-     * Get pending payout requests with cursor pagination.
-     * Schema: pendingPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestConnection> pendingPayoutRequestsCursorPagination(
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: pendingPayoutRequestsCursorPagination");
-        return buildCursorConnection(payoutRequestService.findByStatus(PayoutRequestStatus.PENDING), pagination);
-    }
-
-    /**
-     * Get failed payout requests with cursor pagination.
-     * Schema: failedPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestConnection> failedPayoutRequestsCursorPagination(
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: failedPayoutRequestsCursorPagination");
-        return buildCursorConnection(payoutRequestService.findByStatus(PayoutRequestStatus.FAILED), pagination);
     }
 
     // ========================================================================
@@ -246,7 +174,7 @@ public class PayoutRequestQueryResolver {
      * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService for multi-tenant isolation.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or (#organizerId != null and @organizationSecurityService.canViewFinancialData(#organizerId, authentication))")
+    @PreAuthorize("@organizationSecurityService.rolesOrFinancialView(authentication, 'ADMIN,FINANCE', #organizerId)")
     public Mono<PayoutRequestStats> payoutRequestStats(@InputArgument String organizerId) {
         log.debug("GraphQL query: payoutRequestStats(organizerId={})", organizerId);
 
@@ -289,15 +217,15 @@ public class PayoutRequestQueryResolver {
 
     /**
      * Get payout requests that need review with offset pagination.
-     * Schema: payoutRequestsForReviewOffsetPagination(reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: payoutRequestsForReview(reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestOffsetPage> payoutRequestsForReviewOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> payoutRequestsForReview(
             @InputArgument String reviewStatus,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: payoutRequestsForReviewOffsetPagination(reviewStatus={})", reviewStatus);
+        log.debug("GraphQL query: payoutRequestsForReview(reviewStatus={})", reviewStatus);
         // 0-based, like OffsetPaginationInput documents ("page 0, 1, 2, 3..."),
         // like its own getOffset(), and like every sibling resolver that goes
         // through buildOffsetPage. This block used to read `: 1` and
@@ -315,14 +243,14 @@ public class PayoutRequestQueryResolver {
 
     /**
      * Get stuck payout requests with offset pagination.
-     * Schema: stuckPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: stuckPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestOffsetPage> stuckPayoutRequestsOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> stuckPayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: stuckPayoutRequestsOffsetPagination");
+        log.debug("GraphQL query: stuckPayoutRequests");
         // 0-based, like OffsetPaginationInput documents ("page 0, 1, 2, 3..."),
         // like its own getOffset(), and like every sibling resolver that goes
         // through buildOffsetPage. This block used to read `: 1` and
@@ -339,47 +267,16 @@ public class PayoutRequestQueryResolver {
     }
 
     /**
-     * Get payout requests for review with cursor pagination.
-     * Schema: payoutRequestsForReviewCursorPagination(reviewStatus: PayoutReviewStatus, pagination: CursorPaginationInput): PayoutRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestConnection> payoutRequestsForReviewCursorPagination(
-            @InputArgument String reviewStatus,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: payoutRequestsForReviewCursorPagination(reviewStatus={})", reviewStatus);
-        // Get all payout requests for review (no pagination at service level for cursor pagination)
-        Flux<PayoutRequest> payoutFlux = payoutRecoveryService.getPayoutRequestsForReview(reviewStatus, 0, Integer.MAX_VALUE);
-        return buildCursorConnection(payoutFlux, pagination);
-    }
-
-    /**
-     * Get stuck payout requests with cursor pagination.
-     * Schema: stuckPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestConnection> stuckPayoutRequestsCursorPagination(
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: stuckPayoutRequestsCursorPagination");
-        // Get all stuck payout requests (no pagination at service level for cursor pagination)
-        Flux<PayoutRequest> payoutFlux = payoutRecoveryService.getStuckPayoutRequests(0, Integer.MAX_VALUE);
-        return buildCursorConnection(payoutFlux, pagination);
-    }
-
-    /**
      * Get payout requests by issue type with offset pagination.
-     * Schema: payoutRequestsByIssueTypeOffsetPagination(issueType: PayoutIssueType!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: payoutRequestsByIssueType(issueType: PayoutIssueType!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestOffsetPage> payoutRequestsByIssueTypeOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> payoutRequestsByIssueType(
             @InputArgument String issueType,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: payoutRequestsByIssueTypeOffsetPagination(issueType={})", issueType);
+        log.debug("GraphQL query: payoutRequestsByIssueType(issueType={})", issueType);
         Objects.requireNonNull(issueType, "Issue type is required");
         // 0-based, like OffsetPaginationInput documents ("page 0, 1, 2, 3..."),
         // like its own getOffset(), and like every sibling resolver that goes
@@ -409,14 +306,14 @@ public class PayoutRequestQueryResolver {
 
     /**
      * Get retryable failed payout requests with offset pagination.
-     * Schema: retryablePayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: retryablePayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestOffsetPage> retryablePayoutRequestsOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> retryablePayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: retryablePayoutRequestsOffsetPagination");
+        log.debug("GraphQL query: retryablePayoutRequests");
         return buildOffsetPage(
                 payoutRequestService.findRetryable(3),
                 pagination
@@ -425,15 +322,15 @@ public class PayoutRequestQueryResolver {
 
     /**
      * Get recently resolved payout requests with offset pagination.
-     * Schema: recentlyResolvedPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
+     * Schema: recentlyResolvedPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequestOffsetPage> recentlyResolvedPayoutRequestsOffsetPagination(
+    public Mono<PayoutRequestOffsetPage> recentlyResolvedPayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: recentlyResolvedPayoutRequestsOffsetPagination");
-        java.time.LocalDateTime sevenDaysAgo = java.time.LocalDateTime.now().minusDays(7);
+        log.debug("GraphQL query: recentlyResolvedPayoutRequests");
+        java.time.Instant sevenDaysAgo = clock.instant().minus(Duration.ofDays(7));
         return buildOffsetPage(
                 payoutRequestService.findResolvedAfter(sevenDaysAgo),
                 pagination
@@ -492,49 +389,6 @@ public class PayoutRequestQueryResolver {
                     return new PayoutRequestOffsetPage(paginatedData, paginationInfo);
                 });
     }
-
-    private Mono<PayoutRequestConnection> buildCursorConnection(Flux<PayoutRequest> payoutFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : new CursorPaginationInput(20, null, null, null);
-        int limit = p.getLimit();
-
-        return payoutFlux.collectList()
-                .map(allPayouts -> {
-                    int totalCount = allPayouts.size();
-
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allPayouts.size(); i++) {
-                            if (allPayouts.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    List<PayoutRequest> pageData = allPayouts.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageData.isEmpty()) {
-                        return PayoutRequestConnection.empty();
-                    }
-
-                    List<PayoutRequestEdge> edges = pageData.stream()
-                            .map(PayoutRequestEdge::of)
-                            .toList();
-
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.of(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new PayoutRequestConnection(edges, pageInfo, totalCount);
-                });
-    }
-
     private Flux<PayoutRequest> applyFilters(Flux<PayoutRequest> payouts, PayoutRequestFilterInput filter) {
         if (filter == null) {
             return payouts;
@@ -543,14 +397,45 @@ public class PayoutRequestQueryResolver {
         return payouts
                 .filter(p -> filter.organizerId() == null || filter.organizerId().equals(p.getOrganizerId()))
                 .filter(p -> filter.eventId() == null || filter.eventId().equals(p.getEventId()))
-                .filter(p -> filter.status() == null || filter.status().equals(p.getStatus()))
+                .filter(p -> filter.escrowAccountId() == null || filter.escrowAccountId().equals(p.getEscrowAccountId()))
+                .filter(p -> filter.status() == null || filter.status().equals(com.pml.booking.domain.PayoutStatusView.of(p)))
+                .filter(p -> filter.payoutMethod() == null || filter.payoutMethod() == p.getPayoutMethod())
                 .filter(p -> {
                     if (filter.startDate() == null) return true;
-                    return p.getRequestedAt() != null && !p.getRequestedAt().isBefore(filter.startDate().toLocalDateTime());
+                    return p.getRequestedAt() != null && !p.getRequestedAt().isBefore(filter.startDate().toInstant());
                 })
                 .filter(p -> {
                     if (filter.endDate() == null) return true;
-                    return p.getRequestedAt() != null && !p.getRequestedAt().isAfter(filter.endDate().toLocalDateTime());
+                    return p.getRequestedAt() != null && !p.getRequestedAt().isAfter(filter.endDate().toInstant());
                 });
+    }
+
+    /**
+     * The caller's own payout requests. OWASP A01:2021.
+     *
+     * <p>{@code organizationId} narrows to one of the caller's organizations; omitted, it means
+     * all of them. It cannot widen: {@link CallerScope#organizationIds} resolves it against the
+     * memberships the token established, and a selector naming another tenant refuses with
+     * {@code ORGANIZATION_UNKNOWN} — the code an organization that was never issued produces, so
+     * the two are indistinguishable.
+     *
+     * <p>{@code payoutRequestsByOrganizer} is not a substitute — there the client-supplied id
+     * decides whose data comes back, which is the CWE-639 shape this operation avoids.
+     */
+    @DgsQuery
+    @PreAuthorize("isAuthenticated()")
+    public Mono<PayoutRequestOffsetPage> myPayoutRequests(
+            @InputArgument String organizationId,
+            @InputArgument PayoutRequestStatus status,
+            @InputArgument OffsetPaginationInput pagination
+    ) {
+        log.debug("GraphQL query: myPayoutRequests(organizationId={}, status={})", organizationId, status);
+
+        return CallerScope.organizationIds(organizationId, ErrorCode.ORGANIZATION_UNKNOWN)
+                .flatMap(ids -> buildOffsetPage(
+                        status == null
+                                ? payoutRequestService.findByOrganizationIdIn(ids)
+                                : payoutRequestService.findByOrganizationIdInAndStatus(ids, status),
+                        pagination));
     }
 }

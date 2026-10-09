@@ -1,24 +1,26 @@
 package com.pml.identity.domain.model;
 
-import com.pml.identity.domain.enums.AccountStatus;
+import com.pml.identity.persistence.IdentityCollections;
 
-import com.pml.identity.domain.base.Auditable;
-import com.pml.identity.domain.base.Identifiable;
+import com.pml.identity.domain.enums.AccountState;
+import com.pml.identity.domain.enums.AccountStatus;
+import com.pml.identity.domain.enums.ContactType;
+import com.pml.identity.domain.enums.PendingKind;
+
 import com.pml.shared.constants.UserType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -58,12 +60,13 @@ import java.util.Set;
  * @see Organization For business-specific data (companyName, taxId, etc.)
  * @see OrganizationMember For organization membership and roles
  */
-@Document(collection = "users")
+@Document(collection = IdentityCollections.USERS)
+@TypeAlias("users")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-public class User implements Identifiable<String>, Auditable {
+public class User {
 
     /**
      * User ID - MUST match Keycloak user ID (sub claim).
@@ -78,24 +81,25 @@ public class User implements Identifiable<String>, Auditable {
     // Core Identity (synced from Keycloak)
     // ─────────────────────────────────────────────────────────────────────
 
-    // Sparse unique index: the `users` collection is shared with Better Auth, which
-    // creates the document on first OIDC login WITHOUT a username (it is populated later
-    // by the keycloak-extensions sync from Keycloak `preferred_username`). A sparse index
-    // lets those interim null usernames coexist without violating the unique constraint.
-    @NotBlank(message = "Username is required")
+    // Uniqueness is enforced by `idx_username` in IdentityIndexInitializer. It is
+    // unique and PARTIAL on `$type: string`.
+    //
+    // The distinction decides whether registration works. This collection is shared
+    // with Better Auth, which creates the document on first OIDC login WITHOUT a
+    // username — it arrives later from the keycloak-extensions sync of
+    // `preferred_username`. So many documents hold `username: null` at once. Sparse
+    // skips a document only where the field is ABSENT, and mapping a null Java field
+    // writes `username: null`, which is present: every unsynced account would compete
+    // for the single key `null` and the second concurrent signup would be rejected as
+    // a duplicate. A $type test excludes the absent field and the stored null together.
     @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
-    @Indexed(unique = true, sparse = true)
     private String username;
 
-    @NotBlank(message = "Email is required")
     @Email(message = "Email should be valid")
-    @Indexed(unique = true)
     private String email;
 
-    @NotBlank(message = "First name is required")
     private String firstName;
 
-    @NotBlank(message = "Last name is required")
     private String lastName;
 
     /**
@@ -141,6 +145,46 @@ public class User implements Identifiable<String>, Auditable {
     private AccountStatus accountStatus = AccountStatus.ACTIVE;
 
     // ─────────────────────────────────────────────────────────────────────
+    // Account (CONTRACT 8, ET-IDN-004). Email, username and names above are optional: a
+    // buyer account is identified by its contacts, not by any of them.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /** Lifecycle state. Absent on documents written before the account-fields backfill. */
+    private AccountState status;
+
+    /** The Keycloak user id. Legacy accounts: equal to {@link #id}. Null for orphans and while PROVISIONING. */
+    private String keycloakUserId;
+
+    /** The contact the account is addressed through by default. */
+    private String primaryContactId;
+
+    private ContactType preferredChannel;
+
+    private String displayName;
+
+    private String locale;
+
+    /** Set when {@link AccountState#MERGED}: the surviving account. */
+    private String mergedInto;
+
+    /** When the Keycloak user was finished and the account became ACTIVE. */
+    private Instant provisionedAt;
+
+    /** A transient marker while a multi-step change is in flight. */
+    private PendingKind pendingKind;
+
+    private Instant pendingSince;
+
+    /** How the account came to exist (e.g. OTP, KEYCLOAK_SYNC, MIGRATION). */
+    private String createdVia;
+
+    /** When the person asked for the account to be deleted; null when no request is open. */
+    private Instant deletionRequestedAt;
+
+    /** When the grace period ends and the deletion may proceed. */
+    private Instant deletionScheduledFor;
+
+    // ─────────────────────────────────────────────────────────────────────
     // Verification Status (synced from Keycloak)
     // ─────────────────────────────────────────────────────────────────────
 
@@ -166,15 +210,6 @@ public class User implements Identifiable<String>, Auditable {
      */
     @Builder.Default
     private boolean locked = false;
-
-    /**
-     * Idempotency guard: whether the cross-service {@code UserRegisteredEvent}
-     * has been published for this user. Ensures the event is emitted exactly
-     * once regardless of whether Better Auth or the keycloak-extensions sync
-     * created the document first.
-     */
-    @Builder.Default
-    private boolean registrationEventPublished = false;
 
     // ─────────────────────────────────────────────────────────────────────
     // Profile Information (application-specific)
@@ -283,19 +318,6 @@ public class User implements Identifiable<String>, Auditable {
     }
 
     /**
-     * Check if user has all of the specified roles.
-     *
-     * @param rolesToCheck the roles to check
-     * @return true if user has all of the specified roles
-     */
-    public boolean hasAllRoles(UserType... rolesToCheck) {
-        if (roles == null || rolesToCheck == null) {
-            return false;
-        }
-        return Arrays.stream(rolesToCheck).allMatch(roles::contains);
-    }
-
-    /**
      * Add a role to the user.
      *
      * @param role the role to add
@@ -364,24 +386,6 @@ public class User implements Identifiable<String>, Auditable {
      */
     public boolean isEventOrganizer() {
         return hasRole(UserType.ORGANIZER);
-    }
-
-    /**
-     * Check if user can create events.
-     *
-     * @return true if user has ORGANIZER, ADMIN, or SUPER_ADMIN role
-     */
-    public boolean canCreateEvents() {
-        return hasAnyRole(UserType.ORGANIZER, UserType.ADMIN, UserType.SUPER_ADMIN);
-    }
-
-    /**
-     * Check if user can scan tickets.
-     *
-     * @return true if user has SCANNER, ORGANIZER, ADMIN, or SUPER_ADMIN role
-     */
-    public boolean canScanTickets() {
-        return hasAnyRole(UserType.SCANNER, UserType.ORGANIZER, UserType.ADMIN, UserType.SUPER_ADMIN);
     }
 
     /**

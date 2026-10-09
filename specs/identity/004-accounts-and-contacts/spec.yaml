@@ -1,0 +1,142 @@
+id: ET-IDN-004
+title: Accounts and contacts — identity-first creation, adoption, merge, contact change and repair
+status: approved
+area: IDN
+service: identity-service
+subgraph: null            # internal REST and Temporal; me/profile stay with ET-IDN-002
+owner: lazarous
+created: 2026-10-04
+priority: must
+wave: 1
+blocked_by: [ET-PLT-002, ET-PLT-005, ET-PLT-007]
+conformance: "US Part I §6 Keycloak integration · ASVS 2.5 · ASVS 3.3"
+sources:
+  - specs/CONVENTIONS.md
+  - specs/ROADMAP.md
+  - specs/identity/004-accounts-and-contacts/CONTRACT.md
+  - specs/identity/001-phone-otp-identity/spec.md
+  - specs/identity/002-keycloak-user-sync/spec.md
+  - specs/_platform/015-durable-execution/spec.md
+  - specs/_platform/008-data-protection/spec.md
+
+persistence:
+  collections:
+    - identity_users               # new optional fields: status, keycloakUserId, primaryContactId, preferredChannel, displayName, locale, mergedInto, provisionedAt, pendingKind, pendingSince, createdVia
+    - identity_contacts
+    - identity_consents
+    - identity_account_events
+  indexes:
+    - "identity_contacts {type,valueHash} unique partial (verifiedAt exists, releasedAt absent) name uniq_verified_contact"
+    - "identity_contacts {accountId} single name idx_accountId"
+    - "identity_users {keycloakUserId} unique sparse"
+    - "identity_users {status,pendingSince} compound"
+    - "identity_users {mergedInto} sparse"
+    - "identity_users {email} partial unique — the duplicate plain unique index is dropped"
+    - "identity_consents {accountId,purpose,version} compound"
+    - "identity_account_events {eventId} unique"
+    - "identity_account_events {accountId,at} compound"
+  redis_keys: []                   # challenge, proof and handle keys belong to ET-IDN-001
+
+workflows:
+  - "AccountEnsureWorkflow   account-ensure/{contactKey}      identity-account   Update-with-Start, USE_EXISTING   implemented"
+  - "AccountMergeWorkflow    account-merge/{mergedAccountId}  identity-account   USE_EXISTING                      planned"
+  - "ContactChangeWorkflow   contact-change/{accountId}       identity-account   FAIL on a running id, updates authorise/acceptNew, signals failedAttempt/cancel, expiry PT48H   implemented"
+  - "AccountRepairWorkflow   account-repair/scheduled         identity-account   Schedule, overlap SKIP             implemented"
+schedules:
+  - "identity-account-repair → AccountRepairWorkflow   identity-account   every PT15M   overlap SKIP"
+
+events:
+  module: []
+  bus:
+    - identity.AccountActivated    # v1 -> none yet
+    - identity.AccountSuspended    # v1 -> none yet (booking release-holds planned)
+    - identity.AccountDeleted      # v1 -> none yet (booking, catalog anonymise planned)
+    - identity.ContactAdded        # v1 -> none yet (staged by ContactChangeWorkflow commit; userId, channel, changeId)
+    - identity.ContactChanged      # v1 -> none yet
+    - identity.ContactRemoved      # v1 -> none yet
+  # identity.AccountMerged is proposed in spec.md §4 and joins this list when ET-PLT-003 §4 registers it (merge is a later wave)
+
+  consumes: []
+  topics: []
+
+graphql:
+  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls   # contact operations only; me/profile stay with ET-IDN-002
+  queries: [myContacts]
+  mutations:
+    - requestContactAdd
+    - confirmContactAdd
+    - requestContactChange
+    - confirmContactChange
+    - cancelContactChange
+    - requestContactRemoval
+    - confirmContactRemoval
+    - requestPrimaryContact
+    - setPrimaryContact
+    - resendContactCode
+
+errors:
+  - CONTACT_ALREADY_CLAIMED
+  - ACCOUNT_SUSPENDED
+  - ACCOUNT_MERGING
+  - ACCOUNT_NOT_ACTIVE
+  - CONTACT_UNKNOWN
+  - CONTACT_CHANGE_IN_PROGRESS
+  - LAST_VERIFIED_CONTACT
+  - NO_VERIFIED_CONTACT
+
+account_types: [BUYER, ORGANIZER, TEAM_MEMBER, EVENT_STAFF, PLATFORM_STAFF]
+account_states: [PROVISIONING, ACTIVE, SUSPENDED, MERGED, DELETED]
+pending_kinds: [MERGING, CHANGING, DELETION_REQUESTED]
+drift_classes: [D1, D2, D3, D4, D5, D6, D7, D8, D9]
+
+field_ownership:
+  mongodb: [accountId, status, pendingKind, pendingSince, mergedInto, contacts, consents, preferredChannel, displayName, locale, avatarUrl, bio, dateOfBirth, timezone]
+  identity_service_to_keycloak: [username, enabled, realm_roles, accountId_attribute, email, emailVerified]
+  keycloak: [credentials, mfa, sessions]
+
+max_ages:
+  provisioning: PT10M
+  merging: PT2H
+  changing: PT48H
+  enabled_or_role_drift: PT15M
+
+config:
+  identity.account.repair.interval: PT15M
+  identity.account.repair.provisioning-max-age: PT10M
+  identity.account.repair.merging-max-age: PT2H
+  identity.account.repair.changing-max-age: PT48H
+  identity.contact.quarantine: P30D            # decided for implementation 2026-10-04 (F-044, revisit); PT0S in the test profile
+  identity.contact.resend-after: PT5M          # user decision 2026-10-04 ("after five"); PT0S in the test profile
+  identity.account.repair.enabled: false       # true in the prod profile: creates the Schedule at boot
+  identity.contact.change-wait: PT20S          # how long a contact request waits before answering APPLYING
+  identity.delivery.whatsapp.notice-template-name: "(optional) prefix of parameterless notice templates"
+
+decisions:
+  - "2026-10-04 F-044 (a) a change, removal or primary switch is authorised by a fresh code to the CURRENT primary verified contact; no support-recovery path - an account with no verified contact able to receive a code is refused NO_VERIFIED_CONTACT"
+  - "2026-10-04 F-044 (b) a released contact is quarantined for identity.contact.quarantine (P30D) before any other account may claim it"
+  - "2026-10-04 F-044 (c) removing a contact is refused when it is the last verified one"
+  - "2026-10-04 user: adding a second contact needs ONLY the code to the new contact (no step-up); the stolen-session risk is accepted, revisit later"
+  - "2026-10-04 user: a pending code may be sent again after identity.contact.resend-after (PT5M); quarantine stays P30D"
+  - "2026-10-04 F-044 (d) at most one primary; the primary may be switched among verified contacts after a step-up"
+
+tests:
+  - "ContactRulesTest (L1) - quarantine window, last verified contact, successor, primary"
+  - "ContactChangeRulesTest (L1) - workflow id, 48 h expiry, attempt budget, versioning"
+  - "ContactChangeWorkflowTest (L3, time-skipping Temporal, real MongoDB) - add, change, claim-before-release, lost claim, quarantine, Keycloak down, crash convergence, 48 h expiry, five wrong codes, one open change, remove, primary, replay, no contact in history"
+  - "ContactChangeEndToEndTest (L2, real Redis, MongoDB, Temporal, Keycloak 26.5.2 behind a 503 proxy) - GraphQL add both ways, change with session revocation and quarantine, lost claim, wrong and expired codes, concurrent adds, removal, primary, IDOR, 503 mid change, Keycloak stopped mid change, no contact in logs, Redis or events"
+  - "BuyerSignInEndToEndTest (L2) - crash after claim then retry, orphan Keycloak user adopted by username, Keycloak 5xx, Keycloak stopped"
+  - "KeycloakServiceContainerTest (L2) - admin client 26.0.12 against server 26.5.2"
+  - "AccountRepairTest (L3) - stale CHANGING marker cleared (D8, change part)"
+  - "AccountRepairEndToEndTest (L2, real Mongo replica set, Temporal, Redis, Keycloak 26.5.2 behind a 503 proxy) - each drift class D1..D9 injected, repaired, audited, second run a no-op; Keycloak 503 mid repair; the Schedule and the workflow it starts"
+
+verify:
+  - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-004 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-IDN-004 -DfailIfNoTests=false
+
+risks:
+  - "Contact quarantine length is undecided. Too short and a recycled number lets a new subscriber claim a previous owner's former contact; too long and a legitimate re-registration is blocked. Open item F-044."
+  - "Merge policy (automatic on a match, or only by support) is undecided; the spec allows support-initiated merge only. A merge cannot be undone by the workflow."
+  - "The repair schedule classifies drift every 15 minutes by scanning accounts and Keycloak users; at scale the Keycloak paging cost is real. Cadence and page size are stated but not sized."
+  - "Adopting a console-made change of enabled (D-47) means an attacker with Keycloak admin access can unsuspend an account and have it adopted. Adoption is audited and flagged, but not blocked; a stricter policy would require a second approver."
+  - "Legacy users without any verified contact cannot be mapped to a contact. They keep working through their Keycloak credentials until a migration decides; open item F-044."
+  - "AccountEnsureWorkflow reads the encrypted contact from a Redis proof held for PT30M after consumption. A Redis loss in that window strands a PROVISIONING account whose contact cannot be recovered; the buyer must request a new code."

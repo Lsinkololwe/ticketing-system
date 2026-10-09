@@ -30,7 +30,7 @@ export const ADMIN_USERS = gql`
     $accountStatus: AccountStatus
     $pagination: OffsetPaginationInput
   ) {
-    usersOffsetPagination(
+    users(
       search: $search
       role: $role
       accountStatus: $accountStatus

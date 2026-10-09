@@ -1,8 +1,8 @@
 package com.pml.identity.repository;
 
+import java.util.Collection;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.OrganizationMember;
-import com.pml.identity.domain.valueobject.OrganizationRole;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
@@ -20,6 +20,15 @@ public interface OrganizationMemberRepository extends ReactiveMongoRepository<Or
      * Find member by user ID and organization ID (unique combination)
      */
     Mono<OrganizationMember> findByUserIdAndOrganizationId(String userId, String organizationId);
+
+    /**
+     * Memberships whose Keycloak group mirror is behind.
+     *
+     * <p>Indexed on the model, because the sweep runs every minute and this is the only query it
+     * makes — an unindexed scan of every membership on the platform, once a minute, to find the
+     * handful that are pending.
+     */
+    Flux<OrganizationMember> findByMirrorPendingTrue();
 
     /**
      * Check if user is member of organization
@@ -52,25 +61,6 @@ public interface OrganizationMemberRepository extends ReactiveMongoRepository<Or
     Flux<OrganizationMember> findByOrganizationIdAndStatus(String organizationId, MemberStatus status, Pageable pageable);
 
     /**
-     * Find all members with a specific role
-     */
-    Flux<OrganizationMember> findByOrganizationIdAndRole(String organizationId, OrganizationRole role);
-
-    /**
-     * Find all members with a specific role and status
-     */
-    Flux<OrganizationMember> findByOrganizationIdAndRoleAndStatus(
-            String organizationId,
-            OrganizationRole role,
-            MemberStatus status
-    );
-
-    /**
-     * Find single member by organization and role (use for OWNER lookup)
-     */
-    Mono<OrganizationMember> findFirstByOrganizationIdAndRole(String organizationId, OrganizationRole role);
-
-    /**
      * Find all organizations a user is a member of
      */
     Flux<OrganizationMember> findByUserId(String userId);
@@ -91,18 +81,10 @@ public interface OrganizationMemberRepository extends ReactiveMongoRepository<Or
     Mono<Long> countByOrganizationIdAndStatus(String organizationId, MemberStatus status);
 
     /**
-     * Count members by role
-     */
-    Mono<Long> countByOrganizationIdAndRole(String organizationId, OrganizationRole role);
-
-    /**
-     * Delete all members of an organization
-     */
-    Mono<Void> deleteByOrganizationId(String organizationId);
-
-    /**
      * Find the organization owner
      */
     @Query("{ 'organizationId': ?0, 'role': 'OWNER' }")
     Mono<OrganizationMember> findOwnerByOrganizationId(String organizationId);
+
+    Mono<OrganizationMember> findByIdAndOrganizationIdIn(String id, Collection<String> organizationIds);
 }

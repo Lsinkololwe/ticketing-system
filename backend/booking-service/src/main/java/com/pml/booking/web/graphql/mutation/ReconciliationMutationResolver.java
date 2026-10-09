@@ -1,13 +1,14 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.constants.PlatformTime;
+
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.service.AccountingService;
 import com.pml.booking.service.ReconciliationService;
 import com.pml.booking.web.graphql.dto.EscrowJournalVerificationResponse;
-import com.pml.booking.web.graphql.dto.JournalEntryMutationResponse;
-import com.pml.booking.web.graphql.dto.ReconciliationMutationResponse;
 import com.pml.booking.web.graphql.dto.RecordGatewaySettlementInput;
 import com.pml.booking.web.graphql.dto.ResolveReconciliationItemInput;
 import com.pml.booking.web.graphql.dto.StartReconciliationInput;
@@ -15,6 +16,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
+import com.pml.booking.domain.model.ReconciliationRun;
+import com.pml.booking.domain.model.JournalEntry;
 
 /**
  * GraphQL Mutation Resolver for Reconciliation Operations.
@@ -50,7 +55,11 @@ import reactor.core.publisher.Mono;
  * @since 1.0.0
  */
 @Slf4j
+
+
 @DgsComponent
+@FailClosedOnRevocation
+@Validated
 @RequiredArgsConstructor
 public class ReconciliationMutationResolver {
 
@@ -63,8 +72,8 @@ public class ReconciliationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ReconciliationMutationResponse> startReconciliation(
-            @InputArgument StartReconciliationInput input
+    public Mono<ReconciliationRun> startReconciliation(
+            @Valid @InputArgument StartReconciliationInput input
     ) {
         log.info("GraphQL mutation: startReconciliation(type={}, date={})",
                 input.type(), input.reconciliationDate());
@@ -74,8 +83,10 @@ public class ReconciliationMutationResolver {
         // TODO: Get authenticated user from security context
         String runBy = "system";
 
-        // Convert LocalDateTime to LocalDate
-        java.time.LocalDate reconciliationDate = input.reconciliationDate().toLocalDate();
+        // Which calendar day a reconciliation covers is a question about Zambia, not about
+        // the server's zone: a run at 01:00 UTC belongs to the Zambian day that has already
+        // started, and reconciling it against the previous day would leave a day unmatched.
+        java.time.LocalDate reconciliationDate = PlatformTime.dateAt(input.reconciliationDate());
 
         switch (input.type()) {
             case GATEWAY:
@@ -112,17 +123,14 @@ public class ReconciliationMutationResolver {
                 );
                 break;
             default:
-                return Mono.just(ReconciliationMutationResponse.error(
-                        "Unknown reconciliation type: " + input.type()));
+                // An unmapped enum value is a gap in this switch, not bad input:
+                // the value came from the schema's own enum, so the caller could
+                // not have sent anything else.
+                return Mono.error(new IllegalStateException(
+                        "no reconciliation strategy for type " + input.type()));
         }
 
-        return runMono
-                .map(run -> ReconciliationMutationResponse.success(
-                        "Reconciliation run started: " + run.getId(), run))
-                .onErrorResume(e -> {
-                    log.error("Failed to start reconciliation: {}", e.getMessage());
-                    return Mono.just(ReconciliationMutationResponse.error(e.getMessage()));
-                });
+        return runMono;
     }
 
     /**
@@ -131,9 +139,9 @@ public class ReconciliationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ReconciliationMutationResponse> resolveReconciliationItem(
+    public Mono<ReconciliationRun> resolveReconciliationItem(
             @InputArgument String runId,
-            @InputArgument ResolveReconciliationItemInput input
+            @Valid @InputArgument ResolveReconciliationItemInput input
     ) {
         log.info("GraphQL mutation: resolveReconciliationItem(runId={}, externalId={})",
                 runId, input.externalId());
@@ -141,13 +149,7 @@ public class ReconciliationMutationResolver {
         // TODO: Get authenticated user from security context
         String resolvedBy = "system";
 
-        return reconciliationService.resolveItem(runId, input.externalId(), input.resolution(), resolvedBy)
-                .map(run -> ReconciliationMutationResponse.success(
-                        "Reconciliation item resolved", run))
-                .onErrorResume(e -> {
-                    log.error("Failed to resolve reconciliation item: {}", e.getMessage());
-                    return Mono.just(ReconciliationMutationResponse.error(e.getMessage()));
-                });
+        return reconciliationService.resolveItem(runId, input.externalId(), input.resolution(), resolvedBy);
     }
 
     /**
@@ -156,19 +158,13 @@ public class ReconciliationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ReconciliationMutationResponse> completeReconciliation(
+    public Mono<ReconciliationRun> completeReconciliation(
             @InputArgument String runId,
             @InputArgument(name = "notes") String notes
     ) {
         log.info("GraphQL mutation: completeReconciliation({})", runId);
 
-        return reconciliationService.completeRun(runId, notes != null ? notes : "Completed via GraphQL")
-                .map(run -> ReconciliationMutationResponse.success(
-                        "Reconciliation run completed successfully", run))
-                .onErrorResume(e -> {
-                    log.error("Failed to complete reconciliation run {}: {}", runId, e.getMessage());
-                    return Mono.just(ReconciliationMutationResponse.error(e.getMessage()));
-                });
+        return reconciliationService.completeRun(runId, notes != null ? notes : "Completed via GraphQL");
     }
 
     /**
@@ -177,19 +173,13 @@ public class ReconciliationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ReconciliationMutationResponse> failReconciliation(
+    public Mono<ReconciliationRun> failReconciliation(
             @InputArgument String runId,
             @InputArgument String reason
     ) {
         log.info("GraphQL mutation: failReconciliation(runId={}, reason={})", runId, reason);
 
-        return reconciliationService.failRun(runId, reason)
-                .map(run -> ReconciliationMutationResponse.success(
-                        "Reconciliation run marked as failed: " + reason, run))
-                .onErrorResume(e -> {
-                    log.error("Failed to fail reconciliation run {}: {}", runId, e.getMessage());
-                    return Mono.just(ReconciliationMutationResponse.error(e.getMessage()));
-                });
+        return reconciliationService.failRun(runId, reason);
     }
 
     // ========================================================================
@@ -274,8 +264,8 @@ public class ReconciliationMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<JournalEntryMutationResponse> recordGatewaySettlement(
-            @InputArgument RecordGatewaySettlementInput input
+    public Mono<JournalEntry> recordGatewaySettlement(
+            @Valid @InputArgument RecordGatewaySettlementInput input
     ) {
         log.info("GraphQL mutation: recordGatewaySettlement(settlementId={}, gross={}, fee={}, net={})",
                 input.settlementId(), input.grossAmount(), input.feeAmount(), input.netAmount());
@@ -289,15 +279,7 @@ public class ReconciliationMutationResolver {
                         input.bankReference(),
                         input.currency()
                 )
-                .map(journalEntry -> JournalEntryMutationResponse.success(
-                        "Gateway settlement recorded: " + input.settlementId(),
-                        journalEntry
-                ))
                 .doOnSuccess(response -> log.info("Gateway settlement {} recorded successfully",
-                        input.settlementId()))
-                .onErrorResume(e -> {
-                    log.error("Failed to record gateway settlement {}: {}", input.settlementId(), e.getMessage());
-                    return Mono.just(JournalEntryMutationResponse.error(e.getMessage()));
-                });
+                        input.settlementId()));
     }
 }

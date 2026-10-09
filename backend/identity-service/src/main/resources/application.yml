@@ -3,23 +3,55 @@ server:
   shutdown: graceful
 
 spring:
+
+  # The scheduler pool. Spring's default is ONE thread. The outbox drain, polling
+  # every 2 seconds, is this service's only @Scheduled job: timers, reminders and the Keycloak
+  # group-mirror repair run in Temporal. The pool stays sized so a drain pass never
+  # waits on another job that joins it.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:4}
   profiles:
     # Defaults to "local" (Service Bus emulator). Prod sets SPRING_PROFILES_ACTIVE=prod.
     active: ${SPRING_PROFILES_ACTIVE:local}
   application:
     name: identity-service
-  main:
-    allow-bean-definition-overriding: true
+  # Outgoing mail for email codes. SPRING_MAIL_HOST/PORT/USERNAME/PASSWORD supply the server; the
+  # timeouts bound every SMTP step to 5 s (identity.delivery.email.timeout bounds the whole send).
+  mail:
+    properties:
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
   lifecycle:
     timeout-per-shutdown-phase: 60s
   reactor:
     context-propagation: auto
 
+  # Durable execution. The task queues this service's workers poll; TemporalRegistryLintTest
+  # checks them against the platform's list of queues.
+  temporal:
+    connection:
+      target: ${TEMPORAL_ADDRESS:127.0.0.1:7233}
+    namespace: ${TEMPORAL_NAMESPACE:ticketing}
+    workers-auto-discovery:
+      packages:
+        - com.pml.identity.workflow
+    workers:
+      - task-queue: identity-onboarding
+        capacity:
+          max-concurrent-activity-executors: ${TEMPORAL_ACTIVITY_EXECUTORS:50}
+      - task-queue: identity-notify
+      - task-queue: identity-account
+
   cloud:
     azure:
       servicebus:
         connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:}
-        namespace: ${AZURE_SERVICEBUS_NAMESPACE:}
+        # No `namespace` key on purpose. An empty one is still "set": it overrides the connection string and sends the
+        # producer to ".servicebus.windows.net", where every send times out. Managed-identity deployments set
+        # SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE in the environment instead.
         producer:
           send-timeout: 30s
     stream:
@@ -27,21 +59,33 @@ spring:
       function:
         definition: ""
       bindings:
-        userOutput-out-0:
+        # The one binding identity publishes on, through the outbox drain.
+        identityEvents-out-0:
           destination: identity-events
-          producer:
-            partition-key-expression: headers['partitionKey']
+      # The Azure binder needs the entity kind spelled out for a producer; without it every send
+      # fails with "Entity type cannot be null" and the outbox never drains.
       servicebus:
         bindings:
-          userOutput-out-0:
+          identityEvents-out-0:
             producer:
               entity-type: topic
+              # The binder sends asynchronously unless told otherwise: send() then returns true before the
+              # bus has accepted anything and a later failure is only logged, so the outbox would mark the
+              # event sent and lose it. Synchronous sends raise on failure, which keeps the row pending.
+              sync: true
 
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin&directConnection=true}
+      # No directConnection: it tells the driver to treat the server as a single node, so it
+      # never discovers the replica set — and multi-document transactions become silently inert.
+      # The compose file runs mongod --replSet rs0 with rs.initiate(), so the services connect to
+      # it as a replica set.
+      # No default: the local profile pins the development database, so any other profile that
+      # forgets the variable stops at startup naming it instead of dialling a password in git.
+      uri: ${MONGODB_URI}
       database: ${MONGODB_DATABASE:dev_ticketing}
-      auto-index-creation: true
+      # Indexes come only from the service's *IndexInitializer registry; annotations on the models create none.
+      auto-index-creation: false
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
@@ -50,7 +94,13 @@ spring:
 
   graphql:
     graphiql:
-      enabled: true
+      # A debug surface defaults OFF and is switched on deliberately. Every profile inherits this
+      # base file and application-prod.yml does not override it, so OFF here is what production
+      # gets; only application-local.yml turns it on.
+      #
+      # The page itself is served unauthenticated, but executing a query and introspecting the
+      # schema both go through /graphql, which IS authenticated.
+      enabled: ${GRAPHIQL_ENABLED:false}
     path: /graphql
     websocket:
       path: /graphql
@@ -66,7 +116,7 @@ spring:
         registration:
           identity-service:
             client-id: ${IDENTITY_SERVICE_CLIENT_ID:myticketzm-identity-service}
-            # ET-PLT-001 R6 · no default. Unset in prod must FAIL naming the variable,
+            # No default. Unset in prod must FAIL naming the variable,
             # not start against Keycloak with a credential anyone can read in git.
             client-secret: ${IDENTITY_SERVICE_SECRET}
             authorization-grant-type: client_credentials
@@ -77,7 +127,7 @@ spring:
 
 security:
   debug:
-    enabled: ${SECURITY_DEBUG_ENABLED:true}
+    enabled: ${SECURITY_DEBUG_ENABLED:false}
 
 dgs:
   graphql:
@@ -97,22 +147,20 @@ keycloak:
   server-url: ${KEYCLOAK_URL:http://localhost:8084}
   realm: ${KEYCLOAK_REALM:myticketzm}
   admin-username: ${KEYCLOAK_ADMIN_USER:admin}
-  # ET-PLT-001 R6 · no default. This previously fell back to "admin".
+  # No default: an unset password fails at start-up instead of trying "admin".
   admin-password: ${KEYCLOAK_ADMIN_PASSWORD}
   admin-realm: master
   client-id: ${IDENTITY_SERVICE_CLIENT_ID:myticketzm-identity-service}
   client-secret: ${IDENTITY_SERVICE_SECRET}
-  # Platform-admin realm split (OFF by default). Add the admin realm issuer to enable
-  # validating tokens from BOTH realms, selected by the token's `iss` claim, e.g.:
-  #   KEYCLOAK_TRUSTED_ISSUERS=http://localhost:8084/realms/myticketzm-admin
+  # Platform-admin realm split. The default below is NOT empty: the admin realm is trusted
+  # out of the box, and tokens from both realms are validated per their `iss` claim.
   trusted-issuers: ${KEYCLOAK_TRUSTED_ISSUERS:http://localhost:8084/realms/myticketzm-admin}
+  # The audience check. Blank = `aud` is NOT validated, and the service logs
+  # that at WARN on every start. Enabling it takes BOTH halves: an oidc-audience-mapper on
+  # the client in docker-resources/keycloak/myticketzm-realm.json (without one,
+  # Keycloak emits `"aud": "account"`), and this variable. Set one without the other and
+  # every token is rejected.
   expected-audiences: ${KEYCLOAK_EXPECTED_AUDIENCES:}
-
-services:
-  catalog:
-    url: ${CATALOG_SERVICE_URL:http://localhost:8085}
-  booking:
-    url: ${BOOKING_SERVICE_URL:http://localhost:8082}
 
 management:
   endpoints:
@@ -183,62 +231,83 @@ graphql:
     complexity-exceeded-message: "Query complexity limit exceeded"
 
 identity:
-  service:
-    version: 1.0.0
-    description: User Management and Platform Operations Microservice
-  cdc:
-    webhook:
-      enabled: true
-      path: /api/cdc/events
-      debezium-server-url: http://debezium-server-identity:8100
-  features:
-    email-verification: true
-    sms-verification: false
-    two-factor-auth: false
-    file-upload: true
-  otp:
-    expiration-minutes: ${OTP_EXPIRATION_MINUTES:5}
-    length: ${OTP_LENGTH:6}
-    max-attempts: ${OTP_MAX_ATTEMPTS:3}
-    cooldown-minutes: ${OTP_COOLDOWN_MINUTES:1}
-  notifications:
-    email:
-      enabled: true
-      provider: sendgrid
-    sms:
-      enabled: false
-      provider: twilio
-    push:
-      enabled: false
-      provider: fcm
   migrations:
     enabled: ${IDENTITY_MIGRATIONS_ENABLED:true}
     fail-fast: ${IDENTITY_MIGRATIONS_FAIL_FAST:true}
+    # contacts-backfill: true counts what would be written and writes nothing.
+    contacts-backfill-dry-run: ${IDENTITY_CONTACTS_BACKFILL_DRY_RUN:false}
+    contacts-backfill-batch-size: ${IDENTITY_CONTACTS_BACKFILL_BATCH_SIZE:500}
+
+  # ---------------------------------------------------------------------------
+  # Buyer identity (ET-IDN-004, specs/identity/004-accounts-and-contacts/CONTRACT.md 7).
+  #
+  # The secrets below have EMPTY defaults on purpose: IdentityConfigurationValidator stops
+  # startup naming the property when one is blank, except in profiles local and test, which
+  # carry development values in application-local.yml and src/test/resources/application-test.yml.
+  # ---------------------------------------------------------------------------
+  challenge:
+    code-length: 6
+    ttl: PT5M
+    max-attempts: 5
+    lock: PT15M
+    cooldown: PT60S
+    hmac-pepper: ${IDENTITY_CHALLENGE_HMAC_PEPPER:}
+  proof:
+    ttl: PT2M
+    ensure-hold: PT30M
+  login-handle:
+    ttl: PT60S
+  contact:
+    # HMAC key of the contact key (uniqueness, Redis keys, workflow ids). Changing it orphans every
+    # stored valueHash. The AES key for valueEncrypted is app.security.encryption.key.
+    hash-key: ${IDENTITY_CONTACT_HASH_KEY:}
+    encryption-key-id: ${IDENTITY_CONTACT_ENCRYPTION_KEY_ID:v1}
+    # A released contact cannot be claimed by another account for this long (decision F-044, 2026-10-04)
+    quarantine: ${IDENTITY_CONTACT_QUARANTINE:P30D}
+    # a code may be asked for again this long after it was sent (user decision 2026-10-04)
+    resend-after: ${IDENTITY_CONTACT_RESEND_AFTER:PT5M}
+  id-hash:
+    key: ${IDENTITY_ID_HASH_KEY:}
+  limits:
+    contact-codes-per-day: 10
+    ip-codes-per-hour: 10
+    device-distinct-contacts-per-day: 5
+    country-codes-per-day:
+      default: 2000
+    allowed-countries: [ZM, GB, US, ZA, ZW, MW, TZ, KE, BW, NA, AE, CA, AU, IE, DE, FR, NL]
+  delivery:
+    whatsapp:
+      enabled: ${IDENTITY_DELIVERY_WHATSAPP_ENABLED:false}
+      api-url: ${IDENTITY_DELIVERY_WHATSAPP_API_URL:https://graph.facebook.com/v21.0}
+      phone-number-id: ${IDENTITY_DELIVERY_WHATSAPP_PHONE_NUMBER_ID:}
+      access-token: ${IDENTITY_DELIVERY_WHATSAPP_ACCESS_TOKEN:}
+      template-name: ${IDENTITY_DELIVERY_WHATSAPP_TEMPLATE:}
+      template-language: ${IDENTITY_DELIVERY_WHATSAPP_TEMPLATE_LANGUAGE:en}
+      timeout: PT5S
+    email:
+      enabled: ${IDENTITY_DELIVERY_EMAIL_ENABLED:false}
+      from: ${IDENTITY_DELIVERY_EMAIL_FROM:}
+      timeout: PT5S
+    capture:
+      # In-memory capture of sent messages for tests. Profiles local and test only; startup fails elsewhere.
+      enabled: false
+  # Exact browser origins allowed to call this service cross-origin; no wildcard, no default.
+  cors:
+    allowed-origins: ${IDENTITY_CORS_ALLOWED_ORIGINS:}
+  account:
+    # How long /accounts/ensure waits for the account workflow before answering PROVISIONING (202).
+    ensure-wait: PT5S
+    repair:
+      interval: PT15M
+      provisioning-max-age: PT10M
+      merging-max-age: PT2H
+      changing-max-age: PT48H
 
 messaging:
-  provider: ${MESSAGING_PROVIDER:whatsapp}
   whatsapp:
     api-url: https://graph.facebook.com/v17.0
     phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
     access-token: ${WHATSAPP_ACCESS_TOKEN:}
-    otp-template: ${WHATSAPP_OTP_TEMPLATE:otp_verification}
-  twilio:
-    account-sid: ${TWILIO_ACCOUNT_SID:}
-    auth-token: ${TWILIO_AUTH_TOKEN:}
-    from-number: ${TWILIO_FROM_NUMBER:}
-  storage:
-    type: s3
-    bucket: ${S3_BUCKET:myticketzm-files}
-    region: ${AWS_REGION:us-east-1}
-
-mongock:
-  migration-scan-package:
-    - com.pml.identity.migration
-  enabled: ${MONGOCK_ENABLED:true}
-  transactional: ${MONGOCK_TRANSACTIONAL:true}
-  lock-acquired-for-millis: 60000
-  lock-quit-trying-after-millis: 180000
-  lock-try-frequency-millis: 1000
 
 mongodb:
   schema-validation:
@@ -311,45 +380,62 @@ pml:
       require-eviction-safe-cache: true
 
 file-upload:
-  max-file-size: 10485760
-  max-filename-length: 255
-  allowed-extensions: [pdf, jpg, jpeg, png, webp]
-  allowed-mime-types: [application/pdf, image/jpeg, image/png, image/webp]
   presigned-url:
     default-expiry-minutes: 60
-    max-expiry-minutes: 1440
-  malware-scanning:
-    enabled: false
-    clamav-host: ${CLAMAV_HOST:localhost}
-    clamav-port: ${CLAMAV_PORT:3310}
-    timeout-seconds: 30
 
+# Where verification documents are stored: local (development) or s3. Exactly one
+# FileStorageService is active, chosen by this one key.
 file-storage:
   type: ${FILE_STORAGE_TYPE:local}
   local:
     base-path: ${FILE_STORAGE_LOCAL_PATH:./uploads}
-    serve-files: true
-    cleanup-on-shutdown: false
-  s3:
-    enabled: ${AWS_S3_ENABLED:false}
 
 aws:
-  region: ${AWS_REGION:us-east-1}
   s3:
+    region: ${AWS_REGION:us-east-1}
     bucket:
       verification-documents: ${AWS_S3_BUCKET_VERIFICATION_DOCS:ticketing-verification-docs}
-    encryption:
-      enabled: true
-      type: ${AWS_S3_ENCRYPTION_TYPE:AES256}
-      kms-key-id: ${AWS_S3_KMS_KEY_ID:}
-    lifecycle:
-      transition-to-ia-days: 90
-      expiration-days: 2555
-  credentials:
-    access-key-id: ${AWS_ACCESS_KEY_ID:}
-    secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
 
 app:
   security:
     encryption:
-      key: ${APP_SECURITY_ENCRYPTION_KEY:LqjaTnuN4/v63gj/uxhU3HfBqITe2vx4Ep5dJZxX48Q=}
+      # AES-256 key for payout and bank details, base64. No default: a service started without
+      # APP_SECURITY_ENCRYPTION_KEY stops at startup instead of encrypting with a key in git.
+      # Only the local profile (application-local.yml) carries a development key.
+      key: ${APP_SECURITY_ENCRYPTION_KEY}
+
+# ---------------------------------------------------------------------------
+# The consumer retry budget, stated rather than defaulted
+#
+# Spring Cloud Stream has a default for every one of these, which is how a
+# service can look configured while retrying a dead provider ten times a second
+# or giving up after a single attempt. They are set explicitly, and
+# ConsumerRetryLintTest fails the build if any goes missing.
+#
+# Three attempts over roughly two seconds: long enough to ride out a driver
+# reconnect, short enough that a genuinely broken consumer reaches its dead
+# letter while an operator is still looking at the alert. Exhaustion
+# dead-letters with a reason (DeadLetter), it does not rethrow.
+platform:
+  events:
+    consumer:
+      max-attempts: ${EVENT_CONSUMER_MAX_ATTEMPTS:3}
+      initial-backoff: ${EVENT_CONSUMER_INITIAL_BACKOFF:500ms}
+      max-backoff: ${EVENT_CONSUMER_MAX_BACKOFF:10s}
+      backoff-multiplier: ${EVENT_CONSUMER_BACKOFF_MULTIPLIER:2.0}
+
+  # The transactional outbox.
+  #
+  # No defaults come from the auto-configuration, deliberately: a guessed collection would give a
+  # misconfigured service a working outbox pointed somewhere no drain looks — messages staged where
+  # nothing reads them, which is the failure the outbox exists to prevent, reached another way.
+  outbox:
+    collection: identity_outbox
+    # The binding identity publishes on (spring.cloud.stream.bindings above). A name
+    # that is not declared there has no destination, and the drain's sends would never reach the topic.
+    binding: identityEvents-out-0
+    # Two seconds: the drain is a poll, and this is how long a staged message waits before the bus
+    # sees it. Short enough that nothing feels queued, long enough that an idle service is not
+    # querying constantly.
+    drain-interval: PT2S
+

@@ -1,11 +1,13 @@
 package com.pml.identity.web.rest;
 
+import com.pml.shared.error.DomainRefusal;
+import com.pml.identity.security.IdentityTenantReads;
 import com.pml.shared.constants.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.VerificationDocumentService;
 import com.pml.identity.service.storage.FileStorageService;
-import com.pml.identity.service.validation.FileUploadValidator;
+import com.pml.identity.validation.FileUploadValidator;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -59,10 +61,14 @@ import java.util.UUID;
 public class VerificationDocumentRestController {
 
     private final VerificationDocumentService documentService;
+    private final IdentityTenantReads reads;
     private final OrganizationService organizationService;
     private final FileUploadValidator fileUploadValidator;
     private final FileStorageService fileStorageService;
 
+
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     // ========================================================================
     // UPLOAD URL REQUEST (Step 1: Get presigned URL)
     // ========================================================================
@@ -91,7 +97,7 @@ public class VerificationDocumentRestController {
      * @return Presigned URL response with upload URL and file key
      */
     @PostMapping("/organizations/{orgId}/documents/upload-url")
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<ResponseEntity<PresignedUploadUrlResponse>> requestUploadUrl(
             @PathVariable String orgId,
             @Valid @RequestBody UploadUrlRequest request,
@@ -101,7 +107,7 @@ public class VerificationDocumentRestController {
             return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
         }
 
-        String userId = jwt.getSubject();
+        String userId = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
         log.info("User {} requesting upload URL for organization: {}, documentType: {}",
                 userId, orgId, request.documentType);
 
@@ -139,7 +145,7 @@ public class VerificationDocumentRestController {
                                                     "Upload URL generated successfully",
                                                     presignedUrl,
                                                     fileKey,
-                                                    Instant.now().plus(Duration.ofMinutes(15)),
+                                                    clock.instant().plus(Duration.ofMinutes(15)),
                                                     10 * 1024 * 1024L, // 10MB max
                                                     List.of("application/pdf", "image/jpeg", "image/png", "image/webp"),
                                                     null
@@ -175,7 +181,7 @@ public class VerificationDocumentRestController {
      * @return Saved verification document
      */
     @PostMapping("/organizations/{orgId}/documents")
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<ResponseEntity<DocumentResponse>> registerDocument(
             @PathVariable String orgId,
             @Valid @RequestBody RegisterDocumentRequest request,
@@ -185,7 +191,7 @@ public class VerificationDocumentRestController {
             return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
         }
 
-        String userId = jwt.getSubject();
+        String userId = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
         log.info("User {} registering document for organization: {}", userId, orgId);
 
         // Verify organization ownership
@@ -234,7 +240,7 @@ public class VerificationDocumentRestController {
      * @return List of verification documents
      */
     @GetMapping("/organizations/{orgId}/documents")
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<ResponseEntity<List<VerificationDocument>>> listDocuments(
             @PathVariable String orgId,
             @RequestParam(required = false) DocumentStatus status,
@@ -244,7 +250,7 @@ public class VerificationDocumentRestController {
             return Mono.just(ResponseEntity.<List<VerificationDocument>>status(HttpStatus.UNAUTHORIZED).build());
         }
 
-        String userId = jwt.getSubject();
+        String userId = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
         log.info("User {} listing documents for organization: {}", userId, orgId);
 
         // Verify organization ownership
@@ -273,7 +279,7 @@ public class VerificationDocumentRestController {
      * @return Verification document
      */
     @GetMapping("/documents/{docId}")
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<ResponseEntity<VerificationDocument>> getDocument(
             @PathVariable String docId,
             @AuthenticationPrincipal Jwt jwt) {
@@ -282,9 +288,9 @@ public class VerificationDocumentRestController {
             return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
         }
 
-        String userId = jwt.getSubject();
+        String userId = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
 
-        return documentService.findById(docId)
+        return reads.documentForCaller(docId)
                 .flatMap(document -> organizationService.findByOwnerId(userId)
                         .flatMap(organization -> {
                             if (!document.getOrganizationId().equals(organization.getId())) {
@@ -292,6 +298,7 @@ public class VerificationDocumentRestController {
                             }
                             return Mono.just(ResponseEntity.ok(document));
                         }))
+                .onErrorResume(DomainRefusal.class, refused -> Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).build()))
                 .switchIfEmpty(Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).build()));
     }
 
@@ -309,7 +316,7 @@ public class VerificationDocumentRestController {
      * @return Success response
      */
     @DeleteMapping("/documents/{docId}")
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<ResponseEntity<Void>> deleteDocument(
             @PathVariable String docId,
             @AuthenticationPrincipal Jwt jwt) {
@@ -318,11 +325,11 @@ public class VerificationDocumentRestController {
             return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
         }
 
-        String userId = jwt.getSubject();
+        String userId = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
         log.info("User {} deleting document: {}", userId, docId);
 
         // Verify document belongs to user's organization
-        return documentService.findById(docId)
+        return reads.documentForCaller(docId)
                 .flatMap(doc -> organizationService.findByOwnerId(userId)
                         .flatMap(organization -> {
                             if (!doc.getOrganizationId().equals(organization.getId())) {
@@ -337,6 +344,7 @@ public class VerificationDocumentRestController {
                                     .then(documentService.delete(docId))
                                     .then(Mono.just(ResponseEntity.noContent().<Void>build()));
                         }))
+                .onErrorResume(DomainRefusal.class, refused -> Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).<Void>build()))
                 .switchIfEmpty(Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).build()))
                 .onErrorResume(error -> {
                     log.error("Failed to delete document: {}", error.getMessage());
@@ -369,11 +377,10 @@ public class VerificationDocumentRestController {
         }
 
         // Use validator's raw file validation (without file content)
-        return Mono.just(fileUploadValidator.validateRawFile(
+        return Mono.just(fileUploadValidator.validateDeclaredMetadata(
                 fileName,
                 mimeType,
-                fileSize,
-                new byte[0] // Magic number validation skipped for pre-uploaded files
+                fileSize
         ));
     }
 

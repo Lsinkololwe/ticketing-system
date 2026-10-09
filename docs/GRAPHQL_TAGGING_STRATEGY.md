@@ -97,10 +97,10 @@ type Query {
     discoverEvents(filter: EventDiscoveryFilterInput!): EventConnection!
 
     # Organizer - only event organizers need draft events
-    draftEventsOffsetPagination(...): EventOffsetPage! @tag(name: "organizer") @tag(name: "admin")
+    draftEvents(...): EventOffsetPage! @tag(name: "organizer") @tag(name: "admin")
 
     # Admin - platform administrators only
-    pendingApprovalEventsOffsetPagination(...): EventOffsetPage! @tag(name: "admin")
+    pendingApprovalEvents(...): EventOffsetPage! @tag(name: "admin")
 }
 ```
 
@@ -124,9 +124,9 @@ input ApproveOrganizerInput @tag(name: "admin") {
 | `Event.organizerId` | organizer, admin | Only organizers/admins need this |
 | `Event.approvedBy`, `Event.rejectedBy` | admin | Approval workflow |
 | `discoverEvents` | (none/public) | Mobile event discovery |
-| `eventsOffsetPagination` | admin | Admin table pagination |
-| `draftEventsOffsetPagination` | organizer, admin | Organizer dashboard |
-| `pendingApprovalEventsOffsetPagination` | admin | Admin approval queue |
+| `events` | admin | Admin table pagination |
+| `draftEvents` | organizer, admin | Organizer dashboard |
+| `pendingApprovalEvents` | admin | Admin approval queue |
 | `eventStats` | admin | Platform-wide statistics |
 | `approveEvent`, `rejectEvent` | admin | Admin-only mutations |
 | `createEvent`, `updateEvent` | organizer | Organizer mutations |
@@ -139,11 +139,11 @@ input ApproveOrganizerInput @tag(name: "admin") {
 | `Ticket.buyerId`, `Ticket.buyerEmail` | organizer, admin | Privacy - organizers/admins only |
 | `purchaseTicket` | mobile | Consumer purchase flow |
 | `ticketsByBuyerCursorPagination` | mobile | My tickets list |
-| `ticketsByEventOffsetPagination` | organizer, admin | Event attendee list |
+| `ticketsByEvent` | organizer, admin | Event attendee list |
 | `ticketStats`, `transactionStats` | admin | Platform statistics |
 | `financialReport` | admin | Financial reporting |
 | `adminUpdateTicket` | admin | Admin ticket operations |
-| `escrowAccountsOffsetPagination` | admin | Financial admin |
+| `escrowAccounts` | admin | Financial admin |
 | `createPayoutRequest` | organizer | Organizer payout requests |
 | `approvePayoutRequest` | admin | Admin payout approval |
 
@@ -154,7 +154,7 @@ input ApproveOrganizerInput @tag(name: "admin") {
 | `User` (basic fields) | (none/public) | Profile information |
 | `User.keycloakId` | internal | Service sync only |
 | `me`, `myProfile` | mobile | Current user info |
-| `usersOffsetPagination` | admin | Admin user list |
+| `users` | admin | Admin user list |
 | `platformStatistics` | admin | Platform-wide stats |
 | `myOrganization` | organizer | Organizer dashboard |
 | `approveOrganizer`, `rejectOrganizer` | admin | Admin approval |

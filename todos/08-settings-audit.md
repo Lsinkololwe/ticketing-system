@@ -1,5 +1,7 @@
 # Phase 8: Settings & Audit Logs
 
+> **HISTORICAL — superseded by `specs/tasks` FE-* items; kept for reference. Role names in this file are pre-spec** (see `specs/` for the current role and permission vocabulary). Unticked boxes here are not a backlog.
+
 ## Overview
 Implement system settings, admin profile management, security settings, and comprehensive audit logging.
 

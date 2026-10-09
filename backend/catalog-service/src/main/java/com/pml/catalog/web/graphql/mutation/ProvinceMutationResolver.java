@@ -4,10 +4,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.CreateProvinceInput;
-import com.pml.catalog.web.graphql.dto.CreateProvinceMutationResponse;
-import com.pml.catalog.web.graphql.dto.DeleteProvinceMutationResponse;
 import com.pml.catalog.web.graphql.dto.UpdateProvinceInput;
-import com.pml.catalog.web.graphql.dto.UpdateProvinceMutationResponse;
 import com.pml.catalog.domain.model.Province;
 import com.pml.catalog.service.ProvinceService;
 import lombok.RequiredArgsConstructor;
@@ -15,8 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-import java.util.List;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Province Operations
@@ -27,46 +24,34 @@ import java.util.List;
  * All mutations are secured with admin role.
  */
 @Slf4j
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class ProvinceMutationResolver {
 
     private final ProvinceService provinceService;
 
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
+
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<CreateProvinceMutationResponse> createProvince(
-            @InputArgument CreateProvinceInput input
+    public Mono<Province> createProvince(
+            @Valid @InputArgument CreateProvinceInput input
     ) {
         log.info("Creating province: {}", input.name());
 
         Province province = mapInputToProvince(input);
 
-        return provinceService.createProvince(province)
-                .map(created -> new CreateProvinceMutationResponse(
-                        true,
-                        "Province created successfully",
-                        created,
-                        List.of(),
-                        null
-                ))
-                .onErrorResume(e -> {
-                    log.error("Create province failed: {}", e.getMessage());
-                    return Mono.just(new CreateProvinceMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+        return provinceService.createProvince(province);
     }
 
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<UpdateProvinceMutationResponse> updateProvince(
+    public Mono<Province> updateProvince(
             @InputArgument String id,
-            @InputArgument UpdateProvinceInput input
+            @Valid @InputArgument UpdateProvinceInput input
     ) {
         log.info("Updating province: {}", id);
 
@@ -74,51 +59,18 @@ public class ProvinceMutationResolver {
                 .flatMap(existing -> {
                     updateProvinceFromInput(existing, input);
                     return provinceService.updateProvince(id, existing);
-                })
-                .map(updated -> new UpdateProvinceMutationResponse(
-                        true,
-                        "Province updated successfully",
-                        updated,
-                        List.of(),
-                        null
-                ))
-                .onErrorResume(e -> {
-                    log.error("Update province failed: {}", e.getMessage());
-                    return Mono.just(new UpdateProvinceMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
                 });
     }
 
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<DeleteProvinceMutationResponse> deleteProvince(
+    public Mono<String> deleteProvince(
             @InputArgument String id
     ) {
         log.info("Deleting province: {}", id);
 
         return provinceService.deleteProvince(id)
-                .then(Mono.just(new DeleteProvinceMutationResponse(
-                        true,
-                        "Province deleted successfully",
-                        true,
-                        List.of(),
-                        null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Delete province failed: {}", e.getMessage());
-                    return Mono.just(new DeleteProvinceMutationResponse(
-                            false,
-                            e.getMessage(),
-                            false,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+                .thenReturn(id);
     }
 
     private Province mapInputToProvince(CreateProvinceInput input) {
@@ -133,6 +85,6 @@ public class ProvinceMutationResolver {
         if (input.name() != null) province.setName(input.name());
         if (input.code() != null) province.setCode(input.code());
         if (input.isActive() != null) province.setActive(input.isActive());
-        province.setUpdatedAt(LocalDateTime.now());
+        province.setUpdatedAt(clock.instant());
     }
 }

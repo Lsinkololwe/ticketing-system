@@ -1,16 +1,11 @@
 package com.pml.catalog.service;
 
-import com.pml.catalog.dto.CursorPaginationInput;
-import com.pml.catalog.dto.EventConnection;
-import com.pml.catalog.dto.PageableInput;
-import com.pml.catalog.dto.PagedResult;
 import com.pml.catalog.domain.model.Event;
 import com.pml.shared.constants.EventStatus;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Event Service Interface
@@ -23,21 +18,59 @@ public interface EventService {
 
     Mono<Event> findById(String id);
 
-    Mono<Event> createEvent(Event event);
+    /**
+     * An event as the current caller is entitled to see it, or empty.
+     *
+     * <p>Distinct from {@link #findById}, which loads the document whoever is asking.
+     * That one is correct for service-to-service reads over
+     * {@code /api/internal/events}, where the caller is another service and there is no
+     * tenancy to apply; it is not correct behind a query the schema calls PUBLIC.
+     */
+    Mono<Event> findVisibleById(String id);
 
-    Mono<Event> updateEvent(String id, Event event);
+    /**
+     * A new DRAFT event with its venue and tiers, written in one transaction: either all of it
+     * exists afterwards or none of it does.
+     */
+    Mono<Event> createEvent(com.pml.catalog.web.graphql.dto.CreateEventInput input, String actorId, String organizationId);
 
+    /**
+     * An organizer's edit, under the material-change rule: a material change sends an APPROVED event
+     * back to DRAFT and is refused while the event is under review or published.
+     *
+     * @param platformAdmin whether the caller may set {@code featured}
+     */
+    /**
+     * A DRAFT copy of {@code original} in the caller's organization, with copies of its tiers and
+     * nothing sold. The copy never shares a tier with the original.
+     */
+    Mono<Event> duplicateEvent(Event original, String newTitle, String actorId, String organizationId);
+
+    Mono<Event> updateEvent(Event existing, com.pml.catalog.web.graphql.dto.UpdateEventInput input,
+                            String actorId, boolean platformAdmin);
+
+    /** APPROVED → PUBLISHED, staging {@code catalog.EventPublished}; a PUBLISHED event is returned unchanged. */
     Mono<Event> publishEvent(String id);
 
     /**
-     * Submit event for approval.
-     * Transitions event from DRAFT to PENDING_APPROVAL.
-     * Publishes EventSubmittedEvent for admin notification.
-     *
-     * @param id Event ID
-     * @return Updated event
+     * Confirms a scheduled publication: an APPROVED event whose {@code publishAt} is still ahead is
+     * marked {@code publishScheduled}. Idempotent; the timer itself belongs to the schedule workflow.
      */
-    Mono<Event> submitForApproval(String id);
+    Mono<Event> scheduleEventPublish(String id);
+
+    /** Stops a scheduled publication and clears {@code publishAt}; an event that has none is returned unchanged. */
+    Mono<Event> clearPublishSchedule(String id);
+
+    /** PUBLISHED → APPROVED while no ticket is sold. */
+    /**
+     * {@code soldCount} is booking's own count of non-refunded tickets, verified by
+     * the caller before this method runs — this service does not trust {@code Event.soldTickets},
+     * which is a display figure, not the authority.
+     */
+    Mono<Event> unpublishEvent(String id, long soldCount);
+
+    /** A PUBLISHED event moves to {@code newDateTime}, at most three times. */
+    Mono<Event> rescheduleEvent(String id, Instant newDateTime, String reason);
 
     Mono<Event> cancelEvent(String id);
 
@@ -72,12 +105,6 @@ public interface EventService {
      */
     Mono<Event> sendPublishReminder(String eventId, String triggeredBy);
 
-    Mono<Event> approveEvent(String id);
-
-    Mono<Event> rejectEvent(String id, String reason);
-
-    Mono<Event> updateSoldTickets(String id, int soldCount);
-
     Mono<Void> deleteEvent(String id);
 
     /**
@@ -97,23 +124,11 @@ public interface EventService {
 
     Flux<Event> findAllEvents();
 
-    Flux<Event> findPublishedEvents();
-
     Flux<Event> searchEvents(String query);
-
-    Flux<Event> findUpcomingEvents();
 
     Flux<Event> findEventsByCategory(String categoryId);
 
     Flux<Event> findEventsByCity(String city);
-
-    Flux<Event> findEventsByDateRange(LocalDateTime startDate, LocalDateTime endDate);
-
-    Flux<Event> findEventsByPriceRange(BigDecimal minPrice, BigDecimal maxPrice);
-
-    Flux<Event> findFeaturedEvents();
-
-    Flux<Event> findFreeEvents();
 
     Flux<Event> findEventsByOrganizer(String organizerId);
 
@@ -144,83 +159,4 @@ public interface EventService {
     Mono<Long> countByCity(String city);
 
     Mono<Long> countByStatus(EventStatus status);
-
-    // ==========================================
-    // Cursor-based Pagination Methods
-    // ==========================================
-
-    /**
-     * Find published events with cursor pagination
-     */
-    Mono<EventConnection> findPublishedEventsCursor(CursorPaginationInput pagination);
-
-    /**
-     * Search events with cursor pagination
-     */
-    Mono<EventConnection> searchEventsCursor(String query, CursorPaginationInput pagination);
-
-    /**
-     * Find upcoming events with cursor pagination
-     */
-    Mono<EventConnection> findUpcomingEventsCursor(CursorPaginationInput pagination);
-
-    /**
-     * Find events by category with cursor pagination
-     */
-    Mono<EventConnection> findEventsByCategoryCursor(String category, CursorPaginationInput pagination);
-
-    /**
-     * Find events by city with cursor pagination
-     */
-    Mono<EventConnection> findEventsByCityCursor(String city, CursorPaginationInput pagination);
-
-    /**
-     * Find events by date range with cursor pagination
-     */
-    Mono<EventConnection> findEventsByDateRangeCursor(
-            LocalDateTime startDate, LocalDateTime endDate, CursorPaginationInput pagination);
-
-    /**
-     * Find featured events with cursor pagination
-     */
-    Mono<EventConnection> findFeaturedEventsCursor(CursorPaginationInput pagination);
-
-    /**
-     * Find events by organizer with cursor pagination
-     */
-    Mono<EventConnection> findEventsByOrganizerCursor(String organizerId, CursorPaginationInput pagination);
-
-    // ==========================================
-    // Admin Pagination Methods (Dashboard Tables)
-    // ==========================================
-
-    /**
-     * Find all events with admin pagination
-     */
-    Mono<PagedResult<Event>> findEventsAdmin(PageableInput pageable);
-
-    /**
-     * Find events by status with admin pagination
-     */
-    Mono<PagedResult<Event>> findEventsByStatusAdmin(EventStatus status, PageableInput pageable);
-
-    /**
-     * Find draft events by organizer with admin pagination
-     */
-    Mono<PagedResult<Event>> findDraftEventsAdmin(String organizerId, PageableInput pageable);
-
-    /**
-     * Find pending approval events with admin pagination
-     */
-    Mono<PagedResult<Event>> findPendingApprovalEventsAdmin(PageableInput pageable);
-
-    /**
-     * Find overdue approval events with admin pagination
-     */
-    Mono<PagedResult<Event>> findOverdueApprovalEventsAdmin(PageableInput pageable);
-
-    /**
-     * Find approved but not published events with admin pagination
-     */
-    Mono<PagedResult<Event>> findApprovedNotPublishedEventsAdmin(PageableInput pageable);
 }

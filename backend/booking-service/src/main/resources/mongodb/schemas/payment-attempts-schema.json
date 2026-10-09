@@ -1,18 +1,13 @@
 {
   "$jsonSchema": {
     "bsonType": "object",
-    "title": "Payment Attempt Schema - OWASP Compliant",
-    "description": "MongoDB JSON Schema for payment_attempts collection - Financial data with strict validation",
+    "title": "Payment Attempt Schema",
+    "description": "MongoDB JSON Schema for booking_payment_attempts \u2014 one row per collect attempt against the mobile-money provider, staged before the call is made (ET-PAY-001).",
     "required": [
-      "paymentIntentId",
-      "eventId",
-      "organizerId",
-      "organizationId",
-      "buyerId",
+      "depositId",
       "amount",
       "currency",
       "status",
-      "paymentMethod",
       "createdAt"
     ],
     "properties": {
@@ -23,156 +18,396 @@
       "_id": {
         "bsonType": "objectId"
       },
-      "paymentReference": {
+      "depositId": {
         "bsonType": "string",
-        "pattern": "^PAY-[A-Z0-9]{12,20}$",
-        "description": "Unique payment reference number"
+        "description": "UUID sent to the provider as its deposit id \u2014 the idempotency key, unique"
       },
       "paymentIntentId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "Reference to PaymentIntent"
-      },
-      "eventId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "Event being purchased"
-      },
-      "organizerId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
-        "description": "Event organizer (Keycloak UUID format)"
-      },
-      "organizationId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "OWASP A01 - Tenant isolation required"
-      },
-      "buyerId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
-        "description": "Customer making payment (Keycloak UUID format)"
-      },
-      "amount": {
-        "bsonType": "decimal",
-        "minimum": 0,
-        "description": "OWASP A04 - Payment amount cannot be negative"
-      },
-      "currency": {
-        "bsonType": "string",
-        "enum": [
-          "ZMW",
-          "USD",
-          "EUR",
-          "GBP",
-          "ZAR"
-        ],
-        "description": "ISO 4217 currency code"
-      },
-      "status": {
-        "enum": [
-          "PENDING",
-          "PROCESSING",
-          "AWAITING_PAYMENT",
-          "PAYMENT_RECEIVED",
-          "COMPLETED",
-          "FAILED",
-          "CANCELLED",
-          "EXPIRED",
-          "REFUNDED",
-          "PARTIALLY_REFUNDED"
-        ],
-        "description": "Payment status"
-      },
-      "paymentMethod": {
-        "enum": [
-          "MTN_MOBILE_MONEY",
-          "AIRTEL_MONEY",
-          "ZAMTEL_MONEY",
-          "CARD",
-          "BANK_TRANSFER",
-          "CASH"
-        ],
-        "description": "Payment provider/method"
-      },
-      "providerTransactionId": {
-        "bsonType": "string",
-        "description": "External provider transaction ID"
-      },
-      "providerReference": {
-        "bsonType": "string",
-        "description": "External provider reference"
-      },
-      "phoneNumber": {
-        "bsonType": "string",
-        "pattern": "^\\+[1-9]\\d{1,14}$",
-        "description": "OWASP A03 - E.164 phone format for mobile money"
-      },
-      "fees": {
-        "bsonType": "object",
-        "properties": {
-          "platformFee": {
-            "bsonType": "decimal",
-            "minimum": 0
-          },
-          "providerFee": {
-            "bsonType": "decimal",
-            "minimum": 0
-          },
-          "totalFees": {
-            "bsonType": "decimal",
-            "minimum": 0
-          }
-        },
-        "description": "Fee breakdown"
-      },
-      "failureReason": {
         "bsonType": [
           "string",
           "null"
         ],
-        "maxLength": 1000,
-        "description": "Reason for payment failure"
+        "description": "ET-PAY-001 \u00a74 \u00b7 the PaymentIntent this attempt was made for; answers paymentAttempts(intentId)"
+      },
+      "attemptNumber": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "Human-readable attempt number, format PAY-{YYYYMMDD}-{XXXXX}"
+      },
+      "correlationId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "reservationId": {
+        "bsonType": "string"
+      },
+      "eventId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "organizerId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "organizationId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "OWASP A01 \u00b7 tenant isolation"
+      },
+      "buyerId": {
+        "bsonType": "string"
+      },
+      "clientReferenceId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "amount": {
+        "bsonType": "decimal",
+        "minimum": 0
+      },
+      "currency": {
+        "bsonType": "string"
+      },
+      "provider": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "Mobile-money provider code, e.g. MTN_MOMO_ZMB"
+      },
+      "payerPhone": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "customerMessage": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "status": {
+        "enum": [
+          "CREATED",
+          "PENDING_APPROVAL",
+          "PROCESSING",
+          "CONFIRMED",
+          "COMPLETED",
+          "FAILED",
+          "REJECTED",
+          "EXPIRED",
+          "CANCELLED"
+        ]
+      },
+      "providerStatus": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "providerTransactionId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "country": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
       },
       "failureCode": {
         "bsonType": [
           "string",
           "null"
-        ],
-        "description": "Provider error code"
+        ]
       },
-      "attempts": {
-        "bsonType": "int",
-        "minimum": 1,
-        "maximum": 10,
-        "description": "Number of payment attempts"
+      "failureMessage": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
       },
-      "ipAddress": {
-        "bsonType": "string",
-        "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$",
-        "description": "Client IP address for audit"
+      "customerErrorMessage": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
       },
-      "userAgent": {
-        "bsonType": "string",
-        "maxLength": 500,
-        "description": "Client user agent"
-      },
-      "completedAt": {
+      "apiCalledAt": {
         "bsonType": [
           "date",
           "null"
-        ],
-        "description": "Payment completion timestamp"
+        ]
       },
-      "expiresAt": {
-        "bsonType": "date",
-        "description": "Payment expiration timestamp"
+      "apiRespondedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "apiHttpStatus": {
+        "bsonType": [
+          "int",
+          "null"
+        ]
+      },
+      "apiResponseBody": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "apiDurationMs": {
+        "bsonType": [
+          "long",
+          "null"
+        ]
+      },
+      "webhookReceivedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "webhookPayload": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "webhookProcessed": {
+        "bsonType": "bool"
+      },
+      "webhookSignatureValid": {
+        "bsonType": [
+          "bool",
+          "null"
+        ]
+      },
+      "webhookSourceIp": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "pollCount": {
+        "bsonType": "int"
+      },
+      "lastPolledAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "lastPollResult": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "lastPollStatus": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "retryCount": {
+        "bsonType": "int"
+      },
+      "nextRetryAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "lastError": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "fulfilled": {
+        "bsonType": "bool"
+      },
+      "fulfilledAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "journalEntryId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "commissionId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "escrowTransactionId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "verifiedBeforeFulfillment": {
+        "bsonType": "bool"
+      },
+      "verifiedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "amountVerified": {
+        "bsonType": "bool"
+      },
+      "clientIpAddress": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "OWASP audit \u00b7 IP of the user initiating payment"
+      },
+      "clientUserAgent": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "sessionId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "requestId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "deviceFingerprint": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "metadata": {
+        "bsonType": [
+          "object",
+          "null"
+        ]
+      },
+      "notes": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "reviewStatus": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "reviewedBy": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "reviewedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "riskScore": {"bsonType": ["int", "long", "null"], "minimum": 0, "maximum": 100},
+      "riskFlags": {"bsonType": ["array", "null"], "items": {"bsonType": "string"}},
+      "riskLevel": {"bsonType": ["string", "null"], "enum": ["LOW", "MEDIUM", "HIGH", null]},
+      "riskEvaluatedAt": {"bsonType": ["date", "null"]},
+      "reviewNotes": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
       },
       "createdAt": {
         "bsonType": "date"
       },
       "updatedAt": {
-        "bsonType": "date"
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "expiresAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "version": {
+        "bsonType": [
+          "long",
+          "null"
+        ]
+      },
+      "attemptType": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "COLLECT",
+          "REFUND",
+          "PAYOUT",
+          "VERIFICATION",
+          null
+        ]
+      },
+      "providerReference": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "refundRequestId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "payoutRequestId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "bankAccountId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

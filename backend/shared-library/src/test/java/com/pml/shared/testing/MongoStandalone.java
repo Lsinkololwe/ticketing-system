@@ -11,7 +11,7 @@ import java.time.Duration;
  *
  * <h2>This container exists to fail</h2>
  * It is not a fallback for {@link MongoReplicaSet} and no production-shaped test
- * should use it. Its only job is to make ET-PLT-002 D-01 demonstrable: a harness
+ * should use it. Its only job is to make the inert-transaction trap demonstrable: a harness
  * that cannot show the difference between a replica set and a standalone cannot
  * prove that a transaction is real. An assertion nobody has watched fail is an
  * assumption.

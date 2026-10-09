@@ -77,16 +77,6 @@ public class InactiveAccountException extends RuntimeException {
         this.accountName = null;
     }
 
-    /**
-     * Static factory for creating exception from account lookup.
-     *
-     * @param accountCode The inactive account code
-     * @return New InactiveAccountException
-     */
-    public static InactiveAccountException forAccountCode(String accountCode) {
-        return new InactiveAccountException(accountCode, (String) null);
-    }
-
     // Getters
 
     public String getAccountCode() {

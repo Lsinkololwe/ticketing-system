@@ -13,7 +13,7 @@ import java.util.function.IntFunction;
  * Real threads, released together, against real infrastructure.
  *
  * <h2>Why a start gate</h2>
- * ET-PLT-006 R5 requires the platform's concurrency guarantees to be proven under
+ * The platform's concurrency guarantees have to be proven under
  * <em>contention</em>. Submitting 200 tasks to a pool does not produce contention — the
  * first finishes long before the last begins, and a read-modify-write implementation
  * sails through. Every caller therefore blocks on one latch and is released in the same
@@ -21,11 +21,11 @@ import java.util.function.IntFunction;
  *
  * <p>Virtual threads, so 200 concurrent callers cost 200 continuations rather than 200
  * platform threads, and the number can rise to the on-sale peak this platform is sized for
- * (D-16: 5,000 reservations/minute against a single event) without the harness itself
+ * (5,000 reservations/minute against a single event) without the harness itself
  * becoming the bottleneck being measured.
  *
  * <h2>Repeat, or it is luck</h2>
- * R5's last box: <em>"repeated enough times to be meaningful rather than lucky"</em>. A
+ * Repeated enough times to be meaningful rather than lucky. A
  * concurrency test that passed once has told you nothing, and a flaky one is worse than
  * none — it trains everyone to re-run until green, which is exactly how a real oversell
  * reaches production. {@link #repeat} exists so that is one call rather than a loop
@@ -71,7 +71,7 @@ public final class Concurrency {
     /**
      * Runs {@code callers} copies of {@code action} simultaneously and gathers every outcome.
      *
-     * <p>Failures are collected rather than thrown: in every scenario R5 names, most callers
+     * <p>Failures are collected rather than thrown: in every contention scenario, most callers
      * are <em>supposed</em> to fail — 150 of the 200 reservations must be refused — so a
      * refusal is data, not an error.
      */

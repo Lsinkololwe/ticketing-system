@@ -51,7 +51,7 @@ public class AuthorizationRequest {
 
     /**
      * The permission or action being requested.
-     * Examples: "EVENT_CREATE", "EVENT_EDIT", "EVENT_DELETE", "EVENT_PUBLISH"
+     * A catalogue code, e.g. "event:create" or "payout:request" (see {@link com.pml.shared.security.Permission})
      */
     @NotBlank(message = "Required permission is required")
     private String requiredPermission;
@@ -62,8 +62,4 @@ public class AuthorizationRequest {
      */
     private String resourceType;
 
-    /**
-     * Resource ID being accessed.
-     */
-    private String resourceId;
 }

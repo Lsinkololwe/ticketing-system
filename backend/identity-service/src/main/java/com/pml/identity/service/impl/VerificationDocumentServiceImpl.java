@@ -7,12 +7,12 @@ import com.pml.identity.repository.VerificationDocumentRepository;
 import com.pml.identity.service.VerificationDocumentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cloud.stream.function.StreamBridge;
+import com.pml.identity.workflow.notify.NotificationProcess;
+import com.pml.identity.workflow.notify.NotificationRules;
+import com.pml.identity.workflow.notify.NotificationWorkflow;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.time.Instant;
 
 /**
  * Verification Document Service Implementation
@@ -29,8 +29,11 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
 
     private final VerificationDocumentRepository documentRepository;
     private final OrganizationRepository organizationRepository;
-    private final StreamBridge streamBridge;
+    /** Messages are requested after the write, and their failure stays theirs. */
+    private final NotificationProcess notifications;
 
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     // ========================================================================
     // READ OPERATIONS
     // ========================================================================
@@ -142,15 +145,13 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
                                         .fileSize(fileSize)
                                         .mimeType(mimeType)
                                         .status(DocumentStatus.PENDING)
-                                        .uploadedAt(Instant.now())
+                                        .uploadedAt(clock.instant())
                                         .build();
 
                                 return documentRepository.save(document);
                             })
-                            .doOnSuccess(saved -> {
-                                log.info("Document uploaded: {} for organization: {}", saved.getId(), organizationId);
-                                checkAndUpdateOrganizationStatus(organizationId);
-                            });
+                            .doOnSuccess(saved -> log.info("Document uploaded: {} for organization: {}", saved.getId(), organizationId))
+                            .flatMap(saved -> checkAndUpdateOrganizationStatus(organizationId).thenReturn(saved));
                 });
     }
 
@@ -166,16 +167,14 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
                     }
 
                     document.setStatus(DocumentStatus.APPROVED);
-                    document.setVerifiedAt(Instant.now());
+                    document.setVerifiedAt(clock.instant());
                     document.setVerifiedById(verifiedById);
                     document.setRejectionReason(null);
 
                     return documentRepository.save(document)
-                            .doOnSuccess(approved -> {
-                                log.info("Document approved: {}", approved.getId());
-                                checkAndUpdateOrganizationStatus(document.getOrganizationId());
-                                sendDocumentApprovedNotification(approved);
-                            });
+                            .doOnSuccess(approved -> log.info("Document approved: {}", approved.getId()))
+                            .flatMap(approved -> checkAndUpdateOrganizationStatus(document.getOrganizationId()).thenReturn(approved))
+                            .flatMap(approved -> notifyDocument("document.approved", approved).thenReturn(approved));
                 });
     }
 
@@ -191,15 +190,13 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
                     }
 
                     document.setStatus(DocumentStatus.REJECTED);
-                    document.setVerifiedAt(Instant.now());
+                    document.setVerifiedAt(clock.instant());
                     document.setVerifiedById(rejectedById);
                     document.setRejectionReason(reason);
 
                     return documentRepository.save(document)
-                            .doOnSuccess(rejected -> {
-                                log.info("Document rejected: {}", rejected.getId());
-                                sendDocumentRejectedNotification(rejected);
-                            });
+                            .doOnSuccess(rejected -> log.info("Document rejected: {}", rejected.getId()))
+                            .flatMap(rejected -> notifyDocument("document.rejected", rejected).thenReturn(rejected));
                 });
     }
 
@@ -209,21 +206,16 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
         return documentRepository.deleteById(documentId);
     }
 
-    @Override
-    public Mono<Void> deleteByOrganization(String organizationId) {
-        log.info("Deleting all documents for organization: {}", organizationId);
-        return documentRepository.deleteByOrganizationId(organizationId);
-    }
-
     // ========================================================================
     // HELPER METHODS
     // ========================================================================
 
     /**
-     * Check if all required documents are approved and update organization status
+     * Marks the organization's documents verified once three are approved. Part of the caller's
+     * chain, so the response waits for it; a failure is logged and does not undo the document write.
      */
-    private void checkAndUpdateOrganizationStatus(String organizationId) {
-        countApprovedByOrganization(organizationId)
+    private Mono<Void> checkAndUpdateOrganizationStatus(String organizationId) {
+        return countApprovedByOrganization(organizationId)
                 .flatMap(approvedCount -> {
                     // Check if all required documents are approved (minimum 3 typically)
                     if (approvedCount >= 3) {
@@ -235,53 +227,18 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
                     }
                     return Mono.empty();
                 })
-                .subscribe(
-                        result -> log.info("Updated organization documents verification status"),
-                        error -> log.warn("Failed to update organization status: {}", error.getMessage())
-                );
+                .doOnNext(result -> log.info("Updated organization documents verification status"))
+                .onErrorResume(error -> {
+                    log.warn("Failed to update organization status: {}", error.getMessage());
+                    return Mono.empty();
+                })
+                .then();
     }
 
-    private void sendDocumentApprovedNotification(VerificationDocument document) {
-        try {
-            record DocumentApprovedEvent(
-                    String documentId,
-                    String organizationId,
-                    String documentType
-            ) {}
-
-            DocumentApprovedEvent event = new DocumentApprovedEvent(
-                    document.getId(),
-                    document.getOrganizationId(),
-                    document.getDocumentType()
-            );
-
-            streamBridge.send("notificationOutput-out-0", event);
-            log.info("Sent document approved notification for: {}", document.getId());
-        } catch (Exception e) {
-            log.error("Failed to send document approved notification: {}", e.getMessage());
-        }
-    }
-
-    private void sendDocumentRejectedNotification(VerificationDocument document) {
-        try {
-            record DocumentRejectedEvent(
-                    String documentId,
-                    String organizationId,
-                    String documentType,
-                    String reason
-            ) {}
-
-            DocumentRejectedEvent event = new DocumentRejectedEvent(
-                    document.getId(),
-                    document.getOrganizationId(),
-                    document.getDocumentType(),
-                    document.getRejectionReason()
-            );
-
-            streamBridge.send("notificationOutput-out-0", event);
-            log.info("Sent document rejected notification for: {}", document.getId());
-        } catch (Exception e) {
-            log.error("Failed to send document rejected notification: {}", e.getMessage());
-        }
+    /** The organization's owner is told of each review; the destination is resolved at send time. */
+    private Mono<Void> notifyDocument(String templateKey, VerificationDocument document) {
+        return notifications.request(new NotificationWorkflow.Request(
+                NotificationRules.key(templateKey, document.getId()),
+                templateKey, null, NotificationRules.VERIFICATION_DOCUMENT, document.getId()));
     }
 }

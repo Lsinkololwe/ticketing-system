@@ -1,22 +1,25 @@
 package com.pml.identity.domain.model;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Entity representing a user's notification delivery preferences.
  * Controls which channels are enabled and what types of notifications to receive.
  */
-@Document(collection = "notification_preferences")
+@Document(collection = IdentityCollections.NOTIFICATION_PREFERENCES)
+@TypeAlias("notification_preferences")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -32,7 +35,6 @@ public class NotificationPreferences {
     /**
      * ID of the user these preferences belong to
      */
-    @Indexed(unique = true)
     private String userId;
 
     /**
@@ -59,6 +61,10 @@ public class NotificationPreferences {
     @Builder.Default
     private boolean pushEnabled = true;
 
+    /** Whether in-app notifications are shown. */
+    @Builder.Default
+    private boolean inAppEnabled = true;
+
     /**
      * Whether to receive event reminder notifications
      */
@@ -77,17 +83,50 @@ public class NotificationPreferences {
     @Builder.Default
     private int reminderHoursBefore = 24;
 
+    /** Start of the nightly quiet period, {@code HH:mm} in {@link #timezone}; reminders are not sent inside it. */
+    private String quietHoursStart;
+
+    /** End of the quiet period, {@code HH:mm}; earlier than the start when the period crosses midnight. */
+    private String quietHoursEnd;
+
+    /** The IANA zone the quiet hours are read in; the platform zone when unset. */
+    private String timezone;
+
     /**
      * Timestamp when preferences were created
      */
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     /**
      * Timestamp when preferences were last updated
      */
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
+
+    // Messages about tickets, payments, refunds, payouts, event changes, the organization and team
+    // invitations are always sent: they are not a preference, so nothing stores them and these
+    // read as on for every user.
+
+    public boolean isTicketNotifications() {
+        return true;
+    }
+
+    public boolean isPaymentNotifications() {
+        return true;
+    }
+
+    public boolean isEventUpdates() {
+        return true;
+    }
+
+    public boolean isTeamNotifications() {
+        return true;
+    }
+
+    public boolean isSystemAnnouncements() {
+        return true;
+    }
 
     /**
      * Factory method to create default preferences for a new user.
@@ -105,7 +144,6 @@ public class NotificationPreferences {
             .eventReminders(true)
             .marketingEmails(false)
             .reminderHoursBefore(24)
-            .createdAt(LocalDateTime.now())
             .build();
     }
 }

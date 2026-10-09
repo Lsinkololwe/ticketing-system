@@ -253,7 +253,7 @@ DGS's `com.netflix.graphql.types.errors.ErrorType`. These eight and no others.
 | `REFERENCE_SEMANTIC_REQUIRED` | `ReferenceSemanticRequired` | `BAD_REQUEST` | no | ET-PLT-014 |
 | `REFERENCE_MACHINE_CODE_OWNED` | `ReferenceMachineCodeOwned` | `FAILED_PRECONDITION` | no | ET-PLT-014 |
 
-**Identity** — ET-IDN-001, ET-IDN-002
+**Identity** — ET-IDN-001, ET-IDN-002, ET-IDN-004
 
 | Code | Refusal type | `ErrorType` | Retryable | Detail keys |
 |---|---|---|---|---|
@@ -264,6 +264,20 @@ DGS's `com.netflix.graphql.types.errors.ErrorType`. These eight and no others.
 | `OTP_ATTEMPTS_EXHAUSTED` | `OtpAttemptsExhausted` | `PERMISSION_DENIED` | no | `lockedUntil` |
 | `USER_UNKNOWN` | `UserUnknown` | `NOT_FOUND` | no | — |
 | `USER_SYNC_CONFLICT` | `UserSyncConflict` | `FAILED_PRECONDITION` | **yes** | — |
+| `CONTACT_INVALID` | `ContactInvalid` | `BAD_REQUEST` | no | — |
+| `OTP_LOCKED` | `OtpLocked` | `PERMISSION_DENIED` | no | `lockedUntil` |
+| `OTP_RATE_LIMITED` | `OtpRateLimited` | `UNAVAILABLE` | **yes** | `retryAfterSeconds` |
+| `OTP_DELIVERY_FAILED` | `OtpDeliveryFailed` | `UNAVAILABLE` | **yes** | — |
+| `CONTACT_ALREADY_CLAIMED` | `ContactAlreadyClaimed` | `FAILED_PRECONDITION` | **yes** | — |
+| `ACCOUNT_SUSPENDED` | `AccountSuspended` | `PERMISSION_DENIED` | no | — |
+| `ACCOUNT_MERGING` | `AccountMerging` | `FAILED_PRECONDITION` | **yes** | — |
+| `ACCOUNT_NOT_ACTIVE` | `AccountNotActive` | `FAILED_PRECONDITION` | no | `currentStatus` |
+| `LOGIN_HANDLE_INVALID` | `LoginHandleInvalid` | `BAD_REQUEST` | no | — |
+| `PROOF_INVALID` | `ProofInvalid` | `BAD_REQUEST` | no | — |
+| `CONTACT_UNKNOWN` | `ContactUnknown` | `NOT_FOUND` | no | — |
+| `CONTACT_CHANGE_IN_PROGRESS` | `ContactChangeInProgress` | `FAILED_PRECONDITION` | no | — |
+| `LAST_VERIFIED_CONTACT` | `LastVerifiedContact` | `FAILED_PRECONDITION` | no | — |
+| `NO_VERIFIED_CONTACT` | `NoVerifiedContact` | `FAILED_PRECONDITION` | no | — |
 
 **Organization** — ET-ORG-001, ET-ORG-002, ET-ORG-003
 
@@ -278,12 +292,16 @@ DGS's `com.netflix.graphql.types.errors.ErrorType`. These eight and no others.
 | `DOCUMENT_STATE_INVALID` | `DocumentNotInExpectedState` | `FAILED_PRECONDITION` | no | `currentStatus` |
 | `MEMBER_UNKNOWN` | `MemberUnknown` | `NOT_FOUND` | no | — |
 | `MEMBER_ALREADY_EXISTS` | `MemberAlreadyExists` | `FAILED_PRECONDITION` | no | — |
+| `ORGANIZATION_NOT_ACTIVE` | `OrganizationNotActive` | `FAILED_PRECONDITION` | no | — |
 | `OWNER_CANNOT_BE_REMOVED` | `OwnerCannotBeRemoved` | `FAILED_PRECONDITION` | no | — |
 | `OWNER_ROLE_IMMUTABLE` | `OwnerRoleImmutable` | `FAILED_PRECONDITION` | no | — |
 | `INVITATION_UNKNOWN` | `InvitationUnknown` | `NOT_FOUND` | no | — |
+| `DOCUMENT_UNKNOWN` | `DocumentUnknown` | `NOT_FOUND` | no | — |
 | `INVITATION_EXPIRED` | `InvitationExpired` | `FAILED_PRECONDITION` | no | `expiredAt` |
 | `INVITATION_NOT_PENDING` | `InvitationNotPending` | `FAILED_PRECONDITION` | no | `currentStatus` |
+| `INVITATION_NOT_ADDRESSED_TO_CALLER` | `InvitationNotAddressedToCaller` | `PERMISSION_DENIED` | no | — |
 | `TRANSFER_TARGET_INELIGIBLE` | `TransferTargetIneligible` | `FAILED_PRECONDITION` | no | `requiredRole` |
+| `TRANSFER_NOT_PENDING` | `TransferNotPending` | `FAILED_PRECONDITION` | no | — |
 | `ACCESS_GRANT_UNKNOWN` | `AccessGrantUnknown` | `NOT_FOUND` | no | — |
 | `EVENT_ROLE_NOT_GRANTABLE` | `EventRoleNotGrantable` | `PERMISSION_DENIED` | no | `eventRole` |
 
@@ -298,6 +316,8 @@ DGS's `com.netflix.graphql.types.errors.ErrorType`. These eight and no others.
 | `TIER_NOT_ON_SALE` | `TierNotOnSale` | `FAILED_PRECONDITION` | no | `salesStartAt`, `salesEndAt` |
 | `CAPACITY_BELOW_COMMITTED` | `CapacityBelowCommitted` | `FAILED_PRECONDITION` | no | `committedQuantity` |
 | `LOCATION_UNKNOWN` | `LocationUnknown` | `NOT_FOUND` | no | — |
+| `MEDIA_UNKNOWN` | `MediaUnknown` | `NOT_FOUND` | no | — |
+| `MEDIA_STATE_INVALID` | `MediaNotInExpectedState` | `FAILED_PRECONDITION` | no | `currentStatus` |
 | `PROMO_CODE_UNKNOWN` | `PromoCodeUnknown` | `NOT_FOUND` | no | — |
 | `PROMO_CODE_EXHAUSTED` | `PromoCodeExhausted` | `FAILED_PRECONDITION` | no | — |
 | `PROMO_CODE_NOT_APPLICABLE` | `PromoCodeNotApplicable` | `FAILED_PRECONDITION` | no | `reason` |
@@ -318,6 +338,8 @@ DGS's `com.netflix.graphql.types.errors.ErrorType`. These eight and no others.
 | `TICKET_SIGNATURE_INVALID` | `TicketSignatureInvalid` | `PERMISSION_DENIED` | no | — |
 | `TICKET_NOT_TRANSFERABLE` | `TicketNotTransferable` | `FAILED_PRECONDITION` | no | `reason` |
 | `TRANSFER_TO_SELF` | `TransferToSelf` | `BAD_REQUEST` | no | — |
+| `BOOKING_UNKNOWN` | `BookingUnknown` | `NOT_FOUND` | no | — |
+| `TICKET_TRANSFER_UNKNOWN` | `TicketTransferUnknown` | `NOT_FOUND` | no | — |
 
 **Payment** — ET-PAY-001, ET-PAY-002
 
@@ -351,6 +373,7 @@ own message is never a detail key.**
 | `PAYOUT_WINDOW_NOT_OPEN` | `PayoutWindowNotOpen` | `FAILED_PRECONDITION` | no | `opensAt` |
 | `PAYOUT_STATE_INVALID` | `PayoutNotInExpectedState` | `FAILED_PRECONDITION` | no | `currentStatus` |
 | `BANK_ACCOUNT_UNKNOWN` | `BankAccountUnknown` | `NOT_FOUND` | no | — |
+| `PAYOUT_REQUEST_UNKNOWN` | `PayoutRequestUnknown` | `NOT_FOUND` | no | — |
 | `BANK_ACCOUNT_NOT_VERIFIED` | `BankAccountNotVerified` | `FAILED_PRECONDITION` | no | — |
 | `REFUND_NOT_PERMITTED` | `RefundNotPermitted` | `FAILED_PRECONDITION` | no | `reason` |
 | `REFUND_WINDOW_CLOSED` | `RefundWindowClosed` | `FAILED_PRECONDITION` | no | `closedAt` |
@@ -370,6 +393,7 @@ user's mistake; it is a defect, and it must page somebody.
 | `CONFIGURATION_KEY_UNKNOWN` | `ConfigurationKeyUnknown` | `NOT_FOUND` | no | — |
 | `CONFIGURATION_VALUE_INVALID` | `ConfigurationValueInvalid` | `BAD_REQUEST` | no | `constraint` |
 | `TRANSACTION_NOT_RECOVERABLE` | `TransactionNotRecoverable` | `FAILED_PRECONDITION` | no | `currentStatus` |
+| `RECOVERY_PROPOSAL_UNKNOWN` | `RecoveryProposalUnknown` | `NOT_FOUND` | no | — |
 
 **86 codes.** No other code exists. `UNSUPPORTED_SCHEMA_VERSION` is a dead-letter reason
 ([ET-PLT-003](../003-event-contract/)), not a client-facing code, and is deliberately

@@ -15,5 +15,6 @@ export { PENDING_COUNTS } from './pending-counts.queries';
 export {
   usePlatformSummary,
   type UsePlatformSummaryResult,
+  type PlatformSummaryData,
 } from './platform-summary.hooks';
 export { PLATFORM_SUMMARY } from './platform-summary.queries';

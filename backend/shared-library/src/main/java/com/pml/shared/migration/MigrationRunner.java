@@ -1,12 +1,12 @@
 package com.pml.shared.migration;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.Ordered;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -41,7 +41,24 @@ import java.util.function.Supplier;
  * the operator who has decided otherwise with the data in front of them.
  */
 @Slf4j
-public abstract class MigrationRunner {
+public abstract class MigrationRunner implements ApplicationRunner, Ordered {
+
+    /**
+     * First of all startup work. Validators, seeds and workflow adoption all read or write the
+     * shape a migration produces, so a migration that ran after them would leave them working on
+     * data that is about to move.
+     */
+    public static final int ORDER = Ordered.HIGHEST_PRECEDENCE;
+
+    @Override
+    public int getOrder() {
+        return ORDER;
+    }
+
+    @Override
+    public void run(ApplicationArguments args) {
+        runMigrations();
+    }
 
     /** The ledger collection for this service. Naming it per service keeps histories separate. */
     protected abstract MigrationLedger ledger();
@@ -60,7 +77,6 @@ public abstract class MigrationRunner {
         return getClass().getSimpleName();
     }
 
-    @EventListener(ApplicationReadyEvent.class)
     public void runMigrations() {
         if (!isEnabled()) {
             log.warn("{}: data migrations are DISABLED. If this environment has not been "
@@ -125,10 +141,5 @@ public abstract class MigrationRunner {
                                                     "Migration '" + name + "' failed: " + error.getMessage(), error))
                                             : Mono.just(name)));
                 });
-    }
-
-    /** Exposed for the integration tests, which need the same order production uses. */
-    public List<String> stepNames() {
-        return List.copyOf(steps().keySet());
     }
 }

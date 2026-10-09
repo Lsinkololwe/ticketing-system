@@ -1,5 +1,7 @@
 # Phase 7: Reports & Analytics
 
+> **HISTORICAL — superseded by `specs/tasks` FE-* items; kept for reference. Role names in this file are pre-spec** (see `specs/` for the current role and permission vocabulary). Unticked boxes here are not a backlog.
+
 ## Overview
 Implement comprehensive reporting and analytics features for sales, attendance, and custom report generation.
 

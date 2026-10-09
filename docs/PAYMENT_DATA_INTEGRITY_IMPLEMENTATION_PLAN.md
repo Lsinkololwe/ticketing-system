@@ -1,5 +1,7 @@
 # Production-Grade Payment Data Integrity Implementation Plan
 
+> **Process mechanics superseded (ROADMAP D-21).** This plan stays authoritative on transactional integrity — atomic writes, idempotency, verification before fulfilment. Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 **Version:** 1.0
 **Date:** February 2026
 **Author:** Platform Engineering Team

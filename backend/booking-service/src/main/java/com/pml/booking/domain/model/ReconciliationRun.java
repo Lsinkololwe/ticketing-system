@@ -1,19 +1,18 @@
 package com.pml.booking.domain.model;
 
-import com.pml.booking.domain.enums.ReconciliationItemStatus;
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.enums.ReconciliationStatus;
 import com.pml.booking.domain.enums.ReconciliationType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotNull;
@@ -90,15 +89,12 @@ import java.util.List;
  * @see ReconciliationItem
  * @since 1.0.0
  */
-@Document(collection = "reconciliation_runs")
+@Document(collection = BookingCollections.RECONCILIATION_RUNS)
+@TypeAlias("reconciliation_runs")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "type_date_idx", def = "{'type': 1, 'reconciliationDate': -1}"),
-    @CompoundIndex(name = "status_date_idx", def = "{'status': 1, 'reconciliationDate': -1}")
-})
 public class ReconciliationRun {
 
     /**
@@ -113,7 +109,6 @@ public class ReconciliationRun {
      * <p>Format: REC-{TYPE}-{YYYYMMDD}-{NNN}</p>
      * <p>Example: REC-GATEWAY-20240115-001</p>
      */
-    @Indexed(unique = true)
     private String runNumber;
 
     /**
@@ -123,7 +118,6 @@ public class ReconciliationRun {
      * not the date the reconciliation was executed.</p>
      */
     @NotNull(message = "Reconciliation date is required")
-    @Indexed
     private LocalDate reconciliationDate;
 
     /**
@@ -132,7 +126,6 @@ public class ReconciliationRun {
      * @see ReconciliationType
      */
     @NotNull(message = "Reconciliation type is required")
-    @Indexed
     private ReconciliationType type;
 
     /**
@@ -141,7 +134,6 @@ public class ReconciliationRun {
      * @see ReconciliationStatus
      */
     @NotNull(message = "Status is required")
-    @Indexed
     @Builder.Default
     private ReconciliationStatus status = ReconciliationStatus.RUNNING;
 
@@ -270,23 +262,6 @@ public class ReconciliationRun {
     @Version
     private Long version;
 
-    // ========================================================================
-    // BUSINESS METHODS
-    // ========================================================================
-
-    /**
-     * Adds a reconciliation item to this run.
-     *
-     * @param item The item to add
-     */
-    public void addItem(ReconciliationItem item) {
-        if (items == null) {
-            items = new ArrayList<>();
-        }
-        items.add(item);
-        updateCounts();
-    }
-
     /**
      * Updates counts based on current items.
      *
@@ -325,7 +300,7 @@ public class ReconciliationRun {
     /**
      * Marks the run as completed successfully.
      */
-    public void complete() {
+    public void complete(Instant now) {
         if (status != ReconciliationStatus.RUNNING && status != ReconciliationStatus.REQUIRES_REVIEW) {
             throw new IllegalStateException(
                     "Cannot complete run in status " + status
@@ -335,7 +310,7 @@ public class ReconciliationRun {
         calculateVariance();
 
         this.status = ReconciliationStatus.COMPLETED;
-        this.completedAt = Instant.now();
+        this.completedAt = now;
     }
 
     /**
@@ -343,8 +318,8 @@ public class ReconciliationRun {
      *
      * @param completionNotes Notes about the completion
      */
-    public void complete(String completionNotes) {
-        complete();
+    public void complete(String completionNotes, Instant now) {
+        complete(now);
         this.notes = completionNotes;
     }
 
@@ -362,10 +337,10 @@ public class ReconciliationRun {
      *
      * @param errorMessage Description of the failure
      */
-    public void fail(String errorMessage) {
+    public void fail(String errorMessage, Instant now) {
         this.status = ReconciliationStatus.FAILED;
         this.errorMessage = errorMessage;
-        this.completedAt = Instant.now();
+        this.completedAt = now;
     }
 
     /**
@@ -376,12 +351,12 @@ public class ReconciliationRun {
      * @param resolvedBy User resolving the item
      * @return true if item was found and resolved
      */
-    public boolean resolveItem(String externalId, String resolution, String resolvedBy) {
+    public boolean resolveItem(String externalId, String resolution, String resolvedBy, Instant now) {
         if (items == null) return false;
 
         for (ReconciliationItem item : items) {
             if (externalId.equals(item.getExternalId())) {
-                item.resolve(resolution, resolvedBy);
+                item.resolve(resolution, resolvedBy, now);
                 updateCounts();
 
                 // If all discrepancies resolved, complete the run
@@ -456,19 +431,6 @@ public class ReconciliationRun {
     }
 
     /**
-     * Gets items by status.
-     *
-     * @param status The item status to filter by
-     * @return List of items with that status
-     */
-    public List<ReconciliationItem> getItemsByStatus(ReconciliationItemStatus status) {
-        if (items == null) return List.of();
-        return items.stream()
-                .filter(item -> item.getStatus() == status)
-                .toList();
-    }
-
-    /**
      * Gets the duration of the run in milliseconds.
      *
      * @return Duration in ms, or -1 if not completed
@@ -506,13 +468,11 @@ public class ReconciliationRun {
      * @param runBy User initiating the run
      * @return New ReconciliationRun in RUNNING status
      */
-    public static ReconciliationRun create(
-            String runNumber,
+    public static ReconciliationRun create(String runNumber,
             LocalDate reconciliationDate,
             ReconciliationType type,
             String dataSource,
-            String runBy
-    ) {
+            String runBy, Instant now) {
         return ReconciliationRun.builder()
                 .runNumber(runNumber)
                 .reconciliationDate(reconciliationDate)
@@ -520,7 +480,7 @@ public class ReconciliationRun {
                 .dataSource(dataSource)
                 .status(ReconciliationStatus.RUNNING)
                 .runBy(runBy)
-                .startedAt(Instant.now())
+                .startedAt(now)
                 .build();
     }
 

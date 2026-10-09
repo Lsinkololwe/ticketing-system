@@ -1,6 +1,6 @@
 package com.pml.catalog.service;
 
-import com.pml.catalog.dto.EventLifecycleDto;
+import com.pml.catalog.web.graphql.dto.EventLifecycleDto;
 import com.pml.shared.constants.EventStatus;
 import reactor.core.publisher.Mono;
 

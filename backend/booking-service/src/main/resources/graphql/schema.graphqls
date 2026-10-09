@@ -231,6 +231,9 @@ enum PayoutRequestStatus {
     FAILED
     REJECTED
     CANCELLED
+    # An operator's hold, overlaid on the stored status: while it is on, the request cannot be
+    # approved, retried or settled. Releasing it returns the request to where it was.
+    ON_HOLD
 }
 
 # Payout method types
@@ -348,6 +351,15 @@ enum AccountSubType @tag(name: "admin") {
     CHARGEBACK_LOSS
     CHARGEBACK_FEES
     BAD_DEBT
+    CHARGEBACK_RECOVERY_RECEIVABLE
+    PAYOUT_PAYABLE
+    REFUND_PAYABLE
+    OTHER_INCOME
+    GATEWAY_FEE_EXPENSE
+    CHARGEBACK_EXPENSE
+    BAD_DEBT_EXPENSE
+    VERIFICATION_EXPENSE
+    OTHER_EXPENSE
 }
 
 # Normal balance direction for accounts
@@ -470,9 +482,9 @@ enum PaymentAttemptStatus @tag(name: "admin") {
 type User @key(fields: "id", resolvable: false) {
     id: ID!
     # These fields can be provided from Ticket's cached buyer data
-    # Types must match identity-service: fullName!, email!, phoneNumber (nullable)
+    # Types must match identity-service: fullName!, email (nullable: phone-only accounts have none), phoneNumber (nullable)
     fullName: String! @external
-    email: String! @external
+    email: String @external
     phoneNumber: PhoneNumber @external
 }
 
@@ -491,7 +503,7 @@ extend type User @key(fields: "id") {
     # MOBILE - Customer's purchased tickets (my tickets list)
     purchasedTickets: [Ticket!]! @tag(name: "mobile")
     # ORGANIZER/ADMIN - Financial tracking for customer spending
-    totalSpent: BigDecimal! @tag(name: "organizer") @tag(name: "admin")
+    totalSpent: BigDecimal! @tag(name: "organizer")
     # MOBILE - Quick count for my tickets badge
     activeTicketCount: Int! @tag(name: "mobile")
 }
@@ -505,16 +517,16 @@ extend type Event @key(fields: "id") {
     organizerId: String! @external
 
     # ORGANIZER/ADMIN - Full ticket list for event management
-    tickets: [Ticket!]! @tag(name: "organizer") @tag(name: "admin")
+    tickets: [Ticket!]! @tag(name: "organizer")
     # ORGANIZER/ADMIN - Sales metrics for dashboard
-    ticketsSold: Int! @tag(name: "organizer") @tag(name: "admin")
-    revenue: BigDecimal! @tag(name: "organizer") @tag(name: "admin")
+    ticketsSold: Int! @tag(name: "organizer")
+    revenue: BigDecimal! @tag(name: "organizer")
 
     # PUBLIC - Availability info displayed on event listings
     ticketsAvailable: Int! @requires(fields: "totalCapacity")
     soldOut: Boolean! @shareable @requires(fields: "totalCapacity")
     # ORGANIZER/ADMIN - Sales percentage for performance tracking
-    salesPercentage: Float! @requires(fields: "totalCapacity") @tag(name: "organizer") @tag(name: "admin")
+    salesPercentage: Float! @requires(fields: "totalCapacity") @tag(name: "organizer")
 }
 
 # ============================================================================
@@ -541,7 +553,7 @@ type Ticket @key(fields: "id") {
     # @provides optimization: We cache buyer name/email/phone on Ticket for display
     buyer: User! @provides(fields: "fullName email phoneNumber")
     # ORGANIZER/ADMIN - Buyer ID for attendee management (privacy protection)
-    buyerId: String! @tag(name: "organizer") @tag(name: "admin")
+    buyerId: String! @tag(name: "organizer")
 
     # INTERNAL - Organizer and Organization IDs for multi-tenant tracking
     # Used for authorization, reporting, and financial compliance
@@ -558,9 +570,9 @@ type Ticket @key(fields: "id") {
     # ORGANIZER/ADMIN FIELDS - Buyer PII for attendee management
     # Protected for privacy - only event organizers and admins can see buyer details
     # ---------------------------------------------------------------------------
-    buyerName: String @tag(name: "organizer") @tag(name: "admin")
-    buyerEmail: String @tag(name: "organizer") @tag(name: "admin")
-    buyerPhone: String @tag(name: "organizer") @tag(name: "admin")
+    buyerName: String @tag(name: "organizer")
+    buyerEmail: String @tag(name: "organizer")
+    buyerPhone: String @tag(name: "organizer")
 
     # ---------------------------------------------------------------------------
     # PUBLIC FIELDS - Ticket details shown to ticket holder
@@ -573,6 +585,17 @@ type Ticket @key(fields: "id") {
     status: TicketStatus!
     quantity: Int
 
+    # The booking (purchase) this seat belongs to
+    bookingId: String
+    bookingNumber: String
+    # Sum of completed refunds against this seat, and what remains refundable
+    refundedAmount: BigDecimal
+    refundableAmount: BigDecimal
+    # True while a transfer offer holds this ticket
+    transferPending: Boolean!
+    # How many times this ticket has changed hands
+    transferCount: Int!
+
     # ---------------------------------------------------------------------------
     # TICKET LIFECYCLE - Mixed visibility
     # ---------------------------------------------------------------------------
@@ -580,8 +603,8 @@ type Ticket @key(fields: "id") {
     validFrom: DateTime
     validUntil: DateTime
     # ORGANIZER/ADMIN - Entry validation tracking for venue management
-    validatedAt: DateTime @tag(name: "organizer") @tag(name: "admin")
-    validatedBy: String @tag(name: "organizer") @tag(name: "admin")  # Scanner ID who validated
+    validatedAt: DateTime @tag(name: "organizer")
+    validatedBy: String @tag(name: "organizer")  # Scanner ID who validated
     usedAt: DateTime
     cancelledAt: DateTime
     cancellationReason: String
@@ -597,14 +620,14 @@ type Ticket @key(fields: "id") {
     # ---------------------------------------------------------------------------
     # INTERNAL - Correlation ID for distributed tracing
     correlationId: String @tag(name: "internal")
-    paymentReference: String @tag(name: "organizer") @tag(name: "admin")
+    paymentReference: String @tag(name: "organizer")
 
     # ORGANIZER/ADMIN - Financial breakdown for revenue tracking
-    commissionRate: BigDecimal @tag(name: "organizer") @tag(name: "admin")
-    commissionAmount: BigDecimal @tag(name: "organizer") @tag(name: "admin")
-    netAmount: BigDecimal @tag(name: "organizer") @tag(name: "admin")
-    paymentInfo: PaymentInfo @tag(name: "organizer") @tag(name: "admin")
-    refundInfo: RefundInfo @tag(name: "organizer") @tag(name: "admin")
+    commissionRate: BigDecimal @tag(name: "organizer")
+    commissionAmount: BigDecimal @tag(name: "organizer")
+    netAmount: BigDecimal @tag(name: "organizer")
+    paymentInfo: PaymentInfo @tag(name: "organizer")
+    refundInfo: RefundInfo @tag(name: "organizer")
 
     # ---------------------------------------------------------------------------
     # INTERNAL - Audit fields for system tracking
@@ -708,6 +731,11 @@ type PaymentAttempt @tag(name: "admin") {
     reviewNotes: String
     notes: String
 
+    # Fraud-risk assessment of a collection: 0-100, the rules that fired, and the level. Nothing is blocked by it.
+    riskScore: Int
+    riskLevel: String
+    riskFlags: [String!]!
+
     # Timestamps
     createdAt: DateTime
     updatedAt: DateTime
@@ -719,7 +747,7 @@ type PaymentAttempt @tag(name: "admin") {
 # ADMIN-ONLY - Platform escrow management for event revenue holding
 # Escrow accounts hold ticket revenue until event completion
 # ------------------------------
-type EventEscrowAccount @tag(name: "admin") {
+type EventEscrowAccount {
     id: ID!
     accountNumber: String!
     eventId: String!
@@ -746,7 +774,7 @@ type EventEscrowAccount @tag(name: "admin") {
 # ORGANIZER/ADMIN - Bank account details for payout processing
 # Organizers manage their own bank accounts, admins can view/verify all
 # ------------------------------
-type BankAccount @tag(name: "organizer") @tag(name: "admin") {
+type BankAccount @tag(name: "organizer") {
     id: ID!
     organizerId: String!
     organizationId: String               # Multi-tenant tracking
@@ -773,7 +801,7 @@ type BankAccount @tag(name: "organizer") @tag(name: "admin") {
 # ORGANIZER/ADMIN - Payout request workflow
 # Organizers create and track their payout requests, admins approve/process
 # ------------------------------
-type PayoutRequest @tag(name: "organizer") @tag(name: "admin") {
+type PayoutRequest @tag(name: "organizer") {
     id: ID!
     requestId: String!
     organizerId: String!
@@ -785,8 +813,6 @@ type PayoutRequest @tag(name: "organizer") @tag(name: "admin") {
     bankAccountId: String!
     bankAccount: BankAccount
     requestedAmount: BigDecimal!
-    platformFee: BigDecimal
-    processingFee: BigDecimal
     taxAmount: BigDecimal
     settledAmount: BigDecimal!
     currency: String!
@@ -829,6 +855,12 @@ type PayoutRequest @tag(name: "organizer") @tag(name: "admin") {
     resolvedBy: String @tag(name: "admin")
     resolvedAt: DateTime @tag(name: "admin")
     resolutionNotes: String @tag(name: "admin")
+    onHold: Boolean! @tag(name: "admin")
+    holdReason: String @tag(name: "admin")
+    heldBy: String @tag(name: "admin")
+    heldAt: DateTime @tag(name: "admin")
+    releasedBy: String @tag(name: "admin")
+    releasedAt: DateTime @tag(name: "admin")
 }
 
 # ------------------------------
@@ -837,7 +869,7 @@ type PayoutRequest @tag(name: "organizer") @tag(name: "admin") {
 # Organizers see refunds for their events, admins process all refunds
 # Mobile users can see their own refund status via ticket.refundInfo
 # ------------------------------
-type RefundRequest @tag(name: "organizer") @tag(name: "admin") {
+type RefundRequest @tag(name: "organizer") {
     id: ID!
     requestId: String!
     ticketId: String!
@@ -925,7 +957,7 @@ type ReservationItem @tag(name: "mobile") {
 # ORGANIZER - Promo code management for marketing campaigns
 # Organizers create and track promo codes for their events
 # ------------------------------
-type PromoCode @tag(name: "organizer") @tag(name: "admin") {
+type PromoCode @tag(name: "organizer") {
     id: ID!
     code: String!
     eventId: ID
@@ -975,7 +1007,7 @@ type RefundCalculation @tag(name: "mobile") {
 # ============================================================================
 
 # ORGANIZER/ADMIN - Payment details embedded in ticket
-type PaymentInfo @tag(name: "organizer") @tag(name: "admin") {
+type PaymentInfo @tag(name: "organizer") {
     paymentId: String
     paymentMethod: String
     transactionId: String
@@ -987,7 +1019,7 @@ type PaymentInfo @tag(name: "organizer") @tag(name: "admin") {
 }
 
 # ORGANIZER/ADMIN - Refund details embedded in ticket
-type RefundInfo @tag(name: "organizer") @tag(name: "admin") {
+type RefundInfo @tag(name: "organizer") {
     refundId: String
     refundAmount: BigDecimal
     reason: String
@@ -1026,7 +1058,7 @@ type TicketStatusStats @tag(name: "admin") {
 }
 
 # ORGANIZER/ADMIN - Ticket category analytics (organizers see for own events)
-type TicketCategoryStats @tag(name: "organizer") @tag(name: "admin") {
+type TicketCategoryStats @tag(name: "organizer") {
     category: String!
     count: Int!
     percentage: Float!
@@ -1092,7 +1124,7 @@ type PayoutIssueTypeStats @tag(name: "admin") {
 }
 
 # ORGANIZER/ADMIN - Refund summary (organizers see for own events)
-type RefundSummary @tag(name: "organizer") @tag(name: "admin") {
+type RefundSummary @tag(name: "organizer") {
     totalRefunds: Int!
     totalAmount: BigDecimal!
     currency: String!
@@ -1102,7 +1134,7 @@ type RefundSummary @tag(name: "organizer") @tag(name: "admin") {
 }
 
 # ORGANIZER/ADMIN - Refund status breakdown
-type RefundStatusSummary @tag(name: "organizer") @tag(name: "admin") {
+type RefundStatusSummary @tag(name: "organizer") {
     status: RefundRequestStatus!
     count: Int!
     totalAmount: BigDecimal!
@@ -1110,7 +1142,7 @@ type RefundStatusSummary @tag(name: "organizer") @tag(name: "admin") {
 }
 
 # ORGANIZER/ADMIN - Refund type breakdown
-type RefundTypeSummary @tag(name: "organizer") @tag(name: "admin") {
+type RefundTypeSummary @tag(name: "organizer") {
     requestType: RefundRequestType!
     count: Int!
     totalAmount: BigDecimal!
@@ -1206,8 +1238,6 @@ enum OrganizerActivityType {
 # raw counts and the denominator they were computed against, never a bare
 # percentage — the dashboard prints the denominator beside each rate so the
 # figure is checkable.
-#
-# Chart contract: frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md
 # ==========================================================================
 
 # ORGANIZER - One month of the revenue trend
@@ -1431,7 +1461,7 @@ type FinancialDataPoint @tag(name: "admin") {
 }
 
 # ORGANIZER/ADMIN - Event-level financial summary
-type EventFinancialSummary @tag(name: "organizer") @tag(name: "admin") {
+type EventFinancialSummary @tag(name: "organizer") {
     eventId: ID!
     eventTitle: String!
     totalRevenue: BigDecimal!
@@ -1443,7 +1473,6 @@ type EventFinancialSummary @tag(name: "organizer") @tag(name: "admin") {
 
 # Shared type - must have @shareable on all fields for federation
 type ReportExport @shareable {
-    success: Boolean! @shareable
     downloadUrl: String @shareable
     expiresAt: DateTime @shareable
     format: ExportFormat! @shareable
@@ -1556,7 +1585,7 @@ type PlatformAccount @tag(name: "admin") {
 }
 
 # Standalone Escrow Transaction (for audit trail)
-type StandaloneEscrowTransaction @tag(name: "admin") {
+type StandaloneEscrowTransaction {
     id: ID!
     escrowAccountId: String!
     type: String!
@@ -1597,6 +1626,7 @@ type ChargebackRecord @tag(name: "admin") {
     resolvedAt: DateTime
     recoveryStatus: RecoveryStatus!
     recoveredAmount: BigDecimal
+    unrecoveredAmount: BigDecimal
     commissionClawbackId: String
     fundSource: ChargebackFundSource
     journalEntryId: String
@@ -1717,12 +1747,6 @@ type ReservationOffsetPage {
     pagination: PaginationInfo!
 }
 
-# Financial Engine Pagination Types
-type ChartOfAccountsOffsetPage @tag(name: "admin") {
-    data: [ChartOfAccountsEntry!]!
-    pagination: PaginationInfo!
-}
-
 type JournalEntryOffsetPage @tag(name: "admin") {
     data: [JournalEntry!]!
     pagination: PaginationInfo!
@@ -1738,7 +1762,7 @@ type ReconciliationRunOffsetPage @tag(name: "admin") {
     pagination: PaginationInfo!
 }
 
-type EscrowTransactionOffsetPage @tag(name: "admin") {
+type EscrowTransactionOffsetPage {
     data: [StandaloneEscrowTransaction!]!
     pagination: PaginationInfo!
 }
@@ -1776,56 +1800,7 @@ type TicketEdge {
     node: Ticket!
 }
 
-# Escrow Account cursor pagination
-type EscrowAccountConnection {
-    edges: [EscrowAccountEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type EscrowAccountEdge {
-    cursor: String!
-    node: EventEscrowAccount!
-}
-
-# Refund Request cursor pagination
-type RefundRequestConnection {
-    edges: [RefundRequestEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type RefundRequestEdge {
-    cursor: String!
-    node: RefundRequest!
-}
-
-# Payout Request cursor pagination
-type PayoutRequestConnection {
-    edges: [PayoutRequestEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type PayoutRequestEdge {
-    cursor: String!
-    node: PayoutRequest!
-}
-
 # Financial Transaction cursor pagination - REMOVED (use PaymentAttempt for payment tracking)
-
-
-# Reservation cursor pagination
-type ReservationConnection {
-    edges: [ReservationEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int
-}
-
-type ReservationEdge {
-    cursor: String!
-    node: TicketReservation!
-}
 
 # ============================================================================
 # SECTION 12: INPUT TYPES
@@ -1982,6 +1957,10 @@ input ReserveTicketsInput {
     # where the client never saw a response — a server-generated key travelled
     # back in the reply that never arrived.
     idempotencyKey: String!
+    # Who the order is for. The name goes on the receipt and the gate list; the email is optional.
+    contactName: String
+    contactEmail: String
+    contactPhone: PhoneNumber
 }
 
 input TicketSelectionInput {
@@ -2024,7 +2003,6 @@ input UpdatePromoCodeInput {
     applicableTiers: [String!]
     isActive: Boolean
 }
-
 
 input FinancialReportFilterInput {
     startDate: DateTime!
@@ -2123,12 +2101,6 @@ input DisputeChargebackInput @tag(name: "admin") {
     notes: String!
 }
 
-input RecoverChargebackInput @tag(name: "admin") {
-    fundSource: ChargebackFundSource!
-    amount: BigDecimal
-    notes: String
-}
-
 input ChargebackFilterInput @tag(name: "admin") {
     status: ChargebackStatus
     recoveryStatus: RecoveryStatus
@@ -2136,6 +2108,11 @@ input ChargebackFilterInput @tag(name: "admin") {
     organizerId: String
     startDate: DateTime
     endDate: DateTime
+    # The provider's response deadline falls on or before / on or after this day (Lusaka time)
+    deadlineBefore: DateTime
+    deadlineAfter: DateTime
+    # Only chargebacks still waiting for a decision
+    awaitingResponse: Boolean
 }
 
 input StartReconciliationInput @tag(name: "admin") {
@@ -2190,83 +2167,8 @@ input RecordGatewaySettlementInput @tag(name: "admin") {
 }
 
 # ============================================================================
-# PAYMENT ATTEMPT INPUT TYPES
-# ============================================================================
-
-"""
-Input for initiating a payment attempt with PawaPay.
-Called during ticket checkout to start mobile money payment.
-"""
-input InitiatePaymentAttemptInput @tag(name: "internal") {
-    "Reservation being paid for"
-    reservationId: String!
-    "Event the ticket is for"
-    eventId: String!
-    "User making the payment"
-    buyerId: String!
-    "Payment amount"
-    amount: BigDecimal!
-    "Currency code (default: ZMW)"
-    currency: String
-    "Mobile money provider (e.g., MTN_MOMO_ZMB, AIRTEL_OAPI_ZMB)"
-    provider: String!
-    "Payer phone number in E.164 format (e.g., +260763456789)"
-    payerPhone: PhoneNumber!
-    "Optional correlation ID for tracing"
-    correlationId: String
-    "Client IP address for security"
-    clientIp: String
-    "Session ID for tracing"
-    sessionId: String
-}
-
-"""
-Input for processing a PawaPay webhook callback.
-"""
-input ProcessPaymentWebhookInput @tag(name: "internal") {
-    "UUID of the payment attempt (depositId)"
-    depositId: String!
-    "Status from PawaPay (COMPLETED, FAILED, PROCESSING)"
-    providerStatus: String!
-    "PawaPay transaction ID (if COMPLETED)"
-    providerTransactionId: String
-    "Failure code (if FAILED)"
-    failureCode: String
-    "Failure message (if FAILED)"
-    failureMessage: String
-    "Raw webhook payload for audit"
-    webhookPayload: String!
-    "Source IP of webhook request"
-    sourceIp: String!
-    "Whether webhook signature was valid"
-    signatureValid: Boolean!
-}
-
-"""
-Input for marking a payment as fulfilled after accounting operations complete.
-"""
-input MarkPaymentFulfilledInput @tag(name: "internal") {
-    "UUID of the payment attempt (depositId)"
-    depositId: String!
-    "ID of the journal entry created"
-    journalEntryId: String!
-    "ID of the commission record created"
-    commissionId: String
-    "ID of the escrow transaction created"
-    escrowTransactionId: String!
-}
-
-# ============================================================================
 # SECTION 13: MUTATION RESPONSE TYPES (Consolidated)
 # ============================================================================
-
-type TicketMutationResponse {
-    success: Boolean!
-    message: String
-    data: Ticket
-    errors: [String!]!
-    metadata: JSON
-}
 
 # ============================================================================
 # GATE CHECK-IN (ET-TKT-003)
@@ -2393,22 +2295,6 @@ type ValidationResult @tag(name: "organizer") {
 }
 
 # Specific ticket mutation response types matching resolver return types
-type RefundTicketMutationResponse @tag(name: "organizer") @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: Ticket
-    errors: [String!]!
-    metadata: JSON
-}
-
-type CancelTicketMutationResponse @tag(name: "organizer") @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: Ticket
-    errors: [String!]!
-    metadata: JSON
-}
-
 # MOBILE - The outcome of ASKING for a payment prompt, not of the payment.
 #
 # `success` means the provider accepted the request and the buyer's handset
@@ -2416,232 +2302,43 @@ type CancelTicketMutationResponse @tag(name: "organizer") @tag(name: "admin") {
 # takes between eight seconds and four minutes and fails about one time in six.
 # Poll `reservation(id)` for the actual outcome (ET-TKT-001 R7).
 type PaymentInitiationResponse @tag(name: "mobile") {
-    success: Boolean!
-    message: String
     paymentIntentId: ID
     transactionRef: String
     paymentStatus: String
     reservationId: ID
-    errors: [String!]!
-}
-
-type RefundRequestMutationResponse {
-    success: Boolean!
-    message: String
-    data: RefundRequest
-    errors: [String!]!
-    metadata: JSON
 }
 
 # Specific refund request mutation response types matching resolver return types
-type CreateRefundRequestMutationResponse @tag(name: "mobile") {
-    success: Boolean!
-    message: String
-    data: RefundRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
-type ApproveRefundRequestMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: RefundRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
-type RejectRefundRequestMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: RefundRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
-type ProcessRefundRequestMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: RefundRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
-type PayoutRequestMutationResponse {
-    success: Boolean!
-    message: String
-    data: PayoutRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
 # Specific payout request mutation response types matching resolver return types
-type CreatePayoutRequestMutationResponse @tag(name: "organizer") {
-    success: Boolean!
-    message: String
-    data: PayoutRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
-type ApprovePayoutRequestMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: PayoutRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
-type RejectPayoutRequestMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: PayoutRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
-type ProcessPayoutRequestMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: PayoutRequest
-    errors: [String!]!
-    metadata: JSON
-}
-
-type BankAccountMutationResponse {
-    success: Boolean!
-    message: String
-    data: BankAccount
-    errors: [String!]!
-    metadata: JSON
-}
-
 # Specific bank account mutation response types matching resolver return types
-type CreateBankAccountMutationResponse @tag(name: "organizer") {
-    success: Boolean!
-    message: String
-    data: BankAccount
-    errors: [String!]!
-    metadata: JSON
-}
-
-type UpdateBankAccountMutationResponse @tag(name: "organizer") {
-    success: Boolean!
-    message: String
-    data: BankAccount
-    errors: [String!]!
-    metadata: JSON
-}
-
-type DeleteBankAccountMutationResponse @tag(name: "organizer") {
-    success: Boolean!
-    message: String
-    errors: [String!]!
-    metadata: JSON
-}
-
-type VerifyBankAccountMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: BankAccount
-    errors: [String!]!
-    metadata: JSON
-}
-
-# TransactionMutationResponse - REMOVED (replaced by PaymentAttemptMutationResponse)
-
-# ProcessTransactionMutationResponse - REMOVED (use PaymentAttemptMutationResponse)
-
 # Payment Attempt mutation response type
-type PaymentAttemptMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: PaymentAttempt
-    errors: [String!]!
-    metadata: JSON
-}
-
-type EscrowAccountMutationResponse {
-    success: Boolean!
-    message: String
-    data: EventEscrowAccount
-    errors: [String!]!
-    metadata: JSON
-}
-
 type BulkOperationResponse {
-    success: Boolean!
-    message: String
     processedCount: Int!
     failedCount: Int!
-    errors: [String!]!
 }
 
 # BulkTransactionOperationResponse - REMOVED (use BulkPaymentAttemptOperationResponse)
 
 # ADMIN - Bulk payout operation response with payout request details
 type BulkPayoutOperationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
     processedCount: Int!
     failedCount: Int!
     processedPayouts: [PayoutRequest!]!
     failedPayoutIds: [String!]!
-    errors: [String!]!
 }
 
 # Shared type - must have @shareable on all fields for federation
-type DeleteMutationResponse @shareable {
-    success: Boolean! @shareable
-    message: String @shareable
-    errors: [String!]! @shareable
-    metadata: JSON @shareable
-}
-
 # ============================================================================
 # FINANCIAL ENGINE MUTATION RESPONSE TYPES
 # ============================================================================
 
 # Chart of Accounts mutation response
-type ChartOfAccountsMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: ChartOfAccountsEntry
-    errors: [String!]!
-    metadata: JSON
-}
-
 # Journal Entry mutation response
-type JournalEntryMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: JournalEntry
-    errors: [String!]!
-    metadata: JSON
-}
-
 # Chargeback mutation response
-type ChargebackMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: ChargebackRecord
-    errors: [String!]!
-    metadata: JSON
-}
-
 # Reconciliation mutation response
-type ReconciliationMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: ReconciliationRun
-    errors: [String!]!
-    metadata: JSON
-}
-
 # Escrow-Journal cross-verification response
 # Compares EventEscrowAccount balance with Journal Entry calculated balance
 type EscrowJournalVerificationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
     eventId: String!
     escrowAccountId: String
     journalAccountCode: String
@@ -2651,33 +2348,498 @@ type EscrowJournalVerificationResponse @tag(name: "admin") {
     isConsistent: Boolean!
     status: EscrowJournalVerificationStatus
     details: [String!]!
-    errors: [String!]!
 }
 
 # Platform Account mutation response
-type PlatformAccountMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: PlatformAccount
-    errors: [String!]!
-    metadata: JSON
-}
-
 # Escrow Transaction mutation response
-type EscrowTransactionMutationResponse @tag(name: "admin") {
-    success: Boolean!
-    message: String
-    data: StandaloneEscrowTransaction
-    errors: [String!]!
-    metadata: JSON
+
+# ============================================================================
+# SECTION 8A: BOOKINGS
+# A booking is a purchase as a person understands it: BK-2026-00001234, who it is for,
+# what was bought and where it stands. Tickets are its seats; refunds and the payment
+# hang off it. Buyers read their own; organizers read their organization's (contact masked);
+# platform staff read all.
+# ============================================================================
+
+# Stored states move with the reservation; the last three are derived from refunds and never written.
+enum BookingStatus {
+    PENDING
+    CONFIRMED
+    CANCELLED
+    EXPIRED
+    FAILED
+    PARTIALLY_REFUNDED
+    REFUNDED
+    # The payment arrived after the hold lapsed and was refunded in full automatically
+    PAID_AFTER_EXPIRY_AUTO_REFUNDED
 }
 
+type BookingItem @tag(name: "organizer") @tag(name: "mobile") {
+    ticketTierId: String!
+    tierName: String!
+    quantity: Int!
+    unitPrice: BigDecimal!
+    subtotal: BigDecimal!
+}
+
+type BookingPayment @tag(name: "organizer") @tag(name: "mobile") {
+    provider: String
+    status: String
+    reference: String
+    amount: BigDecimal
+    currency: String
+    # Masked unless the caller is the buyer or platform staff
+    payerPhone: String
+    paidAt: DateTime
+}
+
+type Booking @tag(name: "organizer") @tag(name: "mobile") {
+    id: ID!
+    bookingNumber: String!
+    reservationId: String!
+    eventId: String!
+    eventTitle: String
+    eventDate: String
+    buyerId: String!
+    # Who the order is for. Email and phone are masked unless the caller is the buyer or platform staff.
+    contactName: String
+    contactEmail: String
+    contactPhone: String
+    status: BookingStatus!
+    items: [BookingItem!]!
+    ticketCount: Int!
+    subtotal: BigDecimal
+    discountAmount: BigDecimal
+    totalAmount: BigDecimal!
+    currency: String!
+    promoCode: String
+    refundedAmount: BigDecimal!
+    # What can still be refunded across the booking's tickets
+    refundableAmount: BigDecimal!
+    lateRefundStatus: String
+    tickets: [Ticket!]!
+    refundRequests: [RefundRequest!]!
+    payment: BookingPayment
+    expiresAt: DateTime
+    confirmedAt: DateTime
+    createdAt: DateTime
+}
+
+type BookingOffsetPage @tag(name: "organizer") @tag(name: "mobile") {
+    data: [Booking!]!
+    pagination: PaginationInfo!
+}
+
+input BookingFilterInput @tag(name: "organizer") @tag(name: "mobile") {
+    eventId: String
+    status: BookingStatus
+    statuses: [BookingStatus!]
+    # Booking number or contact name; at least 3 characters
+    search: String
+    createdAfter: DateTime
+    createdBefore: DateTime
+}
+
+# What happened to a ticket re-send. The destination is masked; nothing sent is stored.
+type ResendTicketResult @tag(name: "organizer") @tag(name: "mobile") {
+    ticketId: ID!
+    ticketNumber: String!
+    # QUEUED, DUPLICATE or NO_VERIFIED_CONTACT
+    status: String!
+    channel: String
+    destination: String
+}
+
+# ============================================================================
+# SECTION 8B: TICKET TRANSFERS
+# A holder offers one ticket to another registered person, named by the WhatsApp number or email
+# they signed up with. While the offer is open the ticket is held: not scannable, not refundable,
+# not sendable elsewhere. The QR is the ticket's identity and never changes; a transfer changes who
+# holds the ticket. Refunds still return to whoever paid.
+# ============================================================================
+
+enum TicketTransferStatus {
+    PENDING
+    ACCEPTED
+    DECLINED
+    CANCELLED
+    EXPIRED
+}
+
+enum TransferChannel {
+    WHATSAPP
+    EMAIL
+}
+
+enum TransferDirection {
+    INCOMING
+    OUTGOING
+}
+
+type TicketTransfer @tag(name: "mobile") @tag(name: "organizer") {
+    id: ID!
+    ticketId: ID!
+    ticketNumber: String!
+    bookingNumber: String
+    eventId: String!
+    eventTitle: String
+    status: TicketTransferStatus!
+    # Relative to the caller: OUTGOING when they sent it, INCOMING when it was offered to them
+    direction: TransferDirection
+    # First name and initial only
+    fromDisplayName: String
+    toDisplayName: String
+    # The contact the sender typed, masked
+    recipientMasked: String
+    note: String
+    createdAt: DateTime
+    expiresAt: DateTime
+    resolvedAt: DateTime
+}
+
+type TicketTransferPage @tag(name: "mobile") {
+    data: [TicketTransfer!]!
+    pagination: PaginationInfo!
+}
+
+# The person a ticket would go to, as the sender may see them: never more than this
+type TransferRecipient @tag(name: "mobile") {
+    displayName: String
+    maskedContact: String!
+}
+
+input InitiateTicketTransferInput @tag(name: "mobile") {
+    ticketId: ID!
+    channel: TransferChannel!
+    # A WhatsApp number or an email, matching the channel
+    recipient: String!
+    note: String
+}
+
+# ============================================================================
+# SECTION 8C: ORGANIZER OPERATIONS
+# Sales over time, when people buy, and reaching the people who hold tickets.
+# ============================================================================
+
+enum SalesBucket {
+    HOUR
+    DAY
+    WEEK
+}
+
+# One bucket of an event's sales, in Lusaka time. Every bucket in range is present, quiet ones as zeros.
+type SalesPoint @tag(name: "organizer") {
+    bucketStart: DateTime!
+    bucketEnd: DateTime!
+    tickets: Int!
+    # Distinct purchases (bookings) in the bucket
+    orders: Int!
+    grossRevenue: BigDecimal!
+    netRevenue: BigDecimal!
+    # Refunds against the tickets sold in this bucket, whenever the refund happened
+    refundedAmount: BigDecimal!
+}
+
+# One hour of one weekday. The grid is always 7 x 24 (dayOfWeek 1 = Monday), Lusaka time.
+type PurchaseHeatCell @tag(name: "organizer") {
+    dayOfWeek: Int!
+    hour: Int!
+    purchases: Int!
+    tickets: Int!
+    revenue: BigDecimal!
+}
+
+enum HolderSegment {
+    ALL
+    ADMITTED
+    NOT_ADMITTED
+}
+
+enum HolderMessageStatus {
+    SENDING
+    SENT
+    PARTIAL
+    FAILED
+}
+
+# A message sent to the holders of an event's tickets. Who received it is not kept or shown.
+type HolderMessage @tag(name: "organizer") {
+    id: ID!
+    eventId: String!
+    eventTitle: String
+    subject: String!
+    body: String!
+    segment: HolderSegment!
+    ticketTierId: String
+    recipientCount: Int!
+    deliveredCount: Int!
+    status: HolderMessageStatus!
+    sentBy: String!
+    createdAt: DateTime
+}
+
+type HolderMessagePage @tag(name: "organizer") {
+    data: [HolderMessage!]!
+    pagination: PaginationInfo!
+}
+
+input MessageTicketHoldersInput @tag(name: "organizer") {
+    subject: String!
+    body: String!
+    segment: HolderSegment = ALL
+    # Narrow to the holders of one tier
+    ticketTierId: String
+}
+
+# ============================================================================
+# SECTION 8D: FINANCE AND PAYMENT OPERATIONS (platform staff)
+# ============================================================================
+
+enum CommissionStatus {
+    PENDING
+    EARNED
+    CANCELLED
+    CLAWED_BACK
+}
+
+type CommissionRecord @tag(name: "admin") {
+    id: ID!
+    ticketId: String!
+    eventId: String!
+    organizerId: String
+    organizationId: String
+    amount: BigDecimal!
+    rate: BigDecimal!
+    ticketPrice: BigDecimal!
+    currency: String!
+    status: CommissionStatus!
+    pendingAt: DateTime
+    earnedAt: DateTime
+    cancelledAt: DateTime
+    clawedBackAt: DateTime
+    refundRequestId: String
+    refundReason: String
+    createdAt: DateTime
+}
+
+# Commission by state across the filter, not just the page
+type CommissionTotals @tag(name: "admin") {
+    pending: BigDecimal!
+    earned: BigDecimal!
+    cancelled: BigDecimal!
+    clawedBack: BigDecimal!
+}
+
+type CommissionRecordPage @tag(name: "admin") {
+    data: [CommissionRecord!]!
+    pagination: PaginationInfo!
+    totals: CommissionTotals!
+}
+
+input CommissionFilterInput @tag(name: "admin") {
+    status: CommissionStatus
+    eventId: String
+    organizationId: String
+    ticketId: String
+    createdAfter: DateTime
+    createdBefore: DateTime
+}
+
+# A settlement from the payment gateway, as recorded in the ledger
+type GatewaySettlement @tag(name: "admin") {
+    settlementId: String!
+    journalEntryId: String!
+    entryNumber: String
+    settlementDate: DateTime
+    grossAmount: BigDecimal!
+    feeAmount: BigDecimal!
+    netAmount: BigDecimal!
+    bankReference: String
+    currency: String
+    postedAt: DateTime
+}
+
+type GatewaySettlementPage @tag(name: "admin") {
+    data: [GatewaySettlement!]!
+    pagination: PaginationInfo!
+}
+
+input GatewaySettlementFilterInput @tag(name: "admin") {
+    from: DateTime
+    to: DateTime
+    settlementId: String
+}
+
+enum PaymentAttemptType @tag(name: "admin") {
+    COLLECT
+    REFUND
+    PAYOUT
+    VERIFICATION
+}
+
+type PaymentAttemptOffsetPage @tag(name: "admin") {
+    data: [PaymentAttempt!]!
+    pagination: PaginationInfo!
+}
+
+input PaymentAttemptFilterInput @tag(name: "admin") {
+    statuses: [PaymentAttemptStatus!]
+    attemptType: PaymentAttemptType
+    provider: String
+    eventId: String
+    organizationId: String
+    buyerId: String
+    reviewStatus: String
+    # LOW, MEDIUM or HIGH
+    riskLevel: String
+    createdAfter: DateTime
+    createdBefore: DateTime
+    minAmount: BigDecimal
+    maxAmount: BigDecimal
+    # A deposit id, attempt number or provider reference, exactly as shown
+    reference: String
+    # Collections still short of fulfilment for at least this many minutes
+    stuckForMinutes: Int
+}
+
+type RiskFlagCount @tag(name: "admin") {
+    flag: String!
+    count: Int!
+}
+
+# Exposure over a window: how many collections sit at each risk level, and which rules fired most
+type PaymentRiskSummary @tag(name: "admin") {
+    windowHours: Int!
+    evaluated: Int!
+    low: Int!
+    medium: Int!
+    high: Int!
+    # Medium and high together
+    flagged: Int!
+    amountAtRisk: BigDecimal!
+    topFlags: [RiskFlagCount!]!
+}
+
+# What happened to one payment in a bulk re-query: RETRIED, SKIPPED, NOT_FOUND or FAILED
+type PaymentRecoveryOutcome @tag(name: "admin") {
+    depositId: String!
+    result: String!
+    detail: String
+}
+
+enum RecoveryAction @tag(name: "admin") {
+    FORCE_COMPLETE_PAYMENT_ATTEMPTS
+    WRITE_OFF_CHARGEBACK
+    TRANSFER_PLATFORM_FUNDS
+}
+
+enum RecoveryProposalStatus @tag(name: "admin") {
+    PENDING
+    CONFIRMED
+    WITHDRAWN
+    EXPIRED
+    FAILED
+}
+
+# A sensitive action waiting for its second person. Confirming applies exactly what is stored here.
+type RecoveryProposal @tag(name: "admin") {
+    id: ID!
+    action: RecoveryAction!
+    subjectType: String!
+    subjectIds: [String!]!
+    amount: BigDecimal
+    parameters: JSON
+    status: RecoveryProposalStatus!
+    proposedById: String!
+    proposedAt: DateTime!
+    proposalReason: String!
+    expiresAt: DateTime!
+    confirmedById: String
+    confirmedAt: DateTime
+    confirmationReason: String
+    outcome: String
+    failureReason: String
+    # Whether the caller could confirm it right now: not their own, right role, still open
+    canConfirm: Boolean!
+}
+
+input ProposeRecoveryActionInput @tag(name: "admin") {
+    action: RecoveryAction!
+    # Payment deposit ids, or the chargeback id
+    subjectIds: [String!]!
+    amount: BigDecimal
+    parameters: JSON
+    reason: String!
+}
+
+type PlatformTransfer @tag(name: "admin") {
+    id: ID!
+    fromAccount: PlatformAccountType!
+    toAccount: PlatformAccountType!
+    amount: BigDecimal!
+    currency: String!
+    reason: String!
+    executedBy: String!
+    proposalId: String
+    journalEntryId: String
+    createdAt: DateTime
+}
+
+input PlatformTransferInput @tag(name: "admin") {
+    fromAccount: PlatformAccountType!
+    toAccount: PlatformAccountType!
+    amount: BigDecimal!
+    reason: String!
+    # The same key returns the same transfer instead of moving the money twice
+    idempotencyKey: String!
+}
+
+# Executed now (transfer set), or waiting for a second person (proposal set) above the single-approver limit
+type PlatformTransferResult @tag(name: "admin") {
+    executed: Boolean!
+    requiresSecondApprover: Boolean!
+    transfer: PlatformTransfer
+    proposal: RecoveryProposal
+}
+
+enum ChargebackRecoveryAction @tag(name: "admin") {
+    START_RECOVERY
+    RECORD_RECOVERY
+}
+
+input UpdateChargebackRecoveryInput @tag(name: "admin") {
+    action: ChargebackRecoveryAction!
+    amount: BigDecimal
+    fundSource: ChargebackFundSource
+    reference: String
+}
 
 # ============================================================================
 # SECTION 15: ROOT QUERY TYPE
 # Tags indicate which clients should include these queries in their operations
 # ============================================================================
 type Query {
+    salesOverTime(eventId: ID!, from: DateTime, to: DateTime, bucket: SalesBucket = DAY): [SalesPoint!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    purchasesByDayAndHour(from: DateTime, to: DateTime, eventId: ID, organizationId: ID): [PurchaseHeatCell!]! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    ticketHolderAudience(eventId: ID!, segment: HolderSegment = ALL, ticketTierId: String): Int! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    ticketHolderMessages(eventId: ID!, pagination: OffsetPaginationInput): HolderMessagePage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    commissionRecords(filter: CommissionFilterInput, pagination: OffsetPaginationInput): CommissionRecordPage! @auth(requires: FINANCE) @tag(name: "admin")
+    gatewaySettlements(filter: GatewaySettlementFilterInput, pagination: OffsetPaginationInput): GatewaySettlementPage! @auth(requires: FINANCE) @tag(name: "admin")
+    paymentAttemptSearch(filter: PaymentAttemptFilterInput, pagination: OffsetPaginationInput): PaymentAttemptOffsetPage! @auth(requires: FINANCE) @tag(name: "admin")
+    stuckTransactions(minutes: Int = 30, pagination: OffsetPaginationInput): PaymentAttemptOffsetPage! @auth(requires: FINANCE) @tag(name: "admin")
+    paymentRiskSummary(windowHours: Int = 24): PaymentRiskSummary! @auth(requires: FINANCE) @tag(name: "admin")
+    dualControlQueue: [RecoveryProposal!]! @auth(requires: FINANCE) @tag(name: "admin")
+    myRecoveryProposals: [RecoveryProposal!]! @auth(requires: FINANCE) @tag(name: "admin")
+    pendingRecoveryProposals: [RecoveryProposal!]! @auth(requires: FINANCE) @tag(name: "admin")
+    transferRecipient(channel: TransferChannel!, value: String!): TransferRecipient @auth(requires: CUSTOMER) @tag(name: "mobile")
+    myTicketTransfers(direction: TransferDirection, status: TicketTransferStatus, pagination: OffsetPaginationInput): TicketTransferPage! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    ticketTransferChain(ticketId: ID!): [TicketTransfer!]! @auth(requires: AUTHENTICATED) @tag(name: "mobile") @tag(name: "organizer") @tag(name: "admin")
+    booking(id: ID!): Booking @auth(requires: AUTHENTICATED) @tag(name: "organizer") @tag(name: "mobile") @tag(name: "admin")
+    bookingByNumber(bookingNumber: String!): Booking @auth(requires: AUTHENTICATED) @tag(name: "organizer") @tag(name: "mobile") @tag(name: "admin")
+    bookingsByOrganizer(organizationId: ID, filter: BookingFilterInput, pagination: OffsetPaginationInput): BookingOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    bookingsByBuyer(buyerId: String!, filter: BookingFilterInput, pagination: OffsetPaginationInput): BookingOffsetPage! @auth(requires: AUTHENTICATED) @tag(name: "mobile") @tag(name: "admin")
+    myBookings(filter: BookingFilterInput, pagination: OffsetPaginationInput): BookingOffsetPage! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    refundRequestsByOrganizer(organizationId: ID, filter: RefundRequestFilterInput, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
     # ========================================================================
     # TICKET QUERIES
     # PUBLIC - Single ticket lookup (owner can view their own ticket)
@@ -2689,20 +2851,16 @@ type Query {
     ticketByNumber(ticketNumber: String!): Ticket
 
     # ORGANIZER/ADMIN - Offset pagination for dashboard tables
-    ticketsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "organizer") @tag(name: "admin")
+    ticketsByEvent(eventId: String!, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "organizer")
     ticketsByBuyerOffsetPagination(buyerId: String!, status: TicketStatus, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "admin")
-    ticketsByOrganizerOffsetPagination(organizerId: String!, filter: TicketFilterInput, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "organizer") @tag(name: "admin")
-    searchTicketsOffsetPagination(filter: TicketFilterInput!, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "admin")
+    ticketsByOrganizer(organizerId: String!, filter: TicketFilterInput, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "organizer")
+    searchTickets(filter: TicketFilterInput!, pagination: OffsetPaginationInput): TicketOffsetPage! @tag(name: "admin")
 
-    # ORGANIZER/ADMIN - Cursor pagination for dashboard lists
-    ticketsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): TicketConnection! @tag(name: "organizer") @tag(name: "admin")
     # MOBILE - Customer views their own tickets
     ticketsByBuyerCursorPagination(buyerId: String!, status: TicketStatus, pagination: CursorPaginationInput): TicketConnection! @tag(name: "mobile")
-    ticketsByOrganizerCursorPagination(organizerId: String!, filter: TicketFilterInput, pagination: CursorPaginationInput): TicketConnection! @tag(name: "organizer") @tag(name: "admin")
-    searchTicketsCursorPagination(filter: TicketFilterInput!, pagination: CursorPaginationInput): TicketConnection! @tag(name: "admin")
 
     # ORGANIZER/ADMIN - Ticket counts for dashboard stats
-    ticketCountByEvent(eventId: String!): Int! @tag(name: "organizer") @tag(name: "admin")
+    ticketCountByEvent(eventId: String!): Int! @tag(name: "organizer")
     ticketCountByBuyer(buyerId: String!): Int! @tag(name: "mobile")
 
     # ========================================================================
@@ -2722,6 +2880,9 @@ type Query {
     paymentAttempt(id: ID!): PaymentAttempt @tag(name: "admin")
     paymentAttemptByDepositId(depositId: String!): PaymentAttempt @tag(name: "admin")
     paymentAttemptByAttemptNumber(attemptNumber: String!): PaymentAttempt @tag(name: "admin")
+
+    # ADMIN - ET-PAY-001 §4 · every attempt made against one payment intent
+    paymentAttempts(intentId: ID!): [PaymentAttempt!]! @auth(requires: ADMIN) @tag(name: "admin")
 
     # ADMIN - Payment attempts by ticket (all attempts for a purchase)
     paymentAttemptsByReservation(reservationId: String!): [PaymentAttempt!]! @tag(name: "admin")
@@ -2752,12 +2913,13 @@ type Query {
     escrowAccountByEvent(eventId: String!): EventEscrowAccount @tag(name: "admin")
 
     # ADMIN - Offset pagination for escrow dashboard tables
-    escrowAccountsOffsetPagination(filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput): EscrowAccountOffsetPage! @tag(name: "admin")
-    escrowAccountsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EscrowAccountOffsetPage! @tag(name: "admin")
+    # ORGANIZER - The caller's own escrow accounts. ET-FIN-001 §4.
+    # Not a synonym for escrowAccounts below, which is ADMIN/FINANCE over every account on
+    # the platform. organizationId selects among the caller's own.
+    myEscrowAccounts(organizationId: ID, pagination: OffsetPaginationInput): EscrowAccountOffsetPage! @tag(name: "organizer")
 
-    # ADMIN - Cursor pagination for escrow lists
-    escrowAccountsCursorPagination(filter: EscrowAccountFilterInput, pagination: CursorPaginationInput): EscrowAccountConnection! @tag(name: "admin")
-    escrowAccountsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EscrowAccountConnection! @tag(name: "admin")
+    escrowAccounts(filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput): EscrowAccountOffsetPage! @tag(name: "admin")
+    escrowAccountsByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): EscrowAccountOffsetPage! @tag(name: "admin")
 
     # ADMIN - Escrow balance and summary
     escrowAccountBalance(accountId: String!): BigDecimal @tag(name: "admin")
@@ -2771,28 +2933,27 @@ type Query {
     # ========================================================================
 
     # ORGANIZER/ADMIN - Single refund lookup
-    refundRequest(id: ID!): RefundRequest @tag(name: "organizer") @tag(name: "admin")
-    refundRequestByRequestId(requestId: String!): RefundRequest @tag(name: "organizer") @tag(name: "admin")
-    refundRequestsByTicket(ticketId: String!): [RefundRequest!]! @tag(name: "organizer") @tag(name: "admin")
+    refundRequest(id: ID!): RefundRequest @tag(name: "organizer")
+    refundRequestByRequestId(requestId: String!): RefundRequest @tag(name: "organizer")
+    refundRequestsByTicket(ticketId: String!): [RefundRequest!]! @tag(name: "organizer")
 
     # ADMIN - Offset pagination for refund dashboard tables
-    refundRequestsOffsetPagination(filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
-    refundRequestsByBuyerOffsetPagination(buyerId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
-    # ORGANIZER/ADMIN - Refunds by event
-    refundRequestsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "organizer") @tag(name: "admin")
-    pendingRefundRequestsOffsetPagination(pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
+    # AUTHENTICATED - The caller's own refund requests. ET-FIN-004 §4.
+    # Subject-scoped: the buyer comes from the token and there is no argument to override it.
+    # Contrast refundRequestsByBuyer(buyerId), where the client names whose refunds to return.
+    myRefundRequests(pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "mobile") @tag(name: "admin")
 
-    # ADMIN - Cursor pagination for refund lists
-    refundRequestsCursorPagination(filter: RefundRequestFilterInput!, pagination: CursorPaginationInput): RefundRequestConnection! @tag(name: "admin")
-    refundRequestsByBuyerCursorPagination(buyerId: String!, pagination: CursorPaginationInput): RefundRequestConnection! @tag(name: "admin")
-    refundRequestsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): RefundRequestConnection! @tag(name: "organizer") @tag(name: "admin")
-    pendingRefundRequestsCursorPagination(pagination: CursorPaginationInput): RefundRequestConnection! @tag(name: "admin")
+    refundRequests(filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
+    refundRequestsByBuyer(buyerId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
+    # ORGANIZER/ADMIN - Refunds by event
+    refundRequestsByEvent(eventId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "organizer")
+    pendingRefundRequests(pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "admin")
 
     # MOBILE - Refund eligibility and calculation for customer
     isTicketEligibleForRefund(ticketId: String!): Boolean! @tag(name: "mobile")
     calculateRefundAmount(ticketId: String!): RefundCalculation! @tag(name: "mobile")
     # ORGANIZER/ADMIN - Refund summary for event
-    eventRefundSummary(eventId: String!): RefundSummary @tag(name: "organizer") @tag(name: "admin")
+    eventRefundSummary(eventId: String!): RefundSummary @tag(name: "organizer")
 
     # ========================================================================
     # PAYOUT REQUEST QUERIES
@@ -2801,34 +2962,32 @@ type Query {
     # ========================================================================
 
     # ORGANIZER/ADMIN - Single payout lookup
-    payoutRequest(id: ID!): PayoutRequest @tag(name: "organizer") @tag(name: "admin")
-    payoutRequestByRequestId(requestId: String!): PayoutRequest @tag(name: "organizer") @tag(name: "admin")
+    payoutRequest(id: ID!): PayoutRequest @tag(name: "organizer")
+    payoutRequestByRequestId(requestId: String!): PayoutRequest @tag(name: "organizer")
 
     # ADMIN - Offset pagination for all payouts
-    payoutRequestsOffsetPagination(filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
-    # ORGANIZER/ADMIN - Payouts by organizer
-    payoutRequestsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "organizer") @tag(name: "admin")
-    payoutRequestsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "organizer") @tag(name: "admin")
-    # ADMIN - Pending and failed payouts queue
-    pendingPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
-    failedPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    # ORGANIZER - The caller's own payout requests. ET-FIN-003 §4.
+    # organizationId SELECTS among the caller's organizations; it never grants access to
+    # another. Omitted, it means all of the caller's. Contrast payoutRequestsByOrganizer,
+    # where the argument decides whose data comes back - see F-001.
+    myPayoutRequests(organizationId: ID, status: PayoutRequestStatus, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "organizer")
 
-    # ADMIN - Cursor pagination for payout lists
-    payoutRequestsCursorPagination(filter: PayoutRequestFilterInput!, pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
+    payoutRequests(filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    # ORGANIZER/ADMIN - Payouts by organizer
+    payoutRequestsByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "organizer")
+    payoutRequestsByEvent(eventId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "organizer")
+    # ADMIN - Pending and failed payouts queue
+    pendingPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    failedPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+
     # ORGANIZER - Own payout request history
-    payoutRequestsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "organizer") @tag(name: "admin")
-    payoutRequestsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "organizer") @tag(name: "admin")
-    pendingPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
-    failedPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
 
     # ADMIN - Payout Recovery Queries
-    payoutRequestsForReviewOffsetPagination(reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
-    payoutRequestsForReviewCursorPagination(reviewStatus: PayoutReviewStatus, pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
-    stuckPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
-    stuckPayoutRequestsCursorPagination(pagination: CursorPaginationInput): PayoutRequestConnection! @tag(name: "admin")
-    retryablePayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
-    recentlyResolvedPayoutRequestsOffsetPagination(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
-    payoutRequestsByIssueTypeOffsetPagination(issueType: PayoutIssueType!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    payoutRequestsForReview(reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    stuckPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    retryablePayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    recentlyResolvedPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
+    payoutRequestsByIssueType(issueType: PayoutIssueType!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage! @tag(name: "admin")
     payoutRecoverySummary: PayoutRecoverySummary! @tag(name: "admin")
 
     # ========================================================================
@@ -2838,9 +2997,9 @@ type Query {
     # ========================================================================
 
     # ORGANIZER/ADMIN - Bank account lookups
-    bankAccount(id: ID!): BankAccount @tag(name: "organizer") @tag(name: "admin")
-    bankAccountsByOrganizer(organizerId: String!): [BankAccount!]! @tag(name: "organizer") @tag(name: "admin")
-    defaultBankAccount(organizerId: String!): BankAccount @tag(name: "organizer") @tag(name: "admin")
+    bankAccount(id: ID!): BankAccount @tag(name: "organizer")
+    bankAccountsByOrganizer(organizerId: String!): [BankAccount!]! @tag(name: "organizer")
+    defaultBankAccount(organizerId: String!): BankAccount @tag(name: "organizer")
 
     # ========================================================================
     # STATISTICS QUERIES
@@ -2869,7 +3028,7 @@ type Query {
     financialReport(filter: FinancialReportFilterInput!): FinancialReport! @tag(name: "admin")
     exportFinancialReport(filter: FinancialReportFilterInput!, format: ExportFormat!): ReportExport! @tag(name: "admin")
     # ORGANIZER/ADMIN - Event sales report
-    exportSalesReport(eventId: ID!, format: ExportFormat!): ReportExport! @tag(name: "organizer") @tag(name: "admin")
+    exportSalesReport(eventId: ID!, format: ExportFormat!): ReportExport! @tag(name: "organizer")
 
     # ========================================================================
     # RESERVATION QUERIES
@@ -2881,12 +3040,8 @@ type Query {
     myActiveReservations(userId: ID!): [TicketReservation!]! @tag(name: "mobile")
 
     # ADMIN - Reservation monitoring for event management
-    reservationsByEventOffsetPagination(eventId: ID!, pagination: OffsetPaginationInput): ReservationOffsetPage! @tag(name: "admin")
-    expiredReservationsOffsetPagination(eventId: ID, since: DateTime!, pagination: OffsetPaginationInput): ReservationOffsetPage! @tag(name: "admin")
-
-    # ADMIN - Cursor pagination for reservation lists
-    reservationsByEventCursorPagination(eventId: ID!, pagination: CursorPaginationInput): ReservationConnection! @tag(name: "admin")
-    expiredReservationsCursorPagination(eventId: ID, since: DateTime!, pagination: CursorPaginationInput): ReservationConnection! @tag(name: "admin")
+    reservationsByEvent(eventId: ID!, pagination: OffsetPaginationInput): ReservationOffsetPage! @tag(name: "admin")
+    expiredReservations(eventId: ID, since: DateTime!, pagination: OffsetPaginationInput): ReservationOffsetPage! @tag(name: "admin")
 
     # ========================================================================
     # PROMO CODE QUERIES
@@ -2895,13 +3050,13 @@ type Query {
     # ========================================================================
 
     # ORGANIZER/ADMIN - Promo code lookups
-    promoCode(id: ID!): PromoCode @tag(name: "organizer") @tag(name: "admin")
-    promoCodeByCode(code: String!): PromoCode @tag(name: "organizer") @tag(name: "admin")
+    promoCode(id: ID!): PromoCode @tag(name: "organizer")
+    promoCodeByCode(code: String!): PromoCode @tag(name: "organizer")
     # MOBILE - Validate promo code during checkout
     validatePromoCode(code: String!, eventId: ID!, amount: BigDecimal): PromoCodeValidation! @tag(name: "mobile")
     # ORGANIZER - Promo code management
-    eventPromoCodes(eventId: ID!): [PromoCode!]! @tag(name: "organizer") @tag(name: "admin")
-    organizerPromoCodes(organizerId: ID!): [PromoCode!]! @tag(name: "organizer") @tag(name: "admin")
+    eventPromoCodes(eventId: ID!): [PromoCode!]! @tag(name: "organizer")
+    organizerPromoCodes(organizerId: ID!): [PromoCode!]! @tag(name: "organizer")
 
     # ========================================================================
     # LIVE DASHBOARD QUERIES
@@ -2992,7 +3147,7 @@ type Query {
 
     # ORGANIZER - Transaction history with pagination
     # organizerId extracted from JWT - OWASP A01:2021 compliance
-    myTransactionsOffsetPagination(filter: OrganizerTransactionFilterInput, pagination: OffsetPaginationInput): OrganizerTransactionOffsetPage! @tag(name: "organizer")
+    myTransactions(filter: OrganizerTransactionFilterInput, pagination: OffsetPaginationInput): OrganizerTransactionOffsetPage! @tag(name: "organizer")
 
     # ========================================================================
     # FINANCIAL ENGINE QUERIES - Double-Entry Bookkeeping
@@ -3004,19 +3159,17 @@ type Query {
     chartOfAccountsEntry(id: ID!): ChartOfAccountsEntry @tag(name: "admin")
     chartOfAccountsByCode(accountCode: String!): ChartOfAccountsEntry @tag(name: "admin")
     chartOfAccountsByType(accountType: AccountType!): [ChartOfAccountsEntry!]! @tag(name: "admin")
-    chartOfAccountsOffsetPagination(pagination: OffsetPaginationInput): ChartOfAccountsOffsetPage! @tag(name: "admin")
 
     # ADMIN - Journal Entry queries
     journalEntry(id: ID!): JournalEntry @tag(name: "admin")
     journalEntryByNumber(entryNumber: String!): JournalEntry @tag(name: "admin")
     journalEntriesByCorrelationId(correlationId: String!): [JournalEntry!]! @tag(name: "admin")
-    journalEntriesOffsetPagination(filter: JournalEntryFilterInput, pagination: OffsetPaginationInput): JournalEntryOffsetPage! @tag(name: "admin")
+    journalEntries(filter: JournalEntryFilterInput, pagination: OffsetPaginationInput): JournalEntryOffsetPage! @tag(name: "admin")
     journalEntriesByAccountCode(accountCode: String!, pagination: OffsetPaginationInput): JournalEntryOffsetPage! @tag(name: "admin")
-    pendingJournalEntriesOffsetPagination(pagination: OffsetPaginationInput): JournalEntryOffsetPage! @tag(name: "admin")
+    pendingJournalEntries(pagination: OffsetPaginationInput): JournalEntryOffsetPage! @tag(name: "admin")
 
     # ADMIN - Trial Balance and Account Balance queries
     trialBalance(asOf: DateTime): [AccountBalance!]! @tag(name: "admin")
-    accountBalance(accountCode: String!, asOf: DateTime): AccountBalance @tag(name: "admin")
 
     # ADMIN - Platform Account queries
     platformAccounts: [PlatformAccount!]! @tag(name: "admin")
@@ -3025,7 +3178,15 @@ type Query {
 
     # ADMIN - Standalone Escrow Transaction queries
     escrowTransaction(id: ID!): StandaloneEscrowTransaction @tag(name: "admin")
-    escrowTransactionsByAccount(escrowAccountId: String!, pagination: OffsetPaginationInput): EscrowTransactionOffsetPage! @tag(name: "admin")
+    # O-4 · ET-FIN-001 §4 name and audience. The organizer whose money it is may read it;
+    # the account is resolved through the tenant boundary first, so the id cannot reach
+    # another organization's escrow.
+    # Guarded by @PreAuthorize on the resolver, not @auth, and deliberately: the directive's
+    # hierarchy has ADMIN including ORGANIZER but FINANCE including only AUTHENTICATED, so
+    # `@auth(requires: ORGANIZER)` would refuse the finance team that @PreAuthorize admits.
+    # Booking enforces with @PreAuthorize throughout; mixing the two on one field is how the
+    # two mechanisms come to disagree.
+    escrowTransactions(escrowAccountId: String!, pagination: OffsetPaginationInput): EscrowTransactionOffsetPage! @tag(name: "organizer")
     escrowTransactionsByTicket(ticketId: String!): [StandaloneEscrowTransaction!]! @tag(name: "admin")
     escrowTransactionsUnlinked: [StandaloneEscrowTransaction!]! @tag(name: "admin")
     escrowBalance(escrowAccountId: String!): BigDecimal! @tag(name: "admin")
@@ -3039,7 +3200,7 @@ type Query {
     # ADMIN - Chargeback queries
     chargeback(id: ID!): ChargebackRecord @tag(name: "admin")
     chargebackByChargebackId(chargebackId: String!): ChargebackRecord @tag(name: "admin")
-    chargebacksOffsetPagination(filter: ChargebackFilterInput, pagination: OffsetPaginationInput): ChargebackOffsetPage! @tag(name: "admin")
+    chargebacks(filter: ChargebackFilterInput, pagination: OffsetPaginationInput): ChargebackOffsetPage! @tag(name: "admin")
     chargebacksByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): ChargebackOffsetPage! @tag(name: "admin")
     chargebacksByEvent(eventId: String!, pagination: OffsetPaginationInput): ChargebackOffsetPage! @tag(name: "admin")
     pendingChargebacks: [ChargebackRecord!]! @tag(name: "admin")
@@ -3053,7 +3214,7 @@ type Query {
 
     # ADMIN - Reconciliation queries
     reconciliationRun(id: ID!): ReconciliationRun @tag(name: "admin")
-    reconciliationRunsOffsetPagination(filter: ReconciliationFilterInput, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage! @tag(name: "admin")
+    reconciliationRuns(filter: ReconciliationFilterInput, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage! @tag(name: "admin")
     reconciliationRunsByType(type: ReconciliationType!, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage! @tag(name: "admin")
     reconciliationRunsRequiringReview: [ReconciliationRun!]! @tag(name: "admin")
     reconciliationSummary(type: ReconciliationType, startDate: DateTime, endDate: DateTime): ReconciliationSummary! @tag(name: "admin")
@@ -3079,6 +3240,20 @@ type Query {
 # Tags indicate which clients should include these mutations in their operations
 # ============================================================================
 type Mutation {
+    messageTicketHolders(eventId: ID!, input: MessageTicketHoldersInput!): HolderMessage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    resumePaymentAttempt(depositId: String!): PaymentAttempt! @auth(requires: FINANCE) @tag(name: "admin")
+    retryPaymentAttempts(depositIds: [String!]!): [PaymentRecoveryOutcome!]! @auth(requires: FINANCE) @tag(name: "admin")
+    forceCompletePaymentAttempts(depositIds: [String!]!, reason: String!): RecoveryProposal! @auth(requires: SUPER_ADMIN) @tag(name: "admin")
+    proposeRecoveryAction(input: ProposeRecoveryActionInput!): RecoveryProposal! @auth(requires: FINANCE) @tag(name: "admin")
+    confirmRecoveryAction(proposalId: ID!, reason: String!): RecoveryProposal! @auth(requires: FINANCE) @tag(name: "admin")
+    withdrawRecoveryProposal(proposalId: ID!): RecoveryProposal! @auth(requires: FINANCE) @tag(name: "admin")
+    transferBetweenPlatformAccounts(input: PlatformTransferInput!): PlatformTransferResult! @auth(requires: FINANCE) @tag(name: "admin")
+    updateChargebackRecovery(id: ID!, input: UpdateChargebackRecoveryInput!): ChargebackRecord! @auth(requires: FINANCE) @tag(name: "admin")
+    initiateTicketTransfer(input: InitiateTicketTransferInput!): TicketTransfer! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    cancelTicketTransfer(transferId: ID!): TicketTransfer! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    acceptTicketTransfer(transferId: ID!): Ticket! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    declineTicketTransfer(transferId: ID!): TicketTransfer! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    resendTicket(ticketId: ID!): ResendTicketResult! @auth(requires: AUTHENTICATED) @tag(name: "organizer") @tag(name: "mobile") @tag(name: "admin")
     # ========================================================================
     # TICKET MUTATIONS
     # MOBILE - Purchase flow, ORGANIZER - Validation
@@ -3110,12 +3285,12 @@ type Mutation {
     reviewConflict(id: ID!, note: String!): CheckInConflict! @auth(requires: ORGANIZER) @tag(name: "organizer")
     # ORGANIZER/ADMIN - Cancel and refund tickets
     # NOTE: processedBy extracted from JWT authentication (OWASP A01:2021 compliance)
-    cancelTicket(ticketNumber: String!, reason: String!): CancelTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
-    refundTicket(ticketNumber: String!, reason: String!): RefundTicketMutationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    cancelTicket(ticketNumber: String!, reason: String!): Ticket! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    refundTicket(ticketNumber: String!, reason: String!, amount: BigDecimal): Ticket! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
 
     # ADMIN - Administrative ticket operations
-    adminUpdateTicket(ticketId: ID!, input: AdminTicketUpdateInput!): TicketMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
-    regenerateTicketQrCode(ticketId: ID!): TicketMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    adminUpdateTicket(ticketId: ID!, input: AdminTicketUpdateInput!): Ticket! @auth(requires: ADMIN) @tag(name: "admin")
+    regenerateTicketQrCode(ticketId: ID!): Ticket! @auth(requires: ADMIN) @tag(name: "admin")
     bulkCancelTickets(ticketIds: [ID!]!, reason: String!): BulkOperationResponse! @auth(requires: ADMIN) @tag(name: "admin")
 
     # ========================================================================
@@ -3124,57 +3299,29 @@ type Mutation {
     # ========================================================================
 
     # MOBILE - Customer initiates refund request
-    createUserRefundRequest(input: CreateRefundRequestInput!): CreateRefundRequestMutationResponse! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    createUserRefundRequest(input: CreateRefundRequestInput!): RefundRequest! @auth(requires: CUSTOMER) @tag(name: "mobile")
     # ADMIN - Admin-initiated refund
-    createAdminRefundRequest(ticketId: ID!, reason: String!, bypassApproval: Boolean): RefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    createAdminRefundRequest(ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal): RefundRequest! @auth(requires: FINANCE) @tag(name: "admin")
     # ADMIN - Refund approval workflow
     # NOTE: Actor IDs (reviewerId, processedBy, etc.) extracted from JWT - OWASP A01:2021
-    approveRefundRequest(refundRequestId: ID!, reviewComments: String): ApproveRefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
-    rejectRefundRequest(refundRequestId: ID!, rejectionReason: String!): RejectRefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
-    processRefundRequest(refundRequestId: ID!): ProcessRefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
-    cancelRefundRequest(refundRequestId: ID!, reason: String!): RefundRequestMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    approveRefundRequest(refundRequestId: ID!, reviewComments: String): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
+    rejectRefundRequest(refundRequestId: ID!, rejectionReason: String!): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
+    processRefundRequest(refundRequestId: ID!): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
+    cancelRefundRequest(refundRequestId: ID!, reason: String!): RefundRequest! @auth(requires: CUSTOMER) @tag(name: "mobile") @tag(name: "admin")
     bulkApproveRefunds(refundRequestIds: [ID!]!): BulkOperationResponse! @auth(requires: ADMIN) @tag(name: "admin")
 
     # ========================================================================
-    # FINANCIAL TRANSACTION MUTATIONS - REMOVED
-    # Replaced by:
-    # - PaymentAttempt mutations for payment lifecycle
-    # - JournalEntry mutations for accounting
-    # ========================================================================
-
-    # ========================================================================
     # PAYMENT ATTEMPT MUTATIONS
-    # ADMIN/INTERNAL - Payment attempt lifecycle management
+    # ADMIN - annotations only; a payment's lifecycle is its PurchaseWorkflow (ET-TKT-001)
     # ========================================================================
-
-    # INTERNAL - Initiate payment (called by checkout flow)
-    initiatePaymentAttempt(input: InitiatePaymentAttemptInput!): PaymentAttemptMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
-    # INTERNAL - Retry failed payment
-    retryPaymentAttempt(depositId: String!): PaymentAttemptMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
-
-    # INTERNAL - Webhook processing (called by PawaPay webhook handler)
-    processPaymentWebhook(input: ProcessPaymentWebhookInput!): PaymentAttemptMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
-
-    # ADMIN - Manual status verification with gateway
-    verifyPaymentWithGateway(depositId: String!): PaymentAttemptMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
-
-    # ADMIN - Mark fulfillment complete
-    markPaymentFulfilled(input: MarkPaymentFulfilledInput!): PaymentAttemptMutationResponse! @auth(requires: INTERNAL) @tag(name: "internal")
-
-    # ADMIN - Cancel payment
-    cancelPaymentAttempt(depositId: String!, reason: String!): PaymentAttemptMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
 
     # ADMIN - Add note for audit trail
     # NOTE: author extracted from JWT authentication (OWASP A01:2021 compliance)
-    addPaymentAttemptNote(depositId: String!, note: String!): PaymentAttemptMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    addPaymentAttemptNote(depositId: String!, note: String!): PaymentAttempt! @auth(requires: ADMIN) @tag(name: "admin")
 
     # ADMIN - Set review status for investigation
     # NOTE: reviewedBy extracted from JWT authentication (OWASP A01:2021 compliance)
-    setPaymentAttemptReviewStatus(depositId: String!, reviewStatus: String!, notes: String): PaymentAttemptMutationResponse! @auth(requires: ADMIN) @tag(name: "admin")
-
-    # INTERNAL - Scheduled job operations
-    pollPendingPayments: Int! @auth(requires: INTERNAL) @tag(name: "internal")
-    expireTimedOutPayments: Int! @auth(requires: INTERNAL) @tag(name: "internal")
+    setPaymentAttemptReviewStatus(depositId: String!, reviewStatus: String!, notes: String): PaymentAttempt! @auth(requires: ADMIN) @tag(name: "admin")
 
     # ========================================================================
     # ESCROW ACCOUNT MUTATIONS
@@ -3182,13 +3329,13 @@ type Mutation {
     # ========================================================================
 
     # INTERNAL - Auto-create escrow on event publish
-    createEscrowAccount(input: CreateEscrowAccountInput!): EscrowAccountMutationResponse! @tag(name: "internal")
+    createEscrowAccount(input: CreateEscrowAccountInput!): EventEscrowAccount! @tag(name: "internal")
     # ADMIN - Escrow account management
-    updateEscrowAccountStatus(accountId: ID!, status: EscrowAccountStatus!, reason: String): EscrowAccountMutationResponse! @tag(name: "admin")
-    lockEscrowAccount(accountId: ID!, lockUntil: DateTime!, reason: String!): EscrowAccountMutationResponse! @tag(name: "admin")
-    unlockEscrowAccount(accountId: ID!, reason: String!): EscrowAccountMutationResponse! @tag(name: "admin")
-    markPayoutEligible(accountId: ID!): EscrowAccountMutationResponse! @tag(name: "admin")
-    closeEscrowAccount(accountId: ID!, reason: String!): EscrowAccountMutationResponse! @tag(name: "admin")
+    updateEscrowAccountStatus(accountId: ID!, status: EscrowAccountStatus!, reason: String): EventEscrowAccount! @tag(name: "admin")
+    lockEscrowAccount(accountId: ID!, lockUntil: DateTime!, reason: String!): EventEscrowAccount! @tag(name: "admin")
+    unlockEscrowAccount(accountId: ID!, reason: String!): EventEscrowAccount! @tag(name: "admin")
+    markPayoutEligible(accountId: ID!): EventEscrowAccount! @tag(name: "admin")
+    closeEscrowAccount(accountId: ID!, reason: String!): EventEscrowAccount! @tag(name: "admin")
 
     # ========================================================================
     # PAYOUT REQUEST MUTATIONS
@@ -3197,24 +3344,26 @@ type Mutation {
 
     # ORGANIZER - Request payout of event revenue
     # NOTE: Actor IDs extracted from JWT authentication - OWASP A01:2021
-    createPayoutRequest(input: CreatePayoutRequestInput!): CreatePayoutRequestMutationResponse! @tag(name: "organizer")
+    createPayoutRequest(input: CreatePayoutRequestInput!): PayoutRequest! @tag(name: "organizer")
     # ADMIN - Payout approval workflow
-    approvePayoutRequest(payoutRequestId: ID!, notes: String): ApprovePayoutRequestMutationResponse! @tag(name: "admin")
-    rejectPayoutRequest(payoutRequestId: ID!, rejectionReason: String!): RejectPayoutRequestMutationResponse! @tag(name: "admin")
-    processPayoutRequest(payoutRequestId: ID!): ProcessPayoutRequestMutationResponse! @tag(name: "admin")
+    approvePayoutRequest(payoutRequestId: ID!, notes: String): PayoutRequest! @tag(name: "admin")
+    rejectPayoutRequest(payoutRequestId: ID!, rejectionReason: String!): PayoutRequest! @tag(name: "admin")
+    processPayoutRequest(payoutRequestId: ID!): PayoutRequest! @tag(name: "admin")
     # ADMIN - Complete payout after bank transfer (records accounting entries)
-    completePayoutRequest(payoutRequestId: ID!, bankReference: String!): PayoutRequestMutationResponse! @tag(name: "admin")
+    completePayoutRequest(payoutRequestId: ID!, bankReference: String!): PayoutRequest! @tag(name: "admin")
     # ORGANIZER - Cancel own payout request
-    cancelPayoutRequest(payoutRequestId: ID!, reason: String!): RejectPayoutRequestMutationResponse! @tag(name: "organizer") @tag(name: "admin")
-    retryPayoutRequest(payoutRequestId: ID!): PayoutRequestMutationResponse! @tag(name: "admin")
+    cancelPayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @tag(name: "organizer")
+    retryPayoutRequest(payoutRequestId: ID!): PayoutRequest! @tag(name: "admin")
 
     # ADMIN - Payout Recovery Operations
-    resumePayoutRequest(payoutRequestId: ID!): PayoutRequestMutationResponse! @tag(name: "admin")
-    markPayoutForReview(payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String): PayoutRequestMutationResponse! @tag(name: "admin")
-    resolvePayoutIssue(payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!, newBankAccountId: ID): PayoutRequestMutationResponse! @tag(name: "admin")
+    resumePayoutRequest(payoutRequestId: ID!): PayoutRequest! @tag(name: "admin")
+    markPayoutForReview(payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String): PayoutRequest! @tag(name: "admin")
+    resolvePayoutIssue(payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!): PayoutRequest! @tag(name: "admin")
     bulkRetryFailedPayouts(payoutRequestIds: [ID!]!): BulkPayoutOperationResponse! @tag(name: "admin")
     bulkMarkPayoutsForReview(payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String): BulkPayoutOperationResponse! @tag(name: "admin")
-    escalatePayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequestMutationResponse! @tag(name: "admin")
+    escalatePayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @tag(name: "admin")
+    holdPayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @auth(requires: FINANCE) @tag(name: "admin")
+    releasePayoutHold(payoutRequestId: ID!, note: String): PayoutRequest! @auth(requires: FINANCE) @tag(name: "admin")
 
     # ========================================================================
     # BANK ACCOUNT MUTATIONS
@@ -3223,12 +3372,15 @@ type Mutation {
 
     # ORGANIZER - Bank account CRUD
     # NOTE: organizerId/verifiedBy extracted from JWT authentication (OWASP A01:2021 compliance)
-    createBankAccount(input: CreateBankAccountInput!): CreateBankAccountMutationResponse! @tag(name: "organizer")
-    updateBankAccount(id: ID!, input: UpdateBankAccountInput!): UpdateBankAccountMutationResponse! @tag(name: "organizer")
-    deleteBankAccount(id: ID!): DeleteBankAccountMutationResponse! @tag(name: "organizer")
-    setDefaultBankAccount(id: ID!): UpdateBankAccountMutationResponse! @tag(name: "organizer")
+    createBankAccount(input: CreateBankAccountInput!): BankAccount! @tag(name: "organizer")
+    updateBankAccount(id: ID!, input: UpdateBankAccountInput!): BankAccount! @tag(name: "organizer")
+    deleteBankAccount(id: ID!): ID! @tag(name: "organizer")
+    setDefaultBankAccount(id: ID!): BankAccount! @tag(name: "organizer")
     # ADMIN - Bank account verification
-    verifyBankAccount(id: ID!): VerifyBankAccountMutationResponse! @tag(name: "admin")
+    verifyBankAccount(id: ID!): BankAccount! @tag(name: "admin")
+    # ORGANIZER - ET-FIN-003 R4 micro-deposit verification: a deposit is sent, the owner confirms the amount
+    startBankVerification(id: ID!): BankAccount! @tag(name: "organizer")
+    confirmBankVerification(id: ID!, amount: BigDecimal!): BankAccount! @tag(name: "organizer")
 
     # ========================================================================
     # RESERVATION MUTATIONS
@@ -3256,7 +3408,7 @@ type Mutation {
     updatePromoCode(id: ID!, input: UpdatePromoCodeInput!): PromoCode! @tag(name: "organizer")
     activatePromoCode(id: ID!): PromoCode! @tag(name: "organizer")
     deactivatePromoCode(id: ID!): PromoCode! @tag(name: "organizer")
-    deletePromoCode(id: ID!): DeleteMutationResponse! @tag(name: "organizer")
+    deletePromoCode(id: ID!): ID! @tag(name: "organizer")
 
     # ========================================================================
     # FINANCIAL ENGINE MUTATIONS - Double-Entry Bookkeeping
@@ -3264,21 +3416,16 @@ type Mutation {
     # ========================================================================
 
     # ADMIN - Chart of Accounts management
-    createChartOfAccountsEntry(input: CreateChartOfAccountsInput!): ChartOfAccountsMutationResponse! @tag(name: "admin")
-    updateChartOfAccountsEntry(id: ID!, input: CreateChartOfAccountsInput!): ChartOfAccountsMutationResponse! @tag(name: "admin")
-    deactivateChartOfAccountsEntry(id: ID!): ChartOfAccountsMutationResponse! @tag(name: "admin")
+    createChartOfAccountsEntry(input: CreateChartOfAccountsInput!): ChartOfAccountsEntry! @tag(name: "admin")
+    updateChartOfAccountsEntry(id: ID!, input: CreateChartOfAccountsInput!): ChartOfAccountsEntry! @tag(name: "admin")
+    deactivateChartOfAccountsEntry(id: ID!): ChartOfAccountsEntry! @tag(name: "admin")
     seedChartOfAccounts: Boolean! @tag(name: "admin")
 
     # ADMIN - Journal Entry management
     # NOTE: Actor IDs (postedBy, reversedBy) extracted from JWT authentication (OWASP A01:2021 compliance)
-    createJournalEntry(input: CreateJournalEntryInput!): JournalEntryMutationResponse! @tag(name: "admin")
-    postJournalEntry(id: ID!): JournalEntryMutationResponse! @tag(name: "admin")
-    reverseJournalEntry(id: ID!, reason: String!): JournalEntryMutationResponse! @tag(name: "admin")
-
-    # ADMIN - Platform Account management
-    createPlatformAccount(accountType: PlatformAccountType!, name: String!, currency: String!): PlatformAccountMutationResponse! @tag(name: "admin")
-    creditPlatformAccount(id: ID!, amount: BigDecimal!, description: String!): PlatformAccountMutationResponse! @tag(name: "admin")
-    debitPlatformAccount(id: ID!, amount: BigDecimal!, description: String!): PlatformAccountMutationResponse! @tag(name: "admin")
+    createJournalEntry(input: CreateJournalEntryInput!): JournalEntry! @tag(name: "admin")
+    postJournalEntry(id: ID!): JournalEntry! @tag(name: "admin")
+    reverseJournalEntry(id: ID!, reason: String!): JournalEntry! @tag(name: "admin")
 
     # ========================================================================
     # CHARGEBACK MUTATIONS
@@ -3286,12 +3433,11 @@ type Mutation {
     # ========================================================================
 
     # ADMIN - Chargeback lifecycle management
-    receiveChargeback(input: ReceiveChargebackInput!): ChargebackMutationResponse! @tag(name: "admin")
-    startChargebackReview(id: ID!, notes: String): ChargebackMutationResponse! @tag(name: "admin")
-    acceptChargeback(id: ID!, reason: String): ChargebackMutationResponse! @tag(name: "admin")
-    disputeChargeback(id: ID!, input: DisputeChargebackInput!): ChargebackMutationResponse! @tag(name: "admin")
-    recordChargebackOutcome(id: ID!, won: Boolean!, notes: String): ChargebackMutationResponse! @tag(name: "admin")
-    recoverChargebackFunds(id: ID!, input: RecoverChargebackInput!): ChargebackMutationResponse! @tag(name: "admin")
+    receiveChargeback(input: ReceiveChargebackInput!): ChargebackRecord! @tag(name: "admin")
+    startChargebackReview(id: ID!, notes: String): ChargebackRecord! @tag(name: "admin")
+    acceptChargeback(id: ID!, reason: String): ChargebackRecord! @tag(name: "admin")
+    disputeChargeback(id: ID!, input: DisputeChargebackInput!): ChargebackRecord! @tag(name: "admin")
+    recordChargebackOutcome(id: ID!, won: Boolean!, notes: String): ChargebackRecord! @tag(name: "admin")
 
     # ========================================================================
     # RECONCILIATION MUTATIONS
@@ -3299,10 +3445,10 @@ type Mutation {
     # ========================================================================
 
     # ADMIN - Reconciliation management
-    startReconciliation(input: StartReconciliationInput!): ReconciliationMutationResponse! @tag(name: "admin")
-    resolveReconciliationItem(runId: ID!, input: ResolveReconciliationItemInput!): ReconciliationMutationResponse! @tag(name: "admin")
-    completeReconciliation(runId: ID!, notes: String): ReconciliationMutationResponse! @tag(name: "admin")
-    failReconciliation(runId: ID!, reason: String!): ReconciliationMutationResponse! @tag(name: "admin")
+    startReconciliation(input: StartReconciliationInput!): ReconciliationRun! @tag(name: "admin")
+    resolveReconciliationItem(runId: ID!, input: ResolveReconciliationItemInput!): ReconciliationRun! @tag(name: "admin")
+    completeReconciliation(runId: ID!, notes: String): ReconciliationRun! @tag(name: "admin")
+    failReconciliation(runId: ID!, reason: String!): ReconciliationRun! @tag(name: "admin")
 
     # ADMIN - Escrow-Journal Cross-Verification
     # Verifies that EventEscrowAccount balances match journal entry calculated balances
@@ -3321,7 +3467,7 @@ type Mutation {
     - DR Gateway Fees Expense (5010) - IN: Fee cost to platform
     - CR Gateway Receivable (1021)  - OUT: Receivable cleared
     """
-    recordGatewaySettlement(input: RecordGatewaySettlementInput!): JournalEntryMutationResponse! @tag(name: "admin")
+    recordGatewaySettlement(input: RecordGatewaySettlementInput!): JournalEntry! @tag(name: "admin")
 
 }
 

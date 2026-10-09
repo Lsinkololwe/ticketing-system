@@ -4,11 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -17,11 +15,9 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
-import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -47,12 +43,15 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "aws.s3.enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(name = "file-storage.type", havingValue = "s3")
 public class S3FileStorageService implements FileStorageService {
 
     private final S3AsyncClient s3AsyncClient;
     private final S3Presigner s3Presigner;
 
+
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     @Value("${aws.s3.bucket.verification-documents}")
     private String bucketName;
 
@@ -94,7 +93,6 @@ public class S3FileStorageService implements FileStorageService {
                                 // Generate presigned URL for initial access
                                 return generatePresignedUrl(fileKey, defaultExpiryMinutes)
                                         .map(presignedUrl -> new UploadResult(
-                                                presignedUrl,
                                                 fileKey,
                                                 filename,
                                                 fileSize,
@@ -186,7 +184,7 @@ public class S3FileStorageService implements FileStorageService {
                     .metadata(java.util.Map.of(
                             "organization-id", organizationId,
                             "document-type", documentType,
-                            "uploaded-at", Instant.now().toString()
+                            "uploaded-at", clock.instant().toString()
                     ))
                     // Tagging for cost allocation and lifecycle
                     .tagging("Environment=production&Type=verification-document")

@@ -3,10 +3,8 @@ package com.pml.identity.service;
 import com.pml.identity.domain.model.PayoutConfigAuditLog;
 import com.pml.identity.domain.valueobject.PayoutBankDetails;
 import com.pml.identity.domain.valueobject.MobileMoneyAccount;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
 import java.util.Map;
 
 /**
@@ -138,28 +136,5 @@ public interface PayoutConfigAuditService {
         String errorMessage,
         String ipAddress,
         String userAgent
-    );
-
-    /**
-     * Get audit logs for an organization.
-     *
-     * @param organizationId organization ID
-     * @param limit maximum number of logs to return
-     * @return audit logs (most recent first)
-     */
-    Flux<PayoutConfigAuditLog> getAuditLogs(String organizationId, int limit);
-
-    /**
-     * Get audit logs within a time range (for compliance reporting).
-     *
-     * @param organizationId organization ID
-     * @param startTime start of time range
-     * @param endTime end of time range
-     * @return audit logs
-     */
-    Flux<PayoutConfigAuditLog> getAuditLogsInRange(
-        String organizationId,
-        Instant startTime,
-        Instant endTime
     );
 }

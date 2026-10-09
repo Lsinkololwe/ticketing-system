@@ -1,7 +1,6 @@
 package com.pml.identity.repository;
 
 import com.pml.identity.domain.model.Notification;
-import com.pml.identity.domain.enums.NotificationStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
@@ -24,25 +23,6 @@ public interface NotificationRepository extends ReactiveMongoRepository<Notifica
      * @return Flux of notifications
      */
     Flux<Notification> findByUserIdOrderByCreatedAtDesc(String userId, Pageable pageable);
-
-    /**
-     * Find notifications for a user with a specific status, ordered by creation date.
-     *
-     * @param userId the user ID
-     * @param status the notification status
-     * @param pageable pagination parameters
-     * @return Flux of notifications
-     */
-    Flux<Notification> findByUserIdAndStatusOrderByCreatedAtDesc(String userId, NotificationStatus status, Pageable pageable);
-
-    /**
-     * Count notifications for a user with a specific status.
-     *
-     * @param userId the user ID
-     * @param status the notification status
-     * @return Mono containing the count
-     */
-    Mono<Long> countByUserIdAndStatus(String userId, NotificationStatus status);
 
     /**
      * Find unread notifications for a user.
@@ -69,4 +49,10 @@ public interface NotificationRepository extends ReactiveMongoRepository<Notifica
      * @return Flux of all notifications for the user
      */
     Flux<Notification> findByUserIdOrderByCreatedAtDesc(String userId);
+
+    /** A notification only if it belongs to the user; another user's id answers empty, like an unknown one. */
+    Mono<Notification> findByIdAndUserId(String id, String userId);
+
+    /** Deletes the user's own notification; the count is zero for an unknown id and for someone else's. */
+    Mono<Long> deleteByIdAndUserId(String id, String userId);
 }

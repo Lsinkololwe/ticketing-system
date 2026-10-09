@@ -107,11 +107,11 @@ public class BruteForceProtectionFilter implements GlobalFilter, Ordered {
                 .flatMap(isLocked -> {
                     if (Boolean.TRUE.equals(isLocked)) {
                         log.warn("[BruteForce] BLOCKED locked out IP: {} on path: {}", maskIp(clientIp), path);
-                        return rejectLocked(exchange, clientIp);
+                        return rejectLocked(exchange);
                     }
 
                     // Check attempt count
-                    return checkAndIncrementAttempts(exchange, chain, attemptKey, clientIp, path);
+                    return checkAndIncrementAttempts(exchange, chain, attemptKey, clientIp);
                 })
                 .onErrorResume(error -> {
                     // Fail open: If Redis fails, allow request through
@@ -124,9 +124,7 @@ public class BruteForceProtectionFilter implements GlobalFilter, Ordered {
             ServerWebExchange exchange,
             GatewayFilterChain chain,
             String attemptKey,
-            String clientIp,
-            String path
-    ) {
+            String clientIp) {
         return redisTemplate.opsForValue().get(attemptKey)
                 .defaultIfEmpty("0")
                 .flatMap(countStr -> {
@@ -162,7 +160,7 @@ public class BruteForceProtectionFilter implements GlobalFilter, Ordered {
 
         return redisTemplate.opsForValue()
                 .set(lockoutKey, String.valueOf(attempts), Duration.ofSeconds(lockoutDuration))
-                .then(rejectLocked(exchange, clientIp));
+                .then(rejectLocked(exchange));
     }
 
     private int calculateLockoutDuration(int attempts) {
@@ -178,7 +176,7 @@ public class BruteForceProtectionFilter implements GlobalFilter, Ordered {
         return lockoutSeconds; // Default 15 min
     }
 
-    private Mono<Void> rejectLocked(ServerWebExchange exchange, String clientIp) {
+    private Mono<Void> rejectLocked(ServerWebExchange exchange) {
         exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
         exchange.getResponse().getHeaders().add("Retry-After", String.valueOf(lockoutSeconds));
         exchange.getResponse().getHeaders().add("X-RateLimit-Remaining", "0");

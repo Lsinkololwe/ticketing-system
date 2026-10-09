@@ -2,89 +2,69 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Notifications Schema - OWASP Compliant",
-    "description": "User notifications for system events",
+    "description": "A notification delivered or pending delivery to a user across one or more channels (com.pml.identity.domain.model.Notification)",
     "required": [
-      "userId",
       "type",
       "title",
-      "message",
-      "isRead",
-      "createdAt"
+      "body"
     ],
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
-        "bsonType": "objectId"
+        "bsonType": ["objectId", "string"],
+        "description": "notify:{deduplicationKey}, so a redelivered request finds the notification it already wrote"
       },
       "userId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "OWASP A03 - ObjectId pattern validation"
+        "bsonType": ["string", "null"],
+        "description": "The recipient's account; absent when the subject names the destination, as for a team invitation"
       },
       "type": {
         "bsonType": "string",
-        "enum": [
-          "TICKET_PURCHASE",
-          "EVENT_REMINDER",
-          "EVENT_CANCELLED",
-          "REFUND_APPROVED",
-          "PAYOUT_COMPLETED",
-          "SYSTEM_ANNOUNCEMENT"
-        ],
-        "description": "OWASP A04 - Enum constraint"
+        "enum": ["TICKET_PURCHASED", "EVENT_REMINDER", "EVENT_CANCELLED", "EVENT_UPDATED", "REFUND_PROCESSED",
+          "PAYOUT_COMPLETED", "ORGANIZER_APPROVED", "ORGANIZER_REJECTED", "SYSTEM_ANNOUNCEMENT"],
+        "description": "com.pml.identity.domain.enums.NotificationType"
       },
       "title": {
         "bsonType": "string",
         "minLength": 1,
         "maxLength": 200
       },
-      "message": {
+      "body": {
         "bsonType": "string",
         "minLength": 1,
-        "maxLength": 1000
+        "maxLength": 2000
       },
-      "isRead": {
-        "bsonType": "bool"
+      "data": {
+        "bsonType": ["object", "null"],
+        "description": "Additional structured data, e.g. ticketId, eventId"
+      },
+      "channels": {
+        "bsonType": ["array", "null"],
+        "items": {
+          "bsonType": "string",
+          "enum": ["PUSH", "SMS", "WHATSAPP", "EMAIL", "IN_APP"]
+        },
+        "description": "com.pml.identity.domain.enums.NotificationChannel"
+      },
+      "status": {
+        "bsonType": ["string", "null"],
+        "enum": ["PENDING", "SENT", "DELIVERED", "READ", "FAILED", "SUPPRESSED", null],
+        "description": "com.pml.identity.domain.enums.NotificationStatus"
+      },
+      "sentAt": {
+        "bsonType": ["date", "null"]
+      },
+      "deliveredAt": {
+        "bsonType": ["date", "null"]
       },
       "readAt": {
-        "bsonType": [
-          "date",
-          "null"
-        ]
-      },
-      "eventId": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^[a-fA-F0-9]{24}$"
-      },
-      "ticketId": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^[a-fA-F0-9]{24}$"
-      },
-      "actionUrl": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^https?://.*",
-        "maxLength": 500
-      },
-      "metadata": {
-        "bsonType": [
-          "object",
-          "null"
-        ]
+        "bsonType": ["date", "null"]
       },
       "createdAt": {
-        "bsonType": "date"
+        "bsonType": ["date", "null"]
       }
     },
     "additionalProperties": false

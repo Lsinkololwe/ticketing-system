@@ -1,5 +1,8 @@
 package com.pml.identity.domain.model;
 
+import com.pml.shared.security.Permission;
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.identity.domain.enums.BusinessType;
 import com.pml.identity.domain.enums.KybStatus;
 import com.pml.shared.constants.OrganizationStatus;
@@ -15,10 +18,10 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -60,7 +63,8 @@ import java.time.Instant;
  * @see OrganizationType INDIVIDUAL vs BUSINESS organizations
  * @see PayoutConfig Payout settings (bank/mobile money)
  */
-@Document(collection = "organizations")
+@Document(collection = IdentityCollections.ORGANIZATIONS)
+@TypeAlias("organizations")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -85,7 +89,6 @@ public class Organization {
      * URL-friendly unique identifier (e.g., "acme-events")
      */
     @NotBlank(message = "Slug is required")
-    @Indexed(unique = true)
     private String slug;
 
     /**
@@ -140,7 +143,6 @@ public class Organization {
      * This is the Keycloak user ID (sub claim).
      */
     @NotBlank(message = "Owner is required")
-    @Indexed
     private String ownerId;
 
     /**
@@ -148,7 +150,6 @@ public class Organization {
      * New organizations start as DRAFT and must be approved before publishing events.
      */
     @Builder.Default
-    @Indexed
     private OrganizationStatus status = OrganizationStatus.DRAFT;
 
     /**
@@ -165,7 +166,6 @@ public class Organization {
      * <p>Stamped on write by {@code OrganizationStatusSemanticStamper} and
      * backfilled by {@code OrganizationStatusSemanticMigrationService}.
      */
-    @Indexed
     private WorkflowSemantic statusSemantic;
 
     // ─────────────────────────────────────────────────────────────────────
@@ -211,7 +211,6 @@ public class Organization {
     /**
      * Business email (may differ from owner's personal email)
      */
-    @Indexed
     private String businessEmail;
 
     /**
@@ -282,6 +281,27 @@ public class Organization {
     private Instant reviewedAt;
 
     /**
+     * Why an administrator suspended the organization; shown to its members so they know what to
+     * resolve. Set by suspend, cleared by unsuspend.
+     */
+    private String suspensionReason;
+
+    /** When the current suspension began. */
+    private Instant suspendedAt;
+
+    /** When the owner asked for the organization to be deleted; null when no request is open. */
+    private Instant deletionRequestedAt;
+
+    /** When the grace period ends and the deletion may proceed. */
+    private Instant deletionScheduledFor;
+
+    /** Why the owner asked for deletion. */
+    private String deletionReason;
+
+    /** The status to restore when the deletion request is cancelled. */
+    private OrganizationStatus statusBeforeDeletion;
+
+    /**
      * Admin notes (internal, not shown to organization)
      */
     private String adminNotes;
@@ -300,6 +320,27 @@ public class Organization {
      * When organization was approved
      */
     private Instant approvedAt;
+
+    /**
+     * The last approval step that completed, 1 to 6, and 0 after a compensation.
+     *
+     * <p>A projection: the approval's process state lives in {@code OrganizerOnboardingWorkflow},
+     * and each of its activities writes this marker so the approvals workbench can show progress by
+     * reading the document it already reads.
+     */
+    private Integer approvalSagaStep;
+
+    /** Why the last approval was reversed; cleared when an approval completes. */
+    private String approvalSagaFailure;
+
+    /**
+     * Whether the owner already held {@code ORGANIZER} before this approval began.
+     *
+     * <p>Recorded once, by the step that grants the role, so a compensation revokes only a role
+     * the approval itself granted — never one Keycloak assigned at registration — however many
+     * times that step was retried.
+     */
+    private Boolean approvalOwnerWasOrganizer;
 
     // ─────────────────────────────────────────────────────────────────────
     // Settings & Stats
@@ -369,16 +410,6 @@ public class Organization {
     }
 
     /**
-     * Check if organization can accept payments.
-     * Requires approval and payout account setup.
-     */
-    public boolean canAcceptPayments() {
-        return isApproved()
-            && payoutConfig != null
-            && payoutConfig.canProcessPayouts();
-    }
-
-    /**
      * Check if organization can receive payouts.
      * Requires approval, verified payout account, and KYB if configured.
      */
@@ -386,7 +417,8 @@ public class Organization {
         return isApproved()
             && payoutAccountVerified
             && payoutConfig != null
-            && payoutConfig.isConfigured();
+            && payoutConfig.isConfigured()
+            && !payoutConfig.isAccountSuspended();
     }
 
     /**
@@ -399,20 +431,20 @@ public class Organization {
      * so every status-based permission rule has a single home. Role-based checks are
      * evaluated separately — both must pass.</p>
      *
-     * @param permission the requested permission (e.g. {@code "EVENT_PUBLISH"}, {@code "PAYOUT_REQUEST"})
+     * @param permission the requested permission
      * @return {@code true} if the current status permits the action
      */
-    public boolean canPerform(String permission) {
+    public boolean canPerform(Permission permission) {
         if (permission == null) {
             return false;
         }
         return switch (permission) {
             // Draft-level authoring — allowed throughout the approval workflow
-            case "EVENT_CREATE", "EVENT_EDIT", "EVENT_DELETE" -> canCreateDraftEvents();
+            case EVENT_CREATE, EVENT_EDIT, EVENT_DELETE -> canCreateDraftEvents();
             // Going live — approved/active organizations only
-            case "EVENT_PUBLISH" -> canPublishEvents();
+            case EVENT_PUBLISH -> canPublishEvents();
             // Money movement — approved organizations only
-            case "PAYOUT_REQUEST" -> isApproved();
+            case PAYOUT_REQUEST -> isApproved();
             // Read-only / membership operations are not gated by approval status
             default -> true;
         };

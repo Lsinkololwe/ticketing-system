@@ -1,5 +1,7 @@
 package com.pml.identity.repository;
 
+import com.pml.identity.domain.enums.AccountState;
+import com.pml.identity.domain.enums.PendingKind;
 import com.pml.identity.domain.model.User;
 import com.pml.shared.constants.UserType;
 import org.springframework.data.mongodb.repository.Query;
@@ -8,7 +10,7 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
+import java.time.Instant;
 
 /**
  * User Repository
@@ -27,9 +29,20 @@ public interface UserRepository extends ReactiveMongoRepository<User, String> {
 
     Mono<Boolean> existsByEmail(String email);
 
-    Mono<Boolean> existsByUsername(String username);
+    // ---- accounts (ET-IDN-004) ----
 
-    Mono<Boolean> existsByPhoneNumber(String phoneNumber);
+    Mono<User> findByKeycloakUserId(String keycloakUserId);
+
+    Flux<User> findByStatus(AccountState status);
+
+    /** Accounts stuck in a state since before {@code cutoff}: the repair schedule's query. */
+    Flux<User> findByStatusAndCreatedAtBefore(AccountState status, Instant cutoff);
+
+    Flux<User> findByPendingKindAndPendingSinceBefore(PendingKind pendingKind, Instant cutoff);
+
+    Flux<User> findByMergedInto(String survivorId);
+
+    Mono<Boolean> existsByUsername(String username);
 
     // ========================================================================
     // Multi-Role Queries
@@ -53,15 +66,6 @@ public interface UserRepository extends ReactiveMongoRepository<User, String> {
     default Flux<User> findByRole(UserType role) {
         return findByRole(role.name());
     }
-
-    /**
-     * Find all users who have any of the specified roles.
-     *
-     * @param roles list of role names to search for
-     * @return Flux of users with any of the specified roles
-     */
-    @Query("{ 'roles': { $in: ?0 } }")
-    Flux<User> findByRolesIn(List<String> roles);
 
     /**
      * Find all active users who have a specific role.
@@ -100,23 +104,4 @@ public interface UserRepository extends ReactiveMongoRepository<User, String> {
     default Mono<Long> countByRole(UserType role) {
         return countByRole(role.name());
     }
-
-    /**
-     * Count active users who have a specific role.
-     *
-     * @param role the role to count
-     * @return Mono with the count
-     */
-    @Query(value = "{ 'roles': ?0, 'active': true }", count = true)
-    Mono<Long> countByRoleAndActiveTrue(String role);
-
-    // ========================================================================
-    // Existing Queries
-    // ========================================================================
-
-    Flux<User> findByActiveTrue();
-
-    Flux<User> findByEmailVerifiedFalse();
-
-    Flux<User> findByPhoneVerifiedFalse();
 }

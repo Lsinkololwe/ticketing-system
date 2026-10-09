@@ -1,15 +1,19 @@
 package com.pml.identity.security;
 
 import com.pml.shared.security.KeycloakJwtAuthenticationConverter;
-import com.pml.shared.security.MultiIssuerJwtResolver;
+import com.pml.shared.security.PlatformResourceServer;
+import com.pml.shared.security.revocation.RevocationRequestGuard;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableReactiveMethodSecurity;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
+import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
@@ -39,7 +43,11 @@ import java.util.List;
 @EnableReactiveMethodSecurity
 public class SecurityConfig {
 
-    @Value("${keycloak.client-id:identity-service}")
+    /** Exact origins allowed to call this service from a browser; empty allows none. See {@link #corsConfigurationSource}. */
+    @Value("${identity.cors.allowed-origins:}")
+    private List<String> allowedOrigins;
+
+    @Value("${keycloak.client-id:myticketzm-identity-service}")
     private String keycloakClientId;
 
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8084/realms/myticketzm}")
@@ -47,57 +55,65 @@ public class SecurityConfig {
 
     /**
      * Additional trusted realm issuers (comma-separated), e.g. the platform-admin realm
-     * {@code http://localhost:8084/realms/myticketzm-admin}. Empty by default — when unset the
-     * service keeps the plain single-issuer {@code .jwt(...)} path. Set this to enable the
-     * admin-realm split (tokens are then validated per their {@code iss} claim).
+     * {@code http://localhost:8084/realms/myticketzm-admin}, which {@code application.yml}
+     * supplies by default. Tokens are validated per their {@code iss} claim; one from any other
+     * issuer is rejected.
      */
     @Value("${keycloak.trusted-issuers:}")
     private String trustedIssuersCsv;
 
-    /** Optional expected audiences (comma-separated) enforced on the {@code aud} claim. */
+    /**
+     * Audiences required in the {@code aud} claim (comma-separated). Blank disables the check,
+     * which {@link PlatformResourceServer} logs at WARN — see there for why it is not defaulted
+     * to this service's client id.
+     */
     @Value("${keycloak.expected-audiences:}")
     private String expectedAudiencesCsv;
 
+    /** Refuses revoked tokens on every request; absent when revocation is switched off. */
+    @Autowired(required = false)
+    private RevocationRequestGuard revocationRequestGuard;
+
+    @Bean
+    public ReactiveJwtDecoder reactiveJwtDecoder() {
+        return PlatformResourceServer.decoder(issuerUri, expectedAudiencesCsv);
+    }
+
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+        if (revocationRequestGuard != null) {
+            // After authentication, so only a validly signed token is looked up.
+            http.addFilterAfter(revocationRequestGuard.webFilter(), SecurityWebFiltersOrder.AUTHENTICATION);
+        }
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeExchange(exchanges -> exchanges
-                        // Health endpoints - always public
-                        .pathMatchers("/actuator/**").permitAll()
+                        // Probes only; every other actuator endpoint needs a token
+                        .pathMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        // Local file store (development): the signature in the query string is the credential
+                        .pathMatchers("/local-storage/**").permitAll()
                         // GraphiQL UI - development only
                         .pathMatchers("/graphiql/**").permitAll()
-                        // Debug endpoints - development only (TODO: secure or remove in production)
-                        .pathMatchers("/api/debug/**").permitAll()
-                        // Auth endpoints - public (login, register handled by Keycloak)
-                        .pathMatchers("/api/auth/**").permitAll()
+                        // Buyer-identity API (challenges, proofs, handles): POST needs internal-write, GET internal-read.
+                        .pathMatchers(org.springframework.http.HttpMethod.GET, "/api/internal/auth/**").hasAuthority("SCOPE_internal-read")
+                        .pathMatchers(org.springframework.http.HttpMethod.POST, "/api/internal/auth/**").hasAuthority("SCOPE_internal-write")
+                        .pathMatchers("/api/internal/auth/**").denyAll()
                         // Internal service-to-service calls - require internal scope
                         .pathMatchers("/api/internal/**").hasAnyAuthority("SCOPE_internal-read", "SCOPE_internal-write", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM")
                         // GraphQL - require authentication so JWT is parsed and available to resolvers
                         // Fine-grained access control is handled at resolver level with @PreAuthorize
+                        // The one exception: a tokenless POST whose every top-level field is on
+                        // PublicOperationFilter's allowlist (the filter marks the exchange; it admits nothing else)
+                        .matchers(PublicOperationFilter.isPublicOperation()).permitAll()
                         .pathMatchers("/graphql/**").authenticated()
                         // REST API - require authentication so JWT is parsed
                         .pathMatchers("/api/v1/**").authenticated()
                         // All other endpoints require authentication
                         .anyExchange().authenticated()
                 )
-                .oauth2ResourceServer(oauth2 -> {
-                    List<String> issuers = MultiIssuerJwtResolver.mergeIssuers(issuerUri, trustedIssuersCsv);
-                    if (issuers.size() > 1) {
-                        // Admin-realm split enabled: validate per the token's `iss` claim.
-                        oauth2.authenticationManagerResolver(
-                                MultiIssuerJwtResolver.forIssuers(
-                                        issuers,
-                                        keycloakClientId,
-                                        MultiIssuerJwtResolver.csv(expectedAudiencesCsv)));
-                    } else {
-                        // Default single-issuer path (unchanged).
-                        oauth2.jwt(jwt -> jwt
-                                .jwtAuthenticationConverter(
-                                        KeycloakJwtAuthenticationConverter.reactiveConverter(keycloakClientId)));
-                    }
-                })
+                .oauth2ResourceServer(PlatformResourceServer.jwt(
+                        issuerUri, trustedIssuersCsv, keycloakClientId, expectedAudiencesCsv))
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .build();
@@ -112,15 +128,17 @@ public class SecurityConfig {
      *   <li>GraphQL endpoint</li>
      * </ul>
      *
-     * <p><b>Security Note</b>: In production, replace allowedOrigins with specific
-     * frontend URLs (e.g., https://organizer.example.com).
+     * <p><b>Security Note</b>: the allowed origins are {@code identity.cors.allowed-origins}, a
+     * comma-separated list of exact origins (e.g. https://organizer.example.com). There is no
+     * wildcard and no default.
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Allow all origins in development (TODO: restrict in production)
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        // Only the origins named in configuration. With credentials allowed, a wildcard would let any
+        // site a signed-in person visits call this API as them. An empty list allows no cross-origin call.
+        configuration.setAllowedOrigins(allowedOrigins);
 
         // Allow common HTTP methods for REST APIs
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));

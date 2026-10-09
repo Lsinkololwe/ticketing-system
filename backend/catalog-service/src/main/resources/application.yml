@@ -8,16 +8,30 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:local}
   application:
     name: catalog-service
-  main:
-    allow-bean-definition-overriding: true
   lifecycle:
     timeout-per-shutdown-phase: 60s
+
+  # Durable execution. The task queues this service's workers poll; TemporalRegistryLintTest
+  # checks them against the platform's list of queues.
+  temporal:
+    connection:
+      target: ${TEMPORAL_ADDRESS:127.0.0.1:7233}
+    namespace: ${TEMPORAL_NAMESPACE:ticketing}
+    workers-auto-discovery:
+      packages:
+        - com.pml.catalog.workflow
+    workers:
+      - task-queue: catalog-lifecycle
+        capacity:
+          max-concurrent-activity-executors: ${TEMPORAL_ACTIVITY_EXECUTORS:50}
 
   cloud:
     azure:
       servicebus:
         connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:}
-        namespace: ${AZURE_SERVICEBUS_NAMESPACE:}
+        # No `namespace` key on purpose. An empty one is still "set": it overrides the connection string and sends the
+        # producer to ".servicebus.windows.net", where every send times out. Managed-identity deployments set
+        # SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE in the environment instead.
         producer:
           send-timeout: 30s
     stream:
@@ -25,26 +39,50 @@ spring:
       function:
         definition: ""
       bindings:
-        eventOutput-out-0:
+        # The binding the outbox drain publishes on, through EventBridge.
+        catalogEvents-out-0:
           destination: catalog-events
-          producer:
-            partition-key-expression: headers['partitionKey']
+      # The Azure binder needs the entity kind spelled out for a producer; without it every send
+      # fails with "Entity type cannot be null" and the outbox never drains.
       servicebus:
         bindings:
-          eventOutput-out-0:
+          catalogEvents-out-0:
             producer:
               entity-type: topic
+              # The binder sends asynchronously unless told otherwise: send() then returns true before the
+              # bus has accepted anything and a later failure is only logged, so the outbox would mark the
+              # event sent and lose it. Synchronous sends raise on failure, which keeps the row pending.
+              sync: true
 
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://admin:admin_password@localhost:27017/dev_ticketing?authSource=admin&directConnection=true}
+      # No directConnection: it tells the driver to treat the server as a single node, so it
+      # never discovers the replica set — and multi-document transactions become silently inert.
+      # The compose file runs mongod --replSet rs0 with rs.initiate(), so the services connect to
+      # it as a replica set.
+      # No default: the local profile pins the development database, so any other profile that
+      # forgets the variable stops at startup naming it instead of dialling a password in git.
+      uri: ${MONGODB_URI}
       database: ${MONGODB_DATABASE:dev_ticketing}
-      auto-index-creation: true
+      # Indexes come only from the service's *IndexInitializer registry; annotations on the models create none.
+      auto-index-creation: false
+    # The token-revocation cache, shared with identity and booking.
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
 
   graphql:
     path: /graphql
     graphiql:
-      enabled: true
+      # A debug surface defaults OFF and is switched on deliberately. Every profile inherits this
+      # base file and application-prod.yml does not override it, so OFF here is what production
+      # gets; only application-local.yml turns it on.
+      #
+      # The page itself is served unauthenticated, but executing a query and introspecting the
+      # schema both go through /graphql, which IS authenticated.
+      enabled: ${GRAPHIQL_ENABLED:false}
       path: /graphiql
     websocket:
       path: /graphql
@@ -60,7 +98,7 @@ spring:
         registration:
           catalog-service:
             client-id: ${CATALOG_SERVICE_CLIENT_ID:myticketzm-catalog-service}
-            # ET-PLT-001 R6 · no default. Unset in prod must FAIL naming the variable, not start
+            # No default. Unset in prod must FAIL naming the variable, not start
             # against Keycloak with a credential readable in git.
             client-secret: ${CATALOG_SERVICE_SECRET}
             authorization-grant-type: client_credentials
@@ -71,7 +109,7 @@ spring:
 
 security:
   debug:
-    enabled: ${SECURITY_DEBUG_ENABLED:true}
+    enabled: ${SECURITY_DEBUG_ENABLED:false}
 
 dgs:
   graphql:
@@ -85,10 +123,14 @@ dgs:
 
 keycloak:
   client-id: ${CATALOG_SERVICE_CLIENT_ID:myticketzm-catalog-service}
-  # Platform-admin realm split (OFF by default). Add the admin realm issuer to enable
-  # validating tokens from BOTH realms, selected by the token's `iss` claim, e.g.:
-  #   KEYCLOAK_TRUSTED_ISSUERS=http://localhost:8084/realms/myticketzm-admin
+  # Platform-admin realm split. The default below is NOT empty: the admin realm is trusted
+  # out of the box, and tokens from both realms are validated per their `iss` claim.
   trusted-issuers: ${KEYCLOAK_TRUSTED_ISSUERS:http://localhost:8084/realms/myticketzm-admin}
+  # The audience check. Blank = `aud` is NOT validated, and the service logs
+  # that at WARN on every start. Enabling it takes BOTH halves: an oidc-audience-mapper on
+  # the client in docker-resources/keycloak/myticketzm-realm.json (without one,
+  # Keycloak emits `"aud": "account"`), and this variable. Set one without the other and
+  # every token is rejected.
   expected-audiences: ${KEYCLOAK_EXPECTED_AUDIENCES:}
 
 services:
@@ -166,15 +208,45 @@ graphql:
     complexity-exceeded-message: "Query complexity limit exceeded"
 
 catalog:
-  service:
-    version: 1.0.0
-    description: Event Discovery and Management Microservice
-  event-approval:
-    review-deadline-hours: 48
-  features:
-    event-approval: true
-    auto-publish: false
-    search-indexing: true
+  # Booking and identity expose these; catalog needs them for the same reason — an operator
+  # who has to stop migrations on one service should not find the switch missing on another.
+  migrations:
+    enabled: ${CATALOG_MIGRATIONS_ENABLED:true}
+    fail-fast: ${CATALOG_MIGRATIONS_FAIL_FAST:true}
+
+  # A tier created without its own limit caps each order at this many tickets.
+  tier:
+    default-max-per-order: 10
+
+  # Public discovery ends here; past it the caller narrows the filter instead of walking on.
+  discovery:
+    max-depth: 1000
+
+  # Images: where the bytes live is file-storage.type (local | s3), the same switch identity uses for
+  # verification documents. Pictures are served by this service at public-base-url/media/files/...,
+  # which is what a CDN fronts.
+  media:
+    public-base-url: ${CATALOG_MEDIA_PUBLIC_BASE_URL:http://localhost:8085}
+    max-assets-per-organization: ${CATALOG_MEDIA_MAX_ASSETS:500}
+    max-uploads-per-hour: ${CATALOG_MEDIA_MAX_UPLOADS_PER_HOUR:60}
+
+  # Organizer exports: where files are written, the link handed back, and how long it lives.
+  export:
+    base-url: ${CATALOG_EXPORT_BASE_URL:http://localhost:8085/api/exports}
+    directory: ${CATALOG_EXPORT_DIRECTORY:${java.io.tmpdir}/exports}
+    expiry-hours: 24
+
+# Where uploaded pictures are stored: local (development) or s3. Exactly one MediaStorage is active.
+file-storage:
+  type: ${FILE_STORAGE_TYPE:local}
+  local:
+    base-path: ${FILE_STORAGE_LOCAL_PATH:./uploads}
+
+aws:
+  s3:
+    region: ${AWS_REGION:us-east-1}
+    bucket:
+      media: ${AWS_S3_BUCKET_MEDIA:ticketing-media}
 
 mongodb:
   schema-validation:
@@ -184,3 +256,77 @@ mongodb:
     fail-on-validation-error: ${MONGODB_VALIDATION_FAIL_ON_ERROR:true}
     schema-base-path: ${MONGODB_SCHEMA_BASE_PATH:mongodb/schemas}
     operation-timeout-ms: ${MONGODB_SCHEMA_TIMEOUT_MS:30000}
+
+# ---------------------------------------------------------------------------
+# The consumer retry budget, stated rather than defaulted
+#
+# Spring Cloud Stream has a default for every one of these, which is how a
+# service can look configured while retrying a dead provider ten times a second
+# or giving up after a single attempt. They are set explicitly, and
+# ConsumerRetryLintTest fails the build if any goes missing.
+#
+# Three attempts over roughly two seconds: long enough to ride out a driver
+# reconnect, short enough that a genuinely broken consumer reaches its dead
+# letter while an operator is still looking at the alert. Exhaustion
+# dead-letters with a reason (DeadLetter), it does not rethrow.
+platform:
+  security:
+    # Pictures are public: an event page shows them to anyone. MediaFileController serves only what
+    # moderation has not removed.
+    public-paths:
+      - /media/files/**
+  # Tenancy: a caller's memberships come from identity-service, which owns them.
+  tenancy:
+    identity-url: ${services.identity.url}
+  # The transactional outbox. Publish, cancel, complete and reschedule stage their
+  # envelopes here inside the transaction that changes the event; the drain publishes them on
+  # catalogEvents-out-0.
+  outbox:
+    collection: catalog_outbox
+    binding: catalogEvents-out-0
+    drain-interval: PT2S
+  events:
+    consumer:
+      max-attempts: ${EVENT_CONSUMER_MAX_ATTEMPTS:3}
+      initial-backoff: ${EVENT_CONSUMER_INITIAL_BACKOFF:500ms}
+      max-backoff: ${EVENT_CONSUMER_MAX_BACKOFF:10s}
+      backoff-multiplier: ${EVENT_CONSUMER_BACKOFF_MULTIPLIER:2.0}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      # Guards the Redis revocation cache: while open, checks skip Redis and ask identity directly.
+      revocationCache:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 80
+        slow-call-duration-threshold: 250ms
+        minimum-number-of-calls: 10
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+  timelimiter:
+    instances:
+      revocationCache:
+        timeout-duration: 250ms
+        cancel-running-future: true
+
+# ==============================================================================
+# TOKEN REVOCATION
+# ==============================================================================
+# Every authenticated request is checked against the revocation records identity-service owns:
+# first the shared Redis cache, then identity's internal API. A revoked token is refused with
+# TOKEN_REVOKED. When neither answers, ordinary requests proceed and operations marked
+# @FailClosedOnRevocation are refused with REVOCATION_UNAVAILABLE.
+pml:
+  security:
+    revocation:
+      enabled: ${REVOCATION_ENABLED:true}
+      identity-url: ${services.identity.url}
+      # Tracks the realm's accessTokenLifespan (myticketzm-realm.json: 3600).
+      access-token-lifespan: ${ACCESS_TOKEN_LIFESPAN:1h}
+      clock-skew: 60s
+      cache-timeout: 250ms
+      durable-timeout: 2s
+      require-eviction-safe-cache: true

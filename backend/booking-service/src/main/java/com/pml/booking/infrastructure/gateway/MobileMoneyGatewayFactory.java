@@ -1,6 +1,6 @@
 package com.pml.booking.infrastructure.gateway;
 
-import com.pml.booking.infrastructure.gateway.domain.MobileNetwork;
+import com.pml.booking.infrastructure.gateway.model.MobileNetwork;
 import com.pml.booking.infrastructure.gateway.exception.NoGatewayAvailableException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Factory for selecting the appropriate MobileMoneyGateway.
@@ -38,6 +39,8 @@ public class MobileMoneyGatewayFactory {
     private final Map<String, CachedAvailability> availabilityCache = new ConcurrentHashMap<>();
 
     private static final long AVAILABILITY_CACHE_TTL_MS = 30_000; // 30 seconds
+    private static final long AVAILABILITY_CACHE_TTL_NANOS =
+            TimeUnit.MILLISECONDS.toNanos(AVAILABILITY_CACHE_TTL_MS);
 
     public MobileMoneyGatewayFactory(
             List<MobileMoneyGateway> gateways,
@@ -106,42 +109,10 @@ public class MobileMoneyGatewayFactory {
     }
 
     /**
-     * Get all available gateways for a network.
-     * <p>
-     * Useful for listing options or implementing custom selection logic.
-     *
-     * @param network Mobile network
-     * @return Flux of available gateways, sorted by priority (descending)
-     */
-    public Flux<MobileMoneyGateway> getAvailableGateways(MobileNetwork network) {
-        return Flux.fromIterable(getGatewaysForNetwork(network))
-                .flatMap(gateway -> checkAvailability(gateway)
-                        .filter(available -> available)
-                        .map(available -> gateway))
-                .sort(Comparator.comparingInt(MobileMoneyGateway::getPriority).reversed());
-    }
-
-    /**
      * Get all registered gateways.
      */
     public List<MobileMoneyGateway> getAllGateways() {
         return List.copyOf(gateways);
-    }
-
-    /**
-     * Check if any gateway is available for a network.
-     */
-    public Mono<Boolean> hasAvailableGateway(MobileNetwork network) {
-        return getAvailableGateways(network)
-                .hasElements();
-    }
-
-    /**
-     * Clear availability cache (for testing or after configuration changes).
-     */
-    public void clearAvailabilityCache() {
-        availabilityCache.clear();
-        log.info("Gateway availability cache cleared");
     }
 
     // ==================== Private Methods ====================
@@ -224,7 +195,7 @@ public class MobileMoneyGatewayFactory {
         return gateway.isAvailable()
                 .doOnNext(available -> {
                     availabilityCache.put(providerId,
-                            new CachedAvailability(available, System.currentTimeMillis()));
+                            new CachedAvailability(available, System.nanoTime()));
                     if (!available) {
                         log.warn("Gateway {} health check failed", providerId);
                     }
@@ -232,7 +203,7 @@ public class MobileMoneyGatewayFactory {
                 .onErrorResume(error -> {
                     log.error("Gateway {} health check error: {}", providerId, error.getMessage());
                     availabilityCache.put(providerId,
-                            new CachedAvailability(false, System.currentTimeMillis()));
+                            new CachedAvailability(false, System.nanoTime()));
                     return Mono.just(false);
                 });
     }
@@ -244,9 +215,19 @@ public class MobileMoneyGatewayFactory {
 
     // ==================== Inner Classes ====================
 
+    /**
+     * @param cachedAt a {@link System#nanoTime()} reading, not a wall-clock instant.
+     *
+     *                 <p>Both ends of this TTL are readings of the same source, so the source has
+     *                 to be monotonic. On the wall clock, an NTP correction backwards leaves every
+     *                 entry unexpirable for the size of the correction — the factory keeps routing
+     *                 to a gateway it has already been told is down — and a correction forwards
+     *                 expires the whole cache at once, health-checking every provider on the next
+     *                 request. Neither shows up as an error.</p>
+     */
     private record CachedAvailability(boolean isAvailable, long cachedAt) {
         boolean isExpired() {
-            return System.currentTimeMillis() - cachedAt > AVAILABILITY_CACHE_TTL_MS;
+            return System.nanoTime() - cachedAt > AVAILABILITY_CACHE_TTL_NANOS;
         }
     }
 }

@@ -5,8 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Set;
-
 /**
  * Authorization Result
  *
@@ -49,17 +47,6 @@ public class AuthorizationResult {
     private String organizationId;
 
     /**
-     * Organization slug for reference.
-     */
-    private String organizationSlug;
-
-    /**
-     * All permissions the user has on this resource.
-     * Useful for frontend to know what actions are available.
-     */
-    private Set<String> grantedPermissions;
-
-    /**
      * Create a successful authorization result.
      */
     public static AuthorizationResult authorized(String reason, String source, String role) {
@@ -87,14 +74,13 @@ public class AuthorizationResult {
     /**
      * Create a successful authorization result for an organization member.
      */
-    public static AuthorizationResult authorizedAsMember(String organizationId, String role, Set<String> permissions) {
+    public static AuthorizationResult authorizedAsMember(String organizationId, String role) {
         return AuthorizationResult.builder()
                 .authorized(true)
                 .reason("User is a member of the organization with role: " + role)
                 .authorizationSource("ORGANIZATION_MEMBER")
                 .grantingRole(role)
                 .organizationId(organizationId)
-                .grantedPermissions(permissions)
                 .build();
     }
 
@@ -107,18 +93,6 @@ public class AuthorizationResult {
                 .reason("User has event access grant with role: " + eventRole)
                 .authorizationSource("EVENT_ACCESS_GRANT")
                 .grantingRole(eventRole)
-                .build();
-    }
-
-    /**
-     * Create a successful authorization result for admin.
-     */
-    public static AuthorizationResult authorizedAsAdmin() {
-        return AuthorizationResult.builder()
-                .authorized(true)
-                .reason("User is a platform administrator")
-                .authorizationSource("ADMIN")
-                .grantingRole("ADMIN")
                 .build();
     }
 
@@ -148,12 +122,5 @@ public class AuthorizationResult {
                 .reason("Insufficient permissions. Required: " + requiredPermission + ", Current role: " + currentRole)
                 .grantingRole(currentRole)
                 .build();
-    }
-
-    /**
-     * Create a denied result for not authenticated.
-     */
-    public static AuthorizationResult deniedNotAuthenticated() {
-        return denied("User is not authenticated");
     }
 }

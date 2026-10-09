@@ -1,5 +1,7 @@
 package com.pml.booking.migration;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.shared.constants.TicketStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +18,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Rewrites existing tickets onto ET-TKT-002 R7's seven states.
+ * Rewrites existing tickets onto the seven current ticket states.
  *
  * <h2>The mappings, and what each one costs</h2>
  * <table>
@@ -25,7 +27,7 @@ import java.util.TreeMap;
  *   <tr><td>{@code CONFIRMED}</td><td>{@code ISSUED}</td><td>rename — the pair appeared together at every call site</td></tr>
  *   <tr><td>{@code PENDING_VERIFICATION}</td><td>{@code ISSUED}</td><td>the purchase had completed; verification was a payment-side concern</td></tr>
  *   <tr><td>{@code USED}</td><td>{@code VALIDATED}</td><td>merge — see below</td></tr>
- *   <tr><td>{@code CHARGEDBACK}</td><td>{@code REFUNDED}</td><td>ET-FIN-004 R8 states this outcome directly</td></tr>
+ *   <tr><td>{@code CHARGEDBACK}</td><td>{@code REFUNDED}</td><td>a chargeback ends the ticket exactly as a refund does</td></tr>
  *   <tr><td>{@code PENDING_PAYMENT}</td><td>{@code CANCELLED}</td><td>lossy — see below</td></tr>
  *   <tr><td>{@code PAYMENT_FAILED}</td><td>{@code CANCELLED}</td><td>lossy — see below</td></tr>
  * </table>
@@ -39,9 +41,8 @@ import java.util.TreeMap;
  *
  * <h2>The two mappings that lose information, stated plainly</h2>
  * {@code PENDING_PAYMENT} and {@code PAYMENT_FAILED} describe a ticket that
- * exists without money behind it. ET-TKT-001 R7 made that unreachable — issuance
- * now happens inside the confirmation transaction — so no such row can be
- * created again, but historical ones exist and the seven have nowhere to put
+ * exists without money behind it. Issuance happens inside the confirmation
+ * transaction, so no such row can be created, but historical ones exist and the seven have nowhere to put
  * them. They become {@code CANCELLED}: terminal, never admitted, never counted
  * as revenue.
  *
@@ -58,17 +59,15 @@ import java.util.TreeMap;
  * CANCELLED". A status this migration does not recognise is reported and left
  * untouched, because guessing at an unknown state is how a ticket somebody paid
  * for silently stops working.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/002-ticket-issuance-and-qr/spec.md">ET-TKT-002 R7</a>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class TicketStatusConformanceMigrationService {
 
-    private static final String COLLECTION = "tickets";
+    private static final String COLLECTION = BookingCollections.TICKETS;
 
-    /** Old status → one of ET-TKT-002 R7's seven. Insertion-ordered for a readable summary. */
+    /** Old status → one of the seven current states. Insertion-ordered for a readable summary. */
     private static final Map<String, TicketStatus> MAPPING = new LinkedHashMap<>();
 
     static {

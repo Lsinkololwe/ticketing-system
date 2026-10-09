@@ -2,12 +2,8 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "User Schema - OWASP Compliant",
-    "description": "MongoDB JSON Schema for users collection - Identity data with strict validation",
+    "description": "MongoDB JSON Schema for the accounts collection (identity_users). Email, username and names are optional: an account is identified by its contacts (ET-IDN-004).",
     "required": [
-      "username",
-      "email",
-      "firstName",
-      "lastName",
       "roles",
       "createdAt"
     ],
@@ -17,37 +13,55 @@
         "description": "User ID (matches Keycloak sub claim)"
       },
       "username": {
-        "bsonType": "string",
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "minLength": 3,
         "maxLength": 320,
         "pattern": "^[a-zA-Z0-9._%+@-]+$",
         "description": "OWASP A03 - Username pattern validation (alphanumeric, email chars allowed for Keycloak compatibility)"
       },
       "email": {
-        "bsonType": "string",
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
         "maxLength": 320,
         "description": "OWASP A03 - Email format validation"
       },
       "firstName": {
-        "bsonType": "string",
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "minLength": 1,
         "maxLength": 100,
         "description": "User's first name"
       },
       "lastName": {
-        "bsonType": "string",
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "minLength": 1,
         "maxLength": 100,
         "description": "User's last name"
       },
       "phoneNumber": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^\\+[1-9]\\d{1,14}$",
         "description": "OWASP A03 - E.164 phone format"
       },
       "phoneCountry": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "pattern": "^[A-Z]{2}$",
         "description": "ISO-3166 alpha-2 country of phoneNumber (e.g. ZM)"
       },
@@ -55,7 +69,7 @@
         "bsonType": "array",
         "description": "OWASP A01/A04 - User roles array. Users can have multiple roles. CUSTOMER is the base role that cannot be removed.",
         "minItems": 1,
-        "maxItems": 6,
+        "maxItems": 7,
         "uniqueItems": true,
         "items": {
           "bsonType": "string",
@@ -65,7 +79,8 @@
             "ADMIN",
             "SUPER_ADMIN",
             "SCANNER",
-            "FINANCE"
+            "FINANCE",
+            "FINANCE_LEAD"
           ]
         }
       },
@@ -88,10 +103,6 @@
         "bsonType": "bool",
         "description": "Account locked (synced from Keycloak)"
       },
-      "registrationEventPublished": {
-        "bsonType": "bool",
-        "description": "Idempotency guard - UserRegisteredEvent emitted exactly once per user"
-      },
       "emailVerified": {
         "bsonType": "bool",
         "description": "Email verification status"
@@ -105,21 +116,44 @@
         "description": "2FA enabled flag"
       },
       "twoFactorMethod": {
-        "bsonType": ["string", "null"],
-        "enum": ["SMS", "TOTP", "EMAIL", null],
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "SMS",
+          "TOTP",
+          "EMAIL",
+          null
+        ],
         "description": "2FA method if enabled"
       },
       "gender": {
-        "bsonType": ["string", "null"],
-        "enum": ["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY", null],
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "MALE",
+          "FEMALE",
+          "OTHER",
+          "PREFER_NOT_TO_SAY",
+          null
+        ],
         "description": "User's gender"
       },
       "lastLoginAt": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "Last login timestamp"
       },
       "lastActiveAt": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "Last activity timestamp"
       },
       "createdAt": {
@@ -127,16 +161,108 @@
         "description": "Account creation timestamp"
       },
       "updatedAt": {
-        "bsonType": ["date", "null"],
+        "bsonType": [
+          "date",
+          "null"
+        ],
         "description": "Last update timestamp"
       },
       "createdBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "description": "Creator user ID"
       },
       "updatedBy": {
-        "bsonType": ["string", "null"],
+        "bsonType": [
+          "string",
+          "null"
+        ],
         "description": "Last updater user ID"
+      },
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data type hint"
+      },
+      "status": {
+        "enum": [
+          "PROVISIONING",
+          "ACTIVE",
+          "SUSPENDED",
+          "MERGED",
+          "DELETED"
+        ],
+        "description": "com.pml.identity.domain.enums.AccountState. Absent on documents not yet through users-account-fields-backfill."
+      },
+      "keycloakUserId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "Keycloak user id; legacy accounts equal _id; null for orphans and while PROVISIONING"
+      },
+      "primaryContactId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "preferredChannel": {
+        "enum": [
+          "WHATSAPP",
+          "EMAIL",
+          null
+        ],
+        "description": "com.pml.identity.domain.enums.ContactType"
+      },
+      "displayName": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 200
+      },
+      "locale": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 35
+      },
+      "mergedInto": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "provisionedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "pendingKind": {
+        "enum": [
+          "MERGING",
+          "CHANGING",
+          "DELETION_REQUESTED",
+          null
+        ],
+        "description": "com.pml.identity.domain.enums.PendingKind"
+      },
+      "pendingSince": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "createdVia": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 50
       }
     },
     "additionalProperties": true

@@ -172,17 +172,6 @@ public enum RecoveryStatus {
     }
 
     /**
-     * Checks if recovery can still be attempted.
-     *
-     * <p>Recovery can only be started when NOT_STARTED.</p>
-     *
-     * @return true if recovery can be initiated
-     */
-    public boolean canStartRecovery() {
-        return this == NOT_STARTED;
-    }
-
-    /**
      * Returns the financial impact description.
      *
      * @return Description of what this status means financially

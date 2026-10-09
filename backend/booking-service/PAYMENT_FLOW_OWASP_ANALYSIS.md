@@ -1,5 +1,7 @@
 # Payment Flow & OWASP Compliance Analysis Report
 
+> **Historical analysis (ROADMAP D-21).** The payment lifecycle now runs inside `PurchaseWorkflow`; no mutation starts, verifies, expires or fulfils a payment outside it. Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 **Date:** 2026-04-23
 **Service:** booking-service
 **Payment Provider:** PawaPay (Mobile Money - Zambia)

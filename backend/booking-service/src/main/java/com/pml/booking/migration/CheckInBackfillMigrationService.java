@@ -12,6 +12,9 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.index.PartialIndexFilter;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.schema.JsonSchemaObject;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -45,13 +48,12 @@ import java.util.List;
  * writing, which two operators running the migration at once would both pass.
  *
  * <h2>What it deliberately does not do</h2>
- * It does not invent conflicts. A historical double-admission left no trace to
- * recover — the old code overwrote {@code validatedAt} and moved on — so
- * {@code booking_checkin_conflicts} starts empty and honest rather than
- * populated with guesses.
+ * It does not invent conflicts. A ticket carries a single {@code validatedAt}, so
+ * a historical double-admission is indistinguishable from a single one — the
+ * second scan left nothing behind to recover. {@code booking_checkin_conflicts}
+ * therefore starts empty and honest rather than populated with guesses.
  *
  * @see com.pml.booking.domain.model.CheckIn
- * @see <a href="file:../../../../../../../specs/ticketing/003-validation-and-checkin/spec.md">ET-TKT-003</a>
  */
 @Slf4j
 @Service
@@ -97,29 +99,30 @@ public class CheckInBackfillMigrationService {
     /**
      * Create the check-in indexes, under the SAME names the mapping uses.
      *
-     * <p>The names are the whole point. These three indexes are also declared on
-     * {@link CheckIn} via {@code @Indexed} and {@code @CompoundIndex}, and
-     * production has {@code auto-index-creation: true}, so the mapping creates
-     * them too. MongoDB treats a repeat of an identical (keys, name) pair as a
-     * no-op — but rejects the same keys under a <em>different</em> name with
-     * error 85. These calls were previously unnamed, so MongoDB generated
-     * {@code ticketId_1} against the mapping's {@code ticketId}, the create
-     * failed, and the failure aborted this migration and every one scheduled
-     * after it.
+     * <p>The names are the whole point. {@code BookingIndexInitializer} declares
+     * the same three indexes under the same names. MongoDB treats a repeat of an
+     * identical (keys, name) pair as a no-op — but rejects the same keys under a
+     * <em>different</em> name with error 85. An unnamed create here would be
+     * auto-named {@code ticketId_1} against the initializer's {@code ticketId},
+     * collide, and abort this migration and every one scheduled after it.
      *
-     * <p>They are kept rather than deleted because the mapping is not the only
-     * caller: a test building a bare template has no auto-index-creation, and
-     * the unique {@code ticketId} index is what stops the backfill admitting the
-     * same ticket twice. Deleting these would remove the guarantee exactly where
-     * it is being tested.
+     * <p>These calls earn their place because the backfill may run before the
+     * initializer's pass, and the unique {@code ticketId} index is what stops the
+     * backfill admitting the same ticket twice.
      */
     public Mono<Void> ensureIndexes() {
         return mongoTemplate.indexOps(CheckIn.class)
                 .createIndex(new Index().on("ticketId", Sort.Direction.ASC).unique().named("ticketId"))
                 .doOnNext(name -> log.info("Check-in index ready: {}", name))
+                // Partial, not sparse. A check-in recorded without an upload batch stores
+                // scanId as null rather than omitting it, and sparse excludes only an absent
+                // field — so under `unique` the second such check-in would collide with the
+                // first, and a gate that recorded one offline scan could record no others.
                 .then(mongoTemplate.indexOps(CheckIn.class)
                         .createIndex(new Index().on("scanId", Sort.Direction.ASC)
-                                .unique().sparse().named("scanId")))
+                                .unique().named("scanId")
+                                .partial(PartialIndexFilter.of(
+                                        Criteria.where("scanId").type(JsonSchemaObject.Type.stringType())))))
                 .doOnNext(name -> log.info("Check-in index ready: {}", name))
                 .then(mongoTemplate.indexOps(CheckIn.class)
                         .createIndex(new Index()
@@ -181,21 +184,5 @@ public class CheckInBackfillMigrationService {
                             ticket.getTicketNumber(), error.getMessage());
                     return Mono.just(Outcome.FAILED);
                 });
-    }
-
-    /**
-     * Report what a run would do, without writing anything.
-     *
-     * <p>Worth having before a backfill over a production ticket collection:
-     * the count tells an operator whether to expect seconds or an hour.
-     */
-    public Mono<Long> countPending() {
-        return ticketRepository.findAll()
-                .filter(ticket -> ADMITTED_STATES.contains(ticket.getStatus()))
-                .filter(ticket -> ticket.getValidatedAt() != null)
-                .flatMap(ticket -> checkInRepository.findByTicketId(ticket.getId())
-                        .hasElement()
-                        .filter(exists -> !exists))
-                .count();
     }
 }

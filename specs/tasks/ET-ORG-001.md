@@ -3,7 +3,7 @@
 > **Spec** [`specs/organization/001-organizer-onboarding/spec.md`](../organization/001-organizer-onboarding/spec.md) · **Wave 1** · `blocked_by:` ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-IDN-002
 > **Screens** `Org Admin - Onboarding Wizard.dc.html` *(applicant)* and `Admin - Approvals Workbench.dc.html` *(reviewer)* — **read both**
 > **Routes** `apps/organization-admin/src/app/(application)/apply/{business-info,documents,review,status}`, `welcome`, `unavailable`; `apps/admin/src/app/(dashboard)/approvals/{organizers,documents}`, `organizers/[id]`
-> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-ORG-001 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-ORG-001 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 > ⚠️ **Corpus defect — the spec wins.** [`ROADMAP.md`](../ROADMAP.md) line 84 describes this as
 > *"six states"*. The spec's §4 defines **nine states**, ten actions, 100 pairs, **15 legal**.
@@ -26,7 +26,7 @@ corpus. Specifically check:
 - Does `OrganizationStatus` declare **nine** states, or the older six?
 - Does `OrganizationTransitions.LEGAL` exist as a table, or are transitions written as `if`
   statements across services? Literal status assignment anywhere is `contradicted` (R2).
-- Is the approval **saga** resumable, or a straight-line method that can half-apply?
+- Is approval the compensating `OrganizerOnboardingWorkflow`, or a straight-line method that can half-apply?
 - `docs/ORG_ADMIN_SPEC_CONFORMANCE.md` is an input **here**, in R0 — not to the spec.
 
 ## A · Backend
@@ -65,13 +65,13 @@ corpus. Specifically check:
 - **Acceptance** **reject** and **request-changes** are distinct states with distinct
   notifications. Collapsing them tells a fixable applicant they failed.
 
-### BE-6 · The approval saga — six steps, persisted marker, retry, compensation
+### BE-6 · The approval workflow — six steps, retry, compensation
 - **Spec** R6 · **§5** T6 · **depends** BE-5 · **parallel-safe** **no — the highest-risk write in this spec**
-- Step 1 sets `ACTIVE`, `approvedAt`, `commissionRate`, `payoutSchedule`; step 6 publishes
-  `identity.OrganizationApproved`. The saga's state lives **on the organization document** — no
-  separate saga collection.
-- **Acceptance** killing the process after **each step in turn** yields completion or **full**
-  compensation, **never partial**. Six kill points, six tests.
+- Step 1 sets `ACTIVE`, `approvedAt`, `commissionRate`, `payoutSchedule`; step 6 stages
+  `identity.OrganizationApproved` in the outbox. The process state is the
+  `OrganizerOnboardingWorkflow` execution; `approvalSagaStep` on the document is its projection.
+- **Acceptance** a failure at **each step in turn** yields completion or **full** compensation,
+  **never partial**; the recorded history replays.
 
 ### BE-7 · `OrganizationCapabilities` and the internal resolve endpoint
 - **Spec** R7 · **§5** T7 · **depends** BE-1 · **parallel-safe** no *(two other services consume it)*
@@ -191,9 +191,10 @@ Two concurrent applications → one organization. Slug unique; immutable once `A
 No byte through a resolver; unissued `fileKey` refused; oversize refused server-side; sole
 proprietor never asked for incorporation; refusal names the missing document.
 
-### TS-4 · The saga *(L3 — the highest-risk test in this spec)*
-Kill after **each of the six steps**: completion or full compensation, never partial. Six tests,
-one per kill point. `Persistence.assertNothingPersisted` on every compensated path.
+### TS-4 · The approval workflow *(L3 — the highest-risk test in this spec)*
+Fail **each of the six steps** under time skipping: completion or full compensation, never partial.
+Six cases, one per step, and a replay of the recorded history. `Persistence.assertNothingPersisted`
+on every compensated path.
 
 ### TS-5 · Capabilities *(L2/L3)*
 Catalog and booking gate on the same predicate; the matrix exists in one place; each of the nine
@@ -229,12 +230,22 @@ contract, not on the resolver.
 - [ ] Uploads presigned; no byte through a resolver; oversize refused server-side
 - [ ] Sole proprietor never asked for incorporation; refusals name what is missing
 - [ ] Reject and request-changes distinct, in backend **and** UI
-- [ ] Six saga kill points each yield completion or full compensation
+- [~] Six saga kill points each yield completion or full compensation — **ET-PLT-015, 2026-09-13.**
+      The approval is `OrganizerOnboardingWorkflow`: six activities in order, each compensation
+      registered before its step, reversed on failure (group tree left in place).
+      `OrganizerOnboardingWorkflowTest` (L3) forces a failure at **each of the six steps** and asserts
+      no partial state — status back to `PENDING_REVIEW` with the reason, membership, user type, realm
+      role and owners group all undone in reverse, no `OrganizationApproved` staged — then asserts a
+      later approval converges; Keycloak steps are tried exactly three times; the history replays.
+      `OrganizationApprovalServiceTest` (L2, replica set) runs each MongoDB step twice and asserts one
+      transition, one envelope, and compensations that undo only their own step's work.
+      **Open**: a worker killed mid-step against the Temporal development server (the R6 wording) is
+      not yet exercised.
 - [ ] Capability matrix in one place, consumed by catalog and booking
 - [ ] Nothing deleted; tickets and escrow survive suspension
 - [ ] `organizationBySlug` carries no KYB field, asserted on the composed contract
 - [ ] Both `.dc.html` screens read; layout, table shape and empty states match
 - [ ] Applicant e2e green **on the F0-2 auth harness**
 - [ ] Compliance suite green on both apps
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-ORG-001 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-ORG-001 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

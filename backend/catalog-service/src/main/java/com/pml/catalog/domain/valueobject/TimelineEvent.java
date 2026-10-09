@@ -7,7 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -44,8 +44,17 @@ public class TimelineEvent {
     /**
      * When this action occurred
      */
-    @Builder.Default
-    private LocalDateTime timestamp = LocalDateTime.now();
+    /**
+     * When this action occurred — set explicitly by every factory below.
+     *
+     * <p>This carried {@code @Builder.Default private Instant timestamp = Instant.now()} until
+     * 2026-09-02. A default is the wrong shape for an audit timestamp twice over: it reads the
+     * wall clock, so no test can assert the order of two entries or what a timeline looks like at
+     * a given moment; and it means a caller that simply forgets gets a plausible value instead of
+     * a failure, which is how an audit trail acquires entries stamped when they were <em>built</em>
+     * rather than when the thing happened.</p>
+     */
+    private Instant timestamp;
 
     /**
      * The type of action that occurred
@@ -122,8 +131,9 @@ public class TimelineEvent {
     /**
      * Create a submission timeline event
      */
-    public static TimelineEvent submission(String eventId, String organizerId, String organizerName) {
+    public static TimelineEvent submission(String eventId, String organizerId, String organizerName, Instant now) {
         return TimelineEvent.builder()
+                .timestamp(now)
                 .eventId(eventId)
                 .action(ApprovalAction.SUBMITTED)
                 .actorId(organizerId)
@@ -139,8 +149,9 @@ public class TimelineEvent {
      * Create an assignment timeline event
      */
     public static TimelineEvent assignment(String eventId, String adminId, String adminName,
-                                           String reviewerId, String reviewerName) {
+                                           String reviewerId, String reviewerName, Instant now) {
         return TimelineEvent.builder()
+                .timestamp(now)
                 .eventId(eventId)
                 .action(ApprovalAction.ASSIGNED)
                 .actorId(adminId)
@@ -153,8 +164,9 @@ public class TimelineEvent {
     /**
      * Create an approval timeline event
      */
-    public static TimelineEvent approval(String eventId, String reviewerId, String reviewerName, String comments) {
+    public static TimelineEvent approval(String eventId, String reviewerId, String reviewerName, String comments, Instant now) {
         return TimelineEvent.builder()
+                .timestamp(now)
                 .eventId(eventId)
                 .action(ApprovalAction.APPROVED)
                 .actorId(reviewerId)
@@ -170,8 +182,9 @@ public class TimelineEvent {
     /**
      * Create a rejection timeline event
      */
-    public static TimelineEvent rejection(String eventId, String reviewerId, String reviewerName, String comments) {
+    public static TimelineEvent rejection(String eventId, String reviewerId, String reviewerName, String comments, Instant now) {
         return TimelineEvent.builder()
+                .timestamp(now)
                 .eventId(eventId)
                 .action(ApprovalAction.REJECTED)
                 .actorId(reviewerId)
@@ -187,8 +200,9 @@ public class TimelineEvent {
     /**
      * Create a changes requested timeline event
      */
-    public static TimelineEvent changesRequested(String eventId, String reviewerId, String reviewerName, String comments) {
+    public static TimelineEvent changesRequested(String eventId, String reviewerId, String reviewerName, String comments, Instant now) {
         return TimelineEvent.builder()
+                .timestamp(now)
                 .eventId(eventId)
                 .action(ApprovalAction.CHANGES_REQUESTED)
                 .actorId(reviewerId)
@@ -204,8 +218,9 @@ public class TimelineEvent {
     /**
      * Create a resubmission timeline event
      */
-    public static TimelineEvent resubmission(String eventId, String organizerId, String organizerName) {
+    public static TimelineEvent resubmission(String eventId, String organizerId, String organizerName, Instant now) {
         return TimelineEvent.builder()
+                .timestamp(now)
                 .eventId(eventId)
                 .action(ApprovalAction.RESUBMITTED)
                 .actorId(organizerId)
@@ -220,8 +235,9 @@ public class TimelineEvent {
     /**
      * Create an escalation timeline event
      */
-    public static TimelineEvent escalation(String eventId, String escalatedToName, String reason) {
+    public static TimelineEvent escalation(String eventId, String escalatedToName, String reason, Instant now) {
         return TimelineEvent.builder()
+                .timestamp(now)
                 .eventId(eventId)
                 .action(ApprovalAction.ESCALATED)
                 .actorId("SYSTEM")
@@ -236,8 +252,9 @@ public class TimelineEvent {
      * Create a comment timeline event
      */
     public static TimelineEvent comment(String eventId, String adminId, String adminName,
-                                        String comment, boolean isInternal) {
+                                        String comment, boolean isInternal, Instant now) {
         TimelineEvent.TimelineEventBuilder builder = TimelineEvent.builder()
+                .timestamp(now)
                 .eventId(eventId)
                 .action(ApprovalAction.COMMENT_ADDED)
                 .actorId(adminId)

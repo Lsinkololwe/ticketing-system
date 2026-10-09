@@ -1,12 +1,12 @@
 package com.pml.identity.web.graphql.query;
 
+import com.pml.identity.security.IdentityTenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.domain.model.EventAccessGrant;
 import com.pml.identity.service.EventAccessService;
-import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.web.graphql.dto.pagination.*;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +20,7 @@ import java.util.Objects;
 
 /**
  * GraphQL Query Resolver for Event Access Grant operations.
- * Handles event access-related queries with both offset and cursor pagination.
+ * Handles event access-related queries with offset pagination.
  */
 @Slf4j
 @DgsComponent
@@ -28,7 +28,7 @@ import java.util.Objects;
 public class EventAccessQueryResolver {
 
     private final EventAccessService eventAccessService;
-    private final OrganizationMemberService memberService;
+    private final IdentityTenantReads reads;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
@@ -50,7 +50,7 @@ public class EventAccessQueryResolver {
     public Mono<EventAccessGrant> eventAccessGrant(@InputArgument String id) {
         log.debug("GraphQL query: eventAccessGrant(id={})", id);
         Objects.requireNonNull(id, "Event access grant ID is required");
-        return eventAccessService.findById(id);
+        return reads.grantForCaller(id);
     }
 
     /**
@@ -66,7 +66,7 @@ public class EventAccessQueryResolver {
         log.debug("GraphQL query: userEventAccess(userId={}, eventId={})", userId, eventId);
         Objects.requireNonNull(userId, "User ID is required");
         Objects.requireNonNull(eventId, "Event ID is required");
-        return eventAccessService.findByUserAndEvent(userId, eventId);
+        return reads.userGrantForCaller(userId, eventId);
     }
 
     /**
@@ -102,20 +102,20 @@ public class EventAccessQueryResolver {
 
     /**
      * Get event access grants for an event with offset pagination.
-     * Schema: eventAccessGrantsOffsetPagination(eventId: ID!, status: AccessGrantStatus, pagination: OffsetPaginationInput): EventAccessGrantOffsetPage!
+     * Schema: eventAccessGrants(eventId: ID!, status: AccessGrantStatus, pagination: OffsetPaginationInput): EventAccessGrantOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<EventAccessGrantOffsetPage> eventAccessGrantsOffsetPagination(
+    public Mono<EventAccessGrantOffsetPage> eventAccessGrants(
             @InputArgument String eventId,
             @InputArgument AccessGrantStatus status,
             @InputArgument OffsetPaginationInput pagination
     ) {
         Objects.requireNonNull(eventId, "Event ID is required");
         return SecurityContextUtils.getCurrentUserId()
-                .doOnNext(userId -> log.debug("GraphQL query: eventAccessGrantsOffsetPagination(eventId={}, status={})", eventId, status))
+                .doOnNext(userId -> log.debug("GraphQL query: eventAccessGrants(eventId={}, status={})", eventId, status))
                 .flatMap(userId -> {
-                    Flux<EventAccessGrant> grantFlux = eventAccessService.findByEvent(eventId)
+                    Flux<EventAccessGrant> grantFlux = reads.grantsForEvent(eventId)
                             .filter(grant -> {
                                 if (status != null && grant.getStatus() != status) {
                                     return false;
@@ -126,38 +126,6 @@ public class EventAccessQueryResolver {
                     return buildOffsetPage(grantFlux, pagination);
                 })
                 .defaultIfEmpty(EventAccessGrantOffsetPage.empty());
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Get event access grants with cursor pagination (mobile/infinite scroll).
-     * Schema: eventAccessGrantsCursorPagination(eventId: ID!, status: AccessGrantStatus, pagination: CursorPaginationInput): EventAccessGrantConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("isAuthenticated()")
-    public Mono<EventAccessGrantConnection> eventAccessGrantsCursorPagination(
-            @InputArgument String eventId,
-            @InputArgument AccessGrantStatus status,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        Objects.requireNonNull(eventId, "Event ID is required");
-        return SecurityContextUtils.getCurrentUserId()
-                .doOnNext(userId -> log.debug("GraphQL query: eventAccessGrantsCursorPagination(eventId={}, status={})", eventId, status))
-                .flatMap(userId -> {
-                    Flux<EventAccessGrant> grantFlux = eventAccessService.findByEvent(eventId)
-                            .filter(grant -> {
-                                if (status != null && grant.getStatus() != status) {
-                                    return false;
-                                }
-                                return true;
-                            });
-
-                    return buildCursorConnection(grantFlux, pagination);
-                })
-                .defaultIfEmpty(EventAccessGrantConnection.empty());
     }
 
     // ========================================================================
@@ -197,52 +165,4 @@ public class EventAccessQueryResolver {
                 });
     }
 
-    /**
-     * Build EventAccessGrantConnection from a Flux of grants.
-     */
-    private Mono<EventAccessGrantConnection> buildCursorConnection(Flux<EventAccessGrant> grantFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : CursorPaginationInput.defaults();
-        int limit = p.getLimit();
-
-        return grantFlux.collectList()
-                .map(allGrants -> {
-                    int totalCount = allGrants.size();
-
-                    // Find starting position based on cursor
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allGrants.size(); i++) {
-                            if (allGrants.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Get the page of grants
-                    List<EventAccessGrant> pageGrants = allGrants.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageGrants.isEmpty()) {
-                        return EventAccessGrantConnection.empty();
-                    }
-
-                    // Build edges
-                    List<EventAccessGrantEdge> edges = pageGrants.stream()
-                            .map(EventAccessGrantEdge::of)
-                            .toList();
-
-                    // Build page info
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.forCursor(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new EventAccessGrantConnection(edges, pageInfo, totalCount);
-                });
-    }
 }

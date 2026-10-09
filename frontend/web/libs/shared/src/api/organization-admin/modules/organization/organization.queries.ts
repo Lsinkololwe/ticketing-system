@@ -87,28 +87,6 @@ export const ORGANIZATION_FIELDS = gql`
   }
 `;
 
-/**
- * Minimal fields for status checks and navigation decisions
- */
-export const ORGANIZATION_STATUS_FIELDS = gql`
-  fragment OrganizationStatusFields on Organization {
-    id
-    name
-    status
-    # Drives the required-document set on the documents step (spec §4), so the
-    # status query carries it too — otherwise a resume-mid-wizard renders an
-    # empty document list.
-    businessType
-    rejectionReason
-    documentsVerified
-    submittedAt
-    approvedAt
-    canSubmitForReview
-    isApproved
-    isInApprovalWorkflow
-  }
-`;
-
 // ==========================================
 // Current User Queries
 // ==========================================
@@ -123,31 +101,5 @@ export const MY_ORGANIZATION = gql`
     myOwnedOrganization {
       ...OrganizationFields
     }
-  }
-`;
-
-/**
- * Lightweight query just for status check
- * Used for routing decisions without fetching full organization data
- */
-export const MY_ORGANIZATION_STATUS = gql`
-  ${ORGANIZATION_STATUS_FIELDS}
-  query MyOrganizationStatus {
-    myOwnedOrganization {
-      ...OrganizationStatusFields
-    }
-  }
-`;
-
-// ==========================================
-// Lookup Queries
-// ==========================================
-
-/**
- * Check if a slug is available for a new organization
- */
-export const IS_SLUG_AVAILABLE = gql`
-  query IsSlugAvailable($slug: String!) {
-    isSlugAvailable(slug: $slug)
   }
 `;

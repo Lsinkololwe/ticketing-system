@@ -60,6 +60,14 @@ spring:
                       firstBackoff: 100ms
                       maxBackoff: 500ms
                       factor: 2
+            - id: identity-rest
+              uri: ${IDENTITY_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/organizations/**, /api/v1/documents/**
+            - id: catalog-media-rest
+              uri: ${CATALOG_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/media/**
             - id: payment-webhooks
               uri: ${BOOKING_SERVICE_URL:http://localhost:8082}
               predicates:
@@ -124,13 +132,15 @@ spring:
           jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8084/realms/myticketzm/protocol/openid-connect/certs}
 
 keycloak:
-  url: ${KEYCLOAK_URL:http://localhost:8084}
-  realm: myticketzm
   client-id: ${API_GATEWAY_CLIENT_ID:myticketzm-api-gateway}
-  # Platform-admin realm split (OFF by default). Add the admin realm issuer to enable
-  # validating tokens from BOTH realms, selected by the token's `iss` claim, e.g.:
-  #   KEYCLOAK_TRUSTED_ISSUERS=http://localhost:8084/realms/myticketzm-admin
+  # Platform-admin realm split. The default below is NOT empty: the admin realm is trusted
+  # out of the box, and tokens from both realms are validated per their `iss` claim.
   trusted-issuers: ${KEYCLOAK_TRUSTED_ISSUERS:http://localhost:8084/realms/myticketzm-admin}
+  # The audience check. Blank = `aud` is NOT validated, and the service logs
+  # that at WARN on every start. Enabling it takes BOTH halves: an oidc-audience-mapper on
+  # the client in docker-resources/keycloak/myticketzm-realm.json (without one,
+  # Keycloak emits `"aud": "account"`), and this variable. Set one without the other and
+  # every token is rejected.
   expected-audiences: ${KEYCLOAK_EXPECTED_AUDIENCES:}
 
 resilience4j:
@@ -221,7 +231,7 @@ logging:
 
 security:
   debug:
-    enabled: ${SECURITY_DEBUG_ENABLED:true}
+    enabled: ${SECURITY_DEBUG_ENABLED:false}
 
 gateway:
   security:

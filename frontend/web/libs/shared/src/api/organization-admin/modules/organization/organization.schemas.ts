@@ -84,48 +84,9 @@ function sanitizeOptionalText(str: string | undefined): string | undefined {
  */
 const ZAMBIAN_PHONE_REGEX = /^(\+?260|0)?[79]\d{8}$/;
 
-/**
- * Zambian provinces
- */
-export const ZAMBIAN_PROVINCES = [
-  'CENTRAL',
-  'COPPERBELT',
-  'EASTERN',
-  'LUAPULA',
-  'LUSAKA',
-  'MUCHINGA',
-  'NORTHERN',
-  'NORTH_WESTERN',
-  'SOUTHERN',
-  'WESTERN',
-] as const;
-
-/**
- * Organization (event organizer) types.
- * Must stay in sync with the backend `OrganizationType` enum, the GraphQL
- * schema, and the `organizations` MongoDB `$jsonSchema` enum.
- */
-export const ORGANIZATION_TYPES = [
-  'INDIVIDUAL',
-  'BUSINESS',
-  'NON_PROFIT',
-  'GOVERNMENT',
-  'EDUCATIONAL',
-  'COMMUNITY',
-  'RELIGIOUS',
-] as const;
-
-/**
- * Business types for settings
- */
-export const BUSINESS_TYPES = [
-  'SOLE_PROPRIETORSHIP',
-  'PARTNERSHIP',
-  'LIMITED_COMPANY',
-  'NGO',
-  'GOVERNMENT',
-  'INDIVIDUAL',
-] as const;
+// The organizer types, legal business types and provinces are reference data (catalog `referenceData`
+// types ORGANIZER_TYPE, BUSINESS_TYPE, PROVINCE). The schemas below accept any non-empty code; each form
+// narrows it to the rows it loaded with `referenceCode(...)`, and the server validates against the same rows.
 
 // ==========================================
 // Field-Level Schemas
@@ -225,21 +186,17 @@ export const optionalTextField = (maxLength = 1000) =>
 export const businessInfoFormSchema = z.object({
   // Basic information
   name: requiredTextField('Organization name', 100),
-  type: z.enum(ORGANIZATION_TYPES, {
-    message: 'Organization type is required',
-  }),
+  type: z.string().min(1, 'Organization type is required'),
 
   /**
    * Legal business type — REQUIRED at step 1.
    *
    * This is not cosmetic: it is the sole input to the required-document set
-   * (spec ET-ORG-001 §4), so the documents step cannot render without it and
+   * for the organization, so the documents step cannot render without it and
    * `submitForReview` refuses without it. Asking for it first is what lets a
    * sole proprietor never be shown a certificate-of-incorporation slot.
    */
-  businessType: z.enum(BUSINESS_TYPES, {
-    message: 'Business type is required — it determines which documents we need',
-  }),
+  businessType: z.string().min(1, 'Business type is required — it determines which documents we need'),
   tagline: optionalTextField(50),
   // 2000, matching the organizations collection's $jsonSchema.
   //
@@ -262,9 +219,7 @@ export const businessInfoFormSchema = z.object({
 
   // Location
   city: requiredTextField('City', 50),
-  province: z.enum(ZAMBIAN_PROVINCES, {
-    message: 'Province is required',
-  }),
+  province: z.string().min(1, 'Province is required'),
   country: z.string().max(50, 'Country must be less than 50 characters').default('Zambia'),
 
   // Social links
@@ -292,7 +247,7 @@ export const organizationSettingsFormSchema = z.object({
   // Two different caps on one stored value means whichever screen was edited
   // last silently truncates what the other one accepted.
   companyDescription: optionalTextField(2000),
-  businessType: z.enum(BUSINESS_TYPES).optional(),
+  businessType: z.string().optional(),
 
   // Contact Information
   businessEmail: emailFieldSchema,

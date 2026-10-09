@@ -1,34 +1,14 @@
 package com.pml.identity.service;
 
-import com.pml.identity.web.graphql.dto.SendNotificationInput;
 import com.pml.identity.domain.model.Notification;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.util.List;
 
 /**
  * Service interface for managing notifications.
  * Handles notification creation, delivery, and lifecycle management.
  */
 public interface NotificationService {
-
-    /**
-     * Create and send a notification to a user.
-     *
-     * @param input notification details
-     * @return Mono containing the created notification
-     */
-    Mono<Notification> createNotification(SendNotificationInput input);
-
-    /**
-     * Send a bulk notification to multiple users.
-     *
-     * @param userIds list of user IDs to notify
-     * @param input notification details
-     * @return Mono containing the count of notifications sent
-     */
-    Mono<Integer> sendBulkNotification(List<String> userIds, SendNotificationInput input);
 
     /**
      * Find notifications for a user with pagination.
@@ -71,7 +51,7 @@ public interface NotificationService {
      * @param notificationId the notification ID
      * @return Mono containing the updated notification
      */
-    Mono<Notification> markAsRead(String notificationId);
+    Mono<Notification> markAsRead(String userId, String notificationId);
 
     /**
      * Mark all notifications as read for a user.
@@ -87,5 +67,5 @@ public interface NotificationService {
      * @param notificationId the notification ID
      * @return Mono containing true if deleted successfully
      */
-    Mono<Boolean> deleteNotification(String notificationId);
+    Mono<Boolean> deleteNotification(String userId, String notificationId);
 }

@@ -2,9 +2,9 @@ package com.pml.catalog.service.impl;
 
 import com.pml.catalog.domain.enums.ReferenceType;
 import com.pml.catalog.domain.model.ReferenceData;
-import com.pml.catalog.dto.PageableInput;
-import com.pml.catalog.dto.PagedResult;
-import com.pml.catalog.dto.ReferenceDataPatch;
+import com.pml.catalog.web.graphql.dto.PageableInput;
+import com.pml.catalog.web.graphql.dto.PagedResult;
+import com.pml.catalog.web.graphql.dto.ReferenceDataPatch;
 import com.pml.catalog.repository.ReferenceDataRepository;
 import com.pml.catalog.service.ReferenceDataService;
 import com.pml.catalog.service.ReferenceMetadataValidator;
@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
  * did.
  *
  * <h2>Deactivate, never delete</h2>
- * ET-CAT-003 R7 is explicit that reference data is retained. Rows here are
+ * Reference data is retained. Rows here are
  * referenced by code from documents this service cannot see — an event names its
  * category, a payout names its status — so a hard delete leaves a dangling code
  * with no way to render it. {@link #delete} therefore deactivates and says so.
@@ -146,7 +146,7 @@ public class ReferenceDataServiceImpl implements ReferenceDataService {
     /**
      * Deactivates. Nothing here is ever removed.
      *
-     * <p>ET-CAT-003 R7: reference data is deactivated and retained, because rows
+     * <p>Reference data is deactivated and retained, because rows
      * are referenced <em>by code</em> from documents in collections this service
      * does not own. Deleting the {@code MUSIC} category does not delete the
      * events filed under it — it leaves them naming a code that no longer

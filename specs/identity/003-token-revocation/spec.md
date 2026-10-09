@@ -1,6 +1,11 @@
 # ET-IDN-003 · Token revocation — cutting a live session before its token expires
 
 > **Conformance** · OWASP ASVS 3.3 session termination · PDI Phase 5 idempotency and abuse
+>
+> **Amended 2026-10-04 (D-44, D-45, D-47; F-044).** The access token now lives **5 minutes** (was one hour in the
+> examples below; `identity.revocation.access-token-lifespan` is `PT5M`), buyer tokens are held in the buyer app's
+> **server-side session** and never in a browser, and three new triggers revoke automatically: **contact change**,
+> **suspension** and **deletion**. Logout is end to end (R9 below).
 
 ## 1. Capability
 
@@ -100,10 +105,11 @@ service SHALL rely on another having checked.
 
 **Acceptance**
 - [ ] All three subgraphs and the gateway perform the check; a request sent directly to a subgraph, bypassing the gateway, is still refused
-- [ ] The check evaluates every revocation identifier present on the token in one lookup, not three round trips
+  - *2026-09-19: catalog, booking and identity install `RevocationRequestGuard` after authentication; the gateway still checks the cache only (`SessionBlacklistFilter`, same keys via `RevocationKeys`).*
+- [x] The check evaluates every revocation identifier present on the token in one lookup, not three round trips *(2026-09-19: `RemoteRevocationEnforcementTest`)*
 - [ ] A refused request returns `TOKEN_REVOKED` with `retryable: false`, and never the provider or store's raw error
 - [ ] The check adds no more than 5 ms at p99 to an authenticated request when the cache is warm
-- [ ] The check runs after signature validation, never before — an unsigned token is rejected without touching the store
+- [x] The check runs after signature validation, never before — an unsigned token is rejected without touching the store *(2026-09-19: `RemoteRevocationEnforcementTest`)*
 - [ ] A test asserts the refusal persisted nothing
 
 ### ET-IDN-003-R3 · MongoDB is authoritative; Redis is a cache that may be lost
@@ -117,7 +123,7 @@ emptied THEN THE SYSTEM SHALL continue to refuse every revoked token.
 - [ ] The cache is rebuilt from MongoDB on startup before the service reports ready
 - [ ] Each service re-warms from the durable store on a bounded interval, so a missed event self-heals
 - [ ] A cache entry is written with a TTL that never outlives the durable record
-- [ ] The durable store is reachable from the other two services over the internal API only, never by reading identity's collection
+- [x] The durable store is reachable from the other two services over the internal API only, never by reading identity's collection *(2026-09-19: `RemoteRevocationEnforcementTest`)*
 
 ### ET-IDN-003-R4 · The cache is eviction-safe, and the platform proves it at boot
 
@@ -139,11 +145,12 @@ established, and SHALL degrade to the cached answer for ordinary reads.
 
 **Acceptance**
 - [ ] Every money-moving mutation, role change, ticket issuance and ticket validation is marked sensitive
+  - *2026-09-19: booking's money-moving, check-in and recovery mutations and catalog's platform configuration are marked (`SensitiveMutationsTest` in each); identity's member, role and grant mutations are not yet.*
 - [ ] A sensitive operation refuses with `REVOCATION_UNAVAILABLE` and `retryable: true` when neither cache nor durable store answers within its timeout
-- [ ] An ordinary read proceeds on the cached answer when the durable store is unreachable
+- [x] An ordinary read proceeds on the cached answer when the durable store is unreachable *(2026-09-19: `RemoteRevocationEnforcementTest`)*
 - [ ] The cache timeout and the durable timeout are separate, configured values, and the durable one is the longer
 - [ ] A money-moving mutation that is not marked sensitive fails review — the list of sensitive operations is enumerated in §4, not inferred
-- [ ] A test asserts a sensitive operation refuses, and an ordinary read succeeds, under the same induced store outage
+- [x] A test asserts a sensitive operation refuses, and an ordinary read succeeds, under the same induced store outage *(2026-09-19: `RemoteRevocationEnforcementTest`)*
 
 ### ET-IDN-003-R6 · A revocation propagates platform-wide within a bounded window
 
@@ -156,7 +163,7 @@ revocation to platform-wide effect SHALL be bounded and asserted.
 - [ ] A revocation is effective in every service within 5 seconds at p99, asserted end to end
 - [ ] A service that missed the event still refuses the token after its next re-warm
 - [ ] The event carries the identifier and its type, never the token itself and never the reason text
-- [ ] Publication happens from an `@TransactionalEventListener(AFTER_COMMIT)` after commit, never inside the write transaction
+- [ ] The event is staged in `identity_outbox` inside the revocation's transaction, and only the drain publishes it, after commit
 
 ### ET-IDN-003-R7 · Revocation is triggered by the events that require it
 
@@ -164,13 +171,29 @@ THE SYSTEM SHALL revoke automatically on the security events that invalidate exi
 access, and SHALL NOT require an administrator to remember.
 
 **Acceptance**
-- [ ] Keycloak logout revokes that `sid`
+- [ ] Keycloak logout revokes that `sid`: the `user-sync` listener forwards `LOGOUT` (and `REFRESH_TOKEN_ERROR`) with the session's `sid` to `POST /api/internal/keycloak/sync/event` ([ET-IDN-004](../004-accounts-and-contacts/) CONTRACT 4.6), and identity-service writes `SESSION:{sid}` (idempotent, durable first, no deletion, no personal data); an event with no `sid` revokes nothing, and a write failure answers `503` so the listener retries
+- [ ] The gateway refuses a token whose `sid` was revoked this way (401, `X-Token-Revoked`), still accepts the user's other sessions, and keys users on `sub`, never on the `accountId` claim
+- [ ] A successful **contact change** revokes that `sub` and ends the account's Keycloak sessions ([ET-IDN-004](../004-accounts-and-contacts/) R5)
+- [ ] **Suspension** (`status` to `SUSPENDED`, including a console change adopted back, D-47) revokes that `sub` and disables the Keycloak user ([ET-IDN-004](../004-accounts-and-contacts/) R4)
+- [ ] A completed **merge** revokes the merged account's `sub`; **deletion** revokes it at the scheduled date ([ET-IDN-004](../004-accounts-and-contacts/) R6, R7)
 - [ ] A password or credential change revokes that `sub`
 - [ ] Removing an organization member revokes that member's `sub` ([ET-ORG-002](../../organization/002-teams-and-invitations/))
 - [ ] Revoking an event access grant revokes the affected sessions, so a removed scanner cannot admit ([ET-ORG-003](../../organization/003-permission-resolution/))
 - [ ] Suspending an organization revokes every member's `sub` ([ET-ORG-001](../../organization/001-organizer-onboarding/))
 - [ ] Account deletion or erasure revokes that `sub` ([ET-PLT-008](../../_platform/008-data-protection/))
 - [ ] Each automatic revocation writes an audit row naming the trigger ([ET-PLT-009](../../_platform/009-audit-trail/))
+
+### ET-IDN-003-R9 · Logout ends the session end to end *(added 2026-10-04)*
+
+WHEN a buyer or staff member signs out, THE SYSTEM SHALL end the Keycloak session, the buyer app's server-side session, and every token minted under that `sid`.
+
+**Acceptance**
+- [ ] The buyer app's logout route deletes the server-side session record, clears the HttpOnly cookie, calls Keycloak's end-session endpoint with the stored ID token hint, and registers the `sid` revocation
+- [ ] Revocation is owned by identity-service's listener path above, not by the web app: the app's own call to `/api/internal/revocations/logout` is a redundant idempotent write, so a logout from a client with no web receiver (mobile, console, admin) is still revoked
+- [ ] Keycloak's **back-channel logout** (`backchannel.logout.url` = `${APP_URL}/api/auth/backchannel-logout` on each shared-BFF client: `myticketzm-web`, the organizer client and the admin client) reaches the buyer app, which deletes the matching session by `sid` and answers within the logout token's validity; a logout initiated anywhere (console, another device, an admin) therefore ends the buyer app session
+- [ ] The back-channel logout token is validated (signature, issuer, audience, `events` claim, no `nonce`, `jti` replay-checked) before any session is deleted
+- [ ] After logout the refresh token held server-side is unusable: refresh-token reuse detection ([ET-PLT-007](../../_platform/007-security-and-authorization/)) and the `sid` revocation both refuse it
+- [ ] A test signs in, signs out from a second client, and asserts the first client's next request is refused within one access-token lifespan
 
 ### ET-IDN-003-R8 · A revocation row outlives its token, and no longer
 
@@ -181,7 +204,7 @@ presented, and SHALL then remove it.
 - [ ] `expiresAt` is `revokedAt + accessTokenLifespan + clockSkew`
 - [ ] A TTL index on `expiresAt` with `expireAfterSeconds: 0` removes the row
 - [ ] A `USER` or `SESSION` revocation covers tokens minted up to its `expiresAt`, so re-issue after a ban is refused for the full window
-- [ ] The collection does not grow without bound; a test asserts a row is gone after its window plus the sweep interval
+- [ ] The collection does not grow without bound; a test asserts a row is gone after its window plus the TTL monitor's period
 - [ ] Clock skew is configured, not assumed zero — a token issued by a Keycloak whose clock is 30 s ahead is still covered
 - [ ] Removal of the row is not itself a revocation event and publishes nothing
 
@@ -289,7 +312,7 @@ mutation ([ET-ORG-002](../../organization/002-teams-and-invitations/),
 | Key | Default |
 |---|---|
 | `identity.revocation.enabled` | `true` |
-| `identity.revocation.access-token-lifespan` | `PT1H` |
+| `identity.revocation.access-token-lifespan` | `PT5M` |
 | `identity.revocation.clock-skew` | `PT60S` |
 | `identity.revocation.cache-timeout` | `PT0.25S` |
 | `identity.revocation.durable-timeout` | `PT2S` |
@@ -360,12 +383,13 @@ mutation ([ET-ORG-002](../../organization/002-teams-and-invitations/),
 | Capability | Spec |
 |---|---|
 | Realm configuration, roles, `@auth`, JWT validation itself | [ET-PLT-007](../../_platform/007-security-and-authorization/) |
-| The OTP lifecycle and passwordless login | [ET-IDN-001](../001-phone-otp-identity/) |
+| The contact-OTP lifecycle and passwordless login | [ET-IDN-001](../001-phone-otp-identity/) |
+| Accounts, suspension, merge, contact change and deletion that trigger revocations | [ET-IDN-004](../004-accounts-and-contacts/) |
 | Keycloak ↔ MongoDB user synchronisation | [ET-IDN-002](../002-keycloak-user-sync/) |
 | Permission resolution and event access grants | [ET-ORG-003](../../organization/003-permission-resolution/) |
 | Rate limiting, temporary blocks and abuse control | [ET-PLT-011](../../_platform/011-rate-limiting-and-abuse/) |
 | The audit trail this writes into | [ET-PLT-009](../../_platform/009-audit-trail/) |
-| Refresh-token rotation | Keycloak's own concern; the platform never sees a refresh token |
+| Refresh-token rotation and reuse detection | Keycloak, configured by the realm export ([ET-PLT-007](../../_platform/007-security-and-authorization/)); the buyer app holds the refresh token server-side and never the browser |
 
 Deliberately never in scope: **token introspection against Keycloak on the request path**
 (makes Keycloak a synchronous dependency of every authenticated request), and **shortening

@@ -1,0 +1,48 @@
+{"collection": "identity_audit_logs", "key": {"action": 1, "timestamp": -1}, "unique": false, "sparse": false}
+{"collection": "identity_audit_logs", "key": {"action": 1}, "unique": false, "sparse": false}
+{"collection": "identity_audit_logs", "key": {"performedBy": 1}, "unique": false, "sparse": false}
+{"collection": "identity_audit_logs", "key": {"status": 1, "timestamp": -1}, "unique": false, "sparse": false}
+{"collection": "identity_audit_logs", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "identity_audit_logs", "key": {"timestamp": 1}, "unique": false, "sparse": false}
+{"collection": "identity_audit_logs", "key": {"userId": 1, "action": 1, "timestamp": -1}, "unique": false, "sparse": false}
+{"collection": "identity_audit_logs", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_event_access_grants", "key": {"eventId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "identity_event_access_grants", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_event_access_grants", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_event_access_grants", "key": {"userId": 1, "eventId": 1}, "unique": true, "sparse": false}
+{"collection": "identity_event_access_grants", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_event_reminders", "key": {"eventId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_event_reminders", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_notification_preferences", "key": {"userId": 1}, "unique": true, "sparse": false}
+{"collection": "identity_notifications", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_organization_members", "key": {"organizationId": 1, "role": 1}, "unique": false, "sparse": false}
+{"collection": "identity_organization_members", "key": {"organizationId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "identity_organization_members", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_organization_members", "key": {"userId": 1, "organizationId": 1}, "unique": true, "sparse": false}
+{"collection": "identity_organization_members", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_organizations", "key": {"businessEmail": 1}, "unique": false, "sparse": false}
+{"collection": "identity_organizations", "key": {"ownerId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_organizations", "key": {"slug": 1}, "unique": true, "sparse": false}
+{"collection": "identity_organizations", "key": {"status": 1}, "unique": false, "sparse": false}
+{"collection": "identity_organizations", "key": {"statusSemantic": 1}, "unique": false, "sparse": false}
+{"collection": "identity_ownership_transfers", "key": {"expiresAt": 1}, "unique": false, "sparse": false}
+{"collection": "identity_ownership_transfers", "key": {"organizationId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "identity_ownership_transfers", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_ownership_transfers", "key": {"transferToken": 1}, "unique": true, "sparse": false}
+{"collection": "identity_payout_config_audit_logs", "key": {"action": 1}, "unique": false, "sparse": false}
+{"collection": "identity_payout_config_audit_logs", "key": {"organizationId": 1, "timestamp": -1}, "unique": false, "sparse": false}
+{"collection": "identity_payout_config_audit_logs", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_payout_config_audit_logs", "key": {"timestamp": 1}, "unique": false, "sparse": false}
+{"collection": "identity_payout_config_audit_logs", "key": {"userId": 1, "timestamp": -1}, "unique": false, "sparse": false}
+{"collection": "identity_payout_config_audit_logs", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_team_invitations", "key": {"email": 1, "organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_team_invitations", "key": {"email": 1}, "unique": false, "sparse": false}
+{"collection": "identity_team_invitations", "key": {"expiresAt": 1}, "unique": false, "sparse": false}
+{"collection": "identity_team_invitations", "key": {"invitationToken": 1}, "unique": true, "sparse": false}
+{"collection": "identity_team_invitations", "key": {"organizationId": 1, "status": 1}, "unique": false, "sparse": false}
+{"collection": "identity_team_invitations", "key": {"organizationId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_token_revocations", "key": {"expiresAt": 1}, "unique": false, "sparse": false, "expireAfterSeconds": 0}
+{"collection": "identity_user_devices", "key": {"deviceToken": 1}, "unique": false, "sparse": false}
+{"collection": "identity_user_devices", "key": {"userId": 1}, "unique": false, "sparse": false}
+{"collection": "identity_users", "key": {"email": 1}, "unique": true, "sparse": false}
+{"collection": "identity_verification_documents", "key": {"organizationId": 1}, "unique": false, "sparse": false}

@@ -146,19 +146,6 @@ public interface RefundService {
     Flux<RefundRequest> findPendingRefunds();
 
     /**
-     * Find approved refunds pending processing.
-     */
-    Flux<RefundRequest> findApprovedRefundsPendingProcessing();
-
-    /**
-     * Process automatic refunds for cancelled events.
-     *
-     * @param eventId The cancelled event ID
-     * @return Count of refunds initiated
-     */
-    Mono<Long> processAutomaticRefunds(String eventId);
-
-    /**
      * Calculate the refund amount for a ticket before confirming.
      * Shows the customer what they'll receive based on the refund policy.
      *
@@ -190,6 +177,21 @@ public interface RefundService {
             String adminId,
             boolean bypassApproval
     );
+
+    /**
+     * As {@link #createAdminRefundRequest(String, String, String, boolean)} for a stated amount: at most
+     * what remains refundable on the ticket, in whole ngwee. A null amount refunds what remains.
+     */
+    Mono<RefundRequest> createAdminRefundRequest(
+            String ticketId,
+            String reason,
+            String adminId,
+            boolean bypassApproval,
+            BigDecimal amount
+    );
+
+    /** Every refund request raised against a ticket, newest first: a ticket can be refunded in parts. */
+    Flux<RefundRequest> findAllByTicketId(String ticketId);
 
     /**
      * Cancel a pending refund request.

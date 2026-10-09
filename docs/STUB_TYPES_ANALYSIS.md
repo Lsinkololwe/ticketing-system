@@ -1,5 +1,7 @@
 # Stub Types & Missing Backend Features Analysis
 
+> **SUPERSEDED — pre-spec document, kept for reference only.** Replaced by `specs/` (see `specs/README.md`, `specs/RECONCILIATION.md` and the open items index in `specs/FINDINGS.md`). Findings here pre-date the specs and later fixes; do not quote them as current.
+
 ## Executive Summary
 
 This document analyzes stub types and placeholder implementations in the frontend that require corresponding backend GraphQL schema definitions. The goal is to establish the **supergraph as the single source of truth** for all types across the ticketing system.

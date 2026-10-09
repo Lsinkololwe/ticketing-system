@@ -1,5 +1,7 @@
 package com.pml.booking.service;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.web.graphql.dto.BookingPendingCounts;
 import com.pml.shared.constants.PayoutRequestStatus;
 import com.pml.shared.constants.RefundRequestStatus;
@@ -30,8 +32,8 @@ import static org.springframework.data.mongodb.core.aggregation.Aggregation.newA
 @RequiredArgsConstructor
 public class PendingApprovalStatsService {
 
-    private static final String PAYOUT_REQUESTS_COLLECTION = "booking_payout_requests";
-    private static final String REFUND_REQUESTS_COLLECTION = "refund_requests";
+    private static final String PAYOUT_REQUESTS_COLLECTION = BookingCollections.PAYOUT_REQUESTS;
+    private static final String REFUND_REQUESTS_COLLECTION = BookingCollections.REFUND_REQUESTS;
 
     private final ReactiveMongoTemplate mongoTemplate;
 

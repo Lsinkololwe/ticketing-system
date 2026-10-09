@@ -71,13 +71,4 @@ public enum Role {
      * Used for internal API calls between microservices.
      */
     INTERNAL;
-
-    /**
-     * Get the Spring Security authority name for this role.
-     *
-     * @return Authority name with ROLE_ prefix (e.g., "ROLE_ADMIN")
-     */
-    public String toAuthority() {
-        return "ROLE_" + this.name();
-    }
 }

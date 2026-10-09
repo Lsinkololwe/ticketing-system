@@ -26,6 +26,12 @@
       "@pml.tickets/shared": [
         "libs/shared/src/index.ts"
       ],
+      "@pml.tickets/shared/auth/bff": [
+        "libs/shared/src/auth/bff/index.ts"
+      ],
+      "@pml.tickets/shared/auth/bff/testing": [
+        "libs/shared/src/auth/bff/testing.ts"
+      ],
       "@pml.tickets/shared/*": [
         "libs/shared/src/*"
       ],

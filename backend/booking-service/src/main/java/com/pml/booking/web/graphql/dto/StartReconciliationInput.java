@@ -2,7 +2,7 @@ package com.pml.booking.web.graphql.dto;
 
 import com.pml.booking.domain.enums.ReconciliationType;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Input for starting a reconciliation run.
@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * @since 1.0.0
  */
 public record StartReconciliationInput(
-    LocalDateTime reconciliationDate,
+    Instant reconciliationDate,
     ReconciliationType type,
     String dataSource,
     Boolean includeClosed

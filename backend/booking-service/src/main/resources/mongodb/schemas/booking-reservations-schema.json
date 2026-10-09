@@ -2,7 +2,7 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Ticket Reservations Schema - OWASP Compliant",
-    "description": "Temporary ticket reservations with TTL expiration",
+    "description": "Temporary ticket reservations with TTL expiration; with the payment intent's status, a purchase's only durable state, per ET-TKT-001 R8 (com.pml.booking.domain.model.TicketReservation)",
     "required": [
       "eventId",
       "userId",
@@ -10,8 +10,7 @@
       "items",
       "status",
       "expiresAt",
-      "totalAmount",
-      "createdAt"
+      "totalAmount"
     ],
     "properties": {
       "_class": {
@@ -28,7 +27,7 @@
       },
       "userId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "OWASP A03 - ObjectId pattern validation"
       },
       "organizerId": {
@@ -36,7 +35,7 @@
           "string",
           "null"
         ],
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$"
       },
       "organizationId": {
         "bsonType": "string",
@@ -83,23 +82,40 @@
       "status": {
         "bsonType": "string",
         "enum": [
-          "ACTIVE",
-          "CONVERTED",
+          "HELD",
+          "CONFIRMED",
           "EXPIRED",
-          "CANCELLED"
+          "RELEASED",
+          "FAILED"
         ],
-        "description": "OWASP A04 - Enum constraint for status"
+        "description": "OWASP A04 - com.pml.shared.constants.ReservationStatus, ET-TKT-001 R6/R8"
       },
       "expiresAt": {
         "bsonType": "date",
         "description": "Reservation expiration timestamp (typically 10 minutes from creation)"
       },
       "createdAt": {
-        "bsonType": "date"
-      },
-      "convertedAt": {
         "bsonType": [
           "date",
+          "null"
+        ]
+      },
+      "updatedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "paymentIntentId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "ET-TKT-001 R8 \u00b7 the intent this reservation is waiting on"
+      },
+      "idempotencyKey": {
+        "bsonType": [
+          "string",
           "null"
         ]
       },
@@ -110,9 +126,29 @@
         ],
         "maxLength": 50
       },
+      "promoCodeId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "bookingNumber": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "pattern": "^BK-[0-9]{4}-[0-9]{8,}$",
+        "description": "The number of the durable booking opened for this reservation"
+      },
       "totalAmount": {
         "bsonType": "decimal",
         "minimum": 0
+      },
+      "subtotal": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ]
       },
       "discountAmount": {
         "bsonType": [
@@ -120,6 +156,43 @@
           "null"
         ],
         "minimum": 0
+      },
+      "currency": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "confirmedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "releasedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "failedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "failureReason": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 1000
+      },
+      "version": {
+        "bsonType": [
+          "long",
+          "null"
+        ]
       }
     },
     "additionalProperties": false

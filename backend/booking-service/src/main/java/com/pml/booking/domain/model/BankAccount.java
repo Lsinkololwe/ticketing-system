@@ -1,9 +1,12 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
@@ -11,13 +14,10 @@ import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
 
 import jakarta.validation.constraints.NotBlank;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Bank Account Model
@@ -25,21 +25,18 @@ import java.time.LocalDateTime;
  * Stores organizer bank account details for receiving payouts.
  * Each organizer can have multiple bank accounts with one marked as default.
  */
-@Document(collection = "bank_accounts")
+@Document(collection = BookingCollections.BANK_ACCOUNTS)
+@TypeAlias("bank_accounts")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "organizer_default_idx", def = "{'organizerId': 1, 'isDefault': 1}")
-})
 public class BankAccount {
 
     @Id
     private String id;
 
     @NotBlank(message = "Organizer ID is required")
-    @Indexed
     private String organizerId;
 
     /**
@@ -48,7 +45,6 @@ public class BankAccount {
      *
      * OWASP A01:2021 Compliance: Used for tenant isolation in authorization.
      */
-    @Indexed
     private String organizationId;
 
     @NotBlank(message = "Account holder name is required")
@@ -62,7 +58,6 @@ public class BankAccount {
     private String branchCode;
 
     @NotBlank(message = "Account number is required")
-    @Indexed
     private String accountNumber;
 
     private String accountType;
@@ -79,17 +74,35 @@ public class BankAccount {
     @Builder.Default
     private boolean isVerified = false;
 
-    private LocalDateTime verifiedAt;
+    private Instant verifiedAt;
     private String verifiedBy;
 
     @Builder.Default
     private String status = "ACTIVE";
 
+    /**
+     * Where micro-deposit verification stands. {@link #isVerified} is true exactly
+     * when this is {@code VERIFIED}; the two are written together.
+     */
+    @Builder.Default
+    private VerificationStatus verificationStatus = VerificationStatus.PENDING;
+
+    /** The micro-deposit sent for verification. Not a field of the GraphQL type, so never returned. */
+    private java.math.BigDecimal microDepositAmount;
+
+    /** Wrong confirmations since the last deposit or unlock; three lock verification for a day. */
+    @Builder.Default
+    private int verificationAttempts = 0;
+
+    private Instant verificationLockedUntil;
+
+    public enum VerificationStatus { PENDING, VERIFYING, VERIFIED, VERIFICATION_FAILED, DISABLED }
+
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @CreatedBy
     private String createdBy;

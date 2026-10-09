@@ -2,124 +2,68 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Locations Schema - OWASP Compliant",
-    "description": "Venues and locations where events take place",
+    "description": "A simple address/location for an event; the platform does not own or manage venues (com.pml.catalog.domain.model.Location)",
     "required": [
-      "name",
-      "cityId",
-      "provinceId",
-      "isActive",
-      "createdAt"
+      "isActive"
     ],
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
         "bsonType": "objectId"
       },
       "name": {
-        "bsonType": "string",
-        "minLength": 1,
+        "bsonType": ["string", "null"],
         "maxLength": 200
       },
-      "cityId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "OWASP A03 - ObjectId pattern validation"
-      },
-      "provinceId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$"
-      },
       "address": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
+        "bsonType": ["string", "null"],
         "maxLength": 500
       },
-      "coordinates": {
-        "bsonType": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "latitude": {
-            "bsonType": "double"
-          },
-          "longitude": {
-            "bsonType": "double"
-          }
-        }
+      "cityId": {
+        "bsonType": ["string", "null"],
+        "description": "The reference-data CITY code the venue is in"
       },
-      "capacity": {
-        "bsonType": [
-          "int",
-          "null"
-        ],
-        "minimum": 0
+      "cityName": {
+        "bsonType": ["string", "null"]
       },
-      "type": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "enum": [
-          "STADIUM",
-          "ARENA",
-          "THEATER",
-          "CLUB",
-          "OUTDOOR",
-          "CONFERENCE_CENTER",
-          "OTHER",
-          null
-        ]
+      "organizationId": {
+        "bsonType": ["string", "null"]
       },
-      "facilities": {
-        "bsonType": [
-          "array",
-          "null"
-        ],
-        "items": {
-          "bsonType": "string"
-        }
+      "createdById": {
+        "bsonType": ["string", "null"]
       },
-      "contactEmail": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
-        "description": "OWASP A03 - Email validation"
+      "createdAt": {
+        "bsonType": ["date", "null"]
       },
-      "contactPhone": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^\\+[1-9]\\d{1,14}$",
-        "description": "OWASP A03 - E.164 phone format"
+      "provinceName": {
+        "bsonType": ["string", "null"]
       },
-      "imageUrl": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "pattern": "^https?://.*",
-        "maxLength": 500
+      "country": {
+        "bsonType": ["string", "null"]
+      },
+      "postalCode": {
+        "bsonType": ["string", "null"],
+        "maxLength": 20
+      },
+      "latitude": {
+        "bsonType": ["double", "null"],
+        "minimum": -90,
+        "maximum": 90
+      },
+      "longitude": {
+        "bsonType": ["double", "null"],
+        "minimum": -180,
+        "maximum": 180
+      },
+      "description": {
+        "bsonType": ["string", "null"],
+        "maxLength": 2000
       },
       "isActive": {
         "bsonType": "bool"
-      },
-      "createdAt": {
-        "bsonType": "date"
-      },
-      "updatedAt": {
-        "bsonType": [
-          "date",
-          "null"
-        ]
       }
     },
     "additionalProperties": false

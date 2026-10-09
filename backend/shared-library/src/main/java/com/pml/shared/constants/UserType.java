@@ -21,7 +21,8 @@ public enum UserType {
     ADMIN("ADMIN", "Administrator", "Platform administrator with full access"),
     SUPER_ADMIN("SUPER_ADMIN", "Super Administrator", "Super administrator with highest privileges"),
     SCANNER("SCANNER", "Scanner", "Ticket scanner/validator at events"),
-    FINANCE("FINANCE", "Finance", "Finance team member for payouts and reconciliation");
+    FINANCE("FINANCE", "Finance", "Finance team member for payouts and reconciliation"),
+    FINANCE_LEAD("FINANCE_LEAD", "Finance lead", "Receives chargeback and refund escalations; held together with FINANCE");
 
     private final String code;
     private final String displayName;
@@ -66,33 +67,6 @@ public enum UserType {
         return this == ADMIN || this == SUPER_ADMIN;
     }
 
-    /**
-     * Check if this role can create events.
-     *
-     * @return true if ORGANIZER or admin role
-     */
-    public boolean canCreateEvents() {
-        return this == ORGANIZER || isAdmin();
-    }
-
-    /**
-     * Check if this role can scan tickets.
-     *
-     * @return true if SCANNER, ORGANIZER, or admin role
-     */
-    public boolean canScanTickets() {
-        return this == SCANNER || this == ORGANIZER || isAdmin();
-    }
-
-    /**
-     * Check if this role can process payouts.
-     *
-     * @return true if FINANCE or SUPER_ADMIN
-     */
-    public boolean canProcessPayouts() {
-        return this == FINANCE || this == SUPER_ADMIN;
-    }
-
     // ========================================================================
     // MULTI-ROLE SUPPORT METHODS
     // ========================================================================
@@ -114,7 +88,7 @@ public enum UserType {
      * 1. Must have at least one role
      * 2. Must include CUSTOMER (base role cannot be removed)
      * 3. Cannot have both ADMIN and SUPER_ADMIN (SUPER_ADMIN supersedes ADMIN)
-     * 4. Maximum 6 roles (all possible roles)
+     * 4. Maximum 7 roles (all possible roles)
      *
      * @param roles the set of roles to validate
      * @return true if the combination is valid, false otherwise
@@ -134,8 +108,8 @@ public enum UserType {
             return false;
         }
 
-        // Rule: Max 6 roles
-        if (roles.size() > 6) {
+        // Rule: Max 7 roles
+        if (roles.size() > 7) {
             return false;
         }
 

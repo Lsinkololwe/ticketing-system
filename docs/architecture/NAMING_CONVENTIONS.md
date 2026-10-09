@@ -1,5 +1,7 @@
 # Naming Conventions
 
+> **Process naming (ROADMAP D-21).** Workflow types are `{Noun}Workflow`, ids are `{kind}/{businessId}` from `WorkflowIds`, and task queues are `{service}-{concern}` constants in `TaskQueues`; there are no `*Scheduler` or `*Sweeper` classes for business processes (`specs/_platform/015-durable-execution/spec.md` §4).
+
 This document defines the naming conventions for the Identity Service to ensure consistency across the codebase.
 
 ## Table of Contents

@@ -1,205 +1,140 @@
 package com.pml.identity.domain.valueobject;
 
-import java.util.HashSet;
+import com.pml.shared.security.Permission;
+
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 
+import static com.pml.shared.security.Permission.ANALYTICS_VIEW;
+import static com.pml.shared.security.Permission.ATTENDEE_VIEW;
+import static com.pml.shared.security.Permission.BANK_MANAGE;
+import static com.pml.shared.security.Permission.EVENT_ACCESS_GRANT;
+import static com.pml.shared.security.Permission.EVENT_CANCEL;
+import static com.pml.shared.security.Permission.EVENT_CREATE;
+import static com.pml.shared.security.Permission.EVENT_DELETE;
+import static com.pml.shared.security.Permission.EVENT_EDIT;
+import static com.pml.shared.security.Permission.EVENT_PUBLISH;
+import static com.pml.shared.security.Permission.EVENT_VIEW;
+import static com.pml.shared.security.Permission.FINANCIAL_VIEW;
+import static com.pml.shared.security.Permission.ORGANIZATION_BILLING;
+import static com.pml.shared.security.Permission.ORGANIZATION_DELETE;
+import static com.pml.shared.security.Permission.ORGANIZATION_EDIT;
+import static com.pml.shared.security.Permission.ORGANIZATION_TRANSFER;
+import static com.pml.shared.security.Permission.ORGANIZATION_VIEW;
+import static com.pml.shared.security.Permission.PAYOUT_REQUEST;
+import static com.pml.shared.security.Permission.PROMOTION_MANAGE;
+import static com.pml.shared.security.Permission.TEAM_INVITE;
+import static com.pml.shared.security.Permission.TEAM_REMOVE;
+import static com.pml.shared.security.Permission.TEAM_ROLE;
+import static com.pml.shared.security.Permission.TEAM_VIEW;
+import static com.pml.shared.security.Permission.TICKET_REFUND;
+import static com.pml.shared.security.Permission.TICKET_SCAN;
+
 /**
- * Roles within an organization (tenant-scoped).
+ * A member's role within an organization and the permissions it carries.
  *
- * Role hierarchy:
- * OWNER → ADMIN → MANAGER/MARKETER → CONTRIBUTOR
+ * <p>Each role names only what it adds and which roles it inherits from; {@link #permissions()}
+ * is the transitive closure, computed once. Parents form a graph rather than a chain: ADMIN
+ * inherits from both MANAGER and MARKETER, and neither of those includes the other, so a question
+ * like "is this role senior to that one" has no answer — ask {@link #includes} or
+ * {@link #grants} instead.
+ *
+ * <p>Two permissions depend on the organization's settings rather than the role alone. A MANAGER
+ * sees financial figures only when {@link OrganizationSettings#isManagersCanViewFinancials()} is on,
+ * and an ADMIN requests payouts only when {@link OrganizationSettings#isAdminsCanRequestPayouts()}
+ * is on. They are kept out of the closure and added by {@link #permissions(OrganizationSettings)},
+ * so anything that asks without the settings is refused them rather than granted them.
  */
 public enum OrganizationRole {
-    /**
-     * Single person who owns the organization.
-     * Full access including ownership transfer and deletion.
-     * Only ONE owner per organization.
-     */
-    OWNER,
 
-    /**
-     * Full administrative access except ownership operations.
-     * Can invite/remove team members, manage all events, view financials.
-     */
-    ADMIN,
+    CONTRIBUTOR(EnumSet.of(EVENT_VIEW, ATTENDEE_VIEW, TICKET_SCAN, ORGANIZATION_VIEW, TEAM_VIEW)),
 
-    /**
-     * Event management focus.
-     * Can create/manage events, view event analytics, limited financial access.
-     */
-    MANAGER,
+    MARKETER(EnumSet.of(ANALYTICS_VIEW, PROMOTION_MANAGE), CONTRIBUTOR),
 
-    /**
-     * Marketing and analytics focus.
-     * Can view events, manage promotions, view analytics.
-     * Cannot create or edit events.
-     */
-    MARKETER,
+    MANAGER(EnumSet.of(EVENT_CREATE, EVENT_EDIT, EVENT_PUBLISH, ANALYTICS_VIEW, PROMOTION_MANAGE), CONTRIBUTOR),
 
-    /**
-     * Limited access contributor.
-     * View-only access to events, can assist with check-in.
-     */
-    CONTRIBUTOR;
+    ADMIN(EnumSet.of(EVENT_DELETE, EVENT_CANCEL, TICKET_REFUND, TEAM_INVITE, TEAM_REMOVE, TEAM_ROLE,
+            EVENT_ACCESS_GRANT, ORGANIZATION_EDIT, BANK_MANAGE, FINANCIAL_VIEW), MANAGER, MARKETER),
 
-    /**
-     * Check if this role can invite team members
-     */
-    public boolean canInviteMembers() {
-        return this == OWNER || this == ADMIN;
+    OWNER(EnumSet.of(ORGANIZATION_BILLING, ORGANIZATION_TRANSFER, ORGANIZATION_DELETE, PAYOUT_REQUEST), ADMIN);
+
+    private final Set<Permission> declaredPermissions;
+    private final Set<OrganizationRole> parents;
+
+    OrganizationRole(Set<Permission> declaredPermissions, OrganizationRole... parents) {
+        this.declaredPermissions = Collections.unmodifiableSet(EnumSet.copyOf(declaredPermissions));
+        this.parents = parents.length == 0 ? Set.of() : Set.of(parents);
     }
 
-    /**
-     * Check if this role can remove team members
-     */
-    public boolean canRemoveMembers() {
-        return this == OWNER || this == ADMIN;
+    public Set<OrganizationRole> parents() {
+        return parents;
     }
 
-    /**
-     * Check if this role can change member roles
-     */
-    public boolean canChangeRoles() {
-        return this == OWNER || this == ADMIN;
+    /** What the role carries in every organization, whatever its settings. */
+    public Set<Permission> permissions() {
+        return Closure.BY_ROLE.get(this);
     }
 
-    /**
-     * Check if this role can create events
-     */
-    public boolean canCreateEvents() {
-        return this == OWNER || this == ADMIN || this == MANAGER;
+    /** What the role carries in an organization with {@code settings}; {@code null} means every switch off. */
+    public Set<Permission> permissions(OrganizationSettings settings) {
+        Permission switched = switchedOn(settings);
+        if (switched == null) {
+            return permissions();
+        }
+        EnumSet<Permission> withSwitch = EnumSet.copyOf(permissions());
+        withSwitch.add(switched);
+        return Collections.unmodifiableSet(withSwitch);
     }
 
-    /**
-     * Check if this role can publish events
-     */
-    public boolean canPublishEvents() {
-        return this == OWNER || this == ADMIN || this == MANAGER;
+    public boolean grants(Permission permission, OrganizationSettings settings) {
+        return permission != null && permissions(settings).contains(permission);
     }
 
-    /**
-     * Check if this role can delete events
-     */
-    public boolean canDeleteEvents() {
-        return this == OWNER || this == ADMIN;
+    /** True when this role carries everything {@code other} carries, settings aside. */
+    public boolean includes(OrganizationRole other) {
+        return permissions().containsAll(other.permissions());
     }
 
-    /**
-     * Check if this role can view financials
-     */
-    public boolean canViewFinancials() {
-        return this == OWNER || this == ADMIN || this == MANAGER;
-    }
-
-    /**
-     * Check if this role can request payouts
-     */
-    public boolean canRequestPayouts() {
-        return this == OWNER || this == ADMIN;
-    }
-
-    /**
-     * Check if this role can manage promotions
-     */
-    public boolean canManagePromotions() {
-        return this == OWNER || this == ADMIN || this == MANAGER || this == MARKETER;
-    }
-
-    /**
-     * Check if this role can scan tickets
-     */
-    public boolean canScanTickets() {
-        return true; // All roles can scan tickets
-    }
-
-    /**
-     * Get the roles that this role inherits from (has all permissions of)
-     */
-    public Set<OrganizationRole> getInheritedRoles() {
+    /** The one permission an owner's switch adds to this role, or null when the switch is off. */
+    private Permission switchedOn(OrganizationSettings settings) {
+        if (settings == null) {
+            return null;
+        }
         return switch (this) {
-            case OWNER -> Set.of(ADMIN, MANAGER, MARKETER, CONTRIBUTOR);
-            case ADMIN -> Set.of(MANAGER, MARKETER, CONTRIBUTOR);
-            case MANAGER -> Set.of(CONTRIBUTOR);
-            case MARKETER -> Set.of(CONTRIBUTOR);
-            case CONTRIBUTOR -> Set.of();
+            case MANAGER -> settings.isManagersCanViewFinancials() ? FINANCIAL_VIEW : null;
+            case ADMIN -> settings.isAdminsCanRequestPayouts() ? PAYOUT_REQUEST : null;
+            default -> null;
         };
     }
 
-    /**
-     * Check if this role is higher than or equal to another role
-     */
-    public boolean isAtLeast(OrganizationRole other) {
-        if (this == other) return true;
-        return getInheritedRoles().contains(other);
-    }
+    private static final class Closure {
+        private static final Map<OrganizationRole, Set<Permission>> BY_ROLE = build();
 
-    /**
-     * Whether this role grants a named organization permission.
-     *
-     * <p>The single source of truth for role→permission mapping. Composes the granular
-     * capability methods above so the actor's authority is evaluated on the role itself,
-     * not in a service.</p>
-     *
-     * @param permission permission string (e.g. {@code "EVENT_PUBLISH"})
-     * @return true if the role grants the permission
-     */
-    public boolean grants(String permission) {
-        if (permission == null) {
-            return false;
+        private static Map<OrganizationRole, Set<Permission>> build() {
+            Map<OrganizationRole, Set<Permission>> closures = new EnumMap<>(OrganizationRole.class);
+            for (OrganizationRole role : values()) {
+                EnumSet<Permission> effective = EnumSet.noneOf(Permission.class);
+                Deque<OrganizationRole> pending = new ArrayDeque<>();
+                pending.push(role);
+                Set<OrganizationRole> seen = EnumSet.noneOf(OrganizationRole.class);
+                while (!pending.isEmpty()) {
+                    OrganizationRole current = pending.pop();
+                    // ADMIN reaches CONTRIBUTOR through both MANAGER and MARKETER; the seen set
+                    // visits it once, and would also stop a cycle from looping forever.
+                    if (!seen.add(current)) {
+                        continue;
+                    }
+                    effective.addAll(current.declaredPermissions);
+                    current.parents.forEach(pending::push);
+                }
+                closures.put(role, Collections.unmodifiableSet(effective));
+            }
+            return Collections.unmodifiableMap(closures);
         }
-        return switch (permission) {
-            case "EVENT_CREATE", "EVENT_EDIT" -> canCreateEvents();
-            case "EVENT_PUBLISH" -> canPublishEvents();
-            case "EVENT_DELETE" -> canDeleteEvents();
-            case "EVENT_VIEW" -> true; // all members can view
-            case "FINANCIAL_VIEW" -> canViewFinancials();
-            case "PAYOUT_REQUEST" -> canRequestPayouts();
-            case "MEMBER_INVITE" -> canInviteMembers();
-            case "MEMBER_REMOVE" -> canRemoveMembers();
-            case "MEMBER_ROLE_CHANGE" -> canChangeRoles();
-            case "PROMOTION_MANAGE", "ANALYTICS_VIEW" -> canManagePromotions();
-            case "TICKET_SCAN" -> this == OWNER || this == ADMIN || this == MANAGER || this == CONTRIBUTOR;
-            case "ORG_EDIT", "ORG_SETTINGS" -> this == OWNER || this == ADMIN;
-            case "ORG_DELETE", "OWNERSHIP_TRANSFER" -> this == OWNER;
-            default -> false;
-        };
-    }
-
-    /**
-     * The full set of organization permissions granted by this role (role hierarchy resolved).
-     * Used to describe an actor's effective authority.
-     */
-    public Set<String> permissions() {
-        Set<String> perms = new HashSet<>();
-        switch (this) {
-            case OWNER:
-                perms.add("ORG_DELETE");
-                perms.add("OWNERSHIP_TRANSFER");
-                // fall through
-            case ADMIN:
-                perms.add("MEMBER_INVITE");
-                perms.add("MEMBER_REMOVE");
-                perms.add("MEMBER_ROLE_CHANGE");
-                perms.add("ORG_EDIT");
-                perms.add("ORG_SETTINGS");
-                perms.add("PAYOUT_REQUEST");
-                perms.add("EVENT_DELETE");
-                // fall through
-            case MANAGER:
-                perms.add("EVENT_CREATE");
-                perms.add("EVENT_EDIT");
-                perms.add("EVENT_PUBLISH");
-                perms.add("FINANCIAL_VIEW");
-                // fall through
-            case MARKETER:
-                perms.add("PROMOTION_MANAGE");
-                perms.add("ANALYTICS_VIEW");
-                // fall through
-            case CONTRIBUTOR:
-                perms.add("EVENT_VIEW");
-                perms.add("TICKET_SCAN");
-                break;
-        }
-        return perms;
     }
 }

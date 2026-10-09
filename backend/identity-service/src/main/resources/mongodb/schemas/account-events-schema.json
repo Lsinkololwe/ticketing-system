@@ -1,0 +1,41 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Account Events Schema",
+    "description": "Account lifecycle and operational facts, no personal data (com.pml.identity.domain.model.AccountEvent). _id is the event id.",
+    "required": [
+      "kind",
+      "at"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data type hint"
+      },
+      "_id": {
+        "bsonType": "string"
+      },
+      "accountId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "kind": {
+        "bsonType": "string",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "at": {
+        "bsonType": "date"
+      },
+      "data": {
+        "bsonType": [
+          "object",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  }
+}

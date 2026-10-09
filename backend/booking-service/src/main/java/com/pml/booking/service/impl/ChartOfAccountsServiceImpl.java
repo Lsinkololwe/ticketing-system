@@ -88,31 +88,6 @@ public class ChartOfAccountsServiceImpl implements ChartOfAccountsService {
                 });
     }
 
-    @Override
-    @Transactional
-    public Mono<ChartOfAccountsEntry> createEventEscrowAccount(
-            String eventId,
-            String eventName,
-            String currency
-    ) {
-        // Generate account code: 2011-{eventId} (truncate if needed)
-        String shortEventId = eventId.length() > 8 ? eventId.substring(0, 8) : eventId;
-        String accountCode = "2011-" + shortEventId;
-        String accountName = "Event Escrow - " + eventName;
-
-        log.info("Creating event escrow account: {} for event {}", accountCode, eventId);
-
-        return createAccount(
-                accountCode,
-                accountName,
-                AccountType.LIABILITY,
-                AccountSubType.ESCROW_PAYABLE,
-                "2010",  // Parent: Event Escrow (master)
-                currency,
-                "Escrow account for event: " + eventName + " (ID: " + eventId + ")"
-        );
-    }
-
     // ========================================================================
     // ACCOUNT UPDATES
     // ========================================================================
@@ -152,20 +127,6 @@ public class ChartOfAccountsServiceImpl implements ChartOfAccountsService {
                     return accountsRepository.save(account);
                 })
                 .doOnSuccess(deactivated -> log.info("Account deactivated: {}", deactivated.getAccountCode()));
-    }
-
-    @Override
-    @Transactional
-    public Mono<ChartOfAccountsEntry> reactivateAccount(String accountCode) {
-        log.info("Reactivating account: {}", accountCode);
-
-        return accountsRepository.findByAccountCode(accountCode)
-                .switchIfEmpty(Mono.error(new AccountNotFoundException(accountCode)))
-                .flatMap(account -> {
-                    account.reactivate();
-                    return accountsRepository.save(account);
-                })
-                .doOnSuccess(reactivated -> log.info("Account reactivated: {}", reactivated.getAccountCode()));
     }
 
     // ========================================================================
@@ -209,6 +170,9 @@ public class ChartOfAccountsServiceImpl implements ChartOfAccountsService {
     @Override
     public Mono<Void> validateAccountCode(String accountCode) {
         return accountsRepository.findByAccountCode(accountCode)
+                // An event's escrow account is a child of 2010 that exists from the event's first posting; nothing
+                // else creates it, so a posting that names it opens it rather than failing the sale or the refund.
+                .switchIfEmpty(Mono.defer(() -> provisionEventEscrow(accountCode)))
                 .switchIfEmpty(Mono.error(new AccountNotFoundException(accountCode)))
                 .flatMap(account -> {
                     if (!account.getIsActive()) {
@@ -219,6 +183,27 @@ public class ChartOfAccountsServiceImpl implements ChartOfAccountsService {
                     }
                     return Mono.empty();
                 });
+    }
+
+    private static final String EVENT_ESCROW_PARENT = "2010";
+    private static final java.util.regex.Pattern EVENT_ESCROW_CODE = java.util.regex.Pattern.compile("^2010-[A-Za-z0-9_-]{1,36}$");
+
+    /** Whether {@code accountCode} names an event's escrow account: {@code 2010-} and the event's short id. */
+    static boolean isEventEscrowCode(String accountCode) {
+        return accountCode != null && EVENT_ESCROW_CODE.matcher(accountCode).matches();
+    }
+
+    /** Opens the per-event escrow account {@code 2010-<event>} under the Event Escrow parent; empty for any other code. */
+    private Mono<ChartOfAccountsEntry> provisionEventEscrow(String accountCode) {
+        if (!isEventEscrowCode(accountCode)) {
+            return Mono.empty();
+        }
+        String event = accountCode.substring(EVENT_ESCROW_PARENT.length() + 1);
+        return createAccount(accountCode, "Event Escrow " + event, AccountType.LIABILITY, AccountSubType.ESCROW_PAYABLE,
+                EVENT_ESCROW_PARENT, "ZMW", "Escrow held for event " + event)
+                // Two postings for a new event can race to open it: the loser reads the winner's account.
+                .onErrorResume(org.springframework.dao.DuplicateKeyException.class,
+                        raced -> accountsRepository.findByAccountCode(accountCode));
     }
 
     @Override
@@ -242,17 +227,14 @@ public class ChartOfAccountsServiceImpl implements ChartOfAccountsService {
     public Mono<Boolean> seedStandardAccounts() {
         log.info("Seeding standard chart of accounts...");
 
+        // Every boot creates any standard account the chart lacks, so an account added to the standard
+        // chart reaches a database seeded before it; the answer says whether this was the first seeding.
         return isSeeded()
-                .flatMap(alreadySeeded -> {
-                    if (alreadySeeded) {
-                        log.info("Chart of accounts already seeded");
-                        return Mono.just(false);
-                    }
-
-                    return seedAllAccounts()
-                            .then(Mono.just(true))
-                            .doOnSuccess(v -> log.info("Chart of accounts seeding completed"));
-                });
+                .flatMap(alreadySeeded -> seedAllAccounts()
+                        .thenReturn(!alreadySeeded)
+                        .doOnSuccess(firstSeeding -> log.info(firstSeeding
+                                ? "Chart of accounts seeding completed"
+                                : "Chart of accounts present; missing standard accounts created")));
     }
 
     @Override
@@ -345,6 +327,9 @@ public class ChartOfAccountsServiceImpl implements ChartOfAccountsService {
                 ChartOfAccountsEntry.create("5040", "Bad Debt Expense", AccountType.EXPENSE,
                         AccountSubType.BAD_DEBT, "5000", "ZMW",
                         "Unrecoverable amounts written off"),
+                ChartOfAccountsEntry.create("5050", "Account Verification Costs", AccountType.EXPENSE,
+                        AccountSubType.VERIFICATION_EXPENSE, "5000", "ZMW",
+                        "Micro-deposits sent to verify organizers' bank accounts"),
                 ChartOfAccountsEntry.create("5099", "Reconciliation Variance Expense", AccountType.EXPENSE,
                         AccountSubType.OTHER_EXPENSE, "5000", "ZMW",
                         "Expense from unfavorable reconciliation variances (unexpected losses)")

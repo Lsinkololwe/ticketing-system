@@ -1,0 +1,23 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Announcements Schema",
+    "description": "Administrator announcements shown to a segment (com.pml.identity.domain.model.SystemAnnouncement)",
+    "required": ["title", "message", "segment", "severity", "startsAt", "createdBy", "createdAt"],
+    "properties": {
+      "_class": { "bsonType": "string", "description": "Spring Data type hint" },
+      "_id": { "bsonType": ["objectId", "string"] },
+      "title": { "bsonType": "string", "maxLength": 120 },
+      "message": { "bsonType": "string", "maxLength": 1000 },
+      "segment": { "bsonType": "string", "enum": ["ALL", "ORGANIZERS", "BUYERS", "STAFF"] },
+      "severity": { "bsonType": "string", "enum": ["INFO", "WARNING", "CRITICAL"] },
+      "startsAt": { "bsonType": "date" },
+      "endsAt": { "bsonType": ["date", "null"] },
+      "cancelledAt": { "bsonType": ["date", "null"] },
+      "cancelledBy": { "bsonType": ["string", "null"] },
+      "createdBy": { "bsonType": "string" },
+      "createdAt": { "bsonType": "date" }
+    },
+    "additionalProperties": false
+  }
+}

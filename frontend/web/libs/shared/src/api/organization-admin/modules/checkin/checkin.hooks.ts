@@ -4,8 +4,6 @@
  * React hooks for gate check-in.
  *
  * Types come from codegen — never hand-defined.
- *
- * @see specs/ticketing/003-validation-and-checkin/spec.md
  */
 
 import { useCallback, useMemo, useRef } from 'react';
@@ -15,63 +13,31 @@ import {
   EVENT_TICKET_HOLDERS,
   VALIDATE_TICKET,
   CHECK_IN_SUMMARY,
-  RECENT_CHECK_INS,
-  CHECK_IN_CONFLICTS,
-  REVIEW_CONFLICT,
 } from './checkin.queries';
 import type {
-  Ticket,
-  CheckIn,
-  CheckInConflict,
-  CheckInSummary,
-  CheckInOutcome,
   ValidationMethod,
+  EventTicketHoldersQuery,
+  EventTicketHoldersQueryVariables,
+  ValidateTicketMutation,
+  ValidateTicketMutationVariables,
+  CheckInSummaryQuery,
+  CheckInSummaryQueryVariables,
 } from '../../../../types/graphql';
 
 /** The subset of Ticket the gate screen selects. */
-export type TicketHolderVM = Pick<
-  Ticket,
-  | 'id'
-  | 'ticketNumber'
-  | 'buyerName'
-  | 'buyerEmail'
-  | 'ticketCategoryName'
-  | 'status'
-  | 'purchaseDate'
-  | 'validatedAt'
->;
+export type TicketHolderVM = EventTicketHoldersQuery['ticketsByEvent']['data'][number];
 
-export type CheckInVM = Pick<
-  CheckIn,
-  'id' | 'ticketId' | 'ticketNumber' | 'method' | 'scannedBy' | 'deviceId' | 'recordedAt' | 'reason'
->;
-
-export type CheckInConflictVM = Pick<
-  CheckInConflict,
-  | 'id'
-  | 'ticketId'
-  | 'presentedCode'
-  | 'type'
-  | 'method'
-  | 'scannedBy'
-  | 'deviceId'
-  | 'scannedAt'
-  | 'detectedAt'
-  | 'originalCheckInAt'
-  | 'status'
-  | 'reviewNote'
-  | 'reviewedAt'
->;
+type ValidateTicketPayload = ValidateTicketMutation['validateTicket'];
 
 export interface ValidateTicketResult {
   /** ADMITTED, ALREADY_ADMITTED, WRONG_EVENT, INVALID_STATE, NOT_FOUND, ALREADY_RECORDED. */
-  outcome: CheckInOutcome | 'UNREACHABLE';
+  outcome: ValidateTicketPayload['outcome'] | 'UNREACHABLE';
   /** Whether this person goes in. */
   admitted: boolean;
   message: string;
-  checkIn: Pick<CheckIn, 'id' | 'ticketNumber' | 'method' | 'recordedAt'> | null;
-  conflict: Pick<CheckInConflict, 'id' | 'type' | 'originalCheckInAt'> | null;
-  ticket: TicketHolderVM | null;
+  checkIn: ValidateTicketPayload['checkIn'];
+  conflict: ValidateTicketPayload['conflict'];
+  ticket: ValidateTicketPayload['ticket'];
 }
 
 /**
@@ -84,24 +50,29 @@ export function useEventTicketHolders(
   eventId: string | null | undefined,
   options?: { size?: number; fetchPolicy?: FetchPolicy }
 ) {
-  const { data, loading, error, refetch } = useQuery<{
-    ticketsByEventOffsetPagination: {
-      content: TicketHolderVM[];
-      totalElements: number;
-      hasNext: boolean;
-    };
-  }>(EVENT_TICKET_HOLDERS, {
-    variables: { eventId, pagination: { page: 0, size: options?.size ?? 200 } },
+  const { data, loading, error, refetch } = useQuery<
+    EventTicketHoldersQuery,
+    EventTicketHoldersQueryVariables
+  >(EVENT_TICKET_HOLDERS, {
+    variables: {
+      eventId: eventId ?? '',
+      pagination: { page: 0, size: options?.size ?? 200, sortBy: null, sortDirection: null },
+    },
     fetchPolicy: options?.fetchPolicy ?? 'cache-and-network',
     errorPolicy: 'all',
     notifyOnNetworkStatusChange: true,
     skip: !eventId,
   });
 
+  // `errorPolicy: 'all'` makes Apollo type `data` as deeply partial, since a
+  // partial GraphQL response is possible alongside errors. Absent an error,
+  // the response matches the query exactly, so the read site trusts that.
+  const page = data?.ticketsByEvent as EventTicketHoldersQuery['ticketsByEvent'] | undefined;
+
   return {
-    holders: data?.ticketsByEventOffsetPagination.content ?? [],
-    total: data?.ticketsByEventOffsetPagination.totalElements ?? 0,
-    hasMore: data?.ticketsByEventOffsetPagination.hasNext ?? false,
+    holders: page?.data ?? [],
+    total: page?.pagination.totalElements ?? 0,
+    hasMore: page?.pagination.hasNext ?? false,
     loading,
     error,
     refetch,
@@ -127,16 +98,10 @@ export function useEventTicketHolders(
  * strength of a dropped connection.
  */
 export function useValidateTicket(eventId: string | null | undefined) {
-  const [mutate, { loading }] = useMutation<{
-    validateTicket: {
-      outcome: CheckInOutcome;
-      admitted: boolean;
-      message: string;
-      checkIn: Pick<CheckIn, 'id' | 'ticketNumber' | 'method' | 'recordedAt'> | null;
-      conflict: Pick<CheckInConflict, 'id' | 'type' | 'originalCheckInAt'> | null;
-      ticket: TicketHolderVM | null;
-    };
-  }>(VALIDATE_TICKET);
+  const [mutate, { loading }] = useMutation<
+    ValidateTicketMutation,
+    ValidateTicketMutationVariables
+  >(VALIDATE_TICKET);
 
   const validateTicket = useCallback(
     async (
@@ -163,6 +128,8 @@ export function useValidateTicket(eventId: string | null | undefined) {
               method: options?.method ?? 'QR_ONLINE',
               reason: options?.reason ?? null,
               deviceId: options?.deviceId ?? null,
+              scanId: null,
+              scannedAt: null,
             },
           },
         });
@@ -207,7 +174,7 @@ export function useValidateTicket(eventId: string | null | undefined) {
 /**
  * Attendance for one event's gate.
  *
- * Polls while the gate is open. The interval is the spec's 15 seconds, which is
+ * Polls while the gate is open. The interval is 15 seconds, which is
  * a compromise: the summary is a multi-collection aggregation on the hottest
  * write path of the evening, and every staff device watching pays for it.
  */
@@ -215,10 +182,10 @@ export function useCheckInSummary(
   eventId: string | null | undefined,
   options?: { pollIntervalMs?: number }
 ) {
-  const { data, loading, error, refetch } = useQuery<{ checkInSummary: CheckInSummary }>(
+  const { data, loading, error, refetch } = useQuery<CheckInSummaryQuery, CheckInSummaryQueryVariables>(
     CHECK_IN_SUMMARY,
     {
-      variables: { eventId },
+      variables: { eventId: eventId ?? '' },
       fetchPolicy: 'cache-and-network',
       errorPolicy: 'all',
       notifyOnNetworkStatusChange: true,
@@ -240,7 +207,7 @@ export function useCheckInSummary(
       admittedRate:
         summary && summary.issued > 0 ? summary.admitted / summary.issued : null,
       /**
-       * Share of admissions that bypassed the QR. The spec alerts above 10%,
+       * Share of admissions that bypassed the QR. A rate above 10% is an alert,
        * which usually means the scanning is broken rather than that stewards
        * are careless.
        */
@@ -254,93 +221,6 @@ export function useCheckInSummary(
     }),
     [summary, loading, error, refetch]
   );
-}
-
-/** Most recent admissions, newest first. The server caps this at 100. */
-export function useRecentCheckIns(
-  eventId: string | null | undefined,
-  options?: { limit?: number; pollIntervalMs?: number }
-) {
-  const { data, loading, error, refetch } = useQuery<{ recentCheckIns: CheckInVM[] }>(
-    RECENT_CHECK_INS,
-    {
-      variables: { eventId, limit: options?.limit ?? 25 },
-      fetchPolicy: 'cache-and-network',
-      errorPolicy: 'all',
-      notifyOnNetworkStatusChange: true,
-      pollInterval: options?.pollIntervalMs ?? 15_000,
-      skip: !eventId,
-    }
-  );
-
-  return {
-    checkIns: data?.recentCheckIns ?? [],
-    loading,
-    error,
-    refetch,
-  };
-}
-
-/**
- * Scans that were refused.
- *
- * Worth a screen rather than a log line: for a duplicate admitted offline by a
- * second device, this is the ONLY record that a second person walked in.
- */
-export function useCheckInConflicts(
-  eventId: string | null | undefined,
-  options?: { page?: number; size?: number }
-) {
-  const { data, loading, error, refetch } = useQuery<{
-    checkInConflicts: {
-      content: CheckInConflictVM[];
-      totalElements: number;
-      page: number;
-      size: number;
-    };
-  }>(CHECK_IN_CONFLICTS, {
-    variables: {
-      eventId,
-      pagination: { page: options?.page ?? 0, size: options?.size ?? 20 },
-    },
-    fetchPolicy: 'cache-and-network',
-    errorPolicy: 'all',
-    notifyOnNetworkStatusChange: true,
-    skip: !eventId,
-  });
-
-  return {
-    conflicts: data?.checkInConflicts.content ?? [],
-    total: data?.checkInConflicts.totalElements ?? 0,
-    loading,
-    error,
-    refetch,
-  };
-}
-
-/** Annotate a conflict. Refetches rather than patching the cache by hand. */
-export function useReviewConflict() {
-  const [mutate, { loading }] = useMutation<{
-    reviewConflict: Pick<CheckInConflict, 'id' | 'status' | 'reviewNote' | 'reviewedAt'>;
-  }>(REVIEW_CONFLICT, { refetchQueries: [CHECK_IN_CONFLICTS, CHECK_IN_SUMMARY] });
-
-  const reviewConflict = useCallback(
-    async (id: string, note: string) => {
-      try {
-        const result = await mutate({ variables: { id, note } });
-        return { success: true, conflict: result.data?.reviewConflict ?? null, error: null };
-      } catch (error) {
-        return {
-          success: false,
-          conflict: null,
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-    },
-    [mutate]
-  );
-
-  return { reviewConflict, loading };
 }
 
 /**

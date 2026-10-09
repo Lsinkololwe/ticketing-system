@@ -1,5 +1,7 @@
 package com.pml.booking.repository.impl;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.repository.PlatformSummaryRepository;
 import com.pml.booking.repository.dto.EscrowSummaryResult;
 import com.pml.booking.repository.dto.PayoutSummaryResult;
@@ -50,10 +52,10 @@ public class PlatformSummaryRepositoryImpl implements PlatformSummaryRepository 
 
     private final ReactiveMongoTemplate mongoTemplate;
 
-    private static final String ESCROW_COLLECTION = "booking_escrow_accounts";
+    private static final String ESCROW_COLLECTION = BookingCollections.ESCROW_ACCOUNTS;
     private static final String TRANSACTION_COLLECTION = "financial_transactions";
-    private static final String PAYOUT_COLLECTION = "booking_payout_requests";
-    private static final String TICKET_COLLECTION = "tickets";
+    private static final String PAYOUT_COLLECTION = BookingCollections.PAYOUT_REQUESTS;
+    private static final String TICKET_COLLECTION = BookingCollections.TICKETS;
 
     @Override
     public Mono<EscrowSummaryResult> aggregateEscrowSummary() {
@@ -251,13 +253,10 @@ public class PlatformSummaryRepositoryImpl implements PlatformSummaryRepository 
 
         return new EscrowSummaryResult(
                 total,
-                countsByStatus.getOrDefault("CREATED", 0L),
                 countsByStatus.getOrDefault("ACTIVE", 0L),
                 countsByStatus.getOrDefault("LOCKED", 0L),
                 countsByStatus.getOrDefault("PAYOUT_ELIGIBLE", 0L),
-                countsByStatus.getOrDefault("PROCESSING_PAYOUT", 0L),
                 countsByStatus.getOrDefault("CLOSED", 0L),
-                countsByStatus.getOrDefault("CANCELLED", 0L),
                 totalBalance,
                 totalDeposits,
                 totalWithdrawals,
@@ -293,10 +292,8 @@ public class PlatformSummaryRepositoryImpl implements PlatformSummaryRepository 
         return new TransactionSummaryResult(
                 total,
                 countsByStatus.getOrDefault("PENDING", 0L),
-                countsByStatus.getOrDefault("PROCESSING", 0L),
                 countsByStatus.getOrDefault("COMPLETED", 0L),
                 countsByStatus.getOrDefault("FAILED", 0L),
-                countsByStatus.getOrDefault("CANCELLED", 0L),
                 totalVolume,
                 totalCommissions
         );
@@ -329,7 +326,6 @@ public class PlatformSummaryRepositoryImpl implements PlatformSummaryRepository 
                 countsByStatus.getOrDefault("PROCESSING", 0L),
                 countsByStatus.getOrDefault("COMPLETED", 0L),
                 countsByStatus.getOrDefault("FAILED", 0L),
-                countsByStatus.getOrDefault("REJECTED", 0L),
                 totalAmount
         );
     }

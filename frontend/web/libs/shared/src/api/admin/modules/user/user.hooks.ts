@@ -10,8 +10,11 @@
  */
 
 import { useQuery } from '@apollo/client/react';
-import type { User, UserType, AccountStatus } from '../../../../types/graphql';
+import type { UserType, AccountStatus, AdminUsersQuery, AdminUsersQueryVariables } from '../../../../types/graphql';
 import { ADMIN_USERS } from './user.queries';
+
+/** One row of the admin users table — the `UserListFields` selection, not the full `User` entity. */
+export type AdminUserRow = AdminUsersQuery['users']['content'][number];
 
 export interface UseAdminUsersOptions {
   search?: string;
@@ -22,7 +25,7 @@ export interface UseAdminUsersOptions {
 }
 
 export interface UseAdminUsersResult {
-  users: User[];
+  users: AdminUserRow[];
   totalCount: number;
   totalPages: number;
   currentPage: number;
@@ -34,18 +37,7 @@ export interface UseAdminUsersResult {
 
 export function useAdminUsers(options: UseAdminUsersOptions = {}): UseAdminUsersResult {
   const size = options.size ?? 20;
-  const { data, loading, error, refetch } = useQuery<{
-    usersOffsetPagination: {
-      content: User[];
-      pageInfo: {
-        currentPage: number | null;
-        pageSize: number | null;
-        totalCount: number | null;
-        hasNext: boolean | null;
-        hasPrevious: boolean | null;
-      };
-    };
-  }>(ADMIN_USERS, {
+  const { data, loading, error, refetch } = useQuery<AdminUsersQuery, AdminUsersQueryVariables>(ADMIN_USERS, {
     variables: {
       search: options.search || null,
       role: options.role ?? null,
@@ -61,7 +53,7 @@ export function useAdminUsers(options: UseAdminUsersOptions = {}): UseAdminUsers
     errorPolicy: 'all',
   });
 
-  const page = data?.usersOffsetPagination;
+  const page = data?.users;
   const total = page?.pageInfo?.totalCount ?? 0;
   const pageSize = page?.pageInfo?.pageSize ?? size;
 

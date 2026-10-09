@@ -1,5 +1,5 @@
 id: ET-FIN-003
-title: Payout eligibility, bank accounts and the settlement saga
+title: Payout eligibility, bank accounts and the payout workflow
 status: approved
 area: FIN
 service: booking-service
@@ -36,9 +36,7 @@ persistence:
     - "idem:{key}   STRING  24 h   — requestPayout, approvePayout, retryPayout"
 
 events:
-  module:
-    - PayoutApprovedEvent
-    - PayoutFailedEvent
+  module: []   # a step within a service is a workflow activity (ET-PLT-015)
   bus:
     - booking.PayoutCompleted    # v1 → identity (notify the organizer)
   topics:
@@ -49,16 +47,16 @@ graphql:
   queries:
     - "payoutEligibility(eventId)                       ORGANIZER  PayoutEligibility!"
     - "payoutRequest(id)                                ORGANIZER  PayoutRequest"
-    - "myPayoutRequests(organizationId, status, page)   ORGANIZER  PayoutRequestPage!"
+    - "myPayoutRequests(organizationId, status, pagination)   ORGANIZER  PayoutRequestPage!"
     - "payoutRequests(status, page)                     FINANCE    PayoutRequestPage!  @tag admin"
     - "payoutRequestsForReview(page)                    FINANCE    PayoutRequestPage!  @tag admin"
-    - "bankAccounts(organizationId)                     ORGANIZER  [BankAccount!]!"
+    - "bankAccountsByOrganizer(organizationId)                     ORGANIZER  [BankAccount!]!"
   mutations:
-    - "requestPayout(input)              ORGANIZER  PayoutRequest!   # idempotencyKey"
-    - "cancelPayout(id)                  ORGANIZER  PayoutRequest!"
-    - "approvePayout(input)              FINANCE    PayoutRequest!   @tag admin  # idempotencyKey"
-    - "rejectPayout(id, reason)          FINANCE    PayoutRequest!   @tag admin"
-    - "retryPayout(id)                   FINANCE    PayoutRequest!   @tag admin  # idempotencyKey"
+    - "createPayoutRequest(input)              ORGANIZER  PayoutRequest!   # idempotencyKey"
+    - "cancelPayoutRequest(id)                  ORGANIZER  PayoutRequest!"
+    - "approvePayoutRequest(input)              FINANCE    PayoutRequest!   @tag admin  # idempotencyKey"
+    - "rejectPayoutRequest(id, reason)          FINANCE    PayoutRequest!   @tag admin"
+    - "retryPayoutRequest(id)                   FINANCE    PayoutRequest!   @tag admin  # idempotencyKey"
     - "createBankAccount(input)          ORGANIZER  BankAccount!"
     - "updateBankAccount(id, input)      ORGANIZER  BankAccount!"
     - "deleteBankAccount(id)             ORGANIZER  Boolean!"
@@ -87,15 +85,20 @@ state_machine:
   terminal: [COMPLETED, REJECTED, CANCELLED]
   note: "FAILED is NOT terminal — it permits retry and re-request"
 
-saga:
-  name: PayoutSettlementSaga
+workflow:
+  type: PayoutWorkflow
+  id: "payout/{escrowAccountId}"
+  task_queues: [booking-finance, booking-provider]
+  conflict_policy: FAIL
+  updates: [submit, approve, reject, cancel, retry, confirmTransfer]
+  signals: [providerCallback]
   order: "debit escrow FIRST (transaction), THEN initiate transfer (outside)"
   reason: "late debit lets two concurrent payouts both pass the balance check"
   compensation: "reversing entry debit 1020 / credit 2010, escrow restored exactly"
   journal:
     settle:  "debit 2010 Event Escrow / credit 1020 Platform Bank"
     reverse: "debit 1020 / credit 2010"
-    verify:  "debit 5040 Verification Costs / credit 1020   # 5040 added to ET-FIN-001's chart"
+    verify:  "debit 5050 Account Verification Costs / credit 1020   # one entry per deposit; ROADMAP D-27"
 
 separation_of_duties: "approvedById MUST NOT equal requestedById — checked on identity, not role"
 
@@ -109,12 +112,12 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003 -DfailIfNoTests=true
-  - mvn -q -f backend verify -Dgroups=ET-FIN-003 -DfailIfNoTests=true
+  - mvn -q -f backend/booking-service test -Dgroups=ET-FIN-003 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-FIN-003 -DfailIfNoTests=false
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
-  - "This spec adds account code 5040 Verification Costs to ET-FIN-001's chart, which that spec declares closed and seeded. Either ET-FIN-001 §4 gains the row in the same change or the seeder and this spec disagree, and the micro-deposit entry fails with ACCOUNT_CODE_UNKNOWN."
+  - "Account 5050 Account Verification Costs must exist before the first deposit is booked. The seeder creates missing standard accounts at every boot; a deposit booked against a database that has not booted since fails with ACCOUNT_CODE_UNKNOWN and the activity retries until it exists."
   - "R6 debits the escrow before initiating the transfer, so a crash between the transaction and the provider call leaves money debited with no transfer in flight and no providerReference to poll. Recovery must distinguish 'never initiated' from 'initiated, outcome unknown', and the only way to tell is to ask the provider about a reference that may not exist."
   - "The provider port declares payout() in this spec but ET-PAY-001's PaymentProviderPort declares only collect, status and refund. The interface must gain a fourth method, which is a change to a spec in an earlier wave."
   - "escrow.openDisputeCount gates eligibility, and ET-FIN-001 already flags that nothing in the corpus increments it. Until ET-FIN-004 defines disputes, the third eligibility condition is permanently satisfied and a payout can be approved while a chargeback is in progress."

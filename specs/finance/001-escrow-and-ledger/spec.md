@@ -132,7 +132,7 @@ that account SHALL follow the §4 lifecycle.
 - [ ] `catalog.EventPublished` opens the account, idempotently — a re-publish opens no second account
 - [ ] `EscrowStatus` is `ACTIVE`, `HOLD`, `PAYOUT_ELIGIBLE`, `SUSPENDED`, `CLOSED`
 - [ ] `catalog.EventCompleted` moves it to `HOLD` and sets `holdUntil = endsAt + finance.escrow.hold-period` (P7D)
-- [ ] A sweep moves `HOLD` to `PAYOUT_ELIGIBLE` once `holdUntil` has passed and there are no open disputes
+- [ ] The event's `EventFinanceWorkflow` (`event-finance/{eventId}`) sleeps until `holdUntil` and moves `HOLD` to `PAYOUT_ELIGIBLE` once there are no open disputes, re-checking daily and on a `disputeClosed` signal; no sweep or lock exists
 - [ ] A credit to a `CLOSED` account is refused with `ESCROW_NOT_ACTIVE` carrying `currentStatus`
 - [ ] `holdUntil` is recomputed on `catalog.EventRescheduled` from the new end date
 
@@ -192,6 +192,27 @@ a reason and an operator, and SHALL NOT modify any existing entry.
 
 ## 4. Model
 
+> **Reconciliation note, 2026-09-01 — `myEscrowAccounts` · **built**, not renamed.**
+>
+> **Resolved 2026-09-01.** Rather than adopt an existing name, the operation §4 asks for was
+> built: `myEscrowAccounts(organizationId, pagination)`, scoped through `CallerScope` to the
+> caller's memberships. `organizationId` selects among the caller's own organizations and cannot
+> widen beyond them. Proven by `CallerScopedReadTest` against a Testcontainers replica set;
+> mutation-verified — trusting the selector fails 2 of its 3 selector cases. The reasoning that
+> ruled out the rename follows.
+>
+> The tempting mapping is `escrowAccounts`, because it is the one candidate a client actually
+> calls. It is the wrong operation: it carries `@PreAuthorize("hasAnyRole('ADMIN','FINANCE')")` and
+> calls `escrowService.findAll()` — **every escrow account on the platform**, not the caller's.
+> Adopting it would rewrite an ORGANIZER-scoped requirement as a finance-wide one in a document
+> nobody would re-read.
+>
+> The other candidate, `escrowAccountsByOrganizer(organizerId)`, takes the subject from the client
+> rather than the token — the CWE-639 shape
+> [F-001](../../FINDINGS.md#f-001--organization-scoped-data-has-no-tenant-boundary) is about. This
+> requirement is satisfied by **converting a read path**, not by renaming, and belongs to F-001's
+> open read-path work.
+
 ### Chart of accounts — closed and seeded
 
 | Code | Name | Type | Normal | Holds |
@@ -205,9 +226,10 @@ a reason and an operator, and SHALL NOT modify any existing entry.
 | `5010` | Payment Processing Fees | EXPENSE | debit | the provider's collection fee |
 | `5020` | Refund Processing Fees | EXPENSE | debit | the provider's refund fee, when the platform bears it |
 | `5030` | Chargeback Losses | EXPENSE | debit | unrecoverable reversals |
+| `5050` | Account Verification Costs | EXPENSE | debit | micro-deposits that verify organizers' bank accounts ([ET-FIN-003](../003-payouts-and-settlement/) R4, ROADMAP D-27) |
 | `6010` | Operations | ASSET | debit | working funds |
 
-Ten accounts. `2010` is sub-ledgered per event by `booking_escrow_accounts`; every other
+Eleven accounts. `2010` is sub-ledgered per event by `booking_escrow_accounts`; every other
 code is a single balance.
 
 ### Documents
@@ -301,7 +323,7 @@ and follow the same shape.
 |---|---|---|
 | — | `catalog.EventPublished` | `ACTIVE` |
 | `ACTIVE` | `catalog.EventCompleted` | `HOLD`, `holdUntil = endsAt + P7D` |
-| `HOLD` | sweep, `holdUntil` passed, no open disputes | `PAYOUT_ELIGIBLE` |
+| `HOLD` | `EventFinanceWorkflow` timer, `holdUntil` passed, no open disputes | `PAYOUT_ELIGIBLE` |
 | `PAYOUT_ELIGIBLE` | payout settles, balance zero | `CLOSED` |
 | `ACTIVE`, `HOLD`, `PAYOUT_ELIGIBLE` | admin suspends | `SUSPENDED` |
 | `SUSPENDED` | admin reactivates | previous |
@@ -356,11 +378,15 @@ Subgraph `booking`. Every field carries `@auth`; every finance field carries
 | `catalog.EventRescheduled` | recompute `holdUntil` |
 | `catalog.EventCancelled` | begin the refund-and-close sequence ([ET-FIN-004](../004-refunds-and-chargebacks/)) |
 
-### Sweeps
+### The event finance workflow
 
-| Sweep | Lock | Interval | Purpose |
-|---|---|---|---|
-| hold release | `lock:sweep:escrow-hold` | `PT1H` | `HOLD` → `PAYOUT_ELIGIBLE` |
+Each consumed fact above is a signal-with-start to `EventFinanceWorkflow`
+(`event-finance/{eventId}`, `booking-finance`, [ET-PLT-015](../../_platform/015-durable-execution/) §4),
+carrying the envelope's `eventId` so a redelivery is dropped. The workflow opens the escrow,
+starts the hold, sleeps to `holdUntil`, waits for open disputes to reach zero — re-checking daily
+and on `disputeClosed` — makes the account `PAYOUT_ELIGIBLE`, and recognises commission once. A
+cancellation starts its child `CancellationRefundsWorkflow`. Every transition is an activity that
+writes by compare-and-set and stages its outbox rows in the same transaction.
 
 ### Configuration
 
@@ -421,10 +447,10 @@ Subgraph `booking`. Every field carries `@auth`; every finance field carries
   - parallel-safe: no
   - depends: T5
 
-- [ ] **T7 · The hold-release sweep and the dispute block**
+- [ ] **T7 · The hold timer and the dispute block**
   - requirements: R4
-  - files: `backend/booking-service/.../scheduler/EscrowHoldSweeper.java`
-  - verify: an account with an open dispute does not become `PAYOUT_ELIGIBLE`
+  - files: `backend/booking-service/.../workflow/finance/EventFinanceWorkflowImpl.java`
+  - verify: an account with an open dispute does not become `PAYOUT_ELIGIBLE`; a time-skipping test releases at `holdUntil`; the history replays
   - parallel-safe: yes
   - depends: T4
 

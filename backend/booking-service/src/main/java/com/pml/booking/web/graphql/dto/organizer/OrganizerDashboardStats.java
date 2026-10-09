@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Organizer dashboard statistics for the main dashboard view.
@@ -95,12 +95,12 @@ public class OrganizerDashboardStats {
     /**
      * Start of the statistics period
      */
-    private LocalDateTime periodStart;
+    private Instant periodStart;
 
     /**
      * End of the statistics period
      */
-    private LocalDateTime periodEnd;
+    private Instant periodEnd;
 
     /**
      * Creates empty stats for organizers with no data

@@ -51,16 +51,6 @@ export const REFERENCE_DATA = gql`
   }
 `;
 
-/** Child rows within a hierarchy (active only), e.g. genres of a category. */
-export const REFERENCE_DATA_BY_PARENT = gql`
-  ${REFERENCE_DATA_FIELDS}
-  query ReferenceDataByParent($type: ReferenceType!, $parentCode: String!) {
-    referenceDataByParent(type: $type, parentCode: $parentCode) {
-      ...ReferenceDataFields
-    }
-  }
-`;
-
 /** The type registry that powers the generic admin management screen. */
 export const REFERENCE_TYPES = gql`
   query ReferenceTypes {
@@ -74,14 +64,14 @@ export const REFERENCE_TYPES = gql`
   }
 `;
 
-/** Admin offset table for one reference type. */
-export const REFERENCE_DATA_OFFSET = gql`
+/** Admin table for one reference type — every row including inactive ones. */
+export const REFERENCE_DATA_ALL = gql`
   ${REFERENCE_DATA_FIELDS}
-  query ReferenceDataOffsetPagination(
+  query ReferenceDataAll(
     $type: ReferenceType!
     $pagination: OffsetPaginationInput
   ) {
-    referenceDataOffsetPagination(type: $type, pagination: $pagination) {
+    referenceDataAll(type: $type, pagination: $pagination) {
       content {
         ...ReferenceDataFields
       }

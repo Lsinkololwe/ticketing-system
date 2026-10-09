@@ -7,7 +7,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.util.Date;
 
 /**
@@ -55,7 +54,7 @@ public class MigrationLedger {
     private final String collection;
 
     /**
-     * ET-PLT-001 R3. The ledger's STARTED_AT/FINISHED_AT are audit facts, so they must be
+     * The platform clock. The ledger's STARTED_AT/FINISHED_AT are audit facts, so they must be
      * movable by a test: a migration's timing is exactly the sort of thing a frozen-clock
      * test asserts, and Instant.now() would make that impossible at this call site.
      */

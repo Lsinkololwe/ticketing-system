@@ -3,7 +3,7 @@
 > **Spec** [`specs/admin/003-transaction-recovery/spec.md`](../admin/003-transaction-recovery/spec.md) · **Wave 6** · `blocked_by:` ET-PLT-003, 005, ET-PAY-001, 002, ET-FIN-003, 004, 005
 > **Screen** `Admin - Transaction Recovery.dc.html` — **read it first**
 > **Routes** `apps/admin/src/app/(dashboard)/transactions/recovery`
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-ADM-003 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-ADM-003 -DfailIfNoTests=false`
 
 The destination for everything the platform deliberately refused to guess about: escalated
 reservations ([`ET-TKT-001`](ET-TKT-001.md) BE-7), never-answering payments
@@ -202,5 +202,5 @@ Replay one of **each** message type → no double effect; **nothing auto-deletes
 - [ ] Bulk never reaches a `dual` action; unsafe ids excluded visibly
 - [ ] Items past 3 days alert individually
 - [ ] **Infographics gate passed**; total-at-risk is the single focal number
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-ADM-003 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-ADM-003 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

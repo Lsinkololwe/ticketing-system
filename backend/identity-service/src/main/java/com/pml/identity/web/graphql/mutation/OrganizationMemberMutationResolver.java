@@ -1,8 +1,13 @@
 package com.pml.identity.web.graphql.mutation;
 
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.security.Permission;
+import com.pml.identity.security.IdentityTenantReads;
 import com.pml.identity.web.graphql.dto.organization.UpdateMemberRoleInput;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.service.OrganizationMemberService;
+import com.pml.identity.service.PermissionResolutionService;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -11,19 +16,23 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Organization Member operations.
  */
 @Slf4j
+
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class OrganizationMemberMutationResolver {
 
     private final OrganizationMemberService memberService;
-
-    private static final String MEMBER_EDIT_ROLE_PERMISSION = "MEMBER_EDIT_ROLE";
-    private static final String MEMBER_REMOVE_PERMISSION = "MEMBER_REMOVE";
+    private final IdentityTenantReads reads;
+    private final PermissionResolutionService permissions;
 
     /**
      * Update member role and permissions.
@@ -32,32 +41,28 @@ public class OrganizationMemberMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<OrganizationMember> updateMemberRole(
             @InputArgument String memberId,
-            @InputArgument UpdateMemberRoleInput input) {
+            @Valid @InputArgument UpdateMemberRoleInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(actorUserId -> log.info("User {} updating member role: {}", actorUserId, memberId))
-                .flatMap(actorUserId -> memberService.findById(memberId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Member not found")))
-                        .flatMap(member -> memberService.hasPermission(actorUserId, member.getOrganizationId(), MEMBER_EDIT_ROLE_PERMISSION)
-                                .flatMap(hasPermission -> {
-                                    if (!hasPermission) {
-                                        return Mono.error(new IllegalStateException("Permission denied"));
-                                    }
-
+                .flatMap(actorUserId -> reads.memberForCaller(memberId)
+                        .flatMap(member -> memberService.requirePermission(actorUserId, member.getOrganizationId(), Permission.TEAM_ROLE)
+                                .then(Mono.defer(() -> permissions.requireDelegable(actorUserId, member.getOrganizationId(),
+                                        union(input.customPermissions(), input.deniedPermissions()), Permission.Scope.ORGANIZATION)))
+                                .then(Mono.defer(() -> {
                                     return memberService.canModifyMember(actorUserId, memberId, member.getOrganizationId())
                                             .flatMap(canModify -> {
                                                 if (!canModify) {
-                                                    return Mono.error(new IllegalStateException(
-                                                            "Cannot modify this member's role"));
+                                                    return Mono.error(new TranslatedRefusal(ErrorCode.ACTOR_NOT_PERMITTED, "Cannot modify this member's role"));
                                                 }
 
                                                 return memberService.updateRole(
                                                         memberId,
-                                                        input.role(),
+                                                        input.newRole(),
                                                         input.customPermissions(),
                                                         input.deniedPermissions()
                                                 );
                                             });
-                                })));
+                                }))));
     }
 
     /**
@@ -70,23 +75,18 @@ public class OrganizationMemberMutationResolver {
             @InputArgument String reason) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(actorUserId -> log.info("User {} suspending member: {} - Reason: {}", actorUserId, memberId, reason))
-                .flatMap(actorUserId -> memberService.findById(memberId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Member not found")))
-                        .flatMap(member -> memberService.hasPermission(actorUserId, member.getOrganizationId(), MEMBER_REMOVE_PERMISSION)
-                                .flatMap(hasPermission -> {
-                                    if (!hasPermission) {
-                                        return Mono.error(new IllegalStateException("Permission denied"));
-                                    }
-
+                .flatMap(actorUserId -> reads.memberForCaller(memberId)
+                        .flatMap(member -> memberService.requirePermission(actorUserId, member.getOrganizationId(), Permission.TEAM_REMOVE)
+                                .then(Mono.defer(() -> {
                                     return memberService.canModifyMember(actorUserId, memberId, member.getOrganizationId())
                                             .flatMap(canModify -> {
                                                 if (!canModify) {
-                                                    return Mono.error(new IllegalStateException("Cannot suspend this member"));
+                                                    return Mono.error(new TranslatedRefusal(ErrorCode.ACTOR_NOT_PERMITTED, "Cannot suspend this member"));
                                                 }
 
                                                 return memberService.suspend(memberId, reason);
                                             });
-                                })));
+                                }))));
     }
 
     /**
@@ -97,16 +97,11 @@ public class OrganizationMemberMutationResolver {
     public Mono<OrganizationMember> reactivateMember(@InputArgument String memberId) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(actorUserId -> log.info("User {} reactivating member: {}", actorUserId, memberId))
-                .flatMap(actorUserId -> memberService.findById(memberId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Member not found")))
-                        .flatMap(member -> memberService.hasPermission(actorUserId, member.getOrganizationId(), MEMBER_REMOVE_PERMISSION)
-                                .flatMap(hasPermission -> {
-                                    if (!hasPermission) {
-                                        return Mono.error(new IllegalStateException("Permission denied"));
-                                    }
-
+                .flatMap(actorUserId -> reads.memberForCaller(memberId)
+                        .flatMap(member -> memberService.requirePermission(actorUserId, member.getOrganizationId(), Permission.TEAM_REMOVE)
+                                .then(Mono.defer(() -> {
                                     return memberService.reactivate(memberId);
-                                })));
+                                }))));
     }
 
     /**
@@ -119,23 +114,18 @@ public class OrganizationMemberMutationResolver {
             @InputArgument String reason) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(actorUserId -> log.info("User {} removing member: {} - Reason: {}", actorUserId, memberId, reason))
-                .flatMap(actorUserId -> memberService.findById(memberId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException("Member not found")))
-                        .flatMap(member -> memberService.hasPermission(actorUserId, member.getOrganizationId(), MEMBER_REMOVE_PERMISSION)
-                                .flatMap(hasPermission -> {
-                                    if (!hasPermission) {
-                                        return Mono.error(new IllegalStateException("Permission denied"));
-                                    }
-
+                .flatMap(actorUserId -> reads.memberForCaller(memberId)
+                        .flatMap(member -> memberService.requirePermission(actorUserId, member.getOrganizationId(), Permission.TEAM_REMOVE)
+                                .then(Mono.defer(() -> {
                                     return memberService.canModifyMember(actorUserId, memberId, member.getOrganizationId())
                                             .flatMap(canModify -> {
                                                 if (!canModify) {
-                                                    return Mono.error(new IllegalStateException("Cannot remove this member"));
+                                                    return Mono.error(new TranslatedRefusal(ErrorCode.ACTOR_NOT_PERMITTED, "Cannot remove this member"));
                                                 }
 
                                                 return memberService.remove(memberId, reason).thenReturn(true);
                                             });
-                                })));
+                                }))));
     }
 
     /**
@@ -149,26 +139,15 @@ public class OrganizationMemberMutationResolver {
                 .flatMap(userId -> memberService.leave(userId, organizationId).thenReturn(true));
     }
 
-    /**
-     * Transfer organization ownership.
-     * Only the current owner can do this.
-     */
-    @DgsMutation
-    @PreAuthorize("isAuthenticated()")
-    public Mono<OrganizationMember> transferOrganizationOwnership(
-            @InputArgument String organizationId,
-            @InputArgument String newOwnerId) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(currentUserId -> log.info("User {} transferring ownership of organization {} to user {}",
-                        currentUserId, organizationId, newOwnerId))
-                .flatMap(currentUserId -> memberService.findOwner(organizationId)
-                        .switchIfEmpty(Mono.error(new IllegalStateException("Organization owner not found")))
-                        .flatMap(owner -> {
-                            if (!owner.getUserId().equals(currentUserId)) {
-                                return Mono.error(new IllegalStateException("Only the owner can transfer ownership"));
-                            }
 
-                            return memberService.transferOwnership(organizationId, newOwnerId);
-                        }));
+    /**
+     * Custom and denied codes together: both must name catalogue permissions the actor holds, so
+     * nobody grants a permission they lack or withholds one they could not have granted.
+     */
+    private static java.util.Set<String> union(java.util.Set<String> custom, java.util.Set<String> denied) {
+        java.util.Set<String> all = new java.util.HashSet<>();
+        if (custom != null) all.addAll(custom);
+        if (denied != null) all.addAll(denied);
+        return all;
     }
 }

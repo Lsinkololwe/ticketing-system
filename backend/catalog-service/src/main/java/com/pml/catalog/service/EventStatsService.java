@@ -1,16 +1,16 @@
 package com.pml.catalog.service;
 
+import com.pml.catalog.persistence.CatalogCollections;
+
 import com.pml.catalog.web.graphql.dto.stats.EventCategoryStats;
 import com.pml.catalog.web.graphql.dto.stats.EventOrganizerStats;
 import com.pml.catalog.web.graphql.dto.stats.EventStats;
 import com.pml.catalog.web.graphql.dto.stats.EventStatusStats;
 import com.pml.catalog.domain.model.Event;
-import com.pml.catalog.domain.model.EventCategory;
 import com.pml.catalog.repository.EventRepository;
 import com.pml.shared.constants.EventStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.Document;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -103,7 +103,7 @@ public class EventStatsService {
                         .sum("soldTickets").as("totalSoldTickets")
         );
 
-        return mongoTemplate.aggregate(aggregation, "events", CapacitySalesResult.class)
+        return mongoTemplate.aggregate(aggregation, CatalogCollections.EVENTS, CapacitySalesResult.class)
                 .singleOrEmpty()
                 .map(result -> new CapacitySales(
                         result.getTotalCapacity(),
@@ -115,12 +115,14 @@ public class EventStatsService {
 
     /**
      * Get statistics grouped by category with category name lookup.
-     * Uses MongoDB $lookup to join with event_categories collection.
+     * Uses MongoDB $lookup to join with the categories collection.
      */
     private Mono<List<EventCategoryStats>> getStatsByCategory() {
-        // Aggregation with $lookup to get category names
+        // The joined name comes from the registry constant, not a literal. A $lookup naming a
+        // collection that does not exist is not an error — it yields an empty array for every
+        // document, so the category breakdown silently reports zero for every category.
         LookupOperation lookupOperation = LookupOperation.newLookup()
-                .from("event_categories")
+                .from(CatalogCollections.CATEGORIES)
                 .localField("categoryId")
                 .foreignField("_id")
                 .as("categoryInfo");
@@ -140,7 +142,7 @@ public class EventStatsService {
                 sort(Sort.Direction.DESC, "count")
         );
 
-        return mongoTemplate.aggregate(aggregation, "events", CategoryAggResult.class)
+        return mongoTemplate.aggregate(aggregation, CatalogCollections.EVENTS, CategoryAggResult.class)
                 .collectList()
                 .map(results -> {
                     int totalEvents = results.stream().mapToInt(CategoryAggResult::getCount).sum();
@@ -210,7 +212,7 @@ public class EventStatsService {
                 limit(10) // Top 10 organizers
         );
 
-        return mongoTemplate.aggregate(aggregation, "events", OrganizerAggResult.class)
+        return mongoTemplate.aggregate(aggregation, CatalogCollections.EVENTS, OrganizerAggResult.class)
                 .map(result -> EventOrganizerStats.builder()
                         .organizerId(result.getOrganizerId())
                         .organizerName(result.getOrganizerName() != null ? result.getOrganizerName() : "Unknown")

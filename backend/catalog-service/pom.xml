@@ -33,6 +33,23 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
+        <!-- Token revocation: the shared Redis cache, its circuit breaker, and the fail-closed aspect -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-reactor</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
         <!-- Netflix DGS Framework with Spring GraphQL integration and Apollo Federation -->
         <dependency>
             <groupId>com.netflix.graphql.dgs</groupId>
@@ -84,14 +101,20 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
-        <!-- Spring Modulith -->
-
-        <!-- JDBC and PostgreSQL for Event Publication Registry -->
-
         <!-- Azure Service Bus for cross-service events -->
         <dependency>
             <groupId>com.azure.spring</groupId>
             <artifactId>spring-cloud-azure-stream-binder-servicebus</artifactId>
+        </dependency>
+
+        <!-- AWS SDK for S3 media storage (file-storage.type=s3) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
         </dependency>
 
         <!-- Monitoring and Observability -->
@@ -104,6 +127,25 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            ET-PLT-001 R7 · the JWT rejection contract.
+
+            StubIssuer and JwtRejectionContract live in shared-library's test-jar so that the
+            four checks are asserted identically here, in booking and in identity. Three
+            copies of four assertions is how one of them quietly ends up checking three.
+        -->
+        <dependency>
+            <groupId>com.pml</groupId>
+            <artifactId>shared-library</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -133,6 +175,25 @@
             <artifactId>spring-boot-devtools</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- ET-PLT-015 · durable execution: workflow client, worker factory, auto-discovery -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-spring-boot-starter</artifactId>
+            <!-- The in-process test server belongs on the test classpath only; it is declared
+                 below at test scope, and the starter's auto-configuration is conditional on it. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>io.temporal</groupId>
+                    <artifactId>temporal-testing</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- ET-PLT-006 layer 3 · time-skipping TestWorkflowEnvironment -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -153,7 +214,7 @@
                         engine since 19.03. Override with -Ddocker.api.version=
                         if a newer feature is ever needed.
                     -->
-                    <argLine>-Dapi.version=${docker.api.version}</argLine>
+                    <argLine>@{argLine} -Dapi.version=${docker.api.version}</argLine>
                 </configuration>
             </plugin>
             <plugin>

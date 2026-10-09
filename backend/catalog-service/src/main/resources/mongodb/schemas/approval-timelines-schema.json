@@ -2,57 +2,106 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Approval Timelines Schema - OWASP Compliant",
-    "description": "Tracks timeline entries for event approval workflow",
+    "description": "The aggregate root for an event's approval workflow, with its embedded audit trail (com.pml.catalog.domain.model.ApprovalTimeline)",
     "required": [
       "eventId",
-      "action",
-      "performedBy",
-      "timestamp"
+      "organizerId",
+      "currentStatus"
     ],
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
         "bsonType": "objectId"
       },
       "eventId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "OWASP A03 - ObjectId pattern validation"
+        "description": "1:1 with the event this timeline belongs to"
       },
-      "action": {
+      "eventTitle": {
+        "bsonType": ["string", "null"]
+      },
+      "organizerId": {
+        "bsonType": "string"
+      },
+      "organizerName": {
+        "bsonType": ["string", "null"]
+      },
+      "currentStatus": {
         "bsonType": "string",
-        "enum": [
-          "SUBMITTED",
-          "UNDER_REVIEW",
-          "APPROVED",
-          "REJECTED",
-          "REVISION_REQUESTED",
-          "RESUBMITTED"
-        ],
-        "description": "OWASP A04 - Enum constraint"
+        "enum": ["DRAFT", "PENDING_APPROVAL", "CHANGES_REQUESTED", "APPROVED", "REJECTED", "PUBLISHED", "CANCELLED", "COMPLETED"],
+        "description": "com.pml.shared.constants.EventStatus"
       },
-      "performedBy": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$"
+      "assignedReviewerId": {
+        "bsonType": ["string", "null"]
       },
-      "comments": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "maxLength": 1000
+      "assignedReviewerName": {
+        "bsonType": ["string", "null"]
       },
-      "timestamp": {
-        "bsonType": "date"
+      "timelineEvents": {
+        "bsonType": ["array", "null"],
+        "description": "Embedded com.pml.catalog.domain.valueobject.TimelineEvent audit trail",
+        "items": {
+          "bsonType": "object",
+          "properties": {
+            "id": { "bsonType": ["string", "null"] },
+            "eventId": { "bsonType": ["string", "null"] },
+            "timestamp": { "bsonType": ["date", "null"] },
+            "action": {
+              "bsonType": ["string", "null"],
+              "enum": ["SUBMITTED", "ASSIGNED", "CLAIM_RELEASED", "CLAIM_EXPIRED", "VIEWED", "APPROVED", "REJECTED",
+                "CHANGES_REQUESTED", "RESUBMITTED", "ESCALATED", "ESCALATION_RESOLVED", "COMMENT_ADDED", null]
+            },
+            "actorId": { "bsonType": ["string", "null"] },
+            "actorName": { "bsonType": ["string", "null"] },
+            "actorRole": { "bsonType": ["string", "null"] },
+            "previousStatus": {
+              "bsonType": ["string", "null"],
+              "enum": ["DRAFT", "PENDING_APPROVAL", "CHANGES_REQUESTED", "APPROVED", "REJECTED", "PUBLISHED", "CANCELLED", "COMPLETED", null]
+            },
+            "newStatus": {
+              "bsonType": ["string", "null"],
+              "enum": ["DRAFT", "PENDING_APPROVAL", "CHANGES_REQUESTED", "APPROVED", "REJECTED", "PUBLISHED", "CANCELLED", "COMPLETED", null]
+            },
+            "description": { "bsonType": ["string", "null"] },
+            "comments": { "bsonType": ["string", "null"], "maxLength": 1000 },
+            "internalNotes": { "bsonType": ["string", "null"], "maxLength": 1000 },
+            "isEscalationRelated": { "bsonType": ["bool", "null"] },
+            "metadata": { "bsonType": ["object", "null"] }
+          }
+        }
       },
-      "metadata": {
-        "bsonType": [
-          "object",
-          "null"
-        ]
+      "submittedAt": {
+        "bsonType": ["date", "null"]
+      },
+      "slaDeadline": {
+        "bsonType": ["date", "null"]
+      },
+      "actualApprovalAt": {
+        "bsonType": ["date", "null"]
+      },
+      "isOverdue": {
+        "bsonType": ["bool", "null"]
+      },
+      "escalationId": {
+        "bsonType": ["string", "null"]
+      },
+      "hasActiveEscalation": {
+        "bsonType": ["bool", "null"]
+      },
+      "submissionCount": {
+        "bsonType": ["int", "null"]
+      },
+      "currentIteration": {
+        "bsonType": ["int", "null"]
+      },
+      "totalComments": {
+        "bsonType": ["int", "null"]
+      },
+      "lastActivityAt": {
+        "bsonType": ["date", "null"]
       }
     },
     "additionalProperties": false

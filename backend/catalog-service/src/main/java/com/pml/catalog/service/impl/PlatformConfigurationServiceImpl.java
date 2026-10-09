@@ -8,8 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-
 /**
  * Implementation of PlatformConfigurationService.
  */
@@ -19,6 +17,9 @@ import java.time.LocalDateTime;
 public class PlatformConfigurationServiceImpl implements PlatformConfigurationService {
 
     private final PlatformConfigurationRepository configurationRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
 
     @Override
     public Mono<PlatformConfiguration> getConfiguration() {
@@ -65,7 +66,7 @@ public class PlatformConfigurationServiceImpl implements PlatformConfigurationSe
                     existing.setRequireCommentsOnChangesRequested(config.isRequireCommentsOnChangesRequested());
                     existing.setAllowSelfApproval(config.isAllowSelfApproval());
 
-                    existing.setUpdatedAt(LocalDateTime.now());
+                    existing.setUpdatedAt(clock.instant());
                     existing.setUpdatedBy(updatedBy);
 
                     log.info("Updating platform configuration by admin: {}", updatedBy);

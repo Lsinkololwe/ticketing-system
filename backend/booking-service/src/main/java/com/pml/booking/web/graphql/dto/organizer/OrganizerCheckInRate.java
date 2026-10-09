@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Gate attendance for an organizer's most recent event that has already run.
@@ -27,7 +27,7 @@ public class OrganizerCheckInRate {
 
     private String eventTitle;
 
-    private LocalDateTime eventDateTime;
+    private Instant eventDateTime;
 
     /**
      * Tickets issued for the event and still valid at gate time — the

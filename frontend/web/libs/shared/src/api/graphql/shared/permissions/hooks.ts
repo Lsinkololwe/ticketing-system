@@ -9,6 +9,7 @@
 
 import { useQuery } from '@apollo/client/react';
 import { gql } from '@apollo/client';
+import type { GetMyPermissionsQuery, GetMyPermissionsQueryVariables } from '../../../../types/graphql';
 
 // Simple query to get current user's permissions
 const GET_MY_PERMISSIONS = gql`
@@ -20,18 +21,14 @@ const GET_MY_PERMISSIONS = gql`
   }
 `;
 
-interface MyPermissionsResult {
-  permissions: string[];
-  roles: string[];
-}
-
 /**
  * Hook to fetch current user's permissions
  */
 export function useMyPermissions() {
-  const { data, loading, error, refetch } = useQuery<{
-    myPermissions: MyPermissionsResult;
-  }>(GET_MY_PERMISSIONS, {
+  const { data, loading, error, refetch } = useQuery<
+    GetMyPermissionsQuery,
+    GetMyPermissionsQueryVariables
+  >(GET_MY_PERMISSIONS, {
     fetchPolicy: 'cache-first',
     errorPolicy: 'all',
   });

@@ -17,6 +17,10 @@ export type Scalars = {
   JSON: { input: Record<string, unknown>; output: Record<string, unknown>; }
   Long: { input: number; output: number; }
   PhoneNumber: { input: string; output: string; }
+  join__DirectiveArguments: { input: any; output: any; }
+  join__FieldSet: { input: any; output: any; }
+  join__FieldValue: { input: any; output: any; }
+  link__Import: { input: any; output: any; }
 };
 
 export type AcceptInvitationInput = {
@@ -39,6 +43,23 @@ export type AccountBalance = {
   netBalance: Scalars['BigDecimal']['output'];
 };
 
+export type AccountSession = {
+  __typename: 'AccountSession';
+  clients: Array<Scalars['String']['output']>;
+  current: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  ipAddress: Maybe<Scalars['String']['output']>;
+  lastAccessAt: Maybe<Scalars['DateTime']['output']>;
+  startedAt: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type AccountState =
+  | 'ACTIVE'
+  | 'DELETED'
+  | 'MERGED'
+  | 'PROVISIONING'
+  | 'SUSPENDED';
+
 export type AccountStatus =
   | 'ACTIVE'
   | 'INACTIVE'
@@ -49,10 +70,13 @@ export type AccountStatus =
 
 export type AccountSubType =
   | 'BAD_DEBT'
+  | 'BAD_DEBT_EXPENSE'
   | 'BANK_ACCOUNT'
+  | 'CHARGEBACK_EXPENSE'
   | 'CHARGEBACK_FEES'
   | 'CHARGEBACK_LOSS'
   | 'CHARGEBACK_RECEIVABLE'
+  | 'CHARGEBACK_RECOVERY_RECEIVABLE'
   | 'COMMISSION_RECEIVABLE'
   | 'COMMISSION_REVENUE'
   | 'DEFERRED_REVENUE'
@@ -60,12 +84,18 @@ export type AccountSubType =
   | 'FEES_PAYABLE'
   | 'FEE_REVENUE'
   | 'GATEWAY_FEES'
+  | 'GATEWAY_FEE_EXPENSE'
   | 'GATEWAY_RECEIVABLE'
+  | 'OTHER_EXPENSE'
+  | 'OTHER_INCOME'
   | 'PAYOUTS_PAYABLE'
+  | 'PAYOUT_PAYABLE'
   | 'REFUNDS_PAYABLE'
+  | 'REFUND_PAYABLE'
   | 'RESERVE'
   | 'RETAINED_EARNINGS'
-  | 'TAX_PAYABLE';
+  | 'TAX_PAYABLE'
+  | 'VERIFICATION_EXPENSE';
 
 export type AccountSummary = {
   __typename: 'AccountSummary';
@@ -94,17 +124,35 @@ export type AccountType =
   | 'REVENUE';
 
 export type AdminTicketUpdateInput = {
-  buyerEmail: InputMaybe<Scalars['String']['input']>;
-  buyerName: InputMaybe<Scalars['String']['input']>;
-  buyerPhone: InputMaybe<Scalars['String']['input']>;
-  notes: InputMaybe<Scalars['String']['input']>;
-  ticketCategoryCode: InputMaybe<Scalars['String']['input']>;
+  buyerEmail?: InputMaybe<Scalars['String']['input']>;
+  buyerName?: InputMaybe<Scalars['String']['input']>;
+  buyerPhone?: InputMaybe<Scalars['String']['input']>;
+  notes?: InputMaybe<Scalars['String']['input']>;
+  ticketCategoryCode?: InputMaybe<Scalars['String']['input']>;
 };
+
+export type AlertSeverity =
+  | 'CRITICAL'
+  | 'INFO'
+  | 'WARNING';
+
+export type AlertStatus =
+  | 'ACKNOWLEDGED'
+  | 'OPEN'
+  | 'RESOLVED';
+
+export type AnnouncementSegment =
+  | 'ALL'
+  | 'BUYERS'
+  | 'ORGANIZERS'
+  | 'STAFF';
 
 export type ApprovalAction =
   | 'APPROVED'
   | 'ASSIGNED'
   | 'CHANGES_REQUESTED'
+  | 'CLAIM_EXPIRED'
+  | 'CLAIM_RELEASED'
   | 'COMMENT_ADDED'
   | 'ESCALATED'
   | 'ESCALATION_RESOLVED'
@@ -112,6 +160,11 @@ export type ApprovalAction =
   | 'RESUBMITTED'
   | 'SUBMITTED'
   | 'VIEWED';
+
+export type ApprovalBlocker =
+  | 'NO_CAPACITY'
+  | 'NO_LOCATION'
+  | 'NO_PUBLISHED_TIER';
 
 export type ApprovalEscalation = {
   __typename: 'ApprovalEscalation';
@@ -137,27 +190,6 @@ export type ApprovalEscalation = {
   slaDeadline: Scalars['DateTime']['output'];
   status: EscalationStatus;
   triggeredAt: Scalars['DateTime']['output'];
-};
-
-export type ApprovalEscalationConnection = {
-  __typename: 'ApprovalEscalationConnection';
-  edges: Array<ApprovalEscalationEdge>;
-  pageInfo: PageInfo;
-  totalCount: Scalars['Int']['output'];
-};
-
-export type ApprovalEscalationEdge = {
-  __typename: 'ApprovalEscalationEdge';
-  cursor: Scalars['String']['output'];
-  node: ApprovalEscalation;
-};
-
-export type ApprovalEscalationMutationResponse = {
-  __typename: 'ApprovalEscalationMutationResponse';
-  data: Maybe<ApprovalEscalation>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type ApprovalEscalationOffsetPage = {
@@ -251,36 +283,15 @@ export type ApprovalTimeline = {
   totalProcessingTimeHours: Maybe<Scalars['Int']['output']>;
 };
 
-export type ApprovalTimelineConnection = {
-  __typename: 'ApprovalTimelineConnection';
-  edges: Array<ApprovalTimelineEdge>;
-  pageInfo: PageInfo;
-  totalCount: Scalars['Int']['output'];
-};
-
-export type ApprovalTimelineEdge = {
-  __typename: 'ApprovalTimelineEdge';
-  cursor: Scalars['String']['output'];
-  node: ApprovalTimeline;
-};
-
 export type ApprovalTimelineFilterInput = {
-  assignedReviewerId: InputMaybe<Scalars['String']['input']>;
-  hasActiveEscalation: InputMaybe<Scalars['Boolean']['input']>;
-  isOverdue: InputMaybe<Scalars['Boolean']['input']>;
-  organizerId: InputMaybe<Scalars['String']['input']>;
-  searchQuery: InputMaybe<Scalars['String']['input']>;
-  status: InputMaybe<EventStatus>;
-  submittedAfter: InputMaybe<Scalars['DateTime']['input']>;
-  submittedBefore: InputMaybe<Scalars['DateTime']['input']>;
-};
-
-export type ApprovalTimelineMutationResponse = {
-  __typename: 'ApprovalTimelineMutationResponse';
-  data: Maybe<ApprovalTimeline>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
+  assignedReviewerId?: InputMaybe<Scalars['String']['input']>;
+  hasActiveEscalation?: InputMaybe<Scalars['Boolean']['input']>;
+  isOverdue?: InputMaybe<Scalars['Boolean']['input']>;
+  organizerId?: InputMaybe<Scalars['String']['input']>;
+  searchQuery?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<EventStatus>;
+  submittedAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  submittedBefore?: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 export type ApprovalTimelineOffsetPage = {
@@ -295,46 +306,48 @@ export type ApprovalTimelineOffsetPage = {
 };
 
 export type ApproveOrganizationInput = {
-  commissionRate: InputMaybe<Scalars['Float']['input']>;
+  commissionRate?: InputMaybe<Scalars['Float']['input']>;
   organizationId: Scalars['ID']['input'];
-  payoutSchedule: InputMaybe<Scalars['String']['input']>;
-  reviewNotes: InputMaybe<Scalars['String']['input']>;
-};
-
-export type ApprovePayoutRequestMutationResponse = {
-  __typename: 'ApprovePayoutRequestMutationResponse';
-  data: Maybe<PayoutRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type ApproveRefundRequestMutationResponse = {
-  __typename: 'ApproveRefundRequestMutationResponse';
-  data: Maybe<RefundRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+  payoutSchedule?: InputMaybe<Scalars['String']['input']>;
+  reviewNotes?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type AssignReviewerInput = {
   eventId: Scalars['ID']['input'];
-  internalNotes: InputMaybe<Scalars['String']['input']>;
+  internalNotes?: InputMaybe<Scalars['String']['input']>;
   reviewerId: Scalars['String']['input'];
   reviewerName: Scalars['String']['input'];
 };
 
-export type AuthPayload = {
-  __typename: 'AuthPayload';
-  accessToken: Maybe<Scalars['String']['output']>;
-  expiresIn: Maybe<Scalars['Int']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  refreshToken: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-  tokenType: Maybe<Scalars['String']['output']>;
-  user: Maybe<User>;
+export type AuditLogEntry = {
+  __typename: 'AuditLogEntry';
+  action: Scalars['String']['output'];
+  actorId: Maybe<Scalars['ID']['output']>;
+  at: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  metadata: Maybe<Scalars['JSON']['output']>;
+  resourceId: Maybe<Scalars['ID']['output']>;
+  resourceType: Maybe<Scalars['String']['output']>;
+  source: Scalars['String']['output'];
+  status: Maybe<Scalars['String']['output']>;
+  subjectId: Maybe<Scalars['ID']['output']>;
+};
+
+export type AuditLogEntryOffsetPage = {
+  __typename: 'AuditLogEntryOffsetPage';
+  content: Array<AuditLogEntry>;
+  pageInfo: PageInfo;
+};
+
+export type AuditLogFilterInput = {
+  action?: InputMaybe<Scalars['String']['input']>;
+  actorId?: InputMaybe<Scalars['ID']['input']>;
+  from?: InputMaybe<Scalars['DateTime']['input']>;
+  includeAccountEvents?: InputMaybe<Scalars['Boolean']['input']>;
+  resourceId?: InputMaybe<Scalars['ID']['input']>;
+  resourceType?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<Scalars['String']['input']>;
+  to?: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 export type BalanceDirection =
@@ -364,13 +377,70 @@ export type BankAccount = {
   verifiedBy: Maybe<Scalars['String']['output']>;
 };
 
-export type BankAccountMutationResponse = {
-  __typename: 'BankAccountMutationResponse';
-  data: Maybe<BankAccount>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+export type Booking = {
+  __typename: 'Booking';
+  bookingNumber: Scalars['String']['output'];
+  buyerId: Scalars['String']['output'];
+  confirmedAt: Maybe<Scalars['DateTime']['output']>;
+  contactEmail: Maybe<Scalars['String']['output']>;
+  contactName: Maybe<Scalars['String']['output']>;
+  contactPhone: Maybe<Scalars['String']['output']>;
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  currency: Scalars['String']['output'];
+  discountAmount: Maybe<Scalars['BigDecimal']['output']>;
+  eventDate: Maybe<Scalars['String']['output']>;
+  eventId: Scalars['String']['output'];
+  eventTitle: Maybe<Scalars['String']['output']>;
+  expiresAt: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  items: Array<BookingItem>;
+  lateRefundStatus: Maybe<Scalars['String']['output']>;
+  payment: Maybe<BookingPayment>;
+  promoCode: Maybe<Scalars['String']['output']>;
+  refundRequests: Array<RefundRequest>;
+  refundableAmount: Scalars['BigDecimal']['output'];
+  refundedAmount: Scalars['BigDecimal']['output'];
+  reservationId: Scalars['String']['output'];
+  status: BookingStatus;
+  subtotal: Maybe<Scalars['BigDecimal']['output']>;
+  ticketCount: Scalars['Int']['output'];
+  tickets: Array<Ticket>;
+  totalAmount: Scalars['BigDecimal']['output'];
+};
+
+export type BookingFilterInput = {
+  createdAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  createdBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<BookingStatus>;
+  statuses?: InputMaybe<Array<BookingStatus>>;
+};
+
+export type BookingItem = {
+  __typename: 'BookingItem';
+  quantity: Scalars['Int']['output'];
+  subtotal: Scalars['BigDecimal']['output'];
+  ticketTierId: Scalars['String']['output'];
+  tierName: Scalars['String']['output'];
+  unitPrice: Scalars['BigDecimal']['output'];
+};
+
+export type BookingOffsetPage = {
+  __typename: 'BookingOffsetPage';
+  data: Array<Booking>;
+  pagination: PaginationInfo;
+};
+
+export type BookingPayment = {
+  __typename: 'BookingPayment';
+  amount: Maybe<Scalars['BigDecimal']['output']>;
+  currency: Maybe<Scalars['String']['output']>;
+  paidAt: Maybe<Scalars['DateTime']['output']>;
+  payerPhone: Maybe<Scalars['String']['output']>;
+  provider: Maybe<Scalars['String']['output']>;
+  reference: Maybe<Scalars['String']['output']>;
+  status: Maybe<Scalars['String']['output']>;
 };
 
 export type BookingPendingCounts = {
@@ -379,40 +449,44 @@ export type BookingPendingCounts = {
   refundRequests: Scalars['Int']['output'];
 };
 
-export type BulkAccessGrantResponse = {
-  __typename: 'BulkAccessGrantResponse';
-  errors: Maybe<Array<BulkOperationError>>;
-  failedCount: Scalars['Int']['output'];
-  grantedCount: Scalars['Int']['output'];
-  grants: Maybe<Array<EventAccessGrant>>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
+export type BookingStatus =
+  | 'CANCELLED'
+  | 'CONFIRMED'
+  | 'EXPIRED'
+  | 'FAILED'
+  | 'PAID_AFTER_EXPIRY_AUTO_REFUNDED'
+  | 'PARTIALLY_REFUNDED'
+  | 'PENDING'
+  | 'REFUNDED';
+
+export type BroadcastInput = {
+  endsAt?: InputMaybe<Scalars['DateTime']['input']>;
+  message: Scalars['String']['input'];
+  segment?: InputMaybe<AnnouncementSegment>;
+  severity?: InputMaybe<AlertSeverity>;
+  startsAt?: InputMaybe<Scalars['DateTime']['input']>;
+  title: Scalars['String']['input'];
 };
 
 export type BulkApprovalResponse = {
   __typename: 'BulkApprovalResponse';
-  errors: Array<Scalars['String']['output']>;
   failedCount: Scalars['Int']['output'];
-  message: Maybe<Scalars['String']['output']>;
   processedCount: Scalars['Int']['output'];
   results: Array<EventApprovalResult>;
-  success: Scalars['Boolean']['output'];
+};
+
+export type BulkEventAccessGrantInput = {
+  customPermissions?: InputMaybe<Array<Scalars['String']['input']>>;
+  expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
+  role: EventRole;
+  userId: Scalars['ID']['input'];
 };
 
 export type BulkGrantEventAccessInput = {
   eventId: Scalars['ID']['input'];
   grants: Array<GrantEventAccessInput>;
   organizationId: Scalars['ID']['input'];
-};
-
-export type BulkInvitationResponse = {
-  __typename: 'BulkInvitationResponse';
-  errors: Maybe<Array<BulkOperationError>>;
-  failedCount: Scalars['Int']['output'];
-  invitations: Maybe<Array<TeamInvitation>>;
-  message: Maybe<Scalars['String']['output']>;
-  sentCount: Scalars['Int']['output'];
-  success: Scalars['Boolean']['output'];
 };
 
 export type BulkInviteInput = {
@@ -430,31 +504,22 @@ export type BulkOperationError = {
 
 export type BulkOperationResponse = {
   __typename: 'BulkOperationResponse';
-  errors: Array<Scalars['String']['output']>;
   failedCount: Scalars['Int']['output'];
-  message: Maybe<Scalars['String']['output']>;
   processedCount: Scalars['Int']['output'];
-  success: Scalars['Boolean']['output'];
 };
 
 export type BulkPayoutOperationResponse = {
   __typename: 'BulkPayoutOperationResponse';
-  errors: Array<Scalars['String']['output']>;
   failedCount: Scalars['Int']['output'];
   failedPayoutIds: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
   processedCount: Scalars['Int']['output'];
   processedPayouts: Array<PayoutRequest>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type BulkReminderResponse = {
   __typename: 'BulkReminderResponse';
-  errors: Array<Scalars['String']['output']>;
   failedCount: Scalars['Int']['output'];
-  message: Maybe<Scalars['String']['output']>;
   sentCount: Scalars['Int']['output'];
-  success: Scalars['Boolean']['output'];
 };
 
 export type BusinessAddress = {
@@ -469,6 +534,16 @@ export type BusinessAddress = {
   province: Maybe<Scalars['String']['output']>;
 };
 
+export type BusinessAddressInput = {
+  addressLine1?: InputMaybe<Scalars['String']['input']>;
+  addressLine2?: InputMaybe<Scalars['String']['input']>;
+  city?: InputMaybe<Scalars['String']['input']>;
+  country?: InputMaybe<Scalars['String']['input']>;
+  countryCode?: InputMaybe<Scalars['String']['input']>;
+  postalCode?: InputMaybe<Scalars['String']['input']>;
+  province?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type BusinessType =
   | 'GOVERNMENT'
   | 'INDIVIDUAL'
@@ -477,27 +552,9 @@ export type BusinessType =
   | 'PARTNERSHIP'
   | 'SOLE_PROPRIETORSHIP';
 
-export type CancelTicketMutationResponse = {
-  __typename: 'CancelTicketMutationResponse';
-  data: Maybe<Ticket>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type CatalogPendingCounts = {
   __typename: 'CatalogPendingCounts';
   eventReviews: Scalars['Int']['output'];
-};
-
-export type CategoryMutationResponse = {
-  __typename: 'CategoryMutationResponse';
-  data: Maybe<EventCategory>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type ChannelStatus = {
@@ -510,12 +567,15 @@ export type ChannelStatus = {
 };
 
 export type ChargebackFilterInput = {
-  endDate: InputMaybe<Scalars['DateTime']['input']>;
-  eventId: InputMaybe<Scalars['String']['input']>;
-  organizerId: InputMaybe<Scalars['String']['input']>;
-  recoveryStatus: InputMaybe<RecoveryStatus>;
-  startDate: InputMaybe<Scalars['DateTime']['input']>;
-  status: InputMaybe<ChargebackStatus>;
+  awaitingResponse?: InputMaybe<Scalars['Boolean']['input']>;
+  deadlineAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  deadlineBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  organizerId?: InputMaybe<Scalars['String']['input']>;
+  recoveryStatus?: InputMaybe<RecoveryStatus>;
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
+  status?: InputMaybe<ChargebackStatus>;
 };
 
 export type ChargebackFundSource =
@@ -523,15 +583,6 @@ export type ChargebackFundSource =
   | 'ORGANIZER_FUTURE'
   | 'PLATFORM_RESERVE'
   | 'WRITE_OFF';
-
-export type ChargebackMutationResponse = {
-  __typename: 'ChargebackMutationResponse';
-  data: Maybe<ChargebackRecord>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
 
 export type ChargebackOffsetPage = {
   __typename: 'ChargebackOffsetPage';
@@ -573,8 +624,13 @@ export type ChargebackRecord = {
   responseDeadline: Scalars['DateTime']['output'];
   status: ChargebackStatus;
   ticketId: Scalars['String']['output'];
+  unrecoveredAmount: Maybe<Scalars['BigDecimal']['output']>;
   updatedAt: Maybe<Scalars['DateTime']['output']>;
 };
+
+export type ChargebackRecoveryAction =
+  | 'RECORD_RECOVERY'
+  | 'START_RECOVERY';
 
 export type ChargebackStats = {
   __typename: 'ChargebackStats';
@@ -612,21 +668,6 @@ export type ChartOfAccountsEntry = {
   parentAccountCode: Maybe<Scalars['String']['output']>;
   subType: Maybe<AccountSubType>;
   updatedAt: Maybe<Scalars['DateTime']['output']>;
-};
-
-export type ChartOfAccountsMutationResponse = {
-  __typename: 'ChartOfAccountsMutationResponse';
-  data: Maybe<ChartOfAccountsEntry>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type ChartOfAccountsOffsetPage = {
-  __typename: 'ChartOfAccountsOffsetPage';
-  data: Array<ChartOfAccountsEntry>;
-  pagination: PaginationInfo;
 };
 
 export type CheckIn = {
@@ -711,6 +752,12 @@ export type CheckInSummary = {
   openConflicts: Scalars['Int']['output'];
 };
 
+export type CheckoutSettingsInput = {
+  collectHolderNames?: InputMaybe<Scalars['Boolean']['input']>;
+  extraQuestion?: InputMaybe<Scalars['String']['input']>;
+  maxTicketsPerOrder?: InputMaybe<Scalars['Int']['input']>;
+};
+
 export type City = {
   __typename: 'City';
   code: Maybe<Scalars['String']['output']>;
@@ -727,38 +774,6 @@ export type City = {
   updatedBy: Maybe<Scalars['String']['output']>;
 };
 
-export type CityConnection = {
-  __typename: 'CityConnection';
-  edges: Array<CityEdge>;
-  pageInfo: PageInfo;
-};
-
-export type CityEdge = {
-  __typename: 'CityEdge';
-  cursor: Scalars['String']['output'];
-  node: City;
-};
-
-export type CityMutationResponse = {
-  __typename: 'CityMutationResponse';
-  data: Maybe<City>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type CityOffsetPage = {
-  __typename: 'CityOffsetPage';
-  content: Array<City>;
-  hasNext: Scalars['Boolean']['output'];
-  hasPrevious: Scalars['Boolean']['output'];
-  pageNumber: Scalars['Int']['output'];
-  pageSize: Scalars['Int']['output'];
-  totalElements: Scalars['Int']['output'];
-  totalPages: Scalars['Int']['output'];
-};
-
 export type CityStats = {
   __typename: 'CityStats';
   cityId: Maybe<Scalars['String']['output']>;
@@ -767,10 +782,130 @@ export type CityStats = {
   eventCount: Scalars['Int']['output'];
 };
 
+export type CommissionFilterInput = {
+  createdAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  createdBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  organizationId?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<CommissionStatus>;
+  ticketId?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CommissionRecord = {
+  __typename: 'CommissionRecord';
+  amount: Scalars['BigDecimal']['output'];
+  cancelledAt: Maybe<Scalars['DateTime']['output']>;
+  clawedBackAt: Maybe<Scalars['DateTime']['output']>;
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  currency: Scalars['String']['output'];
+  earnedAt: Maybe<Scalars['DateTime']['output']>;
+  eventId: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  organizationId: Maybe<Scalars['String']['output']>;
+  organizerId: Maybe<Scalars['String']['output']>;
+  pendingAt: Maybe<Scalars['DateTime']['output']>;
+  rate: Scalars['BigDecimal']['output'];
+  refundReason: Maybe<Scalars['String']['output']>;
+  refundRequestId: Maybe<Scalars['String']['output']>;
+  status: CommissionStatus;
+  ticketId: Scalars['String']['output'];
+  ticketPrice: Scalars['BigDecimal']['output'];
+};
+
+export type CommissionRecordPage = {
+  __typename: 'CommissionRecordPage';
+  data: Array<CommissionRecord>;
+  pagination: PaginationInfo;
+  totals: CommissionTotals;
+};
+
+export type CommissionStatus =
+  | 'CANCELLED'
+  | 'CLAWED_BACK'
+  | 'EARNED'
+  | 'PENDING';
+
+export type CommissionTotals = {
+  __typename: 'CommissionTotals';
+  cancelled: Scalars['BigDecimal']['output'];
+  clawedBack: Scalars['BigDecimal']['output'];
+  earned: Scalars['BigDecimal']['output'];
+  pending: Scalars['BigDecimal']['output'];
+};
+
+export type ConfirmContactAddInput = {
+  challengeId: Scalars['ID']['input'];
+  code: Scalars['String']['input'];
+};
+
+export type ConfirmContactChangeInput = {
+  changeId: Scalars['ID']['input'];
+  currentContactCode?: InputMaybe<Scalars['String']['input']>;
+  newContactCode: Scalars['String']['input'];
+};
+
+export type ConfirmContactRemovalInput = {
+  challengeId: Scalars['ID']['input'];
+  code: Scalars['String']['input'];
+};
+
 export type ConfirmOwnershipTransferInput = {
   confirmationCode: Scalars['String']['input'];
   transferToken: Scalars['String']['input'];
 };
+
+export type Contact = {
+  __typename: 'Contact';
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  primary: Scalars['Boolean']['output'];
+  type: ContactType;
+  valueMasked: Scalars['String']['output'];
+  verifiedAt: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type ContactChangeKind =
+  | 'ADD'
+  | 'CHANGE'
+  | 'PRIMARY'
+  | 'REMOVE';
+
+export type ContactChangeRequested = {
+  __typename: 'ContactChangeRequested';
+  changeId: Scalars['ID']['output'];
+  currentContact: ContactCodeSent;
+  expiresAt: Scalars['DateTime']['output'];
+  newContact: ContactCodeSent;
+};
+
+export type ContactChangeResult = {
+  __typename: 'ContactChangeResult';
+  changeId: Scalars['ID']['output'];
+  contacts: Array<Contact>;
+  kind: ContactChangeKind;
+  status: ContactChangeStatus;
+};
+
+export type ContactChangeStatus =
+  | 'APPLYING'
+  | 'COMPLETED';
+
+export type ContactCodeSent = {
+  __typename: 'ContactCodeSent';
+  challengeId: Scalars['ID']['output'];
+  contactType: ContactType;
+  expiresInSeconds: Scalars['Int']['output'];
+  maskedContact: Scalars['String']['output'];
+  resendAfterSeconds: Scalars['Int']['output'];
+};
+
+export type ContactCodeTarget =
+  | 'CURRENT'
+  | 'NEW';
+
+export type ContactType =
+  | 'EMAIL'
+  | 'WHATSAPP';
 
 export type Coordinates = {
   __typename: 'Coordinates';
@@ -781,34 +916,25 @@ export type Coordinates = {
 export type CreateBankAccountInput = {
   accountHolderName: Scalars['String']['input'];
   accountNumber: Scalars['String']['input'];
-  accountType: InputMaybe<Scalars['String']['input']>;
-  bankCode: InputMaybe<Scalars['String']['input']>;
+  accountType?: InputMaybe<Scalars['String']['input']>;
+  bankCode?: InputMaybe<Scalars['String']['input']>;
   bankName: Scalars['String']['input'];
-  branchCode: InputMaybe<Scalars['String']['input']>;
-  branchName: InputMaybe<Scalars['String']['input']>;
+  branchCode?: InputMaybe<Scalars['String']['input']>;
+  branchName?: InputMaybe<Scalars['String']['input']>;
   currency: Scalars['String']['input'];
-  isDefault: InputMaybe<Scalars['Boolean']['input']>;
+  isDefault?: InputMaybe<Scalars['Boolean']['input']>;
   organizerId: Scalars['String']['input'];
-  swiftCode: InputMaybe<Scalars['String']['input']>;
-};
-
-export type CreateBankAccountMutationResponse = {
-  __typename: 'CreateBankAccountMutationResponse';
-  data: Maybe<BankAccount>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+  swiftCode?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type CreateChartOfAccountsInput = {
   accountCode: Scalars['String']['input'];
   accountName: Scalars['String']['input'];
   accountType: AccountType;
-  currency: InputMaybe<Scalars['String']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  parentAccountCode: InputMaybe<Scalars['String']['input']>;
-  subType: InputMaybe<AccountSubType>;
+  currency?: InputMaybe<Scalars['String']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  parentAccountCode?: InputMaybe<Scalars['String']['input']>;
+  subType?: InputMaybe<AccountSubType>;
 };
 
 export type CreateCityInput = {
@@ -826,57 +952,58 @@ export type CreateCoordinatesInput = {
 export type CreateEscrowAccountInput = {
   currency: Scalars['String']['input'];
   eventId: Scalars['String']['input'];
-  eventTitle: InputMaybe<Scalars['String']['input']>;
+  eventTitle?: InputMaybe<Scalars['String']['input']>;
   organizerId: Scalars['String']['input'];
-  organizerName: InputMaybe<Scalars['String']['input']>;
+  organizerName?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type CreateEventCategoryInput = {
   code: Scalars['String']['input'];
-  color: InputMaybe<Scalars['String']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  iconUrl: InputMaybe<Scalars['String']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
-  sortOrder: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type CreateEventInput = {
-  accessibility: InputMaybe<EventAccessibilityInput>;
-  additionalInfo: InputMaybe<Scalars['JSON']['input']>;
-  bannerImageUrl: InputMaybe<Scalars['String']['input']>;
-  cancellationPolicy: InputMaybe<Scalars['String']['input']>;
+  accessibility?: InputMaybe<EventAccessibilityInput>;
+  additionalInfo?: InputMaybe<Scalars['JSON']['input']>;
+  ageRestriction?: InputMaybe<Scalars['String']['input']>;
+  bagPolicy?: InputMaybe<Scalars['String']['input']>;
+  bannerAltText?: InputMaybe<Scalars['String']['input']>;
+  bannerImageUrl?: InputMaybe<Scalars['String']['input']>;
+  cancellationPolicy?: InputMaybe<Scalars['String']['input']>;
   categoryId: Scalars['String']['input'];
+  checkoutSettings?: InputMaybe<CheckoutSettingsInput>;
   description: Scalars['String']['input'];
-  enableWaitlist: InputMaybe<Scalars['Boolean']['input']>;
+  doorsOpenAt?: InputMaybe<Scalars['DateTime']['input']>;
+  enableWaitlist?: InputMaybe<Scalars['Boolean']['input']>;
   endDateTime: Scalars['DateTime']['input'];
   eventDateTime: Scalars['DateTime']['input'];
-  isFreeEvent: InputMaybe<Scalars['Boolean']['input']>;
-  isVirtual: InputMaybe<Scalars['Boolean']['input']>;
-  location: InputMaybe<EventLocationInput>;
-  refundPolicy: InputMaybe<Scalars['String']['input']>;
-  tags: InputMaybe<Array<Scalars['String']['input']>>;
-  termsAndConditions: InputMaybe<Scalars['String']['input']>;
+  faqs?: InputMaybe<Array<EventFaqInput>>;
+  galleryImages?: InputMaybe<Array<Scalars['String']['input']>>;
+  gettingThere?: InputMaybe<Scalars['String']['input']>;
+  isFreeEvent?: InputMaybe<Scalars['Boolean']['input']>;
+  isVirtual?: InputMaybe<Scalars['Boolean']['input']>;
+  location?: InputMaybe<EventLocationInput>;
+  parkingInfo?: InputMaybe<Scalars['String']['input']>;
+  publishAt?: InputMaybe<Scalars['DateTime']['input']>;
+  refundPolicy?: InputMaybe<Scalars['String']['input']>;
+  runningOrder?: InputMaybe<Array<RunningOrderItemInput>>;
+  tagline?: InputMaybe<Scalars['String']['input']>;
+  termsAndConditions?: InputMaybe<Scalars['String']['input']>;
   ticketTiers: Array<CreateTicketTierInput>;
   title: Scalars['String']['input'];
   totalCapacity: Scalars['Int']['input'];
-  virtualEventUrl: InputMaybe<Scalars['String']['input']>;
-  waitlistCapacity: InputMaybe<Scalars['Int']['input']>;
-};
-
-export type CreateEventReminderInput = {
-  channels: InputMaybe<Array<NotificationChannel>>;
-  eventId: Scalars['ID']['input'];
-  minutesBefore: Scalars['Int']['input'];
-  ticketId: Scalars['ID']['input'];
+  virtualEventUrl?: InputMaybe<Scalars['String']['input']>;
+  waitlistCapacity?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type CreateJournalEntryInput = {
   correlationId: Scalars['String']['input'];
   description: Scalars['String']['input'];
-  effectiveDate: InputMaybe<Scalars['DateTime']['input']>;
+  effectiveDate?: InputMaybe<Scalars['DateTime']['input']>;
   entryDate: Scalars['DateTime']['input'];
   lines: Array<JournalLineInput>;
-  metadata: InputMaybe<Scalars['JSON']['input']>;
+  metadata?: InputMaybe<Scalars['JSON']['input']>;
   type: JournalEntryType;
 };
 
@@ -884,36 +1011,27 @@ export type CreatePayoutRequestInput = {
   bankAccountId: Scalars['String']['input'];
   currency: Scalars['String']['input'];
   escrowAccountId: Scalars['String']['input'];
-  eventId: InputMaybe<Scalars['String']['input']>;
-  idempotencyKey: InputMaybe<Scalars['String']['input']>;
-  metadata: InputMaybe<Scalars['JSON']['input']>;
-  notes: InputMaybe<Scalars['String']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  idempotencyKey?: InputMaybe<Scalars['String']['input']>;
+  metadata?: InputMaybe<Scalars['JSON']['input']>;
+  notes?: InputMaybe<Scalars['String']['input']>;
   organizerId: Scalars['String']['input'];
   payoutMethod: PayoutMethod;
   requestedAmount: Scalars['BigDecimal']['input'];
 };
 
-export type CreatePayoutRequestMutationResponse = {
-  __typename: 'CreatePayoutRequestMutationResponse';
-  data: Maybe<PayoutRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type CreatePromoCodeInput = {
-  applicableTiers: InputMaybe<Array<Scalars['String']['input']>>;
+  applicableTiers?: InputMaybe<Array<Scalars['String']['input']>>;
   code: Scalars['String']['input'];
   discountType: DiscountType;
   discountValue: Scalars['BigDecimal']['input'];
-  eventId: InputMaybe<Scalars['ID']['input']>;
-  maxDiscountAmount: InputMaybe<Scalars['BigDecimal']['input']>;
-  maxUses: InputMaybe<Scalars['Int']['input']>;
-  minPurchaseAmount: InputMaybe<Scalars['BigDecimal']['input']>;
-  organizerId: InputMaybe<Scalars['ID']['input']>;
-  validFrom: InputMaybe<Scalars['DateTime']['input']>;
-  validUntil: InputMaybe<Scalars['DateTime']['input']>;
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  maxDiscountAmount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  maxUses?: InputMaybe<Scalars['Int']['input']>;
+  minPurchaseAmount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  organizerId?: InputMaybe<Scalars['ID']['input']>;
+  validFrom?: InputMaybe<Scalars['DateTime']['input']>;
+  validUntil?: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 export type CreateProvinceInput = {
@@ -923,68 +1041,61 @@ export type CreateProvinceInput = {
 };
 
 export type CreateReferenceDataInput = {
-  allowedTransitions: InputMaybe<Array<Scalars['String']['input']>>;
+  allowedTransitions?: InputMaybe<Array<Scalars['String']['input']>>;
   code: Scalars['String']['input'];
-  description: InputMaybe<Scalars['String']['input']>;
-  displayOrder: InputMaybe<Scalars['Int']['input']>;
-  isActive: InputMaybe<Scalars['Boolean']['input']>;
-  metadata: InputMaybe<Scalars['JSON']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  displayOrder?: InputMaybe<Scalars['Int']['input']>;
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  metadata?: InputMaybe<Scalars['JSON']['input']>;
   name: Scalars['String']['input'];
-  parentCode: InputMaybe<Scalars['String']['input']>;
-  parentType: InputMaybe<ReferenceType>;
-  semantic: InputMaybe<WorkflowSemantic>;
+  parentCode?: InputMaybe<Scalars['String']['input']>;
+  parentType?: InputMaybe<ReferenceType>;
+  semantic?: InputMaybe<WorkflowSemantic>;
   type: ReferenceType;
 };
 
 export type CreateRefundRequestInput = {
-  additionalNotes: InputMaybe<Scalars['String']['input']>;
-  metadata: InputMaybe<Scalars['JSON']['input']>;
+  additionalNotes?: InputMaybe<Scalars['String']['input']>;
+  metadata?: InputMaybe<Scalars['JSON']['input']>;
   reason: Scalars['String']['input'];
   requestedById: Scalars['String']['input'];
   ticketId: Scalars['String']['input'];
 };
 
-export type CreateRefundRequestMutationResponse = {
-  __typename: 'CreateRefundRequestMutationResponse';
-  data: Maybe<RefundRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type CreateTicketTierInput = {
-  accessCode: InputMaybe<Scalars['String']['input']>;
-  benefits: InputMaybe<Array<Scalars['String']['input']>>;
+  accessCode?: InputMaybe<Scalars['String']['input']>;
+  benefits?: InputMaybe<Array<Scalars['String']['input']>>;
+  category?: InputMaybe<TicketCategory>;
   code: Scalars['String']['input'];
   currency: Scalars['String']['input'];
-  description: InputMaybe<Scalars['String']['input']>;
-  earlyBirdEndsAt: InputMaybe<Scalars['DateTime']['input']>;
-  earlyBirdPrice: InputMaybe<Scalars['BigDecimal']['input']>;
-  isHidden: InputMaybe<Scalars['Boolean']['input']>;
-  maxPerOrder: InputMaybe<Scalars['Int']['input']>;
-  minPerOrder: InputMaybe<Scalars['Int']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  earlyBirdEndsAt?: InputMaybe<Scalars['DateTime']['input']>;
+  earlyBirdPrice?: InputMaybe<Scalars['BigDecimal']['input']>;
+  isHidden?: InputMaybe<Scalars['Boolean']['input']>;
+  maxPerOrder?: InputMaybe<Scalars['Int']['input']>;
+  minPerOrder?: InputMaybe<Scalars['Int']['input']>;
   name: Scalars['String']['input'];
   price: Scalars['BigDecimal']['input'];
   quantity: Scalars['Int']['input'];
-  salesEndAt: InputMaybe<Scalars['DateTime']['input']>;
-  salesStartAt: InputMaybe<Scalars['DateTime']['input']>;
-  sortOrder: InputMaybe<Scalars['Int']['input']>;
+  salesEndAt?: InputMaybe<Scalars['DateTime']['input']>;
+  salesStartAt?: InputMaybe<Scalars['DateTime']['input']>;
+  sortOrder?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type CreateUserInput = {
   email: Scalars['String']['input'];
   firstName: Scalars['String']['input'];
   lastName: Scalars['String']['input'];
-  password: InputMaybe<Scalars['String']['input']>;
-  phoneNumber: InputMaybe<Scalars['PhoneNumber']['input']>;
+  password?: InputMaybe<Scalars['String']['input']>;
+  phoneNumber?: InputMaybe<Scalars['String']['input']>;
+  role?: InputMaybe<UserType>;
 };
 
 export type CursorPaginationInput = {
-  after: InputMaybe<Scalars['String']['input']>;
-  before: InputMaybe<Scalars['String']['input']>;
-  first: InputMaybe<Scalars['Int']['input']>;
-  last: InputMaybe<Scalars['Int']['input']>;
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type DaysWaitingBreakdown = {
@@ -992,29 +1103,6 @@ export type DaysWaitingBreakdown = {
   count: Scalars['Int']['output'];
   daysWaiting: Scalars['Int']['output'];
   percentage: Scalars['Float']['output'];
-};
-
-export type DeleteBankAccountMutationResponse = {
-  __typename: 'DeleteBankAccountMutationResponse';
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type DeleteMutationResponse = {
-  __typename: 'DeleteMutationResponse';
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type DeviceMutationResponse = {
-  __typename: 'DeviceMutationResponse';
-  device: Maybe<UserDevice>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type DevicePlatform =
@@ -1027,19 +1115,12 @@ export type DiscountType =
   | 'PERCENTAGE';
 
 export type DisputeChargebackInput = {
-  additionalDocuments: InputMaybe<Scalars['String']['input']>;
-  customerCommunicationLog: InputMaybe<Scalars['String']['input']>;
-  deliveryConfirmation: InputMaybe<Scalars['String']['input']>;
+  additionalDocuments?: InputMaybe<Scalars['String']['input']>;
+  customerCommunicationLog?: InputMaybe<Scalars['String']['input']>;
+  deliveryConfirmation?: InputMaybe<Scalars['String']['input']>;
   notes: Scalars['String']['input'];
-  termsAcceptanceProof: InputMaybe<Scalars['String']['input']>;
-  ticketValidationProof: InputMaybe<Scalars['String']['input']>;
-};
-
-export type DocumentMutationResponse = {
-  __typename: 'DocumentMutationResponse';
-  document: Maybe<VerificationDocument>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
+  termsAcceptanceProof?: InputMaybe<Scalars['String']['input']>;
+  ticketValidationProof?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type DocumentStatus =
@@ -1073,34 +1154,12 @@ export type EscalationStatus =
   | 'PENDING'
   | 'RESOLVED';
 
-export type EscrowAccountConnection = {
-  __typename: 'EscrowAccountConnection';
-  edges: Array<EscrowAccountEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type EscrowAccountEdge = {
-  __typename: 'EscrowAccountEdge';
-  cursor: Scalars['String']['output'];
-  node: EventEscrowAccount;
-};
-
 export type EscrowAccountFilterInput = {
-  currency: InputMaybe<Scalars['String']['input']>;
-  eventId: InputMaybe<Scalars['String']['input']>;
-  hasBalance: InputMaybe<Scalars['Boolean']['input']>;
-  organizerId: InputMaybe<Scalars['String']['input']>;
-  status: InputMaybe<EscrowAccountStatus>;
-};
-
-export type EscrowAccountMutationResponse = {
-  __typename: 'EscrowAccountMutationResponse';
-  data: Maybe<EventEscrowAccount>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+  currency?: InputMaybe<Scalars['String']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  hasBalance?: InputMaybe<Scalars['Boolean']['input']>;
+  organizerId?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<EscrowAccountStatus>;
 };
 
 export type EscrowAccountOffsetPage = {
@@ -1119,16 +1178,13 @@ export type EscrowAccountStatus =
 export type EscrowJournalVerificationResponse = {
   __typename: 'EscrowJournalVerificationResponse';
   details: Array<Scalars['String']['output']>;
-  errors: Array<Scalars['String']['output']>;
   escrowAccountId: Maybe<Scalars['String']['output']>;
   escrowBalance: Maybe<Scalars['BigDecimal']['output']>;
   eventId: Scalars['String']['output'];
   isConsistent: Scalars['Boolean']['output'];
   journalAccountCode: Maybe<Scalars['String']['output']>;
   journalBalance: Maybe<Scalars['BigDecimal']['output']>;
-  message: Maybe<Scalars['String']['output']>;
   status: Maybe<EscrowJournalVerificationStatus>;
-  success: Scalars['Boolean']['output'];
   variance: Maybe<Scalars['BigDecimal']['output']>;
 };
 
@@ -1138,15 +1194,6 @@ export type EscrowJournalVerificationStatus =
   | 'MISSING_JOURNAL_ACCOUNT'
   | 'NOT_FOUND'
   | 'ORPHANED_JOURNAL_ACCOUNT';
-
-export type EscrowTransactionMutationResponse = {
-  __typename: 'EscrowTransactionMutationResponse';
-  data: Maybe<StandaloneEscrowTransaction>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
 
 export type EscrowTransactionOffsetPage = {
   __typename: 'EscrowTransactionOffsetPage';
@@ -1158,23 +1205,35 @@ export type Event = {
   __typename: 'Event';
   accessibility: Maybe<EventAccessibility>;
   additionalInfo: Maybe<Scalars['JSON']['output']>;
+  ageRestriction: Maybe<Scalars['String']['output']>;
+  approvalBlockers: Array<ApprovalBlocker>;
   approvalDeadline: Maybe<Scalars['DateTime']['output']>;
   approvedAt: Maybe<Scalars['DateTime']['output']>;
   approvedBy: Maybe<Scalars['String']['output']>;
   availableTickets: Scalars['Int']['output'];
+  bagPolicy: Maybe<Scalars['String']['output']>;
+  bannerAltText: Maybe<Scalars['String']['output']>;
   bannerImageUrl: Maybe<Scalars['String']['output']>;
   cancellationPolicy: Maybe<Scalars['String']['output']>;
+  cancellationReason: Maybe<Scalars['String']['output']>;
+  cancelledAt: Maybe<Scalars['DateTime']['output']>;
   category: Maybe<EventCategory>;
   categoryId: Maybe<Scalars['String']['output']>;
+  checkoutSettings: Maybe<EventCheckoutSettings>;
   cityName: Maybe<Scalars['String']['output']>;
+  commissionAmount: Maybe<Scalars['BigDecimal']['output']>;
   createdAt: Maybe<Scalars['DateTime']['output']>;
   createdBy: Maybe<Scalars['String']['output']>;
   currency: Maybe<Scalars['String']['output']>;
   description: Scalars['String']['output'];
+  doorsOpenAt: Maybe<Scalars['DateTime']['output']>;
   endDateTime: Scalars['DateTime']['output'];
   eventDateTime: Scalars['DateTime']['output'];
+  faqs: Maybe<Array<EventFaq>>;
   featured: Scalars['Boolean']['output'];
   galleryImages: Maybe<Array<Scalars['String']['output']>>;
+  gettingThere: Maybe<Scalars['String']['output']>;
+  grossSales: Maybe<Scalars['BigDecimal']['output']>;
   hasWaitlist: Scalars['Boolean']['output'];
   id: Scalars['ID']['output'];
   isActive: Scalars['Boolean']['output'];
@@ -1188,6 +1247,7 @@ export type Event = {
   locationName: Maybe<Scalars['String']['output']>;
   maxTicketPrice: Maybe<Scalars['BigDecimal']['output']>;
   minTicketPrice: Maybe<Scalars['BigDecimal']['output']>;
+  netSales: Maybe<Scalars['BigDecimal']['output']>;
   organization: Maybe<Organization>;
   organizationId: Maybe<Scalars['String']['output']>;
   organizer: Maybe<User>;
@@ -1201,6 +1261,9 @@ export type Event = {
   organizerName: Scalars['String']['output'];
   organizerPhone: Maybe<Scalars['String']['output']>;
   parentEventId: Maybe<Scalars['String']['output']>;
+  parkingInfo: Maybe<Scalars['String']['output']>;
+  publishAt: Maybe<Scalars['DateTime']['output']>;
+  publishScheduled: Scalars['Boolean']['output'];
   published: Scalars['Boolean']['output'];
   publishedAt: Maybe<Scalars['DateTime']['output']>;
   recurrencePattern: Maybe<Scalars['String']['output']>;
@@ -1209,11 +1272,13 @@ export type Event = {
   rejectedBy: Maybe<Scalars['String']['output']>;
   rejectionReason: Maybe<Scalars['String']['output']>;
   revenue: Scalars['BigDecimal']['output'];
+  runningOrder: Maybe<Array<RunningOrderItem>>;
   salesPercentage: Scalars['Float']['output'];
   soldOut: Scalars['Boolean']['output'];
   soldTickets: Scalars['Int']['output'];
   status: EventStatus;
   submittedForApprovalAt: Maybe<Scalars['DateTime']['output']>;
+  tagline: Maybe<Scalars['String']['output']>;
   tags: Maybe<Array<Scalars['String']['output']>>;
   termsAndConditions: Maybe<Scalars['String']['output']>;
   thumbnailImageUrl: Maybe<Scalars['String']['output']>;
@@ -1256,24 +1321,11 @@ export type EventAccessGrant = {
   userId: Scalars['ID']['output'];
 };
 
-export type EventAccessGrantConnection = {
-  __typename: 'EventAccessGrantConnection';
-  edges: Array<EventAccessGrantEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type EventAccessGrantEdge = {
-  __typename: 'EventAccessGrantEdge';
-  cursor: Scalars['String']['output'];
-  node: EventAccessGrant;
-};
-
 export type EventAccessGrantInput = {
-  customPermissions: InputMaybe<Array<Scalars['String']['input']>>;
+  customPermissions?: InputMaybe<Array<Scalars['String']['input']>>;
   eventId: Scalars['ID']['input'];
-  expiresAt: InputMaybe<Scalars['DateTime']['input']>;
-  reason: InputMaybe<Scalars['String']['input']>;
+  expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
   role: EventRole;
 };
 
@@ -1285,15 +1337,8 @@ export type EventAccessGrantOffsetPage = {
 
 export type EventAccessInput = {
   eventId: Scalars['ID']['input'];
-  expiresAt: InputMaybe<Scalars['DateTime']['input']>;
+  expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
   role: EventRole;
-};
-
-export type EventAccessMutationResponse = {
-  __typename: 'EventAccessMutationResponse';
-  accessGrant: Maybe<EventAccessGrant>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type EventAccessProposal = {
@@ -1316,81 +1361,53 @@ export type EventAccessibility = {
 };
 
 export type EventAccessibilityInput = {
-  accessibleParking: InputMaybe<Scalars['Boolean']['input']>;
-  accessibleRestrooms: InputMaybe<Scalars['Boolean']['input']>;
-  additionalNotes: InputMaybe<Scalars['String']['input']>;
-  assistanceDogsAllowed: InputMaybe<Scalars['Boolean']['input']>;
-  hearingLoopAvailable: InputMaybe<Scalars['Boolean']['input']>;
-  signLanguageInterpreter: InputMaybe<Scalars['Boolean']['input']>;
-  wheelchairAccessible: InputMaybe<Scalars['Boolean']['input']>;
-  wheelchairSeatsAvailable: InputMaybe<Scalars['Int']['input']>;
+  accessibleParking?: InputMaybe<Scalars['Boolean']['input']>;
+  accessibleRestrooms?: InputMaybe<Scalars['Boolean']['input']>;
+  additionalNotes?: InputMaybe<Scalars['String']['input']>;
+  assistanceDogsAllowed?: InputMaybe<Scalars['Boolean']['input']>;
+  hearingLoopAvailable?: InputMaybe<Scalars['Boolean']['input']>;
+  signLanguageInterpreter?: InputMaybe<Scalars['Boolean']['input']>;
+  wheelchairAccessible?: InputMaybe<Scalars['Boolean']['input']>;
+  wheelchairSeatsAvailable?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type EventApprovalResult = {
   __typename: 'EventApprovalResult';
+  /** Null when this event was approved. Otherwise the ET-PLT-005 registry code explaining why it was not. */
+  errorCode: Maybe<Scalars['String']['output']>;
   eventId: Scalars['ID']['output'];
   eventTitle: Maybe<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
   newStatus: Maybe<EventStatus>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type EventCancellationInput = {
-  eventId: InputMaybe<Scalars['ID']['input']>;
-  notifyAttendees: InputMaybe<Scalars['Boolean']['input']>;
-  notifyBuyers: InputMaybe<Scalars['Boolean']['input']>;
-  processRefundsImmediately: InputMaybe<Scalars['Boolean']['input']>;
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  notifyAttendees?: InputMaybe<Scalars['Boolean']['input']>;
+  notifyBuyers?: InputMaybe<Scalars['Boolean']['input']>;
+  processRefundsImmediately?: InputMaybe<Scalars['Boolean']['input']>;
   reason: Scalars['String']['input'];
-  triggerRefunds: InputMaybe<Scalars['Boolean']['input']>;
+  triggerRefunds?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type EventCancellationResponse = {
   __typename: 'EventCancellationResponse';
-  errors: Array<Scalars['String']['output']>;
   event: Maybe<Event>;
-  message: Maybe<Scalars['String']['output']>;
   refundSagaInitiated: Scalars['Boolean']['output'];
   sagaId: Maybe<Scalars['ID']['output']>;
-  success: Scalars['Boolean']['output'];
   ticketsAffected: Scalars['Int']['output'];
 };
 
 export type EventCategory = {
   __typename: 'EventCategory';
   code: Scalars['String']['output'];
-  color: Maybe<Scalars['String']['output']>;
   createdAt: Maybe<Scalars['DateTime']['output']>;
   description: Maybe<Scalars['String']['output']>;
   eventCount: Maybe<Scalars['Int']['output']>;
-  iconUrl: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
+  imageUrl: Maybe<Scalars['String']['output']>;
   isActive: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
-  sortOrder: Maybe<Scalars['Int']['output']>;
   updatedAt: Maybe<Scalars['DateTime']['output']>;
-};
-
-export type EventCategoryConnection = {
-  __typename: 'EventCategoryConnection';
-  edges: Array<EventCategoryEdge>;
-  pageInfo: PageInfo;
-};
-
-export type EventCategoryEdge = {
-  __typename: 'EventCategoryEdge';
-  cursor: Scalars['String']['output'];
-  node: EventCategory;
-};
-
-export type EventCategoryOffsetPage = {
-  __typename: 'EventCategoryOffsetPage';
-  content: Array<EventCategory>;
-  hasNext: Scalars['Boolean']['output'];
-  hasPrevious: Scalars['Boolean']['output'];
-  pageNumber: Scalars['Int']['output'];
-  pageSize: Scalars['Int']['output'];
-  totalElements: Scalars['Int']['output'];
-  totalPages: Scalars['Int']['output'];
 };
 
 export type EventCategoryStats = {
@@ -1404,6 +1421,13 @@ export type EventCategoryStats = {
   totalSoldTickets: Scalars['Int']['output'];
 };
 
+export type EventCheckoutSettings = {
+  __typename: 'EventCheckoutSettings';
+  collectHolderNames: Scalars['Boolean']['output'];
+  extraQuestion: Maybe<Scalars['String']['output']>;
+  maxTicketsPerOrder: Maybe<Scalars['Int']['output']>;
+};
+
 export type EventConnection = {
   __typename: 'EventConnection';
   edges: Array<EventEdge>;
@@ -1411,25 +1435,31 @@ export type EventConnection = {
 };
 
 export type EventDiscoveryFilterInput = {
-  categoryId: InputMaybe<Scalars['String']['input']>;
-  categoryIds: InputMaybe<Array<Scalars['String']['input']>>;
-  cityId: InputMaybe<Scalars['String']['input']>;
-  cityName: InputMaybe<Scalars['String']['input']>;
-  country: InputMaybe<Scalars['String']['input']>;
-  endDate: InputMaybe<Scalars['DateTime']['input']>;
-  hasAvailableTickets: InputMaybe<Scalars['Boolean']['input']>;
-  isAccessible: InputMaybe<Scalars['Boolean']['input']>;
-  isFeatured: InputMaybe<Scalars['Boolean']['input']>;
-  isFreeEvent: InputMaybe<Scalars['Boolean']['input']>;
-  isVirtual: InputMaybe<Scalars['Boolean']['input']>;
-  maxPrice: InputMaybe<Scalars['BigDecimal']['input']>;
-  minPrice: InputMaybe<Scalars['BigDecimal']['input']>;
-  organizerId: InputMaybe<Scalars['String']['input']>;
-  provinceId: InputMaybe<Scalars['String']['input']>;
-  searchQuery: InputMaybe<Scalars['String']['input']>;
-  startDate: InputMaybe<Scalars['DateTime']['input']>;
-  tags: InputMaybe<Array<Scalars['String']['input']>>;
+  categoryId?: InputMaybe<Scalars['String']['input']>;
+  categoryIds?: InputMaybe<Array<Scalars['String']['input']>>;
+  cityId?: InputMaybe<Scalars['String']['input']>;
+  cityName?: InputMaybe<Scalars['String']['input']>;
+  country?: InputMaybe<Scalars['String']['input']>;
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  hasAvailableTickets?: InputMaybe<Scalars['Boolean']['input']>;
+  isAccessible?: InputMaybe<Scalars['Boolean']['input']>;
+  isFeatured?: InputMaybe<Scalars['Boolean']['input']>;
+  isFreeEvent?: InputMaybe<Scalars['Boolean']['input']>;
+  isVirtual?: InputMaybe<Scalars['Boolean']['input']>;
+  maxPrice?: InputMaybe<Scalars['BigDecimal']['input']>;
+  minPrice?: InputMaybe<Scalars['BigDecimal']['input']>;
+  organizerId?: InputMaybe<Scalars['String']['input']>;
+  provinceId?: InputMaybe<Scalars['String']['input']>;
+  searchQuery?: InputMaybe<Scalars['String']['input']>;
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
 };
+
+export type EventDiscoverySort =
+  | 'NEWEST'
+  | 'POPULAR'
+  | 'PRICE_ASC'
+  | 'PRICE_DESC'
+  | 'SOONEST';
 
 export type EventEdge = {
   __typename: 'EventEdge';
@@ -1460,23 +1490,34 @@ export type EventEscrowAccount = {
   updatedAt: Maybe<Scalars['DateTime']['output']>;
 };
 
+export type EventFaq = {
+  __typename: 'EventFaq';
+  answer: Scalars['String']['output'];
+  question: Scalars['String']['output'];
+};
+
+export type EventFaqInput = {
+  answer: Scalars['String']['input'];
+  question: Scalars['String']['input'];
+};
+
 export type EventFilterInput = {
-  approvedNotPublished: InputMaybe<Scalars['Boolean']['input']>;
-  categoryId: InputMaybe<Scalars['String']['input']>;
-  cityId: InputMaybe<Scalars['String']['input']>;
-  country: InputMaybe<Scalars['String']['input']>;
-  createdAfter: InputMaybe<Scalars['DateTime']['input']>;
-  createdBefore: InputMaybe<Scalars['DateTime']['input']>;
-  daysSinceApprovalMax: InputMaybe<Scalars['Int']['input']>;
-  daysSinceApprovalMin: InputMaybe<Scalars['Int']['input']>;
-  eventDateAfter: InputMaybe<Scalars['DateTime']['input']>;
-  eventDateBefore: InputMaybe<Scalars['DateTime']['input']>;
-  organizerId: InputMaybe<Scalars['String']['input']>;
-  overdue: InputMaybe<Scalars['Boolean']['input']>;
-  published: InputMaybe<Scalars['Boolean']['input']>;
-  searchQuery: InputMaybe<Scalars['String']['input']>;
-  status: InputMaybe<EventStatus>;
-  statuses: InputMaybe<Array<EventStatus>>;
+  approvedNotPublished?: InputMaybe<Scalars['Boolean']['input']>;
+  categoryId?: InputMaybe<Scalars['String']['input']>;
+  cityId?: InputMaybe<Scalars['String']['input']>;
+  country?: InputMaybe<Scalars['String']['input']>;
+  createdAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  createdBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  daysSinceApprovalMax?: InputMaybe<Scalars['Int']['input']>;
+  daysSinceApprovalMin?: InputMaybe<Scalars['Int']['input']>;
+  eventDateAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  eventDateBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  organizerId?: InputMaybe<Scalars['String']['input']>;
+  overdue?: InputMaybe<Scalars['Boolean']['input']>;
+  published?: InputMaybe<Scalars['Boolean']['input']>;
+  searchQuery?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<EventStatus>;
+  statuses?: InputMaybe<Array<EventStatus>>;
 };
 
 export type EventFinancialSummary = {
@@ -1504,21 +1545,12 @@ export type EventLifecycle = {
 export type EventLocationInput = {
   address: Scalars['String']['input'];
   city: Scalars['String']['input'];
-  coordinates: InputMaybe<CreateCoordinatesInput>;
+  coordinates?: InputMaybe<CreateCoordinatesInput>;
   country: Scalars['String']['input'];
-  description: InputMaybe<Scalars['String']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
-  postalCode: InputMaybe<Scalars['String']['input']>;
-  province: InputMaybe<Scalars['String']['input']>;
-};
-
-export type EventMutationResponse = {
-  __typename: 'EventMutationResponse';
-  data: Maybe<Event>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+  postalCode?: InputMaybe<Scalars['String']['input']>;
+  province?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type EventOffsetPage = {
@@ -1542,6 +1574,13 @@ export type EventOrganizerStats = {
   totalSoldTickets: Scalars['Int']['output'];
 };
 
+export type EventRecommendation = {
+  __typename: 'EventRecommendation';
+  basedOnEventId: Maybe<Scalars['ID']['output']>;
+  event: Event;
+  reason: RecommendationReason;
+};
+
 export type EventReminder = {
   __typename: 'EventReminder';
   channels: Maybe<Array<NotificationChannel>>;
@@ -1551,7 +1590,6 @@ export type EventReminder = {
   eventId: Scalars['ID']['output'];
   eventTitle: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
-  minutesBefore: Scalars['Int']['output'];
   reminderAt: Scalars['DateTime']['output'];
   sentAt: Maybe<Scalars['DateTime']['output']>;
   status: ReminderStatus;
@@ -1592,8 +1630,9 @@ export type EventStatus =
   | 'CHANGES_REQUESTED'
   | 'COMPLETED'
   | 'DRAFT'
-  | 'PENDING_REVIEW'
-  | 'PUBLISHED';
+  | 'PENDING_APPROVAL'
+  | 'PUBLISHED'
+  | 'REJECTED';
 
 export type EventStatusStats = {
   __typename: 'EventStatusStats';
@@ -1667,20 +1706,91 @@ export type FinancialReport = {
 
 export type FinancialReportFilterInput = {
   endDate: Scalars['DateTime']['input'];
-  eventId: InputMaybe<Scalars['ID']['input']>;
-  groupBy: InputMaybe<TimeUnit>;
-  organizerId: InputMaybe<Scalars['ID']['input']>;
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  groupBy?: InputMaybe<TimeUnit>;
+  organizerId?: InputMaybe<Scalars['ID']['input']>;
   startDate: Scalars['DateTime']['input'];
+};
+
+export type GatewaySettlement = {
+  __typename: 'GatewaySettlement';
+  bankReference: Maybe<Scalars['String']['output']>;
+  currency: Maybe<Scalars['String']['output']>;
+  entryNumber: Maybe<Scalars['String']['output']>;
+  feeAmount: Scalars['BigDecimal']['output'];
+  grossAmount: Scalars['BigDecimal']['output'];
+  journalEntryId: Scalars['String']['output'];
+  netAmount: Scalars['BigDecimal']['output'];
+  postedAt: Maybe<Scalars['DateTime']['output']>;
+  settlementDate: Maybe<Scalars['DateTime']['output']>;
+  settlementId: Scalars['String']['output'];
+};
+
+export type GatewaySettlementFilterInput = {
+  from?: InputMaybe<Scalars['DateTime']['input']>;
+  settlementId?: InputMaybe<Scalars['String']['input']>;
+  to?: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+export type GatewaySettlementPage = {
+  __typename: 'GatewaySettlementPage';
+  data: Array<GatewaySettlement>;
+  pagination: PaginationInfo;
 };
 
 export type GrantEventAccessInput = {
   eventId: Scalars['ID']['input'];
-  expiresAt: InputMaybe<Scalars['DateTime']['input']>;
+  expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
   organizationId: Scalars['ID']['input'];
-  reason: InputMaybe<Scalars['String']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
   role: EventRole;
   userId: Scalars['ID']['input'];
 };
+
+export type GrowthBucket =
+  | 'DAY'
+  | 'MONTH'
+  | 'WEEK';
+
+export type GrowthPoint = {
+  __typename: 'GrowthPoint';
+  bucketStart: Scalars['DateTime']['output'];
+  cumulative: Scalars['Int']['output'];
+  newUsers: Scalars['Int']['output'];
+};
+
+export type HolderMessage = {
+  __typename: 'HolderMessage';
+  body: Scalars['String']['output'];
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  deliveredCount: Scalars['Int']['output'];
+  eventId: Scalars['String']['output'];
+  eventTitle: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  recipientCount: Scalars['Int']['output'];
+  segment: HolderSegment;
+  sentBy: Scalars['String']['output'];
+  status: HolderMessageStatus;
+  subject: Scalars['String']['output'];
+  ticketTierId: Maybe<Scalars['String']['output']>;
+};
+
+export type HolderMessagePage = {
+  __typename: 'HolderMessagePage';
+  data: Array<HolderMessage>;
+  pagination: PaginationInfo;
+};
+
+export type HolderMessageStatus =
+  | 'FAILED'
+  | 'PARTIAL'
+  | 'SENDING'
+  | 'SENT';
+
+export type HolderSegment =
+  | 'ADMITTED'
+  | 'ALL'
+  | 'NOT_ADMITTED';
 
 export type IdentityPendingCounts = {
   __typename: 'IdentityPendingCounts';
@@ -1688,38 +1798,33 @@ export type IdentityPendingCounts = {
   organizerApplications: Scalars['Int']['output'];
 };
 
-/**
- * Input for initiating a payment attempt with PawaPay.
- * Called during ticket checkout to start mobile money payment.
- */
-export type InitiatePaymentAttemptInput = {
-  /** Payment amount */
-  amount: Scalars['BigDecimal']['input'];
-  /** User making the payment */
-  buyerId: Scalars['String']['input'];
-  /** Client IP address for security */
-  clientIp: InputMaybe<Scalars['String']['input']>;
-  /** Optional correlation ID for tracing */
-  correlationId: InputMaybe<Scalars['String']['input']>;
-  /** Currency code (default: ZMW) */
-  currency: InputMaybe<Scalars['String']['input']>;
-  /** Event the ticket is for */
-  eventId: Scalars['String']['input'];
-  /** Payer phone number in E.164 format (e.g., +260763456789) */
-  payerPhone: Scalars['PhoneNumber']['input'];
-  /** Mobile money provider (e.g., MTN_MOMO_ZMB, AIRTEL_OAPI_ZMB) */
-  provider: Scalars['String']['input'];
-  /** Reservation being paid for */
-  reservationId: Scalars['String']['input'];
-  /** Session ID for tracing */
-  sessionId: InputMaybe<Scalars['String']['input']>;
+export type InitiateTicketTransferInput = {
+  channel: TransferChannel;
+  note?: InputMaybe<Scalars['String']['input']>;
+  recipient: Scalars['String']['input'];
+  ticketId: Scalars['ID']['input'];
 };
 
-export type InvitationMutationResponse = {
-  __typename: 'InvitationMutationResponse';
-  invitation: Maybe<TeamInvitation>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
+/**
+ * What the holder of an invitation link is shown before they accept.
+ *
+ * ET-ORG-002 §4 · exactly five fields, and the narrowness is the requirement rather than a
+ * convenience. The invitation token is a bearer credential: it arrives by email or WhatsApp and
+ * is forwarded, screenshotted and pasted into group chats. Everything reachable by it is
+ * reachable by whoever the link reached, so this type answers only what a stranger needs in
+ * order to decide whether to accept — which organization, in what role, from whom, until when.
+ *
+ * Deliberately absent: `invitationToken` (the credential itself), `email` and `phoneNumber`
+ * (the invitee's contact details, which a forwarded link would otherwise disclose), `invitedById`,
+ * `message`, and the invitation's own id.
+ */
+export type InvitationPreview = {
+  __typename: 'InvitationPreview';
+  expiresAt: Scalars['DateTime']['output'];
+  inviterDisplayName: Scalars['String']['output'];
+  organizationLogoUrl: Maybe<Scalars['String']['output']>;
+  organizationName: Scalars['String']['output'];
+  proposedRole: OrganizationRole;
 };
 
 export type InvitationStatus =
@@ -1730,21 +1835,21 @@ export type InvitationStatus =
   | 'REVOKED';
 
 export type InviteMemberInput = {
-  email: Scalars['String']['input'];
-  eventAccessGrants: InputMaybe<Array<EventAccessGrantInput>>;
-  inviteeName: InputMaybe<Scalars['String']['input']>;
-  message: InputMaybe<Scalars['String']['input']>;
-  phoneNumber: InputMaybe<Scalars['String']['input']>;
+  email?: InputMaybe<Scalars['String']['input']>;
+  eventAccessGrants?: InputMaybe<Array<EventAccessGrantInput>>;
+  inviteeName?: InputMaybe<Scalars['String']['input']>;
+  message?: InputMaybe<Scalars['String']['input']>;
+  phoneNumber?: InputMaybe<Scalars['String']['input']>;
   role: OrganizationRole;
 };
 
 export type InviteTeamMemberInput = {
   email: Scalars['String']['input'];
-  eventAccessGrants: InputMaybe<Array<EventAccessInput>>;
-  inviteeName: InputMaybe<Scalars['String']['input']>;
-  message: InputMaybe<Scalars['String']['input']>;
+  eventAccessGrants?: InputMaybe<Array<EventAccessInput>>;
+  inviteeName?: InputMaybe<Scalars['String']['input']>;
+  message?: InputMaybe<Scalars['String']['input']>;
   organizationId: Scalars['ID']['input'];
-  phoneNumber: InputMaybe<Scalars['String']['input']>;
+  phoneNumber?: InputMaybe<Scalars['String']['input']>;
   role: OrganizationRole;
 };
 
@@ -1774,21 +1879,12 @@ export type JournalEntry = {
 };
 
 export type JournalEntryFilterInput = {
-  accountCode: InputMaybe<Scalars['String']['input']>;
-  correlationId: InputMaybe<Scalars['String']['input']>;
-  endDate: InputMaybe<Scalars['DateTime']['input']>;
-  startDate: InputMaybe<Scalars['DateTime']['input']>;
-  status: InputMaybe<JournalEntryStatus>;
-  type: InputMaybe<JournalEntryType>;
-};
-
-export type JournalEntryMutationResponse = {
-  __typename: 'JournalEntryMutationResponse';
-  data: Maybe<JournalEntry>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+  accountCode?: InputMaybe<Scalars['String']['input']>;
+  correlationId?: InputMaybe<Scalars['String']['input']>;
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
+  status?: InputMaybe<JournalEntryStatus>;
+  type?: InputMaybe<JournalEntryType>;
 };
 
 export type JournalEntryOffsetPage = {
@@ -1821,11 +1917,11 @@ export type JournalLine = {
 export type JournalLineInput = {
   accountCode: Scalars['String']['input'];
   accountName: Scalars['String']['input'];
-  credit: InputMaybe<Scalars['BigDecimal']['input']>;
-  debit: InputMaybe<Scalars['BigDecimal']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  referenceId: InputMaybe<Scalars['String']['input']>;
-  referenceType: InputMaybe<Scalars['String']['input']>;
+  credit?: InputMaybe<Scalars['BigDecimal']['input']>;
+  debit?: InputMaybe<Scalars['BigDecimal']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  referenceId?: InputMaybe<Scalars['String']['input']>;
+  referenceType?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type KybStatus =
@@ -1876,24 +1972,75 @@ export type LocationEdge = {
   node: Location;
 };
 
-/** Input for marking a payment as fulfilled after accounting operations complete. */
-export type MarkPaymentFulfilledInput = {
-  /** ID of the commission record created */
-  commissionId: InputMaybe<Scalars['String']['input']>;
-  /** UUID of the payment attempt (depositId) */
-  depositId: Scalars['String']['input'];
-  /** ID of the escrow transaction created */
-  escrowTransactionId: Scalars['String']['input'];
-  /** ID of the journal entry created */
-  journalEntryId: Scalars['String']['input'];
+export type MediaAsset = {
+  __typename: 'MediaAsset';
+  altText: Maybe<Scalars['String']['output']>;
+  contentType: Scalars['String']['output'];
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  eventId: Maybe<Scalars['ID']['output']>;
+  fileName: Scalars['String']['output'];
+  flaggedAt: Maybe<Scalars['DateTime']['output']>;
+  flaggedReason: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  moderationLog: Maybe<Array<MediaModerationEntry>>;
+  organizationId: Maybe<Scalars['ID']['output']>;
+  removedAt: Maybe<Scalars['DateTime']['output']>;
+  removedReason: Maybe<Scalars['String']['output']>;
+  sizeBytes: Scalars['Int']['output'];
+  status: MediaStatus;
+  title: Maybe<Scalars['String']['output']>;
+  updatedAt: Maybe<Scalars['DateTime']['output']>;
+  uploadedBy: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
 };
 
-export type MemberMutationResponse = {
-  __typename: 'MemberMutationResponse';
-  member: Maybe<OrganizationMember>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
+export type MediaAssetConnection = {
+  __typename: 'MediaAssetConnection';
+  edges: Array<MediaAssetEdge>;
+  pageInfo: PageInfo;
 };
+
+export type MediaAssetEdge = {
+  __typename: 'MediaAssetEdge';
+  cursor: Scalars['String']['output'];
+  node: MediaAsset;
+};
+
+export type MediaAssetOffsetPage = {
+  __typename: 'MediaAssetOffsetPage';
+  content: Array<MediaAsset>;
+  hasNext: Scalars['Boolean']['output'];
+  hasPrevious: Scalars['Boolean']['output'];
+  pageNumber: Scalars['Int']['output'];
+  pageSize: Scalars['Int']['output'];
+  totalElements: Scalars['Int']['output'];
+  totalPages: Scalars['Int']['output'];
+};
+
+export type MediaFilterInput = {
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type MediaModerationEntry = {
+  __typename: 'MediaModerationEntry';
+  action: Scalars['String']['output'];
+  actorId: Maybe<Scalars['String']['output']>;
+  at: Maybe<Scalars['DateTime']['output']>;
+  reason: Maybe<Scalars['String']['output']>;
+};
+
+export type MediaModerationFilterInput = {
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  organizationId?: InputMaybe<Scalars['ID']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<MediaStatus>;
+};
+
+export type MediaStatus =
+  | 'ACTIVE'
+  | 'FLAGGED'
+  | 'REMOVED';
 
 export type MemberStatus =
   | 'ACTIVE'
@@ -1901,12 +2048,25 @@ export type MemberStatus =
   | 'REMOVED'
   | 'SUSPENDED';
 
+export type MessageTicketHoldersInput = {
+  body: Scalars['String']['input'];
+  segment?: InputMaybe<HolderSegment>;
+  subject: Scalars['String']['input'];
+  ticketTierId?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type MobileMoneyAccount = {
   __typename: 'MobileMoneyAccount';
   accountHolderName: Maybe<Scalars['String']['output']>;
   maskedPhoneNumber: Maybe<Scalars['String']['output']>;
   phoneNumber: Maybe<Scalars['String']['output']>;
   provider: Maybe<MobileMoneyProvider>;
+  rejectionReason: Maybe<Scalars['String']['output']>;
+  status: PayoutAccountStatus;
+  suspended: Scalars['Boolean']['output'];
+  suspendedReason: Maybe<Scalars['String']['output']>;
+  testDepositSentAt: Maybe<Scalars['DateTime']['output']>;
+  verificationAttemptsLeft: Scalars['Int']['output'];
   verified: Scalars['Boolean']['output'];
 };
 
@@ -1917,106 +2077,114 @@ export type MobileMoneyProvider =
 
 export type Mutation = {
   __typename: 'Mutation';
-  acceptChargeback: ChargebackMutationResponse;
+  acceptChargeback: ChargebackRecord;
   acceptInvitation: Maybe<OrganizationMember>;
   acceptOwnershipTransfer: Maybe<OwnershipTransferRequest>;
-  acknowledgeEscalation: ApprovalEscalationMutationResponse;
-  activateEventCategory: CategoryMutationResponse;
+  acceptTicketTransfer: Ticket;
+  acknowledgeAlert: SystemAlert;
+  acknowledgeEscalation: ApprovalEscalation;
+  activateEventCategory: EventCategory;
   activatePromoCode: PromoCode;
-  activateTicketTier: TierMutationResponse;
+  activateTicketTier: TicketTier;
   activateUser: Scalars['Boolean']['output'];
-  addApprovalComment: ApprovalTimelineMutationResponse;
-  addPaymentAttemptNote: PaymentAttemptMutationResponse;
+  addApprovalComment: ApprovalTimeline;
+  addPaymentAttemptNote: PaymentAttempt;
   /**
    * Add a role to a user.
    * A user can have multiple roles (e.g., CUSTOMER + ORGANIZER).
    * The CUSTOMER role is the base role that all users have.
    */
-  addUserRole: UserMutationResponse;
-  adminUpdateTicket: TicketMutationResponse;
+  addUserRole: User;
+  adminUpdateTicket: Ticket;
   /**
    * Apply to become an organizer.
    * Creates a new organization in DRAFT status.
    * User must fill in business details and submit for approval.
    */
   applyToBeOrganizer: Organization;
-  approveEvent: EventMutationResponse;
+  approveEvent: Event;
   /**
    * Approve an organization application.
    * Changes status from PENDING_REVIEW to APPROVED.
    * Organization can now publish events.
    */
   approveOrganization: Maybe<Organization>;
-  approvePayoutRequest: ApprovePayoutRequestMutationResponse;
-  approveRefundRequest: ApproveRefundRequestMutationResponse;
+  approvePayoutRequest: PayoutRequest;
+  approveRefundRequest: RefundRequest;
   approveVerificationDocument: Maybe<VerificationDocument>;
-  assignEventReviewer: ApprovalTimelineMutationResponse;
-  assignPermissionToRole: Scalars['Boolean']['output'];
+  assignEventReviewer: ApprovalTimeline;
+  broadcastNotification: SystemAnnouncement;
   bulkApproveRefunds: BulkOperationResponse;
   bulkCancelTickets: BulkOperationResponse;
   bulkGrantEventAccess: Maybe<Array<EventAccessGrant>>;
   bulkInviteTeamMembers: Maybe<Array<TeamInvitation>>;
   bulkMarkPayoutsForReview: BulkPayoutOperationResponse;
   bulkRetryFailedPayouts: BulkPayoutOperationResponse;
-  cancelAccountDeletion: MutationResponse;
+  cancelAccountDeletion: User;
+  cancelAnnouncement: SystemAnnouncement;
+  cancelContactChange: Scalars['Boolean']['output'];
   cancelEvent: EventCancellationResponse;
   cancelEventReminder: Scalars['Boolean']['output'];
+  cancelOrganizationDeletion: Maybe<Organization>;
   cancelOwnershipTransfer: Maybe<OwnershipTransferRequest>;
-  cancelPaymentAttempt: PaymentAttemptMutationResponse;
-  cancelPayoutRequest: RejectPayoutRequestMutationResponse;
-  cancelRefundRequest: RefundRequestMutationResponse;
+  cancelPayoutRequest: PayoutRequest;
+  cancelRefundRequest: RefundRequest;
   cancelReservation: Scalars['Boolean']['output'];
-  cancelTicket: CancelTicketMutationResponse;
-  changePassword: Scalars['Boolean']['output'];
-  closeEscrowAccount: EscrowAccountMutationResponse;
-  completeEvent: EventMutationResponse;
-  completePayoutRequest: PayoutRequestMutationResponse;
-  completeReconciliation: ReconciliationMutationResponse;
-  createAdminRefundRequest: RefundRequestMutationResponse;
-  createBankAccount: CreateBankAccountMutationResponse;
-  createChartOfAccountsEntry: ChartOfAccountsMutationResponse;
-  createCity: CityMutationResponse;
-  createEscrowAccount: EscrowAccountMutationResponse;
-  createEvent: EventMutationResponse;
-  createEventCategory: CategoryMutationResponse;
-  createEventOwner: Maybe<EventAccessGrant>;
-  createJournalEntry: JournalEntryMutationResponse;
-  createPayoutRequest: CreatePayoutRequestMutationResponse;
-  createPermission: Maybe<Permission>;
-  createPlatformAccount: PlatformAccountMutationResponse;
+  cancelScheduledPublish: Event;
+  cancelTicket: Ticket;
+  cancelTicketTransfer: TicketTransfer;
+  closeEscrowAccount: EventEscrowAccount;
+  completeEvent: Event;
+  completePayoutRequest: PayoutRequest;
+  completeReconciliation: ReconciliationRun;
+  confirmBankVerification: BankAccount;
+  confirmContactAdd: ContactChangeResult;
+  confirmContactChange: ContactChangeResult;
+  confirmContactRemoval: ContactChangeResult;
+  confirmRecoveryAction: RecoveryProposal;
+  createAdminRefundRequest: RefundRequest;
+  createBankAccount: BankAccount;
+  createChartOfAccountsEntry: ChartOfAccountsEntry;
+  createCity: City;
+  createEscrowAccount: EventEscrowAccount;
+  createEvent: Event;
+  createEventCategory: EventCategory;
+  createJournalEntry: JournalEntry;
+  createPayoutRequest: PayoutRequest;
   createPromoCode: PromoCode;
-  createProvince: ProvinceMutationResponse;
-  createReferenceData: ReferenceDataMutationResponse;
-  createTicketTier: TierMutationResponse;
-  createUser: UserMutationResponse;
-  createUserRefundRequest: CreateRefundRequestMutationResponse;
-  creditPlatformAccount: PlatformAccountMutationResponse;
-  deactivateChartOfAccountsEntry: ChartOfAccountsMutationResponse;
-  deactivateEventCategory: CategoryMutationResponse;
+  createProvince: Province;
+  createReferenceData: ReferenceData;
+  createTicketTier: TicketTier;
+  createUser: User;
+  createUserRefundRequest: RefundRequest;
+  deactivateChartOfAccountsEntry: ChartOfAccountsEntry;
+  deactivateEventCategory: EventCategory;
   deactivatePromoCode: PromoCode;
-  deactivateTicketTier: TierMutationResponse;
+  deactivateTicketTier: TicketTier;
   deactivateUser: Scalars['Boolean']['output'];
-  debitPlatformAccount: PlatformAccountMutationResponse;
-  declineInvitation: Maybe<TeamInvitation>;
+  declineInvitation: Scalars['Boolean']['output'];
   declineOwnershipTransfer: Maybe<OwnershipTransferRequest>;
-  deleteBankAccount: DeleteBankAccountMutationResponse;
-  deleteCity: DeleteMutationResponse;
-  deleteEvent: DeleteMutationResponse;
-  deleteEventCategory: DeleteMutationResponse;
+  declineTicketTransfer: TicketTransfer;
+  deleteBankAccount: Scalars['ID']['output'];
+  deleteCity: Scalars['ID']['output'];
+  deleteEvent: Scalars['ID']['output'];
+  deleteEventCategory: Scalars['ID']['output'];
+  deleteMedia: Scalars['ID']['output'];
   deleteNotification: Scalars['Boolean']['output'];
-  deletePermission: Scalars['Boolean']['output'];
-  deletePromoCode: DeleteMutationResponse;
-  deleteProvince: DeleteMutationResponse;
-  deleteReferenceData: DeleteMutationResponse;
-  deleteTicketTier: DeleteMutationResponse;
+  deletePromoCode: Scalars['ID']['output'];
+  deleteProvince: Scalars['ID']['output'];
+  deleteReferenceData: Scalars['ID']['output'];
+  deleteStockImage: Scalars['ID']['output'];
+  deleteTicketTier: Scalars['ID']['output'];
+  deleteUser: User;
   deleteVerificationDocument: Scalars['Boolean']['output'];
-  disableTwoFactor: MutationResponse;
-  disputeChargeback: ChargebackMutationResponse;
-  duplicateEvent: EventMutationResponse;
-  escalatePayoutRequest: PayoutRequestMutationResponse;
-  expireTimedOutPayments: Scalars['Int']['output'];
-  failReconciliation: ReconciliationMutationResponse;
-  featureEvent: EventMutationResponse;
+  disputeChargeback: ChargebackRecord;
+  duplicateEvent: Event;
+  escalatePayoutRequest: PayoutRequest;
+  failReconciliation: ReconciliationRun;
+  featureEvent: Event;
+  flagMedia: MediaAsset;
+  forceCompletePaymentAttempts: RecoveryProposal;
   forceExpireReservation: Scalars['Boolean']['output'];
   /**
    * Get or create organization for the current user.
@@ -2024,30 +2192,29 @@ export type Mutation = {
    */
   getOrCreateMyOrganization: Organization;
   grantEventAccess: Maybe<EventAccessGrant>;
+  holdPayoutRequest: PayoutRequest;
   initiateOwnershipTransfer: Maybe<OwnershipTransferRequest>;
-  initiatePaymentAttempt: PaymentAttemptMutationResponse;
+  initiateTicketTransfer: TicketTransfer;
   inviteTeamMember: Maybe<TeamInvitation>;
   leaveOrganization: Scalars['Boolean']['output'];
-  linkSocialAccount: MutationResponse;
-  lockEscrowAccount: EscrowAccountMutationResponse;
-  lockUser: MutationResponse;
-  login: AuthPayload;
+  lockEscrowAccount: EventEscrowAccount;
+  lockUser: Scalars['Boolean']['output'];
   logout: Scalars['Boolean']['output'];
   markAllNotificationsRead: Scalars['Int']['output'];
   markNotificationRead: Maybe<Notification>;
-  markPaymentFulfilled: PaymentAttemptMutationResponse;
-  markPayoutEligible: EscrowAccountMutationResponse;
-  markPayoutForReview: PayoutRequestMutationResponse;
+  markPayoutEligible: EventEscrowAccount;
+  markPayoutForReview: PayoutRequest;
+  messageTicketHolders: HolderMessage;
+  overrideEventBanner: Event;
   payReservation: PaymentInitiationResponse;
-  pollPendingPayments: Scalars['Int']['output'];
-  postJournalEntry: JournalEntryMutationResponse;
-  processPaymentWebhook: PaymentAttemptMutationResponse;
-  processPayoutRequest: ProcessPayoutRequestMutationResponse;
-  processRefundRequest: ProcessRefundRequestMutationResponse;
-  publishEvent: EventMutationResponse;
+  postJournalEntry: JournalEntry;
+  processPayoutRequest: PayoutRequest;
+  processRefundRequest: RefundRequest;
+  proposeRecoveryAction: RecoveryProposal;
+  publishEvent: Event;
   reactivateMember: Maybe<OrganizationMember>;
-  receiveChargeback: ChargebackMutationResponse;
-  recordChargebackOutcome: ChargebackMutationResponse;
+  receiveChargeback: ChargebackRecord;
+  recordChargebackOutcome: ChargebackRecord;
   /**
    * Records a gateway settlement in the accounting system.
    *
@@ -2061,60 +2228,67 @@ export type Mutation = {
    * - DR Gateway Fees Expense (5010) - IN: Fee cost to platform
    * - CR Gateway Receivable (1021)  - OUT: Receivable cleared
    */
-  recordGatewaySettlement: JournalEntryMutationResponse;
-  recoverChargebackFunds: ChargebackMutationResponse;
-  refreshToken: AuthPayload;
-  refundTicket: RefundTicketMutationResponse;
-  regenerateTicketQrCode: TicketMutationResponse;
-  register: User;
+  recordGatewaySettlement: JournalEntry;
+  refundTicket: Ticket;
+  regenerateTicketQrCode: Ticket;
   registerDevice: Maybe<UserDevice>;
-  rejectEvent: EventMutationResponse;
+  reinstateBankAccount: Maybe<Organization>;
+  rejectBankAccount: Maybe<Organization>;
+  rejectEvent: Event;
   /**
    * Reject an organization application.
    * Changes status to REJECTED.
    */
   rejectOrganization: Maybe<Organization>;
-  rejectPayoutRequest: RejectPayoutRequestMutationResponse;
-  rejectRefundRequest: RejectRefundRequestMutationResponse;
+  rejectPayoutAccount: Maybe<Organization>;
+  rejectPayoutRequest: PayoutRequest;
+  rejectRefundRequest: RefundRequest;
   rejectVerificationDocument: Maybe<VerificationDocument>;
+  releasePayoutHold: PayoutRequest;
+  removeMedia: MediaAsset;
   removeMember: Scalars['Boolean']['output'];
-  removePermissionFromRole: Scalars['Boolean']['output'];
   /**
    * Remove a role from a user.
    * Note: The CUSTOMER role cannot be removed as it is the base role.
    */
-  removeUserRole: UserMutationResponse;
+  removeUserRole: User;
   reorderTicketTiers: Array<TicketTier>;
-  requestAccountDeletion: MutationResponse;
+  requestAccountDeletion: User;
+  requestContactAdd: ContactCodeSent;
+  requestContactChange: ContactChangeRequested;
+  requestContactRemoval: ContactCodeSent;
   requestDocumentUploadUrl: DocumentUploadUrlResponse;
-  requestEventChanges: EventMutationResponse;
+  requestEventChanges: Event;
   /**
    * Request changes to an organization application.
    * Changes status from PENDING_REVIEW to CHANGES_REQUESTED.
    * User can update details and resubmit.
    */
   requestOrganizationChanges: Maybe<Organization>;
-  requestPhoneOtp: OtpRequestResponse;
+  requestOrganizationDeletion: Maybe<Organization>;
+  requestOwnershipTransferCode: Scalars['Boolean']['output'];
+  requestPrimaryContact: ContactCodeSent;
+  rescheduleEvent: Event;
+  resendContactCode: ContactCodeSent;
   resendInvitation: Maybe<TeamInvitation>;
+  resendTicket: ResendTicketResult;
   reserveTickets: TicketReservation;
-  resetPassword: Scalars['Boolean']['output'];
-  resolveEscalation: ApprovalEscalationMutationResponse;
-  resolvePayoutIssue: PayoutRequestMutationResponse;
-  resolveReconciliationItem: ReconciliationMutationResponse;
-  resumePayoutRequest: PayoutRequestMutationResponse;
-  retryPaymentAttempt: PaymentAttemptMutationResponse;
-  retryPayoutRequest: PayoutRequestMutationResponse;
-  reverseJournalEntry: JournalEntryMutationResponse;
+  resolveEscalation: ApprovalEscalation;
+  resolvePayoutIssue: PayoutRequest;
+  resolveReconciliationItem: ReconciliationRun;
+  restoreMedia: MediaAsset;
+  resumePaymentAttempt: PaymentAttempt;
+  resumePayoutRequest: PayoutRequest;
+  retryPaymentAttempts: Array<PaymentRecoveryOutcome>;
+  retryPayoutRequest: PayoutRequest;
+  reverseJournalEntry: JournalEntry;
   reviewConflict: CheckInConflict;
   revokeEventAccess: Maybe<EventAccessGrant>;
   revokeInvitation: Maybe<TeamInvitation>;
+  revokeSession: Scalars['Boolean']['output'];
   seedChartOfAccounts: Scalars['Boolean']['output'];
   sendBulkEventPublishReminders: BulkReminderResponse;
-  sendBulkNotification: Scalars['Int']['output'];
-  sendEmailVerification: Scalars['Boolean']['output'];
-  sendEventPublishReminder: EventMutationResponse;
-  sendNotification: Maybe<Notification>;
-  sendPhoneVerification: Scalars['Boolean']['output'];
+  sendEventPublishReminder: Event;
   /**
    * Set bank account for payouts.
    * AUTHORIZATION: Only organization OWNER can set bank account.
@@ -2127,7 +2301,7 @@ export type Mutation = {
    * COMPLIANCE: PCI-DSS compliant encryption and audit trail.
    */
   setBankAccount: Maybe<Organization>;
-  setDefaultBankAccount: UpdateBankAccountMutationResponse;
+  setDefaultBankAccount: BankAccount;
   setEventReminder: Maybe<EventReminder>;
   /**
    * Set mobile money account for payouts.
@@ -2139,50 +2313,53 @@ export type Mutation = {
    * - All changes audit logged
    */
   setMobileMoneyAccount: Maybe<Organization>;
-  setPaymentAttemptReviewStatus: PaymentAttemptMutationResponse;
-  setReferenceDataActive: ReferenceDataMutationResponse;
+  setOrganizationCommissionRate: Maybe<Organization>;
+  setPaymentAttemptReviewStatus: PaymentAttempt;
+  setPrimaryContact: ContactChangeResult;
+  setReferenceDataActive: ReferenceData;
   /**
    * Set all roles for a user (replaces existing roles).
    * The roles set must include CUSTOMER.
    */
-  setUserRoles: UserMutationResponse;
-  setupTwoFactor: TwoFactorSetupResponse;
-  socialAuth: AuthPayload;
-  startChargebackReview: ChargebackMutationResponse;
-  startReconciliation: ReconciliationMutationResponse;
-  submitEventForApproval: EventMutationResponse;
+  setUserRoles: User;
+  startBankVerification: BankAccount;
+  startChargebackReview: ChargebackRecord;
+  startReconciliation: ReconciliationRun;
+  submitEventForApproval: Event;
   /**
    * Submit organization application for admin review.
    * Changes status from DRAFT/CHANGES_REQUESTED to PENDING_REVIEW.
    */
   submitOrganizationForReview: Maybe<Organization>;
+  suspendBankAccount: Maybe<Organization>;
   suspendMember: Maybe<OrganizationMember>;
   suspendOrganization: Maybe<Organization>;
-  suspendUser: MutationResponse;
+  suspendUser: User;
   syncAllUsersFromKeycloak: Scalars['Boolean']['output'];
-  syncEmailVerificationStatus: Maybe<User>;
   syncUserFromKeycloak: Maybe<User>;
-  transferOrganizationOwnership: Maybe<OrganizationMember>;
-  triggerManualEscalation: ApprovalEscalationMutationResponse;
-  unassignEventReviewer: ApprovalTimelineMutationResponse;
-  unlinkSocialAccount: MutationResponse;
-  unlockEscrowAccount: EscrowAccountMutationResponse;
-  unlockUser: MutationResponse;
-  unpublishEvent: EventMutationResponse;
+  transferBetweenPlatformAccounts: PlatformTransferResult;
+  triggerManualEscalation: ApprovalEscalation;
+  unassignEventReviewer: ApprovalTimeline;
+  unlockEscrowAccount: EventEscrowAccount;
+  unlockTierWithAccessCode: TicketTier;
+  unlockUser: Scalars['Boolean']['output'];
+  unpublishEvent: Event;
   unregisterDevice: Scalars['Boolean']['output'];
   unsuspendOrganization: Maybe<Organization>;
-  unsuspendUser: MutationResponse;
-  updateBankAccount: UpdateBankAccountMutationResponse;
-  updateChartOfAccountsEntry: ChartOfAccountsMutationResponse;
-  updateCity: CityMutationResponse;
-  updateEscrowAccountStatus: EscrowAccountMutationResponse;
-  updateEvent: EventMutationResponse;
+  unsuspendUser: User;
+  updateBankAccount: BankAccount;
+  updateChargebackRecovery: ChargebackRecord;
+  updateChartOfAccountsEntry: ChartOfAccountsEntry;
+  updateCity: City;
+  updateEscrowAccountStatus: EventEscrowAccount;
+  updateEvent: Event;
   updateEventAccess: Maybe<EventAccessGrant>;
-  updateEventAccessibility: EventMutationResponse;
-  updateEventCapacity: EventMutationResponse;
-  updateEventCategory: CategoryMutationResponse;
+  updateEventAccessibility: Event;
+  updateEventCapacity: Event;
+  updateEventCategory: EventCategory;
+  updateMedia: MediaAsset;
   updateMemberRole: Maybe<OrganizationMember>;
-  updateMyProfile: UserMutationResponse;
+  updateMyProfile: User;
   updateNotificationPreferences: Maybe<NotificationPreferences>;
   updateOrganization: Maybe<Organization>;
   /**
@@ -2198,27 +2375,25 @@ export type Mutation = {
    * SECURITY: All changes are audit logged with IP address and user agent.
    */
   updatePayoutConfig: Maybe<Organization>;
-  updatePermission: Maybe<Permission>;
-  updatePlatformConfiguration: PlatformConfigurationMutationResponse;
-  updateProfile: Maybe<User>;
+  updatePlatformConfiguration: PlatformConfiguration;
   updatePromoCode: PromoCode;
-  updateProvince: ProvinceMutationResponse;
-  updateReferenceData: ReferenceDataMutationResponse;
-  updateTicketTier: TierMutationResponse;
-  updateUser: UserMutationResponse;
+  updateProvince: Province;
+  updateReferenceData: ReferenceData;
+  updateStockImage: StockImage;
+  updateTicketTier: TicketTier;
+  updateUser: User;
   /**
    * Upgrade an individual organization to a business organization.
    * Requires the organization to be owned by the current user.
    */
   upgradeToBusinessOrganization: Maybe<Organization>;
+  uploadMedia: MediaAsset;
   uploadScans: Array<ValidationResult>;
-  uploadVerificationDocument: VerificationDocumentUploadResponse;
+  uploadStockImage: StockImage;
+  uploadVerificationDocument: VerificationDocument;
   validateTicket: ValidationResult;
-  validateToken: TokenValidation;
-  verifyBankAccount: VerifyBankAccountMutationResponse;
-  verifyEmail: Maybe<User>;
+  verifyBankAccount: BankAccount;
   verifyEscrowJournalConsistency: EscrowJournalVerificationResponse;
-  verifyPaymentWithGateway: PaymentAttemptMutationResponse;
   /**
    * Verify payout account (admin only).
    * AUTHORIZATION: Only ADMIN or FINANCE role can verify accounts.
@@ -2228,9 +2403,7 @@ export type Mutation = {
    * - Verification can be revoked if fraud detected
    */
   verifyPayoutAccount: Maybe<Organization>;
-  verifyPhone: Maybe<User>;
-  verifyPhoneOtp: PhoneAuthPayload;
-  verifyTwoFactor: MutationResponse;
+  withdrawRecoveryProposal: RecoveryProposal;
 };
 
 
@@ -2248,6 +2421,16 @@ export type MutationAcceptInvitationArgs = {
 export type MutationAcceptOwnershipTransferArgs = {
   confirmationCode: Scalars['String']['input'];
   token: Scalars['String']['input'];
+};
+
+
+export type MutationAcceptTicketTransferArgs = {
+  transferId: Scalars['ID']['input'];
+};
+
+
+export type MutationAcknowledgeAlertArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -2314,6 +2497,7 @@ export type MutationApproveEventArgs = {
 
 
 export type MutationApproveOrganizationArgs = {
+  commissionRate: InputMaybe<Scalars['Float']['input']>;
   id: Scalars['ID']['input'];
 };
 
@@ -2340,9 +2524,8 @@ export type MutationAssignEventReviewerArgs = {
 };
 
 
-export type MutationAssignPermissionToRoleArgs = {
-  permissionId: Scalars['ID']['input'];
-  roleId: Scalars['ID']['input'];
+export type MutationBroadcastNotificationArgs = {
+  input: BroadcastInput;
 };
 
 
@@ -2359,7 +2542,7 @@ export type MutationBulkCancelTicketsArgs = {
 
 export type MutationBulkGrantEventAccessArgs = {
   eventId: Scalars['ID']['input'];
-  grants: Array<EventAccessGrantInput>;
+  grants: Array<BulkEventAccessGrantInput>;
   organizationId: Scalars['ID']['input'];
 };
 
@@ -2382,6 +2565,16 @@ export type MutationBulkRetryFailedPayoutsArgs = {
 };
 
 
+export type MutationCancelAnnouncementArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationCancelContactChangeArgs = {
+  changeId: Scalars['ID']['input'];
+};
+
+
 export type MutationCancelEventArgs = {
   id: Scalars['ID']['input'];
   input: EventCancellationInput;
@@ -2393,14 +2586,13 @@ export type MutationCancelEventReminderArgs = {
 };
 
 
-export type MutationCancelOwnershipTransferArgs = {
+export type MutationCancelOrganizationDeletionArgs = {
   organizationId: Scalars['ID']['input'];
 };
 
 
-export type MutationCancelPaymentAttemptArgs = {
-  depositId: Scalars['String']['input'];
-  reason: Scalars['String']['input'];
+export type MutationCancelOwnershipTransferArgs = {
+  organizationId: Scalars['ID']['input'];
 };
 
 
@@ -2421,15 +2613,19 @@ export type MutationCancelReservationArgs = {
 };
 
 
+export type MutationCancelScheduledPublishArgs = {
+  eventId: Scalars['ID']['input'];
+};
+
+
 export type MutationCancelTicketArgs = {
   reason: Scalars['String']['input'];
   ticketNumber: Scalars['String']['input'];
 };
 
 
-export type MutationChangePasswordArgs = {
-  newPassword: Scalars['String']['input'];
-  oldPassword: Scalars['String']['input'];
+export type MutationCancelTicketTransferArgs = {
+  transferId: Scalars['ID']['input'];
 };
 
 
@@ -2456,7 +2652,35 @@ export type MutationCompleteReconciliationArgs = {
 };
 
 
+export type MutationConfirmBankVerificationArgs = {
+  amount: Scalars['BigDecimal']['input'];
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationConfirmContactAddArgs = {
+  input: ConfirmContactAddInput;
+};
+
+
+export type MutationConfirmContactChangeArgs = {
+  input: ConfirmContactChangeInput;
+};
+
+
+export type MutationConfirmContactRemovalArgs = {
+  input: ConfirmContactRemovalInput;
+};
+
+
+export type MutationConfirmRecoveryActionArgs = {
+  proposalId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
 export type MutationCreateAdminRefundRequestArgs = {
+  amount: InputMaybe<Scalars['BigDecimal']['input']>;
   bypassApproval: InputMaybe<Scalars['Boolean']['input']>;
   reason: Scalars['String']['input'];
   ticketId: Scalars['ID']['input'];
@@ -2493,12 +2717,6 @@ export type MutationCreateEventCategoryArgs = {
 };
 
 
-export type MutationCreateEventOwnerArgs = {
-  eventId: Scalars['ID']['input'];
-  organizationId: Scalars['ID']['input'];
-};
-
-
 export type MutationCreateJournalEntryArgs = {
   input: CreateJournalEntryInput;
 };
@@ -2506,20 +2724,6 @@ export type MutationCreateJournalEntryArgs = {
 
 export type MutationCreatePayoutRequestArgs = {
   input: CreatePayoutRequestInput;
-};
-
-
-export type MutationCreatePermissionArgs = {
-  category: InputMaybe<Scalars['String']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  name: Scalars['String']['input'];
-};
-
-
-export type MutationCreatePlatformAccountArgs = {
-  accountType: PlatformAccountType;
-  currency: Scalars['String']['input'];
-  name: Scalars['String']['input'];
 };
 
 
@@ -2554,13 +2758,6 @@ export type MutationCreateUserRefundRequestArgs = {
 };
 
 
-export type MutationCreditPlatformAccountArgs = {
-  amount: Scalars['BigDecimal']['input'];
-  description: Scalars['String']['input'];
-  id: Scalars['ID']['input'];
-};
-
-
 export type MutationDeactivateChartOfAccountsEntryArgs = {
   id: Scalars['ID']['input'];
 };
@@ -2586,13 +2783,6 @@ export type MutationDeactivateUserArgs = {
 };
 
 
-export type MutationDebitPlatformAccountArgs = {
-  amount: Scalars['BigDecimal']['input'];
-  description: Scalars['String']['input'];
-  id: Scalars['ID']['input'];
-};
-
-
 export type MutationDeclineInvitationArgs = {
   token: Scalars['String']['input'];
 };
@@ -2600,6 +2790,11 @@ export type MutationDeclineInvitationArgs = {
 
 export type MutationDeclineOwnershipTransferArgs = {
   token: Scalars['String']['input'];
+};
+
+
+export type MutationDeclineTicketTransferArgs = {
+  transferId: Scalars['ID']['input'];
 };
 
 
@@ -2623,13 +2818,13 @@ export type MutationDeleteEventCategoryArgs = {
 };
 
 
-export type MutationDeleteNotificationArgs = {
-  notificationId: Scalars['ID']['input'];
+export type MutationDeleteMediaArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
-export type MutationDeletePermissionArgs = {
-  id: Scalars['ID']['input'];
+export type MutationDeleteNotificationArgs = {
+  notificationId: Scalars['ID']['input'];
 };
 
 
@@ -2648,18 +2843,23 @@ export type MutationDeleteReferenceDataArgs = {
 };
 
 
+export type MutationDeleteStockImageArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationDeleteTicketTierArgs = {
   tierId: Scalars['ID']['input'];
 };
 
 
-export type MutationDeleteVerificationDocumentArgs = {
-  documentId: Scalars['ID']['input'];
+export type MutationDeleteUserArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
-export type MutationDisableTwoFactorArgs = {
-  confirmationCode: Scalars['String']['input'];
+export type MutationDeleteVerificationDocumentArgs = {
+  documentId: Scalars['ID']['input'];
 };
 
 
@@ -2693,6 +2893,18 @@ export type MutationFeatureEventArgs = {
 };
 
 
+export type MutationFlagMediaArgs = {
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationForceCompletePaymentAttemptsArgs = {
+  depositIds: Array<Scalars['String']['input']>;
+  reason: Scalars['String']['input'];
+};
+
+
 export type MutationForceExpireReservationArgs = {
   reservationId: Scalars['ID']['input'];
 };
@@ -2709,6 +2921,12 @@ export type MutationGrantEventAccessArgs = {
 };
 
 
+export type MutationHoldPayoutRequestArgs = {
+  payoutRequestId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
 export type MutationInitiateOwnershipTransferArgs = {
   newOwnerId: Scalars['ID']['input'];
   organizationId: Scalars['ID']['input'];
@@ -2716,8 +2934,8 @@ export type MutationInitiateOwnershipTransferArgs = {
 };
 
 
-export type MutationInitiatePaymentAttemptArgs = {
-  input: InitiatePaymentAttemptInput;
+export type MutationInitiateTicketTransferArgs = {
+  input: InitiateTicketTransferInput;
 };
 
 
@@ -2729,11 +2947,6 @@ export type MutationInviteTeamMemberArgs = {
 
 export type MutationLeaveOrganizationArgs = {
   organizationId: Scalars['ID']['input'];
-};
-
-
-export type MutationLinkSocialAccountArgs = {
-  input: SocialAuthInput;
 };
 
 
@@ -2750,19 +2963,8 @@ export type MutationLockUserArgs = {
 };
 
 
-export type MutationLoginArgs = {
-  email: Scalars['String']['input'];
-  password: Scalars['String']['input'];
-};
-
-
 export type MutationMarkNotificationReadArgs = {
   notificationId: Scalars['ID']['input'];
-};
-
-
-export type MutationMarkPaymentFulfilledArgs = {
-  input: MarkPaymentFulfilledInput;
 };
 
 
@@ -2778,6 +2980,19 @@ export type MutationMarkPayoutForReviewArgs = {
 };
 
 
+export type MutationMessageTicketHoldersArgs = {
+  eventId: Scalars['ID']['input'];
+  input: MessageTicketHoldersInput;
+};
+
+
+export type MutationOverrideEventBannerArgs = {
+  eventId: Scalars['ID']['input'];
+  mediaId: InputMaybe<Scalars['ID']['input']>;
+  reason: Scalars['String']['input'];
+};
+
+
 export type MutationPayReservationArgs = {
   input: PayReservationInput;
 };
@@ -2788,11 +3003,6 @@ export type MutationPostJournalEntryArgs = {
 };
 
 
-export type MutationProcessPaymentWebhookArgs = {
-  input: ProcessPaymentWebhookInput;
-};
-
-
 export type MutationProcessPayoutRequestArgs = {
   payoutRequestId: Scalars['ID']['input'];
 };
@@ -2800,6 +3010,11 @@ export type MutationProcessPayoutRequestArgs = {
 
 export type MutationProcessRefundRequestArgs = {
   refundRequestId: Scalars['ID']['input'];
+};
+
+
+export type MutationProposeRecoveryActionArgs = {
+  input: ProposeRecoveryActionInput;
 };
 
 
@@ -2830,18 +3045,8 @@ export type MutationRecordGatewaySettlementArgs = {
 };
 
 
-export type MutationRecoverChargebackFundsArgs = {
-  id: Scalars['ID']['input'];
-  input: RecoverChargebackInput;
-};
-
-
-export type MutationRefreshTokenArgs = {
-  refreshToken: Scalars['String']['input'];
-};
-
-
 export type MutationRefundTicketArgs = {
+  amount: InputMaybe<Scalars['BigDecimal']['input']>;
   reason: Scalars['String']['input'];
   ticketNumber: Scalars['String']['input'];
 };
@@ -2852,13 +3057,19 @@ export type MutationRegenerateTicketQrCodeArgs = {
 };
 
 
-export type MutationRegisterArgs = {
-  input: RegisterInput;
+export type MutationRegisterDeviceArgs = {
+  input: RegisterDeviceInput;
 };
 
 
-export type MutationRegisterDeviceArgs = {
-  input: RegisterDeviceInput;
+export type MutationReinstateBankAccountArgs = {
+  organizationId: Scalars['ID']['input'];
+};
+
+
+export type MutationRejectBankAccountArgs = {
+  organizationId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
 };
 
 
@@ -2870,6 +3081,12 @@ export type MutationRejectEventArgs = {
 
 export type MutationRejectOrganizationArgs = {
   id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationRejectPayoutAccountArgs = {
+  organizationId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
 };
 
@@ -2892,15 +3109,21 @@ export type MutationRejectVerificationDocumentArgs = {
 };
 
 
-export type MutationRemoveMemberArgs = {
-  memberId: Scalars['ID']['input'];
-  reason: InputMaybe<Scalars['String']['input']>;
+export type MutationReleasePayoutHoldArgs = {
+  note: InputMaybe<Scalars['String']['input']>;
+  payoutRequestId: Scalars['ID']['input'];
 };
 
 
-export type MutationRemovePermissionFromRoleArgs = {
-  permissionId: Scalars['ID']['input'];
-  roleId: Scalars['ID']['input'];
+export type MutationRemoveMediaArgs = {
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationRemoveMemberArgs = {
+  memberId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -2917,7 +3140,22 @@ export type MutationReorderTicketTiersArgs = {
 
 
 export type MutationRequestAccountDeletionArgs = {
-  input: RequestAccountDeletionInput;
+  reason: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationRequestContactAddArgs = {
+  input: RequestContactAddInput;
+};
+
+
+export type MutationRequestContactChangeArgs = {
+  input: RequestContactChangeInput;
+};
+
+
+export type MutationRequestContactRemovalArgs = {
+  contactId: Scalars['ID']['input'];
 };
 
 
@@ -2938,9 +3176,29 @@ export type MutationRequestOrganizationChangesArgs = {
 };
 
 
-export type MutationRequestPhoneOtpArgs = {
-  channel: InputMaybe<Scalars['String']['input']>;
-  phoneNumber: Scalars['String']['input'];
+export type MutationRequestOrganizationDeletionArgs = {
+  organizationId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationRequestOwnershipTransferCodeArgs = {
+  token: Scalars['String']['input'];
+};
+
+
+export type MutationRequestPrimaryContactArgs = {
+  contactId: Scalars['ID']['input'];
+};
+
+
+export type MutationRescheduleEventArgs = {
+  input: RescheduleEventInput;
+};
+
+
+export type MutationResendContactCodeArgs = {
+  input: ResendContactCodeInput;
 };
 
 
@@ -2949,13 +3207,13 @@ export type MutationResendInvitationArgs = {
 };
 
 
-export type MutationReserveTicketsArgs = {
-  input: ReserveTicketsInput;
+export type MutationResendTicketArgs = {
+  ticketId: Scalars['ID']['input'];
 };
 
 
-export type MutationResetPasswordArgs = {
-  email: Scalars['String']['input'];
+export type MutationReserveTicketsArgs = {
+  input: ReserveTicketsInput;
 };
 
 
@@ -2965,7 +3223,6 @@ export type MutationResolveEscalationArgs = {
 
 
 export type MutationResolvePayoutIssueArgs = {
-  newBankAccountId: InputMaybe<Scalars['ID']['input']>;
   notes: Scalars['String']['input'];
   payoutRequestId: Scalars['ID']['input'];
   resolutionType: PayoutResolutionType;
@@ -2978,13 +3235,23 @@ export type MutationResolveReconciliationItemArgs = {
 };
 
 
+export type MutationRestoreMediaArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type MutationResumePaymentAttemptArgs = {
+  depositId: Scalars['String']['input'];
+};
+
+
 export type MutationResumePayoutRequestArgs = {
   payoutRequestId: Scalars['ID']['input'];
 };
 
 
-export type MutationRetryPaymentAttemptArgs = {
-  depositId: Scalars['String']['input'];
+export type MutationRetryPaymentAttemptsArgs = {
+  depositIds: Array<Scalars['String']['input']>;
 };
 
 
@@ -3016,26 +3283,20 @@ export type MutationRevokeInvitationArgs = {
 };
 
 
+export type MutationRevokeSessionArgs = {
+  sessionId: Scalars['ID']['input'];
+};
+
+
 export type MutationSendBulkEventPublishRemindersArgs = {
   eventIds: Array<Scalars['ID']['input']>;
   triggeredBy: Scalars['String']['input'];
 };
 
 
-export type MutationSendBulkNotificationArgs = {
-  input: SendNotificationInput;
-  userIds: Array<Scalars['ID']['input']>;
-};
-
-
 export type MutationSendEventPublishReminderArgs = {
   eventId: Scalars['ID']['input'];
   triggeredBy: Scalars['String']['input'];
-};
-
-
-export type MutationSendNotificationArgs = {
-  input: SendNotificationInput;
 };
 
 
@@ -3061,10 +3322,22 @@ export type MutationSetMobileMoneyAccountArgs = {
 };
 
 
+export type MutationSetOrganizationCommissionRateArgs = {
+  organizationId: Scalars['ID']['input'];
+  rate: Scalars['Float']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type MutationSetPaymentAttemptReviewStatusArgs = {
   depositId: Scalars['String']['input'];
   notes: InputMaybe<Scalars['String']['input']>;
   reviewStatus: Scalars['String']['input'];
+};
+
+
+export type MutationSetPrimaryContactArgs = {
+  input: SetPrimaryContactInput;
 };
 
 
@@ -3080,13 +3353,8 @@ export type MutationSetUserRolesArgs = {
 };
 
 
-export type MutationSetupTwoFactorArgs = {
-  input: SetupTwoFactorInput;
-};
-
-
-export type MutationSocialAuthArgs = {
-  input: SocialAuthInput;
+export type MutationStartBankVerificationArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -3108,6 +3376,12 @@ export type MutationSubmitEventForApprovalArgs = {
 
 export type MutationSubmitOrganizationForReviewArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type MutationSuspendBankAccountArgs = {
+  organizationId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
 };
 
 
@@ -3134,9 +3408,8 @@ export type MutationSyncUserFromKeycloakArgs = {
 };
 
 
-export type MutationTransferOrganizationOwnershipArgs = {
-  newOwnerId: Scalars['ID']['input'];
-  organizationId: Scalars['ID']['input'];
+export type MutationTransferBetweenPlatformAccountsArgs = {
+  input: PlatformTransferInput;
 };
 
 
@@ -3153,14 +3426,15 @@ export type MutationUnassignEventReviewerArgs = {
 };
 
 
-export type MutationUnlinkSocialAccountArgs = {
-  provider: SocialProvider;
-};
-
-
 export type MutationUnlockEscrowAccountArgs = {
   accountId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
+};
+
+
+export type MutationUnlockTierWithAccessCodeArgs = {
+  accessCode: Scalars['String']['input'];
+  eventId: Scalars['ID']['input'];
 };
 
 
@@ -3192,6 +3466,12 @@ export type MutationUnsuspendUserArgs = {
 export type MutationUpdateBankAccountArgs = {
   id: Scalars['ID']['input'];
   input: UpdateBankAccountInput;
+};
+
+
+export type MutationUpdateChargebackRecoveryArgs = {
+  id: Scalars['ID']['input'];
+  input: UpdateChargebackRecoveryInput;
 };
 
 
@@ -3246,6 +3526,12 @@ export type MutationUpdateEventCategoryArgs = {
 };
 
 
+export type MutationUpdateMediaArgs = {
+  id: Scalars['ID']['input'];
+  input: UpdateMediaInput;
+};
+
+
 export type MutationUpdateMemberRoleArgs = {
   input: UpdateMemberRoleInput;
   memberId: Scalars['ID']['input'];
@@ -3292,21 +3578,8 @@ export type MutationUpdatePayoutConfigArgs = {
 };
 
 
-export type MutationUpdatePermissionArgs = {
-  category: InputMaybe<Scalars['String']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  id: Scalars['ID']['input'];
-  name: InputMaybe<Scalars['String']['input']>;
-};
-
-
 export type MutationUpdatePlatformConfigurationArgs = {
   input: UpdatePlatformConfigurationInput;
-};
-
-
-export type MutationUpdateProfileArgs = {
-  input: Scalars['JSON']['input'];
 };
 
 
@@ -3328,6 +3601,12 @@ export type MutationUpdateReferenceDataArgs = {
 };
 
 
+export type MutationUpdateStockImageArgs = {
+  id: Scalars['ID']['input'];
+  input: UpdateStockImageInput;
+};
+
+
 export type MutationUpdateTicketTierArgs = {
   input: UpdateTicketTierInput;
   tierId: Scalars['ID']['input'];
@@ -3346,8 +3625,18 @@ export type MutationUpgradeToBusinessOrganizationArgs = {
 };
 
 
+export type MutationUploadMediaArgs = {
+  input: UploadMediaInput;
+};
+
+
 export type MutationUploadScansArgs = {
   inputs: Array<ValidateTicketInput>;
+};
+
+
+export type MutationUploadStockImageArgs = {
+  input: UploadStockImageInput;
 };
 
 
@@ -3361,28 +3650,13 @@ export type MutationValidateTicketArgs = {
 };
 
 
-export type MutationValidateTokenArgs = {
-  token: Scalars['String']['input'];
-};
-
-
 export type MutationVerifyBankAccountArgs = {
   id: Scalars['ID']['input'];
 };
 
 
-export type MutationVerifyEmailArgs = {
-  token: Scalars['String']['input'];
-};
-
-
 export type MutationVerifyEscrowJournalConsistencyArgs = {
   eventId: Scalars['ID']['input'];
-};
-
-
-export type MutationVerifyPaymentWithGatewayArgs = {
-  depositId: Scalars['String']['input'];
 };
 
 
@@ -3392,33 +3666,27 @@ export type MutationVerifyPayoutAccountArgs = {
 };
 
 
-export type MutationVerifyPhoneArgs = {
-  code: Scalars['String']['input'];
+export type MutationWithdrawRecoveryProposalArgs = {
+  proposalId: Scalars['ID']['input'];
 };
 
-
-export type MutationVerifyPhoneOtpArgs = {
-  otp: Scalars['String']['input'];
-  phoneNumber: Scalars['String']['input'];
+export type MyContacts = {
+  __typename: 'MyContacts';
+  contacts: Array<Contact>;
+  pendingChange: Maybe<PendingContactChange>;
 };
 
-
-export type MutationVerifyTwoFactorArgs = {
-  input: VerifyTwoFactorInput;
-};
-
-export type MutationResponse = {
-  __typename: 'MutationResponse';
-  code: Maybe<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
+export type MyPermissions = {
+  __typename: 'MyPermissions';
+  permissions: Array<Scalars['String']['output']>;
+  roles: Array<Scalars['String']['output']>;
 };
 
 export type NearbyLocationInput = {
   latitude: Scalars['Float']['input'];
   longitude: Scalars['Float']['input'];
-  maxResults: InputMaybe<Scalars['Int']['input']>;
-  radiusKm: InputMaybe<Scalars['Float']['input']>;
+  maxResults?: InputMaybe<Scalars['Int']['input']>;
+  radiusKm?: InputMaybe<Scalars['Float']['input']>;
 };
 
 export type Notification = {
@@ -3463,13 +3731,6 @@ export type NotificationEdge = {
   node: Notification;
 };
 
-export type NotificationMutationResponse = {
-  __typename: 'NotificationMutationResponse';
-  message: Maybe<Scalars['String']['output']>;
-  notification: Maybe<Notification>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type NotificationOffsetPage = {
   __typename: 'NotificationOffsetPage';
   content: Array<Notification>;
@@ -3506,7 +3767,8 @@ export type NotificationStatus =
   | 'PENDING'
   | 'QUEUED'
   | 'READ'
-  | 'SENT';
+  | 'SENT'
+  | 'SUPPRESSED';
 
 export type NotificationType =
   | 'ACCOUNT_SECURITY'
@@ -3549,10 +3811,10 @@ export type NotificationType =
   | 'WELCOME';
 
 export type OffsetPaginationInput = {
-  page: InputMaybe<Scalars['Int']['input']>;
-  size: InputMaybe<Scalars['Int']['input']>;
-  sortBy: InputMaybe<Scalars['String']['input']>;
-  sortDirection: InputMaybe<SortDirection>;
+  page?: InputMaybe<Scalars['Int']['input']>;
+  size?: InputMaybe<Scalars['Int']['input']>;
+  sortBy?: InputMaybe<Scalars['String']['input']>;
+  sortDirection?: InputMaybe<SortDirection>;
 };
 
 export type Organization = {
@@ -3571,7 +3833,11 @@ export type Organization = {
   canPublishEvents: Scalars['Boolean']['output'];
   canReceivePayouts: Scalars['Boolean']['output'];
   canSubmitForReview: Scalars['Boolean']['output'];
+  commissionRate: Maybe<Scalars['Float']['output']>;
+  completedEventCount: Scalars['Int']['output'];
   createdAt: Scalars['DateTime']['output'];
+  deletionRequestedAt: Maybe<Scalars['DateTime']['output']>;
+  deletionScheduledFor: Maybe<Scalars['DateTime']['output']>;
   description: Maybe<Scalars['String']['output']>;
   documentsVerified: Scalars['Boolean']['output'];
   id: Scalars['ID']['output'];
@@ -3590,6 +3856,7 @@ export type Organization = {
   payoutConfig: Maybe<PayoutConfig>;
   pendingInvitationCount: Scalars['Int']['output'];
   pendingInvitations: Maybe<Array<TeamInvitation>>;
+  publishedEventCount: Scalars['Int']['output'];
   rejectionReason: Maybe<Scalars['String']['output']>;
   reviewedAt: Maybe<Scalars['DateTime']['output']>;
   reviewedBy: Maybe<User>;
@@ -3598,6 +3865,8 @@ export type Organization = {
   socialLinks: Maybe<SocialLinks>;
   status: OrganizationStatus;
   submittedAt: Maybe<Scalars['DateTime']['output']>;
+  suspendedAt: Maybe<Scalars['DateTime']['output']>;
+  suspensionReason: Maybe<Scalars['String']['output']>;
   tagline: Maybe<Scalars['String']['output']>;
   taxId: Maybe<Scalars['String']['output']>;
   totalEvents: Maybe<Scalars['Int']['output']>;
@@ -3613,36 +3882,23 @@ export type Organization = {
   yearEstablished: Maybe<Scalars['Int']['output']>;
 };
 
-export type OrganizationApplicationConnection = {
-  __typename: 'OrganizationApplicationConnection';
-  edges: Array<OrganizationApplicationEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type OrganizationApplicationEdge = {
-  __typename: 'OrganizationApplicationEdge';
-  cursor: Scalars['String']['output'];
-  node: Organization;
-};
-
 export type OrganizationApplicationInput = {
-  bannerUrl: InputMaybe<Scalars['String']['input']>;
-  businessEmail: InputMaybe<Scalars['String']['input']>;
-  businessPhone: InputMaybe<Scalars['String']['input']>;
-  businessRegistrationNumber: InputMaybe<Scalars['String']['input']>;
-  businessType: InputMaybe<BusinessType>;
-  city: InputMaybe<Scalars['String']['input']>;
-  country: InputMaybe<Scalars['String']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  logoUrl: InputMaybe<Scalars['String']['input']>;
+  bannerUrl?: InputMaybe<Scalars['String']['input']>;
+  businessEmail?: InputMaybe<Scalars['String']['input']>;
+  businessPhone?: InputMaybe<Scalars['String']['input']>;
+  businessRegistrationNumber?: InputMaybe<Scalars['String']['input']>;
+  businessType?: InputMaybe<BusinessType>;
+  city?: InputMaybe<Scalars['String']['input']>;
+  country?: InputMaybe<Scalars['String']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  logoUrl?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
-  province: InputMaybe<Scalars['String']['input']>;
-  socialLinks: InputMaybe<SocialLinksInput>;
-  tagline: InputMaybe<Scalars['String']['input']>;
-  taxId: InputMaybe<Scalars['String']['input']>;
-  type: InputMaybe<OrganizationType>;
-  website: InputMaybe<Scalars['String']['input']>;
+  province?: InputMaybe<Scalars['String']['input']>;
+  socialLinks?: InputMaybe<SocialLinksInput>;
+  tagline?: InputMaybe<Scalars['String']['input']>;
+  taxId?: InputMaybe<Scalars['String']['input']>;
+  type?: InputMaybe<OrganizationType>;
+  website?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type OrganizationApplicationOffsetPage = {
@@ -3651,21 +3907,10 @@ export type OrganizationApplicationOffsetPage = {
   pageInfo: PageInfo;
 };
 
-export type OrganizationConnection = {
-  __typename: 'OrganizationConnection';
-  edges: Array<OrganizationEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type OrganizationEdge = {
-  __typename: 'OrganizationEdge';
-  cursor: Scalars['String']['output'];
-  node: Organization;
-};
-
 export type OrganizationMember = {
   __typename: 'OrganizationMember';
+  contactEmailMasked: Maybe<Scalars['String']['output']>;
+  contactPhoneMasked: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
   customPermissions: Maybe<Array<Scalars['String']['output']>>;
   deniedPermissions: Maybe<Array<Scalars['String']['output']>>;
@@ -3683,30 +3928,10 @@ export type OrganizationMember = {
   userId: Scalars['ID']['output'];
 };
 
-export type OrganizationMemberConnection = {
-  __typename: 'OrganizationMemberConnection';
-  edges: Array<OrganizationMemberEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type OrganizationMemberEdge = {
-  __typename: 'OrganizationMemberEdge';
-  cursor: Scalars['String']['output'];
-  node: OrganizationMember;
-};
-
 export type OrganizationMemberOffsetPage = {
   __typename: 'OrganizationMemberOffsetPage';
   content: Array<OrganizationMember>;
   pageInfo: PageInfo;
-};
-
-export type OrganizationMutationResponse = {
-  __typename: 'OrganizationMutationResponse';
-  message: Maybe<Scalars['String']['output']>;
-  organization: Maybe<Organization>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type OrganizationOffsetPage = {
@@ -3724,12 +3949,12 @@ export type OrganizationRole =
 
 export type OrganizationSettings = {
   __typename: 'OrganizationSettings';
+  adminsCanRequestPayouts: Scalars['Boolean']['output'];
   allowMembersToInvite: Scalars['Boolean']['output'];
   defaultEventVisibility: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   inviteRequiresApproval: Scalars['Boolean']['output'];
-  managersCanRequestPayouts: Scalars['Boolean']['output'];
-  marketersCanViewFinancials: Scalars['Boolean']['output'];
+  managersCanViewFinancials: Scalars['Boolean']['output'];
   maxTeamMembers: Maybe<Scalars['Int']['output']>;
   notifyOwnerOnEventCreated: Scalars['Boolean']['output'];
   notifyOwnerOnMemberJoin: Scalars['Boolean']['output'];
@@ -3810,11 +4035,11 @@ export type OrganizerDashboardStats = {
 };
 
 export type OrganizerEventFilterInput = {
-  eventDateAfter: InputMaybe<Scalars['DateTime']['input']>;
-  eventDateBefore: InputMaybe<Scalars['DateTime']['input']>;
-  searchQuery: InputMaybe<Scalars['String']['input']>;
-  status: InputMaybe<EventStatus>;
-  statuses: InputMaybe<Array<EventStatus>>;
+  eventDateAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  eventDateBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  searchQuery?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<EventStatus>;
+  statuses?: InputMaybe<Array<EventStatus>>;
 };
 
 export type OrganizerFinanceOverview = {
@@ -3872,23 +4097,6 @@ export type OrganizerShareRow = {
   revenue: Maybe<Scalars['BigDecimal']['output']>;
 };
 
-export type OrganizerStatistics = {
-  __typename: 'OrganizerStatistics';
-  activeEvents: Scalars['Int']['output'];
-  averageRating: Maybe<Scalars['Float']['output']>;
-  cancelledEvents: Scalars['Int']['output'];
-  completedEvents: Scalars['Int']['output'];
-  completedPayouts: Scalars['BigDecimal']['output'];
-  organizationId: Maybe<Scalars['ID']['output']>;
-  organizerId: Scalars['ID']['output'];
-  pendingPayouts: Scalars['BigDecimal']['output'];
-  period: Maybe<Scalars['String']['output']>;
-  totalEvents: Scalars['Int']['output'];
-  totalRevenue: Scalars['BigDecimal']['output'];
-  totalReviews: Scalars['Int']['output'];
-  totalTicketsSold: Scalars['Int']['output'];
-};
-
 export type OrganizerTicketMix = {
   __typename: 'OrganizerTicketMix';
   currency: Scalars['String']['output'];
@@ -3914,12 +4122,12 @@ export type OrganizerTransaction = {
 };
 
 export type OrganizerTransactionFilterInput = {
-  endDate: InputMaybe<Scalars['DateTime']['input']>;
-  eventId: InputMaybe<Scalars['ID']['input']>;
-  maxAmount: InputMaybe<Scalars['BigDecimal']['input']>;
-  minAmount: InputMaybe<Scalars['BigDecimal']['input']>;
-  startDate: InputMaybe<Scalars['DateTime']['input']>;
-  type: InputMaybe<OrganizerTransactionType>;
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  maxAmount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  minAmount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
+  type?: InputMaybe<OrganizerTransactionType>;
 };
 
 export type OrganizerTransactionOffsetPage = {
@@ -3952,22 +4160,6 @@ export type OrganizerUpcomingEvent = {
   totalCapacity: Scalars['Int']['output'];
 };
 
-export type OtpRequestResponse = {
-  __typename: 'OtpRequestResponse';
-  expiresIn: Scalars['Int']['output'];
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type OtpResponse = {
-  __typename: 'OtpResponse';
-  attemptsRemaining: Maybe<Scalars['Int']['output']>;
-  cooldownSeconds: Maybe<Scalars['Int']['output']>;
-  expiresAt: Maybe<Scalars['DateTime']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type OwnershipTransferRequest = {
   __typename: 'OwnershipTransferRequest';
   cancelledAt: Maybe<Scalars['DateTime']['output']>;
@@ -3983,14 +4175,6 @@ export type OwnershipTransferRequest = {
   organizationId: Scalars['ID']['output'];
   reason: Maybe<Scalars['String']['output']>;
   status: TransferStatus;
-  transferToken: Scalars['String']['output'];
-};
-
-export type OwnershipTransferResponse = {
-  __typename: 'OwnershipTransferResponse';
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-  transfer: Maybe<OwnershipTransferRequest>;
 };
 
 export type PageInfo = {
@@ -4075,6 +4259,9 @@ export type PaymentAttempt = {
   reviewStatus: Maybe<Scalars['String']['output']>;
   reviewedAt: Maybe<Scalars['DateTime']['output']>;
   reviewedBy: Maybe<Scalars['String']['output']>;
+  riskFlags: Array<Scalars['String']['output']>;
+  riskLevel: Maybe<Scalars['String']['output']>;
+  riskScore: Maybe<Scalars['Int']['output']>;
   sessionId: Maybe<Scalars['String']['output']>;
   status: PaymentAttemptStatus;
   ticketId: Scalars['String']['output'];
@@ -4087,13 +4274,27 @@ export type PaymentAttempt = {
   webhookSourceIp: Maybe<Scalars['String']['output']>;
 };
 
-export type PaymentAttemptMutationResponse = {
-  __typename: 'PaymentAttemptMutationResponse';
-  data: Maybe<PaymentAttempt>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+export type PaymentAttemptFilterInput = {
+  attemptType?: InputMaybe<PaymentAttemptType>;
+  buyerId?: InputMaybe<Scalars['String']['input']>;
+  createdAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  createdBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  maxAmount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  minAmount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  organizationId?: InputMaybe<Scalars['String']['input']>;
+  provider?: InputMaybe<Scalars['String']['input']>;
+  reference?: InputMaybe<Scalars['String']['input']>;
+  reviewStatus?: InputMaybe<Scalars['String']['input']>;
+  riskLevel?: InputMaybe<Scalars['String']['input']>;
+  statuses?: InputMaybe<Array<PaymentAttemptStatus>>;
+  stuckForMinutes?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type PaymentAttemptOffsetPage = {
+  __typename: 'PaymentAttemptOffsetPage';
+  data: Array<PaymentAttempt>;
+  pagination: PaginationInfo;
 };
 
 export type PaymentAttemptStatus =
@@ -4106,6 +4307,12 @@ export type PaymentAttemptStatus =
   | 'PENDING_APPROVAL'
   | 'PROCESSING'
   | 'REJECTED';
+
+export type PaymentAttemptType =
+  | 'COLLECT'
+  | 'PAYOUT'
+  | 'REFUND'
+  | 'VERIFICATION';
 
 export type PaymentInfo = {
   __typename: 'PaymentInfo';
@@ -4121,12 +4328,9 @@ export type PaymentInfo = {
 
 export type PaymentInitiationResponse = {
   __typename: 'PaymentInitiationResponse';
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
   paymentIntentId: Maybe<Scalars['ID']['output']>;
   paymentStatus: Maybe<Scalars['String']['output']>;
   reservationId: Maybe<Scalars['ID']['output']>;
-  success: Scalars['Boolean']['output'];
   transactionRef: Maybe<Scalars['String']['output']>;
 };
 
@@ -4134,6 +4338,63 @@ export type PaymentMethod =
   | 'BANK_TRANSFER'
   | 'CARD'
   | 'MOBILE_MONEY';
+
+export type PaymentRecoveryOutcome = {
+  __typename: 'PaymentRecoveryOutcome';
+  depositId: Scalars['String']['output'];
+  detail: Maybe<Scalars['String']['output']>;
+  result: Scalars['String']['output'];
+};
+
+export type PaymentRiskSummary = {
+  __typename: 'PaymentRiskSummary';
+  amountAtRisk: Scalars['BigDecimal']['output'];
+  evaluated: Scalars['Int']['output'];
+  flagged: Scalars['Int']['output'];
+  high: Scalars['Int']['output'];
+  low: Scalars['Int']['output'];
+  medium: Scalars['Int']['output'];
+  topFlags: Array<RiskFlagCount>;
+  windowHours: Scalars['Int']['output'];
+};
+
+export type PayoutAccountFilterInput = {
+  method?: InputMaybe<PayoutMethod>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<PayoutAccountStatus>;
+};
+
+export type PayoutAccountRecord = {
+  __typename: 'PayoutAccountRecord';
+  accountHolderName: Maybe<Scalars['String']['output']>;
+  accountNumberMasked: Maybe<Scalars['String']['output']>;
+  bankName: Maybe<Scalars['String']['output']>;
+  method: PayoutMethod;
+  network: Maybe<MobileMoneyProvider>;
+  organizationId: Scalars['ID']['output'];
+  organizationName: Scalars['String']['output'];
+  organizationSlug: Scalars['String']['output'];
+  phoneMasked: Maybe<Scalars['String']['output']>;
+  rejectionReason: Maybe<Scalars['String']['output']>;
+  status: PayoutAccountStatus;
+  suspendedReason: Maybe<Scalars['String']['output']>;
+  testDepositSentAt: Maybe<Scalars['DateTime']['output']>;
+  updatedAt: Maybe<Scalars['DateTime']['output']>;
+  verificationAttemptsLeft: Scalars['Int']['output'];
+};
+
+export type PayoutAccountRecordOffsetPage = {
+  __typename: 'PayoutAccountRecordOffsetPage';
+  content: Array<PayoutAccountRecord>;
+  pageInfo: PageInfo;
+};
+
+export type PayoutAccountStatus =
+  | 'NONE'
+  | 'PENDING'
+  | 'REJECTED'
+  | 'SUSPENDED'
+  | 'VERIFIED';
 
 export type PayoutBankDetails = {
   __typename: 'PayoutBankDetails';
@@ -4145,6 +4406,12 @@ export type PayoutBankDetails = {
   branchCode: Maybe<Scalars['String']['output']>;
   branchName: Maybe<Scalars['String']['output']>;
   maskedAccountNumber: Maybe<Scalars['String']['output']>;
+  rejectionReason: Maybe<Scalars['String']['output']>;
+  status: PayoutAccountStatus;
+  suspended: Scalars['Boolean']['output'];
+  suspendedReason: Maybe<Scalars['String']['output']>;
+  testDepositSentAt: Maybe<Scalars['DateTime']['output']>;
+  verificationAttemptsLeft: Scalars['Int']['output'];
   verified: Scalars['Boolean']['output'];
 };
 
@@ -4235,24 +4502,28 @@ export type PayoutRequest = {
   eventTitle: Maybe<Scalars['String']['output']>;
   expectedPayoutDate: Maybe<Scalars['DateTime']['output']>;
   externalTransactionId: Maybe<Scalars['String']['output']>;
+  heldAt: Maybe<Scalars['DateTime']['output']>;
+  heldBy: Maybe<Scalars['String']['output']>;
+  holdReason: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   isStuck: Maybe<Scalars['Boolean']['output']>;
   issueType: Maybe<PayoutIssueType>;
   lastError: Maybe<Scalars['String']['output']>;
   metadata: Maybe<Scalars['JSON']['output']>;
   notes: Maybe<Scalars['String']['output']>;
+  onHold: Scalars['Boolean']['output'];
   organizationId: Maybe<Scalars['String']['output']>;
   organizerId: Scalars['String']['output'];
   organizerName: Maybe<Scalars['String']['output']>;
   paymentReference: Maybe<Scalars['String']['output']>;
   payoutMethod: Maybe<PayoutMethod>;
-  platformFee: Maybe<Scalars['BigDecimal']['output']>;
   processedAt: Maybe<Scalars['DateTime']['output']>;
   processedBy: Maybe<Scalars['String']['output']>;
-  processingFee: Maybe<Scalars['BigDecimal']['output']>;
   rejectedAt: Maybe<Scalars['DateTime']['output']>;
   rejectedBy: Maybe<Scalars['String']['output']>;
   rejectionReason: Maybe<Scalars['String']['output']>;
+  releasedAt: Maybe<Scalars['DateTime']['output']>;
+  releasedBy: Maybe<Scalars['String']['output']>;
   requestId: Scalars['String']['output'];
   requestedAmount: Scalars['BigDecimal']['output'];
   requestedAt: Scalars['DateTime']['output'];
@@ -4275,36 +4546,14 @@ export type PayoutRequest = {
   updatedAt: Maybe<Scalars['DateTime']['output']>;
 };
 
-export type PayoutRequestConnection = {
-  __typename: 'PayoutRequestConnection';
-  edges: Array<PayoutRequestEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type PayoutRequestEdge = {
-  __typename: 'PayoutRequestEdge';
-  cursor: Scalars['String']['output'];
-  node: PayoutRequest;
-};
-
 export type PayoutRequestFilterInput = {
-  endDate: InputMaybe<Scalars['DateTime']['input']>;
-  escrowAccountId: InputMaybe<Scalars['String']['input']>;
-  eventId: InputMaybe<Scalars['String']['input']>;
-  organizerId: InputMaybe<Scalars['String']['input']>;
-  payoutMethod: InputMaybe<PayoutMethod>;
-  startDate: InputMaybe<Scalars['DateTime']['input']>;
-  status: InputMaybe<PayoutRequestStatus>;
-};
-
-export type PayoutRequestMutationResponse = {
-  __typename: 'PayoutRequestMutationResponse';
-  data: Maybe<PayoutRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  escrowAccountId?: InputMaybe<Scalars['String']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  organizerId?: InputMaybe<Scalars['String']['input']>;
+  payoutMethod?: InputMaybe<PayoutMethod>;
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
+  status?: InputMaybe<PayoutRequestStatus>;
 };
 
 export type PayoutRequestOffsetPage = {
@@ -4330,6 +4579,7 @@ export type PayoutRequestStatus =
   | 'CANCELLED'
   | 'COMPLETED'
   | 'FAILED'
+  | 'ON_HOLD'
   | 'PENDING'
   | 'PROCESSING'
   | 'REJECTED';
@@ -4358,32 +4608,28 @@ export type PayoutSchedule =
   | 'MONTHLY'
   | 'WEEKLY';
 
+export type PendingContactChange = {
+  __typename: 'PendingContactChange';
+  attemptsRemaining: Scalars['Int']['output'];
+  changeId: Scalars['ID']['output'];
+  currentContactVerified: Scalars['Boolean']['output'];
+  expiresAt: Scalars['DateTime']['output'];
+  kind: ContactChangeKind;
+  newContactMasked: Maybe<Scalars['String']['output']>;
+};
+
 export type Permission = {
   __typename: 'Permission';
-  active: Scalars['Boolean']['output'];
-  category: Maybe<Scalars['String']['output']>;
   code: Scalars['String']['output'];
-  createdAt: Scalars['DateTime']['output'];
-  description: Maybe<Scalars['String']['output']>;
-  id: Scalars['ID']['output'];
-  name: Scalars['String']['output'];
+  description: Scalars['String']['output'];
+  module: Scalars['String']['output'];
   scope: PermissionScope;
-  updatedAt: Maybe<Scalars['DateTime']['output']>;
 };
 
 export type PermissionScope =
   | 'EVENT'
   | 'ORGANIZATION'
   | 'PLATFORM';
-
-export type PhoneAuthPayload = {
-  __typename: 'PhoneAuthPayload';
-  accessToken: Maybe<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  refreshToken: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-  user: Maybe<User>;
-};
 
 export type PlatformAccount = {
   __typename: 'PlatformAccount';
@@ -4394,15 +4640,6 @@ export type PlatformAccount = {
   id: Scalars['ID']['output'];
   lastUpdatedAt: Maybe<Scalars['DateTime']['output']>;
   name: Scalars['String']['output'];
-};
-
-export type PlatformAccountMutationResponse = {
-  __typename: 'PlatformAccountMutationResponse';
-  data: Maybe<PlatformAccount>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type PlatformAccountType =
@@ -4417,39 +4654,85 @@ export type PlatformConfiguration = {
   approvalSlaHours: Scalars['Int']['output'];
   approvalWarningThresholdHours: Scalars['Int']['output'];
   autoEscalationEnabled: Scalars['Boolean']['output'];
+  commissionDefault: Maybe<Scalars['Float']['output']>;
+  currency: Scalars['String']['output'];
   escalationDelayHours: Scalars['Int']['output'];
   escalationRecipientRole: Scalars['String']['output'];
   escalationReminderIntervalHours: Scalars['Int']['output'];
+  escrowHoldDays: Scalars['Int']['output'];
   id: Scalars['ID']['output'];
   maxEscalationReminders: Scalars['Int']['output'];
+  maxTicketsPerBooking: Scalars['Int']['output'];
+  minimumPayout: Maybe<Scalars['BigDecimal']['output']>;
   organizerNotificationChannel: ApprovalNotificationChannel;
+  refundCutoffHours: Scalars['Int']['output'];
+  refundPolicies: Array<PlatformRefundPolicy>;
   requireCommentsOnChangesRequested: Scalars['Boolean']['output'];
   requireCommentsOnRejection: Scalars['Boolean']['output'];
+  rescheduleLimit: Scalars['Int']['output'];
+  reservationGraceMinutes: Scalars['Int']['output'];
+  reservationHoldMinutes: Scalars['Int']['output'];
   sendEscalationNotifications: Scalars['Boolean']['output'];
   sendSlaWarningNotifications: Scalars['Boolean']['output'];
   updatedAt: Scalars['DateTime']['output'];
   updatedBy: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
 };
 
-export type PlatformConfigurationMutationResponse = {
-  __typename: 'PlatformConfigurationMutationResponse';
-  data: Maybe<PlatformConfiguration>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
+export type PlatformRefundPolicy = {
+  __typename: 'PlatformRefundPolicy';
+  code: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  rules: Array<PlatformRefundRule>;
+  summary: Scalars['String']['output'];
 };
 
-export type PlatformStatistics = {
-  __typename: 'PlatformStatistics';
-  activeUsers30Days: Scalars['Int']['output'];
-  pendingOrganizerApplications: Scalars['Int']['output'];
-  period: Maybe<Scalars['String']['output']>;
-  totalEvents: Scalars['Int']['output'];
-  totalOrganizations: Scalars['Int']['output'];
-  totalOrganizers: Scalars['Int']['output'];
-  totalRevenue: Scalars['BigDecimal']['output'];
-  totalTicketsSold: Scalars['Int']['output'];
-  totalUsers: Scalars['Int']['output'];
+export type PlatformRefundPolicyInput = {
+  code: Scalars['String']['input'];
+  label?: InputMaybe<Scalars['String']['input']>;
+  rules?: InputMaybe<Array<PlatformRefundRuleInput>>;
+  summary?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type PlatformRefundRule = {
+  __typename: 'PlatformRefundRule';
+  daysBefore: Scalars['Int']['output'];
+  percent: Scalars['Int']['output'];
+};
+
+export type PlatformRefundRuleInput = {
+  daysBefore: Scalars['Int']['input'];
+  percent: Scalars['Int']['input'];
+};
+
+export type PlatformRules = {
+  __typename: 'PlatformRules';
+  approval: PlatformRulesApproval;
+  commissionDefault: Scalars['Float']['output'];
+  commissionRate: Maybe<Scalars['Float']['output']>;
+  currency: Scalars['String']['output'];
+  escrowHoldDays: Scalars['Int']['output'];
+  maxTicketsPerBooking: Scalars['Int']['output'];
+  minimumPayout: Maybe<Scalars['BigDecimal']['output']>;
+  refundCutoffHours: Scalars['Int']['output'];
+  refundPolicies: Array<RulesRefundPolicy>;
+  rescheduleLimit: Scalars['Int']['output'];
+  reservationGraceMinutes: Scalars['Int']['output'];
+  reservationHoldMinutes: Scalars['Int']['output'];
+  updatedAt: Maybe<Scalars['DateTime']['output']>;
+  updatedBy: Maybe<Scalars['String']['output']>;
+  version: Scalars['Int']['output'];
+};
+
+export type PlatformRulesApproval = {
+  __typename: 'PlatformRulesApproval';
+  allowSelfApproval: Scalars['Boolean']['output'];
+  autoEscalation: Scalars['Boolean']['output'];
+  escalationDelayHours: Scalars['Int']['output'];
+  requireCommentsOnChangesRequested: Scalars['Boolean']['output'];
+  requireCommentsOnRejection: Scalars['Boolean']['output'];
+  slaHours: Scalars['Int']['output'];
+  warnHours: Scalars['Int']['output'];
 };
 
 export type PlatformSummary = {
@@ -4479,42 +4762,34 @@ export type PlatformSummary = {
   totalWithdrawals: Scalars['BigDecimal']['output'];
 };
 
-/** Input for processing a PawaPay webhook callback. */
-export type ProcessPaymentWebhookInput = {
-  /** UUID of the payment attempt (depositId) */
-  depositId: Scalars['String']['input'];
-  /** Failure code (if FAILED) */
-  failureCode: InputMaybe<Scalars['String']['input']>;
-  /** Failure message (if FAILED) */
-  failureMessage: InputMaybe<Scalars['String']['input']>;
-  /** Status from PawaPay (COMPLETED, FAILED, PROCESSING) */
-  providerStatus: Scalars['String']['input'];
-  /** PawaPay transaction ID (if COMPLETED) */
-  providerTransactionId: InputMaybe<Scalars['String']['input']>;
-  /** Whether webhook signature was valid */
-  signatureValid: Scalars['Boolean']['input'];
-  /** Source IP of webhook request */
-  sourceIp: Scalars['String']['input'];
-  /** Raw webhook payload for audit */
-  webhookPayload: Scalars['String']['input'];
+export type PlatformTransfer = {
+  __typename: 'PlatformTransfer';
+  amount: Scalars['BigDecimal']['output'];
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  currency: Scalars['String']['output'];
+  executedBy: Scalars['String']['output'];
+  fromAccount: PlatformAccountType;
+  id: Scalars['ID']['output'];
+  journalEntryId: Maybe<Scalars['String']['output']>;
+  proposalId: Maybe<Scalars['String']['output']>;
+  reason: Scalars['String']['output'];
+  toAccount: PlatformAccountType;
 };
 
-export type ProcessPayoutRequestMutationResponse = {
-  __typename: 'ProcessPayoutRequestMutationResponse';
-  data: Maybe<PayoutRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+export type PlatformTransferInput = {
+  amount: Scalars['BigDecimal']['input'];
+  fromAccount: PlatformAccountType;
+  idempotencyKey: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+  toAccount: PlatformAccountType;
 };
 
-export type ProcessRefundRequestMutationResponse = {
-  __typename: 'ProcessRefundRequestMutationResponse';
-  data: Maybe<RefundRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+export type PlatformTransferResult = {
+  __typename: 'PlatformTransferResult';
+  executed: Scalars['Boolean']['output'];
+  proposal: Maybe<RecoveryProposal>;
+  requiresSecondApprover: Scalars['Boolean']['output'];
+  transfer: Maybe<PlatformTransfer>;
 };
 
 export type PromoCode = {
@@ -4545,6 +4820,14 @@ export type PromoCodeValidation = {
   valid: Scalars['Boolean']['output'];
 };
 
+export type ProposeRecoveryActionInput = {
+  action: RecoveryAction;
+  amount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  parameters?: InputMaybe<Scalars['JSON']['input']>;
+  reason: Scalars['String']['input'];
+  subjectIds: Array<Scalars['String']['input']>;
+};
+
 export type Province = {
   __typename: 'Province';
   cityCount: Maybe<Scalars['Int']['output']>;
@@ -4560,118 +4843,95 @@ export type Province = {
   updatedBy: Maybe<Scalars['String']['output']>;
 };
 
-export type ProvinceConnection = {
-  __typename: 'ProvinceConnection';
-  edges: Array<ProvinceEdge>;
-  pageInfo: PageInfo;
+export type PublicPlatformRules = {
+  __typename: 'PublicPlatformRules';
+  currency: Scalars['String']['output'];
+  maxTicketsPerBooking: Scalars['Int']['output'];
+  refundCutoffHours: Scalars['Int']['output'];
+  refundPolicies: Array<RulesRefundPolicy>;
+  rescheduleLimit: Scalars['Int']['output'];
+  reservationGraceMinutes: Scalars['Int']['output'];
+  reservationHoldMinutes: Scalars['Int']['output'];
+  updatedAt: Maybe<Scalars['DateTime']['output']>;
+  version: Scalars['Int']['output'];
 };
 
-export type ProvinceEdge = {
-  __typename: 'ProvinceEdge';
-  cursor: Scalars['String']['output'];
-  node: Province;
-};
-
-export type ProvinceMutationResponse = {
-  __typename: 'ProvinceMutationResponse';
-  data: Maybe<Province>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type ProvinceOffsetPage = {
-  __typename: 'ProvinceOffsetPage';
-  content: Array<Province>;
-  hasNext: Scalars['Boolean']['output'];
-  hasPrevious: Scalars['Boolean']['output'];
-  pageNumber: Scalars['Int']['output'];
-  pageSize: Scalars['Int']['output'];
-  totalElements: Scalars['Int']['output'];
-  totalPages: Scalars['Int']['output'];
+export type PurchaseHeatCell = {
+  __typename: 'PurchaseHeatCell';
+  dayOfWeek: Scalars['Int']['output'];
+  hour: Scalars['Int']['output'];
+  purchases: Scalars['Int']['output'];
+  revenue: Scalars['BigDecimal']['output'];
+  tickets: Scalars['Int']['output'];
 };
 
 export type Query = {
   __typename: 'Query';
-  accountBalance: Maybe<AccountBalance>;
   accountSummary: Maybe<AccountSummary>;
-  activeEscalationsCursorPagination: ApprovalEscalationConnection;
-  activeEscalationsOffsetPagination: ApprovalEscalationOffsetPage;
-  activeEventCategoriesCursorPagination: EventCategoryConnection;
-  activeEventCategoriesOffsetPagination: EventCategoryOffsetPage;
-  allPermissions: Array<Permission>;
+  activeEscalations: ApprovalEscalationOffsetPage;
   allowedStatusTransitions: Array<EventStatus>;
   approvalEscalation: Maybe<ApprovalEscalation>;
   approvalStats: ApprovalStats;
   approvalTimeline: Maybe<ApprovalTimeline>;
-  approvalTimelinesByOrganizerCursorPagination: ApprovalTimelineConnection;
-  approvalTimelinesByOrganizerOffsetPagination: ApprovalTimelineOffsetPage;
-  approvalTimelinesCursorPagination: ApprovalTimelineConnection;
-  approvalTimelinesOffsetPagination: ApprovalTimelineOffsetPage;
-  approvedNotPublishedEventsCursorPagination: EventConnection;
-  approvedNotPublishedEventsOffsetPagination: EventOffsetPage;
+  approvalTimelines: ApprovalTimelineOffsetPage;
+  approvalTimelinesByOrganizer: ApprovalTimelineOffsetPage;
+  approvedNotPublishedEvents: EventOffsetPage;
+  auditLogs: AuditLogEntryOffsetPage;
   availableTicketTiers: Array<TicketTier>;
   bankAccount: Maybe<BankAccount>;
+  bankAccounts: PayoutAccountRecordOffsetPage;
   bankAccountsByOrganizer: Array<BankAccount>;
+  booking: Maybe<Booking>;
+  bookingByNumber: Maybe<Booking>;
   bookingPendingCounts: BookingPendingCounts;
+  bookingsByBuyer: BookingOffsetPage;
+  bookingsByOrganizer: BookingOffsetPage;
   calculateRefundAmount: RefundCalculation;
-  cancelledEventsCursorPagination: EventConnection;
-  cancelledEventsOffsetPagination: EventOffsetPage;
+  cancelledEvents: EventOffsetPage;
   catalogPendingCounts: CatalogPendingCounts;
+  categories: Array<EventCategory>;
   chargeback: Maybe<ChargebackRecord>;
   chargebackByChargebackId: Maybe<ChargebackRecord>;
   chargebackStats: ChargebackStats;
+  chargebacks: ChargebackOffsetPage;
   chargebacksByEvent: ChargebackOffsetPage;
   chargebacksByOrganizer: ChargebackOffsetPage;
-  chargebacksOffsetPagination: ChargebackOffsetPage;
   chargebacksPendingRecovery: Array<ChargebackRecord>;
   chartOfAccounts: Array<ChartOfAccountsEntry>;
   chartOfAccountsByCode: Maybe<ChartOfAccountsEntry>;
   chartOfAccountsByType: Array<ChartOfAccountsEntry>;
   chartOfAccountsEntry: Maybe<ChartOfAccountsEntry>;
-  chartOfAccountsOffsetPagination: ChartOfAccountsOffsetPage;
   checkInConflicts: CheckInConflictPage;
   checkInSummary: CheckInSummary;
-  citiesByCountryCursorPagination: CityConnection;
-  citiesByCountryOffsetPagination: CityOffsetPage;
-  citiesByProvinceCursorPagination: CityConnection;
-  citiesByProvinceOffsetPagination: CityOffsetPage;
-  citiesCursorPagination: CityConnection;
-  citiesOffsetPagination: CityOffsetPage;
+  cities: Array<City>;
   citiesWithEvents: Array<City>;
   city: Maybe<City>;
-  completedEventsCursorPagination: EventConnection;
-  completedEventsOffsetPagination: EventOffsetPage;
+  commissionRecords: CommissionRecordPage;
+  completedEvents: EventOffsetPage;
   confirmedUnfulfilledPaymentAttempts: Array<PaymentAttempt>;
   currentUserPermissions: Array<Scalars['String']['output']>;
   defaultBankAccount: Maybe<BankAccount>;
   discoverEvents: EventConnection;
-  draftEventsCursorPagination: EventConnection;
-  draftEventsOffsetPagination: EventOffsetPage;
+  draftEvents: EventOffsetPage;
+  dualControlQueue: Array<RecoveryProposal>;
   escrowAccount: Maybe<EventEscrowAccount>;
   escrowAccountBalance: Maybe<Scalars['BigDecimal']['output']>;
   escrowAccountByEvent: Maybe<EventEscrowAccount>;
   escrowAccountByNumber: Maybe<EventEscrowAccount>;
-  escrowAccountsByOrganizerCursorPagination: EscrowAccountConnection;
-  escrowAccountsByOrganizerOffsetPagination: EscrowAccountOffsetPage;
-  escrowAccountsCursorPagination: EscrowAccountConnection;
-  escrowAccountsOffsetPagination: EscrowAccountOffsetPage;
+  escrowAccounts: EscrowAccountOffsetPage;
+  escrowAccountsByOrganizer: EscrowAccountOffsetPage;
   escrowBalance: Scalars['BigDecimal']['output'];
   escrowBalanceAsOf: Scalars['BigDecimal']['output'];
   escrowJournalInconsistencies: Array<EscrowJournalVerificationResponse>;
   escrowJournalVerification: EscrowJournalVerificationResponse;
   escrowJournalVerificationAll: Array<EscrowJournalVerificationResponse>;
   escrowTransaction: Maybe<StandaloneEscrowTransaction>;
-  escrowTransactionsByAccount: EscrowTransactionOffsetPage;
+  escrowTransactions: EscrowTransactionOffsetPage;
   escrowTransactionsByTicket: Array<StandaloneEscrowTransaction>;
   escrowTransactionsUnlinked: Array<StandaloneEscrowTransaction>;
   event: Maybe<Event>;
   eventAccessGrant: Maybe<EventAccessGrant>;
-  eventAccessGrantsCursorPagination: EventAccessGrantConnection;
-  eventAccessGrantsOffsetPagination: EventAccessGrantOffsetPage;
-  eventCategoriesCursorPagination: EventCategoryConnection;
-  eventCategoriesOffsetPagination: EventCategoryOffsetPage;
+  eventAccessGrants: EventAccessGrantOffsetPage;
   eventCategory: Maybe<EventCategory>;
   eventCount: Scalars['Int']['output'];
   eventCountByCategory: Scalars['Int']['output'];
@@ -4685,106 +4945,95 @@ export type Query = {
   eventStatistics: Maybe<EventTicketStatistics>;
   eventStats: EventStats;
   eventTicketTiers: Array<TicketTier>;
-  eventsByCategoryCursorPagination: EventConnection;
-  eventsByCategoryOffsetPagination: EventOffsetPage;
-  eventsByCityCursorPagination: EventConnection;
-  eventsByCityOffsetPagination: EventOffsetPage;
-  eventsByDateRangeCursorPagination: EventConnection;
-  eventsByDateRangeOffsetPagination: EventOffsetPage;
-  eventsByOrganizerCursorPagination: EventConnection;
-  eventsByOrganizerOffsetPagination: EventOffsetPage;
-  eventsByPriceRangeCursorPagination: EventConnection;
-  eventsByPriceRangeOffsetPagination: EventOffsetPage;
-  eventsByStatusCursorPagination: EventConnection;
-  eventsByStatusOffsetPagination: EventOffsetPage;
-  eventsCursorPagination: EventConnection;
-  eventsOffsetPagination: EventOffsetPage;
-  expiredReservationsCursorPagination: ReservationConnection;
-  expiredReservationsOffsetPagination: ReservationOffsetPage;
+  events: EventOffsetPage;
+  eventsByCategory: EventConnection;
+  eventsByCity: EventConnection;
+  eventsByStatus: EventOffsetPage;
+  expiredReservations: ReservationOffsetPage;
   exportEventData: ReportExport;
   exportEventsReport: ReportExport;
   exportFinancialReport: ReportExport;
   exportSalesReport: ReportExport;
-  failedPayoutRequestsCursorPagination: PayoutRequestConnection;
-  failedPayoutRequestsOffsetPagination: PayoutRequestOffsetPage;
-  featuredEventsCursorPagination: EventConnection;
-  featuredEventsOffsetPagination: EventOffsetPage;
+  failedPayoutRequests: PayoutRequestOffsetPage;
   financialReport: FinancialReport;
-  freeEventsCursorPagination: EventConnection;
-  freeEventsOffsetPagination: EventOffsetPage;
-  hasEventPermission: Scalars['Boolean']['output'];
-  hasOrganizationPermission: Scalars['Boolean']['output'];
+  gatewaySettlements: GatewaySettlementPage;
   hasPendingOwnershipTransfer: Scalars['Boolean']['output'];
   hasSuccessfulPayment: Scalars['Boolean']['output'];
   identityPendingCounts: Maybe<IdentityPendingCounts>;
-  invitationByToken: Maybe<TeamInvitation>;
+  invitationByToken: Maybe<InvitationPreview>;
   isSlugAvailable: Scalars['Boolean']['output'];
   isTicketEligibleForRefund: Scalars['Boolean']['output'];
+  journalEntries: JournalEntryOffsetPage;
   journalEntriesByAccountCode: JournalEntryOffsetPage;
   journalEntriesByCorrelationId: Array<JournalEntry>;
-  journalEntriesOffsetPagination: JournalEntryOffsetPage;
   journalEntry: Maybe<JournalEntry>;
   journalEntryByNumber: Maybe<JournalEntry>;
   latestPaymentAttemptByReservation: Maybe<PaymentAttempt>;
   location: Maybe<Location>;
-  locationsByCityCursorPagination: LocationConnection;
-  locationsByCountryCursorPagination: LocationConnection;
-  locationsCursorPagination: LocationConnection;
-  locationsNearbyCursorPagination: LocationConnection;
+  locations: LocationConnection;
+  locationsByCity: LocationConnection;
+  locationsByCountry: LocationConnection;
+  locationsNearby: LocationConnection;
   me: Maybe<User>;
+  mediaAssets: MediaAssetOffsetPage;
   myActiveReservations: Array<TicketReservation>;
+  myAnnouncements: Array<SystemAnnouncement>;
   myApprovedDocumentCount: Scalars['Long']['output'];
+  myBookings: BookingOffsetPage;
   myCheckInRate: Maybe<OrganizerCheckInRate>;
+  myContacts: MyContacts;
   myDashboardStats: OrganizerDashboardStats;
   myDevices: Array<UserDevice>;
-  myDraftEventsOffsetPagination: EventOffsetPage;
+  myDraftEvents: EventOffsetPage;
   myEffectivePermissions: EffectivePermissions;
-  myEscalationsCursorPagination: ApprovalEscalationConnection;
-  myEscalationsOffsetPagination: ApprovalEscalationOffsetPage;
+  myEscalations: ApprovalEscalationOffsetPage;
+  myEscrowAccounts: EscrowAccountOffsetPage;
   myEventAccess: Maybe<EventAccessGrant>;
   myEventAccessGrants: Array<EventAccessGrant>;
   myEventCount: Scalars['Int']['output'];
   myEventCountByStatus: Scalars['Int']['output'];
   myEventReminders: Array<EventReminder>;
-  myEventRole: Maybe<EventRole>;
-  myEventsOffsetPagination: EventOffsetPage;
+  myEvents: EventOffsetPage;
+  myEventsConnection: EventConnection;
   myFinanceOverview: OrganizerFinanceOverview;
+  myMedia: MediaAssetConnection;
   myNotificationPreferences: Maybe<NotificationPreferences>;
-  myNotificationsCursorPagination: NotificationConnection;
-  myNotificationsOffsetPagination: NotificationOffsetPage;
+  myNotifications: NotificationConnection;
+  myOrganization: Maybe<Organization>;
   myOrganizationMembership: Maybe<OrganizationMember>;
-  myOrganizationRole: Maybe<OrganizationRole>;
   myOrganizations: Array<Organization>;
   myOwnedOrganization: Maybe<Organization>;
+  myPayoutRequests: PayoutRequestOffsetPage;
   myPayoutSources: Array<OrganizerPayoutSource>;
   myPayoutWindow: OrganizerPayoutWindow;
   myPendingInvitations: Array<TeamInvitation>;
   myPendingOwnershipTransfers: Array<OwnershipTransferRequest>;
+  myPermissions: MyPermissions;
   myRecentActivity: Array<OrganizerActivityItem>;
+  myRecoveryProposals: Array<RecoveryProposal>;
+  myRefundRequests: RefundRequestOffsetPage;
   myRevenueSeries: Array<OrganizerRevenuePoint>;
+  mySessions: Array<AccountSession>;
   myTicketMix: OrganizerTicketMix;
-  myTransactionsOffsetPagination: OrganizerTransactionOffsetPage;
+  myTicketTransfers: TicketTransferPage;
+  myTransactions: OrganizerTransactionOffsetPage;
   myUpcomingEvents: Array<OrganizerUpcomingEvent>;
   myVerificationDocumentByType: Maybe<VerificationDocument>;
   myVerificationDocumentCount: Scalars['Long']['output'];
   myVerificationDocuments: Array<VerificationDocument>;
+  /** Count users who have a specific role. */
   organization: Maybe<Organization>;
-  organizationApplicationsCursorPagination: OrganizationApplicationConnection;
-  organizationApplicationsOffsetPagination: OrganizationApplicationOffsetPage;
+  organizationApplications: OrganizationApplicationOffsetPage;
   organizationByOwnerId: Maybe<Organization>;
   organizationBySlug: Maybe<Organization>;
   organizationCount: Scalars['Long']['output'];
+  organizationEventAccessGrants: EventAccessGrantOffsetPage;
   organizationMember: Maybe<OrganizationMember>;
-  organizationMembersCursorPagination: OrganizationMemberConnection;
-  organizationMembersOffsetPagination: OrganizationMemberOffsetPage;
-  organizationsCursorPagination: OrganizationConnection;
-  organizationsOffsetPagination: OrganizationOffsetPage;
+  organizationMembers: OrganizationMemberOffsetPage;
+  organizations: OrganizationOffsetPage;
   organizerPromoCodes: Array<PromoCode>;
-  organizerStatistics: Maybe<OrganizerStatistics>;
-  overdueApprovalEventsCursorPagination: EventConnection;
-  overdueApprovalEventsOffsetPagination: EventOffsetPage;
-  overdueApprovalTimelinesCursorPagination: ApprovalTimelineConnection;
-  overdueApprovalTimelinesOffsetPagination: ApprovalTimelineOffsetPage;
+  overdueApprovalEvents: EventOffsetPage;
+  overdueApprovalTimelines: ApprovalTimelineOffsetPage;
   ownershipTransfer: Maybe<OwnershipTransferRequest>;
   ownershipTransferByToken: Maybe<OwnershipTransferRequest>;
   ownershipTransfers: Array<OwnershipTransferRequest>;
@@ -4792,146 +5041,132 @@ export type Query = {
   paymentAttemptByAttemptNumber: Maybe<PaymentAttempt>;
   paymentAttemptByDepositId: Maybe<PaymentAttempt>;
   paymentAttemptCountByStatus: Scalars['Int']['output'];
+  paymentAttemptSearch: PaymentAttemptOffsetPage;
+  paymentAttempts: Array<PaymentAttempt>;
   paymentAttemptsByBuyer: Array<PaymentAttempt>;
   paymentAttemptsByEvent: Array<PaymentAttempt>;
   paymentAttemptsByReservation: Array<PaymentAttempt>;
   paymentAttemptsByStatus: Array<PaymentAttempt>;
+  paymentRiskSummary: PaymentRiskSummary;
   payoutEligibility: PayoutEligibility;
   payoutRecoverySummary: PayoutRecoverySummary;
   payoutRequest: Maybe<PayoutRequest>;
   payoutRequestByRequestId: Maybe<PayoutRequest>;
   payoutRequestStats: PayoutRequestStats;
-  payoutRequestsByEventCursorPagination: PayoutRequestConnection;
-  payoutRequestsByEventOffsetPagination: PayoutRequestOffsetPage;
-  payoutRequestsByIssueTypeOffsetPagination: PayoutRequestOffsetPage;
-  payoutRequestsByOrganizerCursorPagination: PayoutRequestConnection;
-  payoutRequestsByOrganizerOffsetPagination: PayoutRequestOffsetPage;
-  payoutRequestsCursorPagination: PayoutRequestConnection;
-  payoutRequestsForReviewCursorPagination: PayoutRequestConnection;
-  payoutRequestsForReviewOffsetPagination: PayoutRequestOffsetPage;
-  payoutRequestsOffsetPagination: PayoutRequestOffsetPage;
-  pendingApprovalEventsCursorPagination: EventConnection;
-  pendingApprovalEventsOffsetPagination: EventOffsetPage;
-  pendingApprovalTimelinesCursorPagination: ApprovalTimelineConnection;
-  pendingApprovalTimelinesOffsetPagination: ApprovalTimelineOffsetPage;
+  payoutRequests: PayoutRequestOffsetPage;
+  payoutRequestsByEvent: PayoutRequestOffsetPage;
+  payoutRequestsByIssueType: PayoutRequestOffsetPage;
+  payoutRequestsByOrganizer: PayoutRequestOffsetPage;
+  payoutRequestsForReview: PayoutRequestOffsetPage;
+  pendingApprovalEvents: EventOffsetPage;
+  pendingApprovalTimelines: ApprovalTimelineOffsetPage;
   pendingChargebacks: Array<ChargebackRecord>;
-  pendingInvitationsCursorPagination: TeamInvitationConnection;
-  pendingInvitationsOffsetPagination: TeamInvitationOffsetPage;
-  pendingJournalEntriesOffsetPagination: JournalEntryOffsetPage;
+  pendingInvitations: TeamInvitationOffsetPage;
+  pendingJournalEntries: JournalEntryOffsetPage;
   pendingOwnershipTransfer: Maybe<OwnershipTransferRequest>;
   pendingPaymentAttempts: Array<PaymentAttempt>;
-  pendingPayoutRequestsCursorPagination: PayoutRequestConnection;
-  pendingPayoutRequestsOffsetPagination: PayoutRequestOffsetPage;
-  pendingRefundRequestsCursorPagination: RefundRequestConnection;
-  pendingRefundRequestsOffsetPagination: RefundRequestOffsetPage;
+  pendingPayoutRequests: PayoutRequestOffsetPage;
+  pendingRecoveryProposals: Array<RecoveryProposal>;
+  pendingRefundRequests: RefundRequestOffsetPage;
   pendingVerificationDocuments: Array<VerificationDocument>;
   permission: Maybe<Permission>;
-  permissionByName: Maybe<Permission>;
   permissions: Array<Permission>;
-  permissionsByCategory: Array<Permission>;
   platformAccount: Maybe<PlatformAccount>;
   platformAccountByType: Maybe<PlatformAccount>;
   platformAccounts: Array<PlatformAccount>;
   platformConfiguration: PlatformConfiguration;
-  platformStatistics: Maybe<PlatformStatistics>;
+  platformRules: PlatformRules;
   platformSummary: PlatformSummary;
   popularCategories: Array<EventCategory>;
   promoCode: Maybe<PromoCode>;
   promoCodeByCode: Maybe<PromoCode>;
   province: Maybe<Province>;
-  provincesByCountryCursorPagination: ProvinceConnection;
-  provincesByCountryOffsetPagination: ProvinceOffsetPage;
-  provincesCursorPagination: ProvinceConnection;
-  provincesOffsetPagination: ProvinceOffsetPage;
-  publishedEventsCursorPagination: EventConnection;
-  publishedEventsOffsetPagination: EventOffsetPage;
+  provinces: Array<Province>;
+  publicPlatformRules: PublicPlatformRules;
+  purchasesByDayAndHour: Array<PurchaseHeatCell>;
   recentCheckIns: Array<CheckIn>;
-  recentlyResolvedPayoutRequestsOffsetPagination: PayoutRequestOffsetPage;
+  recentlyResolvedPayoutRequests: PayoutRequestOffsetPage;
+  recommendedEvents: Array<EventRecommendation>;
   reconciliationRun: Maybe<ReconciliationRun>;
+  reconciliationRuns: ReconciliationRunOffsetPage;
   reconciliationRunsByType: ReconciliationRunOffsetPage;
-  reconciliationRunsOffsetPagination: ReconciliationRunOffsetPage;
   reconciliationRunsRequiringReview: Array<ReconciliationRun>;
   reconciliationSummary: ReconciliationSummary;
   /** All rows of a type. activeOnly=true (default) is the dropdown query. */
   referenceData: Array<ReferenceData>;
+  /**
+   * All rows of a type including inactive ones, paged — the admin management table.
+   *
+   * O-5 · this is ET-PLT-014 §4's `referenceDataAll`, and adopting that name resolves the
+   * collision that held it back from D-19's de-suffixing: `referenceData` above already
+   * exists as the bounded dropdown query, so the suffix could not simply be dropped. The
+   * two are different operations, not two spellings of one — `referenceData` is public and
+   * active-only, this is admin and shows everything.
+   */
+  referenceDataAll: ReferenceDataOffsetPage;
   /** Child rows within a hierarchy (active only), e.g. genres of a category. */
   referenceDataByParent: Array<ReferenceData>;
-  /** Admin offset table for one reference type. */
-  referenceDataOffsetPagination: ReferenceDataOffsetPage;
   /** A single reference item by type + code. */
   referenceItem: Maybe<ReferenceData>;
   /** The type registry that powers the generic admin management screen. */
   referenceTypes: Array<ReferenceTypeInfo>;
   refundRequest: Maybe<RefundRequest>;
   refundRequestByRequestId: Maybe<RefundRequest>;
-  refundRequestsByBuyerCursorPagination: RefundRequestConnection;
-  refundRequestsByBuyerOffsetPagination: RefundRequestOffsetPage;
-  refundRequestsByEventCursorPagination: RefundRequestConnection;
-  refundRequestsByEventOffsetPagination: RefundRequestOffsetPage;
+  refundRequests: RefundRequestOffsetPage;
+  refundRequestsByBuyer: RefundRequestOffsetPage;
+  refundRequestsByEvent: RefundRequestOffsetPage;
+  refundRequestsByOrganizer: RefundRequestOffsetPage;
   refundRequestsByTicket: Array<RefundRequest>;
-  refundRequestsCursorPagination: RefundRequestConnection;
-  refundRequestsOffsetPagination: RefundRequestOffsetPage;
   reservation: Maybe<TicketReservation>;
-  reservationsByEventCursorPagination: ReservationConnection;
-  reservationsByEventOffsetPagination: ReservationOffsetPage;
-  retryablePayoutRequestsOffsetPagination: PayoutRequestOffsetPage;
-  rolePermissions: Array<Permission>;
-  searchCitiesCursorPagination: CityConnection;
-  searchCitiesOffsetPagination: CityOffsetPage;
-  searchEventCategoriesCursorPagination: EventCategoryConnection;
-  searchEventCategoriesOffsetPagination: EventCategoryOffsetPage;
-  searchEventsCursorPagination: EventConnection;
-  searchEventsOffsetPagination: EventOffsetPage;
-  searchLocationsCursorPagination: LocationConnection;
-  searchProvincesCursorPagination: ProvinceConnection;
-  searchProvincesOffsetPagination: ProvinceOffsetPage;
-  searchTicketsCursorPagination: TicketConnection;
-  searchTicketsOffsetPagination: TicketOffsetPage;
-  stuckPayoutRequestsCursorPagination: PayoutRequestConnection;
-  stuckPayoutRequestsOffsetPagination: PayoutRequestOffsetPage;
+  reservationsByEvent: ReservationOffsetPage;
+  retryablePayoutRequests: PayoutRequestOffsetPage;
+  rolePermissions: Maybe<RolePermissions>;
+  salesOverTime: Array<SalesPoint>;
+  searchEvents: EventConnection;
+  searchLocations: LocationConnection;
+  searchTickets: TicketOffsetPage;
+  serviceHealth: Array<ServiceHealth>;
+  staffAccounts: UserOffsetPage;
+  stockImages: StockImageConnection;
+  stuckPayoutRequests: PayoutRequestOffsetPage;
+  stuckTransactions: PaymentAttemptOffsetPage;
   successfulPaymentAttemptByReservation: Maybe<PaymentAttempt>;
-  teamStatistics: Maybe<TeamStatistics>;
+  systemAlerts: Array<SystemAlert>;
+  systemAnnouncements: Array<SystemAnnouncement>;
   ticket: Maybe<Ticket>;
   ticketByNumber: Maybe<Ticket>;
   ticketCountByBuyer: Scalars['Int']['output'];
   ticketCountByEvent: Scalars['Int']['output'];
+  ticketHolderAudience: Scalars['Int']['output'];
+  ticketHolderMessages: HolderMessagePage;
   ticketStats: TicketStats;
   ticketTier: Maybe<TicketTier>;
   ticketTierStatistics: Maybe<TicketTierStats>;
+  ticketTransferChain: Array<TicketTransfer>;
   ticketsByBuyerCursorPagination: TicketConnection;
   ticketsByBuyerOffsetPagination: TicketOffsetPage;
-  ticketsByEventCursorPagination: TicketConnection;
-  ticketsByEventOffsetPagination: TicketOffsetPage;
-  ticketsByOrganizerCursorPagination: TicketConnection;
-  ticketsByOrganizerOffsetPagination: TicketOffsetPage;
+  ticketsByEvent: TicketOffsetPage;
+  ticketsByOrganizer: TicketOffsetPage;
   transactionStats: TransactionStats;
+  transferRecipient: Maybe<TransferRecipient>;
+  trendingEvents: Array<Event>;
   trialBalance: Array<AccountBalance>;
   unreadNotificationCount: Scalars['Int']['output'];
-  upcomingEventsCursorPagination: EventConnection;
-  upcomingEventsOffsetPagination: EventOffsetPage;
   user: Maybe<User>;
   userByEmail: Maybe<User>;
   userByPhone: Maybe<User>;
   userEventAccess: Maybe<EventAccessGrant>;
+  userGrowthSeries: Array<GrowthPoint>;
   userStats: Maybe<UserStats>;
+  users: UserOffsetPage;
   /**
    * Find all users who have a specific role.
    * Example: usersByRole(role: ORGANIZER) returns all users with ORGANIZER role.
    */
   usersByRole: UserOffsetPage;
-  /** Count users who have a specific role. */
-  usersCountByRole: Scalars['Long']['output'];
-  usersCursorPagination: UserConnection;
-  usersOffsetPagination: UserOffsetPage;
   validatePromoCode: PromoCodeValidation;
   verificationDocument: Maybe<VerificationDocument>;
   verificationDocuments: Array<VerificationDocument>;
-};
-
-
-export type QueryAccountBalanceArgs = {
-  accountCode: Scalars['String']['input'];
-  asOf: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 
@@ -4940,28 +5175,8 @@ export type QueryAccountSummaryArgs = {
 };
 
 
-export type QueryActiveEscalationsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryActiveEscalationsOffsetPaginationArgs = {
+export type QueryActiveEscalationsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryActiveEventCategoriesCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryActiveEventCategoriesOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryAllPermissionsArgs = {
-  scope: InputMaybe<PermissionScope>;
 };
 
 
@@ -4980,36 +5195,25 @@ export type QueryApprovalTimelineArgs = {
 };
 
 
-export type QueryApprovalTimelinesByOrganizerCursorPaginationArgs = {
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryApprovalTimelinesByOrganizerOffsetPaginationArgs = {
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryApprovalTimelinesCursorPaginationArgs = {
-  filter: InputMaybe<ApprovalTimelineFilterInput>;
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryApprovalTimelinesOffsetPaginationArgs = {
+export type QueryApprovalTimelinesArgs = {
   filter: InputMaybe<ApprovalTimelineFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryApprovedNotPublishedEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
+export type QueryApprovalTimelinesByOrganizerArgs = {
+  organizerId: Scalars['String']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryApprovedNotPublishedEventsOffsetPaginationArgs = {
+export type QueryApprovedNotPublishedEventsArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryAuditLogsArgs = {
+  filter: InputMaybe<AuditLogFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5024,8 +5228,38 @@ export type QueryBankAccountArgs = {
 };
 
 
+export type QueryBankAccountsArgs = {
+  filter: InputMaybe<PayoutAccountFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
 export type QueryBankAccountsByOrganizerArgs = {
   organizerId: Scalars['String']['input'];
+};
+
+
+export type QueryBookingArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryBookingByNumberArgs = {
+  bookingNumber: Scalars['String']['input'];
+};
+
+
+export type QueryBookingsByBuyerArgs = {
+  buyerId: Scalars['String']['input'];
+  filter: InputMaybe<BookingFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryBookingsByOrganizerArgs = {
+  filter: InputMaybe<BookingFilterInput>;
+  organizationId: InputMaybe<Scalars['ID']['input']>;
+  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
@@ -5034,12 +5268,7 @@ export type QueryCalculateRefundAmountArgs = {
 };
 
 
-export type QueryCancelledEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryCancelledEventsOffsetPaginationArgs = {
+export type QueryCancelledEventsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5060,6 +5289,12 @@ export type QueryChargebackStatsArgs = {
 };
 
 
+export type QueryChargebacksArgs = {
+  filter: InputMaybe<ChargebackFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
 export type QueryChargebacksByEventArgs = {
   eventId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
@@ -5068,12 +5303,6 @@ export type QueryChargebacksByEventArgs = {
 
 export type QueryChargebacksByOrganizerArgs = {
   organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryChargebacksOffsetPaginationArgs = {
-  filter: InputMaybe<ChargebackFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5093,11 +5322,6 @@ export type QueryChartOfAccountsEntryArgs = {
 };
 
 
-export type QueryChartOfAccountsOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
 export type QueryCheckInConflictsArgs = {
   eventId: Scalars['ID']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
@@ -5109,37 +5333,8 @@ export type QueryCheckInSummaryArgs = {
 };
 
 
-export type QueryCitiesByCountryCursorPaginationArgs = {
-  country: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryCitiesByCountryOffsetPaginationArgs = {
-  country: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryCitiesByProvinceCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  provinceId: Scalars['String']['input'];
-};
-
-
-export type QueryCitiesByProvinceOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-  provinceId: Scalars['String']['input'];
-};
-
-
-export type QueryCitiesCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryCitiesOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
+export type QueryCitiesArgs = {
+  provinceId: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -5148,12 +5343,13 @@ export type QueryCityArgs = {
 };
 
 
-export type QueryCompletedEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
+export type QueryCommissionRecordsArgs = {
+  filter: InputMaybe<CommissionFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryCompletedEventsOffsetPaginationArgs = {
+export type QueryCompletedEventsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5166,16 +5362,11 @@ export type QueryDefaultBankAccountArgs = {
 export type QueryDiscoverEventsArgs = {
   filter: EventDiscoveryFilterInput;
   pagination: InputMaybe<CursorPaginationInput>;
+  sort?: InputMaybe<EventDiscoverySort>;
 };
 
 
-export type QueryDraftEventsCursorPaginationArgs = {
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryDraftEventsOffsetPaginationArgs = {
+export type QueryDraftEventsArgs = {
   organizerId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
@@ -5201,26 +5392,14 @@ export type QueryEscrowAccountByNumberArgs = {
 };
 
 
-export type QueryEscrowAccountsByOrganizerCursorPaginationArgs = {
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryEscrowAccountsByOrganizerOffsetPaginationArgs = {
-  organizerId: Scalars['String']['input'];
+export type QueryEscrowAccountsArgs = {
+  filter: InputMaybe<EscrowAccountFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryEscrowAccountsCursorPaginationArgs = {
-  filter: InputMaybe<EscrowAccountFilterInput>;
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryEscrowAccountsOffsetPaginationArgs = {
-  filter: InputMaybe<EscrowAccountFilterInput>;
+export type QueryEscrowAccountsByOrganizerArgs = {
+  organizerId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5246,7 +5425,7 @@ export type QueryEscrowTransactionArgs = {
 };
 
 
-export type QueryEscrowTransactionsByAccountArgs = {
+export type QueryEscrowTransactionsArgs = {
   escrowAccountId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
@@ -5267,27 +5446,10 @@ export type QueryEventAccessGrantArgs = {
 };
 
 
-export type QueryEventAccessGrantsCursorPaginationArgs = {
-  eventId: Scalars['ID']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-  status: InputMaybe<AccessGrantStatus>;
-};
-
-
-export type QueryEventAccessGrantsOffsetPaginationArgs = {
+export type QueryEventAccessGrantsArgs = {
   eventId: Scalars['ID']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
   status: InputMaybe<AccessGrantStatus>;
-};
-
-
-export type QueryEventCategoriesCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryEventCategoriesOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
@@ -5347,102 +5509,31 @@ export type QueryEventTicketTiersArgs = {
 };
 
 
-export type QueryEventsByCategoryCursorPaginationArgs = {
-  categoryId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryEventsByCategoryOffsetPaginationArgs = {
-  categoryId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryEventsByCityCursorPaginationArgs = {
-  city: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryEventsByCityOffsetPaginationArgs = {
-  city: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryEventsByDateRangeCursorPaginationArgs = {
-  endDate: Scalars['DateTime']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-  startDate: Scalars['DateTime']['input'];
-};
-
-
-export type QueryEventsByDateRangeOffsetPaginationArgs = {
-  endDate: Scalars['DateTime']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-  startDate: Scalars['DateTime']['input'];
-};
-
-
-export type QueryEventsByOrganizerCursorPaginationArgs = {
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryEventsByOrganizerOffsetPaginationArgs = {
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryEventsByPriceRangeCursorPaginationArgs = {
-  maxPrice: InputMaybe<Scalars['BigDecimal']['input']>;
-  minPrice: InputMaybe<Scalars['BigDecimal']['input']>;
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryEventsByPriceRangeOffsetPaginationArgs = {
-  maxPrice: InputMaybe<Scalars['BigDecimal']['input']>;
-  minPrice: InputMaybe<Scalars['BigDecimal']['input']>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryEventsByStatusCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  status: EventStatus;
-};
-
-
-export type QueryEventsByStatusOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-  status: EventStatus;
-};
-
-
-export type QueryEventsCursorPaginationArgs = {
-  filter: InputMaybe<EventFilterInput>;
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryEventsOffsetPaginationArgs = {
+export type QueryEventsArgs = {
   filter: InputMaybe<EventFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryExpiredReservationsCursorPaginationArgs = {
-  eventId: InputMaybe<Scalars['ID']['input']>;
+export type QueryEventsByCategoryArgs = {
+  categoryId: Scalars['String']['input'];
   pagination: InputMaybe<CursorPaginationInput>;
-  since: Scalars['DateTime']['input'];
 };
 
 
-export type QueryExpiredReservationsOffsetPaginationArgs = {
+export type QueryEventsByCityArgs = {
+  city: Scalars['String']['input'];
+  pagination: InputMaybe<CursorPaginationInput>;
+};
+
+
+export type QueryEventsByStatusArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
+  status: EventStatus;
+};
+
+
+export type QueryExpiredReservationsArgs = {
   eventId: InputMaybe<Scalars['ID']['input']>;
   pagination: InputMaybe<OffsetPaginationInput>;
   since: Scalars['DateTime']['input'];
@@ -5473,22 +5564,7 @@ export type QueryExportSalesReportArgs = {
 };
 
 
-export type QueryFailedPayoutRequestsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryFailedPayoutRequestsOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryFeaturedEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryFeaturedEventsOffsetPaginationArgs = {
+export type QueryFailedPayoutRequestsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5498,25 +5574,9 @@ export type QueryFinancialReportArgs = {
 };
 
 
-export type QueryFreeEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryFreeEventsOffsetPaginationArgs = {
+export type QueryGatewaySettlementsArgs = {
+  filter: InputMaybe<GatewaySettlementFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryHasEventPermissionArgs = {
-  eventId: Scalars['ID']['input'];
-  permission: Scalars['String']['input'];
-};
-
-
-export type QueryHasOrganizationPermissionArgs = {
-  organizationId: Scalars['ID']['input'];
-  permission: Scalars['String']['input'];
 };
 
 
@@ -5545,6 +5605,12 @@ export type QueryIsTicketEligibleForRefundArgs = {
 };
 
 
+export type QueryJournalEntriesArgs = {
+  filter: InputMaybe<JournalEntryFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
 export type QueryJournalEntriesByAccountCodeArgs = {
   accountCode: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
@@ -5553,12 +5619,6 @@ export type QueryJournalEntriesByAccountCodeArgs = {
 
 export type QueryJournalEntriesByCorrelationIdArgs = {
   correlationId: Scalars['String']['input'];
-};
-
-
-export type QueryJournalEntriesOffsetPaginationArgs = {
-  filter: InputMaybe<JournalEntryFilterInput>;
-  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
@@ -5582,26 +5642,32 @@ export type QueryLocationArgs = {
 };
 
 
-export type QueryLocationsByCityCursorPaginationArgs = {
+export type QueryLocationsArgs = {
+  pagination: InputMaybe<CursorPaginationInput>;
+};
+
+
+export type QueryLocationsByCityArgs = {
   city: Scalars['String']['input'];
   pagination: InputMaybe<CursorPaginationInput>;
 };
 
 
-export type QueryLocationsByCountryCursorPaginationArgs = {
+export type QueryLocationsByCountryArgs = {
   country: Scalars['String']['input'];
   pagination: InputMaybe<CursorPaginationInput>;
 };
 
 
-export type QueryLocationsCursorPaginationArgs = {
+export type QueryLocationsNearbyArgs = {
+  input: NearbyLocationInput;
   pagination: InputMaybe<CursorPaginationInput>;
 };
 
 
-export type QueryLocationsNearbyCursorPaginationArgs = {
-  input: NearbyLocationInput;
-  pagination: InputMaybe<CursorPaginationInput>;
+export type QueryMediaAssetsArgs = {
+  filter: InputMaybe<MediaModerationFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
@@ -5610,7 +5676,13 @@ export type QueryMyActiveReservationsArgs = {
 };
 
 
-export type QueryMyDraftEventsOffsetPaginationArgs = {
+export type QueryMyBookingsArgs = {
+  filter: InputMaybe<BookingFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryMyDraftEventsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5621,12 +5693,13 @@ export type QueryMyEffectivePermissionsArgs = {
 };
 
 
-export type QueryMyEscalationsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
+export type QueryMyEscalationsArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryMyEscalationsOffsetPaginationArgs = {
+export type QueryMyEscrowAccountsArgs = {
+  organizationId: InputMaybe<Scalars['ID']['input']>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5646,26 +5719,26 @@ export type QueryMyEventRemindersArgs = {
 };
 
 
-export type QueryMyEventRoleArgs = {
-  eventId: Scalars['ID']['input'];
-};
-
-
-export type QueryMyEventsOffsetPaginationArgs = {
+export type QueryMyEventsArgs = {
   filter: InputMaybe<OrganizerEventFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryMyNotificationsCursorPaginationArgs = {
+export type QueryMyEventsConnectionArgs = {
+  filter: InputMaybe<OrganizerEventFilterInput>;
   pagination: InputMaybe<CursorPaginationInput>;
-  status: InputMaybe<NotificationStatus>;
-  type: InputMaybe<NotificationType>;
 };
 
 
-export type QueryMyNotificationsOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
+export type QueryMyMediaArgs = {
+  filter: InputMaybe<MediaFilterInput>;
+  pagination: InputMaybe<CursorPaginationInput>;
+};
+
+
+export type QueryMyNotificationsArgs = {
+  pagination: InputMaybe<CursorPaginationInput>;
   status: InputMaybe<NotificationStatus>;
   type: InputMaybe<NotificationType>;
 };
@@ -5676,8 +5749,10 @@ export type QueryMyOrganizationMembershipArgs = {
 };
 
 
-export type QueryMyOrganizationRoleArgs = {
-  organizationId: Scalars['ID']['input'];
+export type QueryMyPayoutRequestsArgs = {
+  organizationId: InputMaybe<Scalars['ID']['input']>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+  status: InputMaybe<PayoutRequestStatus>;
 };
 
 
@@ -5686,12 +5761,24 @@ export type QueryMyRecentActivityArgs = {
 };
 
 
+export type QueryMyRefundRequestsArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
 export type QueryMyRevenueSeriesArgs = {
   months: InputMaybe<Scalars['Int']['input']>;
 };
 
 
-export type QueryMyTransactionsOffsetPaginationArgs = {
+export type QueryMyTicketTransfersArgs = {
+  direction: InputMaybe<TransferDirection>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+  status: InputMaybe<TicketTransferStatus>;
+};
+
+
+export type QueryMyTransactionsArgs = {
   filter: InputMaybe<OrganizerTransactionFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
@@ -5717,13 +5804,7 @@ export type QueryOrganizationArgs = {
 };
 
 
-export type QueryOrganizationApplicationsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  status: InputMaybe<OrganizationStatus>;
-};
-
-
-export type QueryOrganizationApplicationsOffsetPaginationArgs = {
+export type QueryOrganizationApplicationsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
   status: InputMaybe<OrganizationStatus>;
 };
@@ -5744,21 +5825,20 @@ export type QueryOrganizationCountArgs = {
 };
 
 
+export type QueryOrganizationEventAccessGrantsArgs = {
+  organizationId: Scalars['ID']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+  status: InputMaybe<AccessGrantStatus>;
+};
+
+
 export type QueryOrganizationMemberArgs = {
   organizationId: Scalars['ID']['input'];
   userId: Scalars['ID']['input'];
 };
 
 
-export type QueryOrganizationMembersCursorPaginationArgs = {
-  organizationId: Scalars['ID']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-  role: InputMaybe<OrganizationRole>;
-  status: InputMaybe<MemberStatus>;
-};
-
-
-export type QueryOrganizationMembersOffsetPaginationArgs = {
+export type QueryOrganizationMembersArgs = {
   organizationId: Scalars['ID']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
   role: InputMaybe<OrganizationRole>;
@@ -5766,15 +5846,8 @@ export type QueryOrganizationMembersOffsetPaginationArgs = {
 };
 
 
-export type QueryOrganizationsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  search: InputMaybe<Scalars['String']['input']>;
-  status: InputMaybe<OrganizationStatus>;
-  verified: InputMaybe<Scalars['Boolean']['input']>;
-};
-
-
-export type QueryOrganizationsOffsetPaginationArgs = {
+export type QueryOrganizationsArgs = {
+  kybStatus: InputMaybe<KybStatus>;
   pagination: InputMaybe<OffsetPaginationInput>;
   search: InputMaybe<Scalars['String']['input']>;
   status: InputMaybe<OrganizationStatus>;
@@ -5787,27 +5860,12 @@ export type QueryOrganizerPromoCodesArgs = {
 };
 
 
-export type QueryOrganizerStatisticsArgs = {
-  organizerId: Scalars['ID']['input'];
-};
-
-
-export type QueryOverdueApprovalEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryOverdueApprovalEventsOffsetPaginationArgs = {
+export type QueryOverdueApprovalEventsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryOverdueApprovalTimelinesCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryOverdueApprovalTimelinesOffsetPaginationArgs = {
+export type QueryOverdueApprovalTimelinesArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5847,6 +5905,17 @@ export type QueryPaymentAttemptCountByStatusArgs = {
 };
 
 
+export type QueryPaymentAttemptSearchArgs = {
+  filter: InputMaybe<PaymentAttemptFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryPaymentAttemptsArgs = {
+  intentId: Scalars['ID']['input'];
+};
+
+
 export type QueryPaymentAttemptsByBuyerArgs = {
   buyerId: Scalars['String']['input'];
 };
@@ -5864,6 +5933,11 @@ export type QueryPaymentAttemptsByReservationArgs = {
 
 export type QueryPaymentAttemptsByStatusArgs = {
   status: PaymentAttemptStatus;
+};
+
+
+export type QueryPaymentRiskSummaryArgs = {
+  windowHours?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -5887,93 +5961,53 @@ export type QueryPayoutRequestStatsArgs = {
 };
 
 
-export type QueryPayoutRequestsByEventCursorPaginationArgs = {
-  eventId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
+export type QueryPayoutRequestsArgs = {
+  filter: PayoutRequestFilterInput;
+  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryPayoutRequestsByEventOffsetPaginationArgs = {
+export type QueryPayoutRequestsByEventArgs = {
   eventId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryPayoutRequestsByIssueTypeOffsetPaginationArgs = {
+export type QueryPayoutRequestsByIssueTypeArgs = {
   issueType: PayoutIssueType;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryPayoutRequestsByOrganizerCursorPaginationArgs = {
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryPayoutRequestsByOrganizerOffsetPaginationArgs = {
+export type QueryPayoutRequestsByOrganizerArgs = {
   organizerId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryPayoutRequestsCursorPaginationArgs = {
-  filter: PayoutRequestFilterInput;
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryPayoutRequestsForReviewCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  reviewStatus: InputMaybe<PayoutReviewStatus>;
-};
-
-
-export type QueryPayoutRequestsForReviewOffsetPaginationArgs = {
+export type QueryPayoutRequestsForReviewArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
   reviewStatus: InputMaybe<PayoutReviewStatus>;
 };
 
 
-export type QueryPayoutRequestsOffsetPaginationArgs = {
-  filter: PayoutRequestFilterInput;
+export type QueryPendingApprovalEventsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryPendingApprovalEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryPendingApprovalEventsOffsetPaginationArgs = {
+export type QueryPendingApprovalTimelinesArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryPendingApprovalTimelinesCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryPendingApprovalTimelinesOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryPendingInvitationsCursorPaginationArgs = {
-  organizationId: Scalars['ID']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryPendingInvitationsOffsetPaginationArgs = {
+export type QueryPendingInvitationsArgs = {
   organizationId: Scalars['ID']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryPendingJournalEntriesOffsetPaginationArgs = {
+export type QueryPendingJournalEntriesArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -5983,38 +6017,18 @@ export type QueryPendingOwnershipTransferArgs = {
 };
 
 
-export type QueryPendingPayoutRequestsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryPendingPayoutRequestsOffsetPaginationArgs = {
+export type QueryPendingPayoutRequestsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryPendingRefundRequestsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryPendingRefundRequestsOffsetPaginationArgs = {
+export type QueryPendingRefundRequestsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
 export type QueryPermissionArgs = {
-  id: Scalars['ID']['input'];
-};
-
-
-export type QueryPermissionByNameArgs = {
-  name: Scalars['String']['input'];
-};
-
-
-export type QueryPermissionsByCategoryArgs = {
-  category: Scalars['String']['input'];
+  code: Scalars['String']['input'];
 };
 
 
@@ -6048,35 +6062,11 @@ export type QueryProvinceArgs = {
 };
 
 
-export type QueryProvincesByCountryCursorPaginationArgs = {
-  country: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryProvincesByCountryOffsetPaginationArgs = {
-  country: Scalars['String']['input'];
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryProvincesCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryProvincesOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
-export type QueryPublishedEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryPublishedEventsOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
+export type QueryPurchasesByDayAndHourArgs = {
+  eventId: InputMaybe<Scalars['ID']['input']>;
+  from: InputMaybe<Scalars['DateTime']['input']>;
+  organizationId: InputMaybe<Scalars['ID']['input']>;
+  to: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 
@@ -6086,8 +6076,14 @@ export type QueryRecentCheckInsArgs = {
 };
 
 
-export type QueryRecentlyResolvedPayoutRequestsOffsetPaginationArgs = {
+export type QueryRecentlyResolvedPayoutRequestsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryRecommendedEventsArgs = {
+  basedOnEventIds: InputMaybe<Array<Scalars['ID']['input']>>;
+  first?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -6096,15 +6092,15 @@ export type QueryReconciliationRunArgs = {
 };
 
 
-export type QueryReconciliationRunsByTypeArgs = {
+export type QueryReconciliationRunsArgs = {
+  filter: InputMaybe<ReconciliationFilterInput>;
   pagination: InputMaybe<OffsetPaginationInput>;
-  type: ReconciliationType;
 };
 
 
-export type QueryReconciliationRunsOffsetPaginationArgs = {
-  filter: InputMaybe<ReconciliationFilterInput>;
+export type QueryReconciliationRunsByTypeArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
+  type: ReconciliationType;
 };
 
 
@@ -6121,14 +6117,14 @@ export type QueryReferenceDataArgs = {
 };
 
 
-export type QueryReferenceDataByParentArgs = {
-  parentCode: Scalars['String']['input'];
+export type QueryReferenceDataAllArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
   type: ReferenceType;
 };
 
 
-export type QueryReferenceDataOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
+export type QueryReferenceDataByParentArgs = {
+  parentCode: Scalars['String']['input'];
   type: ReferenceType;
 };
 
@@ -6149,26 +6145,27 @@ export type QueryRefundRequestByRequestIdArgs = {
 };
 
 
-export type QueryRefundRequestsByBuyerCursorPaginationArgs = {
-  buyerId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
+export type QueryRefundRequestsArgs = {
+  filter: RefundRequestFilterInput;
+  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryRefundRequestsByBuyerOffsetPaginationArgs = {
+export type QueryRefundRequestsByBuyerArgs = {
   buyerId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryRefundRequestsByEventCursorPaginationArgs = {
+export type QueryRefundRequestsByEventArgs = {
   eventId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryRefundRequestsByEventOffsetPaginationArgs = {
-  eventId: Scalars['String']['input'];
+export type QueryRefundRequestsByOrganizerArgs = {
+  filter: InputMaybe<RefundRequestFilterInput>;
+  organizationId: InputMaybe<Scalars['ID']['input']>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -6178,117 +6175,73 @@ export type QueryRefundRequestsByTicketArgs = {
 };
 
 
-export type QueryRefundRequestsCursorPaginationArgs = {
-  filter: RefundRequestFilterInput;
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryRefundRequestsOffsetPaginationArgs = {
-  filter: RefundRequestFilterInput;
-  pagination: InputMaybe<OffsetPaginationInput>;
-};
-
-
 export type QueryReservationArgs = {
   id: Scalars['ID']['input'];
 };
 
 
-export type QueryReservationsByEventCursorPaginationArgs = {
-  eventId: Scalars['ID']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryReservationsByEventOffsetPaginationArgs = {
+export type QueryReservationsByEventArgs = {
   eventId: Scalars['ID']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryRetryablePayoutRequestsOffsetPaginationArgs = {
+export type QueryRetryablePayoutRequestsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
 export type QueryRolePermissionsArgs = {
-  roleId: Scalars['String']['input'];
+  role: Scalars['String']['input'];
 };
 
 
-export type QuerySearchCitiesCursorPaginationArgs = {
+export type QuerySalesOverTimeArgs = {
+  bucket?: InputMaybe<SalesBucket>;
+  eventId: Scalars['ID']['input'];
+  from: InputMaybe<Scalars['DateTime']['input']>;
+  to: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+
+export type QuerySearchEventsArgs = {
   pagination: InputMaybe<CursorPaginationInput>;
   query: Scalars['String']['input'];
 };
 
 
-export type QuerySearchCitiesOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-  query: Scalars['String']['input'];
-};
-
-
-export type QuerySearchEventCategoriesCursorPaginationArgs = {
+export type QuerySearchLocationsArgs = {
   pagination: InputMaybe<CursorPaginationInput>;
   query: Scalars['String']['input'];
 };
 
 
-export type QuerySearchEventCategoriesOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-  query: Scalars['String']['input'];
-};
-
-
-export type QuerySearchEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  query: Scalars['String']['input'];
-};
-
-
-export type QuerySearchEventsOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-  query: Scalars['String']['input'];
-};
-
-
-export type QuerySearchLocationsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  query: Scalars['String']['input'];
-};
-
-
-export type QuerySearchProvincesCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-  query: Scalars['String']['input'];
-};
-
-
-export type QuerySearchProvincesOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
-  query: Scalars['String']['input'];
-};
-
-
-export type QuerySearchTicketsCursorPaginationArgs = {
-  filter: TicketFilterInput;
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QuerySearchTicketsOffsetPaginationArgs = {
+export type QuerySearchTicketsArgs = {
   filter: TicketFilterInput;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryStuckPayoutRequestsCursorPaginationArgs = {
+export type QueryStaffAccountsArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
+  role: InputMaybe<UserType>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryStockImagesArgs = {
+  filter: InputMaybe<StockImageFilterInput>;
   pagination: InputMaybe<CursorPaginationInput>;
 };
 
 
-export type QueryStuckPayoutRequestsOffsetPaginationArgs = {
+export type QueryStuckPayoutRequestsArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryStuckTransactionsArgs = {
+  minutes?: InputMaybe<Scalars['Int']['input']>;
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
@@ -6298,8 +6251,9 @@ export type QuerySuccessfulPaymentAttemptByReservationArgs = {
 };
 
 
-export type QueryTeamStatisticsArgs = {
-  organizationId: Scalars['ID']['input'];
+export type QuerySystemAlertsArgs = {
+  severity: InputMaybe<AlertSeverity>;
+  status: InputMaybe<AlertStatus>;
 };
 
 
@@ -6323,6 +6277,19 @@ export type QueryTicketCountByEventArgs = {
 };
 
 
+export type QueryTicketHolderAudienceArgs = {
+  eventId: Scalars['ID']['input'];
+  segment?: InputMaybe<HolderSegment>;
+  ticketTierId: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryTicketHolderMessagesArgs = {
+  eventId: Scalars['ID']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
 export type QueryTicketStatsArgs = {
   eventId: InputMaybe<Scalars['ID']['input']>;
 };
@@ -6336,6 +6303,11 @@ export type QueryTicketTierArgs = {
 export type QueryTicketTierStatisticsArgs = {
   eventId: Scalars['ID']['input'];
   tierId: Scalars['ID']['input'];
+};
+
+
+export type QueryTicketTransferChainArgs = {
+  ticketId: Scalars['ID']['input'];
 };
 
 
@@ -6353,26 +6325,13 @@ export type QueryTicketsByBuyerOffsetPaginationArgs = {
 };
 
 
-export type QueryTicketsByEventCursorPaginationArgs = {
-  eventId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryTicketsByEventOffsetPaginationArgs = {
+export type QueryTicketsByEventArgs = {
   eventId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
-export type QueryTicketsByOrganizerCursorPaginationArgs = {
-  filter: InputMaybe<TicketFilterInput>;
-  organizerId: Scalars['String']['input'];
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryTicketsByOrganizerOffsetPaginationArgs = {
+export type QueryTicketsByOrganizerArgs = {
   filter: InputMaybe<TicketFilterInput>;
   organizerId: Scalars['String']['input'];
   pagination: InputMaybe<OffsetPaginationInput>;
@@ -6385,18 +6344,19 @@ export type QueryTransactionStatsArgs = {
 };
 
 
+export type QueryTransferRecipientArgs = {
+  channel: TransferChannel;
+  value: Scalars['String']['input'];
+};
+
+
+export type QueryTrendingEventsArgs = {
+  first?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryTrialBalanceArgs = {
   asOf: InputMaybe<Scalars['DateTime']['input']>;
-};
-
-
-export type QueryUpcomingEventsCursorPaginationArgs = {
-  pagination: InputMaybe<CursorPaginationInput>;
-};
-
-
-export type QueryUpcomingEventsOffsetPaginationArgs = {
-  pagination: InputMaybe<OffsetPaginationInput>;
 };
 
 
@@ -6421,31 +6381,26 @@ export type QueryUserEventAccessArgs = {
 };
 
 
+export type QueryUserGrowthSeriesArgs = {
+  bucket?: InputMaybe<GrowthBucket>;
+  from: Scalars['DateTime']['input'];
+  role: InputMaybe<UserType>;
+  to: Scalars['DateTime']['input'];
+};
+
+
+export type QueryUsersArgs = {
+  accountStatus: InputMaybe<AccountStatus>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+  role: InputMaybe<UserType>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type QueryUsersByRoleArgs = {
   activeOnly?: InputMaybe<Scalars['Boolean']['input']>;
   pagination: InputMaybe<OffsetPaginationInput>;
   role: UserType;
-};
-
-
-export type QueryUsersCountByRoleArgs = {
-  role: UserType;
-};
-
-
-export type QueryUsersCursorPaginationArgs = {
-  accountStatus: InputMaybe<AccountStatus>;
-  pagination: InputMaybe<CursorPaginationInput>;
-  role: InputMaybe<UserType>;
-  search: InputMaybe<Scalars['String']['input']>;
-};
-
-
-export type QueryUsersOffsetPaginationArgs = {
-  accountStatus: InputMaybe<AccountStatus>;
-  pagination: InputMaybe<OffsetPaginationInput>;
-  role: InputMaybe<UserType>;
-  search: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -6473,7 +6428,7 @@ export type ReceiveChargebackInput = {
   currency: Scalars['String']['input'];
   customerId: Scalars['String']['input'];
   eventId: Scalars['String']['input'];
-  organizationId: InputMaybe<Scalars['String']['input']>;
+  organizationId?: InputMaybe<Scalars['String']['input']>;
   organizerId: Scalars['String']['input'];
   originalAmount: Scalars['BigDecimal']['input'];
   originalTransactionId: Scalars['String']['input'];
@@ -6482,11 +6437,15 @@ export type ReceiveChargebackInput = {
   ticketId: Scalars['String']['input'];
 };
 
+export type RecommendationReason =
+  | 'BECAUSE_YOU_BOOKED'
+  | 'TRENDING';
+
 export type ReconciliationFilterInput = {
-  endDate: InputMaybe<Scalars['DateTime']['input']>;
-  startDate: InputMaybe<Scalars['DateTime']['input']>;
-  status: InputMaybe<ReconciliationStatus>;
-  type: InputMaybe<ReconciliationType>;
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
+  status?: InputMaybe<ReconciliationStatus>;
+  type?: InputMaybe<ReconciliationType>;
 };
 
 export type ReconciliationItem = {
@@ -6506,15 +6465,6 @@ export type ReconciliationItemStatus =
   | 'MATCHED'
   | 'UNMATCHED_EXTERNAL'
   | 'UNMATCHED_INTERNAL';
-
-export type ReconciliationMutationResponse = {
-  __typename: 'ReconciliationMutationResponse';
-  data: Maybe<ReconciliationRun>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
 
 export type ReconciliationRun = {
   __typename: 'ReconciliationRun';
@@ -6592,11 +6542,38 @@ export type RecordGatewaySettlementInput = {
   settlementId: Scalars['String']['input'];
 };
 
-export type RecoverChargebackInput = {
-  amount: InputMaybe<Scalars['BigDecimal']['input']>;
-  fundSource: ChargebackFundSource;
-  notes: InputMaybe<Scalars['String']['input']>;
+export type RecoveryAction =
+  | 'FORCE_COMPLETE_PAYMENT_ATTEMPTS'
+  | 'TRANSFER_PLATFORM_FUNDS'
+  | 'WRITE_OFF_CHARGEBACK';
+
+export type RecoveryProposal = {
+  __typename: 'RecoveryProposal';
+  action: RecoveryAction;
+  amount: Maybe<Scalars['BigDecimal']['output']>;
+  canConfirm: Scalars['Boolean']['output'];
+  confirmationReason: Maybe<Scalars['String']['output']>;
+  confirmedAt: Maybe<Scalars['DateTime']['output']>;
+  confirmedById: Maybe<Scalars['String']['output']>;
+  expiresAt: Scalars['DateTime']['output'];
+  failureReason: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  outcome: Maybe<Scalars['String']['output']>;
+  parameters: Maybe<Scalars['JSON']['output']>;
+  proposalReason: Scalars['String']['output'];
+  proposedAt: Scalars['DateTime']['output'];
+  proposedById: Scalars['String']['output'];
+  status: RecoveryProposalStatus;
+  subjectIds: Array<Scalars['String']['output']>;
+  subjectType: Scalars['String']['output'];
 };
+
+export type RecoveryProposalStatus =
+  | 'CONFIRMED'
+  | 'EXPIRED'
+  | 'FAILED'
+  | 'PENDING'
+  | 'WITHDRAWN';
 
 export type RecoveryStatus =
   | 'IN_PROGRESS'
@@ -6628,15 +6605,6 @@ export type ReferenceData = {
   updatedBy: Maybe<Scalars['String']['output']>;
 };
 
-export type ReferenceDataMutationResponse = {
-  __typename: 'ReferenceDataMutationResponse';
-  data: Maybe<ReferenceData>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type ReferenceDataOffsetPage = {
   __typename: 'ReferenceDataOffsetPage';
   content: Array<ReferenceData>;
@@ -6652,30 +6620,39 @@ export type ReferenceDataOffsetPage = {
 export type ReferenceType =
   | 'AGE_RESTRICTION'
   | 'BANK'
+  | 'BUSINESS_TYPE'
   | 'CANCELLATION_REASON'
   | 'CARD_SCHEME'
   | 'CHARGEBACK_STATUS'
+  | 'CITY'
   | 'COUNTRY'
   | 'CURRENCY'
   | 'ESCROW_STATUS'
   | 'EVENT_CATEGORY'
+  | 'EVENT_ROLE'
   | 'EVENT_STATUS'
   | 'EVENT_TYPE'
   | 'KYB_DOCUMENT_TYPE'
   | 'LANGUAGE'
   | 'MOBILE_MONEY_OPERATOR'
   | 'MUSIC_GENRE'
+  | 'NOTIFICATION_CATEGORY'
+  | 'NOTIFICATION_CHANNEL'
+  | 'ORGANIZATION_ROLE'
   | 'ORGANIZATION_STATUS'
+  | 'ORGANIZER_TYPE'
   | 'PAYMENT_STATUS'
   | 'PAYOUT_STATUS'
   | 'PROVINCE'
   | 'REFUND_REASON'
   | 'REFUND_STATUS'
   | 'REJECTION_REASON'
+  | 'REPORT_PERIOD'
   | 'RESERVATION_STATUS'
   | 'TAX_RATE'
   | 'TEAM_INVITATION_STATUS'
   | 'TICKET_STATUS'
+  | 'TICKET_TIER_CATEGORY'
   | 'TIMEZONE'
   | 'VERIFICATION_DOCUMENT_STATUS';
 
@@ -6755,37 +6732,15 @@ export type RefundRequest = {
   updatedAt: Maybe<Scalars['DateTime']['output']>;
 };
 
-export type RefundRequestConnection = {
-  __typename: 'RefundRequestConnection';
-  edges: Array<RefundRequestEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type RefundRequestEdge = {
-  __typename: 'RefundRequestEdge';
-  cursor: Scalars['String']['output'];
-  node: RefundRequest;
-};
-
 export type RefundRequestFilterInput = {
-  buyerId: InputMaybe<Scalars['String']['input']>;
-  endDate: InputMaybe<Scalars['DateTime']['input']>;
-  eventId: InputMaybe<Scalars['String']['input']>;
-  organizerId: InputMaybe<Scalars['String']['input']>;
-  requestType: InputMaybe<RefundRequestType>;
-  startDate: InputMaybe<Scalars['DateTime']['input']>;
-  status: InputMaybe<RefundRequestStatus>;
-  ticketId: InputMaybe<Scalars['String']['input']>;
-};
-
-export type RefundRequestMutationResponse = {
-  __typename: 'RefundRequestMutationResponse';
-  data: Maybe<RefundRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+  buyerId?: InputMaybe<Scalars['String']['input']>;
+  endDate?: InputMaybe<Scalars['DateTime']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  organizerId?: InputMaybe<Scalars['String']['input']>;
+  requestType?: InputMaybe<RefundRequestType>;
+  startDate?: InputMaybe<Scalars['DateTime']['input']>;
+  status?: InputMaybe<RefundRequestStatus>;
+  ticketId?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type RefundRequestOffsetPage = {
@@ -6830,15 +6785,6 @@ export type RefundSummary = {
   totalRefunds: Scalars['Int']['output'];
 };
 
-export type RefundTicketMutationResponse = {
-  __typename: 'RefundTicketMutationResponse';
-  data: Maybe<Ticket>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type RefundTypeSummary = {
   __typename: 'RefundTypeSummary';
   count: Scalars['Int']['output'];
@@ -6848,52 +6794,18 @@ export type RefundTypeSummary = {
 };
 
 export type RegisterDeviceInput = {
-  appVersion: InputMaybe<Scalars['String']['input']>;
-  deviceModel: InputMaybe<Scalars['String']['input']>;
-  deviceName: InputMaybe<Scalars['String']['input']>;
+  appVersion?: InputMaybe<Scalars['String']['input']>;
+  deviceModel?: InputMaybe<Scalars['String']['input']>;
+  deviceName?: InputMaybe<Scalars['String']['input']>;
   deviceToken: Scalars['String']['input'];
-  osVersion: InputMaybe<Scalars['String']['input']>;
+  osVersion?: InputMaybe<Scalars['String']['input']>;
   platform: DevicePlatform;
-};
-
-export type RegisterInput = {
-  email: Scalars['String']['input'];
-  firstName: InputMaybe<Scalars['String']['input']>;
-  lastName: InputMaybe<Scalars['String']['input']>;
-  password: Scalars['String']['input'];
-  phoneNumber: InputMaybe<Scalars['String']['input']>;
-  username: InputMaybe<Scalars['String']['input']>;
 };
 
 export type RejectOrganizationInput = {
   organizationId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
-  reviewNotes: InputMaybe<Scalars['String']['input']>;
-};
-
-export type RejectPayoutRequestMutationResponse = {
-  __typename: 'RejectPayoutRequestMutationResponse';
-  data: Maybe<PayoutRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type RejectRefundRequestMutationResponse = {
-  __typename: 'RejectRefundRequestMutationResponse';
-  data: Maybe<RefundRequest>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type ReminderMutationResponse = {
-  __typename: 'ReminderMutationResponse';
-  message: Maybe<Scalars['String']['output']>;
-  reminder: Maybe<EventReminder>;
-  success: Scalars['Boolean']['output'];
+  reviewNotes?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type ReminderStatus =
@@ -6905,7 +6817,7 @@ export type ReminderStatus =
 export type RemoveMemberInput = {
   memberId: Scalars['ID']['input'];
   organizationId: Scalars['ID']['input'];
-  reason: InputMaybe<Scalars['String']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type ReportExport = {
@@ -6916,19 +6828,25 @@ export type ReportExport = {
   fileName: Maybe<Scalars['String']['output']>;
   format: ExportFormat;
   generatedAt: Scalars['DateTime']['output'];
-  success: Scalars['Boolean']['output'];
 };
 
-export type RequestAccountDeletionInput = {
-  confirmPassword: InputMaybe<Scalars['String']['input']>;
-  feedback: InputMaybe<Scalars['String']['input']>;
-  reason: InputMaybe<Scalars['String']['input']>;
+export type RequestContactAddInput = {
+  regionHint?: InputMaybe<Scalars['String']['input']>;
+  type: ContactType;
+  value: Scalars['String']['input'];
+};
+
+export type RequestContactChangeInput = {
+  contactId: Scalars['ID']['input'];
+  regionHint?: InputMaybe<Scalars['String']['input']>;
+  type: ContactType;
+  value: Scalars['String']['input'];
 };
 
 export type RequestOrganizationChangesInput = {
   changesRequired: Scalars['String']['input'];
   organizationId: Scalars['ID']['input'];
-  reviewNotes: InputMaybe<Scalars['String']['input']>;
+  reviewNotes?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type RequestUploadUrlInput = {
@@ -6938,17 +6856,25 @@ export type RequestUploadUrlInput = {
   mimeType: Scalars['String']['input'];
 };
 
-export type ReservationConnection = {
-  __typename: 'ReservationConnection';
-  edges: Array<ReservationEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
+export type RescheduleEventInput = {
+  eventId: Scalars['ID']['input'];
+  newStartsAt: Scalars['DateTime']['input'];
+  reason: Scalars['String']['input'];
 };
 
-export type ReservationEdge = {
-  __typename: 'ReservationEdge';
-  cursor: Scalars['String']['output'];
-  node: TicketReservation;
+export type ResendContactCodeInput = {
+  challengeId?: InputMaybe<Scalars['ID']['input']>;
+  changeId?: InputMaybe<Scalars['ID']['input']>;
+  target?: InputMaybe<ContactCodeTarget>;
+};
+
+export type ResendTicketResult = {
+  __typename: 'ResendTicketResult';
+  channel: Maybe<Scalars['String']['output']>;
+  destination: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  ticketId: Scalars['ID']['output'];
+  ticketNumber: Scalars['String']['output'];
 };
 
 export type ReservationItem = {
@@ -6974,9 +6900,12 @@ export type ReservationStatus =
   | 'RELEASED';
 
 export type ReserveTicketsInput = {
+  contactEmail?: InputMaybe<Scalars['String']['input']>;
+  contactName?: InputMaybe<Scalars['String']['input']>;
+  contactPhone?: InputMaybe<Scalars['PhoneNumber']['input']>;
   eventId: Scalars['ID']['input'];
   idempotencyKey: Scalars['String']['input'];
-  promoCode: InputMaybe<Scalars['String']['input']>;
+  promoCode?: InputMaybe<Scalars['String']['input']>;
   selections: Array<TicketSelectionInput>;
 };
 
@@ -6993,29 +6922,107 @@ export type ResolveReconciliationItemInput = {
 
 export type RevokeEventAccessInput = {
   accessId: Scalars['ID']['input'];
-  reason: InputMaybe<Scalars['String']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
 };
+
+export type RiskFlagCount = {
+  __typename: 'RiskFlagCount';
+  count: Scalars['Int']['output'];
+  flag: Scalars['String']['output'];
+};
+
+/**
+ * Authorization roles for GraphQL operations.
+ *
+ * Role Hierarchy (higher roles include lower):
+ * - SUPER_ADMIN: Full system access
+ * - ADMIN: Platform administration (includes ORGANIZER, CUSTOMER)
+ * - FINANCE: Financial operations
+ * - ORGANIZER: Event management (includes CUSTOMER)
+ * - CUSTOMER: Ticket purchasing
+ * - AUTHENTICATED: Any logged-in user
+ * - PUBLIC: No authentication required
+ * - INTERNAL: Service-to-service calls only
+ */
+export type Role =
+  /** Admin role - platform administrators. */
+  | 'ADMIN'
+  /** Any authenticated user can access. Requires valid JWT token. */
+  | 'AUTHENTICATED'
+  /** Customer role - regular ticket buyers. */
+  | 'CUSTOMER'
+  /** Finance role - financial operations access. */
+  | 'FINANCE'
+  /** Internal service role - service-to-service communication only. */
+  | 'INTERNAL'
+  /** Organizer role - event creators and managers. */
+  | 'ORGANIZER'
+  /** No authentication required. Field/operation is publicly accessible. */
+  | 'PUBLIC'
+  /** Super Admin role - highest privilege level. */
+  | 'SUPER_ADMIN';
 
 export type RolePermissions = {
   __typename: 'RolePermissions';
-  inheritedFrom: Maybe<Array<Scalars['String']['output']>>;
   permissions: Array<Permission>;
   role: Scalars['String']['output'];
   scope: PermissionScope;
+  switchable: Array<Permission>;
 };
 
-export type SendNotificationInput = {
-  actionUrl: InputMaybe<Scalars['String']['input']>;
-  body: Scalars['String']['input'];
-  channels: Array<NotificationChannel>;
-  data: InputMaybe<Scalars['JSON']['input']>;
-  imageUrl: InputMaybe<Scalars['String']['input']>;
-  priority: InputMaybe<Scalars['String']['input']>;
-  scheduledAt: InputMaybe<Scalars['DateTime']['input']>;
-  title: Scalars['String']['input'];
-  type: NotificationType;
-  userId: Scalars['ID']['input'];
+export type RulesRefundPolicy = {
+  __typename: 'RulesRefundPolicy';
+  code: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  rules: Array<RulesRefundTier>;
+  summary: Scalars['String']['output'];
 };
+
+export type RulesRefundTier = {
+  __typename: 'RulesRefundTier';
+  daysBefore: Scalars['Int']['output'];
+  percent: Scalars['Int']['output'];
+};
+
+export type RunningOrderItem = {
+  __typename: 'RunningOrderItem';
+  time: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+};
+
+export type RunningOrderItemInput = {
+  time: Scalars['String']['input'];
+  title: Scalars['String']['input'];
+};
+
+export type SalesBucket =
+  | 'DAY'
+  | 'HOUR'
+  | 'WEEK';
+
+export type SalesPoint = {
+  __typename: 'SalesPoint';
+  bucketEnd: Scalars['DateTime']['output'];
+  bucketStart: Scalars['DateTime']['output'];
+  grossRevenue: Scalars['BigDecimal']['output'];
+  netRevenue: Scalars['BigDecimal']['output'];
+  orders: Scalars['Int']['output'];
+  refundedAmount: Scalars['BigDecimal']['output'];
+  tickets: Scalars['Int']['output'];
+};
+
+export type ServiceHealth = {
+  __typename: 'ServiceHealth';
+  checkedAt: Scalars['DateTime']['output'];
+  detail: Maybe<Scalars['String']['output']>;
+  latencyMillis: Scalars['Long']['output'];
+  name: Scalars['String']['output'];
+  status: ServiceStatus;
+};
+
+export type ServiceStatus =
+  | 'DOWN'
+  | 'UP';
 
 /**
  * Set bank account for payouts.
@@ -7037,19 +7044,19 @@ export type SetBankAccountInput = {
    */
   accountNumber: Scalars['String']['input'];
   /** Account type (CHECKING, SAVINGS, BUSINESS) */
-  accountType: InputMaybe<Scalars['String']['input']>;
+  accountType?: InputMaybe<Scalars['String']['input']>;
   /** SWIFT/BIC code (8 or 11 characters, alphanumeric) */
   bankCode: Scalars['String']['input'];
   /** Bank name (e.g., Zanaco, FNB, Standard Chartered) */
   bankName: Scalars['String']['input'];
   /** Branch code */
-  branchCode: InputMaybe<Scalars['String']['input']>;
+  branchCode?: InputMaybe<Scalars['String']['input']>;
   /** Branch name */
-  branchName: InputMaybe<Scalars['String']['input']>;
+  branchName?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type SetEventReminderInput = {
-  minutesBefore: Scalars['Int']['input'];
+  eventStartsAt: Scalars['DateTime']['input'];
   ticketId: Scalars['ID']['input'];
 };
 
@@ -7076,16 +7083,10 @@ export type SetMobileMoneyAccountInput = {
   provider: MobileMoneyProvider;
 };
 
-export type SetupTwoFactorInput = {
-  email: InputMaybe<Scalars['String']['input']>;
-  method: TwoFactorMethod;
-  phoneNumber: InputMaybe<Scalars['String']['input']>;
-};
-
-export type SocialAuthInput = {
-  accessToken: Scalars['String']['input'];
-  idToken: InputMaybe<Scalars['String']['input']>;
-  provider: SocialProvider;
+export type SetPrimaryContactInput = {
+  challengeId: Scalars['ID']['input'];
+  code: Scalars['String']['input'];
+  contactId: Scalars['ID']['input'];
 };
 
 export type SocialConnection = {
@@ -7108,12 +7109,12 @@ export type SocialLinks = {
 };
 
 export type SocialLinksInput = {
-  facebook: InputMaybe<Scalars['String']['input']>;
-  instagram: InputMaybe<Scalars['String']['input']>;
-  linkedin: InputMaybe<Scalars['String']['input']>;
-  tiktok: InputMaybe<Scalars['String']['input']>;
-  twitter: InputMaybe<Scalars['String']['input']>;
-  youtube: InputMaybe<Scalars['String']['input']>;
+  facebook?: InputMaybe<Scalars['String']['input']>;
+  instagram?: InputMaybe<Scalars['String']['input']>;
+  linkedin?: InputMaybe<Scalars['String']['input']>;
+  tiktok?: InputMaybe<Scalars['String']['input']>;
+  twitter?: InputMaybe<Scalars['String']['input']>;
+  youtube?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type SocialProvider =
@@ -7147,14 +7148,14 @@ export type StandaloneEscrowTransaction = {
 };
 
 export type StartReconciliationInput = {
-  dataSource: InputMaybe<Scalars['String']['input']>;
+  dataSource?: InputMaybe<Scalars['String']['input']>;
   /**
    * For ESCROW_JOURNAL reconciliation only:
    * If true, includes CLOSED and CANCELLED accounts in verification.
    * Default is false (only verifies OPEN accounts for better performance).
    * Use true for full audit purposes.
    */
-  includeClosed: InputMaybe<Scalars['Boolean']['input']>;
+  includeClosed?: InputMaybe<Scalars['Boolean']['input']>;
   reconciliationDate: Scalars['DateTime']['input'];
   type: ReconciliationType;
 };
@@ -7169,9 +7170,74 @@ export type StatusTransition = {
   transitionedBy: Maybe<Scalars['String']['output']>;
 };
 
+export type StockImage = {
+  __typename: 'StockImage';
+  active: Scalars['Boolean']['output'];
+  altText: Maybe<Scalars['String']['output']>;
+  categoryCode: Maybe<Scalars['String']['output']>;
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  purpose: StockImagePurpose;
+  title: Maybe<Scalars['String']['output']>;
+  updatedAt: Maybe<Scalars['DateTime']['output']>;
+  url: Scalars['String']['output'];
+};
+
+export type StockImageConnection = {
+  __typename: 'StockImageConnection';
+  edges: Array<StockImageEdge>;
+  pageInfo: PageInfo;
+};
+
+export type StockImageEdge = {
+  __typename: 'StockImageEdge';
+  cursor: Scalars['String']['output'];
+  node: StockImage;
+};
+
+export type StockImageFilterInput = {
+  categoryCode?: InputMaybe<Scalars['String']['input']>;
+  includeInactive?: InputMaybe<Scalars['Boolean']['input']>;
+  purpose?: InputMaybe<StockImagePurpose>;
+};
+
+export type StockImagePurpose =
+  | 'CATEGORY_TILE'
+  | 'EVENT_COVER';
+
 export type SuspendOrganizationInput = {
   organizationId: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
+};
+
+export type SystemAlert = {
+  __typename: 'SystemAlert';
+  acknowledgedAt: Maybe<Scalars['DateTime']['output']>;
+  acknowledgedBy: Maybe<Scalars['ID']['output']>;
+  id: Scalars['ID']['output'];
+  key: Scalars['String']['output'];
+  lastSeenAt: Maybe<Scalars['DateTime']['output']>;
+  message: Maybe<Scalars['String']['output']>;
+  occurrences: Scalars['Int']['output'];
+  raisedAt: Scalars['DateTime']['output'];
+  resolvedAt: Maybe<Scalars['DateTime']['output']>;
+  severity: AlertSeverity;
+  source: Scalars['String']['output'];
+  status: AlertStatus;
+  title: Scalars['String']['output'];
+};
+
+export type SystemAnnouncement = {
+  __typename: 'SystemAnnouncement';
+  cancelledAt: Maybe<Scalars['DateTime']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  endsAt: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  message: Scalars['String']['output'];
+  segment: AnnouncementSegment;
+  severity: AlertSeverity;
+  startsAt: Scalars['DateTime']['output'];
+  title: Scalars['String']['output'];
 };
 
 export type TeamInvitation = {
@@ -7179,7 +7245,7 @@ export type TeamInvitation = {
   acceptedAt: Maybe<Scalars['DateTime']['output']>;
   createdAt: Scalars['DateTime']['output'];
   declinedAt: Maybe<Scalars['DateTime']['output']>;
-  email: Scalars['String']['output'];
+  email: Maybe<Scalars['String']['output']>;
   eventAccessGrants: Maybe<Array<EventAccessProposal>>;
   expiresAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
@@ -7195,37 +7261,17 @@ export type TeamInvitation = {
   status: InvitationStatus;
 };
 
-export type TeamInvitationConnection = {
-  __typename: 'TeamInvitationConnection';
-  edges: Array<TeamInvitationEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
-};
-
-export type TeamInvitationEdge = {
-  __typename: 'TeamInvitationEdge';
-  cursor: Scalars['String']['output'];
-  node: TeamInvitation;
-};
-
 export type TeamInvitationOffsetPage = {
   __typename: 'TeamInvitationOffsetPage';
   content: Array<TeamInvitation>;
   pageInfo: PageInfo;
 };
 
-export type TeamStatistics = {
-  __typename: 'TeamStatistics';
-  activeMembers: Scalars['Int']['output'];
-  membersByRole: Maybe<Scalars['JSON']['output']>;
-  organizationId: Scalars['ID']['output'];
-  pendingInvitations: Scalars['Int']['output'];
-  totalMembers: Scalars['Int']['output'];
-};
-
 export type Ticket = {
   __typename: 'Ticket';
   barcode: Maybe<Scalars['String']['output']>;
+  bookingId: Maybe<Scalars['String']['output']>;
+  bookingNumber: Maybe<Scalars['String']['output']>;
   buyer: User;
   buyerEmail: Maybe<Scalars['String']['output']>;
   buyerId: Scalars['String']['output'];
@@ -7257,12 +7303,16 @@ export type Ticket = {
   quantity: Maybe<Scalars['Int']['output']>;
   refundInfo: Maybe<RefundInfo>;
   refundReason: Maybe<Scalars['String']['output']>;
+  refundableAmount: Maybe<Scalars['BigDecimal']['output']>;
+  refundedAmount: Maybe<Scalars['BigDecimal']['output']>;
   refundedAt: Maybe<Scalars['DateTime']['output']>;
   status: TicketStatus;
   ticketCategory: Maybe<TicketCategory>;
   ticketCategoryCode: Maybe<Scalars['String']['output']>;
   ticketCategoryName: Maybe<Scalars['String']['output']>;
   ticketNumber: Scalars['String']['output'];
+  transferCount: Scalars['Int']['output'];
+  transferPending: Scalars['Boolean']['output'];
   updatedAt: Maybe<Scalars['DateTime']['output']>;
   usedAt: Maybe<Scalars['DateTime']['output']>;
   validFrom: Maybe<Scalars['DateTime']['output']>;
@@ -7307,24 +7357,15 @@ export type TicketEdge = {
 };
 
 export type TicketFilterInput = {
-  buyerId: InputMaybe<Scalars['String']['input']>;
-  category: InputMaybe<Scalars['String']['input']>;
-  eventId: InputMaybe<Scalars['String']['input']>;
-  organizerId: InputMaybe<Scalars['String']['input']>;
-  purchaseDateAfter: InputMaybe<Scalars['DateTime']['input']>;
-  purchaseDateBefore: InputMaybe<Scalars['DateTime']['input']>;
-  searchQuery: InputMaybe<Scalars['String']['input']>;
-  status: InputMaybe<TicketStatus>;
-  statuses: InputMaybe<Array<TicketStatus>>;
-};
-
-export type TicketMutationResponse = {
-  __typename: 'TicketMutationResponse';
-  data: Maybe<Ticket>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+  buyerId?: InputMaybe<Scalars['String']['input']>;
+  category?: InputMaybe<Scalars['String']['input']>;
+  eventId?: InputMaybe<Scalars['String']['input']>;
+  organizerId?: InputMaybe<Scalars['String']['input']>;
+  purchaseDateAfter?: InputMaybe<Scalars['DateTime']['input']>;
+  purchaseDateBefore?: InputMaybe<Scalars['DateTime']['input']>;
+  searchQuery?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<TicketStatus>;
+  statuses?: InputMaybe<Array<TicketStatus>>;
 };
 
 export type TicketOffsetPage = {
@@ -7396,6 +7437,7 @@ export type TicketTier = {
   accessCode: Maybe<Scalars['String']['output']>;
   availableQuantity: Scalars['Int']['output'];
   benefits: Maybe<Array<Scalars['String']['output']>>;
+  category: TicketCategory;
   code: Scalars['String']['output'];
   createdAt: Maybe<Scalars['DateTime']['output']>;
   currency: Scalars['String']['output'];
@@ -7435,6 +7477,38 @@ export type TicketTierStats = {
   totalQuantity: Scalars['Int']['output'];
 };
 
+export type TicketTransfer = {
+  __typename: 'TicketTransfer';
+  bookingNumber: Maybe<Scalars['String']['output']>;
+  createdAt: Maybe<Scalars['DateTime']['output']>;
+  direction: Maybe<TransferDirection>;
+  eventId: Scalars['String']['output'];
+  eventTitle: Maybe<Scalars['String']['output']>;
+  expiresAt: Maybe<Scalars['DateTime']['output']>;
+  fromDisplayName: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  note: Maybe<Scalars['String']['output']>;
+  recipientMasked: Maybe<Scalars['String']['output']>;
+  resolvedAt: Maybe<Scalars['DateTime']['output']>;
+  status: TicketTransferStatus;
+  ticketId: Scalars['ID']['output'];
+  ticketNumber: Scalars['String']['output'];
+  toDisplayName: Maybe<Scalars['String']['output']>;
+};
+
+export type TicketTransferPage = {
+  __typename: 'TicketTransferPage';
+  data: Array<TicketTransfer>;
+  pagination: PaginationInfo;
+};
+
+export type TicketTransferStatus =
+  | 'ACCEPTED'
+  | 'CANCELLED'
+  | 'DECLINED'
+  | 'EXPIRED'
+  | 'PENDING';
+
 export type TierCheckInStats = {
   __typename: 'TierCheckInStats';
   checkInRate: Scalars['Float']['output'];
@@ -7442,15 +7516,6 @@ export type TierCheckInStats = {
   sold: Scalars['Int']['output'];
   tierId: Scalars['String']['output'];
   tierName: Scalars['String']['output'];
-};
-
-export type TierMutationResponse = {
-  __typename: 'TierMutationResponse';
-  data: Maybe<TicketTier>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type TimeUnit =
@@ -7475,14 +7540,6 @@ export type TimelineEvent = {
   newStatus: Maybe<EventStatus>;
   previousStatus: Maybe<EventStatus>;
   timestamp: Scalars['DateTime']['output'];
-};
-
-export type TokenValidation = {
-  __typename: 'TokenValidation';
-  email: Maybe<Scalars['String']['output']>;
-  roles: Maybe<Array<Scalars['String']['output']>>;
-  userId: Maybe<Scalars['String']['output']>;
-  valid: Scalars['Boolean']['output'];
 };
 
 export type TransactionIssueType =
@@ -7539,10 +7596,24 @@ export type TransactionStatus =
   | 'ROLLED_BACK'
   | 'TIMED_OUT';
 
+export type TransferChannel =
+  | 'EMAIL'
+  | 'WHATSAPP';
+
+export type TransferDirection =
+  | 'INCOMING'
+  | 'OUTGOING';
+
 export type TransferOwnershipInput = {
   newOwnerId: Scalars['ID']['input'];
   organizationId: Scalars['ID']['input'];
-  reason: InputMaybe<Scalars['String']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type TransferRecipient = {
+  __typename: 'TransferRecipient';
+  displayName: Maybe<Scalars['String']['output']>;
+  maskedContact: Scalars['String']['output'];
 };
 
 export type TransferStatus =
@@ -7559,143 +7630,154 @@ export type TwoFactorMethod =
   | 'EMAIL'
   | 'SMS';
 
-export type TwoFactorSetupResponse = {
-  __typename: 'TwoFactorSetupResponse';
-  backupCodes: Maybe<Array<Scalars['String']['output']>>;
-  message: Maybe<Scalars['String']['output']>;
-  qrCodeUrl: Maybe<Scalars['String']['output']>;
-  secret: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
 export type UpdateBankAccountInput = {
-  accountHolderName: InputMaybe<Scalars['String']['input']>;
-  accountNumber: InputMaybe<Scalars['String']['input']>;
-  accountType: InputMaybe<Scalars['String']['input']>;
-  bankCode: InputMaybe<Scalars['String']['input']>;
-  bankName: InputMaybe<Scalars['String']['input']>;
-  branchCode: InputMaybe<Scalars['String']['input']>;
-  branchName: InputMaybe<Scalars['String']['input']>;
-  isDefault: InputMaybe<Scalars['Boolean']['input']>;
-  swiftCode: InputMaybe<Scalars['String']['input']>;
+  accountHolderName?: InputMaybe<Scalars['String']['input']>;
+  accountNumber?: InputMaybe<Scalars['String']['input']>;
+  accountType?: InputMaybe<Scalars['String']['input']>;
+  bankCode?: InputMaybe<Scalars['String']['input']>;
+  bankName?: InputMaybe<Scalars['String']['input']>;
+  branchCode?: InputMaybe<Scalars['String']['input']>;
+  branchName?: InputMaybe<Scalars['String']['input']>;
+  isDefault?: InputMaybe<Scalars['Boolean']['input']>;
+  swiftCode?: InputMaybe<Scalars['String']['input']>;
 };
 
-export type UpdateBankAccountMutationResponse = {
-  __typename: 'UpdateBankAccountMutationResponse';
-  data: Maybe<BankAccount>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
+export type UpdateChargebackRecoveryInput = {
+  action: ChargebackRecoveryAction;
+  amount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  fundSource?: InputMaybe<ChargebackFundSource>;
+  reference?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateCityInput = {
-  code: InputMaybe<Scalars['String']['input']>;
-  country: InputMaybe<Scalars['String']['input']>;
-  isActive: InputMaybe<Scalars['Boolean']['input']>;
-  name: InputMaybe<Scalars['String']['input']>;
-  provinceId: InputMaybe<Scalars['String']['input']>;
+  code?: InputMaybe<Scalars['String']['input']>;
+  country?: InputMaybe<Scalars['String']['input']>;
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  provinceId?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateCoordinatesInput = {
-  latitude: InputMaybe<Scalars['Float']['input']>;
-  longitude: InputMaybe<Scalars['Float']['input']>;
+  latitude?: InputMaybe<Scalars['Float']['input']>;
+  longitude?: InputMaybe<Scalars['Float']['input']>;
 };
 
 export type UpdateEscrowAccountInput = {
-  lockReason: InputMaybe<Scalars['String']['input']>;
-  lockUntil: InputMaybe<Scalars['DateTime']['input']>;
-  status: InputMaybe<EscrowAccountStatus>;
+  lockReason?: InputMaybe<Scalars['String']['input']>;
+  lockUntil?: InputMaybe<Scalars['DateTime']['input']>;
+  status?: InputMaybe<EscrowAccountStatus>;
 };
 
 export type UpdateEventAccessInput = {
   accessId: Scalars['ID']['input'];
-  customPermissions: InputMaybe<Array<Scalars['String']['input']>>;
-  expiresAt: InputMaybe<Scalars['DateTime']['input']>;
-  newRole: InputMaybe<EventRole>;
+  customPermissions?: InputMaybe<Array<Scalars['String']['input']>>;
+  expiresAt?: InputMaybe<Scalars['DateTime']['input']>;
+  newRole?: InputMaybe<EventRole>;
 };
 
 export type UpdateEventCategoryInput = {
-  code: InputMaybe<Scalars['String']['input']>;
-  color: InputMaybe<Scalars['String']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  iconUrl: InputMaybe<Scalars['String']['input']>;
-  isActive: InputMaybe<Scalars['Boolean']['input']>;
-  name: InputMaybe<Scalars['String']['input']>;
-  sortOrder: InputMaybe<Scalars['Int']['input']>;
+  code?: InputMaybe<Scalars['String']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateEventInput = {
-  additionalInfo: InputMaybe<Scalars['JSON']['input']>;
-  bannerImageUrl: InputMaybe<Scalars['String']['input']>;
-  cancellationPolicy: InputMaybe<Scalars['String']['input']>;
-  categoryId: InputMaybe<Scalars['String']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  enableWaitlist: InputMaybe<Scalars['Boolean']['input']>;
-  endDateTime: InputMaybe<Scalars['DateTime']['input']>;
-  eventDateTime: InputMaybe<Scalars['DateTime']['input']>;
-  featured: InputMaybe<Scalars['Boolean']['input']>;
-  galleryImages: InputMaybe<Array<Scalars['String']['input']>>;
-  isFreeEvent: InputMaybe<Scalars['Boolean']['input']>;
-  isVirtual: InputMaybe<Scalars['Boolean']['input']>;
-  location: InputMaybe<EventLocationInput>;
-  refundPolicy: InputMaybe<Scalars['String']['input']>;
-  tags: InputMaybe<Array<Scalars['String']['input']>>;
-  termsAndConditions: InputMaybe<Scalars['String']['input']>;
-  thumbnailImageUrl: InputMaybe<Scalars['String']['input']>;
-  title: InputMaybe<Scalars['String']['input']>;
-  totalCapacity: InputMaybe<Scalars['Int']['input']>;
-  virtualEventPlatform: InputMaybe<Scalars['String']['input']>;
-  virtualEventUrl: InputMaybe<Scalars['String']['input']>;
-  waitlistCapacity: InputMaybe<Scalars['Int']['input']>;
+  additionalInfo?: InputMaybe<Scalars['JSON']['input']>;
+  ageRestriction?: InputMaybe<Scalars['String']['input']>;
+  bagPolicy?: InputMaybe<Scalars['String']['input']>;
+  bannerAltText?: InputMaybe<Scalars['String']['input']>;
+  bannerImageUrl?: InputMaybe<Scalars['String']['input']>;
+  cancellationPolicy?: InputMaybe<Scalars['String']['input']>;
+  categoryId?: InputMaybe<Scalars['String']['input']>;
+  checkoutSettings?: InputMaybe<CheckoutSettingsInput>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  doorsOpenAt?: InputMaybe<Scalars['DateTime']['input']>;
+  enableWaitlist?: InputMaybe<Scalars['Boolean']['input']>;
+  endDateTime?: InputMaybe<Scalars['DateTime']['input']>;
+  eventDateTime?: InputMaybe<Scalars['DateTime']['input']>;
+  faqs?: InputMaybe<Array<EventFaqInput>>;
+  featured?: InputMaybe<Scalars['Boolean']['input']>;
+  galleryImages?: InputMaybe<Array<Scalars['String']['input']>>;
+  gettingThere?: InputMaybe<Scalars['String']['input']>;
+  isFreeEvent?: InputMaybe<Scalars['Boolean']['input']>;
+  isVirtual?: InputMaybe<Scalars['Boolean']['input']>;
+  location?: InputMaybe<EventLocationInput>;
+  parkingInfo?: InputMaybe<Scalars['String']['input']>;
+  publishAt?: InputMaybe<Scalars['DateTime']['input']>;
+  refundPolicy?: InputMaybe<Scalars['String']['input']>;
+  runningOrder?: InputMaybe<Array<RunningOrderItemInput>>;
+  tagline?: InputMaybe<Scalars['String']['input']>;
+  termsAndConditions?: InputMaybe<Scalars['String']['input']>;
+  thumbnailImageUrl?: InputMaybe<Scalars['String']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+  totalCapacity?: InputMaybe<Scalars['Int']['input']>;
+  virtualEventPlatform?: InputMaybe<Scalars['String']['input']>;
+  virtualEventUrl?: InputMaybe<Scalars['String']['input']>;
+  waitlistCapacity?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type UpdateMediaInput = {
+  altText?: InputMaybe<Scalars['String']['input']>;
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateMemberRoleInput = {
-  customPermissions: InputMaybe<Array<Scalars['String']['input']>>;
-  deniedPermissions: InputMaybe<Array<Scalars['String']['input']>>;
+  customPermissions?: InputMaybe<Array<Scalars['String']['input']>>;
+  deniedPermissions?: InputMaybe<Array<Scalars['String']['input']>>;
   memberId: Scalars['ID']['input'];
   newRole: OrganizationRole;
   organizationId: Scalars['ID']['input'];
 };
 
 export type UpdateNotificationPreferencesInput = {
-  emailEnabled: InputMaybe<Scalars['Boolean']['input']>;
-  eventReminders: InputMaybe<Scalars['Boolean']['input']>;
-  eventUpdates: InputMaybe<Scalars['Boolean']['input']>;
-  inAppEnabled: InputMaybe<Scalars['Boolean']['input']>;
-  marketingEmails: InputMaybe<Scalars['Boolean']['input']>;
-  paymentNotifications: InputMaybe<Scalars['Boolean']['input']>;
-  pushEnabled: InputMaybe<Scalars['Boolean']['input']>;
-  quietHoursEnd: InputMaybe<Scalars['String']['input']>;
-  quietHoursStart: InputMaybe<Scalars['String']['input']>;
-  reminderHoursBefore: InputMaybe<Scalars['Int']['input']>;
-  smsEnabled: InputMaybe<Scalars['Boolean']['input']>;
-  systemAnnouncements: InputMaybe<Scalars['Boolean']['input']>;
-  teamNotifications: InputMaybe<Scalars['Boolean']['input']>;
-  ticketNotifications: InputMaybe<Scalars['Boolean']['input']>;
-  timezone: InputMaybe<Scalars['String']['input']>;
-  whatsappEnabled: InputMaybe<Scalars['Boolean']['input']>;
+  emailEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  eventReminders?: InputMaybe<Scalars['Boolean']['input']>;
+  eventUpdates?: InputMaybe<Scalars['Boolean']['input']>;
+  inAppEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  marketingEmails?: InputMaybe<Scalars['Boolean']['input']>;
+  paymentNotifications?: InputMaybe<Scalars['Boolean']['input']>;
+  pushEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  quietHoursEnd?: InputMaybe<Scalars['String']['input']>;
+  quietHoursStart?: InputMaybe<Scalars['String']['input']>;
+  reminderHoursBefore?: InputMaybe<Scalars['Int']['input']>;
+  smsEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  systemAnnouncements?: InputMaybe<Scalars['Boolean']['input']>;
+  teamNotifications?: InputMaybe<Scalars['Boolean']['input']>;
+  ticketNotifications?: InputMaybe<Scalars['Boolean']['input']>;
+  timezone?: InputMaybe<Scalars['String']['input']>;
+  whatsappEnabled?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type UpdateOrganizationInput = {
-  bannerUrl: InputMaybe<Scalars['String']['input']>;
-  description: InputMaybe<Scalars['String']['input']>;
-  logoUrl: InputMaybe<Scalars['String']['input']>;
-  name: InputMaybe<Scalars['String']['input']>;
+  bannerUrl?: InputMaybe<Scalars['String']['input']>;
+  businessAddress?: InputMaybe<BusinessAddressInput>;
+  businessEmail?: InputMaybe<Scalars['String']['input']>;
+  businessPhone?: InputMaybe<Scalars['String']['input']>;
+  businessRegistrationNumber?: InputMaybe<Scalars['String']['input']>;
+  businessType?: InputMaybe<BusinessType>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  logoUrl?: InputMaybe<Scalars['String']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  socialLinks?: InputMaybe<SocialLinksInput>;
+  tagline?: InputMaybe<Scalars['String']['input']>;
+  taxId?: InputMaybe<Scalars['String']['input']>;
+  website?: InputMaybe<Scalars['String']['input']>;
+  yearEstablished?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type UpdateOrganizationSettingsInput = {
-  allowMembersToInvite: InputMaybe<Scalars['Boolean']['input']>;
-  defaultEventVisibility: InputMaybe<Scalars['String']['input']>;
-  inviteRequiresApproval: InputMaybe<Scalars['Boolean']['input']>;
-  managersCanRequestPayouts: InputMaybe<Scalars['Boolean']['input']>;
-  marketersCanViewFinancials: InputMaybe<Scalars['Boolean']['input']>;
-  maxTeamMembers: InputMaybe<Scalars['Int']['input']>;
-  notifyOwnerOnEventCreated: InputMaybe<Scalars['Boolean']['input']>;
-  notifyOwnerOnMemberJoin: InputMaybe<Scalars['Boolean']['input']>;
-  notifyOwnerOnPayoutRequest: InputMaybe<Scalars['Boolean']['input']>;
-  organizationId: Scalars['ID']['input'];
-  requireEventApproval: InputMaybe<Scalars['Boolean']['input']>;
+  adminsCanRequestPayouts?: InputMaybe<Scalars['Boolean']['input']>;
+  allowMembersToInvite?: InputMaybe<Scalars['Boolean']['input']>;
+  defaultEventVisibility?: InputMaybe<Scalars['String']['input']>;
+  inviteRequiresApproval?: InputMaybe<Scalars['Boolean']['input']>;
+  managersCanViewFinancials?: InputMaybe<Scalars['Boolean']['input']>;
+  maxTeamMembers?: InputMaybe<Scalars['Int']['input']>;
+  notifyOwnerOnEventCreated?: InputMaybe<Scalars['Boolean']['input']>;
+  notifyOwnerOnMemberJoin?: InputMaybe<Scalars['Boolean']['input']>;
+  notifyOwnerOnPayoutRequest?: InputMaybe<Scalars['Boolean']['input']>;
+  requireEventApproval?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /**
@@ -7704,92 +7786,129 @@ export type UpdateOrganizationSettingsInput = {
  */
 export type UpdatePayoutConfigInput = {
   /** Minimum payout amount in ZMW (must be >= 100.0) */
-  minimumPayoutAmount: InputMaybe<Scalars['Float']['input']>;
+  minimumPayoutAmount?: InputMaybe<Scalars['Float']['input']>;
   /** Preferred payout method */
-  preferredMethod: InputMaybe<PayoutMethod>;
+  preferredMethod?: InputMaybe<PayoutMethod>;
   /** Payout schedule */
-  schedule: InputMaybe<PayoutSchedule>;
+  schedule?: InputMaybe<PayoutSchedule>;
 };
 
 export type UpdatePlatformConfigurationInput = {
-  adminNotificationChannel: InputMaybe<ApprovalNotificationChannel>;
-  allowSelfApproval: InputMaybe<Scalars['Boolean']['input']>;
-  approvalSlaHours: InputMaybe<Scalars['Int']['input']>;
-  approvalWarningThresholdHours: InputMaybe<Scalars['Int']['input']>;
-  autoEscalationEnabled: InputMaybe<Scalars['Boolean']['input']>;
-  escalationDelayHours: InputMaybe<Scalars['Int']['input']>;
-  escalationRecipientRole: InputMaybe<Scalars['String']['input']>;
-  escalationReminderIntervalHours: InputMaybe<Scalars['Int']['input']>;
-  maxEscalationReminders: InputMaybe<Scalars['Int']['input']>;
-  organizerNotificationChannel: InputMaybe<ApprovalNotificationChannel>;
-  requireCommentsOnChangesRequested: InputMaybe<Scalars['Boolean']['input']>;
-  requireCommentsOnRejection: InputMaybe<Scalars['Boolean']['input']>;
-  sendEscalationNotifications: InputMaybe<Scalars['Boolean']['input']>;
-  sendSlaWarningNotifications: InputMaybe<Scalars['Boolean']['input']>;
+  adminNotificationChannel?: InputMaybe<ApprovalNotificationChannel>;
+  allowSelfApproval?: InputMaybe<Scalars['Boolean']['input']>;
+  approvalSlaHours?: InputMaybe<Scalars['Int']['input']>;
+  approvalWarningThresholdHours?: InputMaybe<Scalars['Int']['input']>;
+  autoEscalationEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  commissionDefault?: InputMaybe<Scalars['BigDecimal']['input']>;
+  currency?: InputMaybe<Scalars['String']['input']>;
+  escalationDelayHours?: InputMaybe<Scalars['Int']['input']>;
+  escalationRecipientRole?: InputMaybe<Scalars['String']['input']>;
+  escalationReminderIntervalHours?: InputMaybe<Scalars['Int']['input']>;
+  escrowHoldDays?: InputMaybe<Scalars['Int']['input']>;
+  maxEscalationReminders?: InputMaybe<Scalars['Int']['input']>;
+  maxTicketsPerBooking?: InputMaybe<Scalars['Int']['input']>;
+  minimumPayout?: InputMaybe<Scalars['BigDecimal']['input']>;
+  organizerNotificationChannel?: InputMaybe<ApprovalNotificationChannel>;
+  refundCutoffHours?: InputMaybe<Scalars['Int']['input']>;
+  refundPolicies?: InputMaybe<Array<PlatformRefundPolicyInput>>;
+  requireCommentsOnChangesRequested?: InputMaybe<Scalars['Boolean']['input']>;
+  requireCommentsOnRejection?: InputMaybe<Scalars['Boolean']['input']>;
+  rescheduleLimit?: InputMaybe<Scalars['Int']['input']>;
+  reservationGraceMinutes?: InputMaybe<Scalars['Int']['input']>;
+  reservationHoldMinutes?: InputMaybe<Scalars['Int']['input']>;
+  sendEscalationNotifications?: InputMaybe<Scalars['Boolean']['input']>;
+  sendSlaWarningNotifications?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type UpdatePromoCodeInput = {
-  applicableTiers: InputMaybe<Array<Scalars['String']['input']>>;
-  discountType: InputMaybe<DiscountType>;
-  discountValue: InputMaybe<Scalars['BigDecimal']['input']>;
-  isActive: InputMaybe<Scalars['Boolean']['input']>;
-  maxDiscountAmount: InputMaybe<Scalars['BigDecimal']['input']>;
-  maxUses: InputMaybe<Scalars['Int']['input']>;
-  minPurchaseAmount: InputMaybe<Scalars['BigDecimal']['input']>;
-  validFrom: InputMaybe<Scalars['DateTime']['input']>;
-  validUntil: InputMaybe<Scalars['DateTime']['input']>;
+  applicableTiers?: InputMaybe<Array<Scalars['String']['input']>>;
+  discountType?: InputMaybe<DiscountType>;
+  discountValue?: InputMaybe<Scalars['BigDecimal']['input']>;
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  maxDiscountAmount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  maxUses?: InputMaybe<Scalars['Int']['input']>;
+  minPurchaseAmount?: InputMaybe<Scalars['BigDecimal']['input']>;
+  validFrom?: InputMaybe<Scalars['DateTime']['input']>;
+  validUntil?: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 export type UpdateProvinceInput = {
-  code: InputMaybe<Scalars['String']['input']>;
-  country: InputMaybe<Scalars['String']['input']>;
-  isActive: InputMaybe<Scalars['Boolean']['input']>;
-  name: InputMaybe<Scalars['String']['input']>;
+  code?: InputMaybe<Scalars['String']['input']>;
+  country?: InputMaybe<Scalars['String']['input']>;
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateReferenceDataInput = {
-  allowedTransitions: InputMaybe<Array<Scalars['String']['input']>>;
-  description: InputMaybe<Scalars['String']['input']>;
-  displayOrder: InputMaybe<Scalars['Int']['input']>;
-  effectiveFrom: InputMaybe<Scalars['DateTime']['input']>;
-  effectiveTo: InputMaybe<Scalars['DateTime']['input']>;
-  isActive: InputMaybe<Scalars['Boolean']['input']>;
-  metadata: InputMaybe<Scalars['JSON']['input']>;
-  name: InputMaybe<Scalars['String']['input']>;
-  parentCode: InputMaybe<Scalars['String']['input']>;
-  parentType: InputMaybe<ReferenceType>;
-  semantic: InputMaybe<WorkflowSemantic>;
+  allowedTransitions?: InputMaybe<Array<Scalars['String']['input']>>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  displayOrder?: InputMaybe<Scalars['Int']['input']>;
+  effectiveFrom?: InputMaybe<Scalars['DateTime']['input']>;
+  effectiveTo?: InputMaybe<Scalars['DateTime']['input']>;
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  metadata?: InputMaybe<Scalars['JSON']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  parentCode?: InputMaybe<Scalars['String']['input']>;
+  parentType?: InputMaybe<ReferenceType>;
+  semantic?: InputMaybe<WorkflowSemantic>;
+};
+
+export type UpdateStockImageInput = {
+  active?: InputMaybe<Scalars['Boolean']['input']>;
+  altText?: InputMaybe<Scalars['String']['input']>;
+  categoryCode?: InputMaybe<Scalars['String']['input']>;
+  purpose?: InputMaybe<StockImagePurpose>;
+  title?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateTicketTierInput = {
-  accessCode: InputMaybe<Scalars['String']['input']>;
-  benefits: InputMaybe<Array<Scalars['String']['input']>>;
-  description: InputMaybe<Scalars['String']['input']>;
-  earlyBirdEndsAt: InputMaybe<Scalars['DateTime']['input']>;
-  earlyBirdPrice: InputMaybe<Scalars['BigDecimal']['input']>;
-  isActive: InputMaybe<Scalars['Boolean']['input']>;
-  isHidden: InputMaybe<Scalars['Boolean']['input']>;
-  maxPerOrder: InputMaybe<Scalars['Int']['input']>;
-  minPerOrder: InputMaybe<Scalars['Int']['input']>;
-  name: InputMaybe<Scalars['String']['input']>;
-  price: InputMaybe<Scalars['BigDecimal']['input']>;
-  quantity: InputMaybe<Scalars['Int']['input']>;
-  salesEndAt: InputMaybe<Scalars['DateTime']['input']>;
-  salesStartAt: InputMaybe<Scalars['DateTime']['input']>;
-  sortOrder: InputMaybe<Scalars['Int']['input']>;
+  accessCode?: InputMaybe<Scalars['String']['input']>;
+  benefits?: InputMaybe<Array<Scalars['String']['input']>>;
+  category?: InputMaybe<TicketCategory>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  earlyBirdEndsAt?: InputMaybe<Scalars['DateTime']['input']>;
+  earlyBirdPrice?: InputMaybe<Scalars['BigDecimal']['input']>;
+  isActive?: InputMaybe<Scalars['Boolean']['input']>;
+  isHidden?: InputMaybe<Scalars['Boolean']['input']>;
+  maxPerOrder?: InputMaybe<Scalars['Int']['input']>;
+  minPerOrder?: InputMaybe<Scalars['Int']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  price?: InputMaybe<Scalars['BigDecimal']['input']>;
+  quantity?: InputMaybe<Scalars['Int']['input']>;
+  salesEndAt?: InputMaybe<Scalars['DateTime']['input']>;
+  salesStartAt?: InputMaybe<Scalars['DateTime']['input']>;
+  sortOrder?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type UpdateUserInput = {
-  firstName: InputMaybe<Scalars['String']['input']>;
-  gender: InputMaybe<Scalars['String']['input']>;
-  lastName: InputMaybe<Scalars['String']['input']>;
-  phoneCountry: InputMaybe<Scalars['String']['input']>;
-  phoneNumber: InputMaybe<Scalars['PhoneNumber']['input']>;
+  displayName?: InputMaybe<Scalars['String']['input']>;
+  firstName?: InputMaybe<Scalars['String']['input']>;
+  gender?: InputMaybe<Scalars['String']['input']>;
+  lastName?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UploadMediaInput = {
+  altText?: InputMaybe<Scalars['String']['input']>;
+  contentBase64: Scalars['String']['input'];
+  contentType: Scalars['String']['input'];
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  fileName: Scalars['String']['input'];
+  title?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UploadStockImageInput = {
+  altText?: InputMaybe<Scalars['String']['input']>;
+  categoryCode?: InputMaybe<Scalars['String']['input']>;
+  contentBase64: Scalars['String']['input'];
+  contentType: Scalars['String']['input'];
+  fileName: Scalars['String']['input'];
+  purpose: StockImagePurpose;
+  title?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UploadVerificationDocumentInput = {
   documentType: Scalars['String']['input'];
-  documentUrl: InputMaybe<Scalars['String']['input']>;
+  documentUrl?: InputMaybe<Scalars['String']['input']>;
   fileName: Scalars['String']['input'];
   fileSize: Scalars['Long']['input'];
   mimeType: Scalars['String']['input'];
@@ -7800,16 +7919,21 @@ export type User = {
   accountStatus: AccountStatus;
   active: Scalars['Boolean']['output'];
   activeTicketCount: Scalars['Int']['output'];
+  contacts: Array<Contact>;
   createdAt: Scalars['DateTime']['output'];
-  email: Scalars['String']['output'];
+  deletionRequestedAt: Maybe<Scalars['DateTime']['output']>;
+  deletionScheduledFor: Maybe<Scalars['DateTime']['output']>;
+  displayName: Maybe<Scalars['String']['output']>;
+  email: Maybe<Scalars['String']['output']>;
   emailVerified: Scalars['Boolean']['output'];
-  firstName: Scalars['String']['output'];
+  firstName: Maybe<Scalars['String']['output']>;
   fullName: Scalars['String']['output'];
   gender: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   lastActiveAt: Maybe<Scalars['DateTime']['output']>;
   lastLoginAt: Maybe<Scalars['DateTime']['output']>;
-  lastName: Scalars['String']['output'];
+  lastName: Maybe<Scalars['String']['output']>;
+  lockReason: Maybe<Scalars['String']['output']>;
   locked: Scalars['Boolean']['output'];
   memberSince: Maybe<Scalars['DateTime']['output']>;
   notificationPreferences: Maybe<NotificationPreferences>;
@@ -7817,6 +7941,7 @@ export type User = {
   phoneCountry: Maybe<Scalars['String']['output']>;
   phoneNumber: Maybe<Scalars['PhoneNumber']['output']>;
   phoneVerified: Scalars['Boolean']['output'];
+  preferredChannel: Maybe<ContactType>;
   purchasedTickets: Array<Ticket>;
   /**
    * All roles assigned to the user.
@@ -7825,18 +7950,13 @@ export type User = {
    */
   roles: Array<UserType>;
   socialConnections: Maybe<Array<SocialConnection>>;
+  status: AccountState;
+  suspendReason: Maybe<Scalars['String']['output']>;
   totalSpent: Scalars['BigDecimal']['output'];
   twoFactorEnabled: Scalars['Boolean']['output'];
   twoFactorMethod: Maybe<TwoFactorMethod>;
   updatedAt: Maybe<Scalars['DateTime']['output']>;
-  username: Scalars['String']['output'];
-};
-
-export type UserConnection = {
-  __typename: 'UserConnection';
-  edges: Array<UserEdge>;
-  pageInfo: PageInfo;
-  totalCount: Maybe<Scalars['Int']['output']>;
+  username: Maybe<Scalars['String']['output']>;
 };
 
 export type UserDevice = {
@@ -7854,19 +7974,6 @@ export type UserDevice = {
   platform: DevicePlatform;
   updatedAt: Maybe<Scalars['DateTime']['output']>;
   userId: Scalars['ID']['output'];
-};
-
-export type UserEdge = {
-  __typename: 'UserEdge';
-  cursor: Scalars['String']['output'];
-  node: User;
-};
-
-export type UserMutationResponse = {
-  __typename: 'UserMutationResponse';
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-  user: Maybe<User>;
 };
 
 export type UserOffsetPage = {
@@ -7911,17 +8018,18 @@ export type UserType =
   | 'ADMIN'
   | 'CUSTOMER'
   | 'FINANCE'
+  | 'FINANCE_LEAD'
   | 'ORGANIZER'
   | 'SUPER_ADMIN';
 
 export type ValidateTicketInput = {
   code: Scalars['String']['input'];
-  deviceId: InputMaybe<Scalars['String']['input']>;
+  deviceId?: InputMaybe<Scalars['String']['input']>;
   eventId: Scalars['ID']['input'];
-  method: InputMaybe<ValidationMethod>;
-  reason: InputMaybe<Scalars['String']['input']>;
-  scanId: InputMaybe<Scalars['String']['input']>;
-  scannedAt: InputMaybe<Scalars['DateTime']['input']>;
+  method?: InputMaybe<ValidationMethod>;
+  reason?: InputMaybe<Scalars['String']['input']>;
+  scanId?: InputMaybe<Scalars['String']['input']>;
+  scannedAt?: InputMaybe<Scalars['DateTime']['input']>;
 };
 
 export type ValidationMethod =
@@ -7955,28 +8063,6 @@ export type VerificationDocument = {
   verifiedById: Maybe<Scalars['String']['output']>;
 };
 
-export type VerificationDocumentUploadResponse = {
-  __typename: 'VerificationDocumentUploadResponse';
-  document: Maybe<VerificationDocument>;
-  errors: Maybe<Array<FileUploadError>>;
-  message: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type VerifyBankAccountMutationResponse = {
-  __typename: 'VerifyBankAccountMutationResponse';
-  data: Maybe<BankAccount>;
-  errors: Array<Scalars['String']['output']>;
-  message: Maybe<Scalars['String']['output']>;
-  metadata: Maybe<Scalars['JSON']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type VerifyTwoFactorInput = {
-  code: Scalars['String']['input'];
-  method: TwoFactorMethod;
-};
-
 /**
  * What an administrator-defined status MEANS to the code.
  *
@@ -7994,6 +8080,2673 @@ export type WorkflowSemantic =
   | 'PENDING'
   | 'SUCCEEDED';
 
+export type Join__ContextArgument = {
+  context: Scalars['String']['input'];
+  name: Scalars['String']['input'];
+  selection: Scalars['join__FieldValue']['input'];
+  type: Scalars['String']['input'];
+};
+
+export type Join__Graph =
+  | 'BOOKING'
+  | 'CATALOG'
+  | 'IDENTITY';
+
+export type Link__Purpose =
+  /** `EXECUTION` features provide metadata necessary for operation execution. */
+  | 'EXECUTION'
+  /** `SECURITY` features provide metadata necessary to securely resolve fields. */
+  | 'SECURITY';
+
+export type OrganizerTicketsQueryVariables = Exact<{
+  organizerId: Scalars['String']['input'];
+  filter: InputMaybe<TicketFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizerTicketsQuery = { __typename: 'Query', ticketsByOrganizer: { __typename: 'TicketOffsetPage', data: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, purchaseDate: string | null, validatedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, paymentReference: string | null, netAmount: string | null, commissionAmount: string | null, paymentInfo: { __typename: 'PaymentInfo', paymentMethod: string | null, status: string | null, providerReference: string | null, paymentDate: string | null } | null, refundInfo: { __typename: 'RefundInfo', refundAmount: string | null, reason: string | null, status: string | null, refundDate: string | null } | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalPages: number, hasNext: boolean | null } } };
+
+export type EventRefundRequestsQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type EventRefundRequestsQuery = { __typename: 'Query', refundRequestsByEvent: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketNumber: string, eventId: string, refundAmount: string, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, requestedAt: string | null, policyApplied: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalPages: number, hasNext: boolean | null } } };
+
+export type OrganizerCalculateRefundQueryVariables = Exact<{
+  ticketId: Scalars['String']['input'];
+}>;
+
+
+export type OrganizerCalculateRefundQuery = { __typename: 'Query', calculateRefundAmount: { __typename: 'RefundCalculation', ticketId: string, ticketNumber: string, eventDate: string, originalAmount: string, daysBeforeEvent: number, refundPercentage: number, refundAmount: string, commissionRefund: string, platformRetains: string, policyApplied: string, isEligible: boolean, ineligibleReason: string | null } };
+
+export type OrganizerRefundTicketMutationVariables = Exact<{
+  ticketNumber: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+  amount: InputMaybe<Scalars['BigDecimal']['input']>;
+}>;
+
+
+export type OrganizerRefundTicketMutation = { __typename: 'Mutation', refundTicket: { __typename: 'Ticket', id: string, ticketNumber: string, status: TicketStatus, refundedAt: string | null } };
+
+export type OrganizerResendTicketMutationVariables = Exact<{
+  ticketId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerResendTicketMutation = { __typename: 'Mutation', resendTicket: { __typename: 'ResendTicketResult', ticketId: string, ticketNumber: string, status: string, channel: string | null, destination: string | null } };
+
+export type OrganizerBookingsQueryVariables = Exact<{
+  filter: InputMaybe<BookingFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizerBookingsQuery = { __typename: 'Query', bookingsByOrganizer: { __typename: 'BookingOffsetPage', data: Array<{ __typename: 'Booking', id: string, bookingNumber: string, eventId: string, eventTitle: string | null, contactName: string | null, contactEmail: string | null, contactPhone: string | null, status: BookingStatus, ticketCount: number, subtotal: string | null, discountAmount: string | null, totalAmount: string, currency: string, promoCode: string | null, refundedAmount: string, refundableAmount: string, createdAt: string | null, confirmedAt: string | null, payment: { __typename: 'BookingPayment', provider: string | null, status: string | null, reference: string | null, amount: string | null, currency: string | null, payerPhone: string | null, paidAt: string | null } | null, tickets: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, purchaseDate: string | null, validatedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, paymentReference: string | null, netAmount: string | null, commissionAmount: string | null, paymentInfo: { __typename: 'PaymentInfo', paymentMethod: string | null, status: string | null, providerReference: string | null, paymentDate: string | null } | null, refundInfo: { __typename: 'RefundInfo', refundAmount: string | null, reason: string | null, status: string | null, refundDate: string | null } | null }> }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalPages: number, hasNext: boolean | null } } };
+
+export type OrganizerBookingQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerBookingQuery = { __typename: 'Query', booking: { __typename: 'Booking', id: string, bookingNumber: string, eventId: string, eventTitle: string | null, contactName: string | null, contactEmail: string | null, contactPhone: string | null, status: BookingStatus, ticketCount: number, subtotal: string | null, discountAmount: string | null, totalAmount: string, currency: string, promoCode: string | null, refundedAmount: string, refundableAmount: string, createdAt: string | null, confirmedAt: string | null, items: Array<{ __typename: 'BookingItem', ticketTierId: string, tierName: string, quantity: number, unitPrice: string, subtotal: string }>, payment: { __typename: 'BookingPayment', provider: string | null, status: string | null, reference: string | null, amount: string | null, currency: string | null, payerPhone: string | null, paidAt: string | null } | null, refundRequests: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketNumber: string, refundAmount: string, currency: string, status: RefundRequestStatus, reason: string, requestedAt: string | null }>, tickets: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, purchaseDate: string | null, validatedAt: string | null, cancelledAt: string | null, cancellationReason: string | null, refundedAt: string | null, refundReason: string | null, paymentReference: string | null, netAmount: string | null, commissionAmount: string | null, paymentInfo: { __typename: 'PaymentInfo', paymentMethod: string | null, status: string | null, providerReference: string | null, paymentDate: string | null } | null, refundInfo: { __typename: 'RefundInfo', refundAmount: string | null, reason: string | null, status: string | null, refundDate: string | null } | null }> } | null };
+
+export type OrganizerRefundInboxQueryVariables = Exact<{
+  filter: InputMaybe<RefundRequestFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizerRefundInboxQuery = { __typename: 'Query', refundRequestsByOrganizer: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketNumber: string, eventId: string, refundAmount: string, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, requestedAt: string | null, policyApplied: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalPages: number, hasNext: boolean | null } } };
+
+export type OrganizerCancelTicketMutationVariables = Exact<{
+  ticketNumber: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OrganizerCancelTicketMutation = { __typename: 'Mutation', cancelTicket: { __typename: 'Ticket', id: string, ticketNumber: string, status: TicketStatus, cancelledAt: string | null } };
+
+export type OrganizerRecentCheckInsQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  limit: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type OrganizerRecentCheckInsQuery = { __typename: 'Query', recentCheckIns: Array<{ __typename: 'CheckIn', id: string, ticketNumber: string | null, method: ValidationMethod, reason: string | null, scannedAt: string | null, recordedAt: string }> };
+
+export type OrganizerCheckInConflictsQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizerCheckInConflictsQuery = { __typename: 'Query', checkInConflicts: { __typename: 'CheckInConflictPage', totalElements: number, content: Array<{ __typename: 'CheckInConflict', id: string, presentedCode: string | null, type: CheckInConflictType, status: CheckInConflictStatus, detectedAt: string, reviewNote: string | null }> } };
+
+export type OrganizerReviewConflictMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  note: Scalars['String']['input'];
+}>;
+
+
+export type OrganizerReviewConflictMutation = { __typename: 'Mutation', reviewConflict: { __typename: 'CheckInConflict', id: string, status: CheckInConflictStatus, reviewNote: string | null } };
+
+export type EditorEventQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type EditorEventQuery = { __typename: 'Query', event: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, categoryId: string | null, eventDateTime: string, endDateTime: string, bannerImageUrl: string | null, bannerAltText: string | null, isVirtual: boolean, isFreeEvent: boolean, virtualEventUrl: string | null, totalCapacity: number, soldTickets: number, refundPolicy: string | null, cancellationPolicy: string | null, termsAndConditions: string | null, rejectionReason: string | null, tagline: string | null, ageRestriction: string | null, doorsOpenAt: string | null, galleryImages: Array<string> | null, gettingThere: string | null, parkingInfo: string | null, bagPolicy: string | null, publishAt: string | null, publishScheduled: boolean, publishedAt: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, approvedAt: string | null, rejectedAt: string | null, faqs: Array<{ __typename: 'EventFaq', question: string, answer: string }> | null, runningOrder: Array<{ __typename: 'RunningOrderItem', time: string, title: string }> | null, checkoutSettings: { __typename: 'EventCheckoutSettings', maxTicketsPerOrder: number | null, collectHolderNames: boolean, extraQuestion: string | null } | null, location: { __typename: 'Location', name: string, address: string, city: string, province: string | null, country: string } | null, accessibility: { __typename: 'EventAccessibility', wheelchairAccessible: boolean, wheelchairSeatsAvailable: number | null, signLanguageInterpreter: boolean, hearingLoopAvailable: boolean, accessibleParking: boolean, accessibleRestrooms: boolean, assistanceDogsAllowed: boolean, additionalNotes: string | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, code: string, name: string, description: string | null, price: string, currency: string, quantity: number, soldQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null, category: TicketCategory }> | null } | null };
+
+export type EditorReferenceDataQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type EditorReferenceDataQuery = { __typename: 'Query', categories: Array<{ __typename: 'EventCategory', id: string, name: string, code: string, isActive: boolean }>, provinces: Array<{ __typename: 'Province', id: string, name: string, code: string }>, cities: Array<{ __typename: 'City', id: string, name: string, province: string | null, provinceId: string | null }> };
+
+export type EditorCreateEventMutationVariables = Exact<{
+  input: CreateEventInput;
+}>;
+
+
+export type EditorCreateEventMutation = { __typename: 'Mutation', createEvent: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type EditorUpdateEventMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateEventInput;
+}>;
+
+
+export type EditorUpdateEventMutation = { __typename: 'Mutation', updateEvent: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type EditorUpdateAccessibilityMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  input: EventAccessibilityInput;
+}>;
+
+
+export type EditorUpdateAccessibilityMutation = { __typename: 'Mutation', updateEventAccessibility: { __typename: 'Event', id: string } };
+
+export type EditorSubmitForApprovalMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+}>;
+
+
+export type EditorSubmitForApprovalMutation = { __typename: 'Mutation', submitEventForApproval: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type EditorCancelScheduledPublishMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+}>;
+
+
+export type EditorCancelScheduledPublishMutation = { __typename: 'Mutation', cancelScheduledPublish: { __typename: 'Event', id: string, status: EventStatus, publishAt: string | null, publishScheduled: boolean } };
+
+export type EditorCreateTierMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  input: CreateTicketTierInput;
+}>;
+
+
+export type EditorCreateTierMutation = { __typename: 'Mutation', createTicketTier: { __typename: 'TicketTier', id: string, code: string, name: string, description: string | null, price: string, currency: string, quantity: number, soldQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null, category: TicketCategory } };
+
+export type EditorUpdateTierMutationVariables = Exact<{
+  tierId: Scalars['ID']['input'];
+  input: UpdateTicketTierInput;
+}>;
+
+
+export type EditorUpdateTierMutation = { __typename: 'Mutation', updateTicketTier: { __typename: 'TicketTier', id: string, code: string, name: string, description: string | null, price: string, currency: string, quantity: number, soldQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null, category: TicketCategory } };
+
+export type EditorDeleteTierMutationVariables = Exact<{
+  tierId: Scalars['ID']['input'];
+}>;
+
+
+export type EditorDeleteTierMutation = { __typename: 'Mutation', deleteTicketTier: string };
+
+export type EditorReorderTiersMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  tierIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+}>;
+
+
+export type EditorReorderTiersMutation = { __typename: 'Mutation', reorderTicketTiers: Array<{ __typename: 'TicketTier', id: string, sortOrder: number }> };
+
+export type OrganizerSalesSeriesQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  from: InputMaybe<Scalars['DateTime']['input']>;
+  to: InputMaybe<Scalars['DateTime']['input']>;
+  bucket: InputMaybe<SalesBucket>;
+}>;
+
+
+export type OrganizerSalesSeriesQuery = { __typename: 'Query', salesOverTime: Array<{ __typename: 'SalesPoint', bucketStart: string, bucketEnd: string, tickets: number, orders: number, grossRevenue: string, netRevenue: string, refundedAmount: string }> };
+
+export type OrganizerHeatmapQueryVariables = Exact<{
+  eventId: InputMaybe<Scalars['ID']['input']>;
+  from: InputMaybe<Scalars['DateTime']['input']>;
+  to: InputMaybe<Scalars['DateTime']['input']>;
+}>;
+
+
+export type OrganizerHeatmapQuery = { __typename: 'Query', purchasesByDayAndHour: Array<{ __typename: 'PurchaseHeatCell', dayOfWeek: number, hour: number, purchases: number, tickets: number, revenue: string }> };
+
+export type OrganizerHolderAudienceQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  segment: InputMaybe<HolderSegment>;
+  ticketTierId: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type OrganizerHolderAudienceQuery = { __typename: 'Query', ticketHolderAudience: number };
+
+export type OrganizerHolderMessagesQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizerHolderMessagesQuery = { __typename: 'Query', ticketHolderMessages: { __typename: 'HolderMessagePage', data: Array<{ __typename: 'HolderMessage', id: string, subject: string, body: string, segment: HolderSegment, ticketTierId: string | null, recipientCount: number, deliveredCount: number, status: HolderMessageStatus, sentBy: string, createdAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null } } };
+
+export type OrganizerMessageHoldersMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  input: MessageTicketHoldersInput;
+}>;
+
+
+export type OrganizerMessageHoldersMutation = { __typename: 'Mutation', messageTicketHolders: { __typename: 'HolderMessage', id: string, status: HolderMessageStatus, recipientCount: number, deliveredCount: number } };
+
+export type OrgEventsConnectionQueryVariables = Exact<{
+  filter: InputMaybe<OrganizerEventFilterInput>;
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type OrgEventsConnectionQuery = { __typename: 'Query', myEventsConnection: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', cursor: string, node: { __typename: 'Event', id: string, title: string, status: EventStatus, eventDateTime: string, endDateTime: string, locationName: string | null, cityName: string | null, bannerImageUrl: string | null, totalCapacity: number, soldTickets: number, revenue: string, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, isActive: boolean }> | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, endCursor: string | null } } };
+
+export type OrgEventCountsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OrgEventCountsQuery = { __typename: 'Query', total: number, draft: number, pending: number, changes: number, approved: number, rejected: number, published: number, cancelled: number, completed: number };
+
+export type OrgEventDetailQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrgEventDetailQuery = { __typename: 'Query', event: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, bannerImageUrl: string | null, totalCapacity: number, soldTickets: number, availableTickets: number, revenue: string, currency: string | null, refundPolicy: string | null, rejectionReason: string | null, publishedAt: string | null, submittedForApprovalAt: string | null, approvedAt: string | null, rejectedAt: string | null, createdAt: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, eventId: string, code: string, name: string, description: string | null, price: string, currency: string, quantity: number, soldQuantity: number, availableQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, salesStartAt: string | null, salesEndAt: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, sortOrder: number, isActive: boolean, isHidden: boolean, accessCode: string | null }> | null } | null };
+
+export type OrgEventStatisticsQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrgEventStatisticsQuery = { __typename: 'Query', eventStatistics: { __typename: 'EventTicketStatistics', totalTicketsAvailable: number, totalTicketsSold: number, totalTicketsRefunded: number, totalGrossRevenue: string | null, totalCommissionEarned: string | null, overallSalesPercentage: number, bestSellingTier: string | null } | null };
+
+export type OrgSubmitEventMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+}>;
+
+
+export type OrgSubmitEventMutation = { __typename: 'Mutation', submitEventForApproval: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type OrgPublishEventMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrgPublishEventMutation = { __typename: 'Mutation', publishEvent: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type OrgUnpublishEventMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrgUnpublishEventMutation = { __typename: 'Mutation', unpublishEvent: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type OrgRescheduleEventMutationVariables = Exact<{
+  input: RescheduleEventInput;
+}>;
+
+
+export type OrgRescheduleEventMutation = { __typename: 'Mutation', rescheduleEvent: { __typename: 'Event', id: string, status: EventStatus, eventDateTime: string, endDateTime: string } };
+
+export type OrgCancelEventMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: EventCancellationInput;
+}>;
+
+
+export type OrgCancelEventMutation = { __typename: 'Mutation', cancelEvent: { __typename: 'EventCancellationResponse', ticketsAffected: number, refundSagaInitiated: boolean, event: { __typename: 'Event', id: string, status: EventStatus } | null } };
+
+export type OrgDuplicateEventMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  newTitle: Scalars['String']['input'];
+}>;
+
+
+export type OrgDuplicateEventMutation = { __typename: 'Mutation', duplicateEvent: { __typename: 'Event', id: string, title: string, status: EventStatus } };
+
+export type OrgDeleteEventMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrgDeleteEventMutation = { __typename: 'Mutation', deleteEvent: string };
+
+export type OrgCreateTierMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  input: CreateTicketTierInput;
+}>;
+
+
+export type OrgCreateTierMutation = { __typename: 'Mutation', createTicketTier: { __typename: 'TicketTier', id: string } };
+
+export type OrgUpdateTierMutationVariables = Exact<{
+  tierId: Scalars['ID']['input'];
+  input: UpdateTicketTierInput;
+}>;
+
+
+export type OrgUpdateTierMutation = { __typename: 'Mutation', updateTicketTier: { __typename: 'TicketTier', id: string } };
+
+export type OrgDeleteTierMutationVariables = Exact<{
+  tierId: Scalars['ID']['input'];
+}>;
+
+
+export type OrgDeleteTierMutation = { __typename: 'Mutation', deleteTicketTier: string };
+
+export type OrgActivateTierMutationVariables = Exact<{
+  tierId: Scalars['ID']['input'];
+}>;
+
+
+export type OrgActivateTierMutation = { __typename: 'Mutation', activateTicketTier: { __typename: 'TicketTier', id: string, isActive: boolean } };
+
+export type OrgDeactivateTierMutationVariables = Exact<{
+  tierId: Scalars['ID']['input'];
+}>;
+
+
+export type OrgDeactivateTierMutation = { __typename: 'Mutation', deactivateTicketTier: { __typename: 'TicketTier', id: string, isActive: boolean } };
+
+export type OrgReorderTiersMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  tierIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+}>;
+
+
+export type OrgReorderTiersMutation = { __typename: 'Mutation', reorderTicketTiers: Array<{ __typename: 'TicketTier', id: string, sortOrder: number }> };
+
+export type OrgEventPayoutsQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+}>;
+
+
+export type OrgEventPayoutsQuery = { __typename: 'Query', payoutRequestsByEvent: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', requestId: string, status: PayoutRequestStatus, requestedAmount: string, currency: string }> } };
+
+export type OrganizerEscrowAccountsQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizerEscrowAccountsQuery = { __typename: 'Query', myEscrowAccounts: { __typename: 'EscrowAccountOffsetPage', data: Array<{ __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalPages: number, currentPage: number | null, hasNext: boolean | null } } };
+
+export type OrganizerEscrowTransactionsQueryVariables = Exact<{
+  escrowAccountId: Scalars['String']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizerEscrowTransactionsQuery = { __typename: 'Query', escrowTransactions: { __typename: 'EscrowTransactionOffsetPage', data: Array<{ __typename: 'StandaloneEscrowTransaction', id: string, type: string, category: string, amount: string, balanceAfter: string, currency: string, description: string | null, journalEntryId: string | null, timestamp: string }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalPages: number, currentPage: number | null, hasNext: boolean | null } } };
+
+export type OrganizerPayoutEligibilityQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerPayoutEligibilityQuery = { __typename: 'Query', payoutEligibility: { __typename: 'PayoutEligibility', eligible: boolean, reasons: Array<PayoutBlockedReason>, availableAmount: string, currency: string, opensAt: string | null, minimumAmount: string } };
+
+export type OrganizerCancelPayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OrganizerCancelPayoutRequestMutation = { __typename: 'Mutation', cancelPayoutRequest: { __typename: 'PayoutRequest', id: string, status: PayoutRequestStatus } };
+
+export type OrganizerStartBankVerificationMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerStartBankVerificationMutation = { __typename: 'Mutation', startBankVerification: { __typename: 'BankAccount', id: string, status: string } };
+
+export type OrganizerConfirmBankVerificationMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  amount: Scalars['BigDecimal']['input'];
+}>;
+
+
+export type OrganizerConfirmBankVerificationMutation = { __typename: 'Mutation', confirmBankVerification: { __typename: 'BankAccount', id: string, status: string, isVerified: boolean } };
+
+export type OrganizerPayoutWalletQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OrganizerPayoutWalletQuery = { __typename: 'Query', myOrganization: { __typename: 'Organization', id: string, payoutConfig: { __typename: 'PayoutConfig', mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean, status: PayoutAccountStatus, rejectionReason: string | null, suspended: boolean, suspendedReason: string | null, testDepositSentAt: string | null, verificationAttemptsLeft: number } | null } | null } | null };
+
+export type OrganizerSetMobileMoneyAccountMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  input: SetMobileMoneyAccountInput;
+}>;
+
+
+export type OrganizerSetMobileMoneyAccountMutation = { __typename: 'Mutation', setMobileMoneyAccount: { __typename: 'Organization', id: string, payoutConfig: { __typename: 'PayoutConfig', mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean, status: PayoutAccountStatus, testDepositSentAt: string | null, verificationAttemptsLeft: number } | null } | null } | null };
+
+export type OrganizerMediaQueryVariables = Exact<{
+  filter: InputMaybe<MediaFilterInput>;
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type OrganizerMediaQuery = { __typename: 'Query', myMedia: { __typename: 'MediaAssetConnection', edges: Array<{ __typename: 'MediaAssetEdge', cursor: string, node: { __typename: 'MediaAsset', id: string, url: string, fileName: string, contentType: string, sizeBytes: number, title: string | null, altText: string | null, eventId: string | null, status: MediaStatus, flaggedReason: string | null, removedReason: string | null, createdAt: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, endCursor: string | null } } };
+
+export type OrganizerUploadMediaMutationVariables = Exact<{
+  input: UploadMediaInput;
+}>;
+
+
+export type OrganizerUploadMediaMutation = { __typename: 'Mutation', uploadMedia: { __typename: 'MediaAsset', id: string, url: string, fileName: string, contentType: string, sizeBytes: number, title: string | null, altText: string | null, eventId: string | null, status: MediaStatus, createdAt: string | null } };
+
+export type OrganizerUpdateMediaMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateMediaInput;
+}>;
+
+
+export type OrganizerUpdateMediaMutation = { __typename: 'Mutation', updateMedia: { __typename: 'MediaAsset', id: string, title: string | null, altText: string | null, eventId: string | null } };
+
+export type OrganizerDeleteMediaMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerDeleteMediaMutation = { __typename: 'Mutation', deleteMedia: string };
+
+export type OrganizerNotificationsQueryVariables = Exact<{
+  first: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type OrganizerNotificationsQuery = { __typename: 'Query', unreadNotificationCount: number, myNotifications: { __typename: 'NotificationConnection', totalCount: number | null, edges: Array<{ __typename: 'NotificationEdge', cursor: string, node: { __typename: 'Notification', id: string, type: NotificationType, title: string, body: string, actionUrl: string | null, status: NotificationStatus, readAt: string | null, createdAt: string } }> } };
+
+export type OrganizerMarkAllNotificationsReadMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OrganizerMarkAllNotificationsReadMutation = { __typename: 'Mutation', markAllNotificationsRead: number };
+
+export type OrganizerMarkNotificationReadMutationVariables = Exact<{
+  notificationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerMarkNotificationReadMutation = { __typename: 'Mutation', markNotificationRead: { __typename: 'Notification', id: string, readAt: string | null, status: NotificationStatus } | null };
+
+export type OrganizerContextQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OrganizerContextQuery = { __typename: 'Query', myOrganization: { __typename: 'Organization', id: string, name: string, slug: string, status: OrganizationStatus, ownerId: string, commissionRate: number | null, deletionRequestedAt: string | null, deletionScheduledFor: string | null, settings: { __typename: 'OrganizationSettings', id: string, managersCanViewFinancials: boolean, adminsCanRequestPayouts: boolean } | null } | null };
+
+export type OrganizerMembershipQueryVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerMembershipQuery = { __typename: 'Query', myOrganizationMembership: { __typename: 'OrganizationMember', id: string, userId: string, role: OrganizationRole, status: MemberStatus, customPermissions: Array<string> | null, deniedPermissions: Array<string> | null } | null };
+
+export type OrganizerPlatformRulesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OrganizerPlatformRulesQuery = { __typename: 'Query', platformRules: { __typename: 'PlatformRules', version: number, updatedAt: string | null, updatedBy: string | null, currency: string, commissionDefault: number, commissionRate: number | null, minimumPayout: string | null, reservationHoldMinutes: number, reservationGraceMinutes: number, escrowHoldDays: number, refundCutoffHours: number, maxTicketsPerBooking: number, rescheduleLimit: number, refundPolicies: Array<{ __typename: 'RulesRefundPolicy', code: string, label: string, summary: string, rules: Array<{ __typename: 'RulesRefundTier', daysBefore: number, percent: number }> }>, approval: { __typename: 'PlatformRulesApproval', slaHours: number, warnHours: number, autoEscalation: boolean, escalationDelayHours: number, requireCommentsOnRejection: boolean, requireCommentsOnChangesRequested: boolean, allowSelfApproval: boolean } } };
+
+export type OrgEventPromosQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+}>;
+
+
+export type OrgEventPromosQuery = { __typename: 'Query', eventPromoCodes: Array<{ __typename: 'PromoCode', id: string, code: string, eventId: string | null, discountType: DiscountType, discountValue: string, maxUses: number | null, currentUses: number, validFrom: string | null, validUntil: string | null, minPurchaseAmount: string | null, maxDiscountAmount: string | null, applicableTiers: Array<string> | null, isActive: boolean }> };
+
+export type OrgCreatePromoMutationVariables = Exact<{
+  input: CreatePromoCodeInput;
+}>;
+
+
+export type OrgCreatePromoMutation = { __typename: 'Mutation', createPromoCode: { __typename: 'PromoCode', id: string } };
+
+export type OrgUpdatePromoMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdatePromoCodeInput;
+}>;
+
+
+export type OrgUpdatePromoMutation = { __typename: 'Mutation', updatePromoCode: { __typename: 'PromoCode', id: string } };
+
+export type OrgActivatePromoMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrgActivatePromoMutation = { __typename: 'Mutation', activatePromoCode: { __typename: 'PromoCode', id: string, isActive: boolean } };
+
+export type OrgDeactivatePromoMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrgDeactivatePromoMutation = { __typename: 'Mutation', deactivatePromoCode: { __typename: 'PromoCode', id: string, isActive: boolean } };
+
+export type OrgDeletePromoMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OrgDeletePromoMutation = { __typename: 'Mutation', deletePromoCode: string };
+
+export type SettingsOrganizationQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type SettingsOrganizationQuery = { __typename: 'Query', myOrganization: { __typename: 'Organization', id: string, name: string, slug: string, tagline: string | null, description: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, businessType: BusinessType | null, taxId: string | null, businessRegistrationNumber: string | null, yearEstablished: number | null, businessPhone: string | null, businessEmail: string | null, status: OrganizationStatus, commissionRate: number | null, deletionRequestedAt: string | null, deletionScheduledFor: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, addressLine2: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null } | null, settings: { __typename: 'OrganizationSettings', id: string, requireEventApproval: boolean, allowMembersToInvite: boolean, inviteRequiresApproval: boolean, managersCanViewFinancials: boolean, adminsCanRequestPayouts: boolean, notifyOwnerOnMemberJoin: boolean, notifyOwnerOnEventCreated: boolean, notifyOwnerOnPayoutRequest: boolean } | null } | null };
+
+export type SettingsUpdateOrganizationMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateOrganizationInput;
+}>;
+
+
+export type SettingsUpdateOrganizationMutation = { __typename: 'Mutation', updateOrganization: { __typename: 'Organization', id: string, name: string, description: string | null, logoUrl: string | null, bannerUrl: string | null, tagline: string | null, website: string | null } | null };
+
+export type SettingsRequestOrganizationDeletionMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type SettingsRequestOrganizationDeletionMutation = { __typename: 'Mutation', requestOrganizationDeletion: { __typename: 'Organization', id: string, status: OrganizationStatus, deletionRequestedAt: string | null, deletionScheduledFor: string | null } | null };
+
+export type SettingsCancelOrganizationDeletionMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type SettingsCancelOrganizationDeletionMutation = { __typename: 'Mutation', cancelOrganizationDeletion: { __typename: 'Organization', id: string, status: OrganizationStatus, deletionRequestedAt: string | null, deletionScheduledFor: string | null } | null };
+
+export type SettingsUpdateOrganizationSettingsMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateOrganizationSettingsInput;
+}>;
+
+
+export type SettingsUpdateOrganizationSettingsMutation = { __typename: 'Mutation', updateOrganizationSettings: { __typename: 'Organization', id: string, settings: { __typename: 'OrganizationSettings', id: string, requireEventApproval: boolean, allowMembersToInvite: boolean, inviteRequiresApproval: boolean, managersCanViewFinancials: boolean, adminsCanRequestPayouts: boolean, notifyOwnerOnMemberJoin: boolean, notifyOwnerOnEventCreated: boolean, notifyOwnerOnPayoutRequest: boolean } | null } | null };
+
+export type SettingsIsSlugAvailableQueryVariables = Exact<{
+  slug: Scalars['String']['input'];
+}>;
+
+
+export type SettingsIsSlugAvailableQuery = { __typename: 'Query', isSlugAvailable: boolean };
+
+export type SettingsMeQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type SettingsMeQuery = { __typename: 'Query', me: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, fullName: string, email: string | null, phoneNumber: string | null } | null };
+
+export type SettingsNotificationPrefsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type SettingsNotificationPrefsQuery = { __typename: 'Query', myNotificationPreferences: { __typename: 'NotificationPreferences', id: string, emailEnabled: boolean, smsEnabled: boolean, whatsappEnabled: boolean, pushEnabled: boolean, inAppEnabled: boolean, ticketNotifications: boolean, eventReminders: boolean, eventUpdates: boolean, paymentNotifications: boolean, teamNotifications: boolean, marketingEmails: boolean, systemAnnouncements: boolean, reminderHoursBefore: number, quietHoursStart: string | null, quietHoursEnd: string | null, timezone: string | null } | null };
+
+export type SettingsUpdateNotificationPrefsMutationVariables = Exact<{
+  input: UpdateNotificationPreferencesInput;
+}>;
+
+
+export type SettingsUpdateNotificationPrefsMutation = { __typename: 'Mutation', updateNotificationPreferences: { __typename: 'NotificationPreferences', id: string } | null };
+
+export type SettingsUpdateProfileMutationVariables = Exact<{
+  input: UpdateUserInput;
+}>;
+
+
+export type SettingsUpdateProfileMutation = { __typename: 'Mutation', updateMyProfile: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, fullName: string } };
+
+export type OrganizerRosterQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OrganizerRosterQuery = { __typename: 'Query', myOrganization: { __typename: 'Organization', id: string, ownerId: string, members: Array<{ __typename: 'OrganizationMember', id: string, userId: string, role: OrganizationRole, status: MemberStatus, joinedAt: string, lastActiveAt: string | null, customPermissions: Array<string> | null, deniedPermissions: Array<string> | null, user: { __typename: 'User', id: string, fullName: string, username: string | null } | null }> | null } | null };
+
+export type OrganizerInvitationsQueryVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerInvitationsQuery = { __typename: 'Query', pendingInvitations: { __typename: 'TeamInvitationOffsetPage', content: Array<{ __typename: 'TeamInvitation', id: string, email: string | null, phoneNumber: string | null, inviteeName: string | null, proposedRole: OrganizationRole, message: string | null, expiresAt: string, status: InvitationStatus, createdAt: string, eventAccessGrants: Array<{ __typename: 'EventAccessProposal', eventId: string, role: EventRole, expiresAt: string | null }> | null }> } };
+
+export type OrganizerEventAccessGrantsQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerEventAccessGrantsQuery = { __typename: 'Query', eventAccessGrants: { __typename: 'EventAccessGrantOffsetPage', content: Array<{ __typename: 'EventAccessGrant', id: string, userId: string, eventId: string, eventRole: EventRole, reason: string | null, status: AccessGrantStatus, expiresAt: string | null, user: { __typename: 'User', id: string, fullName: string } | null }> } };
+
+export type OrganizerOrgAccessGrantsQueryVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerOrgAccessGrantsQuery = { __typename: 'Query', organizationEventAccessGrants: { __typename: 'EventAccessGrantOffsetPage', content: Array<{ __typename: 'EventAccessGrant', id: string, userId: string, eventId: string, eventRole: EventRole, reason: string | null, status: AccessGrantStatus, expiresAt: string | null, user: { __typename: 'User', id: string, fullName: string } | null }> } };
+
+export type OrganizerIncomingTransfersQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OrganizerIncomingTransfersQuery = { __typename: 'Query', myPendingOwnershipTransfers: Array<{ __typename: 'OwnershipTransferRequest', id: string, status: TransferStatus, expiresAt: string, reason: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, currentOwner: { __typename: 'User', id: string, fullName: string } | null }> };
+
+export type OrganizerPendingTransferQueryVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerPendingTransferQuery = { __typename: 'Query', pendingOwnershipTransfer: { __typename: 'OwnershipTransferRequest', id: string, newOwnerId: string, status: TransferStatus, expiresAt: string, initiatedAt: string, newOwner: { __typename: 'User', id: string, fullName: string } | null } | null };
+
+export type OrganizerUpdateMemberRoleMutationVariables = Exact<{
+  memberId: Scalars['ID']['input'];
+  input: UpdateMemberRoleInput;
+}>;
+
+
+export type OrganizerUpdateMemberRoleMutation = { __typename: 'Mutation', updateMemberRole: { __typename: 'OrganizationMember', id: string, role: OrganizationRole } | null };
+
+export type OrganizerSuspendMemberMutationVariables = Exact<{
+  memberId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type OrganizerSuspendMemberMutation = { __typename: 'Mutation', suspendMember: { __typename: 'OrganizationMember', id: string, status: MemberStatus } | null };
+
+export type OrganizerReactivateMemberMutationVariables = Exact<{
+  memberId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerReactivateMemberMutation = { __typename: 'Mutation', reactivateMember: { __typename: 'OrganizationMember', id: string, status: MemberStatus } | null };
+
+export type OrganizerRemoveMemberMutationVariables = Exact<{
+  memberId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type OrganizerRemoveMemberMutation = { __typename: 'Mutation', removeMember: boolean };
+
+export type OrganizerLeaveMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerLeaveMutation = { __typename: 'Mutation', leaveOrganization: boolean };
+
+export type OrganizerInviteMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  input: InviteMemberInput;
+}>;
+
+
+export type OrganizerInviteMutation = { __typename: 'Mutation', inviteTeamMember: { __typename: 'TeamInvitation', id: string, email: string | null } | null };
+
+export type OrganizerResendInviteMutationVariables = Exact<{
+  invitationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerResendInviteMutation = { __typename: 'Mutation', resendInvitation: { __typename: 'TeamInvitation', id: string, status: InvitationStatus } | null };
+
+export type OrganizerRevokeInviteMutationVariables = Exact<{
+  invitationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerRevokeInviteMutation = { __typename: 'Mutation', revokeInvitation: { __typename: 'TeamInvitation', id: string, status: InvitationStatus } | null };
+
+export type OrganizerInitiateTransferMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  newOwnerId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type OrganizerInitiateTransferMutation = { __typename: 'Mutation', initiateOwnershipTransfer: { __typename: 'OwnershipTransferRequest', id: string, status: TransferStatus } | null };
+
+export type OrganizerCancelTransferMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerCancelTransferMutation = { __typename: 'Mutation', cancelOwnershipTransfer: { __typename: 'OwnershipTransferRequest', id: string, status: TransferStatus } | null };
+
+export type OrganizerRequestTransferCodeMutationVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+
+export type OrganizerRequestTransferCodeMutation = { __typename: 'Mutation', requestOwnershipTransferCode: boolean };
+
+export type OrganizerAcceptTransferMutationVariables = Exact<{
+  token: Scalars['String']['input'];
+  confirmationCode: Scalars['String']['input'];
+}>;
+
+
+export type OrganizerAcceptTransferMutation = { __typename: 'Mutation', acceptOwnershipTransfer: { __typename: 'OwnershipTransferRequest', id: string, status: TransferStatus } | null };
+
+export type OrganizerDeclineTransferMutationVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+
+export type OrganizerDeclineTransferMutation = { __typename: 'Mutation', declineOwnershipTransfer: { __typename: 'OwnershipTransferRequest', id: string, status: TransferStatus } | null };
+
+export type OrganizerGrantAccessMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  organizationId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+  role: EventRole;
+  reason: InputMaybe<Scalars['String']['input']>;
+  expiresAt: InputMaybe<Scalars['DateTime']['input']>;
+}>;
+
+
+export type OrganizerGrantAccessMutation = { __typename: 'Mutation', grantEventAccess: { __typename: 'EventAccessGrant', id: string, status: AccessGrantStatus } | null };
+
+export type OrganizerUpdateGrantMutationVariables = Exact<{
+  accessId: Scalars['ID']['input'];
+  newRole: InputMaybe<EventRole>;
+  expiresAt: InputMaybe<Scalars['DateTime']['input']>;
+}>;
+
+
+export type OrganizerUpdateGrantMutation = { __typename: 'Mutation', updateEventAccess: { __typename: 'EventAccessGrant', id: string, eventRole: EventRole } | null };
+
+export type OrganizerRevokeGrantMutationVariables = Exact<{
+  accessId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type OrganizerRevokeGrantMutation = { __typename: 'Mutation', revokeEventAccess: { __typename: 'EventAccessGrant', id: string, status: AccessGrantStatus } | null };
+
+export type OrganizerApplicationsQueryVariables = Exact<{
+  status: InputMaybe<OrganizationStatus>;
+  search: InputMaybe<Scalars['String']['input']>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizerApplicationsQuery = { __typename: 'Query', organizations: { __typename: 'OrganizationOffsetPage', content: Array<{ __typename: 'Organization', id: string, name: string, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, description: string | null, businessEmail: string | null, businessPhone: string | null, taxId: string | null, businessRegistrationNumber: string | null, rejectionReason: string | null, submittedAt: string | null, payoutAccountVerified: boolean, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null, country: string | null } | null, owner: { __typename: 'User', id: string, fullName: string, email: string | null, contacts: Array<{ __typename: 'Contact', valueMasked: string, primary: boolean }> } | null, verificationDocuments: Array<{ __typename: 'VerificationDocument', id: string, documentType: string, fileName: string | null, fileSize: number | null, status: DocumentStatus, uploadedAt: string, rejectionReason: string | null }> | null, payoutConfig: { __typename: 'PayoutConfig', verified: boolean, isConfigured: boolean, bankAccount: { __typename: 'PayoutBankDetails', bankName: string | null, maskedAccountNumber: string | null, verified: boolean } | null, mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, verified: boolean } | null } | null }>, pageInfo: { __typename: 'PageInfo', currentPage: number | null, pageSize: number | null, totalCount: number | null, hasNext: boolean | null, hasPrevious: boolean | null } } };
+
+export type OrganizationDocumentsQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OrganizationDocumentsQuery = { __typename: 'Query', organizations: { __typename: 'OrganizationOffsetPage', content: Array<{ __typename: 'Organization', id: string, name: string, verificationDocuments: Array<{ __typename: 'VerificationDocument', id: string, documentType: string, fileName: string | null, fileSize: number | null, status: DocumentStatus, uploadedAt: string, rejectionReason: string | null }> | null }>, pageInfo: { __typename: 'PageInfo', currentPage: number | null, pageSize: number | null, totalCount: number | null, hasNext: boolean | null, hasPrevious: boolean | null } } };
+
+export type PendingApprovalEventsQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type PendingApprovalEventsQuery = { __typename: 'Query', events: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, status: EventStatus, organizerId: string, organizerName: string, eventDateTime: string, cityName: string | null, locationName: string | null, totalCapacity: number, minTicketPrice: string | null, currency: string | null, submittedForApprovalAt: string | null, approvalBlockers: Array<ApprovalBlocker>, category: { __typename: 'EventCategory', id: string, name: string } | null }> }, pendingApprovalTimelines: { __typename: 'ApprovalTimelineOffsetPage', content: Array<{ __typename: 'ApprovalTimeline', eventId: string, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, isOverdue: boolean, hoursUntilDeadline: number | null, submissionCount: number, hasActiveEscalation: boolean, escalation: { __typename: 'ApprovalEscalation', id: string, status: EscalationStatus, triggeredAt: string } | null }> } };
+
+export type ApprovalTimelineQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+}>;
+
+
+export type ApprovalTimelineQuery = { __typename: 'Query', approvalTimeline: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, isOverdue: boolean, hoursUntilDeadline: number | null, submissionCount: number, totalComments: number, hasActiveEscalation: boolean, escalation: { __typename: 'ApprovalEscalation', id: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, escalatedToName: string, hoursOverdue: number } | null, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, timestamp: string, action: ApprovalAction, actorName: string, description: string, comments: string | null, isEscalationRelated: boolean }> } | null };
+
+export type ReviewerCandidatesQueryVariables = Exact<{
+  role: InputMaybe<UserType>;
+}>;
+
+
+export type ReviewerCandidatesQuery = { __typename: 'Query', users: { __typename: 'UserOffsetPage', content: Array<{ __typename: 'User', id: string, fullName: string }> } };
+
+export type AssignEventReviewerMutationVariables = Exact<{
+  input: AssignReviewerInput;
+}>;
+
+
+export type AssignEventReviewerMutation = { __typename: 'Mutation', assignEventReviewer: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, isOverdue: boolean, hoursUntilDeadline: number | null, submissionCount: number, totalComments: number, hasActiveEscalation: boolean, escalation: { __typename: 'ApprovalEscalation', id: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, escalatedToName: string, hoursOverdue: number } | null, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, timestamp: string, action: ApprovalAction, actorName: string, description: string, comments: string | null, isEscalationRelated: boolean }> } };
+
+export type UnassignEventReviewerMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type UnassignEventReviewerMutation = { __typename: 'Mutation', unassignEventReviewer: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, isOverdue: boolean, hoursUntilDeadline: number | null, submissionCount: number, totalComments: number, hasActiveEscalation: boolean, escalation: { __typename: 'ApprovalEscalation', id: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, escalatedToName: string, hoursOverdue: number } | null, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, timestamp: string, action: ApprovalAction, actorName: string, description: string, comments: string | null, isEscalationRelated: boolean }> } };
+
+export type AddApprovalCommentMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  comment: Scalars['String']['input'];
+  isInternal: InputMaybe<Scalars['Boolean']['input']>;
+}>;
+
+
+export type AddApprovalCommentMutation = { __typename: 'Mutation', addApprovalComment: { __typename: 'ApprovalTimeline', eventId: string, eventTitle: string, organizerName: string, currentStatus: EventStatus, assignedReviewerId: string | null, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, isOverdue: boolean, hoursUntilDeadline: number | null, submissionCount: number, totalComments: number, hasActiveEscalation: boolean, escalation: { __typename: 'ApprovalEscalation', id: string, status: EscalationStatus, reason: string, triggeredAt: string, acknowledgedAt: string | null, escalatedToName: string, hoursOverdue: number } | null, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, timestamp: string, action: ApprovalAction, actorName: string, description: string, comments: string | null, isEscalationRelated: boolean }> } };
+
+export type AcknowledgeEscalationMutationVariables = Exact<{
+  escalationId: Scalars['ID']['input'];
+  notes: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type AcknowledgeEscalationMutation = { __typename: 'Mutation', acknowledgeEscalation: { __typename: 'ApprovalEscalation', id: string, status: EscalationStatus } };
+
+export type TriggerManualEscalationMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  escalateTo: Scalars['String']['input'];
+}>;
+
+
+export type TriggerManualEscalationMutation = { __typename: 'Mutation', triggerManualEscalation: { __typename: 'ApprovalEscalation', id: string, status: EscalationStatus } };
+
+export type FeatureEventMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  featured: Scalars['Boolean']['input'];
+}>;
+
+
+export type FeatureEventMutation = { __typename: 'Mutation', featureEvent: { __typename: 'Event', id: string, featured: boolean } };
+
+export type CancelEventAsAdminMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: EventCancellationInput;
+}>;
+
+
+export type CancelEventAsAdminMutation = { __typename: 'Mutation', cancelEvent: { __typename: 'EventCancellationResponse', ticketsAffected: number, refundSagaInitiated: boolean, event: { __typename: 'Event', id: string, status: EventStatus } | null } };
+
+export type CreateEventCategoryMutationVariables = Exact<{
+  input: CreateReferenceDataInput;
+}>;
+
+
+export type CreateEventCategoryMutation = { __typename: 'Mutation', createReferenceData: { __typename: 'ReferenceData', id: string, code: string, name: string, description: string | null, isActive: boolean } };
+
+export type UpdateEventCategoryMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateReferenceDataInput;
+}>;
+
+
+export type UpdateEventCategoryMutation = { __typename: 'Mutation', updateReferenceData: { __typename: 'ReferenceData', id: string, code: string, name: string, description: string | null, isActive: boolean } };
+
+export type DeleteEventCategoryMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type DeleteEventCategoryMutation = { __typename: 'Mutation', deleteReferenceData: string };
+
+export type SetEventCategoryActiveMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  active: Scalars['Boolean']['input'];
+}>;
+
+
+export type SetEventCategoryActiveMutation = { __typename: 'Mutation', setReferenceDataActive: { __typename: 'ReferenceData', id: string, code: string, name: string, description: string | null, isActive: boolean } };
+
+export type CreateProvinceMutationVariables = Exact<{
+  input: CreateProvinceInput;
+}>;
+
+
+export type CreateProvinceMutation = { __typename: 'Mutation', createProvince: { __typename: 'Province', id: string, name: string, code: string, country: string, cityCount: number | null, isActive: boolean } };
+
+export type UpdateProvinceMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateProvinceInput;
+}>;
+
+
+export type UpdateProvinceMutation = { __typename: 'Mutation', updateProvince: { __typename: 'Province', id: string, name: string, code: string, country: string, cityCount: number | null, isActive: boolean } };
+
+export type DeleteProvinceMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type DeleteProvinceMutation = { __typename: 'Mutation', deleteProvince: string };
+
+export type CreateCityMutationVariables = Exact<{
+  input: CreateCityInput;
+}>;
+
+
+export type CreateCityMutation = { __typename: 'Mutation', createCity: { __typename: 'City', id: string, name: string, code: string | null, provinceId: string | null, province: string | null, country: string | null, eventCount: number | null, isActive: boolean } };
+
+export type UpdateCityMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateCityInput;
+}>;
+
+
+export type UpdateCityMutation = { __typename: 'Mutation', updateCity: { __typename: 'City', id: string, name: string, code: string | null, provinceId: string | null, province: string | null, country: string | null, eventCount: number | null, isActive: boolean } };
+
+export type DeleteCityMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type DeleteCityMutation = { __typename: 'Mutation', deleteCity: string };
+
+export type AddEventApprovalCommentMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  comment: Scalars['String']['input'];
+  isInternal: InputMaybe<Scalars['Boolean']['input']>;
+}>;
+
+
+export type AddEventApprovalCommentMutation = { __typename: 'Mutation', addApprovalComment: { __typename: 'ApprovalTimeline', eventId: string } };
+
+export type AdminEventsTableQueryVariables = Exact<{
+  filter: InputMaybe<EventFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type AdminEventsTableQuery = { __typename: 'Query', events: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, status: EventStatus, published: boolean, featured: boolean, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, organizationId: string | null, locationName: string | null, cityName: string | null, categoryId: string | null, totalCapacity: number, soldTickets: number, currency: string | null, minTicketPrice: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, isOverdue: boolean | null, category: { __typename: 'EventCategory', id: string, name: string } | null }> } };
+
+export type AdminEventDetailQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type AdminEventDetailQuery = { __typename: 'Query', event: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, published: boolean, publishedAt: string | null, featured: boolean, eventDateTime: string, endDateTime: string, organizerId: string, organizerName: string, organizationId: string | null, organizerEmail: string | null, organizerPhone: string | null, locationName: string | null, locationAddress: string | null, cityName: string | null, categoryId: string | null, totalCapacity: number, soldTickets: number, availableTickets: number, currency: string | null, minTicketPrice: string | null, maxTicketPrice: string | null, refundPolicy: string | null, cancellationPolicy: string | null, bannerImageUrl: string | null, thumbnailImageUrl: string | null, galleryImages: Array<string> | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectedBy: string | null, rejectionReason: string | null, isOverdue: boolean | null, approvalBlockers: Array<ApprovalBlocker>, createdAt: string | null, updatedAt: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null, location: { __typename: 'Location', id: string, city: string, province: string | null, country: string } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, name: string, code: string, price: string, currency: string, quantity: number, soldQuantity: number, isActive: boolean, isHidden: boolean, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null }> | null } | null };
+
+export type EventApprovalTimelineQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+}>;
+
+
+export type EventApprovalTimelineQuery = { __typename: 'Query', approvalTimeline: { __typename: 'ApprovalTimeline', eventId: string, currentStatus: EventStatus, assignedReviewerName: string | null, submittedAt: string | null, slaDeadline: string | null, isOverdue: boolean, hoursUntilDeadline: number | null, submissionCount: number, hasActiveEscalation: boolean, escalation: { __typename: 'ApprovalEscalation', status: EscalationStatus } | null, timelineEvents: Array<{ __typename: 'TimelineEvent', id: string, timestamp: string, action: ApprovalAction, actorName: string, actorRole: string | null, description: string, comments: string | null, isEscalationRelated: boolean }> } | null };
+
+export type ProvincesAdminQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ProvincesAdminQuery = { __typename: 'Query', provinces: Array<{ __typename: 'Province', id: string, name: string, code: string, country: string, cityCount: number | null, isActive: boolean }> };
+
+export type CitiesAdminQueryVariables = Exact<{
+  provinceId: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type CitiesAdminQuery = { __typename: 'Query', cities: Array<{ __typename: 'City', id: string, name: string, code: string | null, provinceId: string | null, province: string | null, country: string | null, eventCount: number | null, isActive: boolean }> };
+
+export type EscrowByEventQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+}>;
+
+
+export type EscrowByEventQuery = { __typename: 'Query', escrowAccountByEvent: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus } | null };
+
+export type PayoutsByEventQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+}>;
+
+
+export type PayoutsByEventQuery = { __typename: 'Query', payoutRequests: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, requestedAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string }> } };
+
+export type RefundsByEventQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+}>;
+
+
+export type RefundsByEventQuery = { __typename: 'Query', refundRequests: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, refundAmount: string, currency: string, status: RefundRequestStatus, requestedAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null } } };
+
+export type ApproveVerificationDocumentMutationVariables = Exact<{
+  documentId: Scalars['ID']['input'];
+}>;
+
+
+export type ApproveVerificationDocumentMutation = { __typename: 'Mutation', approveVerificationDocument: { __typename: 'VerificationDocument', id: string, documentType: string, documentUrl: string, fileName: string | null, fileSize: number | null, mimeType: string | null, status: DocumentStatus, uploadedAt: string, verifiedAt: string | null, verifiedById: string | null, rejectionReason: string | null, verifiedBy: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, fullName: string } | null } | null };
+
+export type RejectVerificationDocumentMutationVariables = Exact<{
+  documentId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type RejectVerificationDocumentMutation = { __typename: 'Mutation', rejectVerificationDocument: { __typename: 'VerificationDocument', id: string, documentType: string, documentUrl: string, fileName: string | null, fileSize: number | null, mimeType: string | null, status: DocumentStatus, uploadedAt: string, verifiedAt: string | null, verifiedById: string | null, rejectionReason: string | null, verifiedBy: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, fullName: string } | null } | null };
+
+export type VerificationDocumentFieldsFragment = { __typename: 'VerificationDocument', id: string, documentType: string, documentUrl: string, fileName: string | null, fileSize: number | null, mimeType: string | null, status: DocumentStatus, uploadedAt: string, verifiedAt: string | null, verifiedById: string | null, rejectionReason: string | null, verifiedBy: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, fullName: string } | null };
+
+export type PendingVerificationDocumentsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PendingVerificationDocumentsQuery = { __typename: 'Query', pendingVerificationDocuments: Array<{ __typename: 'VerificationDocument', id: string, documentType: string, documentUrl: string, fileName: string | null, fileSize: number | null, mimeType: string | null, status: DocumentStatus, uploadedAt: string, verifiedAt: string | null, verifiedById: string | null, rejectionReason: string | null, verifiedBy: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, fullName: string } | null }> };
+
+export type EventListFieldsFragment = { __typename: 'Event', id: string, title: string, status: EventStatus, published: boolean, eventDateTime: string, endDateTime: string, organizerName: string, organizerId: string, locationName: string | null, cityName: string | null, totalCapacity: number, soldTickets: number, availableTickets: number, minTicketPrice: string | null, currency: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, isOverdue: boolean | null, category: { __typename: 'EventCategory', id: string, name: string } | null };
+
+export type AdminEventsQueryVariables = Exact<{
+  filter: InputMaybe<EventFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type AdminEventsQuery = { __typename: 'Query', events: { __typename: 'EventOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'Event', id: string, title: string, status: EventStatus, published: boolean, eventDateTime: string, endDateTime: string, organizerName: string, organizerId: string, locationName: string | null, cityName: string | null, totalCapacity: number, soldTickets: number, availableTickets: number, minTicketPrice: string | null, currency: string | null, submittedForApprovalAt: string | null, approvalDeadline: string | null, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, isOverdue: boolean | null, category: { __typename: 'EventCategory', id: string, name: string } | null }> } };
+
+export type EventStatsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type EventStatsQuery = { __typename: 'Query', eventStats: { __typename: 'EventStats', totalEvents: number, publishedEvents: number, draftEvents: number, pendingApprovalEvents: number, approvedNotPublishedEvents: number, cancelledEvents: number, completedEvents: number, rejectedEvents: number, totalCapacity: number, totalSoldTickets: number } };
+
+export type AdminEventCategoriesQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type AdminEventCategoriesQuery = { __typename: 'Query', referenceDataAll: { __typename: 'ReferenceDataOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'ReferenceData', id: string, code: string, name: string, description: string | null, isActive: boolean }> }, categories: Array<{ __typename: 'EventCategory', code: string, eventCount: number | null }> };
+
+export type AdminLocationsQueryVariables = Exact<{
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type AdminLocationsQuery = { __typename: 'Query', locations: { __typename: 'LocationConnection', edges: Array<{ __typename: 'LocationEdge', node: { __typename: 'Location', id: string, name: string, address: string, city: string, province: string | null, country: string, postalCode: string | null } }>, pageInfo: { __typename: 'PageInfo', hasNextPage: boolean | null, endCursor: string | null, totalCount: number | null } } };
+
+export type ApproveEventMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  comments: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type ApproveEventMutation = { __typename: 'Mutation', approveEvent: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type RejectEventMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  comments: Scalars['String']['input'];
+}>;
+
+
+export type RejectEventMutation = { __typename: 'Mutation', rejectEvent: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type RequestEventChangesMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  comments: Scalars['String']['input'];
+}>;
+
+
+export type RequestEventChangesMutation = { __typename: 'Mutation', requestEventChanges: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type FinanceOpsPageFragment = { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null };
+
+export type PayoutOpsFieldsFragment = { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null };
+
+export type PayoutOpsListQueryVariables = Exact<{
+  filter: PayoutRequestFilterInput;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type PayoutOpsListQuery = { __typename: 'Query', payoutRequests: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type PayoutOpsDetailQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type PayoutOpsDetailQuery = { __typename: 'Query', payoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } | null };
+
+export type ProcessPayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+}>;
+
+
+export type ProcessPayoutRequestMutation = { __typename: 'Mutation', processPayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+
+export type CompletePayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  bankReference: Scalars['String']['input'];
+}>;
+
+
+export type CompletePayoutRequestMutation = { __typename: 'Mutation', completePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+
+export type RetryPayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+}>;
+
+
+export type RetryPayoutRequestMutation = { __typename: 'Mutation', retryPayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+
+export type ResumePayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+}>;
+
+
+export type ResumePayoutRequestMutation = { __typename: 'Mutation', resumePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+
+export type MarkPayoutForReviewMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  issueType: PayoutIssueType;
+  notes: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type MarkPayoutForReviewMutation = { __typename: 'Mutation', markPayoutForReview: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+
+export type ResolvePayoutIssueMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  resolutionType: PayoutResolutionType;
+  notes: Scalars['String']['input'];
+}>;
+
+
+export type ResolvePayoutIssueMutation = { __typename: 'Mutation', resolvePayoutIssue: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+
+export type EscalatePayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type EscalatePayoutRequestMutation = { __typename: 'Mutation', escalatePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+
+export type BulkRetryFailedPayoutsMutationVariables = Exact<{
+  payoutRequestIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+}>;
+
+
+export type BulkRetryFailedPayoutsMutation = { __typename: 'Mutation', bulkRetryFailedPayouts: { __typename: 'BulkPayoutOperationResponse', processedCount: number, failedCount: number, failedPayoutIds: Array<string> } };
+
+export type RefundOpsFieldsFragment = { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedById: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, paymentReference: string | null, originalPaymentMethod: string | null, daysBeforeEvent: number | null, policyApplied: string | null };
+
+export type RefundOpsListQueryVariables = Exact<{
+  filter: RefundRequestFilterInput;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type RefundOpsListQuery = { __typename: 'Query', refundRequests: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedById: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, paymentReference: string | null, originalPaymentMethod: string | null, daysBeforeEvent: number | null, policyApplied: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type RefundOpsDetailQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type RefundOpsDetailQuery = { __typename: 'Query', refundRequest: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedById: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, paymentReference: string | null, originalPaymentMethod: string | null, daysBeforeEvent: number | null, policyApplied: string | null } | null };
+
+export type ProcessRefundRequestMutationVariables = Exact<{
+  refundRequestId: Scalars['ID']['input'];
+}>;
+
+
+export type ProcessRefundRequestMutation = { __typename: 'Mutation', processRefundRequest: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedById: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, paymentReference: string | null, originalPaymentMethod: string | null, daysBeforeEvent: number | null, policyApplied: string | null } };
+
+export type BulkApproveRefundsMutationVariables = Exact<{
+  refundRequestIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+}>;
+
+
+export type BulkApproveRefundsMutation = { __typename: 'Mutation', bulkApproveRefunds: { __typename: 'BulkOperationResponse', processedCount: number, failedCount: number } };
+
+export type CreateAdminRefundRequestMutationVariables = Exact<{
+  ticketId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  bypassApproval: InputMaybe<Scalars['Boolean']['input']>;
+}>;
+
+
+export type CreateAdminRefundRequestMutation = { __typename: 'Mutation', createAdminRefundRequest: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, originalTicketPrice: string | null, refundAmount: string, refundPercentage: number | null, platformRetains: string | null, processingFee: string | null, netRefundAmount: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, additionalNotes: string | null, requestedById: string | null, requestedAt: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewComments: string | null, rejectionReason: string | null, processedAt: string | null, paymentReference: string | null, originalPaymentMethod: string | null, daysBeforeEvent: number | null, policyApplied: string | null } };
+
+export type EscrowOpsDetailQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type EscrowOpsDetailQuery = { __typename: 'Query', escrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null } | null };
+
+export type EscrowOpsTransactionsQueryVariables = Exact<{
+  escrowAccountId: Scalars['String']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type EscrowOpsTransactionsQuery = { __typename: 'Query', escrowTransactions: { __typename: 'EscrowTransactionOffsetPage', data: Array<{ __typename: 'StandaloneEscrowTransaction', id: string, type: string, category: string, amount: string, balanceAfter: string, currency: string, description: string | null, payoutRequestId: string | null, refundRequestId: string | null, chargebackId: string | null, timestamp: string }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type EscrowJournalVerificationAllQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type EscrowJournalVerificationAllQuery = { __typename: 'Query', escrowJournalVerificationAll: Array<{ __typename: 'EscrowJournalVerificationResponse', eventId: string, escrowAccountId: string | null, escrowBalance: string | null, journalBalance: string | null, variance: string | null, isConsistent: boolean, status: EscrowJournalVerificationStatus | null }> };
+
+export type LockEscrowAccountMutationVariables = Exact<{
+  accountId: Scalars['ID']['input'];
+  lockUntil: Scalars['DateTime']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type LockEscrowAccountMutation = { __typename: 'Mutation', lockEscrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, currentBalance: string } };
+
+export type UnlockEscrowAccountMutationVariables = Exact<{
+  accountId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type UnlockEscrowAccountMutation = { __typename: 'Mutation', unlockEscrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, currentBalance: string } };
+
+export type MarkPayoutEligibleMutationVariables = Exact<{
+  accountId: Scalars['ID']['input'];
+}>;
+
+
+export type MarkPayoutEligibleMutation = { __typename: 'Mutation', markPayoutEligible: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, currentBalance: string } };
+
+export type CloseEscrowAccountMutationVariables = Exact<{
+  accountId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type CloseEscrowAccountMutation = { __typename: 'Mutation', closeEscrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, currentBalance: string } };
+
+export type ChargebackOpsFieldsFragment = { __typename: 'ChargebackRecord', id: string, chargebackId: string, originalTransactionId: string, ticketId: string, eventId: string, organizerId: string, customerId: string, originalAmount: string, chargebackAmount: string, chargebackFee: string, currency: string, reason: ChargebackReason, status: ChargebackStatus, receivedAt: string, responseDeadline: string, evidenceSubmitted: string | null, resolvedAt: string | null, recoveryStatus: RecoveryStatus, recoveredAmount: string | null, fundSource: ChargebackFundSource | null, createdAt: string };
+
+export type ChargebackOpsListQueryVariables = Exact<{
+  filter: InputMaybe<ChargebackFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type ChargebackOpsListQuery = { __typename: 'Query', chargebacks: { __typename: 'ChargebackOffsetPage', data: Array<{ __typename: 'ChargebackRecord', id: string, chargebackId: string, originalTransactionId: string, ticketId: string, eventId: string, organizerId: string, customerId: string, originalAmount: string, chargebackAmount: string, chargebackFee: string, currency: string, reason: ChargebackReason, status: ChargebackStatus, receivedAt: string, responseDeadline: string, evidenceSubmitted: string | null, resolvedAt: string | null, recoveryStatus: RecoveryStatus, recoveredAmount: string | null, fundSource: ChargebackFundSource | null, createdAt: string }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type ChargebackOpsPendingQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ChargebackOpsPendingQuery = { __typename: 'Query', pendingChargebacks: Array<{ __typename: 'ChargebackRecord', id: string, chargebackAmount: string, responseDeadline: string, status: ChargebackStatus }>, chargebacksPendingRecovery: Array<{ __typename: 'ChargebackRecord', id: string }> };
+
+export type ChargebackOpsStatsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ChargebackOpsStatsQuery = { __typename: 'Query', chargebackStats: { __typename: 'ChargebackStats', totalCount: number, pendingCount: number, disputedCount: number, wonCount: number, lostCount: number, totalAmount: string, recoveredAmount: string, writtenOffAmount: string, winRate: number } };
+
+export type ReceiveChargebackMutationVariables = Exact<{
+  input: ReceiveChargebackInput;
+}>;
+
+
+export type ReceiveChargebackMutation = { __typename: 'Mutation', receiveChargeback: { __typename: 'ChargebackRecord', id: string, chargebackId: string, originalTransactionId: string, ticketId: string, eventId: string, organizerId: string, customerId: string, originalAmount: string, chargebackAmount: string, chargebackFee: string, currency: string, reason: ChargebackReason, status: ChargebackStatus, receivedAt: string, responseDeadline: string, evidenceSubmitted: string | null, resolvedAt: string | null, recoveryStatus: RecoveryStatus, recoveredAmount: string | null, fundSource: ChargebackFundSource | null, createdAt: string } };
+
+export type StartChargebackReviewMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  notes: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type StartChargebackReviewMutation = { __typename: 'Mutation', startChargebackReview: { __typename: 'ChargebackRecord', id: string, chargebackId: string, originalTransactionId: string, ticketId: string, eventId: string, organizerId: string, customerId: string, originalAmount: string, chargebackAmount: string, chargebackFee: string, currency: string, reason: ChargebackReason, status: ChargebackStatus, receivedAt: string, responseDeadline: string, evidenceSubmitted: string | null, resolvedAt: string | null, recoveryStatus: RecoveryStatus, recoveredAmount: string | null, fundSource: ChargebackFundSource | null, createdAt: string } };
+
+export type AcceptChargebackMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type AcceptChargebackMutation = { __typename: 'Mutation', acceptChargeback: { __typename: 'ChargebackRecord', id: string, chargebackId: string, originalTransactionId: string, ticketId: string, eventId: string, organizerId: string, customerId: string, originalAmount: string, chargebackAmount: string, chargebackFee: string, currency: string, reason: ChargebackReason, status: ChargebackStatus, receivedAt: string, responseDeadline: string, evidenceSubmitted: string | null, resolvedAt: string | null, recoveryStatus: RecoveryStatus, recoveredAmount: string | null, fundSource: ChargebackFundSource | null, createdAt: string } };
+
+export type DisputeChargebackMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: DisputeChargebackInput;
+}>;
+
+
+export type DisputeChargebackMutation = { __typename: 'Mutation', disputeChargeback: { __typename: 'ChargebackRecord', id: string, chargebackId: string, originalTransactionId: string, ticketId: string, eventId: string, organizerId: string, customerId: string, originalAmount: string, chargebackAmount: string, chargebackFee: string, currency: string, reason: ChargebackReason, status: ChargebackStatus, receivedAt: string, responseDeadline: string, evidenceSubmitted: string | null, resolvedAt: string | null, recoveryStatus: RecoveryStatus, recoveredAmount: string | null, fundSource: ChargebackFundSource | null, createdAt: string } };
+
+export type RecordChargebackOutcomeMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  won: Scalars['Boolean']['input'];
+  notes: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type RecordChargebackOutcomeMutation = { __typename: 'Mutation', recordChargebackOutcome: { __typename: 'ChargebackRecord', id: string, chargebackId: string, originalTransactionId: string, ticketId: string, eventId: string, organizerId: string, customerId: string, originalAmount: string, chargebackAmount: string, chargebackFee: string, currency: string, reason: ChargebackReason, status: ChargebackStatus, receivedAt: string, responseDeadline: string, evidenceSubmitted: string | null, resolvedAt: string | null, recoveryStatus: RecoveryStatus, recoveredAmount: string | null, fundSource: ChargebackFundSource | null, createdAt: string } };
+
+export type VerifyBankAccountMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type VerifyBankAccountMutation = { __typename: 'Mutation', verifyBankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, verifiedAt: string | null } };
+
+export type ApprovePayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  notes: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type ApprovePayoutRequestMutation = { __typename: 'Mutation', approvePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventTitle: string | null, requestedAmount: string, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, approvedAt: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, bankName: string | null, accountNumber: string | null, notes: string | null } };
+
+export type RejectPayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  rejectionReason: Scalars['String']['input'];
+}>;
+
+
+export type RejectPayoutRequestMutation = { __typename: 'Mutation', rejectPayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventTitle: string | null, requestedAmount: string, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, approvedAt: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, bankName: string | null, accountNumber: string | null, notes: string | null } };
+
+export type ApproveRefundRequestMutationVariables = Exact<{
+  refundRequestId: Scalars['ID']['input'];
+  reviewComments: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type ApproveRefundRequestMutation = { __typename: 'Mutation', approveRefundRequest: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, refundAmount: string, netRefundAmount: string | null, processingFee: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, requestedAt: string | null, reviewedAt: string | null, rejectionReason: string | null, processedAt: string | null, policyApplied: string | null } };
+
+export type RejectRefundRequestMutationVariables = Exact<{
+  refundRequestId: Scalars['ID']['input'];
+  rejectionReason: Scalars['String']['input'];
+}>;
+
+
+export type RejectRefundRequestMutation = { __typename: 'Mutation', rejectRefundRequest: { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, refundAmount: string, netRefundAmount: string | null, processingFee: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, requestedAt: string | null, reviewedAt: string | null, rejectionReason: string | null, processedAt: string | null, policyApplied: string | null } };
+
+export type UpdateEscrowAccountStatusMutationVariables = Exact<{
+  accountId: Scalars['ID']['input'];
+  status: EscrowAccountStatus;
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type UpdateEscrowAccountStatusMutation = { __typename: 'Mutation', updateEscrowAccountStatus: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null } };
+
+export type FinancePaginationFieldsFragment = { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null };
+
+export type PayoutListFieldsFragment = { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventTitle: string | null, requestedAmount: string, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, approvedAt: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, bankName: string | null, accountNumber: string | null, notes: string | null };
+
+export type AdminPayoutRequestsQueryVariables = Exact<{
+  filter: PayoutRequestFilterInput;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type AdminPayoutRequestsQuery = { __typename: 'Query', payoutRequests: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventTitle: string | null, requestedAmount: string, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, approvedAt: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, bankName: string | null, accountNumber: string | null, notes: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type PayoutRequestStatsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PayoutRequestStatsQuery = { __typename: 'Query', payoutRequestStats: { __typename: 'PayoutRequestStats', totalPayoutRequests: number, pendingPayoutRequests: number, approvedPayoutRequests: number, processingPayoutRequests: number, completedPayoutRequests: number, failedPayoutRequests: number, totalPayoutAmount: string, pendingPayoutAmount: string } };
+
+export type RefundListFieldsFragment = { __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, refundAmount: string, netRefundAmount: string | null, processingFee: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, requestedAt: string | null, reviewedAt: string | null, rejectionReason: string | null, processedAt: string | null, policyApplied: string | null };
+
+export type AdminRefundRequestsQueryVariables = Exact<{
+  filter: RefundRequestFilterInput;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type AdminRefundRequestsQuery = { __typename: 'Query', refundRequests: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, buyerId: string, refundAmount: string, netRefundAmount: string | null, processingFee: string | null, currency: string, status: RefundRequestStatus, requestType: RefundRequestType, reason: string, requestedAt: string | null, reviewedAt: string | null, rejectionReason: string | null, processedAt: string | null, policyApplied: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type RefundStatusCountQueryVariables = Exact<{
+  filter: RefundRequestFilterInput;
+}>;
+
+
+export type RefundStatusCountQuery = { __typename: 'Query', refundRequests: { __typename: 'RefundRequestOffsetPage', pagination: { __typename: 'PaginationInfo', totalCount: number | null } } };
+
+export type EscrowListFieldsFragment = { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null };
+
+export type AdminEscrowAccountsQueryVariables = Exact<{
+  filter: InputMaybe<EscrowAccountFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type AdminEscrowAccountsQuery = { __typename: 'Query', escrowAccounts: { __typename: 'EscrowAccountOffsetPage', data: Array<{ __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, organizerName: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type PayoutRecoveryFieldsFragment = { __typename: 'PayoutRequest', issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, stuckAt: string | null, reviewedAt: string | null, reviewNotes: string | null, retryCount: number | null, lastError: string | null };
+
+export type PayoutRecoverySummaryQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PayoutRecoverySummaryQuery = { __typename: 'Query', payoutRecoverySummary: { __typename: 'PayoutRecoverySummary', totalPayoutsForReview: number, pendingReviewCount: number, underReviewCount: number, stuckPayoutsCount: number, retryablePayoutsCount: number, recentlyResolvedCount: number, averageResolutionTimeMinutes: number | null, totalAmountAtRisk: string, issuesByType: Array<{ __typename: 'PayoutIssueTypeStats', issueType: PayoutIssueType, count: number, percentage: number, unresolvedCount: number, totalAmount: string }> } };
+
+export type StuckPayoutRequestsQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type StuckPayoutRequestsQuery = { __typename: 'Query', stuckPayoutRequests: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventTitle: string | null, requestedAmount: string, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, approvedAt: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, bankName: string | null, accountNumber: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, stuckAt: string | null, reviewedAt: string | null, reviewNotes: string | null, retryCount: number | null, lastError: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type RetryablePayoutRequestsQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type RetryablePayoutRequestsQuery = { __typename: 'Query', retryablePayoutRequests: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventTitle: string | null, requestedAmount: string, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, approvedAt: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, bankName: string | null, accountNumber: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, stuckAt: string | null, reviewedAt: string | null, reviewNotes: string | null, retryCount: number | null, lastError: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type PayoutsForReviewQueryVariables = Exact<{
+  reviewStatus: InputMaybe<PayoutReviewStatus>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type PayoutsForReviewQuery = { __typename: 'Query', payoutRequestsForReview: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, organizerName: string | null, eventTitle: string | null, requestedAmount: string, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, approvedAt: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, bankName: string | null, accountNumber: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, stuckAt: string | null, reviewedAt: string | null, reviewNotes: string | null, retryCount: number | null, lastError: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type IdentityAdminCreateUserMutationVariables = Exact<{
+  input: CreateUserInput;
+}>;
+
+
+export type IdentityAdminCreateUserMutation = { __typename: 'Mutation', createUser: { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null } };
+
+export type IdentityAdminUpdateUserMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateUserInput;
+}>;
+
+
+export type IdentityAdminUpdateUserMutation = { __typename: 'Mutation', updateUser: { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null } };
+
+export type IdentityAdminSuspendUserMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type IdentityAdminSuspendUserMutation = { __typename: 'Mutation', suspendUser: { __typename: 'User', id: string, accountStatus: AccountStatus } };
+
+export type IdentityAdminUnsuspendUserMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminUnsuspendUserMutation = { __typename: 'Mutation', unsuspendUser: { __typename: 'User', id: string, accountStatus: AccountStatus } };
+
+export type IdentityAdminLockUserMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type IdentityAdminLockUserMutation = { __typename: 'Mutation', lockUser: boolean };
+
+export type IdentityAdminUnlockUserMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminUnlockUserMutation = { __typename: 'Mutation', unlockUser: boolean };
+
+export type IdentityAdminActivateUserMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminActivateUserMutation = { __typename: 'Mutation', activateUser: boolean };
+
+export type IdentityAdminDeactivateUserMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminDeactivateUserMutation = { __typename: 'Mutation', deactivateUser: boolean };
+
+export type IdentityAdminSetUserRolesMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+  roles: Array<UserType> | UserType;
+}>;
+
+
+export type IdentityAdminSetUserRolesMutation = { __typename: 'Mutation', setUserRoles: { __typename: 'User', id: string, roles: Array<UserType> } };
+
+export type IdentityAdminSyncUserMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminSyncUserMutation = { __typename: 'Mutation', syncUserFromKeycloak: { __typename: 'User', id: string } | null };
+
+export type IdentityAdminSyncAllUsersMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type IdentityAdminSyncAllUsersMutation = { __typename: 'Mutation', syncAllUsersFromKeycloak: boolean };
+
+export type IdentityAdminSuspendOrgMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type IdentityAdminSuspendOrgMutation = { __typename: 'Mutation', suspendOrganization: { __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, ownerId: string, businessEmail: string | null, businessPhone: string | null, taxId: string | null, businessRegistrationNumber: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, rejectionReason: string | null, suspensionReason: string | null, commissionRate: number | null, memberCount: number, totalEvents: number | null, createdAt: string, owner: { __typename: 'User', id: string, fullName: string, email: string | null, contacts: Array<{ __typename: 'Contact', valueMasked: string, primary: boolean }> } | null, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null, addressLine1: string | null } | null, payoutConfig: { __typename: 'PayoutConfig', commissionRate: number | null, preferredMethod: PayoutMethod | null, verified: boolean, isConfigured: boolean, bankAccount: { __typename: 'PayoutBankDetails', bankName: string | null, maskedAccountNumber: string | null, accountHolderName: string | null, accountType: string | null, verified: boolean } | null, mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean } | null } | null } | null };
+
+export type IdentityAdminUnsuspendOrgMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminUnsuspendOrgMutation = { __typename: 'Mutation', unsuspendOrganization: { __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, ownerId: string, businessEmail: string | null, businessPhone: string | null, taxId: string | null, businessRegistrationNumber: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, rejectionReason: string | null, suspensionReason: string | null, commissionRate: number | null, memberCount: number, totalEvents: number | null, createdAt: string, owner: { __typename: 'User', id: string, fullName: string, email: string | null, contacts: Array<{ __typename: 'Contact', valueMasked: string, primary: boolean }> } | null, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null, addressLine1: string | null } | null, payoutConfig: { __typename: 'PayoutConfig', commissionRate: number | null, preferredMethod: PayoutMethod | null, verified: boolean, isConfigured: boolean, bankAccount: { __typename: 'PayoutBankDetails', bankName: string | null, maskedAccountNumber: string | null, accountHolderName: string | null, accountType: string | null, verified: boolean } | null, mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean } | null } | null } | null };
+
+export type IdentityAdminUpdateOrgStatusMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  status: OrganizationStatus;
+}>;
+
+
+export type IdentityAdminUpdateOrgStatusMutation = { __typename: 'Mutation', updateOrganizationStatus: { __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, ownerId: string, businessEmail: string | null, businessPhone: string | null, taxId: string | null, businessRegistrationNumber: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, rejectionReason: string | null, suspensionReason: string | null, commissionRate: number | null, memberCount: number, totalEvents: number | null, createdAt: string, owner: { __typename: 'User', id: string, fullName: string, email: string | null, contacts: Array<{ __typename: 'Contact', valueMasked: string, primary: boolean }> } | null, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null, addressLine1: string | null } | null, payoutConfig: { __typename: 'PayoutConfig', commissionRate: number | null, preferredMethod: PayoutMethod | null, verified: boolean, isConfigured: boolean, bankAccount: { __typename: 'PayoutBankDetails', bankName: string | null, maskedAccountNumber: string | null, accountHolderName: string | null, accountType: string | null, verified: boolean } | null, mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean } | null } | null } | null };
+
+export type IdentityAdminVerifyPayoutMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  verified: Scalars['Boolean']['input'];
+}>;
+
+
+export type IdentityAdminVerifyPayoutMutation = { __typename: 'Mutation', verifyPayoutAccount: { __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, ownerId: string, businessEmail: string | null, businessPhone: string | null, taxId: string | null, businessRegistrationNumber: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, rejectionReason: string | null, suspensionReason: string | null, commissionRate: number | null, memberCount: number, totalEvents: number | null, createdAt: string, owner: { __typename: 'User', id: string, fullName: string, email: string | null, contacts: Array<{ __typename: 'Contact', valueMasked: string, primary: boolean }> } | null, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null, addressLine1: string | null } | null, payoutConfig: { __typename: 'PayoutConfig', commissionRate: number | null, preferredMethod: PayoutMethod | null, verified: boolean, isConfigured: boolean, bankAccount: { __typename: 'PayoutBankDetails', bankName: string | null, maskedAccountNumber: string | null, accountHolderName: string | null, accountType: string | null, verified: boolean } | null, mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean } | null } | null } | null };
+
+export type AdminPermissionCatalogueQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type AdminPermissionCatalogueQuery = { __typename: 'Query', permissions: Array<{ __typename: 'Permission', code: string, module: string, description: string, scope: PermissionScope }> };
+
+export type AdminRolePermissionsQueryVariables = Exact<{
+  role: Scalars['String']['input'];
+}>;
+
+
+export type AdminRolePermissionsQuery = { __typename: 'Query', rolePermissions: { __typename: 'RolePermissions', role: string, scope: PermissionScope, permissions: Array<{ __typename: 'Permission', code: string }>, switchable: Array<{ __typename: 'Permission', code: string }> } | null };
+
+export type AdminUserRowFieldsFragment = { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null };
+
+export type IdentityAdminUsersQueryVariables = Exact<{
+  search: InputMaybe<Scalars['String']['input']>;
+  role: InputMaybe<UserType>;
+  accountStatus: InputMaybe<AccountStatus>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type IdentityAdminUsersQuery = { __typename: 'Query', users: { __typename: 'UserOffsetPage', content: Array<{ __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null }>, pageInfo: { __typename: 'PageInfo', currentPage: number | null, pageSize: number | null, totalCount: number | null } } };
+
+export type IdentityAdminUserQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminUserQuery = { __typename: 'Query', user: { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null, contacts: Array<{ __typename: 'Contact', id: string, type: ContactType, valueMasked: string, verifiedAt: string | null, primary: boolean }>, organizationMemberships: Array<{ __typename: 'OrganizationMember', role: OrganizationRole, status: MemberStatus, organization: { __typename: 'Organization', id: string, name: string } | null }> | null } | null };
+
+export type IdentityAdminUserByEmailQueryVariables = Exact<{
+  email: Scalars['String']['input'];
+}>;
+
+
+export type IdentityAdminUserByEmailQuery = { __typename: 'Query', userByEmail: { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null } | null };
+
+export type IdentityAdminUserByPhoneQueryVariables = Exact<{
+  phoneNumber: Scalars['String']['input'];
+}>;
+
+
+export type IdentityAdminUserByPhoneQuery = { __typename: 'Query', userByPhone: { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null } | null };
+
+export type AdminOrgRowFieldsFragment = { __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, ownerId: string, businessEmail: string | null, businessPhone: string | null, taxId: string | null, businessRegistrationNumber: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, rejectionReason: string | null, suspensionReason: string | null, commissionRate: number | null, memberCount: number, totalEvents: number | null, createdAt: string, owner: { __typename: 'User', id: string, fullName: string, email: string | null, contacts: Array<{ __typename: 'Contact', valueMasked: string, primary: boolean }> } | null, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null, addressLine1: string | null } | null, payoutConfig: { __typename: 'PayoutConfig', commissionRate: number | null, preferredMethod: PayoutMethod | null, verified: boolean, isConfigured: boolean, bankAccount: { __typename: 'PayoutBankDetails', bankName: string | null, maskedAccountNumber: string | null, accountHolderName: string | null, accountType: string | null, verified: boolean } | null, mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean } | null } | null };
+
+export type IdentityAdminOrganizationsQueryVariables = Exact<{
+  search: InputMaybe<Scalars['String']['input']>;
+  status: InputMaybe<OrganizationStatus>;
+  verified: InputMaybe<Scalars['Boolean']['input']>;
+  kybStatus: InputMaybe<KybStatus>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type IdentityAdminOrganizationsQuery = { __typename: 'Query', organizations: { __typename: 'OrganizationOffsetPage', content: Array<{ __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, ownerId: string, businessEmail: string | null, businessPhone: string | null, taxId: string | null, businessRegistrationNumber: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, rejectionReason: string | null, suspensionReason: string | null, commissionRate: number | null, memberCount: number, totalEvents: number | null, createdAt: string, owner: { __typename: 'User', id: string, fullName: string, email: string | null, contacts: Array<{ __typename: 'Contact', valueMasked: string, primary: boolean }> } | null, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null, addressLine1: string | null } | null, payoutConfig: { __typename: 'PayoutConfig', commissionRate: number | null, preferredMethod: PayoutMethod | null, verified: boolean, isConfigured: boolean, bankAccount: { __typename: 'PayoutBankDetails', bankName: string | null, maskedAccountNumber: string | null, accountHolderName: string | null, accountType: string | null, verified: boolean } | null, mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean } | null } | null }>, pageInfo: { __typename: 'PageInfo', currentPage: number | null, pageSize: number | null, totalCount: number | null } } };
+
+export type IdentityAdminOrganizationQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminOrganizationQuery = { __typename: 'Query', organization: { __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, ownerId: string, businessEmail: string | null, businessPhone: string | null, taxId: string | null, businessRegistrationNumber: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, rejectionReason: string | null, suspensionReason: string | null, commissionRate: number | null, memberCount: number, totalEvents: number | null, createdAt: string, owner: { __typename: 'User', id: string, fullName: string, email: string | null, contacts: Array<{ __typename: 'Contact', valueMasked: string, primary: boolean }> } | null, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null, addressLine1: string | null } | null, payoutConfig: { __typename: 'PayoutConfig', commissionRate: number | null, preferredMethod: PayoutMethod | null, verified: boolean, isConfigured: boolean, bankAccount: { __typename: 'PayoutBankDetails', bankName: string | null, maskedAccountNumber: string | null, accountHolderName: string | null, accountType: string | null, verified: boolean } | null, mobileMoneyAccount: { __typename: 'MobileMoneyAccount', provider: MobileMoneyProvider | null, maskedPhoneNumber: string | null, accountHolderName: string | null, verified: boolean } | null } | null } | null };
+
+export type IdentityAdminOrgMembersQueryVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type IdentityAdminOrgMembersQuery = { __typename: 'Query', organizationMembers: { __typename: 'OrganizationMemberOffsetPage', content: Array<{ __typename: 'OrganizationMember', id: string, userId: string, role: OrganizationRole, status: MemberStatus, user: { __typename: 'User', id: string, fullName: string } | null }>, pageInfo: { __typename: 'PageInfo', currentPage: number | null, pageSize: number | null, totalCount: number | null } } };
+
+export type IdentityAdminOrgDocumentsQueryVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminOrgDocumentsQuery = { __typename: 'Query', verificationDocuments: Array<{ __typename: 'VerificationDocument', id: string, documentType: string, fileName: string | null, status: DocumentStatus, uploadedAt: string, rejectionReason: string | null }> };
+
+export type IdentityAdminOrgEventsQueryVariables = Exact<{
+  filter: InputMaybe<EventFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type IdentityAdminOrgEventsQuery = { __typename: 'Query', events: { __typename: 'EventOffsetPage', totalElements: number, content: Array<{ __typename: 'Event', id: string, title: string, status: EventStatus, eventDateTime: string, soldTickets: number }> } };
+
+export type IdentityAdminUserTicketsQueryVariables = Exact<{
+  buyerId: Scalars['String']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type IdentityAdminUserTicketsQuery = { __typename: 'Query', ticketsByBuyerOffsetPagination: { __typename: 'TicketOffsetPage', data: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventTitle: string, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, purchaseDate: string | null, paymentReference: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalCount: number | null } } };
+
+export type IdentityAdminUserRefundsQueryVariables = Exact<{
+  buyerId: Scalars['String']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type IdentityAdminUserRefundsQuery = { __typename: 'Query', refundRequestsByBuyer: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketNumber: string, refundAmount: string, currency: string, status: RefundRequestStatus, requestedAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalCount: number | null } } };
+
+export type LedgerChartOfAccountsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type LedgerChartOfAccountsQuery = { __typename: 'Query', chartOfAccounts: Array<{ __typename: 'ChartOfAccountsEntry', id: string, accountCode: string, accountName: string, accountType: AccountType, subType: AccountSubType | null, parentAccountCode: string | null, currency: string, isActive: boolean, description: string | null, normalBalance: BalanceDirection }> };
+
+export type LedgerCreateAccountMutationVariables = Exact<{
+  input: CreateChartOfAccountsInput;
+}>;
+
+
+export type LedgerCreateAccountMutation = { __typename: 'Mutation', createChartOfAccountsEntry: { __typename: 'ChartOfAccountsEntry', id: string, accountCode: string } };
+
+export type LedgerUpdateAccountMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: CreateChartOfAccountsInput;
+}>;
+
+
+export type LedgerUpdateAccountMutation = { __typename: 'Mutation', updateChartOfAccountsEntry: { __typename: 'ChartOfAccountsEntry', id: string, accountCode: string } };
+
+export type LedgerDeactivateAccountMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type LedgerDeactivateAccountMutation = { __typename: 'Mutation', deactivateChartOfAccountsEntry: { __typename: 'ChartOfAccountsEntry', id: string, isActive: boolean } };
+
+export type LedgerSeedChartMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type LedgerSeedChartMutation = { __typename: 'Mutation', seedChartOfAccounts: boolean };
+
+export type LedgerJournalEntryFieldsFragment = { __typename: 'JournalEntry', id: string, entryNumber: string, correlationId: string | null, entryDate: string, description: string, type: JournalEntryType, status: JournalEntryStatus, createdBy: string | null, postedBy: string | null, postedAt: string | null, reversedBy: string | null, reversedAt: string | null, reversalEntryId: string | null, reversedByEntryId: string | null, totalDebits: string, totalCredits: string, isBalanced: boolean, lines: Array<{ __typename: 'JournalLine', accountCode: string, accountName: string, debit: string | null, credit: string | null, description: string | null }> };
+
+export type LedgerJournalEntriesQueryVariables = Exact<{
+  filter: InputMaybe<JournalEntryFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type LedgerJournalEntriesQuery = { __typename: 'Query', journalEntries: { __typename: 'JournalEntryOffsetPage', data: Array<{ __typename: 'JournalEntry', id: string, entryNumber: string, correlationId: string | null, entryDate: string, description: string, type: JournalEntryType, status: JournalEntryStatus, createdBy: string | null, postedBy: string | null, postedAt: string | null, reversedBy: string | null, reversedAt: string | null, reversalEntryId: string | null, reversedByEntryId: string | null, totalDebits: string, totalCredits: string, isBalanced: boolean, lines: Array<{ __typename: 'JournalLine', accountCode: string, accountName: string, debit: string | null, credit: string | null, description: string | null }> }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type LedgerCreateJournalEntryMutationVariables = Exact<{
+  input: CreateJournalEntryInput;
+}>;
+
+
+export type LedgerCreateJournalEntryMutation = { __typename: 'Mutation', createJournalEntry: { __typename: 'JournalEntry', id: string, entryNumber: string, correlationId: string | null, entryDate: string, description: string, type: JournalEntryType, status: JournalEntryStatus, createdBy: string | null, postedBy: string | null, postedAt: string | null, reversedBy: string | null, reversedAt: string | null, reversalEntryId: string | null, reversedByEntryId: string | null, totalDebits: string, totalCredits: string, isBalanced: boolean, lines: Array<{ __typename: 'JournalLine', accountCode: string, accountName: string, debit: string | null, credit: string | null, description: string | null }> } };
+
+export type LedgerPostJournalEntryMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type LedgerPostJournalEntryMutation = { __typename: 'Mutation', postJournalEntry: { __typename: 'JournalEntry', id: string, entryNumber: string, correlationId: string | null, entryDate: string, description: string, type: JournalEntryType, status: JournalEntryStatus, createdBy: string | null, postedBy: string | null, postedAt: string | null, reversedBy: string | null, reversedAt: string | null, reversalEntryId: string | null, reversedByEntryId: string | null, totalDebits: string, totalCredits: string, isBalanced: boolean, lines: Array<{ __typename: 'JournalLine', accountCode: string, accountName: string, debit: string | null, credit: string | null, description: string | null }> } };
+
+export type LedgerReverseJournalEntryMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type LedgerReverseJournalEntryMutation = { __typename: 'Mutation', reverseJournalEntry: { __typename: 'JournalEntry', id: string, entryNumber: string, correlationId: string | null, entryDate: string, description: string, type: JournalEntryType, status: JournalEntryStatus, createdBy: string | null, postedBy: string | null, postedAt: string | null, reversedBy: string | null, reversedAt: string | null, reversalEntryId: string | null, reversedByEntryId: string | null, totalDebits: string, totalCredits: string, isBalanced: boolean, lines: Array<{ __typename: 'JournalLine', accountCode: string, accountName: string, debit: string | null, credit: string | null, description: string | null }> } };
+
+export type LedgerTrialBalanceQueryVariables = Exact<{
+  asOf: InputMaybe<Scalars['DateTime']['input']>;
+}>;
+
+
+export type LedgerTrialBalanceQuery = { __typename: 'Query', trialBalance: Array<{ __typename: 'AccountBalance', accountCode: string, accountName: string, accountType: string, debitBalance: string, creditBalance: string, netBalance: string }> };
+
+export type LedgerPlatformAccountsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type LedgerPlatformAccountsQuery = { __typename: 'Query', platformAccounts: Array<{ __typename: 'PlatformAccount', id: string, accountType: PlatformAccountType, name: string, balance: string, currency: string, lastUpdatedAt: string | null }> };
+
+export type LedgerReconciliationRunsQueryVariables = Exact<{
+  filter: InputMaybe<ReconciliationFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type LedgerReconciliationRunsQuery = { __typename: 'Query', reconciliationRuns: { __typename: 'ReconciliationRunOffsetPage', data: Array<{ __typename: 'ReconciliationRun', id: string, reconciliationDate: string, type: ReconciliationType, status: ReconciliationStatus, dataSource: string | null, expectedTotal: string | null, actualTotal: string | null, variance: string | null, matchedCount: number, unmatchedCount: number, runBy: string | null, startedAt: string, completedAt: string | null, notes: string | null, items: Array<{ __typename: 'ReconciliationItem', externalId: string | null, internalId: string | null, externalAmount: string | null, internalAmount: string | null, status: ReconciliationItemStatus, resolution: string | null, resolvedBy: string | null, resolvedAt: string | null }> }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type LedgerStartReconciliationMutationVariables = Exact<{
+  input: StartReconciliationInput;
+}>;
+
+
+export type LedgerStartReconciliationMutation = { __typename: 'Mutation', startReconciliation: { __typename: 'ReconciliationRun', id: string, status: ReconciliationStatus, notes: string | null, unmatchedCount: number } };
+
+export type LedgerResolveReconciliationItemMutationVariables = Exact<{
+  runId: Scalars['ID']['input'];
+  input: ResolveReconciliationItemInput;
+}>;
+
+
+export type LedgerResolveReconciliationItemMutation = { __typename: 'Mutation', resolveReconciliationItem: { __typename: 'ReconciliationRun', id: string, status: ReconciliationStatus, notes: string | null, unmatchedCount: number } };
+
+export type LedgerCompleteReconciliationMutationVariables = Exact<{
+  runId: Scalars['ID']['input'];
+  notes: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type LedgerCompleteReconciliationMutation = { __typename: 'Mutation', completeReconciliation: { __typename: 'ReconciliationRun', id: string, status: ReconciliationStatus, notes: string | null, unmatchedCount: number } };
+
+export type LedgerFailReconciliationMutationVariables = Exact<{
+  runId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type LedgerFailReconciliationMutation = { __typename: 'Mutation', failReconciliation: { __typename: 'ReconciliationRun', id: string, status: ReconciliationStatus, notes: string | null, unmatchedCount: number } };
+
+export type LedgerRecordGatewaySettlementMutationVariables = Exact<{
+  input: RecordGatewaySettlementInput;
+}>;
+
+
+export type LedgerRecordGatewaySettlementMutation = { __typename: 'Mutation', recordGatewaySettlement: { __typename: 'JournalEntry', id: string, entryNumber: string, status: JournalEntryStatus } };
+
+export type OpsMediaAssetFieldsFragment = { __typename: 'MediaAsset', id: string, eventId: string | null, organizationId: string | null, fileName: string, title: string | null, altText: string | null, contentType: string, sizeBytes: number, url: string, status: MediaStatus, flaggedAt: string | null, flaggedReason: string | null, removedAt: string | null, removedReason: string | null, uploadedBy: string | null, createdAt: string | null, updatedAt: string | null, moderationLog: Array<{ __typename: 'MediaModerationEntry', action: string, reason: string | null, actorId: string | null, at: string | null }> | null };
+
+export type OpsMediaAssetsQueryVariables = Exact<{
+  filter: InputMaybe<MediaModerationFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsMediaAssetsQuery = { __typename: 'Query', mediaAssets: { __typename: 'MediaAssetOffsetPage', totalElements: number, totalPages: number, pageNumber: number, pageSize: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'MediaAsset', id: string, eventId: string | null, organizationId: string | null, fileName: string, title: string | null, altText: string | null, contentType: string, sizeBytes: number, url: string, status: MediaStatus, flaggedAt: string | null, flaggedReason: string | null, removedAt: string | null, removedReason: string | null, uploadedBy: string | null, createdAt: string | null, updatedAt: string | null, moderationLog: Array<{ __typename: 'MediaModerationEntry', action: string, reason: string | null, actorId: string | null, at: string | null }> | null }> } };
+
+export type OpsFlagMediaMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsFlagMediaMutation = { __typename: 'Mutation', flagMedia: { __typename: 'MediaAsset', id: string, eventId: string | null, organizationId: string | null, fileName: string, title: string | null, altText: string | null, contentType: string, sizeBytes: number, url: string, status: MediaStatus, flaggedAt: string | null, flaggedReason: string | null, removedAt: string | null, removedReason: string | null, uploadedBy: string | null, createdAt: string | null, updatedAt: string | null, moderationLog: Array<{ __typename: 'MediaModerationEntry', action: string, reason: string | null, actorId: string | null, at: string | null }> | null } };
+
+export type OpsRemoveMediaMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsRemoveMediaMutation = { __typename: 'Mutation', removeMedia: { __typename: 'MediaAsset', id: string, eventId: string | null, organizationId: string | null, fileName: string, title: string | null, altText: string | null, contentType: string, sizeBytes: number, url: string, status: MediaStatus, flaggedAt: string | null, flaggedReason: string | null, removedAt: string | null, removedReason: string | null, uploadedBy: string | null, createdAt: string | null, updatedAt: string | null, moderationLog: Array<{ __typename: 'MediaModerationEntry', action: string, reason: string | null, actorId: string | null, at: string | null }> | null } };
+
+export type OpsRestoreMediaMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OpsRestoreMediaMutation = { __typename: 'Mutation', restoreMedia: { __typename: 'MediaAsset', id: string, eventId: string | null, organizationId: string | null, fileName: string, title: string | null, altText: string | null, contentType: string, sizeBytes: number, url: string, status: MediaStatus, flaggedAt: string | null, flaggedReason: string | null, removedAt: string | null, removedReason: string | null, uploadedBy: string | null, createdAt: string | null, updatedAt: string | null, moderationLog: Array<{ __typename: 'MediaModerationEntry', action: string, reason: string | null, actorId: string | null, at: string | null }> | null } };
+
+export type OpsStockImageFieldsFragment = { __typename: 'StockImage', id: string, title: string | null, altText: string | null, url: string, purpose: StockImagePurpose, categoryCode: string | null, active: boolean, createdAt: string | null, updatedAt: string | null };
+
+export type OpsStockImagesQueryVariables = Exact<{
+  filter: InputMaybe<StockImageFilterInput>;
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type OpsStockImagesQuery = { __typename: 'Query', stockImages: { __typename: 'StockImageConnection', edges: Array<{ __typename: 'StockImageEdge', node: { __typename: 'StockImage', id: string, title: string | null, altText: string | null, url: string, purpose: StockImagePurpose, categoryCode: string | null, active: boolean, createdAt: string | null, updatedAt: string | null } }> } };
+
+export type OpsUploadStockImageMutationVariables = Exact<{
+  input: UploadStockImageInput;
+}>;
+
+
+export type OpsUploadStockImageMutation = { __typename: 'Mutation', uploadStockImage: { __typename: 'StockImage', id: string, title: string | null, altText: string | null, url: string, purpose: StockImagePurpose, categoryCode: string | null, active: boolean, createdAt: string | null, updatedAt: string | null } };
+
+export type OpsUpdateStockImageMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateStockImageInput;
+}>;
+
+
+export type OpsUpdateStockImageMutation = { __typename: 'Mutation', updateStockImage: { __typename: 'StockImage', id: string, title: string | null, altText: string | null, url: string, purpose: StockImagePurpose, categoryCode: string | null, active: boolean, createdAt: string | null, updatedAt: string | null } };
+
+export type OpsDeleteStockImageMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OpsDeleteStockImageMutation = { __typename: 'Mutation', deleteStockImage: string };
+
+export type OpsOverrideEventBannerMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  mediaId: InputMaybe<Scalars['ID']['input']>;
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsOverrideEventBannerMutation = { __typename: 'Mutation', overrideEventBanner: { __typename: 'Event', id: string, bannerImageUrl: string | null } };
+
+export type ApproveOrganizationMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  commissionRate: InputMaybe<Scalars['Float']['input']>;
+}>;
+
+
+export type ApproveOrganizationMutation = { __typename: 'Mutation', approveOrganization: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null } | null } | null };
+
+export type RejectOrganizationMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type RejectOrganizationMutation = { __typename: 'Mutation', rejectOrganization: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null } | null } | null };
+
+export type RequestOrganizationChangesMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type RequestOrganizationChangesMutation = { __typename: 'Mutation', requestOrganizationChanges: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null } | null } | null };
+
+export type SuspendOrganizationMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type SuspendOrganizationMutation = { __typename: 'Mutation', suspendOrganization: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null } | null } | null };
+
+export type UnsuspendOrganizationMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type UnsuspendOrganizationMutation = { __typename: 'Mutation', unsuspendOrganization: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null } | null } | null };
+
+export type AdminOrganizationFieldsFragment = { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null } | null };
+
+export type OrganizationListFieldsFragment = { __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, logoUrl: string | null, businessEmail: string | null, businessPhone: string | null, verified: boolean, documentsVerified: boolean, submittedAt: string | null, approvedAt: string | null, createdAt: string, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null } | null };
+
+export type PendingOrganizationsQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type PendingOrganizationsQuery = { __typename: 'Query', organizations: { __typename: 'OrganizationOffsetPage', content: Array<{ __typename: 'Organization', id: string, name: string, slug: string, type: OrganizationType, status: OrganizationStatus, logoUrl: string | null, businessEmail: string | null, businessPhone: string | null, verified: boolean, documentsVerified: boolean, submittedAt: string | null, approvedAt: string | null, createdAt: string, businessAddress: { __typename: 'BusinessAddress', city: string | null, province: string | null } | null }>, pageInfo: { __typename: 'PageInfo', currentPage: number | null, pageSize: number | null, totalCount: number | null, hasNext: boolean | null, hasPrevious: boolean | null } } };
+
+export type GetOrganizationQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type GetOrganizationQuery = { __typename: 'Query', organization: { __typename: 'Organization', id: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, city: string | null, province: string | null, country: string | null, postalCode: string | null } | null } | null };
+
+export type OpsPaginationFieldsFragment = { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null };
+
+export type OpsAttemptFieldsFragment = { __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null };
+
+export type OpsPaymentAttemptSearchQueryVariables = Exact<{
+  filter: InputMaybe<PaymentAttemptFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsPaymentAttemptSearchQuery = { __typename: 'Query', paymentAttemptSearch: { __typename: 'PaymentAttemptOffsetPage', data: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type OpsStuckTransactionsQueryVariables = Exact<{
+  minutes: InputMaybe<Scalars['Int']['input']>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsStuckTransactionsQuery = { __typename: 'Query', stuckTransactions: { __typename: 'PaymentAttemptOffsetPage', data: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type OpsResumePaymentAttemptMutationVariables = Exact<{
+  depositId: Scalars['String']['input'];
+}>;
+
+
+export type OpsResumePaymentAttemptMutation = { __typename: 'Mutation', resumePaymentAttempt: { __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null } };
+
+export type OpsRetryPaymentAttemptsMutationVariables = Exact<{
+  depositIds: Array<Scalars['String']['input']> | Scalars['String']['input'];
+}>;
+
+
+export type OpsRetryPaymentAttemptsMutation = { __typename: 'Mutation', retryPaymentAttempts: Array<{ __typename: 'PaymentRecoveryOutcome', depositId: string, result: string, detail: string | null }> };
+
+export type OpsRecoveryProposalFieldsFragment = { __typename: 'RecoveryProposal', id: string, action: RecoveryAction, amount: string | null, canConfirm: boolean, confirmationReason: string | null, confirmedAt: string | null, confirmedById: string | null, expiresAt: string, failureReason: string | null, outcome: string | null, proposalReason: string, proposedAt: string, proposedById: string, status: RecoveryProposalStatus, subjectIds: Array<string>, subjectType: string };
+
+export type OpsForceCompletePaymentAttemptsMutationVariables = Exact<{
+  depositIds: Array<Scalars['String']['input']> | Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsForceCompletePaymentAttemptsMutation = { __typename: 'Mutation', forceCompletePaymentAttempts: { __typename: 'RecoveryProposal', id: string, action: RecoveryAction, amount: string | null, canConfirm: boolean, confirmationReason: string | null, confirmedAt: string | null, confirmedById: string | null, expiresAt: string, failureReason: string | null, outcome: string | null, proposalReason: string, proposedAt: string, proposedById: string, status: RecoveryProposalStatus, subjectIds: Array<string>, subjectType: string } };
+
+export type OpsDualControlQueueQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OpsDualControlQueueQuery = { __typename: 'Query', dualControlQueue: Array<{ __typename: 'RecoveryProposal', id: string, action: RecoveryAction, amount: string | null, canConfirm: boolean, confirmationReason: string | null, confirmedAt: string | null, confirmedById: string | null, expiresAt: string, failureReason: string | null, outcome: string | null, proposalReason: string, proposedAt: string, proposedById: string, status: RecoveryProposalStatus, subjectIds: Array<string>, subjectType: string }> };
+
+export type OpsConfirmRecoveryActionMutationVariables = Exact<{
+  proposalId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsConfirmRecoveryActionMutation = { __typename: 'Mutation', confirmRecoveryAction: { __typename: 'RecoveryProposal', id: string, action: RecoveryAction, amount: string | null, canConfirm: boolean, confirmationReason: string | null, confirmedAt: string | null, confirmedById: string | null, expiresAt: string, failureReason: string | null, outcome: string | null, proposalReason: string, proposedAt: string, proposedById: string, status: RecoveryProposalStatus, subjectIds: Array<string>, subjectType: string } };
+
+export type OpsWithdrawRecoveryProposalMutationVariables = Exact<{
+  proposalId: Scalars['ID']['input'];
+}>;
+
+
+export type OpsWithdrawRecoveryProposalMutation = { __typename: 'Mutation', withdrawRecoveryProposal: { __typename: 'RecoveryProposal', id: string, action: RecoveryAction, amount: string | null, canConfirm: boolean, confirmationReason: string | null, confirmedAt: string | null, confirmedById: string | null, expiresAt: string, failureReason: string | null, outcome: string | null, proposalReason: string, proposedAt: string, proposedById: string, status: RecoveryProposalStatus, subjectIds: Array<string>, subjectType: string } };
+
+export type OpsPaymentRiskSummaryQueryVariables = Exact<{
+  windowHours: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type OpsPaymentRiskSummaryQuery = { __typename: 'Query', paymentRiskSummary: { __typename: 'PaymentRiskSummary', windowHours: number, evaluated: number, flagged: number, high: number, medium: number, low: number, amountAtRisk: string, topFlags: Array<{ __typename: 'RiskFlagCount', flag: string, count: number }> } };
+
+export type OpsCommissionRecordsQueryVariables = Exact<{
+  filter: InputMaybe<CommissionFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsCommissionRecordsQuery = { __typename: 'Query', commissionRecords: { __typename: 'CommissionRecordPage', data: Array<{ __typename: 'CommissionRecord', id: string, eventId: string, organizationId: string | null, ticketId: string, ticketPrice: string, rate: string, amount: string, currency: string, status: CommissionStatus, earnedAt: string | null, pendingAt: string | null, cancelledAt: string | null, clawedBackAt: string | null, refundReason: string | null, createdAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null }, totals: { __typename: 'CommissionTotals', earned: string, pending: string, cancelled: string, clawedBack: string } } };
+
+export type OpsGatewaySettlementsQueryVariables = Exact<{
+  filter: InputMaybe<GatewaySettlementFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsGatewaySettlementsQuery = { __typename: 'Query', gatewaySettlements: { __typename: 'GatewaySettlementPage', data: Array<{ __typename: 'GatewaySettlement', settlementId: string, settlementDate: string | null, grossAmount: string, feeAmount: string, netAmount: string, currency: string | null, bankReference: string | null, entryNumber: string | null, journalEntryId: string, postedAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type OpsTransferBetweenPlatformAccountsMutationVariables = Exact<{
+  input: PlatformTransferInput;
+}>;
+
+
+export type OpsTransferBetweenPlatformAccountsMutation = { __typename: 'Mutation', transferBetweenPlatformAccounts: { __typename: 'PlatformTransferResult', executed: boolean, requiresSecondApprover: boolean, proposal: { __typename: 'RecoveryProposal', id: string, action: RecoveryAction, amount: string | null, canConfirm: boolean, confirmationReason: string | null, confirmedAt: string | null, confirmedById: string | null, expiresAt: string, failureReason: string | null, outcome: string | null, proposalReason: string, proposedAt: string, proposedById: string, status: RecoveryProposalStatus, subjectIds: Array<string>, subjectType: string } | null, transfer: { __typename: 'PlatformTransfer', id: string, fromAccount: PlatformAccountType, toAccount: PlatformAccountType, amount: string, currency: string, reason: string, executedBy: string, createdAt: string | null } | null } };
+
+export type OpsHoldPayoutRequestMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsHoldPayoutRequestMutation = { __typename: 'Mutation', holdPayoutRequest: { __typename: 'PayoutRequest', id: string, status: PayoutRequestStatus } };
+
+export type OpsReleasePayoutHoldMutationVariables = Exact<{
+  payoutRequestId: Scalars['ID']['input'];
+  note: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type OpsReleasePayoutHoldMutation = { __typename: 'Mutation', releasePayoutHold: { __typename: 'PayoutRequest', id: string, status: PayoutRequestStatus } };
+
+export type OpsPurchasesByDayAndHourQueryVariables = Exact<{
+  from: InputMaybe<Scalars['DateTime']['input']>;
+  to: InputMaybe<Scalars['DateTime']['input']>;
+  eventId: InputMaybe<Scalars['ID']['input']>;
+  organizationId: InputMaybe<Scalars['ID']['input']>;
+}>;
+
+
+export type OpsPurchasesByDayAndHourQuery = { __typename: 'Query', purchasesByDayAndHour: Array<{ __typename: 'PurchaseHeatCell', dayOfWeek: number, hour: number, purchases: number, tickets: number, revenue: string }> };
+
+export type OpsBookingsByBuyerQueryVariables = Exact<{
+  buyerId: Scalars['String']['input'];
+  filter: InputMaybe<BookingFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsBookingsByBuyerQuery = { __typename: 'Query', bookingsByBuyer: { __typename: 'BookingOffsetPage', data: Array<{ __typename: 'Booking', id: string, bookingNumber: string, eventId: string, eventTitle: string | null, eventDate: string | null, status: BookingStatus, ticketCount: number, totalAmount: string, currency: string, refundedAmount: string, createdAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type PlatformConfigFieldsFragment = { __typename: 'PlatformConfiguration', id: string, approvalSlaHours: number, approvalWarningThresholdHours: number, autoEscalationEnabled: boolean, escalationDelayHours: number, escalationRecipientRole: string, escalationReminderIntervalHours: number, maxEscalationReminders: number, organizerNotificationChannel: ApprovalNotificationChannel, adminNotificationChannel: ApprovalNotificationChannel, sendSlaWarningNotifications: boolean, sendEscalationNotifications: boolean, requireCommentsOnRejection: boolean, requireCommentsOnChangesRequested: boolean, allowSelfApproval: boolean, commissionDefault: number | null, minimumPayout: string | null, currency: string, reservationHoldMinutes: number, reservationGraceMinutes: number, escrowHoldDays: number, refundCutoffHours: number, maxTicketsPerBooking: number, rescheduleLimit: number, version: number, updatedAt: string, updatedBy: string, refundPolicies: Array<{ __typename: 'PlatformRefundPolicy', code: string, label: string, summary: string, rules: Array<{ __typename: 'PlatformRefundRule', daysBefore: number, percent: number }> }> };
+
+export type PlatformConfigurationQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PlatformConfigurationQuery = { __typename: 'Query', platformConfiguration: { __typename: 'PlatformConfiguration', id: string, approvalSlaHours: number, approvalWarningThresholdHours: number, autoEscalationEnabled: boolean, escalationDelayHours: number, escalationRecipientRole: string, escalationReminderIntervalHours: number, maxEscalationReminders: number, organizerNotificationChannel: ApprovalNotificationChannel, adminNotificationChannel: ApprovalNotificationChannel, sendSlaWarningNotifications: boolean, sendEscalationNotifications: boolean, requireCommentsOnRejection: boolean, requireCommentsOnChangesRequested: boolean, allowSelfApproval: boolean, commissionDefault: number | null, minimumPayout: string | null, currency: string, reservationHoldMinutes: number, reservationGraceMinutes: number, escrowHoldDays: number, refundCutoffHours: number, maxTicketsPerBooking: number, rescheduleLimit: number, version: number, updatedAt: string, updatedBy: string, refundPolicies: Array<{ __typename: 'PlatformRefundPolicy', code: string, label: string, summary: string, rules: Array<{ __typename: 'PlatformRefundRule', daysBefore: number, percent: number }> }> } };
+
+export type UpdatePlatformConfigurationMutationVariables = Exact<{
+  input: UpdatePlatformConfigurationInput;
+}>;
+
+
+export type UpdatePlatformConfigurationMutation = { __typename: 'Mutation', updatePlatformConfiguration: { __typename: 'PlatformConfiguration', id: string, approvalSlaHours: number, approvalWarningThresholdHours: number, autoEscalationEnabled: boolean, escalationDelayHours: number, escalationRecipientRole: string, escalationReminderIntervalHours: number, maxEscalationReminders: number, organizerNotificationChannel: ApprovalNotificationChannel, adminNotificationChannel: ApprovalNotificationChannel, sendSlaWarningNotifications: boolean, sendEscalationNotifications: boolean, requireCommentsOnRejection: boolean, requireCommentsOnChangesRequested: boolean, allowSelfApproval: boolean, commissionDefault: number | null, minimumPayout: string | null, currency: string, reservationHoldMinutes: number, reservationGraceMinutes: number, escrowHoldDays: number, refundCutoffHours: number, maxTicketsPerBooking: number, rescheduleLimit: number, version: number, updatedAt: string, updatedBy: string, refundPolicies: Array<{ __typename: 'PlatformRefundPolicy', code: string, label: string, summary: string, rules: Array<{ __typename: 'PlatformRefundRule', daysBefore: number, percent: number }> }> } };
+
+export type OpsPageInfoFieldsFragment = { __typename: 'PageInfo', totalCount: number | null, pageSize: number | null, currentPage: number | null, totalPages: number | null, hasNextPage: boolean | null, hasPreviousPage: boolean | null };
+
+export type OpsServiceHealthQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OpsServiceHealthQuery = { __typename: 'Query', serviceHealth: Array<{ __typename: 'ServiceHealth', name: string, status: ServiceStatus, latencyMillis: number, checkedAt: string, detail: string | null }> };
+
+export type OpsSystemAlertFieldsFragment = { __typename: 'SystemAlert', id: string, source: string, key: string, severity: AlertSeverity, title: string, message: string | null, status: AlertStatus, occurrences: number, raisedAt: string, lastSeenAt: string | null, acknowledgedAt: string | null, acknowledgedBy: string | null, resolvedAt: string | null };
+
+export type OpsSystemAlertsQueryVariables = Exact<{
+  status: InputMaybe<AlertStatus>;
+  severity: InputMaybe<AlertSeverity>;
+}>;
+
+
+export type OpsSystemAlertsQuery = { __typename: 'Query', systemAlerts: Array<{ __typename: 'SystemAlert', id: string, source: string, key: string, severity: AlertSeverity, title: string, message: string | null, status: AlertStatus, occurrences: number, raisedAt: string, lastSeenAt: string | null, acknowledgedAt: string | null, acknowledgedBy: string | null, resolvedAt: string | null }> };
+
+export type OpsAcknowledgeAlertMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OpsAcknowledgeAlertMutation = { __typename: 'Mutation', acknowledgeAlert: { __typename: 'SystemAlert', id: string, source: string, key: string, severity: AlertSeverity, title: string, message: string | null, status: AlertStatus, occurrences: number, raisedAt: string, lastSeenAt: string | null, acknowledgedAt: string | null, acknowledgedBy: string | null, resolvedAt: string | null } };
+
+export type OpsAnnouncementFieldsFragment = { __typename: 'SystemAnnouncement', id: string, title: string, message: string, segment: AnnouncementSegment, severity: AlertSeverity, startsAt: string, endsAt: string | null, cancelledAt: string | null, createdAt: string };
+
+export type OpsSystemAnnouncementsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OpsSystemAnnouncementsQuery = { __typename: 'Query', systemAnnouncements: Array<{ __typename: 'SystemAnnouncement', id: string, title: string, message: string, segment: AnnouncementSegment, severity: AlertSeverity, startsAt: string, endsAt: string | null, cancelledAt: string | null, createdAt: string }> };
+
+export type OpsBroadcastNotificationMutationVariables = Exact<{
+  input: BroadcastInput;
+}>;
+
+
+export type OpsBroadcastNotificationMutation = { __typename: 'Mutation', broadcastNotification: { __typename: 'SystemAnnouncement', id: string, title: string, message: string, segment: AnnouncementSegment, severity: AlertSeverity, startsAt: string, endsAt: string | null, cancelledAt: string | null, createdAt: string } };
+
+export type OpsCancelAnnouncementMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OpsCancelAnnouncementMutation = { __typename: 'Mutation', cancelAnnouncement: { __typename: 'SystemAnnouncement', id: string, title: string, message: string, segment: AnnouncementSegment, severity: AlertSeverity, startsAt: string, endsAt: string | null, cancelledAt: string | null, createdAt: string } };
+
+export type OpsAuditLogsQueryVariables = Exact<{
+  filter: InputMaybe<AuditLogFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsAuditLogsQuery = { __typename: 'Query', auditLogs: { __typename: 'AuditLogEntryOffsetPage', content: Array<{ __typename: 'AuditLogEntry', id: string, action: string, actorId: string | null, at: string | null, metadata: Record<string, unknown> | null, resourceId: string | null, resourceType: string | null, source: string, status: string | null, subjectId: string | null }>, pageInfo: { __typename: 'PageInfo', totalCount: number | null, pageSize: number | null, currentPage: number | null, totalPages: number | null, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type OpsStaffAccountsQueryVariables = Exact<{
+  search: InputMaybe<Scalars['String']['input']>;
+  role: InputMaybe<UserType>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsStaffAccountsQuery = { __typename: 'Query', staffAccounts: { __typename: 'UserOffsetPage', content: Array<{ __typename: 'User', id: string, email: string | null, fullName: string, phoneNumber: string | null, roles: Array<UserType>, accountStatus: AccountStatus, locked: boolean, twoFactorEnabled: boolean, lastLoginAt: string | null, createdAt: string }>, pageInfo: { __typename: 'PageInfo', totalCount: number | null, pageSize: number | null, currentPage: number | null, totalPages: number | null, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type OpsCreateStaffMutationVariables = Exact<{
+  input: CreateUserInput;
+}>;
+
+
+export type OpsCreateStaffMutation = { __typename: 'Mutation', createUser: { __typename: 'User', id: string, email: string | null, fullName: string, roles: Array<UserType> } };
+
+export type OpsDeleteUserMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type OpsDeleteUserMutation = { __typename: 'Mutation', deleteUser: { __typename: 'User', id: string, accountStatus: AccountStatus } };
+
+export type OpsMySessionsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OpsMySessionsQuery = { __typename: 'Query', mySessions: Array<{ __typename: 'AccountSession', id: string, current: boolean, clients: Array<string>, ipAddress: string | null, startedAt: string | null, lastAccessAt: string | null }> };
+
+export type OpsRevokeSessionMutationVariables = Exact<{
+  sessionId: Scalars['ID']['input'];
+}>;
+
+
+export type OpsRevokeSessionMutation = { __typename: 'Mutation', revokeSession: boolean };
+
+export type OpsUpdateMyProfileMutationVariables = Exact<{
+  input: UpdateUserInput;
+}>;
+
+
+export type OpsUpdateMyProfileMutation = { __typename: 'Mutation', updateMyProfile: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, fullName: string, displayName: string | null } };
+
+export type OpsMeSecurityQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type OpsMeSecurityQuery = { __typename: 'Query', me: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, displayName: string | null, fullName: string, email: string | null, phoneNumber: string | null, twoFactorEnabled: boolean, lastLoginAt: string | null } | null };
+
+export type OpsUserGrowthSeriesQueryVariables = Exact<{
+  from: Scalars['DateTime']['input'];
+  to: Scalars['DateTime']['input'];
+  bucket: InputMaybe<GrowthBucket>;
+  role: InputMaybe<UserType>;
+}>;
+
+
+export type OpsUserGrowthSeriesQuery = { __typename: 'Query', userGrowthSeries: Array<{ __typename: 'GrowthPoint', bucketStart: string, newUsers: number, cumulative: number }> };
+
+export type OpsPayoutAccountsQueryVariables = Exact<{
+  filter: InputMaybe<PayoutAccountFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type OpsPayoutAccountsQuery = { __typename: 'Query', bankAccounts: { __typename: 'PayoutAccountRecordOffsetPage', content: Array<{ __typename: 'PayoutAccountRecord', organizationId: string, organizationName: string, organizationSlug: string, method: PayoutMethod, status: PayoutAccountStatus, bankName: string | null, accountHolderName: string | null, accountNumberMasked: string | null, network: MobileMoneyProvider | null, phoneMasked: string | null, rejectionReason: string | null, suspendedReason: string | null, testDepositSentAt: string | null, verificationAttemptsLeft: number, updatedAt: string | null }>, pageInfo: { __typename: 'PageInfo', totalCount: number | null, pageSize: number | null, currentPage: number | null, totalPages: number | null, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type OpsRejectBankAccountMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsRejectBankAccountMutation = { __typename: 'Mutation', rejectBankAccount: { __typename: 'Organization', id: string } | null };
+
+export type OpsSuspendBankAccountMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsSuspendBankAccountMutation = { __typename: 'Mutation', suspendBankAccount: { __typename: 'Organization', id: string } | null };
+
+export type OpsReinstateBankAccountMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type OpsReinstateBankAccountMutation = { __typename: 'Mutation', reinstateBankAccount: { __typename: 'Organization', id: string } | null };
+
+export type OpsRejectPayoutAccountMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type OpsRejectPayoutAccountMutation = { __typename: 'Mutation', rejectPayoutAccount: { __typename: 'Organization', id: string } | null };
+
+export type OpsSetOrganizationCommissionRateMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  rate: Scalars['Float']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type OpsSetOrganizationCommissionRateMutation = { __typename: 'Mutation', setOrganizationCommissionRate: { __typename: 'Organization', id: string, commissionRate: number | null } | null };
+
+export type CreateReferenceDataMutationVariables = Exact<{
+  input: CreateReferenceDataInput;
+}>;
+
+
+export type CreateReferenceDataMutation = { __typename: 'Mutation', createReferenceData: { __typename: 'ReferenceData', id: string, type: ReferenceType, code: string, name: string, description: string | null, semantic: WorkflowSemantic | null, allowedTransitions: Array<string>, parentType: ReferenceType | null, parentCode: string | null, displayOrder: number, isActive: boolean, isSystem: boolean, effectiveFrom: string | null, effectiveTo: string | null, metadata: Record<string, unknown> | null, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null } };
+
+export type UpdateReferenceDataMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateReferenceDataInput;
+}>;
+
+
+export type UpdateReferenceDataMutation = { __typename: 'Mutation', updateReferenceData: { __typename: 'ReferenceData', id: string, type: ReferenceType, code: string, name: string, description: string | null, semantic: WorkflowSemantic | null, allowedTransitions: Array<string>, parentType: ReferenceType | null, parentCode: string | null, displayOrder: number, isActive: boolean, isSystem: boolean, effectiveFrom: string | null, effectiveTo: string | null, metadata: Record<string, unknown> | null, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null } };
+
+export type DeleteReferenceDataMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type DeleteReferenceDataMutation = { __typename: 'Mutation', deleteReferenceData: string };
+
+export type SetReferenceDataActiveMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  active: Scalars['Boolean']['input'];
+}>;
+
+
+export type SetReferenceDataActiveMutation = { __typename: 'Mutation', setReferenceDataActive: { __typename: 'ReferenceData', id: string, type: ReferenceType, code: string, name: string, description: string | null, semantic: WorkflowSemantic | null, allowedTransitions: Array<string>, parentType: ReferenceType | null, parentCode: string | null, displayOrder: number, isActive: boolean, isSystem: boolean, effectiveFrom: string | null, effectiveTo: string | null, metadata: Record<string, unknown> | null, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null } };
+
+export type ReferenceDataFieldsFragment = { __typename: 'ReferenceData', id: string, type: ReferenceType, code: string, name: string, description: string | null, semantic: WorkflowSemantic | null, allowedTransitions: Array<string>, parentType: ReferenceType | null, parentCode: string | null, displayOrder: number, isActive: boolean, isSystem: boolean, effectiveFrom: string | null, effectiveTo: string | null, metadata: Record<string, unknown> | null, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null };
+
+export type ReferenceDataQueryVariables = Exact<{
+  type: ReferenceType;
+  activeOnly: InputMaybe<Scalars['Boolean']['input']>;
+}>;
+
+
+export type ReferenceDataQuery = { __typename: 'Query', referenceData: Array<{ __typename: 'ReferenceData', id: string, type: ReferenceType, code: string, name: string, description: string | null, semantic: WorkflowSemantic | null, allowedTransitions: Array<string>, parentType: ReferenceType | null, parentCode: string | null, displayOrder: number, isActive: boolean, isSystem: boolean, effectiveFrom: string | null, effectiveTo: string | null, metadata: Record<string, unknown> | null, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null }> };
+
+export type ReferenceTypesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ReferenceTypesQuery = { __typename: 'Query', referenceTypes: Array<{ __typename: 'ReferenceTypeInfo', type: ReferenceType, label: string, group: string, groupLabel: string, requiredMetadataKeys: Array<string> }> };
+
+export type ReferenceDataAllQueryVariables = Exact<{
+  type: ReferenceType;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type ReferenceDataAllQuery = { __typename: 'Query', referenceDataAll: { __typename: 'ReferenceDataOffsetPage', pageNumber: number, pageSize: number, totalElements: number, totalPages: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'ReferenceData', id: string, type: ReferenceType, code: string, name: string, description: string | null, semantic: WorkflowSemantic | null, allowedTransitions: Array<string>, parentType: ReferenceType | null, parentCode: string | null, displayOrder: number, isActive: boolean, isSystem: boolean, effectiveFrom: string | null, effectiveTo: string | null, metadata: Record<string, unknown> | null, createdAt: string | null, updatedAt: string | null, createdBy: string | null, updatedBy: string | null }> } };
+
+export type AdminUserStatsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type AdminUserStatsQuery = { __typename: 'Query', userStats: { __typename: 'UserStats', totalUsers: number, organizers: number, attendees: number, adminUsers: number, verifiedUsers: number, activeUsers: number, suspendedUsers: number, lockedUsers: number, pendingVerificationUsers: number, newUsersThisMonth: number, newUsersThisWeek: number, growthRate: number | null } | null };
+
+export type AdminFinancialReportQueryVariables = Exact<{
+  filter: FinancialReportFilterInput;
+}>;
+
+
+export type AdminFinancialReportQuery = { __typename: 'Query', financialReport: { __typename: 'FinancialReport', startDate: string, endDate: string, totalRevenue: string, totalCommissions: string, totalRefunds: string, totalPayouts: string, pendingPayouts: string, escrowBalance: string, netPlatformRevenue: string, dataPoints: Array<{ __typename: 'FinancialDataPoint', period: string, revenue: string, commissions: string, refunds: string, payouts: string, ticketsSold: number }> } };
+
+export type AdminChargebackStatsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type AdminChargebackStatsQuery = { __typename: 'Query', chargebackStats: { __typename: 'ChargebackStats', totalCount: number, pendingCount: number, disputedCount: number, wonCount: number, lostCount: number, totalAmount: string, recoveredAmount: string, writtenOffAmount: string, chargebackRate: number, winRate: number } };
+
+export type AdminTransactionStatsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type AdminTransactionStatsQuery = { __typename: 'Query', transactionStats: { __typename: 'TransactionStats', totalTransactions: number, completedTransactions: number, failedTransactions: number, pendingTransactions: number, timedOutTransactions: number, totalVolume: string, totalCommissions: string, averageTransactionValue: string | null } };
+
+export type AdminTicketStatsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type AdminTicketStatsQuery = { __typename: 'Query', ticketStats: { __typename: 'TicketStats', totalTickets: number, issuedTickets: number, validatedTickets: number, refundPendingTickets: number, refundedTickets: number, cancelledTickets: number, expiredTickets: number, ticketsByStatus: Array<{ __typename: 'TicketStatusStats', status: TicketStatus, count: number, percentage: number }> | null } };
+
+export type AdminExportFinancialReportQueryVariables = Exact<{
+  filter: FinancialReportFilterInput;
+  format: ExportFormat;
+}>;
+
+
+export type AdminExportFinancialReportQuery = { __typename: 'Query', exportFinancialReport: { __typename: 'ReportExport', downloadUrl: string | null, expiresAt: string | null, format: ExportFormat, generatedAt: string, fileName: string | null, errorMessage: string | null } };
+
+export type TxPaymentAttemptFieldsFragment = { __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null };
+
+export type TxPaymentAttemptsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type TxPaymentAttemptsQuery = { __typename: 'Query', s0: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, s1: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, s2: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, s3: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, s4: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, s5: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, s6: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, s7: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }>, s8: Array<{ __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null }> };
+
+export type TxAddPaymentAttemptNoteMutationVariables = Exact<{
+  depositId: Scalars['String']['input'];
+  note: Scalars['String']['input'];
+}>;
+
+
+export type TxAddPaymentAttemptNoteMutation = { __typename: 'Mutation', addPaymentAttemptNote: { __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null } };
+
+export type TxSetPaymentAttemptReviewStatusMutationVariables = Exact<{
+  depositId: Scalars['String']['input'];
+  reviewStatus: Scalars['String']['input'];
+  notes: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type TxSetPaymentAttemptReviewStatusMutation = { __typename: 'Mutation', setPaymentAttemptReviewStatus: { __typename: 'PaymentAttempt', id: string, depositId: string, attemptNumber: string, ticketId: string, eventId: string | null, buyerId: string, amount: string, currency: string, provider: string, payerPhone: string, status: PaymentAttemptStatus, providerStatus: string | null, providerTransactionId: string | null, failureCode: string | null, failureMessage: string | null, webhookProcessed: boolean, retryCount: number, lastError: string | null, fulfilled: boolean, reviewStatus: string | null, reviewedBy: string | null, reviewedAt: string | null, reviewNotes: string | null, notes: string | null, riskScore: number | null, riskLevel: string | null, riskFlags: Array<string>, createdAt: string | null, updatedAt: string | null, expiresAt: string | null } };
+
+export type TxTicketFieldsFragment = { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, qrCode: string | null, purchaseDate: string | null, cancelledAt: string | null, cancellationReason: string | null };
+
+export type TxSearchTicketsQueryVariables = Exact<{
+  filter: TicketFilterInput;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type TxSearchTicketsQuery = { __typename: 'Query', searchTickets: { __typename: 'TicketOffsetPage', data: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, qrCode: string | null, purchaseDate: string | null, cancelledAt: string | null, cancellationReason: string | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type TxAdminUpdateTicketMutationVariables = Exact<{
+  ticketId: Scalars['ID']['input'];
+  input: AdminTicketUpdateInput;
+}>;
+
+
+export type TxAdminUpdateTicketMutation = { __typename: 'Mutation', adminUpdateTicket: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, qrCode: string | null, purchaseDate: string | null, cancelledAt: string | null, cancellationReason: string | null } };
+
+export type TxRegenerateTicketQrMutationVariables = Exact<{
+  ticketId: Scalars['ID']['input'];
+}>;
+
+
+export type TxRegenerateTicketQrMutation = { __typename: 'Mutation', regenerateTicketQrCode: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, buyerName: string | null, buyerEmail: string | null, buyerPhone: string | null, ticketCategoryCode: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, qrCode: string | null, purchaseDate: string | null, cancelledAt: string | null, cancellationReason: string | null } };
+
+export type TxBulkCancelTicketsMutationVariables = Exact<{
+  ticketIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type TxBulkCancelTicketsMutation = { __typename: 'Mutation', bulkCancelTickets: { __typename: 'BulkOperationResponse', processedCount: number, failedCount: number } };
+
+export type TxReservationsByEventQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type TxReservationsByEventQuery = { __typename: 'Query', reservationsByEvent: { __typename: 'ReservationOffsetPage', data: Array<{ __typename: 'TicketReservation', id: string, eventId: string, userId: string, status: ReservationStatus, totalAmount: string, currency: string, expiresAt: string, createdAt: string, confirmedAt: string | null, releasedAt: string | null, failedAt: string | null, failureReason: string | null, items: Array<{ __typename: 'ReservationItem', tierName: string, quantity: number }> }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+
+export type TxForceExpireReservationMutationVariables = Exact<{
+  reservationId: Scalars['ID']['input'];
+}>;
+
+
+export type TxForceExpireReservationMutation = { __typename: 'Mutation', forceExpireReservation: boolean };
+
+export type UserListFieldsFragment = { __typename: 'User', id: string, fullName: string, email: string | null, phoneNumber: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, memberSince: string | null, createdAt: string, lastLoginAt: string | null };
+
+export type AdminUsersQueryVariables = Exact<{
+  search: InputMaybe<Scalars['String']['input']>;
+  role: InputMaybe<UserType>;
+  accountStatus: InputMaybe<AccountStatus>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type AdminUsersQuery = { __typename: 'Query', users: { __typename: 'UserOffsetPage', content: Array<{ __typename: 'User', id: string, fullName: string, email: string | null, phoneNumber: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, memberSince: string | null, createdAt: string, lastLoginAt: string | null }>, pageInfo: { __typename: 'PageInfo', currentPage: number | null, pageSize: number | null, totalCount: number | null, hasNext: boolean | null, hasPrevious: boolean | null } } };
+
+export type PendingCountsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PendingCountsQuery = { __typename: 'Query', identityPendingCounts: { __typename: 'IdentityPendingCounts', organizerApplications: number, documentVerifications: number } | null, catalogPendingCounts: { __typename: 'CatalogPendingCounts', eventReviews: number }, bookingPendingCounts: { __typename: 'BookingPendingCounts', payoutRequests: number, refundRequests: number } };
+
+export type PlatformSummaryQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PlatformSummaryQuery = { __typename: 'Query', platformSummary: { __typename: 'PlatformSummary', totalTicketRevenue: string, totalEscrowBalance: string, availableForPayout: string, primaryCurrency: string, totalTicketsSold: number, totalTransactions: number, pendingTransactions: number, failedTransactions: number, totalPayoutRequests: number, pendingPayoutRequests: number, totalPayoutAmount: string } };
+
+export type TicketFieldsFragment = { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, qrCode: string | null, barcode: string | null, purchaseDate: string | null, validUntil: string | null };
+
+export type ReservationFieldsFragment = { __typename: 'TicketReservation', id: string, eventId: string, totalAmount: string, currency: string, status: ReservationStatus, expiresAt: string, remainingSeconds: number | null, discountAmount: string | null, promoCodeApplied: string | null, paymentIntentId: string | null, confirmedAt: string | null, releasedAt: string | null, failedAt: string | null, failureReason: string | null, items: Array<{ __typename: 'ReservationItem', ticketTierId: string, tierName: string, quantity: number, unitPrice: string, subtotal: string }> };
+
+export type ReserveTicketsMutationVariables = Exact<{
+  input: ReserveTicketsInput;
+}>;
+
+
+export type ReserveTicketsMutation = { __typename: 'Mutation', reserveTickets: { __typename: 'TicketReservation', id: string, eventId: string, totalAmount: string, currency: string, status: ReservationStatus, expiresAt: string, remainingSeconds: number | null, discountAmount: string | null, promoCodeApplied: string | null, paymentIntentId: string | null, confirmedAt: string | null, releasedAt: string | null, failedAt: string | null, failureReason: string | null, items: Array<{ __typename: 'ReservationItem', ticketTierId: string, tierName: string, quantity: number, unitPrice: string, subtotal: string }> } };
+
+export type PayReservationMutationVariables = Exact<{
+  input: PayReservationInput;
+}>;
+
+
+export type PayReservationMutation = { __typename: 'Mutation', payReservation: { __typename: 'PaymentInitiationResponse', paymentIntentId: string | null, transactionRef: string | null, paymentStatus: string | null, reservationId: string | null } };
+
+export type GetReservationQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type GetReservationQuery = { __typename: 'Query', reservation: { __typename: 'TicketReservation', id: string, eventId: string, totalAmount: string, currency: string, status: ReservationStatus, expiresAt: string, remainingSeconds: number | null, discountAmount: string | null, promoCodeApplied: string | null, paymentIntentId: string | null, confirmedAt: string | null, releasedAt: string | null, failedAt: string | null, failureReason: string | null, items: Array<{ __typename: 'ReservationItem', ticketTierId: string, tierName: string, quantity: number, unitPrice: string, subtotal: string }> } | null };
+
+export type GetMyTicketsQueryVariables = Exact<{
+  buyerId: Scalars['String']['input'];
+  status: InputMaybe<TicketStatus>;
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type GetMyTicketsQuery = { __typename: 'Query', ticketsByBuyerCursorPagination: { __typename: 'TicketConnection', totalCount: number | null, edges: Array<{ __typename: 'TicketEdge', node: { __typename: 'Ticket', id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, qrCode: string | null, barcode: string | null, purchaseDate: string | null, validUntil: string | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null, hasNext: boolean | null, endCursor: string | null } } };
+
+export type BuyerMyBookingsQueryVariables = Exact<{
+  filter: InputMaybe<BookingFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type BuyerMyBookingsQuery = { __typename: 'Query', myBookings: { __typename: 'BookingOffsetPage', data: Array<{ __typename: 'Booking', id: string, bookingNumber: string, reservationId: string, eventId: string, eventTitle: string | null, eventDate: string | null, status: BookingStatus, ticketCount: number, totalAmount: string, currency: string, refundedAmount: string, lateRefundStatus: string | null, contactName: string | null, contactEmail: string | null, contactPhone: string | null, createdAt: string | null, confirmedAt: string | null, items: Array<{ __typename: 'BookingItem', ticketTierId: string, tierName: string, quantity: number }>, tickets: Array<{ __typename: 'Ticket', bookingNumber: string | null, transferPending: boolean, transferCount: number, id: string, ticketNumber: string, eventId: string, eventTitle: string, eventDate: string | null, eventLocationName: string | null, ticketCategoryName: string | null, price: string, currency: string, status: TicketStatus, qrCode: string | null, barcode: string | null, purchaseDate: string | null, validUntil: string | null }> }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, hasNext: boolean | null } } };
+
+export type BuyerResendTicketMutationVariables = Exact<{
+  ticketId: Scalars['ID']['input'];
+}>;
+
+
+export type BuyerResendTicketMutation = { __typename: 'Mutation', resendTicket: { __typename: 'ResendTicketResult', ticketId: string, ticketNumber: string, status: string, channel: string | null, destination: string | null } };
+
+export type BuyerCancelRefundRequestMutationVariables = Exact<{
+  refundRequestId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+}>;
+
+
+export type BuyerCancelRefundRequestMutation = { __typename: 'Mutation', cancelRefundRequest: { __typename: 'RefundRequest', id: string, status: RefundRequestStatus } };
+
+export type DiscoverEventsQueryVariables = Exact<{
+  filter: EventDiscoveryFilterInput;
+  pagination: InputMaybe<CursorPaginationInput>;
+  sort: InputMaybe<EventDiscoverySort>;
+}>;
+
+
+export type DiscoverEventsQuery = { __typename: 'Query', discoverEvents: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', node: { __typename: 'Event', soldOut: boolean, id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null, hasNext: boolean | null, endCursor: string | null } } };
+
+export type BuyerTrendingEventsQueryVariables = Exact<{
+  first: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type BuyerTrendingEventsQuery = { __typename: 'Query', trendingEvents: Array<{ __typename: 'Event', soldOut: boolean, id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null }> };
+
+export type BuyerRecommendedEventsQueryVariables = Exact<{
+  basedOnEventIds: InputMaybe<Array<Scalars['ID']['input']> | Scalars['ID']['input']>;
+  first: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type BuyerRecommendedEventsQuery = { __typename: 'Query', recommendedEvents: Array<{ __typename: 'EventRecommendation', reason: RecommendationReason, basedOnEventId: string | null, event: { __typename: 'Event', soldOut: boolean, id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null } }> };
+
+export type EventPageQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type EventPageQuery = { __typename: 'Query', event: { __typename: 'Event', soldOut: boolean, locationAddress: string | null, refundPolicy: string | null, cancellationPolicy: string | null, termsAndConditions: string | null, isVirtual: boolean, isFreeEvent: boolean, ageRestriction: string | null, doorsOpenAt: string | null, gettingThere: string | null, parkingInfo: string | null, bagPolicy: string | null, id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, faqs: Array<{ __typename: 'EventFaq', question: string, answer: string }> | null, runningOrder: Array<{ __typename: 'RunningOrderItem', time: string, title: string }> | null, organization: { __typename: 'Organization', id: string, verified: boolean, publishedEventCount: number } | null, accessibility: { __typename: 'EventAccessibility', wheelchairAccessible: boolean, wheelchairSeatsAvailable: number | null, signLanguageInterpreter: boolean, hearingLoopAvailable: boolean, accessibleParking: boolean, accessibleRestrooms: boolean, assistanceDogsAllowed: boolean, additionalNotes: string | null } | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, name: string, code: string, description: string | null, price: string, originalPrice: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, salesStartAt: string | null, salesEndAt: string | null, currency: string, quantity: number, soldQuantity: number, availableQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, isActive: boolean, isHidden: boolean, sortOrder: number }> | null, category: { __typename: 'EventCategory', id: string, name: string } | null } | null };
+
+export type BuyerUnlockTierMutationVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+  accessCode: Scalars['String']['input'];
+}>;
+
+
+export type BuyerUnlockTierMutation = { __typename: 'Mutation', unlockTierWithAccessCode: { __typename: 'TicketTier', id: string, name: string, code: string, description: string | null, price: string, originalPrice: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, salesStartAt: string | null, salesEndAt: string | null, currency: string, quantity: number, soldQuantity: number, availableQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, isActive: boolean, isHidden: boolean, sortOrder: number } };
+
+export type ValidatePromoCodeQueryVariables = Exact<{
+  code: Scalars['String']['input'];
+  eventId: Scalars['ID']['input'];
+  amount: InputMaybe<Scalars['BigDecimal']['input']>;
+}>;
+
+
+export type ValidatePromoCodeQuery = { __typename: 'Query', validatePromoCode: { __typename: 'PromoCodeValidation', valid: boolean, discountAmount: string | null, errorMessage: string | null } };
+
+export type InvitationByTokenQueryVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+
+export type InvitationByTokenQuery = { __typename: 'Query', invitationByToken: { __typename: 'InvitationPreview', organizationName: string, organizationLogoUrl: string | null, proposedRole: OrganizationRole, inviterDisplayName: string, expiresAt: string } | null };
+
+export type AcceptInvitationMutationVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+
+export type AcceptInvitationMutation = { __typename: 'Mutation', acceptInvitation: { __typename: 'OrganizationMember', id: string } | null };
+
+export type DeclineInvitationMutationVariables = Exact<{
+  token: Scalars['String']['input'];
+}>;
+
+
+export type DeclineInvitationMutation = { __typename: 'Mutation', declineInvitation: boolean };
+
+export type MeQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MeQuery = { __typename: 'Query', me: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, displayName: string | null, fullName: string, deletionRequestedAt: string | null, deletionScheduledFor: string | null } | null };
+
+export type BuyerUpdateMyProfileMutationVariables = Exact<{
+  input: UpdateUserInput;
+}>;
+
+
+export type BuyerUpdateMyProfileMutation = { __typename: 'Mutation', updateMyProfile: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, displayName: string | null, fullName: string } };
+
+export type BuyerRequestAccountDeletionMutationVariables = Exact<{
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type BuyerRequestAccountDeletionMutation = { __typename: 'Mutation', requestAccountDeletion: { __typename: 'User', id: string, deletionRequestedAt: string | null, deletionScheduledFor: string | null } };
+
+export type BuyerCancelAccountDeletionMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type BuyerCancelAccountDeletionMutation = { __typename: 'Mutation', cancelAccountDeletion: { __typename: 'User', id: string, deletionRequestedAt: string | null, deletionScheduledFor: string | null } };
+
+export type UnreadNotificationCountQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type UnreadNotificationCountQuery = { __typename: 'Query', unreadNotificationCount: number };
+
+export type MyNotificationsQueryVariables = Exact<{
+  pagination: InputMaybe<CursorPaginationInput>;
+}>;
+
+
+export type MyNotificationsQuery = { __typename: 'Query', myNotifications: { __typename: 'NotificationConnection', totalCount: number | null, edges: Array<{ __typename: 'NotificationEdge', node: { __typename: 'Notification', id: string, type: NotificationType, title: string, body: string, actionUrl: string | null, status: NotificationStatus, readAt: string | null, createdAt: string } }>, pageInfo: { __typename: 'PageInfo', hasNext: boolean | null, endCursor: string | null } } };
+
+export type MarkNotificationReadMutationVariables = Exact<{
+  notificationId: Scalars['ID']['input'];
+}>;
+
+
+export type MarkNotificationReadMutation = { __typename: 'Mutation', markNotificationRead: { __typename: 'Notification', id: string, readAt: string | null, status: NotificationStatus } | null };
+
+export type BuyerMarkAllNotificationsReadMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type BuyerMarkAllNotificationsReadMutation = { __typename: 'Mutation', markAllNotificationsRead: number };
+
+export type DeleteNotificationMutationVariables = Exact<{
+  notificationId: Scalars['ID']['input'];
+}>;
+
+
+export type DeleteNotificationMutation = { __typename: 'Mutation', deleteNotification: boolean };
+
+export type BuyerMyNotificationPreferencesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type BuyerMyNotificationPreferencesQuery = { __typename: 'Query', myNotificationPreferences: { __typename: 'NotificationPreferences', emailEnabled: boolean, smsEnabled: boolean, whatsappEnabled: boolean, pushEnabled: boolean, inAppEnabled: boolean, ticketNotifications: boolean, eventReminders: boolean, eventUpdates: boolean, paymentNotifications: boolean, teamNotifications: boolean, marketingEmails: boolean, systemAnnouncements: boolean, reminderHoursBefore: number, quietHoursStart: string | null, quietHoursEnd: string | null, timezone: string | null } | null };
+
+export type BuyerUpdateNotificationPreferencesMutationVariables = Exact<{
+  input: UpdateNotificationPreferencesInput;
+}>;
+
+
+export type BuyerUpdateNotificationPreferencesMutation = { __typename: 'Mutation', updateNotificationPreferences: { __typename: 'NotificationPreferences', reminderHoursBefore: number } | null };
+
+export type CalculateRefundAmountQueryVariables = Exact<{
+  ticketId: Scalars['String']['input'];
+}>;
+
+
+export type CalculateRefundAmountQuery = { __typename: 'Query', calculateRefundAmount: { __typename: 'RefundCalculation', ticketId: string, ticketNumber: string, eventId: string, eventDate: string, originalAmount: string, daysBeforeEvent: number, refundPercentage: number, refundAmount: string, platformRetains: string, policyApplied: string, isEligible: boolean, ineligibleReason: string | null } };
+
+export type CreateUserRefundRequestMutationVariables = Exact<{
+  input: CreateRefundRequestInput;
+}>;
+
+
+export type CreateUserRefundRequestMutation = { __typename: 'Mutation', createUserRefundRequest: { __typename: 'RefundRequest', id: string, status: RefundRequestStatus } };
+
+export type MyRefundRequestsQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type MyRefundRequestsQuery = { __typename: 'Query', myRefundRequests: { __typename: 'RefundRequestOffsetPage', data: Array<{ __typename: 'RefundRequest', id: string, requestId: string, ticketId: string, ticketNumber: string, eventId: string, refundAmount: string, refundPercentage: number | null, currency: string, status: RefundRequestStatus, reason: string, rejectionReason: string | null, requestedAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, hasNext: boolean | null } } };
+
+export type MyEventRemindersQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyEventRemindersQuery = { __typename: 'Query', myEventReminders: Array<{ __typename: 'EventReminder', id: string, eventId: string, ticketId: string, status: ReminderStatus }> };
+
+export type SetEventReminderMutationVariables = Exact<{
+  input: SetEventReminderInput;
+}>;
+
+
+export type SetEventReminderMutation = { __typename: 'Mutation', setEventReminder: { __typename: 'EventReminder', id: string } | null };
+
+export type CancelEventReminderMutationVariables = Exact<{
+  reminderId: Scalars['ID']['input'];
+}>;
+
+
+export type CancelEventReminderMutation = { __typename: 'Mutation', cancelEventReminder: boolean };
+
+export type CancelReservationMutationVariables = Exact<{
+  reservationId: Scalars['ID']['input'];
+}>;
+
+
+export type CancelReservationMutation = { __typename: 'Mutation', cancelReservation: boolean };
+
+export type BuyerPlatformRulesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type BuyerPlatformRulesQuery = { __typename: 'Query', publicPlatformRules: { __typename: 'PublicPlatformRules', version: number, updatedAt: string | null, currency: string, reservationHoldMinutes: number, reservationGraceMinutes: number, refundCutoffHours: number, maxTicketsPerBooking: number, rescheduleLimit: number, refundPolicies: Array<{ __typename: 'RulesRefundPolicy', code: string, label: string, summary: string, rules: Array<{ __typename: 'RulesRefundTier', daysBefore: number, percent: number }> }> } };
+
+export type BuyerTransferRecipientQueryVariables = Exact<{
+  channel: TransferChannel;
+  value: Scalars['String']['input'];
+}>;
+
+
+export type BuyerTransferRecipientQuery = { __typename: 'Query', transferRecipient: { __typename: 'TransferRecipient', displayName: string | null, maskedContact: string } | null };
+
+export type BuyerMyTicketTransfersQueryVariables = Exact<{
+  direction: InputMaybe<TransferDirection>;
+  status: InputMaybe<TicketTransferStatus>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type BuyerMyTicketTransfersQuery = { __typename: 'Query', myTicketTransfers: { __typename: 'TicketTransferPage', data: Array<{ __typename: 'TicketTransfer', id: string, ticketId: string, ticketNumber: string, bookingNumber: string | null, eventId: string, eventTitle: string | null, status: TicketTransferStatus, direction: TransferDirection | null, fromDisplayName: string | null, toDisplayName: string | null, recipientMasked: string | null, note: string | null, createdAt: string | null, expiresAt: string | null, resolvedAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, hasNext: boolean | null } } };
+
+export type BuyerInitiateTicketTransferMutationVariables = Exact<{
+  input: InitiateTicketTransferInput;
+}>;
+
+
+export type BuyerInitiateTicketTransferMutation = { __typename: 'Mutation', initiateTicketTransfer: { __typename: 'TicketTransfer', id: string, ticketId: string, status: TicketTransferStatus, recipientMasked: string | null, toDisplayName: string | null, expiresAt: string | null } };
+
+export type BuyerCancelTicketTransferMutationVariables = Exact<{
+  transferId: Scalars['ID']['input'];
+}>;
+
+
+export type BuyerCancelTicketTransferMutation = { __typename: 'Mutation', cancelTicketTransfer: { __typename: 'TicketTransfer', id: string, status: TicketTransferStatus } };
+
+export type BuyerAcceptTicketTransferMutationVariables = Exact<{
+  transferId: Scalars['ID']['input'];
+}>;
+
+
+export type BuyerAcceptTicketTransferMutation = { __typename: 'Mutation', acceptTicketTransfer: { __typename: 'Ticket', id: string, ticketNumber: string, status: TicketStatus } };
+
+export type BuyerDeclineTicketTransferMutationVariables = Exact<{
+  transferId: Scalars['ID']['input'];
+}>;
+
+
+export type BuyerDeclineTicketTransferMutation = { __typename: 'Mutation', declineTicketTransfer: { __typename: 'TicketTransfer', id: string, status: TicketTransferStatus } };
+
 export type EventCardFieldsFragment = { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null };
 
 export type EventDetailFieldsFragment = { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, name: string, code: string, description: string | null, price: string, originalPrice: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, salesStartAt: string | null, salesEndAt: string | null, currency: string, quantity: number, soldQuantity: number, availableQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, isActive: boolean, isHidden: boolean, sortOrder: number }> | null, category: { __typename: 'EventCategory', id: string, name: string } | null };
@@ -8003,14 +10756,7 @@ export type GetPublishedEventsQueryVariables = Exact<{
 }>;
 
 
-export type GetPublishedEventsQuery = { __typename: 'Query', publishedEventsCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', node: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null, totalPages: number | null, currentPage: number | null, pageSize: number | null, hasNext: boolean | null, hasPrevious: boolean | null, endCursor: string | null } } };
-
-export type GetUpcomingEventsQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
-
-
-export type GetUpcomingEventsQuery = { __typename: 'Query', upcomingEventsCursorPagination: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', node: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null, totalPages: number | null, currentPage: number | null, pageSize: number | null, hasNext: boolean | null, hasPrevious: boolean | null, endCursor: string | null } } };
+export type GetPublishedEventsQuery = { __typename: 'Query', discoverEvents: { __typename: 'EventConnection', edges: Array<{ __typename: 'EventEdge', node: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, category: { __typename: 'EventCategory', id: string, name: string } | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null, totalPages: number | null, currentPage: number | null, pageSize: number | null, hasNext: boolean | null, hasPrevious: boolean | null, endCursor: string | null } } };
 
 export type GetEventByIdQueryVariables = Exact<{
   id: Scalars['ID']['input'];
@@ -8019,14 +10765,268 @@ export type GetEventByIdQueryVariables = Exact<{
 
 export type GetEventByIdQuery = { __typename: 'Query', event: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, featured: boolean, eventDateTime: string, endDateTime: string, cityName: string | null, locationName: string | null, bannerImageUrl: string | null, galleryImages: Array<string> | null, organizerName: string, soldTickets: number, totalCapacity: number, availableTickets: number, minTicketPrice: string | null, maxTicketPrice: string | null, currency: string | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, name: string, code: string, description: string | null, price: string, originalPrice: string | null, earlyBirdPrice: string | null, earlyBirdEndsAt: string | null, salesStartAt: string | null, salesEndAt: string | null, currency: string, quantity: number, soldQuantity: number, availableQuantity: number, minPerOrder: number | null, maxPerOrder: number | null, benefits: Array<string> | null, isActive: boolean, isHidden: boolean, sortOrder: number }> | null, category: { __typename: 'EventCategory', id: string, name: string } | null } | null };
 
-export type GetActiveEventCategoriesQueryVariables = Exact<{
-  pagination: InputMaybe<CursorPaginationInput>;
-}>;
+export type GetActiveEventCategoriesQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetActiveEventCategoriesQuery = { __typename: 'Query', activeEventCategoriesCursorPagination: { __typename: 'EventCategoryConnection', edges: Array<{ __typename: 'EventCategoryEdge', node: { __typename: 'EventCategory', id: string, name: string, code: string, eventCount: number | null } }>, pageInfo: { __typename: 'PageInfo', totalElements: number | null } } };
+export type GetActiveEventCategoriesQuery = { __typename: 'Query', categories: Array<{ __typename: 'EventCategory', id: string, name: string, code: string, eventCount: number | null, imageUrl: string | null }> };
 
 export type GetCitiesWithEventsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
 export type GetCitiesWithEventsQuery = { __typename: 'Query', citiesWithEvents: Array<{ __typename: 'City', id: string, name: string, province: string | null }> };
+
+export type GetMyPermissionsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type GetMyPermissionsQuery = { __typename: 'Query', myPermissions: { __typename: 'MyPermissions', permissions: Array<string>, roles: Array<string> } };
+
+export type ReferenceOptionsQueryVariables = Exact<{
+  type: ReferenceType;
+}>;
+
+
+export type ReferenceOptionsQuery = { __typename: 'Query', referenceData: Array<{ __typename: 'ReferenceData', id: string, code: string, name: string, description: string | null, parentCode: string | null, displayOrder: number, metadata: Record<string, unknown> | null }> };
+
+export type EventTicketHoldersQueryVariables = Exact<{
+  eventId: Scalars['String']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type EventTicketHoldersQuery = { __typename: 'Query', ticketsByEvent: { __typename: 'TicketOffsetPage', data: Array<{ __typename: 'Ticket', id: string, ticketNumber: string, buyerName: string | null, buyerEmail: string | null, ticketCategoryName: string | null, status: TicketStatus, purchaseDate: string | null, validatedAt: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalPages: number, hasNext: boolean | null } } };
+
+export type ValidateTicketMutationVariables = Exact<{
+  input: ValidateTicketInput;
+}>;
+
+
+export type ValidateTicketMutation = { __typename: 'Mutation', validateTicket: { __typename: 'ValidationResult', outcome: CheckInOutcome, admitted: boolean, message: string, checkIn: { __typename: 'CheckIn', id: string, ticketNumber: string | null, method: ValidationMethod, recordedAt: string } | null, conflict: { __typename: 'CheckInConflict', id: string, type: CheckInConflictType, originalCheckInAt: string | null } | null, ticket: { __typename: 'Ticket', id: string, ticketNumber: string, buyerName: string | null, buyerEmail: string | null, ticketCategoryName: string | null, status: TicketStatus, purchaseDate: string | null, validatedAt: string | null } | null } };
+
+export type CheckInSummaryQueryVariables = Exact<{
+  eventId: Scalars['ID']['input'];
+}>;
+
+
+export type CheckInSummaryQuery = { __typename: 'Query', checkInSummary: { __typename: 'CheckInSummary', eventId: string, issued: number, admitted: number, conflicts: number, openConflicts: number, manualAdmissions: number, lastCheckInAt: string | null } };
+
+export type MyDashboardStatsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyDashboardStatsQuery = { __typename: 'Query', myDashboardStats: { __typename: 'OrganizerDashboardStats', totalRevenue: string, revenueChange: number | null, revenueCurrency: string, totalTicketsSold: number, ticketsSoldChange: number | null, activeEvents: number, eventsChange: number | null, eventsEndingThisWeek: number, totalAttendees: number, attendeesChange: number | null, pendingPayouts: string, availableBalance: string } };
+
+export type MyUpcomingEventsQueryVariables = Exact<{
+  limit: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type MyUpcomingEventsQuery = { __typename: 'Query', myUpcomingEvents: Array<{ __typename: 'OrganizerUpcomingEvent', id: string, title: string, eventDateTime: string, ticketsSold: number, totalCapacity: number, status: string, revenue: string, currency: string }> };
+
+export type MyRevenueSeriesQueryVariables = Exact<{
+  months: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type MyRevenueSeriesQuery = { __typename: 'Query', myRevenueSeries: Array<{ __typename: 'OrganizerRevenuePoint', periodStart: string, revenue: string, ticketsSold: number, currency: string }> };
+
+export type MyTicketMixQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyTicketMixQuery = { __typename: 'Query', myTicketMix: { __typename: 'OrganizerTicketMix', totalSold: number, totalRevenue: string, currency: string, rows: Array<{ __typename: 'OrganizerShareRow', name: string, count: number, revenue: string | null }> } };
+
+export type MyCheckInRateQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyCheckInRateQuery = { __typename: 'Query', myCheckInRate: { __typename: 'OrganizerCheckInRate', eventId: string, eventTitle: string, eventDateTime: string | null, issued: number, scanned: number, ratePercent: number } | null };
+
+export type MyPayoutWindowQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyPayoutWindowQuery = { __typename: 'Query', myPayoutWindow: { __typename: 'OrganizerPayoutWindow', availableNow: string, pendingRelease: string, currency: string, windowOpenedAt: string | null, nextReleaseAt: string | null, windowDaysTotal: number, daysElapsed: number, daysRemaining: number } };
+
+export type MyPayoutSourcesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyPayoutSourcesQuery = { __typename: 'Query', myPayoutSources: Array<{ __typename: 'OrganizerPayoutSource', escrowAccountId: string, eventId: string | null, eventTitle: string | null, availableAmount: string, currency: string, eligibleSince: string | null }> };
+
+export type MyRecentActivityQueryVariables = Exact<{
+  limit: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type MyRecentActivityQuery = { __typename: 'Query', myRecentActivity: Array<{ __typename: 'OrganizerActivityItem', id: string, type: OrganizerActivityType, message: string, timestamp: string, eventId: string | null, eventTitle: string | null, amount: string | null, currency: string | null }> };
+
+export type MyEventsQueryVariables = Exact<{
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type MyEventsQuery = { __typename: 'Query', myEvents: { __typename: 'EventOffsetPage', totalElements: number, totalPages: number, hasNext: boolean, content: Array<{ __typename: 'Event', id: string, title: string, status: EventStatus, eventDateTime: string, endDateTime: string, locationName: string | null, cityName: string | null, bannerImageUrl: string | null, totalCapacity: number, soldTickets: number, revenue: string, currency: string | null }> } };
+
+export type PublishEventMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type PublishEventMutation = { __typename: 'Mutation', publishEvent: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type UnpublishEventMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type UnpublishEventMutation = { __typename: 'Mutation', unpublishEvent: { __typename: 'Event', id: string, status: EventStatus } };
+
+export type MyEventDetailQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type MyEventDetailQuery = { __typename: 'Query', event: { __typename: 'Event', id: string, title: string, description: string, status: EventStatus, eventDateTime: string, endDateTime: string, locationName: string | null, locationAddress: string | null, cityName: string | null, bannerImageUrl: string | null, totalCapacity: number, soldTickets: number, availableTickets: number, revenue: string, currency: string | null, rejectionReason: string | null, ticketTiers: Array<{ __typename: 'TicketTier', id: string, name: string, price: string, currency: string, quantity: number, soldQuantity: number, isActive: boolean }> | null } | null };
+
+export type CreateEventMutationVariables = Exact<{
+  input: CreateEventInput;
+}>;
+
+
+export type CreateEventMutation = { __typename: 'Mutation', createEvent: { __typename: 'Event', id: string, title: string, status: EventStatus } };
+
+export type MyFinanceOverviewQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyFinanceOverviewQuery = { __typename: 'Query', myFinanceOverview: { __typename: 'OrganizerFinanceOverview', availableBalance: string, pendingBalance: string, totalEarned: string, currency: string, pendingPayoutRequests: number, lastPayoutDate: string | null, lastPayoutAmount: string | null, totalTicketRevenue: string, totalRefunds: string, platformFees: string, netEarnings: string, earningsThisMonth: string, earningsLastMonth: string, monthlyGrowth: number | null } };
+
+export type MyTransactionsQueryVariables = Exact<{
+  filter: InputMaybe<OrganizerTransactionFilterInput>;
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type MyTransactionsQuery = { __typename: 'Query', myTransactions: { __typename: 'OrganizerTransactionOffsetPage', totalElements: number, totalPages: number, page: number, size: number, hasNext: boolean, hasPrevious: boolean, content: Array<{ __typename: 'OrganizerTransaction', id: string, type: OrganizerTransactionType, description: string, amount: string, currency: string, status: string, timestamp: string, eventId: string | null, eventTitle: string | null, reference: string | null }> } };
+
+export type PayoutsByOrganizerQueryVariables = Exact<{
+  organizerId: Scalars['String']['input'];
+  pagination: InputMaybe<OffsetPaginationInput>;
+}>;
+
+
+export type PayoutsByOrganizerQuery = { __typename: 'Query', payoutRequestsByOrganizer: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, requestedAmount: string, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, approvedAt: string | null, processedAt: string | null, rejectionReason: string | null, bankName: string | null, accountNumber: string | null, bankAccountName: string | null, notes: string | null }>, pagination: { __typename: 'PaginationInfo', totalElements: number | null, totalPages: number, currentPage: number | null, hasNext: boolean | null, hasPrevious: boolean | null } } };
+
+export type BankAccountsByOrganizerQueryVariables = Exact<{
+  organizerId: Scalars['String']['input'];
+}>;
+
+
+export type BankAccountsByOrganizerQuery = { __typename: 'Query', bankAccountsByOrganizer: Array<{ __typename: 'BankAccount', id: string, organizerId: string, accountHolderName: string, bankName: string, bankCode: string | null, branchName: string | null, branchCode: string | null, accountNumber: string, accountType: string | null, currency: string, swiftCode: string | null, isDefault: boolean, isVerified: boolean, status: string, createdAt: string | null }> };
+
+export type CreatePayoutRequestMutationVariables = Exact<{
+  input: CreatePayoutRequestInput;
+}>;
+
+
+export type CreatePayoutRequestMutation = { __typename: 'Mutation', createPayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, status: PayoutRequestStatus, requestedAmount: string } };
+
+export type CreateBankAccountMutationVariables = Exact<{
+  input: CreateBankAccountInput;
+}>;
+
+
+export type CreateBankAccountMutation = { __typename: 'Mutation', createBankAccount: { __typename: 'BankAccount', id: string } };
+
+export type UpdateBankAccountMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: UpdateBankAccountInput;
+}>;
+
+
+export type UpdateBankAccountMutation = { __typename: 'Mutation', updateBankAccount: { __typename: 'BankAccount', id: string } };
+
+export type DeleteBankAccountMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type DeleteBankAccountMutation = { __typename: 'Mutation', deleteBankAccount: string };
+
+export type SetDefaultBankAccountMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type SetDefaultBankAccountMutation = { __typename: 'Mutation', setDefaultBankAccount: { __typename: 'BankAccount', id: string, isDefault: boolean } };
+
+export type ApplyToBeOrganizerMutationVariables = Exact<{
+  input: OrganizationApplicationInput;
+}>;
+
+
+export type ApplyToBeOrganizerMutation = { __typename: 'Mutation', applyToBeOrganizer: { __typename: 'Organization', id: string, ownerId: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, addressLine2: string | null, city: string | null, province: string | null, country: string | null, countryCode: string | null, postalCode: string | null, formattedAddress: string | null } | null } };
+
+export type UpdateOrganizationApplicationMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+  input: OrganizationApplicationInput;
+}>;
+
+
+export type UpdateOrganizationApplicationMutation = { __typename: 'Mutation', updateOrganizationApplication: { __typename: 'Organization', id: string, ownerId: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, addressLine2: string | null, city: string | null, province: string | null, country: string | null, countryCode: string | null, postalCode: string | null, formattedAddress: string | null } | null } | null };
+
+export type SubmitOrganizationForReviewMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type SubmitOrganizationForReviewMutation = { __typename: 'Mutation', submitOrganizationForReview: { __typename: 'Organization', id: string, ownerId: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, addressLine2: string | null, city: string | null, province: string | null, country: string | null, countryCode: string | null, postalCode: string | null, formattedAddress: string | null } | null } | null };
+
+export type OrganizationFieldsFragment = { __typename: 'Organization', id: string, ownerId: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, addressLine2: string | null, city: string | null, province: string | null, country: string | null, countryCode: string | null, postalCode: string | null, formattedAddress: string | null } | null };
+
+export type MyOrganizationQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyOrganizationQuery = { __typename: 'Query', myOwnedOrganization: { __typename: 'Organization', id: string, ownerId: string, name: string, slug: string, description: string | null, tagline: string | null, logoUrl: string | null, bannerUrl: string | null, website: string | null, type: OrganizationType, status: OrganizationStatus, kybStatus: KybStatus, businessEmail: string | null, businessPhone: string | null, businessType: BusinessType | null, businessRegistrationNumber: string | null, taxId: string | null, verified: boolean, documentsVerified: boolean, payoutAccountVerified: boolean, verifiedAt: string | null, submittedAt: string | null, approvedAt: string | null, rejectionReason: string | null, reviewedAt: string | null, canCreateDraftEvents: boolean, canPublishEvents: boolean, canReceivePayouts: boolean, canBeEdited: boolean, canSubmitForReview: boolean, isApproved: boolean, isInApprovalWorkflow: boolean, createdAt: string, updatedAt: string | null, socialLinks: { __typename: 'SocialLinks', facebook: string | null, instagram: string | null, twitter: string | null, linkedin: string | null, youtube: string | null, tiktok: string | null } | null, businessAddress: { __typename: 'BusinessAddress', addressLine1: string | null, addressLine2: string | null, city: string | null, province: string | null, country: string | null, countryCode: string | null, postalCode: string | null, formattedAddress: string | null } | null } | null };
+
+export type MyNotificationPreferencesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyNotificationPreferencesQuery = { __typename: 'Query', myNotificationPreferences: { __typename: 'NotificationPreferences', id: string, emailEnabled: boolean, smsEnabled: boolean, whatsappEnabled: boolean, pushEnabled: boolean, inAppEnabled: boolean, ticketNotifications: boolean, eventReminders: boolean, eventUpdates: boolean, paymentNotifications: boolean, teamNotifications: boolean, marketingEmails: boolean, systemAnnouncements: boolean } | null };
+
+export type UpdateNotificationPreferencesMutationVariables = Exact<{
+  input: UpdateNotificationPreferencesInput;
+}>;
+
+
+export type UpdateNotificationPreferencesMutation = { __typename: 'Mutation', updateNotificationPreferences: { __typename: 'NotificationPreferences', id: string, emailEnabled: boolean, smsEnabled: boolean, whatsappEnabled: boolean, pushEnabled: boolean, inAppEnabled: boolean, ticketNotifications: boolean, eventReminders: boolean, eventUpdates: boolean, paymentNotifications: boolean, teamNotifications: boolean, marketingEmails: boolean, systemAnnouncements: boolean } | null };
+
+export type UpdateMyProfileMutationVariables = Exact<{
+  input: UpdateUserInput;
+}>;
+
+
+export type UpdateMyProfileMutation = { __typename: 'Mutation', updateMyProfile: { __typename: 'User', id: string, firstName: string | null, lastName: string | null, fullName: string } };
+
+export type MyTeamMembersQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyTeamMembersQuery = { __typename: 'Query', myOwnedOrganization: { __typename: 'Organization', id: string, members: Array<{ __typename: 'OrganizationMember', id: string, userId: string, role: OrganizationRole, status: MemberStatus, joinedAt: string, lastActiveAt: string | null, user: { __typename: 'User', id: string, fullName: string, username: string | null } | null }> | null } | null };
+
+export type UpdateMemberRoleMutationVariables = Exact<{
+  memberId: Scalars['ID']['input'];
+  input: UpdateMemberRoleInput;
+}>;
+
+
+export type UpdateMemberRoleMutation = { __typename: 'Mutation', updateMemberRole: { __typename: 'OrganizationMember', id: string, role: OrganizationRole, status: MemberStatus } | null };
+
+export type RemoveMemberMutationVariables = Exact<{
+  memberId: Scalars['ID']['input'];
+  reason: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type RemoveMemberMutation = { __typename: 'Mutation', removeMember: boolean };
+
+export type InviteTeamMemberMutationVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+  input: InviteMemberInput;
+}>;
+
+
+export type InviteTeamMemberMutation = { __typename: 'Mutation', inviteTeamMember: { __typename: 'TeamInvitation', id: string, email: string | null, proposedRole: OrganizationRole } | null };

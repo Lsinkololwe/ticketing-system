@@ -1,6 +1,8 @@
 Perfect! Now I have all the pieces. Let me create a comprehensive technical document showing the complete registration flow.
 
 # MyTicket Zambia - Complete Registration Business Flow
+
+> **Process mechanics (ROADMAP D-21).** Keycloak user changes reach `identity_users` through `UserSyncWorkflow`; no `UserRegisteredEvent` is published. Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
 ## Technical Implementation Documentation
 
 ---

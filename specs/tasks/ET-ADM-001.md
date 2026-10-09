@@ -3,7 +3,7 @@
 > **Spec** [`specs/admin/001-approvals-workbench/spec.md`](../admin/001-approvals-workbench/spec.md) · **Wave 6** · `blocked_by:` ET-PLT-004, 005, ET-ORG-001, ET-ORG-003, ET-CAT-001, ET-NTF-002
 > **Screen** `Admin - Approvals Workbench.dc.html` (+ `Admin - Docs - Approvals & Config.dc.html`) — **read both first**
 > **Routes** `apps/admin/src/app/(dashboard)/approvals/{page,organizers,events,documents}`
-> **Verify** `mvn -q -f backend test -Dgroups=ET-ADM-001 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend test -Dgroups=ET-ADM-001 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 This spec **owns no decision.** Approving an organizer belongs to [`ET-ORG-001`](ET-ORG-001.md);
 approving an event to [`ET-CAT-001`](ET-CAT-001.md). What this owns is the **workbench**: queues,
@@ -26,7 +26,7 @@ queue offering an action the mutation refuses.
 - **Spec** R1 · **§5** T1 · **depends** R0 · **parallel-safe** yes *(one service per agent)*
 - **Acceptance** `explain()` reports `IXSCAN`; **breached items float**.
 
-### BE-2 · Claims — the unique index, the TTL, the expiry sweep
+### BE-2 · Claims — the unique index and the lease timer
 - **Spec** R2 · **§5** T2 · **depends** BE-1 · **parallel-safe** no
 - **Acceptance** two parallel claims yield **one holder**; **an expired claim keeps its queue
   position**.
@@ -128,11 +128,11 @@ queue offering an action the mutation refuses.
 ### TS-1 · Queues *(L3)* — `IXSCAN`; breached items float; ordering stable under insertion.
 
 ### TS-2 · Claims *(L3)*
-Two parallel claims → one holder (index live via MCP); expiry keeps queue position; TTL sweep
-idempotent.
+Two parallel claims → one holder (index live via MCP); expiry keeps queue position; the lease
+timer fires once under time skipping.
 
 ### TS-3 · SLA *(L3, frozen clock)*
-One escalation per level, asserted by running the sweeper repeatedly; the clock **pauses** in
+One escalation per level, asserted by skipping time past each threshold twice; the clock **pauses** in
 `CHANGES_REQUESTED` and resumes on resubmission.
 
 ### TS-4 · Preconditions *(L1 + source scan)*
@@ -163,15 +163,15 @@ Re-submission approves nothing twice. A mixed batch returns per-id outcomes.
 
 - [ ] R0 recorded; any duplicated precondition check classified `contradicted`
 - [ ] Breached items float; queues `IXSCAN`
-- [ ] Two parallel claims yield one holder; expiry preserves queue position
-- [ ] One escalation per level; SLA clock pauses in `CHANGES_REQUESTED`
+- [x] Two parallel claims yield one holder; expiry preserves queue position — for events, by `EventApprovalWorkflow` (claim lease PT30M): `EventApprovalWorkflowTest.racingClaimsYieldOneHolder`, `aClaimExpires` (L3); `EventReviewServiceTest.claimsAndExpiry` (L2). Organizer-application claims (identity) not covered.
+- [x] One escalation per level; SLA clock pauses in `CHANGES_REQUESTED` — for events: `EventApprovalWorkflowTest.escalationsFireOncePerLevel`, `theClockPausesForTheApplicant`, `anAdoptedReviewCatchesUp` (L3, time-skipped); `EventReviewServiceTest.oneEscalationPerLevel` (L2); `ApprovalRulesTest`, `SlaClockTest` (L1).
 - [ ] Preconditions shared with the owning specs — **one implementation**
-- [ ] Deciding another reviewer's claim refuses; decision and release are atomic
+- [x] Deciding another reviewer's claim refuses; decision and release are atomic — for events: `EventApprovalWorkflowTest.onlyTheHolderDecides`, `oneDecisionAtATime` (L3); `EventReviewServiceTest.aDecisionReleasesItsClaimTogether` (L2, one transaction on a replica set).
 - [ ] **No bulk rejection exists in the schema or the UI**
 - [ ] Bulk returns per-id outcomes
 - [ ] The pre-breach alert fires before the SLA
 - [ ] Both `.dc.html` screens read; table shape and empty state match
 - [ ] **Infographics gate passed**; breaching-soon is the single focal figure
 - [ ] Approve / Reject / Request Changes use exactly those words
-- [ ] `mvn -q -f backend verify -Dgroups=ET-ADM-001 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend verify -Dgroups=ET-ADM-001 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

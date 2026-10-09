@@ -1,73 +1,45 @@
 'use client';
 
-import { Component, ReactNode } from 'react';
-import { Flex, Text, Button, Card, Heading } from '@radix-ui/themes';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Banner, Button } from '@pml.tickets/shared/components/m3';
 
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
 }
-
 interface State {
-  hasError: boolean;
   error: Error | null;
 }
 
+/** Catches render errors and shows the designed error state with a retry. */
 export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+  override state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    return { error };
   }
 
-  override componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  override componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('ErrorBoundary caught an error:', error, info);
   }
-
-  handleReset = () => {
-    this.setState({ hasError: false, error: null });
-  };
 
   override render() {
-    if (this.state.hasError) {
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
-
-      return (
-        <Flex
-          align="center"
-          justify="center"
-          style={{ minHeight: '100vh', padding: '24px' }}
+    if (!this.state.error) return this.props.children;
+    if (this.props.fallback) return this.props.fallback;
+    return (
+      <main className="m3-main">
+        <Banner
+          tone="error"
+          title="Something went wrong"
+          actions={
+            <Button size="sm" variant="tonal" onClick={() => this.setState({ error: null })}>
+              Try again
+            </Button>
+          }
         >
-          <Card size="3" style={{ maxWidth: '500px', width: '100%' }}>
-            <Flex direction="column" gap="4">
-              <Heading size="5" color="red">
-                Something went wrong
-              </Heading>
-              <Text color="gray" size="2">
-                {this.state.error?.message || 'An unexpected error occurred'}
-              </Text>
-              <Flex gap="2">
-                <Button onClick={this.handleReset} variant="soft">
-                  Try again
-                </Button>
-                <Button
-                  onClick={() => window.location.reload()}
-                  variant="outline"
-                >
-                  Reload page
-                </Button>
-              </Flex>
-            </Flex>
-          </Card>
-        </Flex>
-      );
-    }
-
-    return this.props.children;
+          {this.state.error.message || 'An unexpected error occurred.'}
+        </Banner>
+      </main>
+    );
   }
 }

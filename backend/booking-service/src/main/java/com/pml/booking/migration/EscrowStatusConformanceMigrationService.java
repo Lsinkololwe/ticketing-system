@@ -1,5 +1,7 @@
 package com.pml.booking.migration;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -14,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Moves stored escrow statuses onto ET-FIN-001 R4's five.
+ * Moves stored escrow statuses onto the current five.
  *
  * <h2>Why the rows cannot simply be left</h2>
  * {@code EscrowStatus} no longer has constants for {@code CREATED},
@@ -43,15 +45,13 @@ import java.util.Map;
  * once it reads {@code ACTIVE} — {@code ACTIVE} means {@code IN_PROGRESS}. The
  * update rewrites both fields together, because a row whose code and meaning
  * disagree is worse than one carrying neither.
- *
- * @see <a href="file:../../../../../../../specs/finance/001-escrow-and-ledger/spec.md">ET-FIN-001</a>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class EscrowStatusConformanceMigrationService {
 
-    private static final String COLLECTION = "booking_escrow_accounts";
+    private static final String COLLECTION = BookingCollections.ESCROW_ACCOUNTS;
 
     /** Retired code → its replacement, and the semantic that replacement carries. */
     private static final Map<String, Replacement> MAPPING = new LinkedHashMap<>(Map.of(

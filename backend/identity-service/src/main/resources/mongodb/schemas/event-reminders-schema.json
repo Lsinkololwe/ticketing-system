@@ -2,65 +2,46 @@
   "$jsonSchema": {
     "bsonType": "object",
     "title": "Event Reminders Schema - OWASP Compliant",
-    "description": "User reminders for upcoming events",
+    "description": "A scheduled reminder for an upcoming event, fired by ReminderWorkflow (com.pml.identity.domain.model.EventReminder)",
     "required": [
       "userId",
-      "eventId",
-      "reminderDate",
-      "status",
-      "createdAt"
+      "eventId"
     ],
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
         "bsonType": "objectId"
       },
       "userId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
-        "description": "OWASP A03 - ObjectId pattern validation"
+        "bsonType": "string"
       },
       "eventId": {
-        "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$"
+        "bsonType": "string"
       },
-      "reminderDate": {
-        "bsonType": "date",
-        "description": "When to send the reminder"
+      "ticketId": {
+        "bsonType": ["string", "null"]
+      },
+      "reminderAt": {
+        "bsonType": ["date", "null"],
+        "description": "The next of the two ET-NTF-002 R5 offsets (24h/1h before eventStartsAt)"
+      },
+      "eventStartsAt": {
+        "bsonType": ["date", "null"],
+        "description": "ET-NTF-002 R5 · when the event starts; reminders fire 24h and 1h before it"
       },
       "status": {
-        "bsonType": "string",
-        "enum": [
-          "PENDING",
-          "SENT",
-          "FAILED",
-          "CANCELLED"
-        ],
-        "description": "OWASP A04 - Enum constraint"
+        "bsonType": ["string", "null"],
+        "enum": ["SCHEDULED", "SENT", "CANCELLED", null],
+        "description": "com.pml.identity.domain.enums.ReminderStatus"
       },
       "sentAt": {
-        "bsonType": [
-          "date",
-          "null"
-        ]
-      },
-      "notificationChannel": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "enum": [
-          "EMAIL",
-          "SMS",
-          "PUSH",
-          null
-        ]
+        "bsonType": ["date", "null"]
       },
       "createdAt": {
-        "bsonType": "date"
+        "bsonType": ["date", "null"]
       }
     },
     "additionalProperties": false

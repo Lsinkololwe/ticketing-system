@@ -9,13 +9,18 @@ import com.pml.booking.web.graphql.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.GrantedAuthority;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * GraphQL Query Resolver for Ticket Reservations.
@@ -35,16 +40,55 @@ public class ReservationQueryResolver {
     // ========================================================================
 
     /**
-     * Get a reservation by ID.
-     * Schema: reservation(id: ID!): TicketReservation
+     * One reservation, if it is the caller's own.
+     * Schema: {@code reservation(id: ID!): TicketReservation}
+     *
+     * <h2>Scoped to the buyer, because a reservation belongs to a person</h2>
+     * OWASP A01:2021 · CWE-639. The id arrives from the client and a reservation carries the
+     * buyer's identity, the tiers and quantities they chose, the promo code they used and the
+     * exact money — {@code unitPrice}, {@code subtotal}, {@code discountAmount},
+     * {@code totalAmount}. A lookup that answers on the id alone hands all of that to any
+     * signed-in account holding one, which on this platform costs a phone number to obtain.
+     *
+     * <p>The two neighbouring operations already scope: {@code cancelReservation} matches the
+     * caller against {@code userId}, and {@code myActiveReservations} compares the argument to
+     * the token's subject. This is the third, and it takes the same rule.
+     *
+     * <h2>Subject-scoped, not tenant-scoped</h2>
+     * A reservation is keyed to a buyer rather than an organization, so {@code TenantScope} is
+     * the wrong instrument — a customer belongs to no organization and would be refused by it.
+     * The comparison is against the token's subject. Support and finance read across buyers,
+     * which is what {@code reservationsByEvent} exists for on the organizer side.
+     *
+     * <h2>Empty rather than a refusal</h2>
+     * The field is nullable and has always answered {@code null} for an id that does not exist.
+     * Answering the same for one that is not the caller's keeps the two indistinguishable, so the
+     * query cannot be used to sort real reservation ids from invented ones.
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
     public Mono<TicketReservation> reservation(@InputArgument String id) {
         log.debug("GraphQL query: reservation(id={})", id);
         Objects.requireNonNull(id, "Reservation ID is required");
-        return reservationService.findById(id);
+
+        return ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .flatMap(authentication -> reservationService.findById(id)
+                        .filter(reservation -> visibleTo(authentication, reservation)));
     }
+
+    /** The buyer themselves, or support and finance acting on their behalf. */
+    private static boolean visibleTo(Authentication authentication, TicketReservation reservation) {
+        boolean support = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(SUPPORT_AUTHORITIES::contains);
+        return support || (reservation.getUserId() != null
+                && reservation.getUserId().equals(authentication.getName()));
+    }
+
+    /** Roles that read across buyers: refunds, disputes and reconciliation all need it. */
+    private static final Set<String> SUPPORT_AUTHORITIES =
+            Set.of("ROLE_ADMIN", "ROLE_FINANCE", "ROLE_SUPER_ADMIN");
 
     /**
      * Get active reservations for a user.
@@ -64,15 +108,15 @@ public class ReservationQueryResolver {
 
     /**
      * Get reservations by event with offset pagination.
-     * Schema: reservationsByEventOffsetPagination(eventId: ID!, pagination: OffsetPaginationInput): ReservationOffsetPage!
+     * Schema: reservationsByEvent(eventId: ID!, pagination: OffsetPaginationInput): ReservationOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
-    public Mono<ReservationOffsetPage> reservationsByEventOffsetPagination(
+    public Mono<ReservationOffsetPage> reservationsByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: reservationsByEventOffsetPagination(eventId={})", eventId);
+        log.debug("GraphQL query: reservationsByEvent(eventId={})", eventId);
         Objects.requireNonNull(eventId, "Event ID is required");
 
         return buildOffsetPage(reservationService.findByEventId(eventId), pagination);
@@ -80,66 +124,24 @@ public class ReservationQueryResolver {
 
     /**
      * Get expired reservations with offset pagination.
-     * Schema: expiredReservationsOffsetPagination(eventId: ID, since: DateTime!, pagination: OffsetPaginationInput): ReservationOffsetPage!
+     * Schema: expiredReservations(eventId: ID, since: DateTime!, pagination: OffsetPaginationInput): ReservationOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<ReservationOffsetPage> expiredReservationsOffsetPagination(
+    public Mono<ReservationOffsetPage> expiredReservations(
             @InputArgument String eventId,
             @InputArgument OffsetDateTime since,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: expiredReservationsOffsetPagination(eventId={}, since={})", eventId, since);
+        log.debug("GraphQL query: expiredReservations(eventId={}, since={})", eventId, since);
         Objects.requireNonNull(since, "Since date is required");
 
-        LocalDateTime sinceLocal = since.toLocalDateTime();
+        Instant sinceLocal = since.toInstant();
         Flux<TicketReservation> reservationFlux = eventId != null
                 ? reservationService.findExpiredByEventId(eventId, sinceLocal)
                 : reservationService.findExpiredSince(sinceLocal);
 
         return buildOffsetPage(reservationFlux, pagination);
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Get reservations by event with cursor pagination.
-     * Schema: reservationsByEventCursorPagination(eventId: ID!, pagination: CursorPaginationInput): ReservationConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
-    public Mono<ReservationConnection> reservationsByEventCursorPagination(
-            @InputArgument String eventId,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: reservationsByEventCursorPagination(eventId={})", eventId);
-        Objects.requireNonNull(eventId, "Event ID is required");
-
-        return buildCursorConnection(reservationService.findByEventId(eventId), pagination);
-    }
-
-    /**
-     * Get expired reservations with cursor pagination.
-     * Schema: expiredReservationsCursorPagination(eventId: ID, since: DateTime!, pagination: CursorPaginationInput): ReservationConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<ReservationConnection> expiredReservationsCursorPagination(
-            @InputArgument String eventId,
-            @InputArgument OffsetDateTime since,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: expiredReservationsCursorPagination(eventId={}, since={})", eventId, since);
-        Objects.requireNonNull(since, "Since date is required");
-
-        LocalDateTime sinceLocal = since.toLocalDateTime();
-        Flux<TicketReservation> reservationFlux = eventId != null
-                ? reservationService.findExpiredByEventId(eventId, sinceLocal)
-                : reservationService.findExpiredSince(sinceLocal);
-
-        return buildCursorConnection(reservationFlux, pagination);
     }
 
     // ========================================================================
@@ -168,48 +170,6 @@ public class ReservationQueryResolver {
                     );
 
                     return new ReservationOffsetPage(paginatedData, paginationInfo);
-                });
-    }
-
-    private Mono<ReservationConnection> buildCursorConnection(Flux<TicketReservation> reservationFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : new CursorPaginationInput(20, null, null, null);
-        int limit = p.getLimit();
-
-        return reservationFlux.collectList()
-                .map(allReservations -> {
-                    int totalCount = allReservations.size();
-
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allReservations.size(); i++) {
-                            if (allReservations.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    List<TicketReservation> pageData = allReservations.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageData.isEmpty()) {
-                        return ReservationConnection.empty();
-                    }
-
-                    List<ReservationEdge> edges = pageData.stream()
-                            .map(ReservationEdge::of)
-                            .toList();
-
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.of(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new ReservationConnection(edges, pageInfo, totalCount);
                 });
     }
 }

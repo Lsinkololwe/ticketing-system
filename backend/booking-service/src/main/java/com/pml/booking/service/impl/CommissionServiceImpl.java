@@ -1,6 +1,5 @@
 package com.pml.booking.service.impl;
 
-import com.pml.booking.event.domain.CommissionEarnedEvent;
 import com.pml.booking.domain.model.CommissionRecord;
 import com.pml.booking.domain.model.CommissionRecord.CommissionStatus;
 import com.pml.booking.repository.CommissionRecordRepository;
@@ -9,7 +8,6 @@ import com.pml.booking.service.CommissionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
@@ -38,8 +36,9 @@ public class CommissionServiceImpl implements CommissionService {
 
     private final CommissionRecordRepository commissionRepository;
     private final AccountingService accountingService;
-    private final ApplicationEventPublisher eventPublisher;
 
+    /** The injected platform clock. */
+    private final java.time.Clock clock;
     @Value("${platform.commission.rate:0.05}")
     private BigDecimal commissionRate;
 
@@ -90,36 +89,12 @@ public class CommissionServiceImpl implements CommissionService {
                             organizationId,
                             ticketPrice,
                             commissionRate
-                    );
+                    , clock.instant());
 
                     return commissionRepository.save(commission)
                             .doOnSuccess(c -> log.info("Pending commission created: {} ({})",
                                     c.getAmount(), ticketId));
                 });
-    }
-
-    @Override
-    @Transactional
-    public Mono<CommissionRecord> markCommissionEarned(String ticketId) {
-        log.info("Marking commission as earned for ticket: {}", ticketId);
-
-        return commissionRepository.findByTicketId(ticketId)
-                .switchIfEmpty(Mono.error(new IllegalStateException(
-                        "Commission record not found for ticket: " + ticketId)))
-                .flatMap(commission -> {
-                    // Record accounting entry for commission recognition
-                    return accountingService.recordCommissionEarned(
-                            commission.getId(),
-                            commission.getEventId(),
-                            commission.getAmount(),
-                            "ZMW" // Default currency
-                    ).flatMap(journalEntry -> {
-                        commission.markEarned(journalEntry.getId());
-                        return commissionRepository.save(commission);
-                    });
-                })
-                .doOnSuccess(c -> log.info("Commission earned: {} for ticket: {}",
-                        c.getAmount(), ticketId));
     }
 
     @Override
@@ -130,17 +105,10 @@ public class CommissionServiceImpl implements CommissionService {
         return commissionRepository.findByEventIdAndStatus(eventId, CommissionStatus.PENDING)
                 .flatMap(commission -> {
                     String journalEntryId = generateJournalEntryId();
-                    commission.markEarned(journalEntryId);
+                    commission.markEarned(journalEntryId, clock.instant());
                     return commissionRepository.save(commission);
                 })
                 .count()
-                .flatMap(count -> {
-                    if (count > 0) {
-                        return publishCommissionEarnedEvent(eventId)
-                                .thenReturn(count);
-                    }
-                    return Mono.just(count);
-                })
                 .doOnSuccess(count -> log.info("Marked {} commissions as earned for event: {}", count, eventId));
     }
 
@@ -158,7 +126,7 @@ public class CommissionServiceImpl implements CommissionService {
                         "Commission record not found for ticket: " + ticketId)))
                 .flatMap(commission -> {
                     String journalEntryId = generateJournalEntryId();
-                    commission.cancel(refundRequestId, reason, journalEntryId);
+                    commission.cancel(refundRequestId, reason, journalEntryId, clock.instant());
                     return commissionRepository.save(commission)
                             .doOnSuccess(c -> log.info("Pending commission cancelled for ticket: {}", ticketId));
                 });
@@ -185,12 +153,55 @@ public class CommissionServiceImpl implements CommissionService {
                             commission.isEarned(), // wasEarned
                             "ZMW" // Default currency
                     ).flatMap(journalEntry -> {
-                        commission.clawback(refundRequestId, reason, journalEntry.getId());
+                        commission.clawback(refundRequestId, reason, journalEntry.getId(), clock.instant());
                         return commissionRepository.save(commission);
                     });
                 })
                 .doOnSuccess(c -> log.warn("Commission clawed back for ticket: {} ({})",
                         ticketId, c.getAmount()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<CommissionRecord> reduceForPartialRefund(String ticketId, String refundRequestId,
+                                                         BigDecimal refundAmount, BigDecimal commissionShare) {
+        return commissionRepository.findByTicketId(ticketId)
+                .switchIfEmpty(Mono.error(new IllegalStateException(
+                        "Commission record not found for ticket: " + ticketId)))
+                .flatMap(commission -> {
+                    commission.reduce(refundRequestId, refundAmount, commissionShare, clock.instant());
+                    return commissionRepository.save(commission);
+                });
+    }
+
+    @Override
+    @Transactional
+    public Mono<CommissionRecord> reinstatePendingCommission(String ticketId, String refundRequestId) {
+        return commissionRepository.findByTicketId(ticketId)
+                .switchIfEmpty(Mono.error(new IllegalStateException(
+                        "Commission record not found for ticket: " + ticketId)))
+                .flatMap(commission -> {
+                    // A partial refund reduced the record rather than cancelling it; undoing it is
+                    // giving the reduction back, and finding none means this was not that kind of refund.
+                    if (commission.restoreReduction(refundRequestId)) {
+                        return commissionRepository.save(commission);
+                    }
+                    if (commission.isPending()) {
+                        // Already reinstated by an earlier attempt at this activity.
+                        return Mono.just(commission);
+                    }
+                    if (!commission.isCancelled() || !refundRequestId.equals(commission.getRefundRequestId())) {
+                        // Not this refund's cancellation to reverse — an earned commission's
+                        // clawback is a real ledger entry and is reconciled by an operator, not
+                        // reversed automatically here.
+                        return Mono.just(commission);
+                    }
+                    commission.reinstate(clock.instant());
+                    return commissionRepository.save(commission)
+                            .doOnSuccess(c -> log.info(
+                                    "Pending commission for ticket {} reinstated: refund {} did not reach the provider",
+                                    ticketId, refundRequestId));
+                });
     }
 
     @Override
@@ -214,16 +225,6 @@ public class CommissionServiceImpl implements CommissionService {
     }
 
     @Override
-    public Mono<BigDecimal> getTotalPendingCommission(String eventId) {
-        return commissionRepository.sumAmountByEventIdAndStatus(eventId, CommissionStatus.PENDING);
-    }
-
-    @Override
-    public Mono<BigDecimal> getTotalEarnedCommission(String eventId) {
-        return commissionRepository.sumAmountByEventIdAndStatus(eventId, CommissionStatus.EARNED);
-    }
-
-    @Override
     public Mono<BigDecimal> getTotalPlatformEarnedCommission() {
         return commissionRepository.findByStatus(CommissionStatus.EARNED)
                 .map(CommissionRecord::getAmount)
@@ -234,35 +235,4 @@ public class CommissionServiceImpl implements CommissionService {
         return "JE-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     }
 
-    private Mono<Void> publishCommissionEarnedEvent(String eventId) {
-        return commissionRepository.findByEventIdAndStatus(eventId, CommissionStatus.EARNED)
-                .collectList()
-                .flatMap(commissions -> {
-                    if (commissions.isEmpty()) {
-                        return Mono.empty();
-                    }
-
-                    CommissionRecord first = commissions.get(0);
-                    BigDecimal totalCommission = commissions.stream()
-                            .map(CommissionRecord::getAmount)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                    BigDecimal grossRevenue = commissions.stream()
-                            .map(CommissionRecord::getTicketPrice)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-                    CommissionEarnedEvent event = new CommissionEarnedEvent(
-                            eventId,
-                            first.getOrganizerId(),
-                            null, // Event title would need to be fetched
-                            totalCommission,
-                            commissions.size(),
-                            grossRevenue
-                    );
-
-                    eventPublisher.publishEvent(event);
-                    log.info("Published CommissionEarnedEvent for event: {}, total: {}",
-                            eventId, totalCommission);
-                    return Mono.empty();
-                });
-    }
 }

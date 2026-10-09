@@ -9,6 +9,8 @@ import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationOnboardingService;
 import com.pml.identity.service.OrganizationService;
+import com.pml.identity.workflow.onboarding.OrganizerOnboardingProcess;
+import com.pml.shared.security.Permission;
 import com.pml.shared.security.SecurityContextUtils;
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import com.netflix.graphql.dgs.DgsComponent;
@@ -18,6 +20,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Organization operations.
@@ -26,20 +30,24 @@ import reactor.core.publisher.Mono;
  * ==========================
  * 1. User applies → Organization created (DRAFT)
  * 2. User fills details and submits → PENDING_REVIEW
- * 3. Admin approves/rejects → APPROVED/CHANGES_REQUESTED/REJECTED
+ * 3. Admin approves, rejects or requests changes → ACTIVE/REJECTED/CHANGES_REQUESTED
  * 4. User can create draft events during approval process
  */
 @Slf4j
+
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class OrganizationMutationResolver {
 
     private final OrganizationService organizationService;
     private final OrganizationOnboardingService onboardingService;
     private final OrganizationMemberService memberService;
+    private final com.pml.identity.service.OrganizationAdminService adminService;
 
-    private static final String ORG_EDIT_PERMISSION = "ORG_EDIT";
-    private static final String ORG_MANAGE_SETTINGS_PERMISSION = "ORG_MANAGE_SETTINGS";
+    /** Submission and the three review decisions run in the organization's workflow. */
+    private final OrganizerOnboardingProcess onboardingProcess;
 
     // =========================================================================
     // ONBOARDING MUTATIONS (User)
@@ -53,7 +61,7 @@ public class OrganizationMutationResolver {
     @PreAuthorize("isAuthenticated()")
     @FailClosedOnRevocation("organizer.apply")
     public Mono<Organization> applyToBeOrganizer(
-            @InputArgument OrganizationApplicationInput input) {
+            @Valid @InputArgument OrganizationApplicationInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("User {} applying to become organizer", userId))
                 .flatMap(userId -> onboardingService.applyToBeOrganizer(userId, input));
@@ -68,7 +76,7 @@ public class OrganizationMutationResolver {
     @FailClosedOnRevocation("organizer.updateApplication")
     public Mono<Organization> updateOrganizationApplication(
             @InputArgument String id,
-            @InputArgument OrganizationApplicationInput input) {
+            @Valid @InputArgument OrganizationApplicationInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("User {} updating organization application: {}", userId, id))
                 .flatMap(userId -> organizationService.findById(id)
@@ -96,7 +104,7 @@ public class OrganizationMutationResolver {
                             if (!org.getOwnerId().equals(userId)) {
                                 return Mono.error(new IllegalStateException("Only the owner can submit for review"));
                             }
-                            return onboardingService.submitForReview(id);
+                            return onboardingProcess.submit(id, userId);
                         }));
     }
 
@@ -144,11 +152,21 @@ public class OrganizationMutationResolver {
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @FailClosedOnRevocation("admin.approveOrganization")
     public Mono<Organization> approveOrganization(
-            @InputArgument String id) {
+            @InputArgument String id,
+            @InputArgument Double commissionRate) {
+        // The rate is validated before anything starts: a refused rate must not leave a
+        // half-approved organization behind. It is written first so the organization never sells
+        // at the platform default for the moment between approval and the override.
+        Mono<Void> rate = commissionRate == null ? Mono.empty()
+                : Mono.fromRunnable(() -> com.pml.identity.service.OrganizationRules.fractionOf(commissionRate))
+                        .then(SecurityContextUtils.getCurrentUserId().defaultIfEmpty("system")
+                                .flatMap(adminId -> adminService.setCommissionRate(
+                                        id, commissionRate, "set at approval", adminId)))
+                        .then();
         return SecurityContextUtils.getCurrentUserId()
                 .defaultIfEmpty("system")
                 .doOnNext(adminId -> log.info("Admin {} approving organization: {}", adminId, id))
-                .flatMap(adminId -> onboardingService.approve(id, adminId));
+                .flatMap(adminId -> rate.then(Mono.defer(() -> onboardingProcess.approve(id, adminId))));
     }
 
     /**
@@ -163,7 +181,7 @@ public class OrganizationMutationResolver {
         return SecurityContextUtils.getCurrentUserId()
                 .defaultIfEmpty("system")
                 .doOnNext(adminId -> log.info("Admin {} requesting changes for organization {}: {}", adminId, id, reason))
-                .flatMap(adminId -> onboardingService.requestChanges(id, reason, adminId));
+                .flatMap(adminId -> onboardingProcess.requestChanges(id, reason, adminId));
     }
 
     /**
@@ -178,7 +196,7 @@ public class OrganizationMutationResolver {
         return SecurityContextUtils.getCurrentUserId()
                 .defaultIfEmpty("system")
                 .doOnNext(adminId -> log.info("Admin {} rejecting organization {}: {}", adminId, id, reason))
-                .flatMap(adminId -> onboardingService.reject(id, reason, adminId));
+                .flatMap(adminId -> onboardingProcess.reject(id, reason, adminId));
     }
 
     // =========================================================================
@@ -186,74 +204,57 @@ public class OrganizationMutationResolver {
     // =========================================================================
 
     /**
-     * Update organization details.
-     * Requires ORG_EDIT permission.
+     * Update the organization's name, description and images. Requires {@code organization:edit}.
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
     @FailClosedOnRevocation("organizer.updateOrganization")
     public Mono<Organization> updateOrganization(
             @InputArgument String id,
-            @InputArgument UpdateOrganizationInput input) {
+            @Valid @InputArgument UpdateOrganizationInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("User {} updating organization: {}", userId, id))
-                .flatMap(userId -> memberService.hasPermission(userId, id, ORG_EDIT_PERMISSION)
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied: " + ORG_EDIT_PERMISSION));
-                            }
-
-                            return organizationService.update(
-                                    id,
-                                    input.name(),
-                                    input.description(),
-                                    input.logoUrl(),
-                                    input.bannerUrl()
-                            );
-                        }));
+                .flatMap(userId -> memberService.requirePermission(userId, id, Permission.ORGANIZATION_EDIT)
+                        .then(Mono.defer(() -> adminService.updateProfile(id, input))));
     }
 
     /**
-     * Update organization settings.
-     * Requires ORG_MANAGE_SETTINGS permission.
+     * Update the organization's settings. Requires {@code organization:edit}; changing either of
+     * the two money switches — managers seeing financial figures, admins requesting payouts —
+     * also requires {@code organization:billing}, which only the owner holds, so an admin cannot
+     * widen their own access.
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
     @FailClosedOnRevocation("organizer.updateOrganizationSettings")
     public Mono<Organization> updateOrganizationSettings(
             @InputArgument String id,
-            @InputArgument UpdateOrganizationSettingsInput input) {
+            @Valid @InputArgument UpdateOrganizationSettingsInput input) {
+        boolean changesMoneySwitches = input.managersCanViewFinancials() != null || input.adminsCanRequestPayouts() != null;
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("User {} updating organization settings: {}", userId, id))
-                .flatMap(userId -> memberService.hasPermission(userId, id, ORG_MANAGE_SETTINGS_PERMISSION)
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied: " + ORG_MANAGE_SETTINGS_PERMISSION));
-                            }
+                .flatMap(userId -> memberService.requirePermission(userId, id, Permission.ORGANIZATION_EDIT)
+                        .then(Mono.defer(() -> changesMoneySwitches
+                                ? memberService.requirePermission(userId, id, Permission.ORGANIZATION_BILLING)
+                                : Mono.empty()))
+                        .then(Mono.defer(() -> organizationService.findById(id)))
+                        .flatMap(org -> organizationService.updateSettings(id, applied(org.getSettings(), input))));
+    }
 
-                            return organizationService.findById(id)
-                                    .flatMap(org -> {
-                                        OrganizationSettings settings = org.getSettings();
-                                        if (settings == null) {
-                                            settings = new OrganizationSettings();
-                                        }
-
-                                        if (input.allowMemberInvites() != null) {
-                                            settings.setAllowMembersToInvite(input.allowMemberInvites());
-                                        }
-                                        if (input.requireApprovalForEvents() != null) {
-                                            settings.setRequireEventApproval(input.requireApprovalForEvents());
-                                        }
-                                        if (input.notifyOnNewMember() != null) {
-                                            settings.setNotifyOwnerOnMemberJoin(input.notifyOnNewMember());
-                                        }
-                                        if (input.defaultEventVisibility() != null) {
-                                            settings.setDefaultEventVisibility(input.defaultEventVisibility());
-                                        }
-
-                                        return organizationService.updateSettings(id, settings);
-                                    });
-                        }));
+    /** {@code current} with every non-null field of {@code input} written over it. */
+    static OrganizationSettings applied(OrganizationSettings current, UpdateOrganizationSettingsInput input) {
+        OrganizationSettings settings = current != null ? current : new OrganizationSettings();
+        if (input.defaultEventVisibility() != null) settings.setDefaultEventVisibility(input.defaultEventVisibility());
+        if (input.requireEventApproval() != null) settings.setRequireEventApproval(input.requireEventApproval());
+        if (input.allowMembersToInvite() != null) settings.setAllowMembersToInvite(input.allowMembersToInvite());
+        if (input.inviteRequiresApproval() != null) settings.setInviteRequiresApproval(input.inviteRequiresApproval());
+        if (input.maxTeamMembers() != null) settings.setMaxTeamMembers(input.maxTeamMembers());
+        if (input.managersCanViewFinancials() != null) settings.setManagersCanViewFinancials(input.managersCanViewFinancials());
+        if (input.adminsCanRequestPayouts() != null) settings.setAdminsCanRequestPayouts(input.adminsCanRequestPayouts());
+        if (input.notifyOwnerOnMemberJoin() != null) settings.setNotifyOwnerOnMemberJoin(input.notifyOwnerOnMemberJoin());
+        if (input.notifyOwnerOnEventCreated() != null) settings.setNotifyOwnerOnEventCreated(input.notifyOwnerOnEventCreated());
+        if (input.notifyOwnerOnPayoutRequest() != null) settings.setNotifyOwnerOnPayoutRequest(input.notifyOwnerOnPayoutRequest());
+        return settings;
     }
 
     /**
@@ -272,7 +273,9 @@ public class OrganizationMutationResolver {
         return SecurityContextUtils.getCurrentUserId()
                 .defaultIfEmpty("system")
                 .doOnNext(adminId -> log.info("Admin {} suspending organization: {} - Reason: {}", adminId, id, reason))
-                .flatMap(adminId -> organizationService.suspend(id, reason));
+                .flatMap(adminId -> organizationService.suspend(id, reason)
+                        .flatMap(suspended -> adminService.auditSuspension(id, reason, adminId, true)
+                                .thenReturn(suspended)));
     }
 
     /**
@@ -286,7 +289,9 @@ public class OrganizationMutationResolver {
         return SecurityContextUtils.getCurrentUserId()
                 .defaultIfEmpty("system")
                 .doOnNext(adminId -> log.info("Admin {} unsuspending organization: {}", adminId, id))
-                .flatMap(adminId -> organizationService.unsuspend(id));
+                .flatMap(adminId -> organizationService.unsuspend(id)
+                        .flatMap(restored -> adminService.auditSuspension(id, null, adminId, false)
+                                .thenReturn(restored)));
     }
 
     /**

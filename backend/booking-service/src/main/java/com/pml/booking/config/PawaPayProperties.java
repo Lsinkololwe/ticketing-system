@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Positive;
 import java.net.InetAddress;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -39,11 +38,6 @@ public class PawaPayProperties {
      * Webhook configuration for callback handling.
      */
     private Webhook webhook = new Webhook();
-
-    /**
-     * Timeout and retry configuration.
-     */
-    private Retry retry = new Retry();
 
     /**
      * Supported mobile money providers in Zambia.
@@ -214,35 +208,6 @@ public class PawaPayProperties {
                 return false;
             }
         }
-    }
-
-    @Data
-    public static class Retry {
-        /**
-         * Maximum retry attempts for failed API calls.
-         */
-        @Positive
-        private int maxAttempts = 3;
-
-        /**
-         * Initial delay between retries.
-         */
-        private Duration initialDelay = Duration.ofSeconds(1);
-
-        /**
-         * Maximum delay between retries.
-         */
-        private Duration maxDelay = Duration.ofSeconds(30);
-
-        /**
-         * Multiplier for exponential backoff.
-         */
-        private double multiplier = 2.0;
-
-        /**
-         * HTTP status codes that should trigger retry.
-         */
-        private List<Integer> retryableStatusCodes = List.of(408, 429, 500, 502, 503, 504);
     }
 
     @Data

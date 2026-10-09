@@ -1,0 +1,152 @@
+package com.pml.catalog.service;
+
+import com.pml.catalog.domain.model.PlatformConfiguration;
+import com.pml.catalog.web.graphql.dto.UpdatePlatformConfigurationInput;
+import com.pml.catalog.web.graphql.dto.UpdatePlatformConfigurationInput.RefundPolicyInput;
+import com.pml.catalog.web.graphql.dto.UpdatePlatformConfigurationInput.RefundRuleInput;
+import com.pml.shared.config.model.RefundPolicyDefinition;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TranslatedRefusal;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+@Tag("L1")
+@Tag("ET-ADM-002")
+@DisplayName("Runtime platform rules are bounded before they are written")
+class PlatformRulesUpdaterTest {
+
+    private static PlatformConfiguration fresh() {
+        return PlatformConfiguration.createDefault();
+    }
+
+    private static UpdatePlatformConfigurationInput input() {
+        return new UpdatePlatformConfigurationInput();
+    }
+
+    @Test
+    @DisplayName("the seeded defaults match the specified platform configuration")
+    void defaults() {
+        PlatformConfiguration config = fresh();
+        assertThat(config.getApprovalSlaHours()).isEqualTo(48);
+        assertThat(config.getReservationHoldMinutes()).isEqualTo(10);
+        assertThat(config.getReservationGraceMinutes()).isEqualTo(5);
+        assertThat(config.getEscrowHoldDays()).isEqualTo(7);
+        assertThat(config.getRefundCutoffHours()).isEqualTo(24);
+        assertThat(config.getMaxTicketsPerBooking()).isEqualTo(8);
+        assertThat(config.getRescheduleLimit()).isEqualTo(3);
+        assertThat(config.getCurrency()).isEqualTo("ZMW");
+        assertThat(config.getCommissionDefault()).isEqualTo(5.0);
+        assertThat(config.getRefundPolicies()).extracting(p -> p.get("code"))
+                .containsExactly("FLEXIBLE", "MODERATE", "STRICT", "NO_REFUNDS");
+    }
+
+    @Test
+    @DisplayName("an update writes the new values, converts the commission and bumps the version")
+    void applies() {
+        PlatformConfiguration config = fresh();
+        long before = config.getVersion();
+        UpdatePlatformConfigurationInput in = input();
+        in.setCommissionDefault(7.5);
+        in.setMinimumPayout(new BigDecimal("25"));
+        in.setReservationHoldMinutes(15);
+        in.setMaxTicketsPerBooking(6);
+        PlatformRulesUpdater.apply(config, in);
+
+        assertThat(config.getPayment().getCommissionRate()).isEqualTo(0.075);
+        assertThat(config.getCommissionDefault()).isEqualTo(7.5);
+        assertThat(config.getMinimumPayout()).isEqualByComparingTo("25");
+        assertThat(config.getReservationHoldMinutes()).isEqualTo(15);
+        assertThat(config.getMaxTicketsPerBooking()).isEqualTo(6);
+        assertThat(config.getEscrowHoldDays()).isEqualTo(7);
+        assertThat(config.getVersion()).isEqualTo(before + 1);
+    }
+
+    @Test
+    @DisplayName("a value outside its bounds refuses with CONFIGURATION_VALUE_INVALID and changes nothing")
+    void refusesOutOfBounds() {
+        for (UpdatePlatformConfigurationInput bad : List.of(
+                with(i -> i.setCommissionDefault(51.0)),
+                with(i -> i.setCommissionDefault(-1.0)),
+                with(i -> i.setMinimumPayout(new BigDecimal("-1"))),
+                with(i -> i.setReservationHoldMinutes(0)),
+                with(i -> i.setMaxTicketsPerBooking(51)),
+                with(i -> i.setEscrowHoldDays(91)),
+                with(i -> i.setCurrency("zmw")),
+                with(i -> i.setApprovalWarningThresholdHours(60)))) {
+            PlatformConfiguration config = fresh();
+            assertThatThrownBy(() -> PlatformRulesUpdater.apply(config, bad))
+                    .isInstanceOfSatisfying(TranslatedRefusal.class, e -> {
+                        assertThat(e.errorCode()).isEqualTo(ErrorCode.CONFIGURATION_VALUE_INVALID);
+                        assertThat(e.details()).containsKey("constraint");
+                    });
+            assertThat(config.getVersion()).isEqualTo(1);
+            assertThat(config.getCommissionDefault()).isEqualTo(5.0);
+        }
+    }
+
+    @Test
+    @DisplayName("one bad field in an update means no field of it is applied")
+    void allOrNothing() {
+        PlatformConfiguration config = fresh();
+        UpdatePlatformConfigurationInput in = input();
+        in.setReservationHoldMinutes(20);
+        in.setRescheduleLimit(99);
+        assertThatThrownBy(() -> PlatformRulesUpdater.apply(config, in)).isInstanceOf(TranslatedRefusal.class);
+        assertThat(config.getReservationHoldMinutes()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("a refund policy tier never refunds more closer to the event")
+    void refundTierOrdering() {
+        UpdatePlatformConfigurationInput in = input();
+        in.setRefundPolicies(List.of(policy("STRICT", new RefundRuleInput(7, 40), new RefundRuleInput(1, 60))));
+        assertThatThrownBy(() -> PlatformRulesUpdater.apply(fresh(), in)).isInstanceOf(TranslatedRefusal.class);
+    }
+
+    @Test
+    @DisplayName("an unknown policy code and a NO_REFUNDS with tiers are refused")
+    void policyCodes() {
+        UpdatePlatformConfigurationInput unknown = input();
+        unknown.setRefundPolicies(List.of(policy("GENEROUS")));
+        assertThatThrownBy(() -> PlatformRulesUpdater.apply(fresh(), unknown)).isInstanceOf(TranslatedRefusal.class);
+
+        UpdatePlatformConfigurationInput tiers = input();
+        tiers.setRefundPolicies(List.of(policy("NO_REFUNDS", new RefundRuleInput(1, 10))));
+        assertThatThrownBy(() -> PlatformRulesUpdater.apply(fresh(), tiers)).isInstanceOf(TranslatedRefusal.class);
+    }
+
+    @Test
+    @DisplayName("a valid policy edit replaces the schedule and the quote follows it")
+    void policyEdit() {
+        PlatformConfiguration config = fresh();
+        UpdatePlatformConfigurationInput in = input();
+        in.setRefundPolicies(List.of(policy("STRICT", new RefundRuleInput(14, 75), new RefundRuleInput(2, 25))));
+        PlatformRulesUpdater.apply(config, in);
+
+        RefundPolicyDefinition strict = config.getRules().getRefundPolicies().get("STRICT");
+        assertThat(strict.percentAt(20)).isEqualTo(75);
+        assertThat(strict.percentAt(3)).isEqualTo(25);
+        assertThat(strict.percentAt(1)).isEqualTo(0);
+        assertThat(config.getRules().getRefundPolicies().get("FLEXIBLE").percentAt(2)).isEqualTo(100);
+    }
+
+    private static UpdatePlatformConfigurationInput with(java.util.function.Consumer<UpdatePlatformConfigurationInput> c) {
+        UpdatePlatformConfigurationInput in = input();
+        c.accept(in);
+        return in;
+    }
+
+    private static RefundPolicyInput policy(String code, RefundRuleInput... rules) {
+        RefundPolicyInput p = new RefundPolicyInput();
+        p.setCode(code);
+        p.setRules(List.of(rules));
+        return p;
+    }
+}

@@ -12,7 +12,6 @@
 // ==========================================
 
 export type {
-  Organization,
   OrganizationStatus,
   OrganizationType,
   BusinessType,
@@ -20,29 +19,18 @@ export type {
   SocialLinks,
   KybStatus,
   OrganizationApplicationInput,
-  UpdateOrganizationSettingsInput as OrganizationSettingsInput,
 } from '../../../../types/graphql';
 
-// ==========================================
-// Organization Admin Specific Types
-// ==========================================
+import type { MyOrganizationQuery } from '../../../../types/graphql';
 
 /**
- * Lightweight organization status information
- * Used for routing decisions and status checks without full organization data
+ * The organizer's own organization, as selected by `OrganizationFields` (self
+ * -service screens only). NOT the full `Organization` entity — it omits
+ * `members`, `owner`, `settings`, `payoutConfig`, `totalRevenue` and every
+ * other field this app's queries never fetch, so a screen that needs one of
+ * those must select it explicitly rather than assume it is already on hand.
  */
-export interface OrganizationStatusInfo {
-  id: string;
-  name: string;
-  status: import('../../../../types/graphql').OrganizationStatus;
-  rejectionReason?: string | null;
-  documentsVerified: boolean;
-  submittedAt?: string | null;
-  approvedAt?: string | null;
-  canSubmitForReview: boolean;
-  isApproved: boolean;
-  isInApprovalWorkflow: boolean;
-}
+export type Organization = NonNullable<MyOrganizationQuery['myOwnedOrganization']>;
 
 // ==========================================
 // UI Helper Functions

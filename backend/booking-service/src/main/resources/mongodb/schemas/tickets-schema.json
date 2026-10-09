@@ -51,14 +51,53 @@
         "pattern": "^[a-fA-F0-9]{24}$",
         "description": "Ticket tier ID from catalog-service"
       },
+      "bookingId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "The durable booking (booking_bookings) this seat belongs to; equals reservationId"
+      },
+      "bookingNumber": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "pattern": "^BK-[0-9]{4}-[0-9]{8,}$",
+        "description": "Human-facing booking number, for example BK-2026-00001234"
+      },
+      "activeTransferId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "The open transfer offer holding this seat (not scannable, not refundable); absent when none"
+      },
+      "transferCount": {
+        "bsonType": [
+          "int",
+          "long",
+          "null"
+        ],
+        "minimum": 0,
+        "description": "How many times this seat has changed hands"
+      },
+      "refundedAmount": {
+        "bsonType": [
+          "decimal",
+          "null"
+        ],
+        "minimum": 0,
+        "description": "Sum of completed refunds against this seat; REFUNDED once it reaches the price"
+      },
       "buyerId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "User ID of buyer"
       },
       "organizerId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "Denormalized organizer ID for efficient querying"
       },
       "organizationId": {
@@ -345,7 +384,7 @@
           },
           "processedBy": {
             "bsonType": "string",
-            "pattern": "^[a-fA-F0-9]{24}$"
+            "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$"
           },
           "transactionId": {
             "bsonType": "string",
@@ -364,12 +403,12 @@
       },
       "createdBy": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "User who created the ticket"
       },
       "updatedBy": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "User who last updated the ticket"
       },
       "isActive": {

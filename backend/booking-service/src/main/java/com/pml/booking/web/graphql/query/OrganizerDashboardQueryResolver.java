@@ -111,13 +111,13 @@ public class OrganizerDashboardQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ORGANIZER')")
-    public Mono<OrganizerTransactionOffsetPage> myTransactionsOffsetPagination(
+    public Mono<OrganizerTransactionOffsetPage> myTransactions(
             @InputArgument OrganizerTransactionFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
         return getCurrentUserId()
                 .flatMap(organizerId -> {
-                    log.debug("GraphQL query: myTransactionsOffsetPagination for organizer {}", organizerId);
+                    log.debug("GraphQL query: myTransactions for organizer {}", organizerId);
                     return organizerDashboardService.getTransactions(
                             organizerId,
                             filter != null ? filter : OrganizerTransactionFilterInput.empty(),
@@ -129,8 +129,7 @@ public class OrganizerDashboardQueryResolver {
     // ========================================================================
     // DASHBOARD ANALYTICS
     //
-    // Back the dashboard's data-viz tiles. Contract:
-    // frontend/web/docs/ORG_ADMIN_DASHBOARD_INFOGRAPHIC_SPEC.md
+    // Back the dashboard's data-viz tiles.
     // ========================================================================
 
     /**
@@ -244,7 +243,7 @@ public class OrganizerDashboardQueryResolver {
                 .flatMap(principal -> {
                     if (principal instanceof Jwt jwt) {
                         // Try 'sub' claim first (standard JWT claim)
-                        String userId = jwt.getClaimAsString("sub");
+                        String userId = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
                         if (userId != null && !userId.isBlank()) {
                             return Mono.just(userId);
                         }

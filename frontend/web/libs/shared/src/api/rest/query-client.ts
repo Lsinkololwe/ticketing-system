@@ -1,7 +1,8 @@
 // TanStack Query client configuration
 import { QueryClient } from '@tanstack/react-query';
 
-export const queryClient = new QueryClient({
+/** Fresh client with the platform defaults. Use per browser session / per request on the server (see QueryProvider). */
+export const createQueryClient = () => new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000, // 5 minutes
@@ -23,6 +24,9 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/** Shared singleton for client-only code that is outside React. */
+export const queryClient = createQueryClient();
 
 // Query keys for consistent caching
 export const queryKeys = {

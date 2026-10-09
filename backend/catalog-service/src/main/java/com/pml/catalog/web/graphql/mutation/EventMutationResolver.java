@@ -1,38 +1,38 @@
 package com.pml.catalog.web.graphql.mutation;
 
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.catalog.dto.EventCancellationInputDto;
-import com.pml.catalog.dto.EventCancellationResponseDto;
+import com.pml.catalog.web.graphql.dto.EventCancellationInputDto;
+import com.pml.catalog.web.graphql.dto.EventCancellationResponseDto;
 import com.pml.catalog.infrastructure.client.IdentityServiceClient;
-import com.pml.catalog.web.graphql.dto.ApproveEventMutationResponse;
 import com.pml.catalog.web.graphql.dto.BulkReminderResponse;
 import com.pml.catalog.web.graphql.dto.CreateEventInput;
-import com.pml.catalog.web.graphql.dto.CreateEventMutationResponse;
-import com.pml.catalog.web.graphql.dto.DeleteEventMutationResponse;
-import com.pml.catalog.web.graphql.dto.DuplicateEventMutationResponse;
 import com.pml.catalog.web.graphql.dto.EventMutationResponse;
-import com.pml.catalog.web.graphql.dto.PublishEventMutationResponse;
-import com.pml.catalog.web.graphql.dto.RejectEventMutationResponse;
-import com.pml.catalog.web.graphql.dto.SubmitEventForApprovalMutationResponse;
-import com.pml.catalog.web.graphql.dto.UnpublishEventMutationResponse;
-import com.pml.catalog.web.graphql.dto.UpdateEventCapacityMutationResponse;
+import com.pml.catalog.web.graphql.dto.RescheduleEventInput;
 import com.pml.catalog.web.graphql.dto.UpdateEventInput;
-import com.pml.catalog.web.graphql.dto.UpdateEventMutationResponse;
+import com.pml.catalog.workflow.approval.EventApprovalProcess;
+import com.pml.catalog.workflow.lifecycle.EventLifecycleProcess;
+import com.pml.catalog.workflow.schedule.EventPublishScheduleProcess;
 import com.pml.catalog.domain.model.Event;
+import com.pml.catalog.exception.EventNotFoundException;
+import com.pml.catalog.security.EventWriteGuard;
 import com.pml.catalog.service.EventService;
 import com.pml.shared.constants.EventStatus;
 import com.pml.shared.dto.authorization.AuthorizationRequest;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Event Operations
@@ -55,12 +55,37 @@ import java.util.Map;
  * </ul>
  */
 @Slf4j
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class EventMutationResolver {
 
+    private static final java.util.Set<String> ADMIN_AUTHORITIES = java.util.Set.of("ROLE_ADMIN", "ROLE_SUPER_ADMIN");
+
     private final EventService eventService;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final IdentityServiceClient identityServiceClient;
+
+    /**
+     * The only way an event is loaded in order to be changed.
+     *
+     * <p>Both locks in one call: the repository filter that will not return another
+     * organization's event, and the identity-service check for the permission this particular
+     * mutation needs. Neither substitutes for the other — see {@link EventWriteGuard}.
+     */
+    private final EventWriteGuard eventWriteGuard;
+
+    /** Publish, unpublish, reschedule and cancel go through the event's lifecycle workflow. */
+    private final EventLifecycleProcess lifecycle;
+
+    /** Submission and the reviewer's decisions go through the event's review workflow. */
+    private final EventApprovalProcess approvals;
+
+    /** A publication the organizer scheduled for later waits in its own workflow. */
+    private final EventPublishScheduleProcess schedules;
 
     /**
      * Create a new event.
@@ -72,76 +97,26 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
-    public Mono<CreateEventMutationResponse> createEvent(
-            @InputArgument CreateEventInput input
+    public Mono<Event> createEvent(
+            @Valid @InputArgument CreateEventInput input
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("Creating event for user: {}", userId))
                 .flatMap(userId ->
-                        // Step 1: Verify user has EVENT_CREATE permission and get their organization
+                        // Step 1: Verify user holds event:create and get their organization
                         identityServiceClient.checkAuthorization(AuthorizationRequest.builder()
                                         .userId(userId)
-                                        .requiredPermission("EVENT_CREATE")
+                                        .requiredPermission(Permission.EVENT_CREATE.code())
                                         .build())
                                 .flatMap(authResult -> {
                                     if (!authResult.isAuthorized()) {
-                                        return Mono.just(new CreateEventMutationResponse(
-                                                false,
-                                                authResult.getReason(),
-                                                null,
-                                                List.of(authResult.getReason()),
-                                                null
-                                        ));
+                                        return Mono.error(new AccessDeniedException(authResult.getReason()));
                                     }
 
-                                    // Step 2: Create event with userId as organizerId
-                                    String organizationId = authResult.getOrganizationId();
-                                    Event event = mapInputToEvent(input, userId, organizationId);
-
-                                    return eventService.createEvent(event)
-                                            .map(created -> new CreateEventMutationResponse(
-                                                    true,
-                                                    "Event created successfully",
-                                                    created,
-                                                    List.of(),
-                                                    Map.of(
-                                                            "organizerId", userId,
-                                                            "organizationId", organizationId != null ? organizationId : "",
-                                                            "authSource", authResult.getAuthorizationSource()
-                                                    )
-                                            ));
+                                    // Step 2: the event, its venue and its tiers, in one transaction
+                                    return eventService.createEvent(input, userId, authResult.getOrganizationId());
                                 })
-                )
-                .onErrorResume(SecurityException.class, e -> {
-                    log.warn("Authentication required for createEvent");
-                    return Mono.just(new CreateEventMutationResponse(
-                            false,
-                            "Authentication required",
-                            null,
-                            List.of("Please log in to create events"),
-                            null
-                    ));
-                })
-                .onErrorResume(IdentityServiceClient.AuthorizationDeniedException.class, e -> {
-                    log.warn("Authorization denied for createEvent: {}", e.getMessage());
-                    return Mono.just(new CreateEventMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                })
-                .onErrorResume(e -> {
-                    log.error("Create event failed: {}", e.getMessage());
-                    return Mono.just(new CreateEventMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+                );
     }
 
     /**
@@ -155,59 +130,18 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
-    public Mono<UpdateEventMutationResponse> updateEvent(
+    public Mono<Event> updateEvent(
             @InputArgument String id,
-            @InputArgument UpdateEventInput input
+            @Valid @InputArgument UpdateEventInput input
     ) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.info("Updating event: {} by user: {}", id, userId))
-                .flatMap(userId ->
-                        // Step 1: Get the event to find its organizationId
-                        eventService.findById(id)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
-                                .flatMap(existingEvent ->
-                                        // Step 2: Verify authorization for this specific event
-                                        identityServiceClient.checkEventAccess(
-                                                        userId,
-                                                        id,
-                                                        existingEvent.getOrganizationId(),
-                                                        "EVENT_EDIT")
-                                                .flatMap(authResult -> {
-                                                    if (!authResult.isAuthorized()) {
-                                                        return Mono.just(new UpdateEventMutationResponse(
-                                                                false,
-                                                                authResult.getReason(),
-                                                                null,
-                                                                List.of(authResult.getReason()),
-                                                                null
-                                                        ));
-                                                    }
-
-                                                    // Step 3: Update the event
-                                                    updateEventFromInput(existingEvent, input);
-                                                    return eventService.updateEvent(id, existingEvent)
-                                                            .map(updated -> new UpdateEventMutationResponse(
-                                                                    true,
-                                                                    "Event updated successfully",
-                                                                    updated,
-                                                                    List.of(),
-                                                                    Map.of("authSource", authResult.getAuthorizationSource())
-                                                            ));
-                                                })
-                                )
-                )
-                .onErrorResume(SecurityException.class, e -> Mono.just(new UpdateEventMutationResponse(
-                        false, "Authentication required", null, List.of("Please log in"), null
-                )))
-                .onErrorResume(IdentityServiceClient.AuthorizationDeniedException.class, e ->
-                        Mono.just(new UpdateEventMutationResponse(false, e.getMessage(), null, List.of(e.getMessage()), null))
-                )
-                .onErrorResume(e -> {
-                    log.error("Update event failed: {}", e.getMessage());
-                    return Mono.just(new UpdateEventMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null
-                    ));
-                });
+        log.info("Updating event: {}", id);
+        return eventWriteGuard.forWrite(id, Permission.EVENT_EDIT)
+                .flatMap(existingEvent -> Mono.zip(SecurityContextUtils.requireCurrentUserId(), platformAdmin())
+                        .flatMap(caller -> {
+                            boolean wasScheduled = existingEvent.isPublishScheduled();
+                            return eventService.updateEvent(existingEvent, input, caller.getT1(), caller.getT2())
+                                    .flatMap(updated -> followSchedule(wasScheduled, updated).thenReturn(updated));
+                        }));
     }
 
     /**
@@ -220,41 +154,12 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
-    public Mono<DeleteEventMutationResponse> deleteEvent(
+    public Mono<String> deleteEvent(
             @InputArgument String id
     ) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.info("Deleting event: {} by user: {}", id, userId))
-                .flatMap(userId ->
-                        eventService.findById(id)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
-                                .flatMap(existingEvent ->
-                                        identityServiceClient.checkEventAccess(
-                                                        userId, id, existingEvent.getOrganizationId(), "EVENT_DELETE")
-                                                .flatMap(authResult -> {
-                                                    if (!authResult.isAuthorized()) {
-                                                        return Mono.just(new DeleteEventMutationResponse(
-                                                                false, authResult.getReason(), false,
-                                                                List.of(authResult.getReason()), null
-                                                        ));
-                                                    }
-                                                    return eventService.deleteEvent(id)
-                                                            .then(Mono.just(new DeleteEventMutationResponse(
-                                                                    true, "Event deleted successfully", true,
-                                                                    List.of(), null
-                                                            )));
-                                                })
-                                )
-                )
-                .onErrorResume(SecurityException.class, e -> Mono.just(new DeleteEventMutationResponse(
-                        false, "Authentication required", false, List.of("Please log in"), null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Delete event failed: {}", e.getMessage());
-                    return Mono.just(new DeleteEventMutationResponse(
-                            false, e.getMessage(), false, List.of(e.getMessage()), null
-                    ));
-                });
+        log.info("Deleting event: {}", id);
+        return eventWriteGuard.forWrite(id, Permission.EVENT_DELETE)
+                .flatMap(existingEvent -> eventService.deleteEvent(id).thenReturn(id));
     }
 
     /**
@@ -267,42 +172,39 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
-    public Mono<PublishEventMutationResponse> publishEvent(
+    public Mono<Event> publishEvent(
             @InputArgument String id
     ) {
+        log.info("Publishing event: {}", id);
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.info("Publishing event: {} by user: {}", id, userId))
-                .flatMap(userId ->
-                        eventService.findById(id)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
-                                .flatMap(existingEvent ->
-                                        identityServiceClient.checkEventAccess(
-                                                        userId, id, existingEvent.getOrganizationId(), "EVENT_PUBLISH")
-                                                .flatMap(authResult -> {
-                                                    if (!authResult.isAuthorized()) {
-                                                        return Mono.just(new PublishEventMutationResponse(
-                                                                false, authResult.getReason(), null,
-                                                                List.of(authResult.getReason()), null
-                                                        ));
-                                                    }
-                                                    return eventService.publishEvent(id)
-                                                            .map(published -> new PublishEventMutationResponse(
-                                                                    true, "Event published successfully", published,
-                                                                    List.of(),
-                                                                    Map.of("publishedAt", LocalDateTime.now().toString())
-                                                            ));
-                                                })
-                                )
-                )
-                .onErrorResume(SecurityException.class, e -> Mono.just(new PublishEventMutationResponse(
-                        false, "Authentication required", null, List.of("Please log in"), null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Publish event failed: {}", e.getMessage());
-                    return Mono.just(new PublishEventMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null
-                    ));
-                });
+                .flatMap(userId -> eventWriteGuard.forWrite(id, Permission.EVENT_PUBLISH)
+                        .flatMap(existingEvent -> {
+                            // An approved event with a go-live time still ahead is scheduled, not
+                            // published: it stays APPROVED, hidden from buyers, and the schedule
+                            // workflow publishes it through the same path at that time.
+                            if (existingEvent.getStatus() == EventStatus.APPROVED
+                                    && existingEvent.getPublishAt() != null
+                                    && existingEvent.getPublishAt().isAfter(clock.instant())) {
+                                return eventService.scheduleEventPublish(id)
+                                        .flatMap(scheduled -> schedules.schedule(id, scheduled.getPublishAt())
+                                                .thenReturn(scheduled));
+                            }
+                            return lifecycle.publish(id, userId);
+                        }));
+    }
+
+    /**
+     * Withdraw a scheduled publication: the event stays APPROVED and its go-live time is cleared.
+     *
+     * <p>Security: EVENT_PUBLISH permission verified on the owning organization's event.</p>
+     */
+    @DgsMutation
+    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    public Mono<Event> cancelScheduledPublish(@InputArgument String eventId) {
+        log.info("Cancelling scheduled publication of event: {}", eventId);
+        return eventWriteGuard.forWrite(eventId, Permission.EVENT_PUBLISH)
+                .flatMap(existingEvent -> eventService.clearPublishSchedule(eventId)
+                        .flatMap(cleared -> schedules.cancel(eventId).thenReturn(cleared)));
     }
 
     /**
@@ -315,44 +217,29 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
-    public Mono<UnpublishEventMutationResponse> unpublishEvent(
+    public Mono<Event> unpublishEvent(
             @InputArgument String id
     ) {
+        log.info("Unpublishing event: {}", id);
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.info("Unpublishing event: {} by user: {}", id, userId))
-                .flatMap(userId ->
-                        eventService.findById(id)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
-                                .flatMap(existingEvent ->
-                                        identityServiceClient.checkEventAccess(
-                                                        userId, id, existingEvent.getOrganizationId(), "EVENT_PUBLISH")
-                                                .flatMap(authResult -> {
-                                                    if (!authResult.isAuthorized()) {
-                                                        return Mono.just(new UnpublishEventMutationResponse(
-                                                                false, authResult.getReason(), null,
-                                                                List.of(authResult.getReason()), null
-                                                        ));
-                                                    }
-                                                    existingEvent.setPublished(false);
-                                                    existingEvent.setStatus(EventStatus.APPROVED);
-                                                    existingEvent.setPublishedAt(null);
-                                                    return eventService.updateEvent(id, existingEvent)
-                                                            .map(unpublished -> new UnpublishEventMutationResponse(
-                                                                    true, "Event unpublished successfully",
-                                                                    unpublished, List.of(), null
-                                                            ));
-                                                })
-                                )
-                )
-                .onErrorResume(SecurityException.class, e -> Mono.just(new UnpublishEventMutationResponse(
-                        false, "Authentication required", null, List.of("Please log in"), null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Unpublish event failed: {}", e.getMessage());
-                    return Mono.just(new UnpublishEventMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null
-                    ));
-                });
+                .flatMap(userId -> eventWriteGuard.forWrite(id, Permission.EVENT_PUBLISH)
+                        .flatMap(existingEvent -> lifecycle.unpublish(id, userId)));
+    }
+
+    /**
+     * Move a published event to a new start. Tickets stay valid; booking opens the
+     * holders' refund window from {@code catalog.EventRescheduled}.
+     */
+    @DgsMutation
+    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    public Mono<Event> rescheduleEvent(
+            @Valid @InputArgument RescheduleEventInput input
+    ) {
+        log.info("Rescheduling event: {}", input.eventId());
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(userId -> eventWriteGuard.forWrite(input.eventId(), Permission.EVENT_PUBLISH)
+                        .flatMap(existingEvent -> lifecycle.reschedule(
+                                input.eventId(), userId, input.newStartsAt(), input.reason())));
     }
 
     /**
@@ -362,7 +249,7 @@ public class EventMutationResolver {
      *
      * @param id Event ID to cancel
      * @param input Cancellation options (reason, notify attendees, trigger refunds)
-     * @return Cancellation response with saga ID if refunds initiated
+     * @return Cancellation response, with the refund workflow's id if refunds were started
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
@@ -370,47 +257,18 @@ public class EventMutationResolver {
             @InputArgument String id,
             @InputArgument EventCancellationInputDto input
     ) {
+        log.info("Cancelling event: {} reason: {}", id, input.getReason());
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.info("Cancelling event: {} by user: {} reason: {}",
-                        id, userId, input.getReason()))
-                .flatMap(userId ->
-                        eventService.findById(id)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
-                                .flatMap(existingEvent ->
-                                        identityServiceClient.checkEventAccess(
-                                                        userId, id, existingEvent.getOrganizationId(), "EVENT_DELETE")
-                                                .flatMap(authResult -> {
-                                                    if (!authResult.isAuthorized()) {
-                                                        return Mono.just(EventCancellationResponseDto.builder()
-                                                                .success(false)
-                                                                .message(authResult.getReason())
-                                                                .build());
-                                                    }
-                                                    boolean notifyAttendees = input.getNotifyAttendees() != null
-                                                            ? input.getNotifyAttendees() : true;
-                                                    boolean triggerRefunds = input.getTriggerRefunds() != null
-                                                            ? input.getTriggerRefunds() : true;
-
-                                                    return eventService.cancelEventWithDetails(
-                                                                    id, input.getReason(), notifyAttendees, triggerRefunds)
-                                                            .map(cancelled -> EventCancellationResponseDto.builder()
-                                                                    .success(true)
-                                                                    .message("Event cancelled successfully")
-                                                                    .event(cancelled)
-                                                                    .ticketsAffected(cancelled.getSoldTickets())
-                                                                    .refundSagaInitiated(triggerRefunds)
-                                                                    .sagaId(triggerRefunds
-                                                                            ? java.util.UUID.randomUUID().toString() : null)
-                                                                    .build());
-                                                })
-                                )
-                )
-                .onErrorResume(SecurityException.class, e ->
-                        Mono.just(EventCancellationResponseDto.error("Authentication required")))
-                .onErrorResume(e -> {
-                    log.error("Cancel event failed: {}", e.getMessage());
-                    return Mono.just(EventCancellationResponseDto.error(e.getMessage()));
-                });
+                .flatMap(userId -> eventWriteGuard.forWrite(id, Permission.EVENT_CANCEL)
+                        .flatMap(existingEvent -> lifecycle.cancel(id, userId, input.getReason())
+                                // Every ticket is refunded in full: booking's consumer
+                                // of catalog.EventCancelled owns the refunds, so no id is invented here.
+                                .map(cancelled -> EventCancellationResponseDto.builder()
+                                        .event(cancelled)
+                                        .ticketsAffected(cancelled.getSoldTickets())
+                                        .refundSagaInitiated(true)
+                                        .sagaId(null)
+                                        .build())));
     }
 
     /**
@@ -423,45 +281,13 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
-    public Mono<SubmitEventForApprovalMutationResponse> submitEventForApproval(
+    public Mono<Event> submitEventForApproval(
             @InputArgument String eventId
     ) {
+        log.info("Submitting event for approval: {}", eventId);
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.info("Submitting event for approval: {} by user: {}", eventId, userId))
-                .flatMap(userId ->
-                        eventService.findById(eventId)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + eventId)))
-                                .flatMap(existingEvent ->
-                                        identityServiceClient.checkEventAccess(
-                                                        userId, eventId, existingEvent.getOrganizationId(), "EVENT_EDIT")
-                                                .flatMap(authResult -> {
-                                                    if (!authResult.isAuthorized()) {
-                                                        return Mono.just(new SubmitEventForApprovalMutationResponse(
-                                                                false, authResult.getReason(), null,
-                                                                List.of(authResult.getReason()), null
-                                                        ));
-                                                    }
-                                                    existingEvent.setStatus(EventStatus.PENDING_APPROVAL);
-                                                    existingEvent.setSubmittedForApprovalAt(LocalDateTime.now());
-                                                    existingEvent.setApprovalDeadline(LocalDateTime.now().plusDays(3));
-                                                    return eventService.updateEvent(eventId, existingEvent)
-                                                            .map(submitted -> new SubmitEventForApprovalMutationResponse(
-                                                                    true, "Event submitted for approval", submitted,
-                                                                    List.of(),
-                                                                    Map.of("submittedAt", LocalDateTime.now().toString())
-                                                            ));
-                                                })
-                                )
-                )
-                .onErrorResume(SecurityException.class, e -> Mono.just(new SubmitEventForApprovalMutationResponse(
-                        false, "Authentication required", null, List.of("Please log in"), null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Submit event for approval failed: {}", e.getMessage());
-                    return Mono.just(new SubmitEventForApprovalMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null
-                    ));
-                });
+                .flatMap(userId -> eventWriteGuard.forWrite(eventId, Permission.EVENT_EDIT)
+                        .flatMap(existingEvent -> approvals.submit(eventId, userId)));
     }
 
     /**
@@ -470,30 +296,13 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ApproveEventMutationResponse> approveEvent(
+    public Mono<Event> approveEvent(
             @InputArgument String eventId,
             @InputArgument String comments
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(reviewerId -> log.info("Approving event: {} by reviewer: {} comments: {}", eventId, reviewerId, comments))
-                .flatMap(reviewerId -> eventService.approveEvent(eventId)
-                        .map(approved -> new ApproveEventMutationResponse(
-                                true,
-                                "Event approved successfully",
-                                approved,
-                                List.of(),
-                                Map.of("reviewerId", reviewerId, "comments", comments != null ? comments : "", "approvedAt", LocalDateTime.now().toString())
-                        )))
-                .onErrorResume(e -> {
-                    log.error("Approve event failed: {}", e.getMessage());
-                    return Mono.just(new ApproveEventMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+                .flatMap(reviewerId -> approvals.approve(eventId, reviewerId, comments));
     }
 
     /**
@@ -502,36 +311,19 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<RejectEventMutationResponse> rejectEvent(
+    public Mono<Event> rejectEvent(
             @InputArgument String eventId,
             @InputArgument String comments
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(reviewerId -> log.info("Rejecting event: {} by reviewer: {} reason: {}", eventId, reviewerId, comments))
-                .flatMap(reviewerId -> eventService.rejectEvent(eventId, comments)
-                        .map(rejected -> new RejectEventMutationResponse(
-                                true,
-                                "Event rejected",
-                                rejected,
-                                List.of(),
-                                Map.of("reviewerId", reviewerId, "comments", comments != null ? comments : "", "rejectedAt", LocalDateTime.now().toString())
-                        )))
-                .onErrorResume(e -> {
-                    log.error("Reject event failed: {}", e.getMessage());
-                    return Mono.just(new RejectEventMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+                .flatMap(reviewerId -> approvals.reject(eventId, reviewerId, comments));
     }
 
     /**
      * Duplicate an event with a new title.
      *
-     * <p>Security: User ID extracted from JWT, EVENT_CREATE permission verified.</p>
+     * <p>Security: User ID extracted from JWT, event:create verified.</p>
      *
      * @param eventId Original event ID to duplicate
      * @param newTitle Title for the duplicated event
@@ -539,7 +331,7 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
-    public Mono<DuplicateEventMutationResponse> duplicateEvent(
+    public Mono<Event> duplicateEvent(
             @InputArgument String eventId,
             @InputArgument String newTitle
     ) {
@@ -547,64 +339,31 @@ public class EventMutationResolver {
                 .doOnNext(userId -> log.info("Duplicating event: {} by user: {} with title: {}",
                         eventId, userId, newTitle))
                 .flatMap(userId ->
-                        eventService.findById(eventId)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + eventId)))
+                        // findVisibleById, not findById. Duplication copies the source
+                        // event's title, description, capacity and tier structure into the
+                        // caller's own draft, so reading it is the whole operation. Under the
+                        // bare findById any ORGANIZER could lift a rival's unannounced line-up
+                        // and pricing by id. A published event is public and stays duplicable;
+                        // a draft is duplicable only by the organization that owns it.
+                        eventService.findVisibleById(eventId)
+                                .switchIfEmpty(Mono.error(new EventNotFoundException("event not found: " + eventId)))
                                 .flatMap(original ->
-                                        // Need EVENT_CREATE permission to create the duplicate
+                                        // event:create is about the duplicate, not the original:
+                                        // the caller is creating an event in their own
+                                        // organization, so this is the same check createEvent makes.
                                         identityServiceClient.checkAuthorization(AuthorizationRequest.builder()
                                                         .userId(userId)
-                                                        .requiredPermission("EVENT_CREATE")
+                                                        .requiredPermission(Permission.EVENT_CREATE.code())
                                                         .build())
                                                 .flatMap(authResult -> {
                                                     if (!authResult.isAuthorized()) {
-                                                        return Mono.just(new DuplicateEventMutationResponse(
-                                                                false, authResult.getReason(), null,
-                                                                List.of(authResult.getReason()), null
-                                                        ));
+                                                        return Mono.error(new AccessDeniedException(authResult.getReason()));
                                                     }
-                                                    // Create duplicate with current user as organizer
-                                                    Event duplicate = Event.builder()
-                                                            .title(newTitle)
-                                                            .description(original.getDescription())
-                                                            .categoryId(original.getCategoryId())
-                                                            .eventDateTime(original.getEventDateTime())
-                                                            .endDateTime(original.getEndDateTime())
-                                                            .locationId(original.getLocationId())
-                                                            .locationName(original.getLocationName())
-                                                            .locationAddress(original.getLocationAddress())
-                                                            .cityName(original.getCityName())
-                                                            .organizerId(userId)
-                                                            .organizationId(authResult.getOrganizationId())
-                                                            .organizerName(original.getOrganizerName())
-                                                            .status(EventStatus.DRAFT)
-                                                            .published(false)
-                                                            .totalCapacity(original.getTotalCapacity())
-                                                            .availableTickets(original.getTotalCapacity())
-                                                            .soldTickets(0)
-                                                            .ticketCategories(original.getTicketCategories())
-                                                            .bannerImageUrl(original.getBannerImageUrl())
-                                                            .tags(original.getTags())
-                                                            .additionalInfo(original.getAdditionalInfo())
-                                                            .featured(false)
-                                                            .isActive(true)
-                                                            .build();
-                                                    return eventService.createEvent(duplicate)
-                                                            .map(duplicated -> new DuplicateEventMutationResponse(
-                                                                    true, "Event duplicated successfully", duplicated,
-                                                                    List.of(), Map.of("originalEventId", eventId)
-                                                            ));
+                                                    return eventService.duplicateEvent(original, newTitle, userId,
+                                                            authResult.getOrganizationId());
                                                 })
                                 )
-                )
-                .onErrorResume(SecurityException.class, e -> Mono.just(new DuplicateEventMutationResponse(
-                        false, "Authentication required", null, List.of("Please log in"), null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Duplicate event failed: {}", e.getMessage());
-                    return Mono.just(new DuplicateEventMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null
-                    ));
-                });
+                );
     }
 
     /**
@@ -618,49 +377,15 @@ public class EventMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
-    public Mono<UpdateEventCapacityMutationResponse> updateEventCapacity(
+    public Mono<Event> updateEventCapacity(
             @InputArgument String eventId,
             @InputArgument int newCapacity
     ) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.info("Updating capacity for event: {} to: {} by user: {}",
-                        eventId, newCapacity, userId))
-                .flatMap(userId ->
-                        eventService.findById(eventId)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + eventId)))
-                                .flatMap(existingEvent ->
-                                        identityServiceClient.checkEventAccess(
-                                                        userId, eventId, existingEvent.getOrganizationId(), "EVENT_EDIT")
-                                                .flatMap(authResult -> {
-                                                    if (!authResult.isAuthorized()) {
-                                                        return Mono.just(new UpdateEventCapacityMutationResponse(
-                                                                false, authResult.getReason(), null,
-                                                                List.of(authResult.getReason()), null
-                                                        ));
-                                                    }
-                                                    int oldCapacity = existingEvent.getTotalCapacity();
-                                                    int capacityDiff = newCapacity - oldCapacity;
-                                                    existingEvent.setTotalCapacity(newCapacity);
-                                                    existingEvent.setAvailableTickets(
-                                                            existingEvent.getAvailableTickets() + capacityDiff);
-                                                    return eventService.updateEvent(eventId, existingEvent)
-                                                            .map(updated -> new UpdateEventCapacityMutationResponse(
-                                                                    true, "Event capacity updated successfully",
-                                                                    updated, List.of(),
-                                                                    Map.of("newCapacity", newCapacity)
-                                                            ));
-                                                })
-                                )
-                )
-                .onErrorResume(SecurityException.class, e -> Mono.just(new UpdateEventCapacityMutationResponse(
-                        false, "Authentication required", null, List.of("Please log in"), null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Update event capacity failed: {}", e.getMessage());
-                    return Mono.just(new UpdateEventCapacityMutationResponse(
-                            false, e.getMessage(), null, List.of(e.getMessage()), null
-                    ));
-                });
+        log.info("Updating capacity for event: {} to: {}", eventId, newCapacity);
+        return eventWriteGuard.forWrite(eventId, Permission.EVENT_EDIT)
+                .flatMap(existingEvent -> SecurityContextUtils.requireCurrentUserId()
+                        .flatMap(actorId -> eventService.updateEvent(existingEvent, UpdateEventInput.capacity(newCapacity),
+                                actorId, false)));
     }
 
     @DgsMutation
@@ -694,7 +419,7 @@ public class EventMutationResolver {
                 .map(event -> EventMutationResponse.success(
                         event,
                         "Event completed successfully",
-                        Map.of("completedAt", LocalDateTime.now().toString())
+                        Map.of("completedAt", clock.instant().toString())
                 ))
                 .onErrorResume(e -> {
                     log.error("Complete event failed: {}", e.getMessage());
@@ -714,7 +439,7 @@ public class EventMutationResolver {
                 .map(event -> EventMutationResponse.success(
                         event,
                         "Publish reminder sent successfully",
-                        Map.of("sentAt", LocalDateTime.now().toString(), "triggeredBy", triggeredBy)
+                        Map.of("sentAt", clock.instant().toString(), "triggeredBy", triggeredBy)
                 ))
                 .onErrorResume(e -> {
                     log.error("Send publish reminder failed: {}", e.getMessage());
@@ -741,49 +466,29 @@ public class EventMutationResolver {
                 .map(results -> {
                     int sentCount = (int) results.stream().filter(Boolean::booleanValue).count();
                     int failedCount = results.size() - sentCount;
-                    return BulkReminderResponse.success(sentCount, failedCount);
-                })
-                .onErrorResume(e -> {
-                    log.error("Bulk send publish reminders failed: {}", e.getMessage());
-                    return Mono.just(BulkReminderResponse.error(e.getMessage()));
+                    return BulkReminderResponse.of(sentCount, failedCount);
                 });
     }
 
     /**
-     * Map CreateEventInput to Event entity.
-     *
-     * @param input Creation input
-     * @param organizerId User ID from JWT (event owner)
-     * @param organizationId Organization ID from authorization result
-     * @return Event entity ready for persistence
+     * Keeps the schedule workflow in step with an edit: a new go-live time moves the wait, and an
+     * edit that sent the event back for review ended the schedule, so the wait is stopped.
      */
-    private Event mapInputToEvent(CreateEventInput input, String organizerId, String organizationId) {
-        return Event.builder()
-                .title(input.title())
-                .description(input.description())
-                .categoryId(input.categoryId())
-                .eventDateTime(input.eventDateTime())
-                .endDateTime(input.endDateTime())
-                .organizerId(organizerId)
-                .organizationId(organizationId)
-                .status(EventStatus.DRAFT)
-                .published(false)
-                .totalCapacity(input.totalCapacity())
-                .availableTickets(input.totalCapacity())
-                .soldTickets(0)
-                .featured(false)
-                .isActive(true)
-                .build();
+    private Mono<Void> followSchedule(boolean wasScheduled, Event updated) {
+        if (!wasScheduled) {
+            return Mono.empty();
+        }
+        if (!updated.isPublishScheduled() || updated.getPublishAt() == null) {
+            return schedules.cancel(updated.getId());
+        }
+        return schedules.move(updated.getId(), updated.getPublishAt());
     }
 
-    private void updateEventFromInput(Event event, UpdateEventInput input) {
-        if (input.title() != null) event.setTitle(input.title());
-        if (input.description() != null) event.setDescription(input.description());
-        if (input.categoryId() != null) event.setCategoryId(input.categoryId());
-        if (input.eventDateTime() != null) event.setEventDateTime(input.eventDateTime());
-        if (input.endDateTime() != null) event.setEndDateTime(input.endDateTime());
-        if (input.totalCapacity() != null) event.setTotalCapacity(input.totalCapacity());
-        if (input.tags() != null) event.setTags(input.tags());
-        if (input.additionalInfo() != null) event.setAdditionalInfo(input.additionalInfo());
+    /** Whether the caller is a platform administrator, who alone may feature an event. */
+    private static Mono<Boolean> platformAdmin() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(context -> context.getAuthentication() != null && context.getAuthentication().getAuthorities().stream()
+                        .anyMatch(authority -> ADMIN_AUTHORITIES.contains(authority.getAuthority())))
+                .defaultIfEmpty(false);
     }
 }

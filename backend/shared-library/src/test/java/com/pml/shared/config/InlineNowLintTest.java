@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ET-PLT-001 R3 — every timestamp comes from the injected {@link java.time.Clock}.
+ * Every timestamp comes from the injected {@link java.time.Clock}.
  *
  * <h2>Why this matters more than it looks</h2>
  * The platform is defined by its time boundaries: a reservation live at 9:59 and expired at
@@ -46,18 +46,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 477 call sites exist across four services. They are not one job:
  *
  * <ul>
- *   <li><b>ET-PLT-001 (here):</b> {@code Instant.now()}, {@code LocalDate.now()} and
+ *   <li><b>Here:</b> {@code Instant.now()}, {@code LocalDate.now()} and
  *       {@code System.currentTimeMillis()} — a straight substitution to the injected clock.</li>
- *   <li><b>ET-PLT-002 R5 (there):</b> the 230 {@code LocalDateTime.now()} sites. The correct
+ *   <li><b>The persistence type migration:</b> the 230 {@code LocalDateTime.now()} sites. The correct
  *       fix is a <em>type</em> migration to {@code Instant}, not {@code LocalDateTime.now(clock)}
- *       — that would satisfy this lint while cementing exactly the type ET-PLT-002 removes,
+ *       — that would satisfy this lint while cementing exactly the type the migration removes,
  *       and would have to be undone. Fixing a lint in a way that entrenches the defect is
  *       worse than leaving it visible.</li>
  * </ul>
  *
  * <p>So the counts below are frozen per module and may only fall. New violations fail
- * immediately; the backlog is burned down by the spec that owns each kind.
+ * immediately; the backlog is burned down by the work that owns each kind.
  */
+@Tag("L1")
 @Tag("ET-PLT-001")
 @DisplayName("ET-PLT-001-R3 · timestamps come from the injected Clock")
 class InlineNowLintTest {
@@ -80,12 +81,12 @@ class InlineNowLintTest {
      * new one elsewhere. These may only fall.
      */
     private static final Map<String, Integer> BUDGET = new LinkedHashMap<>(Map.of(
-            "shared-library", 7,
-            "catalog-service", 108,
-            "booking-service", 229,
-            "identity-service", 111,
-            "api-gateway", 4,
-            "keycloak-extensions", 8));
+            "shared-library", 0,
+            "catalog-service", 0,
+            "booking-service", 0,
+            "identity-service", 0,
+            "api-gateway", 0,
+            "keycloak-extensions", 0));
 
     @Test
     @DisplayName("no module exceeds its frozen inline-now budget")

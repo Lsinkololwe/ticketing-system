@@ -1,0 +1,23 @@
+# Profile "test": development values for tests that boot configuration. Not secrets.
+app:
+  security:
+    encryption:
+      key: "4BL5P9rsrnVX9NOYJ3V9CoZbrInkrA+3hwju49qFl98="
+identity:
+  challenge:
+    hmac-pepper: test-challenge-pepper-not-a-secret
+  contact:
+    hash-key: test-contact-hash-key-not-a-secret
+    quarantine: PT0S
+    resend-after: PT0S
+  id-hash:
+    key: test-id-hash-key-not-a-secret
+  delivery:
+    capture:
+      enabled: true
+spring:
+  cloud:
+    azure:
+      servicebus:
+        # The Service Bus client needs an endpoint to be built. These tests never send: the event bridge is faked.
+        connection-string: "Endpoint=sb://127.0.0.1;SharedAccessKeyName=test;SharedAccessKey=dGVzdA==;UseDevelopmentEmulator=true;"

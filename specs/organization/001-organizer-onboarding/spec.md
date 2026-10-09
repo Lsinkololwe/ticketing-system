@@ -1,4 +1,4 @@
-# ET-ORG-001 · Organizer onboarding — nine states, staged access, the approval saga
+# ET-ORG-001 · Organizer onboarding — nine states, staged access, the approval workflow
 
 > **Conformance** · US Part I §4 onboarding stages · US Part II §8, §12 organization and profile CRUD · US Part IV §20 approval saga · US Part IV §21 state machines
 
@@ -25,7 +25,7 @@ organization that is simultaneously an application and a tenant is one thing wit
 lifecycle, and modelling it as two produces the perennial question of what an approved
 application with an inactive organization means.
 
-And it declares the approval itself as an explicit, compensating saga. Approval is not one
+And it declares the approval itself as an explicit, compensating workflow. Approval is not one
 write: it activates the organization, makes the applicant its owner, upgrades their user
 type, grants a realm role, creates five Keycloak groups and sends a welcome. Five of those
 six steps are in a different system from the first, and the platform must never end up with
@@ -68,9 +68,10 @@ the file in the server's heap, adds a CSRF surface, and gives no progress — fo
 photographed business licence over a mobile connection, progress is the difference between
 waiting and giving up.
 
-**Approval is a saga with an explicit state and explicit compensation.** Six steps across
-two systems. The saga document records which step it reached, every step is idempotent and
-re-entrant, and a failure past the retry budget compensates in reverse — because the
+**Approval is a compensating workflow.** Six steps across two systems, run by the
+organization's `OrganizerOnboardingWorkflow`: each compensation is registered before its step,
+every step is an idempotent activity, and a failure past the retry budget compensates in reverse —
+because the
 failure mode this prevents is an organization the platform believes is active whose owner
 has no role, no group and no way in. Retry first, compensate only when retries are
 exhausted, and record the outcome either way.
@@ -175,19 +176,19 @@ request-changes, and each SHALL move the organization to the state §4 names for
 - [ ] Every decision records `reviewedById`, `reviewedAt` and the reason, and writes an audit row
 - [ ] The applicant is notified on each of the three outcomes, with the reason where one exists
 
-### ET-ORG-001-R6 · Approval is a compensating saga that never half-completes
+### ET-ORG-001-R6 · Approval is a compensating workflow that never half-completes
 
 WHEN an application is approved, THE SYSTEM SHALL perform the six steps of §4 in order, and
 IF a step fails past its retry budget, THEN THE SYSTEM SHALL compensate the completed steps
 in reverse and return the organization to `PENDING_REVIEW`.
 
 **Acceptance**
-- [ ] The saga's state is persisted with an explicit step marker before each step runs
-- [ ] The six steps are: activate the organization, create the `OWNER` membership, set `userType = ORGANIZER`, grant the `ORGANIZER` realm role, create the group tree and add the owner, publish `identity.OrganizationApproved`
-- [ ] Every step is idempotent — re-running the saga from any step converges rather than duplicating
+- [ ] Approval runs in the organization's `OrganizerOnboardingWorkflow` (`org-onboarding/{organizationId}`); its history is the process state, and `approvalSagaStep` on the document is a projection written before each step
+- [ ] The six steps are: activate the organization, create the `OWNER` membership, set `userType = ORGANIZER`, grant the `ORGANIZER` realm role, create the group tree and add the owner, stage `identity.OrganizationApproved` in the outbox
+- [ ] Every step is an idempotent activity — a retried or replayed step converges rather than duplicating
 - [ ] A Keycloak failure retries with backoff up to the configured budget before compensating
 - [ ] Compensation reverses in order: remove from groups, revoke the role, restore `userType = CUSTOMER`, remove the membership, return the status to `PENDING_REVIEW` — and records why
-- [ ] A test kills the process after each of the six steps in turn and asserts the saga either completes or fully compensates on restart, never a partial state
+- [ ] A time-skipping test fails each of the six steps in turn and asserts the workflow either completes or fully compensates, never a partial state; a recorded approval history replays
 - [ ] No approval leaves an `ACTIVE` organization whose owner lacks the `ORGANIZER` role or the owners group — asserted directly
 
 ### ET-ORG-001-R7 · Capability follows status, at every gate
@@ -218,6 +219,17 @@ SHALL permit the action to be reversed.
 
 ## 4. Model
 
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** `myOrganization` → `myOwnedOrganization` — takes no arguments and reads the subject from the token — a genuine `my*` operation. Its shipped role is ORGANIZER, narrower than §4's AUTHENTICATED.
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 1 operation name below adopts the
+> shipped name: `submitForReview` → `submitOrganizationForReview`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
+
 ### Documents
 
 | Collection | Holds |
@@ -238,7 +250,7 @@ SHALL permit the action to be reversed.
 | `taxId`, `businessRegistrationNumber` | `String` | KYB |
 | `businessPhone`, `businessEmail`, `businessAddress` | `String` | KYB |
 | `status` | `OrganizationStatus` | the nine states |
-| `keycloakGroupId` | `String` | set by saga step 5 |
+| `keycloakGroupId` | `String` | set by approval workflow step 5 |
 | `commissionRate` | `BigDecimal` | set at approval ([ET-FIN-002](../../finance/002-commission/)) |
 | `payoutSchedule` | `PayoutSchedule` | set at approval |
 | `verified`, `documentsVerified`, `bankVerified` | `boolean` | |
@@ -307,7 +319,7 @@ asks for via `requestOrganizationChanges` when something does not add up.
 `mimeType`, `fileSize`, `status`, `reviewedById`, `reviewedAt`, `rejectionReason`,
 `supersededById`, `uploadedById`, `createdAt`, `updatedAt`.
 
-### The approval saga
+### The approval workflow
 
 | # | Step | System | Compensation |
 |---|---|---|---|
@@ -316,11 +328,15 @@ asks for via `requestOrganizationChanges` when something does not add up.
 | 3 | `identity_users.userType` → `ORGANIZER`, set `primaryOrganizationId` | MongoDB | restore `CUSTOMER`, clear |
 | 4 | grant the `ORGANIZER` realm role | Keycloak | revoke |
 | 5 | create `/organizations/{slug}` and its five role subgroups; add the owner to `owners`; store `keycloakGroupId` | Keycloak | remove from group; the tree is left (it is harmless and re-usable) |
-| 6 | publish `identity.OrganizationApproved` | bus | — (a consumer receiving it for a compensated approval sees `OrganizationSuspended` next) |
+| 6 | mark approved and stage `identity.OrganizationApproved` in `identity_outbox` | MongoDB | — (a consumer receiving it for a compensated approval sees `OrganizationSuspended` next) |
 
 Steps 4 and 5 retry with exponential backoff up to `identity.onboarding.saga.max-retries`
-before compensation begins. The saga's own state lives on the organization document as
-`approvalSagaStep` and `approvalSagaAttempts`, so recovery needs no extra collection.
+before compensation begins. The process state is the `OrganizerOnboardingWorkflow` execution
+(`org-onboarding/{organizationId}`, `identity-onboarding`,
+[ET-PLT-015](../../_platform/015-durable-execution/) §4); `approvalSagaStep` and
+`approvalSagaAttempts` on the organization document are its projection for screens and support.
+Submit, approve, reject and request changes reach it as updates through
+`OrganizerOnboardingProcess`.
 
 ### GraphQL
 
@@ -336,7 +352,7 @@ Subgraph `identity`. Every field carries `@auth` explicitly.
 | `verificationDocuments(organizationId)` | query | `AUTHENTICATED` | `[VerificationDocument!]!` |
 | `applyToBeOrganizer(input)` | mutation | `AUTHENTICATED` | `Organization!` |
 | `updateOrganization(id, input)` | mutation | `AUTHENTICATED` | `Organization!` |
-| `submitForReview(id)` | mutation | `AUTHENTICATED` | `Organization!` |
+| `submitOrganizationForReview(id)` | mutation | `AUTHENTICATED` | `Organization!` |
 | `approveOrganization(input)` | mutation | `ADMIN` | `Organization!` |
 | `rejectOrganization(input)` | mutation | `ADMIN` | `Organization!` |
 | `requestOrganizationChanges(input)` | mutation | `ADMIN` | `Organization!` |
@@ -365,13 +381,14 @@ booking with `bankAccounts`, `payoutRequests` and `availableBalance`
 
 | Tier | Name | When | Consumers |
 |---|---|---|---|
-| bus | `identity.OrganizationApproved` v1 | saga step 6 | catalog → may publish; booking → enable payouts |
+| bus | `identity.OrganizationApproved` v1 | workflow step 6, staged in the outbox | catalog → may publish; booking → enable payouts |
 | bus | `identity.OrganizationSuspended` v1 | transition 9, and on compensation | catalog → unpublish; booking → block payouts |
-| module | `OrganizationSubmittedEvent` | transition 3, 4 | notify the review queue |
-| module | `OrganizationDecidedEvent` | transitions 5, 6, 7 | notify the applicant |
+
 
 Both bus rows are §4 registry rows of
-[ET-PLT-003](../../_platform/003-event-contract/), session-keyed on `organizationId`.
+[ET-PLT-003](../../_platform/003-event-contract/), session-keyed on `organizationId`. Review-queue
+and applicant messages are `NotificationWorkflow` requests made by the workflow's activities, not
+in-memory events.
 
 ### Configuration
 
@@ -429,10 +446,10 @@ plus `ORGANIZER_NOT_APPROVED`, introduced by
   - parallel-safe: yes
   - depends: T4
 
-- [ ] **T6 · The approval saga: six steps, persisted marker, retry, compensation**
+- [ ] **T6 · The approval workflow: six steps, retry, compensation**
   - requirements: R6
-  - files: `backend/identity-service/.../service/impl/OrganizationApprovalSaga.java`
-  - verify: killing the process after each step in turn yields completion or full compensation, never partial
+  - files: `backend/identity-service/.../workflow/onboarding/OrganizerOnboardingWorkflowImpl.java`
+  - verify: a failure at each step in turn yields completion or full compensation, never partial; the history replays
   - parallel-safe: no — the highest-risk write in this spec
   - depends: T5
 
@@ -476,3 +493,39 @@ Deliberately never in scope: **a separate `organizer_profiles` document** (two i
 business), **an `APPROVED` state distinct from `ACTIVE`** (a distinction with no
 behavioural difference), and **hard deletion of an organization** (it orphans every event,
 ticket, escrow account and journal line that references it).
+
+---
+
+## Amendment, 2026-10-04 — commission, payout-account review, profile and deletion
+
+### ET-ORG-001-R10 · An organization's own commission
+
+WHEN an administrator approves an organization or sets its rate, THE SYSTEM SHALL record a commission
+between 0 and 50 percent for that organization, replacing the platform default for it.
+
+**Acceptance**
+- [ ] `approveOrganization(id, commissionRate)` validates the rate before the approval starts and writes it before the approval, so the organization never sells at the default in between
+- [ ] `setOrganizationCommissionRate(organizationId, rate, reason)` is ADMIN or SUPER_ADMIN, audited with the old and new rate and the actor
+- [ ] `Organization.commissionRate` is visible to the organization's members and to administrators only
+- [ ] A rate outside 0..50 is refused with `CONFIGURATION_VALUE_INVALID`
+
+### ET-ORG-001-R11 · Payout-account review
+
+THE SYSTEM SHALL let ADMIN and FINANCE reject, suspend and reinstate the payout account on file, and list accounts with their review state.
+
+**Acceptance**
+- [ ] `rejectPayoutAccount` / `rejectBankAccount` unverify the account and record the reason the owner sees
+- [ ] `suspendBankAccount` freezes payouts to the account without removing it, so `canReceivePayouts` is false; `reinstateBankAccount` lifts it; both are idempotent
+- [ ] `bankAccounts(filter)` lists one row per organization with an account, filtered by status, method and name, with numbers and phones masked; the number is decrypted only to be masked
+- [ ] Every action writes an audit row and a payout-config audit row
+
+### ET-ORG-001-R12 · Profile and deletion
+
+**Acceptance**
+- [ ] `updateOrganization` accepts tagline, website, social links, business contact and address with `organization:edit`; the KYB identity fields (business type, TPIN, registration number) only while the application is DRAFT or CHANGES_REQUESTED
+- [ ] `suspendOrganization` records `suspensionReason` and `suspendedAt`, shown to the organization's members; `unsuspendOrganization` clears them
+- [ ] `requestOrganizationDeletion` (needs `organization:delete`) moves the organization to PENDING_DELETION with a 30-day grace period; `cancelOrganizationDeletion` restores the previous status; a suspended organization cannot be deleted by its owner
+- [ ] `myOrganization` returns the organization the caller belongs to by active membership, for every role
+- [ ] **Deferred**: the step that executes a due deletion (a Temporal timer workflow that checks open events and unpaid escrow in catalog and booking) — it needs those services' answers and is specified in ET-PLT-015
+
+**Tests** `OrganizationRulesTest` (L1), `OrganizationAdminServiceTest` (L2)

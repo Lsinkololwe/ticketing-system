@@ -1,20 +1,16 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.constants.PlatformTime;
 import com.pml.shared.constants.EscrowStatus;
 import com.pml.booking.domain.enums.AlertPriority;
-import com.pml.booking.domain.enums.JournalEntryType;
-import com.pml.booking.domain.enums.NotificationType;
 import com.pml.booking.domain.enums.ReconciliationItemStatus;
 import com.pml.booking.domain.enums.ReconciliationStatus;
 import com.pml.booking.domain.enums.ReconciliationType;
-import com.pml.booking.domain.model.JournalLine;
 import com.pml.booking.domain.model.PaymentIntent;
 import com.pml.booking.domain.model.ReconciliationItem;
 import com.pml.booking.domain.model.ReconciliationRun;
 import com.pml.booking.exception.ReconciliationDiscrepancyException;
-import com.pml.booking.domain.model.EventEscrowAccount;
 import com.pml.booking.repository.EventEscrowAccountRepository;
-import com.pml.booking.repository.PaymentIntentRepository;
 import com.pml.booking.repository.ReconciliationRunRepository;
 import com.pml.booking.service.AccountingService;
 import com.pml.booking.service.EscrowTransactionService;
@@ -32,9 +28,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -74,8 +70,10 @@ import java.util.stream.Collectors;
 public class ReconciliationServiceImpl implements ReconciliationService {
 
     private final ReconciliationRunRepository reconciliationRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final EventEscrowAccountRepository escrowAccountRepository;
-    private final PaymentIntentRepository paymentIntentRepository;
     private final EscrowTransactionService escrowTransactionService;
     private final JournalService journalService;
     private final AccountingService accountingService;
@@ -125,238 +123,6 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                                     "Gateway reconciliation started: {} items, {} matched",
                                     saved.getItems().size(), saved.getMatchedCount()));
                 });
-    }
-
-    @Override
-    @Transactional
-    public Mono<ReconciliationRun> startGatewayReconciliationFromFile(
-            LocalDate reconciliationDate,
-            String settlementFileContent,
-            String fileFormat,
-            String runBy
-    ) {
-        log.info("Starting gateway reconciliation from file for date: {}", reconciliationDate);
-
-        // Parse file based on format
-        Map<String, BigDecimal> gatewayData = parseSettlementFile(settlementFileContent, fileFormat);
-
-        return startGatewayReconciliation(reconciliationDate, gatewayData, runBy);
-    }
-
-    /**
-     * Parses settlement file content based on format.
-     *
-     * <h2>Supported Formats</h2>
-     * <ul>
-     *   <li><b>CSV</b>: Header row + transaction_id,amount,status columns</li>
-     *   <li><b>JSON</b>: Array of objects with transactionId, amount, status fields</li>
-     * </ul>
-     *
-     * <h2>CSV Format Example</h2>
-     * <pre>
-     * transaction_id,amount,status
-     * TXN-001,500.00,SUCCEEDED
-     * TXN-002,250.00,SUCCEEDED
-     * </pre>
-     *
-     * <h2>JSON Format Example</h2>
-     * <pre>
-     * {
-     *   "settlementDate": "2024-03-15",
-     *   "transactions": [
-     *     {"transactionId": "TXN-001", "amount": 500.00, "status": "SUCCEEDED"},
-     *     {"transactionId": "TXN-002", "amount": 250.00, "status": "SUCCEEDED"}
-     *   ]
-     * }
-     * </pre>
-     *
-     * @param content File content as string
-     * @param format  File format: "csv" or "json"
-     * @return Map of transaction ID to amount
-     */
-    private Map<String, BigDecimal> parseSettlementFile(String content, String format) {
-        Map<String, BigDecimal> data = new HashMap<>();
-
-        if ("csv".equalsIgnoreCase(format)) {
-            parseCsvSettlement(content, data);
-        } else if ("json".equalsIgnoreCase(format)) {
-            parseJsonSettlement(content, data);
-        } else {
-            log.warn("Unsupported settlement file format: {}. Supported formats: csv, json", format);
-        }
-
-        log.info("Parsed {} transactions from {} format settlement file", data.size(), format);
-        return data;
-    }
-
-    /**
-     * Parses CSV format settlement file.
-     *
-     * <p>Expected format: transaction_id,amount[,status] with header row.</p>
-     */
-    private void parseCsvSettlement(String content, Map<String, BigDecimal> data) {
-        String[] lines = content.split("\n");
-
-        // Find column indices from header
-        int txIdCol = 0;
-        int amountCol = 1;
-        int statusCol = -1;
-
-        if (lines.length > 0) {
-            String[] headers = lines[0].toLowerCase().split(",");
-            for (int i = 0; i < headers.length; i++) {
-                String header = headers[i].trim();
-                if (header.contains("transaction") && header.contains("id") || header.equals("transactionid")) {
-                    txIdCol = i;
-                } else if (header.contains("amount") || header.equals("value")) {
-                    amountCol = i;
-                } else if (header.contains("status")) {
-                    statusCol = i;
-                }
-            }
-        }
-
-        for (int i = 1; i < lines.length; i++) { // Skip header
-            String line = lines[i].trim();
-            if (line.isEmpty()) continue;
-
-            String[] parts = line.split(",");
-            if (parts.length >= 2) {
-                try {
-                    String txId = parts[txIdCol].trim().replace("\"", "");
-                    String amountStr = parts[amountCol].trim().replace("\"", "");
-                    BigDecimal amount = new BigDecimal(amountStr);
-
-                    // Only include SUCCEEDED transactions if status column exists
-                    if (statusCol >= 0 && parts.length > statusCol) {
-                        String status = parts[statusCol].trim().toUpperCase().replace("\"", "");
-                        if (!"SUCCEEDED".equals(status) && !"SUCCESS".equals(status) && !"COMPLETED".equals(status)) {
-                            continue;
-                        }
-                    }
-
-                    data.put(txId, amount);
-                } catch (NumberFormatException e) {
-                    log.warn("Skipping CSV line {} - invalid amount format: {}", i + 1, line);
-                }
-            }
-        }
-    }
-
-    /**
-     * Parses JSON format settlement file.
-     *
-     * <p>Supports two formats:</p>
-     * <ul>
-     *   <li>Object with "transactions" array: {"transactions": [...]}</li>
-     *   <li>Direct array of transactions: [...]</li>
-     * </ul>
-     */
-    private void parseJsonSettlement(String content, Map<String, BigDecimal> data) {
-        try {
-            content = content.trim();
-
-            // Check if it's an array or object
-            if (content.startsWith("[")) {
-                // Direct array format
-                parseJsonArray(content, data);
-            } else if (content.startsWith("{")) {
-                // Object format - look for transactions array
-                int txArrayStart = content.indexOf("\"transactions\"");
-                if (txArrayStart > 0) {
-                    int arrayStart = content.indexOf("[", txArrayStart);
-                    int arrayEnd = findMatchingBracket(content, arrayStart, '[', ']');
-                    if (arrayStart > 0 && arrayEnd > arrayStart) {
-                        String arrayContent = content.substring(arrayStart, arrayEnd + 1);
-                        parseJsonArray(arrayContent, data);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Failed to parse JSON settlement file", e);
-        }
-    }
-
-    /**
-     * Parses a JSON array of transaction objects.
-     */
-    private void parseJsonArray(String arrayContent, Map<String, BigDecimal> data) {
-        // Simple JSON array parsing without external dependencies
-        // Looks for objects with transactionId/transaction_id and amount fields
-        int pos = 0;
-        while (pos < arrayContent.length()) {
-            int objStart = arrayContent.indexOf("{", pos);
-            if (objStart < 0) break;
-
-            int objEnd = findMatchingBracket(arrayContent, objStart, '{', '}');
-            if (objEnd < 0) break;
-
-            String obj = arrayContent.substring(objStart, objEnd + 1);
-
-            // Extract transaction ID
-            String txId = extractJsonStringField(obj, "transactionId");
-            if (txId == null) txId = extractJsonStringField(obj, "transaction_id");
-            if (txId == null) txId = extractJsonStringField(obj, "id");
-
-            // Extract amount
-            BigDecimal amount = extractJsonNumberField(obj, "amount");
-            if (amount == null) amount = extractJsonNumberField(obj, "value");
-
-            // Extract status (optional)
-            String status = extractJsonStringField(obj, "status");
-
-            // Add to map if valid and succeeded
-            if (txId != null && amount != null) {
-                if (status == null || "SUCCEEDED".equalsIgnoreCase(status) ||
-                        "SUCCESS".equalsIgnoreCase(status) || "COMPLETED".equalsIgnoreCase(status)) {
-                    data.put(txId, amount);
-                }
-            }
-
-            pos = objEnd + 1;
-        }
-    }
-
-    private int findMatchingBracket(String s, int start, char open, char close) {
-        if (start < 0 || start >= s.length() || s.charAt(start) != open) return -1;
-
-        int depth = 1;
-        boolean inString = false;
-        for (int i = start + 1; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '"' && (i == 0 || s.charAt(i - 1) != '\\')) {
-                inString = !inString;
-            } else if (!inString) {
-                if (c == open) depth++;
-                else if (c == close) {
-                    depth--;
-                    if (depth == 0) return i;
-                }
-            }
-        }
-        return -1;
-    }
-
-    private String extractJsonStringField(String json, String field) {
-        String pattern1 = "\"" + field + "\"\\s*:\\s*\"([^\"]+)\"";
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern1);
-        java.util.regex.Matcher m = p.matcher(json);
-        if (m.find()) return m.group(1);
-        return null;
-    }
-
-    private BigDecimal extractJsonNumberField(String json, String field) {
-        String pattern = "\"" + field + "\"\\s*:\\s*([\\d.]+)";
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-        java.util.regex.Matcher m = p.matcher(json);
-        if (m.find()) {
-            try {
-                return new BigDecimal(m.group(1));
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        }
-        return null;
     }
 
     // ========================================================================
@@ -453,7 +219,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                             if (run.getUnmatchedCount() > 0) {
                                 run.requiresReview();
                             } else {
-                                run.complete("All escrow accounts balanced");
+                                run.complete("All escrow accounts balanced", clock.instant());
                             }
 
                             return reconciliationRepository.save(run);
@@ -485,8 +251,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                                     recordedBalance,
                                     calculatedBalance,
                                     variance,
-                                    isBalanced,
-                                    discrepancies
+                                    isBalanced
                             );
                         }))
                 .defaultIfEmpty(new EscrowReconciliationResult(
@@ -494,8 +259,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                         BigDecimal.ZERO,
                         BigDecimal.ZERO,
                         BigDecimal.ZERO,
-                        true,
-                        List.of()
+                        true
                 ));
     }
 
@@ -570,7 +334,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                                 log.warn("Escrow-Journal cross-verification found {} inconsistencies with total variance: K{}",
                                         run.getUnmatchedCount(), totalVariance);
                             } else {
-                                run.complete("All escrow accounts consistent with journal entries");
+                                run.complete("All escrow accounts consistent with journal entries", clock.instant());
                                 log.info("Escrow-Journal cross-verification passed for all {} accounts", items.size());
                             }
 
@@ -742,169 +506,10 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         return reconciliationRepository.findById(runId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Run not found: " + runId)))
                 .flatMap(run -> {
-                    run.resolveItem(externalId, resolution, resolvedBy);
+                    run.resolveItem(externalId, resolution, resolvedBy, clock.instant());
                     return reconciliationRepository.save(run);
                 })
                 .doOnSuccess(updated -> log.info("Item resolved: {}", externalId));
-    }
-
-    @Override
-    @Transactional
-    public Mono<ReconciliationRun> resolveItems(
-            String runId,
-            Map<String, String> resolutions,
-            String resolvedBy
-    ) {
-        return reconciliationRepository.findById(runId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Run not found: " + runId)))
-                .flatMap(run -> {
-                    for (Map.Entry<String, String> entry : resolutions.entrySet()) {
-                        run.resolveItem(entry.getKey(), entry.getValue(), resolvedBy);
-                    }
-                    return reconciliationRepository.save(run);
-                });
-    }
-
-    /**
-     * Creates an adjustment journal entry to correct a reconciliation discrepancy.
-     *
-     * <h2>Purpose</h2>
-     * <p>When reconciliation finds a variance that cannot be explained by timing
-     * or other expected differences, an adjustment entry may be needed to
-     * bring the books into alignment with reality.</p>
-     *
-     * <h2>Typical Adjustment Scenarios</h2>
-     * <ul>
-     *   <li><b>Gateway Fee Variance</b>: Gateway charged a fee we didn't record</li>
-     *   <li><b>Missing Internal Record</b>: Webhook failed, need to record payment</li>
-     *   <li><b>Bank Fee</b>: Bank charged fee not in our records</li>
-     *   <li><b>Rounding Difference</b>: Small currency conversion rounding</li>
-     * </ul>
-     *
-     * <h2>Journal Entry Structure</h2>
-     * <pre>
-     * For positive variance (we have less than gateway):
-     *   DR 5030 Bank Fees / Reconciliation Variance   K50.00
-     *   CR 1021 Gateway Settlement Receivable         K50.00
-     *
-     * For negative variance (we have more than gateway):
-     *   DR 1021 Gateway Settlement Receivable         K50.00
-     *   CR 4090 Other Income / Reconciliation Gain    K50.00
-     * </pre>
-     *
-     * @param runId The reconciliation run ID
-     * @param externalId The external transaction ID being adjusted
-     * @param adjustmentAmount The adjustment amount (positive = expense, negative = income)
-     * @param description Human-readable description of the adjustment
-     * @param approvedBy User who approved the adjustment
-     * @return The created journal entry ID
-     */
-    @Override
-    @Transactional
-    public Mono<String> createAdjustmentEntry(
-            String runId,
-            String externalId,
-            BigDecimal adjustmentAmount,
-            String description,
-            String approvedBy
-    ) {
-        log.info("Creating adjustment entry for reconciliation: run={}, item={}, amount={}",
-                runId, externalId, adjustmentAmount);
-
-        return reconciliationRepository.findById(runId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Run not found: " + runId)))
-                .flatMap(run -> {
-                    // Build journal entry lines based on adjustment direction
-                    List<JournalLine> lines = new ArrayList<>();
-
-                    // Account codes (from Chart of Accounts)
-                    String gatewayReceivableAccount = "1021"; // Gateway Settlement Receivable
-                    String reconciliationExpenseAccount = "5099"; // Reconciliation Variance Expense
-                    String reconciliationIncomeAccount = "4099"; // Reconciliation Variance Income
-
-                    String fullDescription = String.format(
-                            "Reconciliation Adjustment - %s %s: %s (Run: %s, External ID: %s)",
-                            run.getType(),
-                            run.getReconciliationDate(),
-                            description,
-                            run.getRunNumber(),
-                            externalId
-                    );
-
-                    if (adjustmentAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        // Positive adjustment: We need to record an expense/loss
-                        // Gateway has more than we recorded, so we owe the difference
-                        lines.add(JournalLine.debitWithReference(
-                                reconciliationExpenseAccount,
-                                adjustmentAmount,
-                                "Reconciliation variance - " + description,
-                                "RECONCILIATION",
-                                runId
-                        ));
-                        lines.add(JournalLine.creditWithReference(
-                                gatewayReceivableAccount,
-                                adjustmentAmount,
-                                "Adjust gateway receivable for variance",
-                                "RECONCILIATION",
-                                runId
-                        ));
-                    } else {
-                        // Negative adjustment: We record income/gain
-                        // We have more than gateway shows, adjust to match
-                        BigDecimal absAmount = adjustmentAmount.abs();
-                        lines.add(JournalLine.debitWithReference(
-                                gatewayReceivableAccount,
-                                absAmount,
-                                "Adjust gateway receivable for variance",
-                                "RECONCILIATION",
-                                runId
-                        ));
-                        lines.add(JournalLine.creditWithReference(
-                                reconciliationIncomeAccount,
-                                absAmount,
-                                "Reconciliation variance gain - " + description,
-                                "RECONCILIATION",
-                                runId
-                        ));
-                    }
-
-                    // Create the journal entry
-                    return journalService.createAndPostEntry(
-                            "RECON-" + runId + "-" + externalId,
-                            LocalDateTime.now(),
-                            fullDescription,
-                            JournalEntryType.ADJUSTMENT,
-                            lines,
-                            approvedBy,
-                            Map.of(
-                                    "reconciliationRunId", runId,
-                                    "reconciliationRunNumber", run.getRunNumber(),
-                                    "reconciliationType", run.getType().name(),
-                                    "externalId", externalId,
-                                    "adjustmentAmount", adjustmentAmount.toString()
-                            )
-                    ).flatMap(entry -> {
-                        // Update the reconciliation item with the journal entry reference
-                        run.getItems().stream()
-                                .filter(item -> externalId.equals(item.getExternalId()) ||
-                                        externalId.equals(item.getInternalId()))
-                                .findFirst()
-                                .ifPresent(item -> {
-                                    item.resolveWithAdjustment(
-                                            "Adjustment entry created: " + description,
-                                            approvedBy,
-                                            entry.getId()
-                                    );
-                                });
-
-                        return reconciliationRepository.save(run)
-                                .thenReturn(entry.getId());
-                    });
-                })
-                .doOnSuccess(entryId -> log.info("Created adjustment entry {} for reconciliation {}",
-                        entryId, runId))
-                .doOnError(error -> log.error("Failed to create adjustment entry for reconciliation {}",
-                        runId, error));
     }
 
     // ========================================================================
@@ -931,7 +536,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                         ));
                     }
 
-                    run.complete(notes);
+                    run.complete(notes, clock.instant());
                     return reconciliationRepository.save(run);
                 })
                 .doOnSuccess(completed -> log.info("Reconciliation run completed: {}", runId));
@@ -945,20 +550,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         return reconciliationRepository.findById(runId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Run not found: " + runId)))
                 .flatMap(run -> {
-                    run.fail(reason);
-                    return reconciliationRepository.save(run);
-                });
-    }
-
-    @Override
-    @Transactional
-    public Mono<ReconciliationRun> cancelRun(String runId, String reason) {
-        log.info("Cancelling reconciliation run: {}", runId);
-
-        return reconciliationRepository.findById(runId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Run not found: " + runId)))
-                .flatMap(run -> {
-                    run.fail("Cancelled: " + reason);
+                    run.fail(reason, clock.instant());
                     return reconciliationRepository.save(run);
                 });
     }
@@ -995,20 +587,6 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     @Override
     public Flux<ReconciliationRun> findRequiringReview() {
         return reconciliationRepository.findByStatus(ReconciliationStatus.REQUIRES_REVIEW);
-    }
-
-    @Override
-    public Flux<ReconciliationItemWithRun> findItemsByStatus(ReconciliationItemStatus status) {
-        return reconciliationRepository.findAll()
-                .flatMapIterable(run -> run.getItems().stream()
-                        .filter(item -> item.getStatus() == status)
-                        .map(item -> new ReconciliationItemWithRun(
-                                run.getId(),
-                                run.getType(),
-                                run.getReconciliationDate(),
-                                item
-                        ))
-                        .toList());
     }
 
     // ========================================================================
@@ -1089,12 +667,6 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                             .mapToInt(ReconciliationRun::getUnmatchedCount)
                             .sum();
 
-                    // Count resolved items
-                    int resolvedCount = (int) runs.stream()
-                            .flatMap(r -> r.getItems().stream())
-                            .filter(item -> item.getResolvedAt() != null)
-                            .count();
-
                     BigDecimal expectedTotal = runs.stream()
                             .map(r -> r.getExpectedTotal() != null ? r.getExpectedTotal() : BigDecimal.ZERO)
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -1117,8 +689,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                                             item.getInternalId(),
                                             item.getExternalAmount(),
                                             item.getInternalAmount(),
-                                            item.getStatus(),
-                                            (int) ChronoUnit.DAYS.between(run.getReconciliationDate(), LocalDate.now())
+                                            item.getStatus()
                                     )))
                             .toList();
 
@@ -1130,26 +701,12 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                             itemCount,
                             matchedCount,
                             unmatchedCount,
-                            resolvedCount,
                             expectedTotal,
                             actualTotal,
                             variance,
                             unresolvedItems
                     );
                 });
-    }
-
-    // ========================================================================
-    // AUTOMATED SCHEDULING
-    // ========================================================================
-
-    @Override
-    public Mono<Integer> processScheduledReconciliations() {
-        log.info("Processing scheduled reconciliations");
-        // TODO: Implement scheduled reconciliation logic
-        // - Check for pending gateway settlements
-        // - Run escrow reconciliation
-        return Mono.just(0);
     }
 
     /**
@@ -1169,7 +726,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     public Mono<Integer> sendReconciliationAlerts() {
         log.info("Checking for reconciliation alerts");
 
-        LocalDate threeDaysAgo = LocalDate.now().minusDays(3);
+        LocalDate threeDaysAgo = PlatformTime.dateAt(clock.instant()).minus(Duration.ofDays(3));
         BigDecimal highVarianceThreshold = new BigDecimal("1000.00");
         int highItemCountThreshold = 10;
 
@@ -1185,7 +742,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
                         // Check 1: Pending for more than 3 days
                         if (run.getReconciliationDate().isBefore(threeDaysAgo)) {
-                            long daysPending = ChronoUnit.DAYS.between(run.getReconciliationDate(), LocalDate.now());
+                            long daysPending = ChronoUnit.DAYS.between(run.getReconciliationDate(), PlatformTime.dateAt(clock.instant()));
                             alerts.add(String.format("OVERDUE: Pending for %d days (threshold: 3 days)", daysPending));
                             log.warn("ALERT [HIGH]: Reconciliation {} pending for {} days",
                                     run.getRunNumber(), daysPending);
@@ -1279,7 +836,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                             type,
                             type.name() + " Source",
                             runBy
-                    );
+                    , clock.instant());
                 });
     }
 
@@ -1333,7 +890,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
         // Convert LocalDate to Instant range for the day (using system default timezone)
         Instant startOfDay = reconciliationDate.atStartOfDay(ZoneId.systemDefault()).toInstant();
-        Instant endOfDay = reconciliationDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+        Instant endOfDay = reconciliationDate.plus(Duration.ofDays(1)).atStartOfDay(ZoneId.systemDefault()).toInstant();
 
         // Find all SUCCEEDED payments for the reconciliation date
         Query query = Query.query(Criteria.where("status").is(PaymentIntent.PaymentStatus.SUCCEEDED)
@@ -1413,7 +970,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                         log.warn("Gateway reconciliation {}: {} matched, {} discrepancies found, variance: K{}",
                                 run.getRunNumber(), matched, unmatched, run.getVariance());
                     } else {
-                        run.complete("All " + matched + " transactions matched automatically");
+                        run.complete("All " + matched + " transactions matched automatically", clock.instant());
                         log.info("Gateway reconciliation {} completed: all {} items matched",
                                 run.getRunNumber(), matched);
                     }
@@ -1444,8 +1001,8 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
         return journalService.findByAccountCodeAndDateRange(
                         bankAccountCode,
-                        run.getReconciliationDate().minusDays(3), // Allow 3 days for timing differences
-                        run.getReconciliationDate().plusDays(1)
+                        run.getReconciliationDate().minus(Duration.ofDays(3)), // Allow 3 days for timing differences
+                        run.getReconciliationDate().plus(Duration.ofDays(1))
                 )
                 .collectList()
                 .map(journalEntries -> {
@@ -1507,7 +1064,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                     if (unmatched > 0) {
                         run.requiresReview();
                     } else {
-                        run.complete("All bank transactions matched");
+                        run.complete("All bank transactions matched", clock.instant());
                     }
 
                     return run;

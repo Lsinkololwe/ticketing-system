@@ -1,0 +1,74 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Contacts Schema",
+    "description": "A verified WhatsApp number or email owned by one account (com.pml.identity.domain.model.Contact). The raw value exists only inside valueEncrypted.",
+    "required": [
+      "accountId",
+      "type",
+      "valueHash",
+      "valueEncrypted",
+      "valueMasked",
+      "createdAt"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data type hint"
+      },
+      "_id": {
+        "bsonType": "string"
+      },
+      "accountId": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "type": {
+        "bsonType": "string",
+        "enum": [
+          "WHATSAPP",
+          "EMAIL"
+        ]
+      },
+      "valueHash": {
+        "bsonType": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "description": "HMAC-SHA256 contact key, lower-case hex"
+      },
+      "valueEncrypted": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "valueMasked": {
+        "bsonType": "string",
+        "maxLength": 100
+      },
+      "verifiedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "primary": {
+        "bsonType": "bool"
+      },
+      "source": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 50
+      },
+      "createdAt": {
+        "bsonType": "date"
+      },
+      "releasedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  }
+}

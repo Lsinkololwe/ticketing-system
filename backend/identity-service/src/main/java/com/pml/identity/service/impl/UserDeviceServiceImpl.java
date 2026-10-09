@@ -10,8 +10,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-
 /**
  * Implementation of UserDeviceService.
  * Manages device registration for push notifications.
@@ -22,6 +20,15 @@ import java.time.LocalDateTime;
 public class UserDeviceServiceImpl implements UserDeviceService {
 
     private final UserDeviceRepository deviceRepository;
+
+    /**
+     * Every timestamp comes from here.
+     *
+     * <p>An inline {@code clock.instant()} makes a time-dependent branch untestable: a reminder
+     * that fires at its scheduled minute can only be checked by waiting for that minute to
+     * arrive. With an injected clock the test moves time instead.</p>
+     */
+    private final java.time.Clock clock;
 
     @Override
     public Mono<UserDevice> registerDevice(String userId, RegisterDeviceInput input) {
@@ -36,7 +43,7 @@ public class UserDeviceServiceImpl implements UserDeviceService {
                 existing.setDeviceName(input.deviceName());
                 existing.setPlatform(input.platform());
                 existing.setActive(true);
-                existing.setLastActiveAt(LocalDateTime.now());
+                existing.setLastActiveAt(clock.instant());
                 return deviceRepository.save(existing);
             })
             .switchIfEmpty(Mono.defer(() -> {
@@ -48,8 +55,7 @@ public class UserDeviceServiceImpl implements UserDeviceService {
                     .platform(input.platform())
                     .deviceName(input.deviceName())
                     .isActive(true)
-                    .lastActiveAt(LocalDateTime.now())
-                    .createdAt(LocalDateTime.now())
+                    .lastActiveAt(clock.instant())
                     .build();
 
                 return deviceRepository.save(device);
@@ -57,10 +63,11 @@ public class UserDeviceServiceImpl implements UserDeviceService {
     }
 
     @Override
-    public Mono<Boolean> unregisterDevice(String deviceId) {
+    public Mono<Boolean> unregisterDevice(String userId, String deviceId) {
         log.debug("Unregistering device {}", deviceId);
 
-        return deviceRepository.findById(deviceId)
+        // Always true on success: whether the id was unknown or someone else's must not be observable.
+        return deviceRepository.findByIdAndUserId(deviceId, userId)
             .flatMap(device -> {
                 device.setActive(false);
                 return deviceRepository.save(device);
@@ -73,16 +80,5 @@ public class UserDeviceServiceImpl implements UserDeviceService {
     public Flux<UserDevice> findByUserId(String userId) {
         log.debug("Finding devices for user {}", userId);
         return deviceRepository.findByUserId(userId);
-    }
-
-    @Override
-    public Mono<UserDevice> updateLastActive(String deviceToken) {
-        log.debug("Updating last active for device token {}", deviceToken);
-
-        return deviceRepository.findByDeviceToken(deviceToken)
-            .flatMap(device -> {
-                device.setLastActiveAt(LocalDateTime.now());
-                return deviceRepository.save(device);
-            });
     }
 }

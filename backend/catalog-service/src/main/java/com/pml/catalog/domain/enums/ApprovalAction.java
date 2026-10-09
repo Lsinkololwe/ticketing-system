@@ -10,6 +10,8 @@ public enum ApprovalAction {
 
     SUBMITTED("SUBMITTED", "Submitted", "Organizer submitted event for review"),
     ASSIGNED("ASSIGNED", "Assigned", "Event assigned to reviewer"),
+    CLAIM_RELEASED("CLAIM_RELEASED", "Claim Released", "Reviewer released their claim"),
+    CLAIM_EXPIRED("CLAIM_EXPIRED", "Claim Expired", "Claim lapsed at the end of its lease"),
     VIEWED("VIEWED", "Viewed", "Reviewer viewed event details"),
     APPROVED("APPROVED", "Approved", "Event approved"),
     REJECTED("REJECTED", "Rejected", "Event rejected (final)"),
@@ -39,23 +41,6 @@ public enum ApprovalAction {
 
     public String getDescription() {
         return description;
-    }
-
-    public static ApprovalAction fromCode(String code) {
-        for (ApprovalAction action : values()) {
-            if (action.code.equals(code)) {
-                return action;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Check if this action results in a status change
-     */
-    public boolean changesStatus() {
-        return this == SUBMITTED || this == APPROVED || this == REJECTED ||
-               this == CHANGES_REQUESTED || this == RESUBMITTED;
     }
 
     /**

@@ -5,8 +5,8 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.domain.enums.ReferenceType;
 import com.pml.catalog.domain.model.ReferenceData;
-import com.pml.catalog.dto.PageableInput;
-import com.pml.catalog.dto.ReferenceDataOffsetPage;
+import com.pml.catalog.web.graphql.dto.PageableInput;
+import com.pml.catalog.web.graphql.dto.ReferenceDataOffsetPage;
 import com.pml.catalog.service.ReferenceDataService;
 import com.pml.catalog.service.ReferenceMetadataValidator;
 import com.pml.catalog.web.graphql.dto.ReferenceTypeInfo;
@@ -23,7 +23,8 @@ import java.util.Objects;
 /**
  * GraphQL query resolver for reference data.
  *
- * <p>Reads are public (dropdowns must work for unauthenticated storefront users); the admin offset
+ * <p>{@code referenceData} and {@code referenceDataByParent} are admitted without a token, but only for the
+ * types in {@code ReferenceAccess.PUBLIC_TYPES}; every other type needs a signed-in caller. The admin offset
  * table is guarded. {@code referenceTypes} exposes the type registry so a single admin screen can
  * render every type without a hardcoded client list.</p>
  */
@@ -45,6 +46,7 @@ public class ReferenceDataQueryResolver {
     }
 
     @DgsQuery
+    @PreAuthorize("isAuthenticated() or @referenceAccess.isPublic(#type)")
     public Flux<ReferenceData> referenceData(
             @InputArgument ReferenceType type,
             @InputArgument Boolean activeOnly) {
@@ -55,6 +57,7 @@ public class ReferenceDataQueryResolver {
     }
 
     @DgsQuery
+    @PreAuthorize("isAuthenticated() or @referenceAccess.isPublic(#type)")
     public Flux<ReferenceData> referenceDataByParent(
             @InputArgument ReferenceType type,
             @InputArgument String parentCode) {
@@ -65,7 +68,7 @@ public class ReferenceDataQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ReferenceDataOffsetPage> referenceDataOffsetPagination(
+    public Mono<ReferenceDataOffsetPage> referenceDataAll(
             @InputArgument ReferenceType type,
             @InputArgument PageableInput pagination) {
         Objects.requireNonNull(type, "type is required");

@@ -31,6 +31,13 @@ payout statuses and the money still moves through the branch that handles *pendi
 identical shapes is twenty sets of indexes, twenty repositories and twenty admin screens for one
 concept. The rows differ only in which list they belong to.
 
+**Reference data describes values, never their appearance.** *(Amended 2026-09-19, product
+owner.)* A row is a code, a name, its place in a hierarchy and its typed metadata. It carries no
+colour, icon, image or style: the reference engine does not determine the frontend, and each
+application's design decides how a value is drawn. `ReferenceMetadataValidator` refuses a
+presentation key (`color`, `icon`, `iconUrl`, `image`, …) with `COMMAND_NOT_WELL_FORMED`;
+`displayOrder` stays, because the order of a list is data, not styling.
+
 **Types are compiled; rows are runtime.** A type carries a metadata contract — MSISDN prefixes for
 an operator, a SWIFT code for a bank — and something in the code consumes it. Letting an
 administrator invent a type produces a list nothing reads.
@@ -171,7 +178,89 @@ THE SYSTEM SHALL serve reference reads from cache, evicting on mutation.
 - [ ] A cache miss on an unreachable store returns the stored answer or refuses; it never returns an empty list as though the list were empty
 - [ ] The picker query for a type reports `IXSCAN` on `{ type, active, displayOrder }`
 
+### ET-PLT-014-R9 · Every list a screen offers is a reference type, an API enum's labels, or UI-only
+
+THE SYSTEM SHALL serve every platform-owned list a client renders from a reference type, and SHALL leave
+in a client only (a) labels for a closed API enum, typed from the generated enum, and (b) UI-only choices
+(sort order, view toggles). *(Added 2026-10-06, product owner: "every reference dropdown must be integrated
+with the backend, not hardcoded in the frontend".)*
+
+Eight types are added to the compiled enum. No new collection: the single polymorphic collection, its
+unique `{ type, code }` index and its per-type metadata contract are the registry rows for all of them.
+
+| Type | Group | Metadata contract | Mirrors |
+|---|---|---|---|
+| `ORGANIZER_TYPE` | KYB | none | identity `OrganizationType` |
+| `BUSINESS_TYPE` | KYB | `requiredDocuments` (codes of `KYB_DOCUMENT_TYPE`) | identity `BusinessType`, `RequiredDocuments` |
+| `TICKET_TIER_CATEGORY` | Events | none | catalog `TicketCategory` |
+| `ORGANIZATION_ROLE`, `EVENT_ROLE` | Access | `invitable` | identity `OrganizationRole`, `EventRole` |
+| `NOTIFICATION_CHANNEL` | Communication | `preferenceKey` | identity `NotificationChannel`, `NotificationPreferences` |
+| `NOTIFICATION_CATEGORY` | Communication | `preferenceKey`, `locked` | identity `NotificationPreferences` |
+| `REPORT_PERIOD` | Reporting | `days`, `bucket` | the analytics bucket enum |
+
+**Acceptance**
+- [ ] Each type is in `ReferenceType`, in the `referenceTypes` registry with its group, and in the collection validator's `type` and `parentType` enums
+- [ ] A row of a type that names a required metadata key without it is refused by `ReferenceMetadataValidator`
+- [ ] A row whose codes mirror an API enum carries exactly that enum's members, asserted by reading the enum from the owning service's schema (a member added on one side only fails a test)
+- [ ] `BUSINESS_TYPE.requiredDocuments` equals identity's `RequiredDocuments` table for every business type, and `KYB_DOCUMENT_TYPE` codes equal identity's document vocabulary
+- [ ] `CITY` coordinates are optional: a district town without a surveyed position is a valid row
+
+### ET-PLT-014-R10 · Countries come from a maintained standard, not a list in code or a client
+
+THE SYSTEM SHALL seed `COUNTRY` from the regions libphonenumber supports, each with its calling code and
+ISO 3166 alpha-3, and SHALL expose them through `referenceData(type: COUNTRY)`.
+
+**Acceptance**
+- [ ] Every supported region with an ISO alpha-3 is a `COUNTRY` row: code, English name, `dialCode` (`+260`), `iso3`
+- [ ] Zambia is first and its neighbours follow; the rest are alphabetical; `displayOrder` is data an administrator may change
+- [ ] No client holds a country list; the phone field takes its options from the query
+- [ ] Upgrading libphonenumber adds the new regions on the next release step without an edit to the seed
+
+### ET-PLT-014-R11 · A visitor with no token reads the public types and nothing else
+
+THE SYSTEM SHALL admit `referenceData` and `referenceDataByParent` without a token for the public types only.
+
+**Acceptance**
+- [ ] Both root fields are on the catalog's public allowlist; `referenceItem`, `referenceTypes` and `referenceDataAll` are not
+- [ ] The public types are `COUNTRY`, `CURRENCY`, `LANGUAGE`, `TIMEZONE`, `PROVINCE`, `CITY`, `MOBILE_MONEY_OPERATOR`, `EVENT_TYPE`, `EVENT_CATEGORY`, `MUSIC_GENRE`, `AGE_RESTRICTION`, `TICKET_TIER_CATEGORY`, `REFUND_REASON`, `NOTIFICATION_CHANNEL`, `NOTIFICATION_CATEGORY`, `CARD_SCHEME`, `TICKET_STATUS`, `RESERVATION_STATUS`, `EVENT_STATUS`
+- [ ] Every other type (banks, verification documents, legal and organizer types, reason codes, tax rates, roles, report periods, money statuses) is refused to a visitor with an access error and answered to any signed-in caller
+- [ ] The per-type gate is asserted through the real method-security proxy for every `ReferenceType`
+- [ ] The public surface test names the allowlist and fails if a role gate other than this one appears on an allowlisted root
+
+### ET-PLT-014-R12 · Reference data ships as versioned, idempotent release steps
+
+THE SYSTEM SHALL deliver real reference configuration through numbered steps of the service's migration
+runner, each applied once and each safe to apply again.
+
+**Acceptance**
+- [ ] Release 2 is the step `reference-data-seed-v2`, recorded in the migration ledger; a correction is a later step, never an edit of this one
+- [ ] It ensures the vocabularies of R9, the corrected Zambian mobile-money prefixes (MTN 096 and 076, Airtel 097 and 077, Zamtel 095 and 055), identity's KYB document codes, the 116 districts of Zambia as `CITY` rows under their province, and the countries of R10
+- [ ] Applying it twice yields the same collection; an administrator's `isActive` choice is never reversed by it
+- [ ] A document code it retires is deactivated, never deleted (R7); a row an administrator created is untouched
+- [ ] The release passes the real collection validator, asserted against a live database
+- [ ] A type is owned by exactly one seed file, so no row is rewritten on every boot
+
+### ET-PLT-014-R13 · There is one province, city and category list, and the public queries read it
+
+THE SYSTEM SHALL answer `categories`, `provinces`, `cities` and `citiesWithEvents` from the `EVENT_CATEGORY`,
+`PROVINCE` and `CITY` rows, with `id` equal to the row's code.
+
+**Acceptance**
+- [ ] An event, a venue and a discovery filter all name a category or city by the same code the public queries return as `id`
+- [ ] A fresh database with only the reference seed serves non-empty `categories`, `provinces` and `cities`
+- [ ] `citiesWithEvents` returns the cities with at least one published, active, undeleted event, each with its count, and omits a city whose only events are drafts
+- [ ] A deactivated row leaves each public list
+
 ## 4. Model
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 3 operation names below adopt the
+> shipped names: `createReferenceRow` → `createReferenceData`, `setReferenceRowActive` → `setReferenceDataActive`, `updateReferenceRow` → `updateReferenceData`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
 
 ### Documents
 
@@ -191,10 +280,13 @@ THE SYSTEM SHALL serve reference reads from cache, evicting on mutation.
 
 | Group | Types |
 |---|---|
-| Geography | `COUNTRY`, `CURRENCY`, `LANGUAGE`, `TIMEZONE`, `PROVINCE` |
+| Geography | `COUNTRY` (from libphonenumber, R10), `CURRENCY`, `LANGUAGE`, `TIMEZONE`, `PROVINCE`, `CITY` (parent `PROVINCE`; metadata optional `latitude`, `longitude`) |
 | Payments | `MOBILE_MONEY_OPERATOR`, `BANK` |
-| Events | `EVENT_TYPE`, `EVENT_CATEGORY`, `MUSIC_GENRE`, `AGE_RESTRICTION` |
-| KYB | `KYB_DOCUMENT_TYPE` |
+| Events | `EVENT_TYPE`, `EVENT_CATEGORY`, `MUSIC_GENRE`, `AGE_RESTRICTION`, `TICKET_TIER_CATEGORY` |
+| KYB & Onboarding | `KYB_DOCUMENT_TYPE`, `ORGANIZER_TYPE`, `BUSINESS_TYPE` |
+| Roles & Access | `ORGANIZATION_ROLE`, `EVENT_ROLE` |
+| Communication | `NOTIFICATION_CHANNEL`, `NOTIFICATION_CATEGORY` |
+| Reporting | `REPORT_PERIOD` |
 | Operations | `CANCELLATION_REASON`, `REFUND_REASON`, `REJECTION_REASON` |
 | Finance | `TAX_RATE`, `CARD_SCHEME` |
 | Workflow | `TICKET_STATUS`, `RESERVATION_STATUS`, `PAYMENT_STATUS`, `PAYOUT_STATUS`, `REFUND_STATUS`, `ESCROW_STATUS`, `EVENT_STATUS`, `ORGANIZATION_STATUS`, `INVITATION_STATUS`, `DOCUMENT_STATUS`, `CHARGEBACK_STATUS`, `TRANSACTION_STATUS` |
@@ -235,13 +327,14 @@ Subgraph `catalog`.
 
 | Operation | Kind | `@auth` | Returns |
 |---|---|---|---|
-| `referenceTypes` | query | *public* | `[ReferenceTypeInfo!]!` — grouped, for the admin type picker |
-| `referenceData(type)` | query | *public* | `[ReferenceData!]!` — active rows, ordered |
+| `referenceTypes` | query | signed in | `[ReferenceTypeInfo!]!` — grouped, for the admin type picker |
+| `referenceData(type)` | query | public for the R11 types, signed in for the rest | `[ReferenceData!]!` — active rows, ordered |
+| `referenceDataByParent(type, parentCode)` | query | same gate | `[ReferenceData!]!` — active child rows |
 | `referenceDataAll(type)` | query | `ADMIN` | `[ReferenceData!]!` — including inactive |
-| `createReferenceRow(input)` | mutation | `ADMIN` | `ReferenceData!` |
-| `updateReferenceRow(input)` | mutation | `ADMIN` | `ReferenceData!` |
+| `createReferenceData(input)` | mutation | `ADMIN` | `ReferenceData!` |
+| `updateReferenceData(input)` | mutation | `ADMIN` | `ReferenceData!` |
 | `reorderReferenceRows(input)` | mutation | `ADMIN` | `[ReferenceData!]!` |
-| `setReferenceRowActive(input)` | mutation | `ADMIN` | `ReferenceData!` |
+| `setReferenceDataActive(input)` | mutation | `ADMIN` | `ReferenceData!` |
 
 There is no `deleteReferenceRow`.
 
@@ -249,8 +342,9 @@ There is no `deleteReferenceRow`.
 
 | Tier | Java type | Wire name | Topic | Consumers |
 |---|---|---|---|---|
-| module | `ReferenceDataChangedEvent` | — | — | the local cache |
 | bus | `ReferenceDataChangedEvent` | `catalog.ReferenceDataChanged` v`1` | `catalog-events` | booking, identity — cache eviction |
+
+Catalog evicts its own cache in the method that changes the row; there is no in-memory event.
 
 ### Redis keys
 

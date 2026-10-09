@@ -1,14 +1,12 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.web.graphql.dto.CreateBankAccountInput;
-import com.pml.booking.web.graphql.dto.CreateBankAccountMutationResponse;
-import com.pml.booking.web.graphql.dto.DeleteBankAccountMutationResponse;
 import com.pml.booking.web.graphql.dto.UpdateBankAccountInput;
-import com.pml.booking.web.graphql.dto.UpdateBankAccountMutationResponse;
-import com.pml.booking.web.graphql.dto.VerifyBankAccountMutationResponse;
 import com.pml.booking.service.BankAccountService;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +14,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
+import com.pml.booking.domain.model.BankAccount;
+import com.pml.booking.exception.AccountNotFoundException;
 
 /**
  * GraphQL Mutation Resolver for Bank Account Operations.
@@ -35,11 +36,16 @@ import java.util.List;
  * @since 1.0
  */
 @Slf4j
+
 @DgsComponent
+@FailClosedOnRevocation
+@Validated
 @RequiredArgsConstructor
 public class BankAccountMutationResolver {
 
     private final BankAccountService bankAccountService;
+    private final TenantReads tenantReads;
+    private final com.pml.booking.workflow.bank.BankVerificationProcess bankVerificationProcess;
 
     /**
      * Create a new bank account for an organizer.
@@ -55,32 +61,12 @@ public class BankAccountMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<CreateBankAccountMutationResponse> createBankAccount(
-            @InputArgument CreateBankAccountInput input
+    public Mono<BankAccount> createBankAccount(
+            @Valid @InputArgument CreateBankAccountInput input
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(organizerId -> log.info("Creating bank account for organizer: {}", organizerId))
-                .flatMap(organizerId -> bankAccountService.create(input, organizerId)
-                        .map(account -> new CreateBankAccountMutationResponse(
-                                true,
-                                "Bank account created successfully",
-                                account,
-                                List.of(),
-                                null
-                        )))
-                .onErrorResume(SecurityException.class, e ->
-                        Mono.just(new CreateBankAccountMutationResponse(
-                                false, "Authentication required", null, List.of("Please log in"), null)))
-                .onErrorResume(e -> {
-                    log.error("Create bank account failed: {}", e.getMessage());
-                    return Mono.just(new CreateBankAccountMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+                .flatMap(organizerId -> bankAccountService.create(input, organizerId));
     }
 
     /**
@@ -92,38 +78,15 @@ public class BankAccountMutationResolver {
      * @return UpdateBankAccountMutationResponse with success status and updated account
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @bankAccountSecurityService.isBankAccountOwner(#id, authentication)")
-    public Mono<UpdateBankAccountMutationResponse> updateBankAccount(
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    public Mono<BankAccount> updateBankAccount(
             @InputArgument String id,
-            @InputArgument UpdateBankAccountInput input
+            @Valid @InputArgument UpdateBankAccountInput input
     ) {
         log.info("Updating bank account: {}", id);
 
-        return bankAccountService.update(id, input)
-                .map(account -> new UpdateBankAccountMutationResponse(
-                        true,
-                        "Bank account updated successfully",
-                        account,
-                        List.of(),
-                        null
-                ))
-                .switchIfEmpty(Mono.just(new UpdateBankAccountMutationResponse(
-                        false,
-                        "Bank account not found",
-                        null,
-                        List.of("Bank account not found"),
-                        null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Update bank account failed: {}", e.getMessage());
-                    return Mono.just(new UpdateBankAccountMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+        return tenantReads.bankAccountForCaller(id).then(bankAccountService.update(id, input))
+                .switchIfEmpty(Mono.error(new IllegalStateException("Bank account not found")));
     }
 
     /**
@@ -134,39 +97,17 @@ public class BankAccountMutationResolver {
      * @return DeleteBankAccountMutationResponse with success status
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @bankAccountSecurityService.isBankAccountOwner(#id, authentication)")
-    public Mono<DeleteBankAccountMutationResponse> deleteBankAccount(
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    public Mono<String> deleteBankAccount(
             @InputArgument String id
     ) {
         log.info("Deleting bank account: {}", id);
 
-        return bankAccountService.delete(id)
-                .map(deleted -> {
-                    if (deleted) {
-                        return new DeleteBankAccountMutationResponse(
-                                true,
-                                "Bank account deleted successfully",
-                                List.of(),
-                                null
-                        );
-                    } else {
-                        return new DeleteBankAccountMutationResponse(
-                                false,
-                                "Bank account not found",
-                                List.of("Bank account not found"),
-                                null
-                        );
-                    }
-                })
-                .onErrorResume(e -> {
-                    log.error("Delete bank account failed: {}", e.getMessage());
-                    return Mono.just(new DeleteBankAccountMutationResponse(
-                            false,
-                            e.getMessage(),
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+        return tenantReads.bankAccountForCaller(id).then(bankAccountService.delete(id))
+                .flatMap(deleted -> deleted
+                        ? Mono.just(id)
+                        : Mono.error(new AccountNotFoundException(
+                                "bank account not found: " + id)));
     }
 
     /**
@@ -183,39 +124,13 @@ public class BankAccountMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
-    public Mono<UpdateBankAccountMutationResponse> setDefaultBankAccount(
+    public Mono<BankAccount> setDefaultBankAccount(
             @InputArgument String id
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(organizerId -> log.info("Setting default bank account: {} for organizer: {}", id, organizerId))
-                .flatMap(organizerId -> bankAccountService.setAsDefault(id, organizerId)
-                        .map(account -> new UpdateBankAccountMutationResponse(
-                                true,
-                                "Default bank account updated successfully",
-                                account,
-                                List.of(),
-                                null
-                        ))
-                        .switchIfEmpty(Mono.just(new UpdateBankAccountMutationResponse(
-                                false,
-                                "Bank account not found",
-                                null,
-                                List.of("Bank account not found"),
-                                null
-                        ))))
-                .onErrorResume(SecurityException.class, e ->
-                        Mono.just(new UpdateBankAccountMutationResponse(
-                                false, "Authentication required", null, List.of("Please log in"), null)))
-                .onErrorResume(e -> {
-                    log.error("Set default bank account failed: {}", e.getMessage());
-                    return Mono.just(new UpdateBankAccountMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+                .flatMap(organizerId -> tenantReads.bankAccountForCaller(id).then(bankAccountService.setAsDefault(id, organizerId))
+                        .switchIfEmpty(Mono.error(new IllegalStateException("Bank account not found"))));
     }
 
     /**
@@ -232,35 +147,29 @@ public class BankAccountMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<VerifyBankAccountMutationResponse> verifyBankAccount(
+    public Mono<BankAccount> verifyBankAccount(
             @InputArgument String id
     ) {
+        // An account is verified by the micro-deposit its owner confirms; a platform
+        // role starts that verification on the owner's behalf and cannot mark it verified by hand.
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(verifiedBy -> log.info("Verifying bank account: {} by: {}", id, verifiedBy))
-                .flatMap(verifiedBy -> bankAccountService.verify(id, verifiedBy)
-                        .map(account -> new VerifyBankAccountMutationResponse(
-                                true,
-                                "Bank account verified successfully",
-                                account,
-                                List.of(),
-                                null
-                        ))
-                        .switchIfEmpty(Mono.just(new VerifyBankAccountMutationResponse(
-                                false,
-                                "Bank account not found",
-                                null,
-                                List.of("Bank account not found"),
-                                null
-                        ))))
-                .onErrorResume(e -> {
-                    log.error("Verify bank account failed: {}", e.getMessage());
-                    return Mono.just(new VerifyBankAccountMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+                .doOnNext(actorId -> log.info("Starting verification of bank account: {} by: {}", id, actorId))
+                .flatMap(actorId -> bankVerificationProcess.start(id, null));
+    }
+
+    /** Sends the micro-deposit to the caller's own account. */
+    @DgsMutation
+    @PreAuthorize("isAuthenticated()")
+    public Mono<BankAccount> startBankVerification(@InputArgument String id) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(ownerId -> tenantReads.bankAccountForCaller(id).then(bankVerificationProcess.start(id, ownerId)));
+    }
+
+    /** The owner confirms the amount that arrived; three wrong answers lock it for a day. */
+    @DgsMutation
+    @PreAuthorize("isAuthenticated()")
+    public Mono<BankAccount> confirmBankVerification(@InputArgument String id, @InputArgument java.math.BigDecimal amount) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(ownerId -> tenantReads.bankAccountForCaller(id).then(bankVerificationProcess.confirm(id, ownerId, amount)));
     }
 }

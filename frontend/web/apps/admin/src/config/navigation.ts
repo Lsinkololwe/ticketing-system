@@ -1,380 +1,170 @@
 /**
- * Admin Navigation Configuration
- *
- * Role-based navigation structure for the MyTicket Zambia Admin.
- *
- * Navigation Philosophy:
- * - Action-oriented: Show pending tasks, not just data views
- * - Role-appropriate: Each role sees relevant features only
- * - Workflow-focused: Group by workflow, not entity type
- *
- * Admin Roles:
- * - SUPER_ADMIN: Full access to all features
- * - ADMIN: Operations focus (approvals, user management, events)
- * - FINANCE: Financial focus (payouts, refunds, escrow, reports)
- *
- * Note: SCANNER, ORGANIZER, and CUSTOMER are valid AdminRole values but hold
- * no dashboard-access sections — they will receive an empty navigation set.
+ * Platform admin navigation: modules, their tabs and which staff roles may
+ * open them. Mirrors the approved prototype (six groups, ten modules).
  */
+import type { IconName } from '@pml.tickets/shared';
+import type { UserType } from '@pml.tickets/shared/types/graphql';
 
-// `import type` erases to nothing at runtime, so `server-only` in the barrel
-// is never triggered when this config is consumed by Client Components.
-import type { AdminRole } from '@/lib/auth/interfaces';
+/** The platform roles that sign in to this console: a subset of the generated `UserType`. */
+export type StaffRole = Extract<UserType, 'SUPER_ADMIN' | 'ADMIN' | 'FINANCE' | 'FINANCE_LEAD'>;
 
-// =============================================================================
-// TYPES
-// =============================================================================
+export const ROLE_LABELS: Record<StaffRole, string> = {
+  SUPER_ADMIN: 'Super admin',
+  ADMIN: 'Admin',
+  FINANCE: 'Finance',
+  FINANCE_LEAD: 'Finance lead',
+};
 
-// Re-export AdminRole so existing callers that import it from this module
-// continue to work without changes.
-export type { AdminRole };
+/** Staff roles in privilege order: the keys of the label map, so a role has a label or does not compile. */
+export const STAFF_ROLES: readonly StaffRole[] = Object.keys(ROLE_LABELS) as StaffRole[];
 
-export interface NavItem {
+export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
+  SUPER_ADMIN: 'Everything, including staff accounts, timing rules and force-complete.',
+  ADMIN: 'Approvals, events, users, organizations and day-to-day finance.',
+  FINANCE: 'Payouts, refunds, escrow, chargebacks, ledger and reports.',
+  FINANCE_LEAD: 'Finance plus escalations, second approvals and stuck transactions.',
+};
+
+export type ModuleId =
+  | 'dashboard'
+  | 'approvals'
+  | 'events'
+  | 'users'
+  | 'finance'
+  | 'ledger'
+  | 'transactions'
+  | 'analytics'
+  | 'health'
+  | 'config';
+
+export interface ModuleTab {
   id: string;
   label: string;
-  href: string;
-  icon: string; // Icon name from iconoir-react
-  /** Badge count - for pending items */
-  badge?: number | 'dynamic';
-  /** Roles that can see this item */
-  roles: AdminRole[];
-  /** Sub-items (for nested navigation) */
-  children?: NavItem[];
 }
 
-export interface NavSection {
-  id: string;
-  title: string;
-  roles: AdminRole[];
-  items: NavItem[];
+export interface ConsoleModule {
+  id: ModuleId;
+  label: string;
+  icon: IconName;
+  /** Base path; modules with tabs live at `/<path>/<tab>`. */
+  path: string;
+  roles: readonly StaffRole[];
+  group: string;
+  tabs?: ModuleTab[];
+  /** Per-role tab allow-list (module default: every tab). */
+  roleTabs?: Partial<Record<StaffRole, string[]>>;
 }
 
-// =============================================================================
-// NAVIGATION CONFIGURATION
-// =============================================================================
+const ALL: readonly StaffRole[] = STAFF_ROLES;
+const OPS: readonly StaffRole[] = ['SUPER_ADMIN', 'ADMIN'];
 
-/**
- * The admin navigation, exactly as `Admin - Dashboard.dc.html` declares it.
- *
- * <h2>This list is not editorial</h2>
- * It is a transcription of the `NAV` constant in the design project's admin
- * dashboard screen — seven sections, fifteen items, in this order. The app
- * previously carried eight sections with a four-item Action center and a
- * Transactions group the design does not have, which is the drift that made the
- * shell "totally different from the design".
- *
- * <p>Adding an item here without a corresponding entry in the design is how that
- * drift starts again. If a screen needs navigation the design does not show,
- * change the design first.
- *
- * @see frontend/web/docs/DESIGN_AUTHORITY.md
- */
-export const navigationConfig: NavSection[] = [
+export const MODULES: ConsoleModule[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', path: '/dashboard', roles: ALL, group: 'Overview' },
   {
-    id: 'overview',
-    title: 'Overview',
-    roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-    items: [
-      {
-        id: 'dashboard',
-        label: 'Dashboard',
-        href: '/dashboard',
-        icon: 'HomeSimple',
-        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-      },
+    id: 'approvals', label: 'Approvals', icon: 'check-circle', path: '/approvals', roles: OPS, group: 'Review',
+    tabs: [{ id: 'orgs', label: 'Organizers' }, { id: 'events', label: 'Events' }, { id: 'docs', label: 'Documents' }],
+  },
+  {
+    id: 'events', label: 'Events', icon: 'calendar', path: '/events', roles: OPS, group: 'Platform',
+    tabs: [
+      { id: 'all', label: 'All events' },
+      { id: 'categories', label: 'Categories' },
+      { id: 'locations', label: 'Provinces and cities' },
+      { id: 'media', label: 'Media moderation' },
+      { id: 'stock', label: 'Stock images' },
     ],
   },
-
   {
-    id: 'action-center',
-    title: 'Action center',
-    roles: ['SUPER_ADMIN', 'ADMIN'],
-    items: [
-      {
-        // The design folds organizer applications, event reviews and document
-        // verification into one queue. They remain reachable as routes and as
-        // the dashboard's action cards; they are not separate nav items.
-        id: 'pending-approvals',
-        label: 'All approvals',
-        href: '/approvals',
-        icon: 'ClipboardCheck',
-        badge: 'dynamic',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
-      {
-        id: 'recovery-queue',
-        label: 'Recovery queue',
-        href: '/transactions/recovery',
-        icon: 'WarningTriangle',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
+    id: 'users', label: 'Users & orgs', icon: 'users', path: '/users', roles: OPS, group: 'Platform',
+    tabs: [{ id: 'users', label: 'Users' }, { id: 'orgs', label: 'Organizations' }],
+  },
+  {
+    id: 'finance', label: 'Finance', icon: 'card', path: '/finance', roles: ALL, group: 'Money',
+    tabs: [
+      { id: 'payouts', label: 'Payout requests' },
+      { id: 'refunds', label: 'Refund requests' },
+      { id: 'escrow', label: 'Escrow accounts' },
+      { id: 'chargebacks', label: 'Chargebacks' },
+      { id: 'banks', label: 'Payout accounts' },
     ],
   },
-
   {
-    id: 'events',
-    title: 'Events',
-    roles: ['SUPER_ADMIN', 'ADMIN'],
-    items: [
-      {
-        id: 'all-events',
-        label: 'All events',
-        href: '/events',
-        icon: 'Calendar',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
-      {
-        id: 'event-categories',
-        label: 'Categories',
-        href: '/events/categories',
-        icon: 'Folder',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
+    id: 'ledger', label: 'Ledger', icon: 'receipt', path: '/ledger', roles: ALL, group: 'Money',
+    tabs: [
+      { id: 'coa', label: 'Chart of accounts' },
+      { id: 'journal', label: 'Journal entries' },
+      { id: 'tb', label: 'Trial balance' },
+      { id: 'platform', label: 'Platform accounts' },
+      { id: 'commission', label: 'Commission' },
+      { id: 'recon', label: 'Reconciliation' },
     ],
   },
-
   {
-    id: 'users',
-    title: 'Users',
-    roles: ['SUPER_ADMIN', 'ADMIN'],
-    items: [
-      {
-        id: 'all-users',
-        label: 'All users',
-        href: '/users',
-        icon: 'Group',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
-      {
-        id: 'organizers',
-        label: 'Organizers',
-        href: '/organizers',
-        icon: 'Building',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
-      {
-        id: 'organizations',
-        label: 'Organizations',
-        href: '/organizations',
-        icon: 'Community',
-        roles: ['SUPER_ADMIN', 'ADMIN'],
-      },
+    id: 'transactions', label: 'Transactions', icon: 'server', path: '/transactions', roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE_LEAD'], group: 'Operations',
+    tabs: [
+      { id: 'payments', label: 'Payments' },
+      { id: 'tickets', label: 'Tickets' },
+      { id: 'reservations', label: 'Reservations' },
+      { id: 'recovery', label: 'Transaction recovery' },
+      { id: 'refdata', label: 'Reference data' },
+      { id: 'audit', label: 'Audit log' },
+      { id: 'announce', label: 'Announcements' },
     ],
+    roleTabs: { FINANCE_LEAD: ['payments', 'reservations', 'recovery', 'audit'] },
   },
-
+  { id: 'analytics', label: 'Analytics', icon: 'chart', path: '/analytics', roles: ALL, group: 'Operations' },
+  { id: 'health', label: 'Health', icon: 'pulse', path: '/health', roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE_LEAD'], group: 'Operations' },
   {
-    id: 'financial-ops',
-    title: 'Financial ops',
-    roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-    items: [
-      {
-        id: 'payout-requests',
-        label: 'Payout requests',
-        href: '/finance/payouts',
-        icon: 'SendDiagonal',
-        badge: 'dynamic',
-        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-      },
-      {
-        id: 'refund-requests',
-        label: 'Refund requests',
-        href: '/finance/refunds',
-        icon: 'Undo',
-        badge: 'dynamic',
-        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-      },
-      {
-        id: 'escrow-accounts',
-        label: 'Escrow accounts',
-        href: '/finance/escrow',
-        icon: 'Safe',
-        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-      },
-    ],
-  },
-
-  {
-    id: 'analytics',
-    title: 'Analytics',
-    roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-    items: [
-      {
-        id: 'platform-analytics',
-        label: 'Platform overview',
-        href: '/analytics',
-        icon: 'StatsReport',
-        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-      },
-      {
-        id: 'ledger-reconciliation',
-        label: 'Ledger & reconciliation',
-        href: '/analytics/ledger',
-        icon: 'GraphUp',
-        roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE'],
-      },
-    ],
-  },
-
-  {
-    id: 'system',
-    title: 'System',
-    roles: ['SUPER_ADMIN'],
-    items: [
-      {
-        id: 'platform-configuration',
-        label: 'Platform configuration',
-        href: '/system/configuration',
-        icon: 'Settings',
-        roles: ['SUPER_ADMIN'],
-      },
-      {
-        id: 'observability',
-        label: 'Observability',
-        href: '/system/observability',
-        icon: 'Activity',
-        roles: ['SUPER_ADMIN'],
-      },
-      {
-        id: 'audit-logs',
-        label: 'Audit logs',
-        href: '/system/audit',
-        icon: 'HistoricShield',
-        roles: ['SUPER_ADMIN'],
-      },
-    ],
+    id: 'config', label: 'Settings', icon: 'cog', path: '/config', roles: OPS, group: 'Setup',
+    tabs: [{ id: 'rules', label: 'Platform rules' }, { id: 'roles', label: 'Roles and access' }, { id: 'refdata', label: 'Reference data' }],
   },
 ];
 
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
+export const MODULE_BY_ID = Object.fromEntries(MODULES.map((m) => [m.id, m])) as Record<ModuleId, ConsoleModule>;
 
-/**
- * Return the UNION of all navigation sections/items visible to ANY of the
- * supplied roles.
- *
- * - Preserves the section and item order declared in `navigationConfig`.
- * - Emits no duplicate sections or items (each appears at most once because
- *   we iterate `navigationConfig` once and filter per-item by role set).
- * - Roles not present in any section's `roles` array (e.g. SCANNER, CUSTOMER)
- *   will yield an empty array — this is correct; never coerce unknown roles.
- */
-export function getNavigationForRoles(roles: AdminRole[]): NavSection[] {
-  // Use a Set for O(1) membership tests across potentially many items.
-  const roleSet = new Set<string>(roles);
-
-  return navigationConfig
-    .filter((section) => section.roles.some((r) => roleSet.has(r)))
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) => item.roles.some((r) => roleSet.has(r))),
-    }))
-    .filter((section) => section.items.length > 0);
+/** Staff roles carried by a session (upper-cased, filtered to platform staff). */
+export function staffRolesOf(roles: readonly string[] | undefined): StaffRole[] {
+  const set = new Set((roles ?? []).map((r) => r.toUpperCase()));
+  return STAFF_ROLES.filter((r) => set.has(r));
 }
 
-/**
- * Filter navigation based on a single user role.
- *
- * Kept for back-compat; implemented as `getNavigationForRoles([role])` so
- * the Sidebar can migrate to `getNavigationForRoles` at its own pace.
- */
-export function getNavigationForRole(role: AdminRole): NavSection[] {
-  return getNavigationForRoles([role]);
+export function canOpenModule(roles: readonly StaffRole[], id: ModuleId): boolean {
+  return MODULE_BY_ID[id].roles.some((r) => roles.includes(r));
 }
 
-/**
- * Get a flat list of all nav items (including children) visible to a role.
- */
-export function getAllNavItemsForRole(role: AdminRole): NavItem[] {
-  const sections = getNavigationForRoles([role]);
-  const items: NavItem[] = [];
-
-  for (const section of sections) {
-    for (const item of section.items) {
-      items.push(item);
-      if (item.children) {
-        items.push(...item.children.filter((child) => child.roles.includes(role)));
-      }
-    }
+/** Tabs of a module that the given roles may open (union across roles). */
+export function tabsFor(roles: readonly StaffRole[], id: ModuleId): ModuleTab[] {
+  const m = MODULE_BY_ID[id];
+  if (!m.tabs) return [];
+  const allowed = new Set<string>();
+  for (const r of roles) {
+    if (!m.roles.includes(r)) continue;
+    (m.roleTabs?.[r] ?? m.tabs.map((t) => t.id)).forEach((t) => allowed.add(t));
   }
-
-  return items;
+  return m.tabs.filter((t) => allowed.has(t.id));
 }
 
-/**
- * Check if a nav item's href matches the current pathname.
- *
- * Uses PREFIX-AWARE matching: a nav item is active when the pathname equals
- * the href exactly OR begins with `href + '/'`.  This keeps parent items
- * highlighted on nested routes (e.g. `/organizers/123` lights up `/organizers`)
- * while preventing `/events` from matching `/events-archive`.
- */
-export function isNavItemActive(href: string, pathname: string): boolean {
-  return pathname === href || pathname.startsWith(href + '/');
-}
-
-/**
- * Return the href of the BEST (most specific) visible nav item for the given
- * pathname and role set, using longest-match precedence.
- *
- * This ensures that `/events/calendar` resolves to the Calendar item
- * (`/events/calendar`, 16 chars) rather than "All events" (`/events`, 7 chars),
- * and `/dashboard/settings` resolves to Settings rather than "Dashboard".
- *
- * Returns `null` when no visible item matches the pathname.
- */
-export function getActiveNavHref(pathname: string, roles: AdminRole[]): string | null {
-  // Collect every visible item (top-level + children) in config order.
-  const candidates: NavItem[] = [];
-  for (const section of getNavigationForRoles(roles)) {
-    for (const item of section.items) {
-      candidates.push(item);
-      if (item.children) {
-        candidates.push(...item.children);
-      }
-    }
-  }
-
-  // Among all matching hrefs, keep the longest (most specific) one.
-  let bestHref: string | null = null;
-  let bestLength = -1;
-
-  for (const item of candidates) {
-    if (isNavItemActive(item.href, pathname) && item.href.length > bestLength) {
-      bestHref = item.href;
-      bestLength = item.href.length;
-    }
-  }
-
-  return bestHref;
-}
-
-// =============================================================================
-// ICON MAPPING (for dynamic icon rendering)
-// =============================================================================
-
-export const iconMap: Record<string, string> = {
-  HomeSimple: 'HomeSimple',
-  ClipboardCheck: 'ClipboardCheck',
-  Group: 'Group',
-  Calendar: 'Calendar',
-  CalendarPlus: 'CalendarPlus',
-  PageSearch: 'PageSearch',
-  Folder: 'Folder',
-  MapPin: 'MapPin',
-  Building: 'Building',
-  Community: 'Community',
-  SendDiagonal: 'SendDiagonal',
-  Undo: 'Undo',
-  Safe: 'Safe',
-  CreditCard: 'CreditCard',
-  Label: 'Label',
-  Percentage: 'Percentage',
-  StatsReport: 'StatsReport',
-  GraphUp: 'GraphUp',
-  TrendingUp: 'TrendingUp',
-  Settings: 'Settings',
-  Database: 'Database',
-  HistoricShield: 'HistoricShield',
-  Key: 'Key',
+/** Labels on the phone bottom bar (the prototype's rail names). */
+export const RAIL_LABELS: Partial<Record<ModuleId, string>> = {
+  dashboard: 'Home',
+  approvals: 'Approvals',
+  users: 'Users',
+  ledger: 'Ledger',
+  transactions: 'System',
+  analytics: 'Analytics',
+  health: 'Health',
+  config: 'Config',
 };
+
+/** Module a pathname belongs to ('/user/abc' -> users, '/event/x' -> events). */
+export function moduleOfPath(pathname: string): ModuleId | null {
+  const first = pathname.split('/')[1] ?? '';
+  if (first === 'user' || first === 'org') return 'users';
+  if (first === 'event') return 'events';
+  if (first === 'profile') return null;
+  return MODULES.find((m) => m.path === `/${first}`)?.id ?? null;
+}
+
+export function modulesFor(roles: readonly StaffRole[]): ConsoleModule[] {
+  return MODULES.filter((m) => canOpenModule(roles, m.id));
+}

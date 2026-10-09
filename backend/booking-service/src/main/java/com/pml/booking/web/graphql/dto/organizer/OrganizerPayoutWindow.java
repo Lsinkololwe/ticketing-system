@@ -8,9 +8,6 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-
 /**
  * How much of an organizer's money is withdrawable now, and when the next
  * tranche unlocks.
@@ -52,9 +49,9 @@ public class OrganizerPayoutWindow {
      * unlocks. Null when nothing is locked — the client then renders the
      * headline figure with no meter rather than a meter at 100%.
      */
-    private LocalDateTime windowOpenedAt;
+    private Instant windowOpenedAt;
 
-    private LocalDateTime nextReleaseAt;
+    private Instant nextReleaseAt;
 
     /**
      * Whole days from {@link #windowOpenedAt} to {@link #nextReleaseAt}.
@@ -90,8 +87,8 @@ public class OrganizerPayoutWindow {
         long total = Duration.between(openedAt, releaseAt).toDays();
         long elapsed = Duration.between(openedAt, now).toDays();
         return builder
-                .windowOpenedAt(LocalDateTime.ofInstant(openedAt, ZoneOffset.UTC))
-                .nextReleaseAt(LocalDateTime.ofInstant(releaseAt, ZoneOffset.UTC))
+                .windowOpenedAt(openedAt)
+                .nextReleaseAt(releaseAt)
                 .windowDaysTotal((int) Math.max(0, total))
                 .daysElapsed((int) Math.min(Math.max(0, elapsed), Math.max(0, total)));
     }

@@ -1,6 +1,12 @@
 # ET-ADM-003 · Transaction recovery — stuck money and the operator's tools
 
 > **Conformance** · PDI Phase 8 dead-letter queue and recovery
+>
+> **Verified 2026-10-05 (integration tests `FinanceOpsTest`, `AdminFinanceOpsTest`, `PaymentOperationsTest`).** A platform transfer is one balanced entry per idempotency key (unique index
+> `booking_platform_transfers.idempotencyKey`), moves nothing when it is refused, and conserves total platform money under simultaneous transfers. A proposal cannot be confirmed by its maker,
+> after its two hours, or without the role (ADMIN covers FINANCE; only SUPER_ADMIN proposes or confirms a force-complete); six simultaneous confirmers run the action once; a refused action leaves the
+> proposal `FAILED` with the reason. Force-complete applies only the provider's confirmed answers. A chargeback recovery is recorded once per reference, bounded by what is unrecovered, and records who
+> recorded it.
 
 ## 1. Capability
 
@@ -169,6 +175,17 @@ THE SYSTEM SHALL report the queue's size, age and value as first-class metrics.
 
 ## 4. Model
 
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** `markForReview` → `markPayoutForReview` — FINANCE matches the shipped `hasAnyRole('ADMIN','FINANCE')`; the singular form matches §4's `RecoveryItem!`.
+
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 1 operation name below adopts the
+> shipped name: `bulkRetry` → `bulkRetryFailedPayouts`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
+
 ### Queue sources
 
 | Source | Condition | Amount at risk | Spec |
@@ -261,11 +278,11 @@ Subgraph `booking`. Every field `FINANCE` or higher, every field `@tag(name: "ad
 | `retryPayout(id)` | mutation | `FINANCE` | `PayoutRequest!` |
 | `retryRefund(id)` | mutation | `FINANCE` | `RefundRequest!` |
 | `resolveReconciliationItem(input)` | mutation | `FINANCE` | `ReconciliationItem!` |
-| `markForReview(input)` | mutation | `FINANCE` | `RecoveryItem!` |
+| `markPayoutForReview(input)` | mutation | `FINANCE` | `RecoveryItem!` |
 | `proposeRecoveryAction(input)` | mutation | `FINANCE` | `RecoveryProposal!` |
 | `confirmRecoveryAction(id, reason)` | mutation | `FINANCE` | `RecoveryOutcome!` |
 | `withdrawRecoveryProposal(id)` | mutation | `FINANCE` | `RecoveryProposal!` |
-| `bulkRetry(input)` | mutation | `FINANCE` | `[RecoveryOutcome!]!` |
+| `bulkRetryFailedPayouts(input)` | mutation | `FINANCE` | `[RecoveryOutcome!]!` |
 | `replayDeadLetter(id)` | mutation | `ADMIN` | `RecoveryOutcome!` |
 | `discardDeadLetter(id, reason)` | mutation | `SUPER_ADMIN` | `Boolean!` |
 

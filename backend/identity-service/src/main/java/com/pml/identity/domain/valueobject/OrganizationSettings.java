@@ -44,16 +44,18 @@ public class OrganizationSettings {
     private Integer maxTeamMembers;
 
     /**
-     * Whether managers can request payouts
+     * Whether members with the MANAGER role see revenue, escrow and commission figures.
+     * Off for a new organization; the owner turns it on.
      */
     @Builder.Default
-    private boolean managersCanRequestPayouts = false;
+    private boolean managersCanViewFinancials = false;
 
     /**
-     * Whether marketers can view financial data
+     * Whether members with the ADMIN role may request payouts. The owner always may.
+     * Off for a new organization; the owner turns it on.
      */
     @Builder.Default
-    private boolean marketersCanViewFinancials = false;
+    private boolean adminsCanRequestPayouts = false;
 
     /**
      * Notify owner when a member joins

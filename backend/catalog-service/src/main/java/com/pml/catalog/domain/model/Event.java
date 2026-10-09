@@ -1,20 +1,26 @@
 package com.pml.catalog.domain.model;
 
+import com.pml.shared.constants.Money;
+
+import com.pml.catalog.persistence.CatalogCollections;
+
+import com.pml.catalog.domain.valueobject.CheckoutSettings;
 import com.pml.catalog.domain.valueobject.EventAccessibility;
+import com.pml.catalog.domain.valueobject.EventFaq;
+import com.pml.catalog.domain.valueobject.RunningOrderItem;
 
 import com.pml.shared.constants.EventStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.index.TextIndexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -22,7 +28,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -31,7 +37,8 @@ import java.util.Map;
  *
  * Represents an event with location information, ticket categories, and pricing.
  */
-@Document(collection = "events")
+@Document(collection = CatalogCollections.EVENTS)
+@TypeAlias("events")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -41,36 +48,47 @@ public class Event {
     @Id
     private String id;
 
+    /**
+     * Every monetary field carries a currency sibling. Launch is ZMW-only
+     * and the field still exists: adding a second currency later becomes a data
+     * migration rather than an audit of which amounts meant what.
+     */
+    @Builder.Default
+    private String currency = Money.DEFAULT_CURRENCY;
+
     @NotBlank(message = "Event title is required")
     @Size(min = 3, max = 200)
-    @TextIndexed
     private String title;
 
     @NotBlank(message = "Event description is required")
     @Size(min = 10, max = 2000)
-    @TextIndexed
     private String description;
 
     @NotNull(message = "Event category is required")
-    @Indexed
     private String categoryId;
 
     @NotNull(message = "Event date and time is required")
-    @Indexed
-    private LocalDateTime eventDateTime;
+    private Instant eventDateTime;
 
     @NotNull(message = "Event end time is required")
-    private LocalDateTime endDateTime;
+    private Instant endDateTime;
 
     private String locationId;
     private String locationName;
     private String locationAddress;
 
-    @Indexed
     private String cityName;
 
+    /** The reference-data {@code CITY} code of the venue: the discovery city filter reads this, never a typed name. */
+    private String cityId;
+
+    /**
+     * The cheapest price among the event's on-sale tiers, kept by every tier write so a price
+     * filter never joins to the tiers. Null when the event has no visible tier.
+     */
+    private java.math.BigDecimal lowestTicketPrice;
+
     @NotNull(message = "Event organizer is required")
-    @Indexed
     private String organizerId;
 
     /**
@@ -78,7 +96,6 @@ public class Event {
      * Direct link to Organization entity in identity-service.
      * Used for authorization - team members of this organization can manage this event.
      */
-    @Indexed
     private String organizationId;
 
     private String organizerName;
@@ -96,12 +113,11 @@ public class Event {
     private String organizerBusinessPhone;
 
     @NotNull(message = "Event status is required")
-    @Indexed
     private EventStatus status;
 
     @Builder.Default
     private boolean published = false;
-    private LocalDateTime publishedAt;
+    private Instant publishedAt;
 
     @Positive(message = "Total capacity must be positive")
     private int totalCapacity;
@@ -227,8 +243,8 @@ public class Event {
     // APPROVAL WORKFLOW FIELDS
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private LocalDateTime submittedForApprovalAt;
-    private LocalDateTime approvalDeadline;
+    private Instant submittedForApprovalAt;
+    private Instant approvalDeadline;
 
     @Builder.Default
     private boolean isOverdue = false;
@@ -236,14 +252,13 @@ public class Event {
     /**
      * Assigned reviewer for this event (null if unassigned)
      */
-    @Indexed
     private String assignedReviewerId;
     private String assignedReviewerName;
 
     /**
      * When the event was approved
      */
-    private LocalDateTime approvedAt;
+    private Instant approvedAt;
 
     /**
      * Admin who approved the event
@@ -253,7 +268,7 @@ public class Event {
     /**
      * When the event was rejected
      */
-    private LocalDateTime rejectedAt;
+    private Instant rejectedAt;
 
     /**
      * Admin who rejected the event
@@ -268,7 +283,7 @@ public class Event {
     /**
      * When changes were requested
      */
-    private LocalDateTime changesRequestedAt;
+    private Instant changesRequestedAt;
 
     /**
      * Admin who requested changes
@@ -286,6 +301,16 @@ public class Event {
     @Builder.Default
     private int submissionCount = 0;
 
+    /**
+     * The start this event had before its latest reschedule, so a holder can see
+     * what changed.
+     */
+    private Instant previousStartsAt;
+
+    /** How many times this event has been rescheduled; capped at three. */
+    @Builder.Default
+    private int rescheduleCount = 0;
+
     @Builder.Default
     private boolean featured = false;
 
@@ -294,21 +319,18 @@ public class Event {
      * Set to true when all ticket categories have price = 0 or when organizer marks it as free.
      */
     @Builder.Default
-    @Indexed
     private boolean isFreeEvent = false;
 
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @CreatedBy
-    @Indexed
     private String createdBy;
 
     @LastModifiedBy
-    @Indexed
     private String updatedBy;
 
     @Builder.Default
@@ -323,19 +345,17 @@ public class Event {
      * Soft deleted events are excluded from queries but retained for audit purposes.
      */
     @Builder.Default
-    @Indexed
     private boolean isDeleted = false;
 
     /**
      * When the event was soft deleted.
      */
-    private LocalDateTime deletedAt;
+    private Instant deletedAt;
 
     /**
      * User ID who deleted the event.
      * Used for audit trail.
      */
-    @Indexed
     private String deletedBy;
 
     /**
@@ -348,6 +368,68 @@ public class Event {
      */
     private EventAccessibility accessibility;
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EVENT PAGE CONTENT · what the organizer says about the event (ET-CAT-004)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** One line under the title; at most 100 characters. */
+    private String tagline;
+
+    /** One of {@code ALL_AGES}, {@code 13+}, {@code 16+}, {@code 18+}, {@code 21+}. */
+    private String ageRestriction;
+
+    /** When the doors open; on or before the start. */
+    private Instant doorsOpenAt;
+
+    /** Alt text for the banner image. */
+    private String bannerAltText;
+
+    private List<EventFaq> faqs;
+
+    /** The programme, in the order the organizer gave it. */
+    private List<RunningOrderItem> runningOrder;
+
+    /** Public transport and directions. */
+    private String gettingThere;
+
+    private String parkingInfo;
+
+    /** What may and may not be brought in. */
+    private String bagPolicy;
+
+    private CheckoutSettings checkoutSettings;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SCHEDULED PUBLICATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** When the organizer wants the event to go live; only honoured once {@link #publishScheduled}. */
+    private Instant publishAt;
+
+    /** The organizer pressed Publish with a future {@link #publishAt}: the timer is running. */
+    @Builder.Default
+    private boolean publishScheduled = false;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CANCELLATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private String cancellationReason;
+
+    private Instant cancelledAt;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SALES TOTALS · denormalised from booking's commits and refunds
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** What buyers paid for tickets still held; booking reports it with each commit and refund. */
+    @Builder.Default
+    private BigDecimal grossSales = BigDecimal.ZERO;
+
+    /** The platform's commission on {@link #grossSales}. */
+    @Builder.Default
+    private BigDecimal commissionAmount = BigDecimal.ZERO;
+
     /**
      * Event Ticket Category
      */
@@ -356,6 +438,9 @@ public class Event {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class EventTicketCategory {
+
+        /** The tier document this mirrors; booking reserves and prices by it. */
+        private String tierId;
 
         @NotBlank(message = "Category code is required")
         private String code;
@@ -366,7 +451,7 @@ public class Event {
         private String description;
 
         @NotNull(message = "Price is required")
-        @Positive(message = "Price must be positive")
+        @jakarta.validation.constraints.PositiveOrZero(message = "Price cannot be negative")
         private BigDecimal price;
 
         @Positive(message = "Quantity must be positive")
@@ -377,11 +462,14 @@ public class Event {
         @Builder.Default
         private boolean active = true;
 
+        /** Hidden from the public listing; reserved only with the tier's access code. */
+        private boolean hidden;
+
         private List<String> benefits;
 
         @Builder.Default
         private boolean isEarlyBird = false;
-        private LocalDateTime earlyBirdEndDate;
+        private Instant earlyBirdEndDate;
         private BigDecimal earlyBirdPrice;
 
         public String getFormattedPrice() {
@@ -407,18 +495,5 @@ public class Event {
 
     public boolean isSoldOut() {
         return availableTickets <= 0;
-    }
-
-    public boolean isHappeningToday() {
-        LocalDateTime now = LocalDateTime.now();
-        return eventDateTime.toLocalDate().equals(now.toLocalDate());
-    }
-
-    public boolean isInThePast() {
-        return eventDateTime.isBefore(LocalDateTime.now());
-    }
-
-    public boolean isInTheFuture() {
-        return eventDateTime.isAfter(LocalDateTime.now());
     }
 }

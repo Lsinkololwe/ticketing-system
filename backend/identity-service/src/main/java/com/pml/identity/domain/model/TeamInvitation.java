@@ -1,5 +1,7 @@
 package com.pml.identity.domain.model;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.shared.constants.InvitationStatus;
 import com.pml.identity.domain.valueobject.EventRole;
 import com.pml.identity.domain.valueobject.OrganizationRole;
@@ -8,11 +10,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.Email;
@@ -40,15 +40,12 @@ import java.util.List;
  *    - Add to Keycloak group
  *    - Notify organization owner
  */
-@Document(collection = "team_invitations")
+@Document(collection = IdentityCollections.TEAM_INVITATIONS)
+@TypeAlias("team_invitations")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "email_org_idx", def = "{'email': 1, 'organizationId': 1}"),
-    @CompoundIndex(name = "org_status_idx", def = "{'organizationId': 1, 'status': 1}")
-})
 public class TeamInvitation {
 
     @Id
@@ -57,9 +54,8 @@ public class TeamInvitation {
     /**
      * Email address of the invitee
      */
-    @NotBlank(message = "Email is required")
+    /** Where an email invitation goes; null for an invitation sent to a WhatsApp number. */
     @Email(message = "Email should be valid")
-    @Indexed
     private String email;
 
     /**
@@ -76,7 +72,6 @@ public class TeamInvitation {
      * Organization ID
      */
     @NotBlank(message = "Organization ID is required")
-    @Indexed
     private String organizationId;
 
     /**
@@ -106,14 +101,12 @@ public class TeamInvitation {
      * Unique token for acceptance link
      */
     @NotBlank(message = "Invitation token is required")
-    @Indexed(unique = true)
     private String invitationToken;
 
     /**
      * When the invitation expires
      */
     @NotNull(message = "Expiry date is required")
-    @Indexed
     private Instant expiresAt;
 
     /**
@@ -138,17 +131,40 @@ public class TeamInvitation {
     /**
      * Check if invitation is still valid
      */
-    public boolean isValid() {
-        return status == InvitationStatus.PENDING &&
-               expiresAt != null &&
-               expiresAt.isAfter(Instant.now());
+    public boolean isValid(Instant now) {
+        return status == InvitationStatus.PENDING
+                && expiresAt != null
+                && expiresAt.isAfter(now);
     }
 
     /**
      * Check if invitation has expired
      */
-    public boolean isExpired() {
-        return expiresAt != null && expiresAt.isBefore(Instant.now());
+    public boolean isExpired(Instant now) {
+        return expiresAt != null && !expiresAt.isAfter(now);
+    }
+
+    /**
+     * Whether {@code candidate} is the person this invitation was addressed to.
+     *
+     * <p>An invitation names an email, a phone number, or both, and the token travels to that
+     * address. The token alone cannot answer who is accepting: it is forwarded, screenshotted and
+     * pasted into group chats, so the holder and the addressee are routinely different people.
+     *
+     * <p>Either identifier matching is enough — a Zambian invitee may hold the phone number the
+     * invitation was sent to and an email the inviter guessed, or the reverse. Requiring both
+     * would refuse the ordinary case; requiring neither is what let a forwarded link join an
+     * organization.
+     *
+     * <p>Comparison is case-insensitive on email and exact on phone, which is E.164 and has one
+     * spelling.
+     */
+    public boolean addressedTo(String candidateEmail, String candidatePhone) {
+        boolean emailMatches = email != null && !email.isBlank()
+                && candidateEmail != null && email.equalsIgnoreCase(candidateEmail);
+        boolean phoneMatches = phoneNumber != null && !phoneNumber.isBlank()
+                && candidatePhone != null && phoneNumber.equals(candidatePhone);
+        return emailMatches || phoneMatches;
     }
 
     /**

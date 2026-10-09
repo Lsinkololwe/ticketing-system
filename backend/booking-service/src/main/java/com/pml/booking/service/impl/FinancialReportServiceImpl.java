@@ -1,8 +1,9 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.constants.PlatformTime;
+
 import com.pml.shared.constants.EscrowStatus;
 import com.pml.booking.domain.enums.JournalEntryStatus;
-import com.pml.booking.domain.model.EventEscrowAccount;
 import com.pml.booking.domain.model.JournalEntry;
 import com.pml.booking.domain.model.JournalLine;
 import com.pml.booking.repository.EventEscrowAccountRepository;
@@ -16,14 +17,14 @@ import com.pml.shared.constants.PayoutRequestStatus;
 import com.pml.shared.constants.RefundRequestStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -51,15 +52,16 @@ import java.util.stream.Collectors;
 public class FinancialReportServiceImpl implements FinancialReportService {
 
     private final JournalEntryRepository journalEntryRepository;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final PayoutRequestRepository payoutRequestRepository;
     private final RefundRequestRepository refundRequestRepository;
     private final EventEscrowAccountRepository escrowAccountRepository;
     private final TicketRepository ticketRepository;
-    private final ReactiveMongoTemplate mongoTemplate;
 
     // Chart of Accounts codes
     private static final String ACCOUNT_PLATFORM_COMMISSION = "4010";
-    private static final String ACCOUNT_PROCESSING_FEE = "4020";
     private static final String ACCOUNT_PREFIX_ESCROW = "2010-";
 
     @Override
@@ -132,8 +134,8 @@ public class FinancialReportServiceImpl implements FinancialReportService {
     public Mono<FinancialReport> generateFinancialReport(FinancialReportFilterInput filter) {
         log.info("Generating financial report for period: {} to {}", filter.startDate(), filter.endDate());
 
-        LocalDate startDate = filter.startDate().toLocalDate();
-        LocalDate endDate = filter.endDate().toLocalDate();
+        LocalDate startDate = PlatformTime.dateAt(filter.startDate());
+        LocalDate endDate = PlatformTime.dateAt(filter.endDate());
 
         // Fetch POSTED journal entries in date range
         Mono<List<JournalEntry>> entriesMono = journalEntryRepository
@@ -243,8 +245,8 @@ public class FinancialReportServiceImpl implements FinancialReportService {
                 .map(report -> {
                     // Generate file name
                     String fileName = String.format("financial_report_%s_to_%s.%s",
-                            filter.startDate().toLocalDate(),
-                            filter.endDate().toLocalDate(),
+                            PlatformTime.dateAt(filter.startDate()),
+                            PlatformTime.dateAt(filter.endDate()),
                             format.name().toLowerCase());
 
                     // In a real implementation, this would:
@@ -255,11 +257,7 @@ public class FinancialReportServiceImpl implements FinancialReportService {
                     // For now, return a placeholder indicating the feature needs cloud storage integration
                     String downloadUrl = "/api/reports/download/" + UUID.randomUUID() + "/" + fileName;
 
-                    return ReportExport.success(downloadUrl, format, fileName);
-                })
-                .onErrorResume(e -> {
-                    log.error("Failed to export financial report: {}", e.getMessage());
-                    return Mono.just(ReportExport.error("Failed to generate report: " + e.getMessage(), format));
+                    return ReportExport.of(downloadUrl, format, fileName, clock.instant());
                 });
     }
 
@@ -273,17 +271,13 @@ public class FinancialReportServiceImpl implements FinancialReportService {
                 .map(tickets -> {
                     String fileName = String.format("sales_report_event_%s_%s.%s",
                             eventId,
-                            LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")),
+                            PlatformTime.format(clock.instant(), DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")),
                             format.name().toLowerCase());
 
                     // In a real implementation, this would generate the actual report file
                     String downloadUrl = "/api/reports/download/" + UUID.randomUUID() + "/" + fileName;
 
-                    return ReportExport.success(downloadUrl, format, fileName);
-                })
-                .onErrorResume(e -> {
-                    log.error("Failed to export sales report: {}", e.getMessage());
-                    return Mono.just(ReportExport.error("Failed to generate sales report: " + e.getMessage(), format));
+                    return ReportExport.of(downloadUrl, format, fileName, clock.instant());
                 });
     }
 
@@ -292,15 +286,15 @@ public class FinancialReportServiceImpl implements FinancialReportService {
      */
     private List<FinancialDataPoint> generateDataPoints(
             List<JournalEntry> entries,
-            LocalDateTime startDate,
-            LocalDateTime endDate,
+            Instant startDate,
+            Instant endDate,
             TimeUnit groupBy
     ) {
         TimeUnit effectiveGroupBy = groupBy != null ? groupBy : TimeUnit.DAY;
 
         // Group journal entries by period
         Map<String, List<JournalEntry>> groupedEntries = entries.stream()
-                .collect(Collectors.groupingBy(e -> formatPeriod(e.getEntryDate().atStartOfDay(), effectiveGroupBy)));
+                .collect(Collectors.groupingBy(e -> formatPeriod(e.getEntryDate().atStartOfDay(PlatformTime.ZONE).toInstant(), effectiveGroupBy)));
 
         // Generate all periods in the range
         List<String> allPeriods = generatePeriods(startDate, endDate, effectiveGroupBy);
@@ -364,7 +358,15 @@ public class FinancialReportServiceImpl implements FinancialReportService {
     /**
      * Format a date/time into a period string based on the time unit.
      */
-    private String formatPeriod(LocalDateTime dateTime, TimeUnit timeUnit) {
+    /**
+     * Groups an instant into a reporting period.
+     *
+     * <p>Every case here is a calendar question — which hour, which ISO week, which month — and
+     * an Instant has no calendar. Resolving it in the platform zone is what makes a financial
+     * report agree with the day an organizer thinks a sale happened, rather than with UTC.</p>
+     */
+    private String formatPeriod(Instant instant, TimeUnit timeUnit) {
+        java.time.ZonedDateTime dateTime = PlatformTime.atZone(instant);
         return switch (timeUnit) {
             case HOUR -> dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:00"));
             case DAY -> dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
@@ -380,18 +382,18 @@ public class FinancialReportServiceImpl implements FinancialReportService {
     /**
      * Generate all period labels between start and end dates.
      */
-    private List<String> generatePeriods(LocalDateTime startDate, LocalDateTime endDate, TimeUnit timeUnit) {
+    private List<String> generatePeriods(Instant startDate, Instant endDate, TimeUnit timeUnit) {
         List<String> periods = new ArrayList<>();
-        LocalDateTime current = startDate;
+        Instant current = startDate;
 
         while (!current.isAfter(endDate)) {
             periods.add(formatPeriod(current, timeUnit));
 
             current = switch (timeUnit) {
-                case HOUR -> current.plusHours(1);
-                case DAY -> current.plusDays(1);
-                case WEEK -> current.plusWeeks(1);
-                case MONTH -> current.plusMonths(1);
+                case HOUR -> current.plus(Duration.ofHours(1));
+                case DAY -> current.plus(Duration.ofDays(1));
+                case WEEK -> current.plus(Duration.ofDays(7));
+                case MONTH -> PlatformTime.atZone(current).plusMonths(1).toInstant();
             };
         }
 

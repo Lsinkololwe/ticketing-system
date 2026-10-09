@@ -6,7 +6,6 @@ import com.pml.booking.infrastructure.metrics.PaymentMetrics;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
-import io.micrometer.core.instrument.Timer;
 import io.netty.channel.ChannelOption;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -23,6 +22,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  * pawaPay Mobile Money API Client
@@ -112,7 +112,10 @@ public class PawaPayClient {
 
         // Auto-detect provider from phone number if not specified
         String resolvedProvider = provider != null ? provider : pawaPayProperties.detectProvider(phoneNumber);
-        long startTime = System.currentTimeMillis();
+        // nanoTime, not the wall clock: this is an elapsed measurement, and NTP or a DST step
+        // between the two readings makes the difference wrong or negative. nanoTime
+        // is exempt from the injected-clock rule because it is a monotonic counter, not a timestamp.
+        long startTime = System.nanoTime();
 
         // Audit log for payment initiation
         String correlationId = PciDssLogger.generateCorrelationId();
@@ -122,7 +125,6 @@ public class PawaPayClient {
         DepositRequest request = new DepositRequest(
                 depositId,
                 new Payer("MMO", new AccountDetails(normalizePhoneNumber(phoneNumber), resolvedProvider)),
-                null, // preAuthorisationCode
                 clientReference,
                 truncateMessage(customerMessage),
                 amount.toPlainString(),
@@ -136,7 +138,7 @@ public class PawaPayClient {
                 .retrieve()
                 .bodyToMono(DepositResponse.class)
                 .doOnSuccess(response -> {
-                    long duration = System.currentTimeMillis() - startTime;
+                    long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
                     paymentMetrics.recordDepositLatency(Duration.ofMillis(duration));
                     if (response.isAccepted()) {
                         paymentMetrics.recordPaymentAmount("deposit", resolvedProvider, amount.doubleValue(),
@@ -151,7 +153,7 @@ public class PawaPayClient {
                     log.info("Deposit {} status: {} ({}ms)", depositId, response.status(), duration);
                 })
                 .doOnError(error -> {
-                    long duration = System.currentTimeMillis() - startTime;
+                    long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
                     paymentMetrics.recordDepositLatency(Duration.ofMillis(duration));
                     // PCI DSS: Audit log for deposit error
                     pciDssLogger.logPaymentFailed(correlationId, depositId, "DEPOSIT", "API_ERROR", error.getMessage());
@@ -162,17 +164,16 @@ public class PawaPayClient {
     /**
      * Fallback for initiateDeposit when circuit breaker is open.
      */
-    private Mono<DepositResponse> initiateDepositFallback(
-            String depositId, BigDecimal amount, String currency, String phoneNumber,
+    private Mono<DepositResponse> initiateDepositFallback(String depositId, BigDecimal amount, String currency, String phoneNumber,
             String provider, String clientReference, String customerMessage,
-            Map<String, Object> metadata, Throwable throwable) {
+            Map<String, Object> metadata, Throwable throwable, Instant now) {
         log.warn("Circuit breaker fallback for initiateDeposit({}): {}", depositId, throwable.getMessage());
         paymentMetrics.recordCircuitBreakerFallback("initiateDeposit");
         paymentMetrics.recordDepositFailed(provider != null ? provider : "unknown", "CIRCUIT_BREAKER_OPEN");
         return Mono.just(new DepositResponse(
                 depositId,
                 "REJECTED",
-                Instant.now(),
+                now,
                 new FailureReason("CIRCUIT_BREAKER_OPEN", "Payment service temporarily unavailable: " + throwable.getMessage())
         ));
     }
@@ -238,8 +239,6 @@ public class PawaPayClient {
         pciDssLogger.logPaymentInitiated(correlationId, refundId, "REFUND",
                 null, amount, currency != null ? currency : "ZMW", "PAWAPAY", depositId);
 
-        long startTime = System.currentTimeMillis();
-
         RefundRequest request = new RefundRequest(
                 refundId,
                 depositId,
@@ -274,14 +273,13 @@ public class PawaPayClient {
     /**
      * Fallback for initiateRefund when circuit breaker is open.
      */
-    private Mono<RefundResponse> initiateRefundFallback(
-            String refundId, String depositId, BigDecimal amount, String currency,
-            Map<String, Object> metadata, Throwable throwable) {
+    private Mono<RefundResponse> initiateRefundFallback(String refundId, String depositId, BigDecimal amount, String currency,
+            Map<String, Object> metadata, Throwable throwable, Instant now) {
         log.warn("Circuit breaker fallback for initiateRefund({}): {}", refundId, throwable.getMessage());
         return Mono.just(new RefundResponse(
                 refundId,
                 "REJECTED",
-                Instant.now(),
+                now,
                 new FailureReason("CIRCUIT_BREAKER_OPEN", "Refund service temporarily unavailable: " + throwable.getMessage())
         ));
     }
@@ -353,8 +351,6 @@ public class PawaPayClient {
         pciDssLogger.logPaymentInitiated(correlationId, payoutId, "PAYOUT",
                 phoneNumber, amount, currency != null ? currency : "ZMW", resolvedProvider, null);
 
-        long startTime = System.currentTimeMillis();
-
         PayoutRequest request = new PayoutRequest(
                 payoutId,
                 amount.toPlainString(),
@@ -388,14 +384,13 @@ public class PawaPayClient {
     /**
      * Fallback for initiatePayout when circuit breaker is open.
      */
-    private Mono<PayoutResponse> initiatePayoutFallback(
-            String payoutId, BigDecimal amount, String currency, String phoneNumber,
-            String provider, String customerMessage, Throwable throwable) {
+    private Mono<PayoutResponse> initiatePayoutFallback(String payoutId, BigDecimal amount, String currency, String phoneNumber,
+            String provider, String customerMessage, Throwable throwable, Instant now) {
         log.warn("Circuit breaker fallback for initiatePayout({}): {}", payoutId, throwable.getMessage());
         return Mono.just(new PayoutResponse(
                 payoutId,
                 "REJECTED",
-                Instant.now(),
+                now,
                 new FailureReason("CIRCUIT_BREAKER_OPEN", "Payout service temporarily unavailable: " + throwable.getMessage())
         ));
     }
@@ -437,7 +432,6 @@ public class PawaPayClient {
         return UUID.randomUUID().toString();
     }
 
-
     private static String normalizePhoneNumber(String phoneNumber) {
         String digits = phoneNumber.replaceAll("[^0-9]", "");
         if (digits.startsWith("0") && digits.length() == 10) {
@@ -460,7 +454,6 @@ public class PawaPayClient {
     public record DepositRequest(
             String depositId,
             Payer payer,
-            String preAuthorisationCode,
             String clientReferenceId,
             String customerMessage,
             String amount,

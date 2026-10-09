@@ -1,7 +1,7 @@
 package com.pml.catalog.web.graphql.dto;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -13,18 +13,18 @@ public record UpdateTicketTierInput(
         String name,
         String description,
         BigDecimal price,
-        BigDecimal originalPrice,
         Integer quantity,
         Integer maxPerOrder,
         Integer minPerOrder,
         List<String> benefits,
         Integer sortOrder,
         Boolean isActive,
-        LocalDateTime salesStartAt,
-        LocalDateTime salesEndAt,
+        Instant salesStartAt,
+        Instant salesEndAt,
         BigDecimal earlyBirdPrice,
-        LocalDateTime earlyBirdEndsAt,
+        Instant earlyBirdEndsAt,
         Boolean isHidden,
-        String accessCode
+        String accessCode,
+        com.pml.shared.constants.TicketCategory category
 ) {
 }

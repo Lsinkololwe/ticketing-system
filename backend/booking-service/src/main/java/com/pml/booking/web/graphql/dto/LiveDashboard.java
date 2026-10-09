@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -42,7 +42,7 @@ public class LiveDashboard {
     private int checkInsLastHour;
 
     /** Peak check-in time (highest activity) */
-    private LocalDateTime peakCheckInTime;
+    private Instant peakCheckInTime;
 
     /** Current check-in rate per minute */
     private Float currentCheckInRate;

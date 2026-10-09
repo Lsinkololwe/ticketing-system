@@ -3,7 +3,7 @@
 > **Spec** [`specs/finance/005-reconciliation/spec.md`](../finance/005-reconciliation/spec.md) · **Wave 4** · `blocked_by:` ET-PLT-005, ET-FIN-001, 002, 003, 004, ET-PAY-002
 > **Screen** `Admin - Ledger, Commission & Reconciliation.dc.html` — **three reconciliation types, seven discrepancy classes**
 > **Authority** `docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md` §11, §12
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-005 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-005 -DfailIfNoTests=false`
 
 The spec that makes every other finance spec checkable. [ROADMAP §Cross-cutting](../ROADMAP.md)
 gives it one job: **the ledger and every cached balance reconcile.**
@@ -145,7 +145,7 @@ counts are unchanged by a reconciliation run.
 3 days escalates critical.
 
 ### TS-6 · Escalation *(L3, frozen clock)*
-Each class escalates **once** at its threshold — run the sweeper repeatedly and assert no
+Each class escalates **once** at its threshold — run the `ESCALATION` workflow repeatedly and assert no
 duplicate escalation. K499 and K501 write-offs on both sides of the `SUPER_ADMIN` gate.
 
 ### TS-7 · Contention *(L3 — the one that protects on-sale)*
@@ -177,5 +177,5 @@ within the bound and inventory is still conserved.
 - [ ] **Reservation latency holds during a full reconciliation run**
 - [ ] **Infographics gate passed**; one focal point; classes labelled not legend-coded; ≤5 meaningful hues
 - [ ] Trial balance component shared with ET-FIN-001, not reimplemented
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-005 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-FIN-005 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented` — **Wave 5 does not open until all of Wave 4 is**

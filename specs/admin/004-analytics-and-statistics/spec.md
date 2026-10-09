@@ -136,7 +136,7 @@ SHALL report when.
 
 **Acceptance**
 - [ ] The §4 table marks each statistic `live` or `rollup`
-- [ ] Rollups are computed by a scheduled job under `lock:sweep:analytics-rollup` and stored by each service in its own `{catalog,booking,identity}_statistics_rollups`
+- [ ] Rollups are computed by each service's rollup workflow, started by Temporal Schedules with overlap `SKIP`, and stored by that service in its own `{catalog,booking,identity}_statistics_rollups`
 - [ ] No service writes a rollup row into another service's collection; the dashboard composes the three over the graph
 - [ ] Every response carries `computedAt`, for live and rollup figures alike
 - [ ] A rollup older than twice its interval is flagged stale in the response
@@ -248,10 +248,13 @@ collection, because a collection with three writers has no owner.
 `{statisticKey, scope, scopeId, granularity, periodStart}` is unique, so a re-run of a
 period replaces rather than duplicates.
 
-| Job | Lock | Cadence |
-|---|---|---|
-| hourly rollups | `lock:sweep:analytics-rollup-hourly` | `PT1H`, off the hour |
-| nightly trends | `lock:sweep:analytics-rollup-nightly` | daily, off-peak |
+| Schedule | Starts | Queue | Cadence (UTC) | Overlap |
+|---|---|---|---|---|
+| `{service}-rollup-hourly` | `BookingRollupWorkflow`, `CatalogRollupWorkflow`, `IdentityRollupWorkflow` with `HOURLY` | `booking-recon`, `catalog-lifecycle`, `identity-onboarding` | every hour at :17 | `SKIP` |
+| `{service}-rollup-nightly` | the same types with `NIGHTLY` | the same queues | daily 01:30 | `SKIP` |
+
+Each service's Schedules start its own workflow type; no service computes another's rollup. A
+failed run leaves the previous rollup in place and the next fire tries again.
 
 ### The pipeline shape
 
@@ -303,8 +306,8 @@ Every admin statistic carries `@tag(name: "admin")`; every finance statistic req
 | `admin.analytics.max-range` | `P90D` for live aggregations |
 | `admin.analytics.query-timeout` | `PT10S` |
 | `admin.analytics.max-backoff` | `PT5M` |
-| `admin.analytics.rollup-hourly-cron` | hourly, off the hour |
-| `admin.analytics.rollup-nightly-cron` | daily, off-peak |
+| `admin.analytics.rollup-hourly-schedule` | `17 * * * *` UTC |
+| `admin.analytics.rollup-nightly-schedule` | `30 1 * * *` UTC |
 | `admin.analytics.poll-jitter` | 10% |
 
 ### Error codes
@@ -328,9 +331,9 @@ carrying the bound.
   - parallel-safe: no
   - depends: T1
 
-- [ ] **T3 · The rollup document, the two jobs and the staleness flag**
+- [ ] **T3 · The rollup document, the two Schedules and the staleness flag**
   - requirements: R5
-  - files: `backend/*/src/main/java/com/pml/*/scheduler/AnalyticsRollupJob.java`
+  - files: `backend/*/src/main/java/com/pml/*/workflow/rollup/`
   - verify: a failed job leaves the previous rollup; `computedAt` is always present
   - parallel-safe: yes — one service per agent
   - depends: T1
@@ -394,3 +397,15 @@ Deliberately never in scope: **GraphQL subscriptions** (D-12 — the transport i
 platform's path), **client-side counting** (wrong from the second page onward), and
 **summing ticket rows for revenue** (it diverges from the ledger the moment a refund
 settles).
+
+---
+
+## Amendment, 2026-10-04 — user growth
+
+### ET-ADM-004-R9 · User-growth series
+
+**Acceptance**
+- [ ] `userGrowthSeries(from, to, bucket, role)` returns new accounts per day, week (Monday) or month in the platform time zone, with the running total
+- [ ] Every bucket in the range is present, with zero where nobody joined; a range that runs backwards or exceeds ten years is refused
+
+**Tests** `GrowthBucketsTest` (L1)

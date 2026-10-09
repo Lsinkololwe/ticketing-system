@@ -1,693 +1,426 @@
 /**
- * Admin Portal — Global Styles
- *
- * Brand context: Radix accent TEAL, gray SLATE, radius MEDIUM, scaling 100%,
- * `<html data-brand="admin">`. Configured in `src/components/Providers.tsx`.
- *
- * THIS FILE IS DELIBERATELY THIN.
- *
- * The MyTicketZM shared token layer (imported first, below) is the single
- * source of truth and already ships:
- *   - fonts (Inter / Space Grotesk / Fira Code)
- *   - the copper scale + semantic ROLE tokens
- *     (--color-primary / --color-money / --color-highlight / --status-*)
- *   - the type, weight, micro-label, spacing, bento and motion scales
- *   - card/bento surface tokens (--card-bg, --card-border, --card-shadow, …)
- *   - the global focus ring, tabular-nums body base, reduced-motion block
- *   - the .ds-* utility classes (.ds-amount, .ds-card-bento, .ds-bento-grid,
- *     .ds-lift, .ds-label, .ds-glass-header, .ds-accent-chip, …)
- *
- * Do NOT redeclare any of the above here. What remains in this file is only
- * what is genuinely specific to the Admin Portal:
- *   1. legacy `--brand-* / --surface-* / --content-* / --success-*` aliases,
- *      mapped onto the DS role tokens (kept so tailwind.config.js and older
- *      markup keep resolving — they alias, they never duplicate)
- *   2. the sidebar rail + dashboard chrome tokens
- *   3. Radix Themes component overrides (cursors, focus rings, card language)
- *   4. a handful of admin component classes still referenced by markup
- *
- * @see libs/shared/src/styles/design-tokens.css   (runtime source of truth)
- * @see docs/MYTICKETZM_DESIGN_SYSTEM.md           (the contract)
+ * Platform admin global styles. Everything visual comes from the shared M3
+ * design system (measurements in m3.tokens.css, colours in m3.themes.css).
+ * Only app-level additions that the library does not provide belong here, and
+ * they must use var(--m3-*) tokens exclusively.
  */
+@import '../../../../libs/shared/src/styles/m3.css';
 
-/* MyTicketZM Design System — shared token layer. MUST come first. */
-@import '../../../../libs/shared/src/styles/design-tokens.css';
-
-@layer tailwind-base, radix, tailwind-components, tailwind-utilities;
-
-@layer tailwind-base {
-  @tailwind base;
+/* ---- Console page layout helpers (dashboard, analytics, health, profile) ---- */
+.adm-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--m3-kpi-min-w) * 1.6)), 1fr));
+  gap: var(--m3-grid-gap);
+  align-items: start;
+}
+.adm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m3-grid-gap);
+  min-width: 0;
+}
+.adm-note {
+  margin: var(--m3-sp-16) var(--m3-sp-4) 0;
+  color: var(--m3-on-surface-variant);
+  font-size: var(--m3-body-s-size);
+}
+.adm-cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--m3-sp-4);
+}
+.adm-cal__h {
+  color: var(--m3-on-surface-variant);
+  font-weight: 700;
+}
+.adm-cal__d {
+  min-height: var(--m3-sp-48);
+  padding: var(--m3-sp-4) var(--m3-sp-6);
+  border-radius: var(--m3-sp-8);
+  background: var(--m3-surface-container);
+  overflow: hidden;
+}
+.adm-cal__d[data-today='true'] {
+  outline: var(--m3-sp-2) solid var(--m3-primary);
+}
+.adm-cal__d span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adm-bell {
+  position: relative;
+}
+.adm-hot {
+  color: var(--m3-error);
+}
+.adm-cmdk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m3-sp-8);
+}
+.adm-cmdk__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 55vh;
+  overflow: auto;
+}
+.adm-cmdk__grp {
+  padding: var(--m3-sp-10) var(--m3-sp-12) var(--m3-sp-4);
+  color: var(--m3-on-surface-variant);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.adm-cmdk__it {
+  display: flex;
+  gap: var(--m3-sp-12);
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: var(--m3-sp-8) var(--m3-sp-12);
+  border-radius: var(--m3-sp-10);
+  min-height: var(--m3-list-row-h);
+  cursor: pointer;
+}
+.adm-cmdk__it[aria-selected='true'] {
+  background: var(--m3-primary-container);
+  color: var(--m3-on-primary-container);
+}
+.adm-cmdk__it small {
+  display: block;
+  color: var(--m3-on-surface-variant);
 }
 
-@layer tailwind-components {
-  @tailwind components;
+/* Media moderation and stock image thumbnails */
+.adm-thumb {
+  width: var(--m3-avatar-lg);
+  height: var(--m3-avatar-lg);
+  object-fit: cover;
+  border-radius: var(--m3-chip-radius);
 }
 
-@layer tailwind-utilities {
-  @tailwind utilities;
+/* ---- Top bar tools: search, pending-work bell, account (phones) ---- */
+.adm-tabsrow {
+  display: flex;
+  gap: var(--m3-sp-12);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--m3-sp-12);
 }
-
-/* ===========================================================================
-   1. LEGACY ALIASES → DS ROLE TOKENS
-   These exist so `tailwind.config.js` and pre-existing markup keep resolving.
-   Every one of them points at a DS role token or a Radix scale step — none of
-   them introduces a new colour. Status aliases route through --status-*, money
-   routes through --color-money, brand routes through the accent (teal) scale.
-   =========================================================================== */
-:root,
-.light,
-.light-theme,
-.dark,
-.dark-theme {
-  /* Brand → Radix accent (teal), i.e. --color-primary's scale */
-  --brand-50: var(--accent-2);
-  --brand-100: var(--accent-3);
-  --brand-200: var(--accent-4);
-  --brand-300: var(--accent-5);
-  --brand-400: var(--accent-7);
-  --brand-500: var(--color-primary);
-  --brand-600: var(--color-primary-hover);
-  --brand-700: var(--color-primary-text);
-
-  /* Content → Radix gray (slate) */
-  --content-primary: var(--gray-12);
-  --content-secondary: var(--gray-11);
-  --content-tertiary: var(--gray-10);
-  --content-muted: var(--gray-9);
-  --content-inverse: var(--gray-1);
-
-  /* Surfaces */
-  --surface-primary: var(--color-background);
-  --surface-secondary: var(--gray-2);
-  --surface-tertiary: var(--gray-3);
-  --surface-hover: var(--gray-4);
-  --surface-border: var(--gray-6);
-  --surface-border-light: var(--gray-a5);
-  --surface-base: var(--color-background);
-  --surface-raised: var(--color-panel-solid);
-  --surface-lowered: var(--gray-2);
-  --surface-sunken: var(--gray-3);
-  --surface-tinted: var(--accent-a2);
-  --surface-tinted-hover: var(--accent-a3);
-  --surface-tinted-strong: var(--accent-a4);
-
-  /* Status → DS --status-* roles (NOT duplicated scales).
-     Generic success is GREEN. Jade is money-only and is reached through
-     --color-money, never through --success-*. */
-  --success-50: var(--status-success-a3);
-  --success-100: var(--status-success-a3);
-  --success-500: var(--status-success-9);
-  --success-600: var(--status-success-11);
-  --warning-50: var(--status-warning-a3);
-  --warning-100: var(--status-warning-a3);
-  --warning-500: var(--status-warning-9);
-  --warning-600: var(--status-warning-11);
-  --danger-50: var(--status-danger-a3);
-  --danger-100: var(--status-danger-a3);
-  --danger-500: var(--status-danger-9);
-  --danger-600: var(--status-danger-11);
-  --info-50: var(--status-info-a3);
-  --info-100: var(--status-info-a3);
-  --info-500: var(--status-info-9);
-  --info-600: var(--status-info-11);
-
-  /* Money → the DS money role. Revenue, payouts, escrow, "paid" ONLY. */
-  --money-surface: var(--color-money-surface);
-  --money-text: var(--color-money-text);
-  --money-solid: var(--color-money);
+.adm-search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--m3-sp-8);
+  height: var(--m3-btn-h);
+  padding: 0 var(--m3-sp-12);
+  border: var(--m3-bw) solid var(--m3-outline);
+  border-radius: var(--m3-r-full);
+  background: transparent;
+  color: var(--m3-on-surface-variant);
+  font: inherit;
+  cursor: pointer;
 }
-
-/* ===========================================================================
-   2. NON-COLOUR TOKENS still referenced by tailwind.config.js
-   Radix ships --shadow-1..6 and --radius-1..6; these are the named aliases the
-   Tailwind bridge exposes. They must NOT be remapped back onto --shadow-N —
-   the shared layer already derives --card-shadow FROM --shadow-2, so pointing
-   --shadow-2 back at --card-shadow creates an unresolvable cycle.
-   =========================================================================== */
-:root {
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
-  --shadow-sm: var(--shadow-2);
-  --shadow-md: var(--shadow-3);
-  --shadow-lg: var(--shadow-4);
-  --shadow-xl: var(--shadow-5);
-  --shadow-elevated: var(--shadow-4);
-  --shadow-dropdown: var(--shadow-5);
-  --shadow-modal: var(--shadow-6);
-
-  /* Named radius scale used by the Tailwind bridge + component classes.
-     Form controls stay at 6–8px (--radius-3/4); bento tiles use the shared
-     --card-radius-bento (14px). */
-  --radius-sm: var(--radius-3);
-  --radius-md: var(--radius-4);
-  --radius-lg: var(--radius-5);
-  --radius-xl: var(--radius-6);
-  --radius-2xl: 1.25rem;
-  --radius-3xl: 1.5rem;
-
-  --card-transition: box-shadow var(--transition-default) var(--ease-standard),
-    border-color var(--transition-default) var(--ease-standard);
+.adm-search .m3-icon {
+  width: var(--m3-icon-md);
+  height: var(--m3-icon-md);
 }
-
-.dark,
-.dark-theme {
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+.adm-search__kbd {
+  font-family: var(--m3-font-mono);
+  font-size: var(--m3-support-size);
+  font-weight: 600;
+  background: var(--m3-surface-container-high);
+  border-radius: var(--m3-r-xs);
+  padding: var(--m3-sp-1) var(--m3-sp-6);
 }
-
-/* ===========================================================================
-   3. DASHBOARD CHROME
-   Header is a frosted bar (one of only two sanctioned blur surfaces).
-   The main canvas is a flat background — no ambient glow, no mesh gradient:
-   the DS bans gradients as full-page/full-card dashboard backgrounds.
-   =========================================================================== */
-:root {
-  --dashboard-header-bg: var(--color-panel-translucent);
-  --dashboard-header-blur: 12px;
-  --dashboard-header-border: var(--gray-a5);
-  --dashboard-main-bg: var(--color-background);
+.adm-bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--m3-icon-btn);
+  height: var(--m3-icon-btn);
+  border: 0;
+  border-radius: var(--m3-r-circle);
+  background: transparent;
+  color: var(--m3-on-surface-variant);
+  cursor: pointer;
 }
-
-/* ---------------------------------------------------------------------------
-   SIDEBAR RAIL — declared on .radix-themes (NOT :root) so Radix's gray/accent
-   scale variables resolve in BOTH appearances. Declaring them at :root
-   collapsed --dashboard-sidebar-bg to an empty value in light mode.
-   Foreground tokens reference the Radix scales so they auto-flip per
-   appearance: WCAG AA in both.
-   --------------------------------------------------------------------------- */
-.radix-themes {
-  --dashboard-sidebar-bg: var(--gray-2);
-  --dashboard-sidebar-border: var(--gray-a5);
-
-  --sidebar-fg: var(--gray-12);
-  --sidebar-fg-muted: var(--gray-11);
-  --sidebar-section-fg: var(--gray-11);
-
-  --sidebar-active-fg: var(--accent-11);
-  --sidebar-active-bg: var(--accent-a3);
-  --sidebar-active-border: var(--accent-9);
-
-  --sidebar-item-hover-bg: var(--gray-a3);
-  --sidebar-divider: var(--gray-a5);
-  --sidebar-well-bg: var(--gray-a2);
-  --sidebar-well-border: var(--gray-a4);
-
-  /* Count badge — a "needs attention" signal, so it uses the danger role. */
-  --sidebar-badge-bg: var(--status-danger-9);
-  --sidebar-badge-fg: var(--accent-contrast);
+.adm-bell:hover {
+  background: var(--m3-surface-container);
 }
-
-:where(.dark, .dark-theme) .radix-themes,
-.radix-themes:where(.dark, .dark-theme) {
-  --dashboard-sidebar-bg: var(--gray-1);
+.adm-bell .m3-icon {
+  width: var(--m3-icon-xl);
+  height: var(--m3-icon-xl);
 }
-
-/* ===========================================================================
-   4. RADIX THEMES CUSTOMISATION
-   No accent remap — the <Theme accentColor="teal"> tokens flow through.
-   =========================================================================== */
-.radix-themes {
-  --cursor-button: pointer;
-  --cursor-checkbox: pointer;
-  --cursor-disabled: not-allowed;
-  --cursor-link: pointer;
-  --cursor-menu-item: pointer;
-  --cursor-radio: pointer;
-  --cursor-slider-thumb: grab;
-  --cursor-slider-thumb-active: grabbing;
-  --cursor-switch: pointer;
-
-  /* Admin uses Inter for headings too (Space Grotesk is ticketing-only). */
-  --heading-font-family: var(--font-sans);
-
-  --card-background-color: var(--card-bg);
-  --focus-8: var(--accent-8);
+.adm-bell__bdg {
+  position: absolute;
+  top: var(--m3-sp-2);
+  right: 0;
+  display: grid;
+  place-items: center;
+  min-width: var(--m3-badge-min);
+  height: var(--m3-badge-min);
+  padding: 0 var(--m3-sp-4);
+  border-radius: var(--m3-r-full);
+  background: var(--m3-error);
+  color: var(--m3-on-error);
+  font-size: var(--m3-support-size);
+  font-weight: 700;
 }
-
-/* ===========================================================================
-   5. BASE
-   Fonts, tabular-nums, focus ring and reduced-motion all come from the shared
-   layer. Only the scrollbar and the border default live here.
-   =========================================================================== */
-@layer tailwind-base {
-  * {
-    border-color: var(--gray-a5);
+.adm-who {
+  display: none;
+}
+.adm-who__btn {
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: var(--m3-r-circle);
+  cursor: pointer;
+}
+@media (max-width: 700px) {
+  .adm-search__lb,
+  .adm-search__kbd {
+    display: none;
   }
-
-  body {
-    background-color: var(--color-background);
-    color: var(--gray-12);
+  .adm-search {
+    width: var(--m3-icon-btn);
+    padding: 0;
+    justify-content: center;
+    border-radius: var(--m3-r-circle);
   }
-
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: var(--gray-7);
-    border-radius: var(--radius-2);
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--gray-8);
-  }
-
-  html {
-    scroll-behavior: smooth;
+}
+@media (max-width: 599px) {
+  .adm-who {
+    display: inline-flex;
   }
 }
 
-/* ===========================================================================
-   6. ADMIN COMPONENT CLASSES
-   Cards follow the DS language: flat fill, 1px hairline alpha-gray border,
-   soft two-step shadow. No colored left-border accent cards anywhere.
-   =========================================================================== */
-@layer tailwind-components {
-  .card {
-    background: var(--card-bg);
-    border-radius: var(--card-radius);
-    border: var(--card-border);
-    box-shadow: var(--card-shadow);
-    transition: var(--card-transition);
-  }
-
-  .card:hover {
-    box-shadow: var(--card-shadow-hover);
-  }
-
-  .card-flat {
-    background: var(--card-bg);
-    border-radius: var(--card-radius);
-    border: var(--card-border);
-    box-shadow: none;
-  }
-
-  .card-interactive {
-    background: var(--card-bg);
-    border-radius: var(--card-radius);
-    border: var(--card-border);
-    box-shadow: var(--card-shadow);
-    transition: var(--card-transition);
-    cursor: pointer;
-  }
-
-  .card-interactive:hover {
-    box-shadow: var(--card-shadow-hover);
-    border-color: var(--accent-a6);
-  }
-
-  /* Inputs — 6–8px corners, hairline border, --gray-a3 hover tint,
-     single 2px accent-alpha focus ring. Matches the DS Input contract. */
-  .input {
-    width: 100%;
-    padding: 0 12px;
-    height: 40px;
-    background: var(--color-surface);
-    border: var(--hairline);
-    border-radius: var(--radius-3);
-    font-family: var(--font-sans);
-    font-size: var(--text-2-size);
-    color: var(--gray-12);
-    transition: box-shadow var(--transition-fast) var(--ease-standard),
-      border-color var(--transition-fast) var(--ease-standard),
-      background-color var(--transition-fast) var(--ease-standard);
-  }
-
-  .input::placeholder {
-    color: var(--gray-9);
-  }
-
-  .input:hover:not(:focus) {
-    background: var(--gray-a3);
-  }
-
-  .input:focus {
-    outline: none;
-    border-color: var(--accent-8);
-    box-shadow: 0 0 0 2px var(--accent-a5);
-  }
-
-  .input-error,
-  .input-error:focus {
-    border-color: var(--status-danger-9);
-  }
-
-  /* Micro uppercase label — the one deliberate ALL-CAPS exception. */
-  .label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: var(--label-size);
-    font-weight: var(--label-weight);
-    letter-spacing: var(--label-tracking);
-    text-transform: uppercase;
-    color: var(--gray-11);
-  }
-
-  /* Tables — micro-label headers, hairline rows, --gray-a3 hover tint. */
-  .table-header {
-    padding: 12px 16px;
-    text-align: left;
-    font-size: var(--label-size);
-    font-weight: var(--label-weight);
-    letter-spacing: var(--label-tracking);
-    text-transform: uppercase;
-    color: var(--gray-11);
-    background: var(--gray-2);
-  }
-
-  .table-cell {
-    padding: 14px 16px;
-    font-size: var(--text-2-size);
-    color: var(--gray-11);
-  }
-
-  .table-row {
-    border-bottom: var(--hairline);
-    transition: background-color var(--transition-fast) var(--ease-standard);
-  }
-
-  .table-row:hover {
-    background-color: var(--gray-a3);
-  }
-
-  .dropdown {
-    background: var(--card-bg);
-    border-radius: var(--card-radius);
-    border: var(--card-border);
-    box-shadow: var(--shadow-dropdown);
-    overflow: hidden;
-  }
-
-  /* Tonal surfaces — elevation through colour, no gradients. */
-  .surface-raised {
-    background-color: var(--surface-raised);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .surface-lowered {
-    background-color: var(--surface-lowered);
-  }
-
-  .surface-sunken {
-    background-color: var(--surface-sunken);
-  }
-
-  .surface-tinted {
-    background-color: var(--surface-tinted);
-  }
+/* ---- List toolbars: search 290, selects 220 (prototype .toolbar .fld) ---- */
+.adm-filterbar > .m3-field {
+  flex: 0 1 var(--m3-toolbar-select-w);
+  max-width: none;
+}
+.adm-filterbar > .m3-field:first-child {
+  flex-basis: var(--m3-toolbar-search-w);
 }
 
-@layer tailwind-utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-
-  .animate-in {
-    animation: fadeIn var(--transition-default) var(--ease-standard);
-  }
+/* ---- Tonal count tiles, status rows, activity rows (prototype .tiles, .stl, .lst) ---- */
+.adm-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--m3-tile-min-w), 1fr));
+  gap: var(--m3-sp-12);
+}
+.adm-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m3-sp-2);
+  padding: var(--m3-sp-10) var(--m3-sp-12);
+  border: 0;
+  border-radius: var(--m3-card-radius);
+  background: var(--m3-surface-container);
+  color: var(--m3-on-surface);
+  text-align: start;
+  font: inherit;
+}
+button.adm-tile {
+  cursor: pointer;
+}
+button.adm-tile:hover {
+  background: var(--m3-surface-container-high);
+}
+.adm-tile > span {
+  font-size: var(--m3-overline-size);
+  font-weight: 700;
+  letter-spacing: var(--m3-track-overline);
+  text-transform: uppercase;
+  color: var(--m3-on-surface-variant);
+}
+.adm-tile > b {
+  font-family: var(--m3-font-display);
+  font-size: var(--m3-tile-size);
+  line-height: var(--m3-tile-line);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.adm-statusrows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.adm-statusrows > li {
+  display: flex;
+  gap: var(--m3-sp-12);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--m3-sp-8) 0;
+  border-bottom: var(--m3-bw) solid var(--m3-outline-variant);
+}
+.adm-statusrows > li:last-child {
+  border: 0;
+}
+.adm-statusrows > li > b {
+  flex: 1;
+  min-width: var(--m3-tile-min-w);
 }
 
-/* ===========================================================================
-   6b. <StyledCard> HOVER STATES
-   Hover shifts the border and shadow only — never a gradient, never a fill
-   change on a solid surface, never a scale/shrink press effect.
-     default : deepen the shadow one step
-     lift    : the shared .ds-lift language — 2px rise + softer shadow
-     glow    : an accent-tinted ring. A *ring*, not a blur: blur is reserved
-               for header bars.
-   =========================================================================== */
-.ds-styled-card--default:hover {
-  border-color: var(--gray-a6);
-  box-shadow: var(--card-shadow-hover);
+/* ---- Role chip and dashboard role notice ---- */
+.adm-rolechip {
+  --rc: var(--m3-primary);
+  --rc-bg: var(--m3-primary-container);
+  --rc-fg: var(--m3-on-primary-container);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--m3-sp-6);
+  height: var(--m3-chip-h);
+  padding: 0 var(--m3-sp-12) 0 var(--m3-sp-8);
+  border-radius: var(--m3-r-full);
+  font-size: var(--m3-caption-size);
+  font-weight: 700;
+  background: var(--rc-bg);
+  color: var(--rc-fg);
+  white-space: nowrap;
+}
+.adm-rolechip > i {
+  width: var(--m3-sp-10);
+  height: var(--m3-sp-10);
+  border-radius: var(--m3-r-circle);
+  background: var(--rc);
+  display: inline-block;
+}
+.adm-rolechip[data-role='SUPER_ADMIN'] {
+  --rc: var(--m3-role-super);
+  --rc-bg: var(--m3-role-super-bg);
+  --rc-fg: var(--m3-role-super-fg);
+}
+.adm-rolechip[data-role='ADMIN'] {
+  --rc: var(--m3-role-admin);
+  --rc-bg: var(--m3-role-admin-bg);
+  --rc-fg: var(--m3-role-admin-fg);
+}
+.adm-rolechip[data-role='FINANCE'] {
+  --rc: var(--m3-role-finance);
+  --rc-bg: var(--m3-role-finance-bg);
+  --rc-fg: var(--m3-role-finance-fg);
+}
+.adm-rolechip[data-role='FINANCE_LEAD'] {
+  --rc: var(--m3-role-lead);
+  --rc-bg: var(--m3-role-lead-bg);
+  --rc-fg: var(--m3-role-lead-fg);
+}
+.adm-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m3-sp-12);
+  align-items: center;
+  margin-bottom: var(--m3-sp-16);
+  padding: var(--m3-sp-8) var(--m3-sp-14);
+  border-radius: var(--m3-card-radius);
+  background: var(--m3-surface-container);
+}
+.adm-notice__text {
+  flex: 1;
+  min-width: var(--m3-kpi-min-w);
+  font-size: var(--m3-caption-size);
+  color: var(--m3-on-surface-variant);
 }
 
-.ds-styled-card--lift:hover {
-  transform: translateY(-2px);
-  border-color: var(--accent-a6);
-  box-shadow: var(--card-shadow-hover);
+/* ---- Platform shell: prototype spacing under the top bar, search and bell sizes ---- */
+[data-app='platform'] .m3-topbar {
+  border-bottom: var(--m3-bw) solid transparent;
+}
+[data-app='platform'] .m3-main > .m3-topbar + * {
+  margin-top: var(--m3-sp-8);
+}
+.adm-search {
+  height: calc(var(--m3-btn-h) + var(--m3-sp-2));
+}
+.adm-bell {
+  width: var(--m3-field-h);
+  height: var(--m3-field-h);
 }
 
-.ds-styled-card--glow:hover {
-  border-color: var(--accent-a7);
-  box-shadow: 0 0 0 3px var(--accent-a3), var(--card-shadow-hover);
+/* ---- Dashboard list rows: the title is the link (prototype `.lst li button`) ---- */
+.adm-rowlink {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--m3-sp-2);
+  min-width: 0;
+  padding: var(--m3-sp-4) 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.adm-rowlink:hover b {
+  text-decoration: underline;
+}
+.adm-rowlink > small {
+  color: var(--m3-on-surface-variant);
+  font-size: var(--m3-caption-size);
 }
 
-.ds-styled-card:focus-visible {
-  outline: 2px solid var(--accent-8);
-  outline-offset: 2px;
+/* ---- Media moderation grid (prototype .mcard) ---- */
+.adm-mgrid {
+  list-style: none;
+  margin: var(--m3-sp-12) 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--m3-kpi-min-w) - var(--m3-sp-24)), 1fr));
+  gap: var(--m3-sp-12);
+}
+.adm-mcard {
+  border: var(--m3-bw) solid var(--m3-outline-variant);
+  border-radius: var(--m3-card-radius);
+  overflow: hidden;
+  background: var(--m3-surface);
+}
+.adm-mcard__im {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: var(--m3-surface-container-high);
+  display: grid;
+  place-items: center;
+}
+.adm-mcard__im img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.adm-mcard__flag {
+  position: absolute;
+  inset-inline-start: var(--m3-sp-8);
+  top: var(--m3-sp-8);
+}
+.adm-mcard__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m3-sp-2);
+  padding: var(--m3-sp-10) var(--m3-sp-12);
+  min-width: 0;
+}
+.adm-mcard__body > b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--m3-body-s-size);
+}
+.adm-mcard__body > small {
+  color: var(--m3-on-surface-variant);
+  font-size: var(--m3-caption-size);
 }
 
-/* ===========================================================================
-   7. SIDEBAR NAV — active state
-   The DS requires a persistent 2px left accent border on active nav items.
-   It lives HERE rather than as an inline style so the `borderLeft` adherence
-   grep over *.tsx stays clean and the rule is themable in one place.
-   =========================================================================== */
-.sidebar-nav-item {
-  border-left: 2px solid transparent;
-  transition: background-color var(--transition-fast) var(--ease-standard),
-    color var(--transition-fast) var(--ease-standard);
-}
-
-.sidebar-nav-item[data-active='true'] {
-  border-left-color: var(--sidebar-active-border);
-  background-color: var(--sidebar-active-bg);
-  color: var(--sidebar-active-fg);
-}
-
-.sidebar-nav-item:hover {
-  background-color: var(--sidebar-item-hover-bg);
-  color: var(--sidebar-fg);
-}
-
-.sidebar-nav-item:focus-visible {
-  outline: 2px solid var(--sidebar-active-border);
-  outline-offset: -2px;
-}
-
-.sidebar-section-header:hover,
-.sidebar-close-btn:hover {
-  background-color: var(--sidebar-item-hover-bg);
-}
-
-.sidebar-section-header:focus-visible {
-  outline: 2px solid var(--sidebar-active-border);
-  outline-offset: -2px;
-}
-
-/* ===========================================================================
-   8. RADIX COMPONENT OVERRIDES
-   Focus: text fields get a SINGLE 2px accent-alpha ring; buttons, checkboxes,
-   radios and switches get the offset double ring. Per DS §6.
-   =========================================================================== */
-.rt-TextFieldRoot:focus-within,
-.rt-SelectTrigger:focus-within,
-.rt-SelectTrigger:focus,
-.rt-TextAreaRoot:focus-within {
-  outline: none !important;
-  box-shadow: 0 0 0 2px var(--accent-a5) !important;
-}
-
-.rt-TextFieldInput:focus,
-.rt-TextAreaInput:focus {
-  outline: none !important;
-  box-shadow: none !important;
-}
-
-.rt-Button:focus-visible,
-.rt-IconButton:focus-visible,
-.rt-CheckboxRoot:focus-within,
-.rt-RadioGroupItem:focus-within,
-.rt-SwitchRoot:focus-within {
-  outline: none !important;
-  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--accent-8) !important;
-}
-
-.rt-TabsTrigger:focus-visible {
-  outline: none !important;
-  box-shadow: inset 0 0 0 1px var(--accent-8) !important;
-}
-
-/* Radix Card adopts the DS card language. */
-.rt-Card {
-  border-radius: var(--card-radius) !important;
-  box-shadow: var(--card-shadow) !important;
-  border: var(--card-border) !important;
-  transition: var(--card-transition) !important;
-}
-
-.rt-Card:hover {
-  box-shadow: var(--card-shadow-hover) !important;
-}
-
-.rt-Card:focus-visible {
-  outline: none !important;
-  box-shadow: 0 0 0 2px var(--accent-a6) !important;
-}
-
-/* Tab badges follow the active state. */
-.tab-trigger[data-state='active'] .tab-badge {
-  background-color: var(--accent-a3) !important;
-  color: var(--accent-11) !important;
-}
-
-.tab-trigger[data-state='inactive'] .tab-badge {
-  background-color: var(--gray-a3) !important;
-  color: var(--gray-11) !important;
-}
-
-.tab-badge {
-  transition: background-color var(--transition-fast) var(--ease-standard),
-    color var(--transition-fast) var(--ease-standard);
-}
-
-/* Pointer affordance on everything interactive. */
-.rt-Button,
-.rt-IconButton,
-.rt-TabsTrigger,
-.rt-Link,
-.rt-SelectTrigger,
-.rt-DropdownMenuTrigger,
-.rt-DropdownMenuItem,
-.rt-ContextMenuItem,
-.rt-CheckboxRoot,
-.rt-RadioGroupItem,
-.rt-SwitchRoot,
-.rt-SliderThumb,
-.rt-AlertDialogAction,
-.rt-AlertDialogCancel,
-.rt-DialogClose,
-.rt-PopoverTrigger,
-.rt-TooltipTrigger,
-.rt-AccordionTrigger,
-.rt-NavigationMenuTrigger,
-.rt-NavigationMenuLink,
-.rt-ToggleGroupItem,
-.rt-Card[data-interactive='true'],
-[role='button'],
-[role='tab'],
-[role='link'],
-[role='menuitem'],
-[role='option'],
-button,
-a {
-  cursor: pointer !important;
-}
-
-.rt-Button:disabled,
-.rt-IconButton:disabled,
-[disabled],
-[aria-disabled='true'] {
-  cursor: not-allowed !important;
-}
-
-input,
-textarea,
-select {
-  transition: box-shadow var(--transition-fast) var(--ease-standard),
-    border-color var(--transition-fast) var(--ease-standard);
-}
-
-input:focus,
-textarea:focus,
-select:focus {
-  outline: none;
-}
-
-/* ===========================================================================
-   9. MOTION — 150–200ms, no scale/shrink press effects.
-   The reduced-motion block lives in the shared token layer.
-   =========================================================================== */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes fadeOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes slideDown {
-  from {
-    height: 0;
-    opacity: 0;
-  }
-  to {
-    height: var(--radix-accordion-content-height);
-    opacity: 1;
-  }
-}
-
-@keyframes slideUp {
-  from {
-    height: var(--radix-accordion-content-height);
-    opacity: 1;
-  }
-  to {
-    height: 0;
-    opacity: 0;
-  }
-}
-
-.DialogOverlay[data-state='open'],
-.DialogContent[data-state='open'],
-.AlertDialogOverlay[data-state='open'],
-.AlertDialogContent[data-state='open'] {
-  animation: fadeIn var(--transition-default) var(--ease-standard);
-}
-
-.DialogOverlay[data-state='closed'],
-.DialogContent[data-state='closed'],
-.AlertDialogOverlay[data-state='closed'],
-.AlertDialogContent[data-state='closed'] {
-  animation: fadeOut var(--transition-fast) var(--ease-standard);
-}
-
-.DropdownMenuContent[data-state='open'],
-.ContextMenuContent[data-state='open'],
-.PopoverContent[data-state='open'] {
-  animation: scaleIn var(--transition-fast) var(--ease-standard);
-}
-
-.AccordionContent[data-state='open'] {
-  animation: slideDown var(--transition-slow) var(--ease-standard);
-}
-
-.AccordionContent[data-state='closed'] {
-  animation: slideUp var(--transition-slow) var(--ease-standard);
-}
-
-/* ===========================================================================
-   10. RESPONSIVE HELPERS
-   Sidebar collapses to an overlay drawer under 1024px (handled in the shell).
-   =========================================================================== */
-@media (max-width: 1023px) {
-  .hidden-mobile {
-    display: none !important;
-  }
+/* Phones: the bottom bar lists every module, so the hamburger is not needed (prototype has none). */
+.m3-shell[data-bottomnav='true'] .m3-navtoggle {
+  display: none;
 }

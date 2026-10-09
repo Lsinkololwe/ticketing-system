@@ -1,5 +1,7 @@
 package com.pml.identity.service;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.shared.constants.DocumentStatus;
 import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.web.graphql.dto.stats.IdentityPendingCounts;
@@ -29,8 +31,8 @@ import static org.springframework.data.mongodb.core.aggregation.Aggregation.newA
 @RequiredArgsConstructor
 public class PendingApprovalStatsService {
 
-    private static final String ORGANIZATIONS_COLLECTION = "organizations";
-    private static final String VERIFICATION_DOCUMENTS_COLLECTION = "verification_documents";
+    private static final String ORGANIZATIONS_COLLECTION = IdentityCollections.ORGANIZATIONS;
+    private static final String VERIFICATION_DOCUMENTS_COLLECTION = IdentityCollections.VERIFICATION_DOCUMENTS;
 
     private final ReactiveMongoTemplate mongoTemplate;
 

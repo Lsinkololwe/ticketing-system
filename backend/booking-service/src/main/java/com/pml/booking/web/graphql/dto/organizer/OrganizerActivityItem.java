@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Activity item for the organizer's dashboard activity feed.
@@ -42,7 +42,7 @@ public class OrganizerActivityItem {
     /**
      * When the activity occurred
      */
-    private LocalDateTime timestamp;
+    private Instant timestamp;
 
     /**
      * Associated event ID (if applicable)

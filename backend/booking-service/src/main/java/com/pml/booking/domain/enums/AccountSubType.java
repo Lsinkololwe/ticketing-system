@@ -34,7 +34,8 @@ package com.pml.booking.domain.enums;
  * 5000 - EXPENSES
  * ├── 5010 - Payment Gateway Fees (GATEWAY_FEE_EXPENSE)
  * ├── 5020 - Chargeback Losses (CHARGEBACK_EXPENSE)
- * └── 5040 - Bad Debt Expense (BAD_DEBT_EXPENSE)
+ * ├── 5040 - Bad Debt Expense (BAD_DEBT_EXPENSE)
+ * └── 5050 - Account Verification Costs (VERIFICATION_EXPENSE)
  * </pre>
  *
  * @see AccountType
@@ -253,6 +254,13 @@ public enum AccountSubType {
      * <p>Parent: {@link AccountType#EXPENSE}</p>
      */
     BAD_DEBT(AccountType.EXPENSE, "5040"),
+
+    /**
+     * Account Verification Costs - micro-deposits sent to prove a bank account.
+     *
+     * <p>Parent: {@link AccountType#EXPENSE}</p>
+     */
+    VERIFICATION_EXPENSE(AccountType.EXPENSE, "5050"),
 
     /**
      * Other Expense - Miscellaneous expense items.

@@ -6,7 +6,6 @@
     "required": [
       "idempotencyKey",
       "transactionRef",
-      "ticketId",
       "eventId",
       "userId",
       "amount",
@@ -43,6 +42,19 @@
         ],
         "maxLength": 100
       },
+      "reservationId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "1:1 with the reservation this intent pays for; also serves as paymentAttempts(intentId) per ET-PAY-001 \u00a74"
+      },
+      "depositId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
       "ticketId": {
         "bsonType": "string",
         "pattern": "^[a-fA-F0-9]{24}$",
@@ -55,7 +67,7 @@
       },
       "userId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "OWASP A03 - ObjectId pattern validation"
       },
       "amount": {
@@ -150,6 +162,32 @@
       },
       "expiresAt": {
         "bsonType": "date"
+      },
+      "lateRefundId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "description": "Provider refund id of late money (ROADMAP D-22), minted once"
+      },
+      "lateRefundStatus": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "REQUESTED",
+          "PROCESSING",
+          "COMPLETED",
+          "FAILED",
+          null
+        ]
+      },
+      "lateRefundFailure": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
       },
       "processedAt": {
         "bsonType": [

@@ -1,9 +1,14 @@
 package com.pml.catalog.web.graphql.query;
 
+import com.pml.catalog.service.EventDiscovery;
+import com.pml.shared.error.FieldViolation;
+import com.pml.shared.error.ValidationRefusal;
+import com.pml.shared.constants.PlatformTime;
+
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.catalog.dto.*;
+import com.pml.catalog.web.graphql.dto.*;
 import com.pml.catalog.web.graphql.dto.stats.CatalogPendingCounts;
 import com.pml.catalog.web.graphql.dto.stats.EventStats;
 import com.pml.catalog.domain.model.Event;
@@ -18,8 +23,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
@@ -34,18 +38,29 @@ import java.util.Objects;
 public class EventQueryResolver {
 
     private final EventService eventService;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final EventStatsService eventStatsService;
     private final PendingApprovalStatsService pendingApprovalStatsService;
+    private final EventDiscovery discovery;
 
     // ==========================================
     // Single Event Query
     // ==========================================
 
+    /**
+     * A single event, as this caller may see it.
+     *
+     * <p>Deliberately {@code findVisibleById} and not {@code findById}. The
+     * schema calls this query PUBLIC and it has no {@code @auth} directive, so the
+     * visibility filter every other public query carries has to live below it.
+     */
     @DgsQuery
     public Mono<Event> event(@InputArgument String id) {
         log.debug("GraphQL query: event(id={})", id);
         Objects.requireNonNull(id, "Event ID is required");
-        return eventService.findById(id);
+        return eventService.findVisibleById(id);
     }
 
     // ==========================================
@@ -55,14 +70,14 @@ public class EventQueryResolver {
     @DgsQuery
     public Mono<EventConnection> discoverEvents(
             @InputArgument EventDiscoveryFilterInput filter,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: discoverEvents");
-        Objects.requireNonNull(filter, "Filter is required");
-        // For now, delegate to published events. In full implementation,
-        // this would filter based on all criteria in the filter.
-        return buildCursorConnection(
-                eventService.findPublishedEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
+            @InputArgument CursorPaginationInput pagination,
+            @InputArgument com.pml.catalog.domain.enums.EventDiscoverySort sort) {
+        CursorPaginationInput page = pagination != null ? pagination : new CursorPaginationInput();
+        if (page.isBackward()) {
+            return Mono.error(new ValidationRefusal(List.of(new FieldViolation("pagination.before",
+                    "the discovery feed pages forward only"))));
+        }
+        return discovery.find(filter, sort, page.getLimit(), page.getAfter()).map(EventQueryResolver::connection);
     }
 
     // ==========================================
@@ -70,16 +85,7 @@ public class EventQueryResolver {
     // ==========================================
 
     @DgsQuery
-    public Mono<EventConnection> publishedEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: publishedEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findPublishedEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    public Mono<EventConnection> searchEventsCursorPagination(
+    public Mono<EventConnection> searchEvents(
             @InputArgument String query,
             @InputArgument CursorPaginationInput pagination) {
         log.debug("GraphQL query: searchEventsCursorPagination(query={})", query);
@@ -90,16 +96,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    public Mono<EventConnection> upcomingEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: upcomingEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findUpcomingEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    public Mono<EventConnection> eventsByCategoryCursorPagination(
+    public Mono<EventConnection> eventsByCategory(
             @InputArgument String categoryId,
             @InputArgument CursorPaginationInput pagination) {
         log.debug("GraphQL query: eventsByCategoryCursorPagination(categoryId={})", categoryId);
@@ -110,7 +107,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    public Mono<EventConnection> eventsByCityCursorPagination(
+    public Mono<EventConnection> eventsByCity(
             @InputArgument String city,
             @InputArgument CursorPaginationInput pagination) {
         log.debug("GraphQL query: eventsByCityCursorPagination(city={})", city);
@@ -120,184 +117,9 @@ public class EventQueryResolver {
                 pagination != null ? pagination : new CursorPaginationInput());
     }
 
-    @DgsQuery
-    public Mono<EventConnection> eventsByDateRangeCursorPagination(
-            @InputArgument String startDate,
-            @InputArgument String endDate,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByDateRangeCursorPagination(startDate={}, endDate={})", startDate, endDate);
-        Objects.requireNonNull(startDate, "Start date is required");
-        Objects.requireNonNull(endDate, "End date is required");
-        LocalDateTime start = parseDateTime(startDate);
-        LocalDateTime end = parseDateTime(endDate);
-        return buildCursorConnection(
-                eventService.findEventsByDateRange(start, end),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    public Mono<EventConnection> eventsByPriceRangeCursorPagination(
-            @InputArgument BigDecimal minPrice,
-            @InputArgument BigDecimal maxPrice,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByPriceRangeCursorPagination(minPrice={}, maxPrice={})", minPrice, maxPrice);
-        return buildCursorConnection(
-                eventService.findEventsByPriceRange(minPrice, maxPrice),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    public Mono<EventConnection> featuredEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: featuredEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findFeaturedEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    public Mono<EventConnection> freeEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: freeEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findFreeEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    /**
-     * Get events by organizer with cursor pagination.
-     *
-     * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService to validate
-     * that the requesting user is either the organizer or a team member with access.</p>
-     */
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
-    public Mono<EventConnection> eventsByOrganizerCursorPagination(
-            @InputArgument String organizerId,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByOrganizerCursorPagination(organizerId={})", organizerId);
-        Objects.requireNonNull(organizerId, "Organizer ID is required");
-        return buildCursorConnection(
-                eventService.findEventsByOrganizer(organizerId),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
     // ==========================================
     // Offset-based Pagination Queries (Admin Tables)
     // ==========================================
-
-    @DgsQuery
-    public Mono<EventOffsetPage> publishedEventsOffsetPagination(
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: publishedEventsOffsetPagination");
-        return buildOffsetPage(
-                eventService.findPublishedEvents(),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    @DgsQuery
-    public Mono<EventOffsetPage> searchEventsOffsetPagination(
-            @InputArgument String query,
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: searchEventsOffsetPagination(query={})", query);
-        Objects.requireNonNull(query, "Search query is required");
-        return buildOffsetPage(
-                eventService.searchEvents(query),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    @DgsQuery
-    public Mono<EventOffsetPage> upcomingEventsOffsetPagination(
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: upcomingEventsOffsetPagination");
-        return buildOffsetPage(
-                eventService.findUpcomingEvents(),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    @DgsQuery
-    public Mono<EventOffsetPage> eventsByCategoryOffsetPagination(
-            @InputArgument String categoryId,
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByCategoryOffsetPagination(categoryId={})", categoryId);
-        Objects.requireNonNull(categoryId, "Category ID is required");
-        return buildOffsetPage(
-                eventService.findEventsByCategory(categoryId),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    @DgsQuery
-    public Mono<EventOffsetPage> eventsByCityOffsetPagination(
-            @InputArgument String city,
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByCityOffsetPagination(city={})", city);
-        Objects.requireNonNull(city, "City is required");
-        return buildOffsetPage(
-                eventService.findEventsByCity(city),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    @DgsQuery
-    public Mono<EventOffsetPage> eventsByDateRangeOffsetPagination(
-            @InputArgument String startDate,
-            @InputArgument String endDate,
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByDateRangeOffsetPagination(startDate={}, endDate={})", startDate, endDate);
-        Objects.requireNonNull(startDate, "Start date is required");
-        Objects.requireNonNull(endDate, "End date is required");
-        LocalDateTime start = parseDateTime(startDate);
-        LocalDateTime end = parseDateTime(endDate);
-        return buildOffsetPage(
-                eventService.findEventsByDateRange(start, end),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    @DgsQuery
-    public Mono<EventOffsetPage> eventsByPriceRangeOffsetPagination(
-            @InputArgument BigDecimal minPrice,
-            @InputArgument BigDecimal maxPrice,
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByPriceRangeOffsetPagination(minPrice={}, maxPrice={})", minPrice, maxPrice);
-        return buildOffsetPage(
-                eventService.findEventsByPriceRange(minPrice, maxPrice),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    @DgsQuery
-    public Mono<EventOffsetPage> featuredEventsOffsetPagination(
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: featuredEventsOffsetPagination");
-        return buildOffsetPage(
-                eventService.findFeaturedEvents(),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    @DgsQuery
-    public Mono<EventOffsetPage> freeEventsOffsetPagination(
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: freeEventsOffsetPagination");
-        return buildOffsetPage(
-                eventService.findFreeEvents(),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
-
-    /**
-     * Get events by organizer with offset pagination.
-     *
-     * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService to validate
-     * that the requesting user is either the organizer or a team member with access.</p>
-     */
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
-    public Mono<EventOffsetPage> eventsByOrganizerOffsetPagination(
-            @InputArgument String organizerId,
-            @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByOrganizerOffsetPagination(organizerId={})", organizerId);
-        Objects.requireNonNull(organizerId, "Organizer ID is required");
-        return buildOffsetPage(
-                eventService.findEventsByOrganizer(organizerId),
-                pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
-    }
 
     // ==========================================
     // Admin Event Queries - Offset Pagination
@@ -305,10 +127,10 @@ public class EventQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventOffsetPage> eventsOffsetPagination(
+    public Mono<EventOffsetPage> events(
             @InputArgument EventFilterInput filter,
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: eventsOffsetPagination");
+        log.debug("GraphQL query: events");
         return buildOffsetPage(
                 eventService.findAllEvents(),
                 pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
@@ -321,11 +143,11 @@ public class EventQueryResolver {
      * that the requesting user is either the organizer or a team member with access.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
-    public Mono<EventOffsetPage> draftEventsOffsetPagination(
+    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN', #organizerId)")
+    public Mono<EventOffsetPage> draftEvents(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: draftEventsOffsetPagination(organizerId={})", organizerId);
+        log.debug("GraphQL query: draftEvents(organizerId={})", organizerId);
         Objects.requireNonNull(organizerId, "Organizer ID is required");
         return buildOffsetPage(
                 eventService.findDraftEventsByOrganizer(organizerId),
@@ -334,9 +156,9 @@ public class EventQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventOffsetPage> pendingApprovalEventsOffsetPagination(
+    public Mono<EventOffsetPage> pendingApprovalEvents(
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: pendingApprovalEventsOffsetPagination");
+        log.debug("GraphQL query: pendingApprovalEvents");
         return buildOffsetPage(
                 eventService.findPendingApprovalEvents(),
                 pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
@@ -344,9 +166,9 @@ public class EventQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventOffsetPage> overdueApprovalEventsOffsetPagination(
+    public Mono<EventOffsetPage> overdueApprovalEvents(
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: overdueApprovalEventsOffsetPagination");
+        log.debug("GraphQL query: overdueApprovalEvents");
         return buildOffsetPage(
                 eventService.findOverdueApprovalEvents(),
                 pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
@@ -354,9 +176,9 @@ public class EventQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventOffsetPage> approvedNotPublishedEventsOffsetPagination(
+    public Mono<EventOffsetPage> approvedNotPublishedEvents(
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: approvedNotPublishedEventsOffsetPagination");
+        log.debug("GraphQL query: approvedNotPublishedEvents");
         return buildOffsetPage(
                 eventService.findApprovedNotPublishedEvents(),
                 pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
@@ -364,10 +186,10 @@ public class EventQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventOffsetPage> eventsByStatusOffsetPagination(
+    public Mono<EventOffsetPage> eventsByStatus(
             @InputArgument EventStatus status,
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByStatusOffsetPagination(status={})", status);
+        log.debug("GraphQL query: eventsByStatus(status={})", status);
         Objects.requireNonNull(status, "Status is required");
         return buildOffsetPage(
                 eventService.findEventsByStatus(status),
@@ -376,9 +198,9 @@ public class EventQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventOffsetPage> cancelledEventsOffsetPagination(
+    public Mono<EventOffsetPage> cancelledEvents(
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: cancelledEventsOffsetPagination");
+        log.debug("GraphQL query: cancelledEvents");
         return buildOffsetPage(
                 eventService.findCancelledEvents(),
                 pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
@@ -386,109 +208,13 @@ public class EventQueryResolver {
 
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventOffsetPage> completedEventsOffsetPagination(
+    public Mono<EventOffsetPage> completedEvents(
             @InputArgument OffsetPaginationInput pagination) {
-        log.debug("GraphQL query: completedEventsOffsetPagination");
+        log.debug("GraphQL query: completedEvents");
         return buildOffsetPage(
                 eventService.findCompletedEvents(),
                 pagination != null ? pagination : new OffsetPaginationInput(0, 20, "createdAt", OffsetPaginationInput.SortDirection.DESC));
     }
-
-    // ==========================================
-    // Admin Event Queries - Cursor Pagination
-    // ==========================================
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventConnection> eventsCursorPagination(
-            @InputArgument EventFilterInput filter,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: eventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findAllEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    /**
-     * Get draft events for an organizer with cursor pagination.
-     *
-     * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService to validate
-     * that the requesting user is either the organizer or a team member with access.</p>
-     */
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
-    public Mono<EventConnection> draftEventsCursorPagination(
-            @InputArgument String organizerId,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: draftEventsCursorPagination(organizerId={})", organizerId);
-        Objects.requireNonNull(organizerId, "Organizer ID is required");
-        return buildCursorConnection(
-                eventService.findDraftEventsByOrganizer(organizerId),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventConnection> pendingApprovalEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: pendingApprovalEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findPendingApprovalEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventConnection> overdueApprovalEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: overdueApprovalEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findOverdueApprovalEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventConnection> approvedNotPublishedEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: approvedNotPublishedEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findApprovedNotPublishedEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventConnection> eventsByStatusCursorPagination(
-            @InputArgument EventStatus status,
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: eventsByStatusCursorPagination(status={})", status);
-        Objects.requireNonNull(status, "Status is required");
-        return buildCursorConnection(
-                eventService.findEventsByStatus(status),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventConnection> cancelledEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: cancelledEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findCancelledEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<EventConnection> completedEventsCursorPagination(
-            @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: completedEventsCursorPagination");
-        return buildCursorConnection(
-                eventService.findCompletedEvents(),
-                pagination != null ? pagination : new CursorPaginationInput());
-    }
-
     // ==========================================
     // Count Queries
     // ==========================================
@@ -506,7 +232,7 @@ public class EventQueryResolver {
      * that the requesting user is either the organizer or a team member with access.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
+    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN', #organizerId)")
     public Mono<Integer> eventCountByOrganizer(@InputArgument String organizerId) {
         log.debug("GraphQL query: eventCountByOrganizer(organizerId={})", organizerId);
         Objects.requireNonNull(organizerId, "Organizer ID is required");
@@ -622,6 +348,26 @@ public class EventQueryResolver {
     /**
      * Build EventConnection from a Flux of events.
      */
+    /** A discovery page as a Relay connection; each edge's cursor resumes the feed after it. */
+    private static EventConnection connection(EventDiscovery.Page page) {
+        if (page.events().isEmpty()) {
+            return EventConnection.empty();
+        }
+        List<EventEdge> edges = new java.util.ArrayList<>();
+        for (int i = 0; i < page.events().size(); i++) {
+            edges.add(new EventEdge(EventDiscovery.cursor(page.start() + i + 1), page.events().get(i)));
+        }
+        EventConnection connection = new EventConnection();
+        connection.setEdges(edges);
+        connection.setPageInfo(PageInfo.builder()
+                .hasNextPage(page.hasNext())
+                .hasPreviousPage(page.start() > 0)
+                .startCursor(edges.get(0).getCursor())
+                .endCursor(edges.get(edges.size() - 1).getCursor())
+                .build());
+        return connection;
+    }
+
     private Mono<EventConnection> buildCursorConnection(Flux<Event> eventFlux, CursorPaginationInput pagination) {
         int limit = pagination.getLimit();
 
@@ -677,24 +423,24 @@ public class EventQueryResolver {
     }
 
     /**
-     * Parse date string to LocalDateTime.
+     * Parse date string to Instant.
      * Supports ISO 8601 format (e.g., "2024-01-15T00:00:00")
      */
-    private LocalDateTime parseDateTime(String dateStr) {
+    private Instant parseDateTime(String dateStr) {
         if (dateStr == null || dateStr.isBlank()) {
-            return LocalDateTime.now();
+            return clock.instant();
         }
 
         try {
             // Try ISO_DATE_TIME first (e.g., "2024-01-15T10:30:00")
-            return LocalDateTime.parse(dateStr, DateTimeFormatter.ISO_DATE_TIME);
+            return PlatformTime.parseLocal(dateStr, DateTimeFormatter.ISO_DATE_TIME);
         } catch (Exception e1) {
             try {
                 // Try ISO_LOCAL_DATE and add time (e.g., "2024-01-15")
-                return LocalDateTime.parse(dateStr + "T00:00:00", DateTimeFormatter.ISO_DATE_TIME);
+                return PlatformTime.parseLocal(dateStr + "T00:00:00", DateTimeFormatter.ISO_DATE_TIME);
             } catch (Exception e2) {
                 log.warn("Failed to parse date: {}", dateStr);
-                return LocalDateTime.now();
+                return clock.instant();
             }
         }
     }

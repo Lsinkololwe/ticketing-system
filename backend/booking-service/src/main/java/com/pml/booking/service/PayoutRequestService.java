@@ -1,10 +1,11 @@
 package com.pml.booking.service;
 
+
 import com.pml.booking.domain.model.PayoutRequest;
-import com.pml.booking.web.graphql.dto.CreatePayoutRequestInput;
 import com.pml.shared.constants.PayoutRequestStatus;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import java.util.Collection;
 
 /**
  * Service for managing payout requests to organizers.
@@ -64,8 +65,7 @@ public interface PayoutRequestService {
      * Find an existing request by its client-supplied idempotency key.
      *
      * <p>Lets a retried create return the ORIGINAL payout instead of producing
-     * a second one for the same money. Required by
-     * {@code specs/finance/003-payouts-and-settlement}.
+     * a second one for the same money.
      */
     Mono<PayoutRequest> findByIdempotencyKey(String idempotencyKey);
 
@@ -96,6 +96,15 @@ public interface PayoutRequestService {
     Flux<PayoutRequest> findByEventId(String eventId);
 
     /**
+     * Whether the event has a payout request that has not yet reached a terminal
+     * state — the answer catalog's event cancellation refuses on until it resolves.
+     *
+     * @param eventId the event
+     * @return true while any of the event's payout requests is not {@link PayoutRequestStatus#isFinal()}
+     */
+    Mono<Boolean> hasOpenPayoutRequest(String eventId);
+
+    /**
      * Retrieves all payout requests.
      * Used for admin payout request list with filtering.
      *
@@ -119,7 +128,7 @@ public interface PayoutRequestService {
      * @param since The date to filter from
      * @return Flux of recently resolved payout requests
      */
-    Flux<PayoutRequest> findResolvedAfter(java.time.LocalDateTime since);
+    Flux<PayoutRequest> findResolvedAfter(java.time.Instant since);
 
     /**
      * Counts payout requests by issue type.
@@ -135,80 +144,21 @@ public interface PayoutRequestService {
     // ========================================================================
 
     /**
-     * Creates a new payout request for an organizer.
-     * Validates bank account exists and calculates platform/processing fees.
-     *
-     * @param input The payout request creation input
-     * @param requestedBy The user ID who requested the payout
-     * @return Mono containing the created payout request
-     */
-    Mono<PayoutRequest> create(CreatePayoutRequestInput input, String requestedBy);
-
-    /**
-     * Approves a pending payout request.
-     * Changes status from PENDING to APPROVED.
-     *
-     * @param id The payout request ID
-     * @param approverId The admin user who approved
-     * @param notes Optional approval notes
-     * @return Mono containing the approved payout request
-     */
-    Mono<PayoutRequest> approve(String id, String approverId, String notes);
-
-    /**
-     * Rejects a payout request.
-     * Changes status to REJECTED and records reason.
-     *
-     * @param id The payout request ID
-     * @param rejectedBy The admin user who rejected
-     * @param reason The rejection reason
-     * @return Mono containing the rejected payout request
-     */
-    Mono<PayoutRequest> reject(String id, String rejectedBy, String reason);
-
-    /**
-     * Starts processing an approved payout request.
-     * Changes status from APPROVED to PROCESSING.
-     *
-     * @param id The payout request ID
-     * @param processedBy The admin user who initiated processing
-     * @return Mono containing the payout request being processed
-     */
-    Mono<PayoutRequest> process(String id, String processedBy);
-
-    /**
-     * Completes a payout request after successful bank transfer.
-     * Records accounting entries (payout and disbursement) and changes status to COMPLETED.
-     *
-     * <p>Accounting entries created:</p>
-     * <ul>
-     *   <li>DR Event Escrow, CR Organizer Payouts Payable (payout recorded)</li>
-     *   <li>DR Organizer Payouts Payable, CR Bank Account (disbursement)</li>
-     * </ul>
-     *
-     * @param id The payout request ID
-     * @param bankReference The bank transaction reference
-     * @param completedBy The admin user who completed the payout
-     * @return Mono containing the completed payout request
-     */
-    Mono<PayoutRequest> complete(String id, String bankReference, String completedBy);
-
-    /**
-     * Cancels a payout request.
-     * Can only cancel requests in PENDING or APPROVED status.
-     *
-     * @param id The payout request ID
-     * @param cancelledBy The user who cancelled
-     * @param reason The cancellation reason
-     * @return Mono containing the cancelled payout request
-     */
-    Mono<PayoutRequest> cancel(String id, String cancelledBy, String reason);
-
-    /**
      * Saves a payout request (create or update).
      *
      * @param payoutRequest The payout request to save
      * @return Mono containing the saved payout request
      */
     Mono<PayoutRequest> save(PayoutRequest payoutRequest);
+
+    /**
+     * Payout requests across a set of organizations — the caller's own.
+     *
+     * <p>An empty set matches nothing. That is the point: a caller with no memberships must not
+     * fall through to an unfiltered query.
+     */
+    Flux<PayoutRequest> findByOrganizationIdIn(Collection<String> organizationIds);
+
+    /** As above, narrowed to one status. */
+    Flux<PayoutRequest> findByOrganizationIdInAndStatus(Collection<String> organizationIds, PayoutRequestStatus status);
 }

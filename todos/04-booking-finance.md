@@ -1,5 +1,7 @@
 # Phase 4: Booking & Finance Management
 
+> **HISTORICAL — superseded by `specs/tasks` FE-* items; kept for reference. Role names in this file are pre-spec** (see `specs/` for the current role and permission vocabulary). Unticked boxes here are not a backlog.
+
 ## Overview
 Implement comprehensive booking management, refund processing, financial reporting, and organizer settlement capabilities.
 

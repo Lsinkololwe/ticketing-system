@@ -1,5 +1,7 @@
 package com.pml.booking.security;
 
+import com.pml.booking.domain.model.RefundRequest;
+
 import com.pml.booking.service.RefundService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,18 +26,26 @@ public class RefundSecurityService {
     /**
      * Check if the authenticated user is the requester of the refund.
      */
-    public Mono<Boolean> isRefundRequestOwner(String requestId, Authentication authentication) {
+    /** Whether the caller requested the refund with this document id. */
+    public Mono<Boolean> isRefundRequestOwner(String id, Authentication authentication) {
+        return requestedByCaller(refundService.findById(id), authentication);
+    }
+
+    /** Whether the caller requested the refund with this business request id. */
+    public Mono<Boolean> isRefundRequestOwnerByRequestId(String requestId, Authentication authentication) {
+        return requestedByCaller(refundService.findByRequestId(requestId), authentication);
+    }
+
+    private Mono<Boolean> requestedByCaller(Mono<RefundRequest> refund, Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
             return Mono.just(false);
         }
-
         String userId = extractUserId(authentication);
         if (userId == null) {
             return Mono.just(false);
         }
-
-        return refundService.findById(requestId)
-                .map(refundRequest -> refundRequest.getRequestedBy().equals(userId))
+        return refund
+                .map(refundRequest -> userId.equals(refundRequest.getRequestedBy()))
                 .defaultIfEmpty(false)
                 .onErrorReturn(false);
     }
@@ -43,7 +53,7 @@ public class RefundSecurityService {
     private String extractUserId(Authentication authentication) {
         Object principal = authentication.getPrincipal();
         if (principal instanceof Jwt jwt) {
-            return jwt.getSubject();
+            return com.pml.shared.security.AccountIdentity.userIdOf(jwt);
         }
         return null;
     }

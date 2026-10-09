@@ -41,64 +41,62 @@ public enum PaymentAttemptStatus {
      * Record created, API not yet called.
      * This state survives crashes - depositId is stored before API call.
      */
-    CREATED("Created", false, true),
+    CREATED("Created", false),
 
     /**
      * API called, PawaPay returned ACCEPTED.
      * Waiting for customer to approve on phone (up to 15 minutes).
      */
-    PENDING_APPROVAL("Pending Approval", false, true),
+    PENDING_APPROVAL("Pending Approval", false),
 
     /**
      * PawaPay is processing the payment.
      * Intermediate state between approval and completion.
      */
-    PROCESSING("Processing", false, true),
+    PROCESSING("Processing", false),
 
     /**
      * Payment confirmed by PawaPay.
      * Ready for fulfillment (escrow, commission, journal).
      */
-    CONFIRMED("Confirmed", false, true),
+    CONFIRMED("Confirmed", false),
 
     /**
      * Fulfillment completed successfully.
      * Escrow credited, commission created, journal entry posted.
      */
-    COMPLETED("Completed", true, false),
+    COMPLETED("Completed", true),
 
     /**
      * Payment failed.
      * Customer declined, insufficient funds, timeout on provider side, etc.
      */
-    FAILED("Failed", true, false),
+    FAILED("Failed", true),
 
     /**
      * PawaPay rejected our request.
      * Invalid phone number, unsupported provider, invalid amount, etc.
      */
-    REJECTED("Rejected", true, false),
+    REJECTED("Rejected", true),
 
     /**
      * 15-minute timeout reached without confirmation.
      * Customer did not approve the payment on their phone.
      */
-    EXPIRED("Expired", true, false),
+    EXPIRED("Expired", true),
 
     /**
      * Cancelled by user or system.
      * User navigated away, session ended, or admin cancelled.
      */
-    CANCELLED("Cancelled", true, false);
+    CANCELLED("Cancelled", true);
 
     private final String displayName;
     private final boolean isFinal;
-    private final boolean canTransition;
 
-    PaymentAttemptStatus(String displayName, boolean isFinal, boolean canTransition) {
+    PaymentAttemptStatus(String displayName, boolean isFinal) {
         this.displayName = displayName;
         this.isFinal = isFinal;
-        this.canTransition = canTransition;
     }
 
     public String getDisplayName() {
@@ -110,13 +108,6 @@ public enum PaymentAttemptStatus {
      */
     public boolean isFinal() {
         return isFinal;
-    }
-
-    /**
-     * Whether this status can transition to another status.
-     */
-    public boolean canTransition() {
-        return canTransition;
     }
 
     /**
@@ -137,9 +128,11 @@ public enum PaymentAttemptStatus {
     static {
         VALID_TRANSITIONS = new java.util.EnumMap<>(PaymentAttemptStatus.class);
 
-        // CREATED can go to: PENDING_APPROVAL, REJECTED, FAILED, CANCELLED
+        // CREATED can go to: PENDING_APPROVAL (a buyer must approve a collection on their phone),
+        // PROCESSING (a refund, payout or verification deposit the provider accepted), REJECTED,
+        // FAILED, CANCELLED
         VALID_TRANSITIONS.put(CREATED, EnumSet.of(
-                PENDING_APPROVAL, REJECTED, FAILED, CANCELLED
+                PENDING_APPROVAL, PROCESSING, REJECTED, FAILED, CANCELLED
         ));
 
         // PENDING_APPROVAL can go to: PROCESSING, CONFIRMED, FAILED, EXPIRED, CANCELLED

@@ -120,6 +120,25 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            ET-PLT-001 R7 · the JWT rejection contract.
+
+            StubIssuer and JwtRejectionContract live in shared-library's test-jar so that the
+            four checks are asserted identically here, in booking and in identity. Three
+            copies of four assertions is how one of them quietly ends up checking three.
+        -->
+        <dependency>
+            <groupId>com.pml</groupId>
+            <artifactId>shared-library</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-test</artifactId>
@@ -140,13 +159,11 @@
             <artifactId>mongodb</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Flow B integration tests: Spring Modulith event registry runs on PostgreSQL -->
         <!-- Flow B integration tests: real Keycloak with the production realm,
              themes and the keycloak-extensions SPI jar -->
         <dependency>
             <groupId>com.github.dasniko</groupId>
             <artifactId>testcontainers-keycloak</artifactId>
-            <version>${testcontainers-keycloak.version}</version>
             <scope>test</scope>
         </dependency>
         <!-- Flow B integration tests: observable binding for StreamBridge.
@@ -181,7 +198,15 @@
         <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-admin-client</artifactId>
-            <version>${keycloak.version}</version>
+            <version>${keycloak-admin-client.version}</version>
+            <exclusions>
+                <!-- 26.0.12 declares Jackson 2.21; the platform runs Boot's 2.19 (see root pom) -->
+                <exclusion><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId></exclusion>
+                <exclusion><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jdk8</artifactId></exclusion>
+                <exclusion><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-core</artifactId></exclusion>
+                <exclusion><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-annotations</artifactId></exclusion>
+                <exclusion><groupId>com.fasterxml.jackson.jakarta.rs</groupId><artifactId>jackson-jakarta-rs-yaml-provider</artifactId></exclusion>
+            </exclusions>
         </dependency>
 
         <!-- Redis for OTP storage and caching -->
@@ -190,24 +215,10 @@
             <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
         </dependency>
 
-        <!-- Spring Modulith -->
-
-        <!-- JDBC and PostgreSQL for Event Publication Registry -->
-
         <!-- Azure Service Bus for cross-service events -->
         <dependency>
             <groupId>com.azure.spring</groupId>
             <artifactId>spring-cloud-azure-stream-binder-servicebus</artifactId>
-        </dependency>
-
-        <!-- Mongock - MongoDB Migration Tool (Apache 2.0 License - Free) -->
-        <dependency>
-            <groupId>io.mongock</groupId>
-            <artifactId>mongock-springboot-v3</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.mongock</groupId>
-            <artifactId>mongodb-reactive-driver</artifactId>
         </dependency>
 
         <!-- Spring Boot DevTools for automatic restart during development -->
@@ -230,6 +241,25 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
+        <!-- ET-PLT-015 · durable execution: workflow client, worker factory, auto-discovery -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-spring-boot-starter</artifactId>
+            <!-- The in-process test server belongs on the test classpath only; it is declared
+                 below at test scope, and the starter's auto-configuration is conditional on it. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>io.temporal</groupId>
+                    <artifactId>temporal-testing</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- ET-PLT-006 layer 3 · time-skipping TestWorkflowEnvironment -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -250,7 +280,7 @@
                         engine since 19.03. Override with -Ddocker.api.version=
                         if a newer feature is ever needed.
                     -->
-                    <argLine>-Dapi.version=${docker.api.version}</argLine>
+                    <argLine>@{argLine} -Dapi.version=${docker.api.version}</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -267,23 +297,22 @@
             </plugin>
             <!-- Container-backed integration tests (*IT) run in `verify`, not `test`,
                  so `mvn test` stays fast and Docker-free. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-failsafe-plugin</artifactId>
-                <configuration>
-                    <includes>
-                        <include>**/*IT.java</include>
-                    </includes>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
+            <!--
+                ET-PLT-005 · the maven-failsafe-plugin binding was removed on 2026-09-02.
+
+                It included `**/*IT.java` and there is not one such file anywhere in the backend —
+                this corpus names its layer-5 tests `*Test` and groups them by `@Tag`, running them
+                under surefire. identity-service was also the only one of five modules to bind it.
+
+                Dead configuration would be merely untidy; this was not. Every spec's stated verify
+                command is `mvn -f backend verify -Dgroups=<SPEC> -DfailIfNoTests=true`, and
+                failsafe reads that same flag — so it failed with "No tests were executed!" on
+                identity-service for EVERY spec, always, regardless of how much passed. The one
+                command the corpus uses to decide a spec is done could not succeed. See F-022.
+
+                If `*IT` naming is ever adopted, add failsafe to the PARENT so all five modules get
+                it, rather than to one.
+            -->
         </plugins>
     </build>
 </project>

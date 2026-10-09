@@ -1,23 +1,26 @@
 package com.pml.identity.domain.model;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.valueobject.OrganizationRole;
+import com.pml.identity.domain.valueobject.OrganizationSettings;
+import com.pml.shared.security.Permission;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -40,16 +43,12 @@ import java.util.Set;
  * 3. Remove denied permissions
  * 4. Event-level access can override (see EventAccessGrant)
  */
-@Document(collection = "organization_members")
+@Document(collection = IdentityCollections.ORGANIZATION_MEMBERS)
+@TypeAlias("organization_members")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "user_org_idx", def = "{'userId': 1, 'organizationId': 1}", unique = true),
-    @CompoundIndex(name = "org_role_idx", def = "{'organizationId': 1, 'role': 1}"),
-    @CompoundIndex(name = "org_status_idx", def = "{'organizationId': 1, 'status': 1}")
-})
 public class OrganizationMember {
 
     @Id
@@ -59,14 +58,12 @@ public class OrganizationMember {
      * User ID of the member
      */
     @NotBlank(message = "User ID is required")
-    @Indexed
     private String userId;
 
     /**
      * Organization ID
      */
     @NotBlank(message = "Organization ID is required")
-    @Indexed
     private String organizationId;
 
     /**
@@ -76,15 +73,14 @@ public class OrganizationMember {
     private OrganizationRole role;
 
     /**
-     * Custom permissions that add to role defaults
-     * Example: ["PAYOUT_REQUEST"] grants a Manager payout access
+     * Permission codes added to the role's, e.g. {@code ["analytics:view"]} for a contributor
      */
     @Builder.Default
     private Set<String> customPermissions = new HashSet<>();
 
     /**
-     * Permissions explicitly denied (override role defaults)
-     * Example: ["EVENT_DELETE"] prevents deletion even for Admins
+     * Permission codes withheld from this member even when the role carries them,
+     * e.g. {@code ["event:delete"]} for an admin
      */
     @Builder.Default
     private Set<String> deniedPermissions = new HashSet<>();
@@ -110,6 +106,32 @@ public class OrganizationMember {
      */
     private Instant lastActiveAt;
 
+    /**
+     * When the membership became {@code REMOVED}.
+     *
+     * <p>Removal retains the record rather than deleting it, so this is what
+     * distinguishes a membership that ended from one that never happened — and it is what a
+     * re-invited member's new row is dated against.
+     */
+    /**
+     * The Keycloak group mirror is behind this document.
+     *
+     * <p>Keycloak mirrors membership; it never owns it. So a group write that fails must not fail
+     * the membership change — an organizer removing somebody cannot be blocked by a third party
+     * being down, and that is the one operation you least want blocked. The change commits, this
+     * flag is set, and the sweep repairs the mirror afterwards.
+     *
+     * <p>Without the flag a failed group write is a log line: the drift is real, invisible, and
+     * unrepairable except by reconciling every member on the platform.
+     *
+     * <p>Indexed through {@code IdentityIndexInitializer} rather than by an
+     * annotation here: {@code @Indexed} creates an index outside the registry, where nothing
+     * checks that it exists on a live database.
+     */
+    private boolean mirrorPending;
+
+    private Instant removedAt;
+
     @CreatedDate
     private Instant createdAt;
 
@@ -131,44 +153,31 @@ public class OrganizationMember {
     }
 
     /**
-     * Check if member has a specific permission.
-     * Resolution order: denied (revokes) → custom (grants) → role default.
-     * This is the actor's authority, independent of membership status.
+     * What this member may do in an organization with {@code settings}: the role's permissions,
+     * plus the member's custom permissions, minus the denied ones. A denial always wins, and a
+     * stored code the catalogue does not know grants nothing. Membership status is not considered
+     * here; callers check {@link #isActive()}.
      */
-    public boolean hasPermission(String permission) {
-        // Explicitly denied takes precedence
-        if (deniedPermissions != null && deniedPermissions.contains(permission)) {
-            return false;
+    public Set<Permission> permissions(OrganizationSettings settings) {
+        EnumSet<Permission> effective = EnumSet.noneOf(Permission.class);
+        if (role != null) {
+            effective.addAll(role.permissions(settings));
         }
-        // Custom permissions add to role
-        if (customPermissions != null && customPermissions.contains(permission)) {
-            return true;
-        }
-        // Fall back to the role's default permissions
-        return role != null && role.grants(permission);
+        effective.addAll(known(customPermissions));
+        effective.removeAll(known(deniedPermissions));
+        return effective;
     }
 
-    /**
-     * Whether this actor can perform an action: the member must be active AND hold the
-     * permission. This is the "can the actor do this?" half of an authorization decision;
-     * the "can the organization do this?" half lives on {@link Organization#canPerform}.
-     */
-    public boolean canPerform(String permission) {
-        return isActive() && hasPermission(permission);
+    public boolean hasPermission(Permission permission, OrganizationSettings settings) {
+        return permission != null && permissions(settings).contains(permission);
     }
 
-    /**
-     * The actor's effective permission set: role defaults, plus custom, minus denied.
-     */
-    public Set<String> effectivePermissions() {
-        Set<String> perms = role != null ? role.permissions() : new HashSet<>();
-        if (customPermissions != null) {
-            perms.addAll(customPermissions);
+    private static Set<Permission> known(Set<String> codes) {
+        EnumSet<Permission> known = EnumSet.noneOf(Permission.class);
+        if (codes != null) {
+            codes.forEach(code -> Permission.fromCode(code).ifPresent(known::add));
         }
-        if (deniedPermissions != null) {
-            perms.removeAll(deniedPermissions);
-        }
-        return perms;
+        return known;
     }
 
     /**

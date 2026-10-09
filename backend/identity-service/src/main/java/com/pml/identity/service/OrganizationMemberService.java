@@ -1,5 +1,6 @@
 package com.pml.identity.service;
 
+import com.pml.shared.security.Permission;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.OrganizationRole;
@@ -31,11 +32,6 @@ public interface OrganizationMemberService {
     Mono<OrganizationMember> findByUserAndOrganization(String userId, String organizationId);
 
     /**
-     * Check if user is a member of organization
-     */
-    Mono<Boolean> isMember(String userId, String organizationId);
-
-    /**
      * Check if user is an active member of organization
      */
     Mono<Boolean> isActiveMember(String userId, String organizationId);
@@ -49,21 +45,6 @@ public interface OrganizationMemberService {
      * Find all members of an organization
      */
     Flux<OrganizationMember> findByOrganization(String organizationId);
-
-    /**
-     * Find members by organization and role
-     */
-    Flux<OrganizationMember> findByOrganizationAndRole(
-            String organizationId,
-            OrganizationRole role,
-            MemberStatus status,
-            Pageable pageable
-    );
-
-    /**
-     * Find active members of an organization
-     */
-    Flux<OrganizationMember> findActiveMembers(String organizationId, Pageable pageable);
 
     /**
      * Find organization owner
@@ -81,23 +62,9 @@ public interface OrganizationMemberService {
     Flux<OrganizationMember> findActiveByUser(String userId);
 
     /**
-     * Count members in organization
-     */
-    Mono<Long> countMembers(String organizationId);
-
-    /**
      * Count active members in organization
      */
     Mono<Long> countActiveMembers(String organizationId);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Write Operations
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Create owner member (internal - called when organization is created)
-     */
-    Mono<OrganizationMember> createOwner(String organizationId, String userId);
 
     /**
      * Create member from accepted invitation
@@ -144,29 +111,15 @@ public interface OrganizationMemberService {
      */
     Mono<Void> leave(String userId, String organizationId);
 
-    /**
-     * Transfer ownership from current owner to new owner
-     */
-    Mono<OrganizationMember> transferOwnership(String organizationId, String newOwnerId);
-
-    /**
-     * Update last active timestamp
-     */
-    Mono<OrganizationMember> updateLastActive(String memberId);
-
     // ─────────────────────────────────────────────────────────────────────
     // Permission Operations
     // ─────────────────────────────────────────────────────────────────────
 
-    /**
-     * Check if user has permission in organization
-     */
-    Mono<Boolean> hasPermission(String userId, String organizationId, String permission);
+    /** Whether the user holds {@code permission} in the organization. */
+    Mono<Boolean> hasPermission(String userId, String organizationId, Permission permission);
 
-    /**
-     * Get user's role in organization
-     */
-    Mono<OrganizationRole> getUserRole(String userId, String organizationId);
+    /** Completes when the user holds {@code permission} in the organization; otherwise refuses with {@code ACTOR_NOT_PERMITTED}. */
+    Mono<Void> requirePermission(String userId, String organizationId, Permission permission);
 
     /**
      * Check if user can modify another member

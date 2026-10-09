@@ -1,14 +1,17 @@
 package com.pml.booking.domain.model;
 
+import java.time.LocalDate;
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -31,7 +34,8 @@ import java.time.Instant;
  * 5. EXPIRED - Payment not completed within timeout
  * 6. CANCELLED - User cancelled payment
  */
-@Document(collection = "payment_intents")
+@Document(collection = BookingCollections.PAYMENT_INTENTS)
+@TypeAlias("payment_intents")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -46,7 +50,6 @@ public class PaymentIntent {
      * Format: userId_eventId_timestamp
      */
     @NotBlank(message = "Idempotency key is required")
-    @Indexed(unique = true)
     private String idempotencyKey;
 
     /**
@@ -54,42 +57,47 @@ public class PaymentIntent {
      * Format: TXN-YYYYMMDD-XXXXXXXX
      */
     @NotBlank(message = "Transaction reference is required")
-    @Indexed(unique = true)
     private String transactionRef;
 
     /**
      * pawaPay's deposit/transaction ID returned after creation.
      */
-    @Indexed
     private String providerTransactionId;
+
+    /**
+     * The platform's own reference, sent to the provider as its deposit id.
+     *
+     * <p>Minted when the intent is created, so it exists — and is committed — before any provider
+     * call. A callback names this id, which is what lets the platform find the
+     * intent the money belongs to; a reference generated at call time and not stored would leave
+     * every callback uncorrelatable.</p>
+     *
+     * <p>Unique through {@code BookingIndexInitializer} (partial on {@code $type: string}), not
+     * through an annotation: {@code BookingIndexInitializer} is the only index authority.</p>
+     */
+    private String depositId;
 
     // References
 
     /**
      * The reservation this intent is paying for.
      *
-     * <p>Was {@code ticketId}, and the change is the point of ET-TKT-001 R7. A
-     * ticket cannot be the subject of a payment because, under this spec, no
-     * ticket exists yet — tickets are written inside the confirmation
-     * transaction, after the money has arrived. Pointing an intent at a ticket
-     * forced the old code to create one in {@code PENDING_PAYMENT} first, which
-     * is a ticket the platform has not been paid for and cannot account for.
+     * <p>A payment's subject is a reservation, not a ticket: no
+     * ticket exists until the confirmation transaction runs, after the money has
+     * arrived. A ticket written before payment would be one the platform has not
+     * been paid for and cannot account for.
      *
      * <p>Unique, not merely indexed: a reservation has at most one intent, and
-     * ET-TKT-001 R6 requires that a retried purchase produce one charge rather
-     * than a second. Enforcing that here means a duplicate cannot be written
+     * a retried purchase must produce one charge rather than a second. Enforcing that here means a duplicate cannot be written
      * even if the application-level guard is bypassed.
      */
     @NotBlank(message = "Reservation ID is required")
-    @Indexed(unique = true)
     private String reservationId;
 
     @NotBlank(message = "Event ID is required")
-    @Indexed
     private String eventId;
 
     @NotBlank(message = "User ID is required")
-    @Indexed
     private String userId;
 
     // Amount
@@ -119,7 +127,6 @@ public class PaymentIntent {
 
     // Status
     @NotNull(message = "Status is required")
-    @Indexed
     private PaymentStatus status;
 
     private String failureReason;
@@ -144,6 +151,19 @@ public class PaymentIntent {
     private Instant expiresAt;
 
     private Instant processedAt;
+
+    /**
+     * The provider refund id of late money (ROADMAP D-22), minted once with the first refund
+     * request and sent unchanged on every retry, so the provider treats a repeat as the refund it
+     * already holds. Null unless the payment confirmed after its reservation lapsed.
+     */
+    private String lateRefundId;
+
+    /** REQUESTED, PROCESSING, COMPLETED or FAILED; moved only by compare-and-set. */
+    private String lateRefundStatus;
+
+    /** Why the automatic refund of late money stopped, when it did. */
+    private String lateRefundFailure;
 
     @LastModifiedDate
     private Instant updatedAt;
@@ -184,52 +204,24 @@ public class PaymentIntent {
                status == PaymentStatus.REFUNDED;
     }
 
-    public boolean isExpired() {
-        return expiresAt != null && Instant.now().isAfter(expiresAt);
+    public boolean isExpired(Instant now) {
+        return expiresAt != null && now.isAfter(expiresAt);
     }
 
     public boolean canRetry() {
         return status == PaymentStatus.FAILED && pollAttempts < 3;
     }
 
-    public void markProcessing(String providerTxnId) {
-        this.providerTransactionId = providerTxnId;
-        this.status = PaymentStatus.PROCESSING;
-    }
-
-    public void markSucceeded() {
-        this.status = PaymentStatus.SUCCEEDED;
-        this.processedAt = Instant.now();
-    }
-
-    public void markFailed(String reason, String code) {
-        this.status = PaymentStatus.FAILED;
-        this.failureReason = reason;
-        this.failureCode = code;
-        this.processedAt = Instant.now();
-    }
-
-    public void markExpired() {
-        this.status = PaymentStatus.EXPIRED;
-        this.failureReason = "Payment timeout expired";
-        this.processedAt = Instant.now();
-    }
-
-    public void recordWebhook() {
-        this.webhookAttempts++;
-        this.lastWebhookAt = Instant.now();
-    }
-
-    public void recordPoll() {
+    public void recordPoll(Instant now) {
         this.pollAttempts++;
-        this.lastPolledAt = Instant.now();
+        this.lastPolledAt = now;
     }
 
     /**
      * Generate a unique transaction reference.
      */
-    public static String generateTransactionRef() {
-        String date = java.time.LocalDate.now().toString().replace("-", "");
+    public static String generateTransactionRef(LocalDate today) {
+        String date = today.toString().replace("-", "");
         String random = java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         return "TXN-" + date + "-" + random;
     }

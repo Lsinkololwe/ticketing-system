@@ -1,6 +1,6 @@
 package com.pml.identity.service.impl;
 
-import com.pml.identity.domain.RequiredDocuments;
+import com.pml.identity.domain.valueobject.RequiredDocuments;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.exception.MissingRequiredDocumentsException;
@@ -8,28 +8,24 @@ import com.pml.identity.repository.VerificationDocumentRepository;
 import com.pml.shared.constants.DocumentStatus;
 import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.domain.enums.OrganizationType;
-import com.pml.identity.domain.event.OrganizationApprovedEvent;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.model.User;
-import com.pml.identity.domain.enums.PayoutMethod;
+import com.pml.shared.constants.PayoutMethod;
 import com.pml.identity.domain.enums.PayoutSchedule;
-import com.pml.identity.domain.model.PlatformConfigurationView;
 import com.pml.identity.domain.valueobject.BusinessAddress;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.domain.valueobject.PayoutConfig;
 import com.pml.identity.domain.valueobject.SocialLinks;
 import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
-import com.pml.identity.repository.PlatformConfigurationRepository;
 import com.pml.identity.repository.UserRepository;
+import com.pml.shared.config.PlatformConfigurationReader;
 import com.pml.shared.config.model.PlatformPaymentDefaults;
 import com.pml.identity.service.OrganizationOnboardingService;
-import com.pml.identity.service.RoleSyncService;
 import com.pml.identity.web.graphql.dto.organization.OrganizationApplicationInput;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -46,8 +42,10 @@ import java.util.regex.Pattern;
  * Handles approval-based organization onboarding:
  * - User applies → Organization created (DRAFT)
  * - User fills details and submits → PENDING_REVIEW
- * - Admin approves/rejects → APPROVED/CHANGES_REQUESTED/REJECTED
  * - User can create draft events during approval process
+ *
+ * <p>The admin decisions — approve, reject, request changes — are not here: they run in
+ * {@code OrganizerOnboardingWorkflow}, whose approval is a six-step compensating saga.
  */
 @Slf4j
 @Service
@@ -61,10 +59,10 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     private final VerificationDocumentRepository verificationDocumentRepository;
     private final OrganizationMemberRepository organizationMemberRepository;
     private final UserRepository userRepository;
-    private final RoleSyncService roleSyncService;
-    private final ApplicationEventPublisher eventPublisher;
-    private final PlatformConfigurationRepository platformConfigRepository;
+    private final PlatformConfigurationReader platformConfiguration;
 
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     // =========================================================================
     // USER OPERATIONS
     // =========================================================================
@@ -163,7 +161,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                         org.setSocialLinks(socialLinks);
                     }
 
-                    org.setUpdatedAt(Instant.now());
+                    org.setUpdatedAt(clock.instant());
                     return organizationRepository.save(org);
                 })
                 .doOnSuccess(org -> log.info("Updated organization application: {}", org.getId()));
@@ -193,16 +191,16 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                                 "Business type is required — it determines which documents must be supplied"));
                     }
 
-                    // Spec ET-ORG-001 R3: verify the document set required for THIS
+                    // Verify the document set required for THIS
                     // business type, and name exactly what is missing. A generic
                     // "application incomplete" is how an applicant gives up.
                     return verifyRequiredDocuments(org).thenReturn(org);
                 })
                 .flatMap(org -> {
                     org.setStatus(OrganizationStatus.PENDING_REVIEW);
-                    org.setSubmittedAt(Instant.now());
+                    org.setSubmittedAt(clock.instant());
                     org.setRejectionReason(null); // Clear any previous rejection reason
-                    org.setUpdatedAt(Instant.now());
+                    org.setUpdatedAt(clock.instant());
 
                     // NOTE: the ORGANIZER realm role is NOT granted here. It is assigned by Keycloak
                     // at registration via the AccountTypeRoleMapper SPI (keycloak-extensions) based on
@@ -218,9 +216,8 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     /**
      * Refuse the submit if any document required by this business type is absent.
      *
-     * <p>Spec ET-ORG-001 R3: "Missing documents are refused with
-     * {@code DOCUMENT_REQUIRED} carrying {@code missingDocumentTypes}" — the
-     * refusal names exactly what is missing rather than a generic
+     * <p>Missing documents are refused with {@code DOCUMENT_REQUIRED} carrying
+     * {@code missingDocumentTypes}: the refusal names exactly what is missing rather than a generic
      * "incomplete", because a generic refusal gives the applicant nothing to
      * act on.</p>
      *
@@ -278,8 +275,8 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                                     .businessPhone(user.getPhoneNumber())
                                     .status(OrganizationStatus.DRAFT) // Start in DRAFT
                                     .payoutConfig(payoutConfig)
-                                    .createdAt(Instant.now())
-                                    .updatedAt(Instant.now())
+                                    .createdAt(clock.instant())
+                                    .updatedAt(clock.instant())
                                     .build();
 
                             return organizationRepository.save(organization)
@@ -304,7 +301,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
 
                     org.setType(OrganizationType.BUSINESS);
                     org.setName(businessName);
-                    org.setUpdatedAt(Instant.now());
+                    org.setUpdatedAt(clock.instant());
 
                     String newSlug = toSlug(businessName);
                     return generateUniqueSlug(newSlug)
@@ -319,147 +316,8 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     }
 
     @Override
-    public Mono<Boolean> hasOrganization(String userId) {
-        return organizationRepository.findByOwnerId(userId)
-                .map(org -> true)
-                .defaultIfEmpty(false);
-    }
-
-    @Override
     public Mono<Organization> findOrganizationByOwnerId(String userId) {
         return organizationRepository.findByOwnerId(userId);
-    }
-
-    // =========================================================================
-    // ADMIN OPERATIONS
-    // =========================================================================
-
-    @Override
-    public Mono<Organization> approve(String organizationId, String adminId) {
-        log.info("Admin {} approving organization: {}", adminId, organizationId);
-
-        return organizationRepository.findById(organizationId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Organization not found: " + organizationId)))
-                .flatMap(org -> {
-                    if (org.getStatus() != OrganizationStatus.PENDING_REVIEW) {
-                        return Mono.error(new IllegalStateException(
-                                "Only organizations in PENDING_REVIEW status can be approved. Current: " + org.getStatus()));
-                    }
-
-                    // Update organization status
-                    org.setStatus(OrganizationStatus.APPROVED);
-                    org.setVerified(true);
-                    org.setVerifiedAt(Instant.now());
-                    org.setVerifiedBy(adminId);
-                    org.setReviewedBy(adminId);
-                    org.setReviewedAt(Instant.now());
-                    org.setApprovedAt(Instant.now());
-                    org.setRejectionReason(null);
-                    org.setUpdatedAt(Instant.now());
-
-                    String ownerId = org.getOwnerId();
-
-                    // Save organization and grant ORGANIZER role to owner
-                    return organizationRepository.save(org)
-                            .flatMap(savedOrg -> {
-                                // Grant ORGANIZER role (syncs to both MongoDB and Keycloak)
-                                // This operation is idempotent and includes audit logging
-                                log.info("Granting ORGANIZER role to organization owner: {}", ownerId);
-                                return roleSyncService.grantOrganizerRole(ownerId, adminId, organizationId)
-                                        .thenReturn(savedOrg)
-                                        .onErrorResume(roleError -> {
-                                            // Log error but don't fail the approval
-                                            // Role sync failures are logged in audit trail
-                                            log.error("Failed to grant ORGANIZER role to user {} for organization {}: {}",
-                                                    ownerId, organizationId, roleError.getMessage());
-                                            return Mono.just(savedOrg);
-                                        });
-                            })
-                            .doOnSuccess(savedOrg -> {
-                                log.info("Organization {} approved by admin {}, ORGANIZER role granted to owner {}",
-                                        savedOrg.getId(), adminId, ownerId);
-
-                                // Publish domain event for cross-service notification
-                                // This allows catalog-service and booking-service to react to approval
-                                publishOrganizationApprovedEvent(savedOrg, adminId);
-                            });
-                });
-    }
-
-    /**
-     * Publish OrganizationApprovedEvent for cross-service consumption
-     * This is a best-effort operation that won't fail the approval process
-     */
-    private void publishOrganizationApprovedEvent(Organization org, String adminId) {
-        try {
-            OrganizationApprovedEvent event = new OrganizationApprovedEvent(
-                    org.getId(),
-                    org.getOwnerId(),
-                    org.getName(),
-                    org.getSlug(),
-                    adminId,
-                    Instant.now()
-            );
-            eventPublisher.publishEvent(event);
-            log.debug("Published OrganizationApprovedEvent for organization: {}", org.getId());
-        } catch (Exception e) {
-            log.warn("Failed to publish OrganizationApprovedEvent for organization {}: {}",
-                    org.getId(), e.getMessage());
-        }
-    }
-
-    @Override
-    public Mono<Organization> requestChanges(String organizationId, String reason, String adminId) {
-        log.info("Admin {} requesting changes for organization {}: {}", adminId, organizationId, reason);
-
-        return organizationRepository.findById(organizationId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Organization not found: " + organizationId)))
-                .flatMap(org -> {
-                    if (org.getStatus() != OrganizationStatus.PENDING_REVIEW) {
-                        return Mono.error(new IllegalStateException(
-                                "Only organizations in PENDING_REVIEW status can have changes requested. Current: " + org.getStatus()));
-                    }
-
-                    if (reason == null || reason.isBlank()) {
-                        return Mono.error(new IllegalArgumentException("Reason for changes is required"));
-                    }
-
-                    org.setStatus(OrganizationStatus.CHANGES_REQUESTED);
-                    org.setRejectionReason(reason);
-                    org.setReviewedBy(adminId);
-                    org.setReviewedAt(Instant.now());
-                    org.setUpdatedAt(Instant.now());
-
-                    return organizationRepository.save(org);
-                })
-                .doOnSuccess(org -> log.info("Changes requested for organization {} by admin {}", org.getId(), adminId));
-    }
-
-    @Override
-    public Mono<Organization> reject(String organizationId, String reason, String adminId) {
-        log.info("Admin {} rejecting organization {}: {}", adminId, organizationId, reason);
-
-        return organizationRepository.findById(organizationId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Organization not found: " + organizationId)))
-                .flatMap(org -> {
-                    if (org.getStatus() != OrganizationStatus.PENDING_REVIEW) {
-                        return Mono.error(new IllegalStateException(
-                                "Only organizations in PENDING_REVIEW status can be rejected. Current: " + org.getStatus()));
-                    }
-
-                    if (reason == null || reason.isBlank()) {
-                        return Mono.error(new IllegalArgumentException("Rejection reason is required"));
-                    }
-
-                    org.setStatus(OrganizationStatus.REJECTED);
-                    org.setRejectionReason(reason);
-                    org.setReviewedBy(adminId);
-                    org.setReviewedAt(Instant.now());
-                    org.setUpdatedAt(Instant.now());
-
-                    return organizationRepository.save(org);
-                })
-                .doOnSuccess(org -> log.info("Organization {} rejected by admin {}", org.getId(), adminId));
     }
 
     // =========================================================================
@@ -483,8 +341,8 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                             .businessPhone(input.businessPhone() != null ? input.businessPhone() : user.getPhoneNumber())
                             .status(OrganizationStatus.DRAFT)
                             .payoutConfig(payoutConfig)
-                            .createdAt(Instant.now())
-                            .updatedAt(Instant.now());
+                            .createdAt(clock.instant())
+                            .updatedAt(clock.instant());
 
                     // Set optional fields
                     if (input.description() != null) {
@@ -541,25 +399,19 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     }
 
     /**
-     * Build a new organization's {@link PayoutConfig} from the shared platform
-     * configuration. The commission rate, payout method/schedule and minimum payout
-     * amount all come from {@link PlatformPaymentDefaults} on the {@code platform_configuration}
-     * document — never from defaults baked into the entity.
+     * Build a new organization's {@link PayoutConfig} from the platform settings. The commission
+     * rate, payout method/schedule and minimum payout amount all come from the settings table's
+     * {@link PlatformPaymentDefaults} — never from defaults baked into the entity.
      *
-     * <p>Fails loudly if the configuration (or its payment section) is missing, since these
-     * are financial values that must originate from the configured source of truth.</p>
+     * <p>Fails loudly if the settings or their payment section are missing, since these are
+     * financial values that must originate from the configured source of truth.</p>
      */
     private Mono<PayoutConfig> buildDefaultPayoutConfig() {
-        return platformConfigRepository.getConfiguration()
+        return platformConfiguration.paymentDefaults()
                 .switchIfEmpty(Mono.error(new IllegalStateException(
-                        "Platform configuration not found. Ensure catalog-service has initialized the "
-                                + "platform_configuration document before creating organizations.")))
-                .map(config -> {
-                    PlatformPaymentDefaults payment = config.getPayment();
-                    if (payment == null) {
-                        throw new IllegalStateException(
-                                "Platform configuration is missing the payment/payout/commission section.");
-                    }
+                        "The platform settings have no payment defaults. catalog-service seeds them at "
+                                + "startup; start it before creating organizations.")))
+                .map(payment -> {
                     return PayoutConfig.builder()
                             .preferredMethod(PayoutMethod.valueOf(payment.getPayoutMethod()))
                             .schedule(PayoutSchedule.valueOf(payment.getPayoutSchedule()))
@@ -600,7 +452,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     }
 
     private Mono<OrganizationMember> createOwnerMembership(Organization organization, User user) {
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         OrganizationMember member = OrganizationMember.builder()
                 .organizationId(organization.getId())
                 .userId(user.getId())

@@ -1,5 +1,7 @@
 package com.pml.booking.web.graphql.query;
 
+import com.pml.shared.dto.EventSummaryDto;
+import com.pml.booking.security.EventGateAccess;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -9,7 +11,6 @@ import com.pml.booking.service.CheckInService;
 import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
 import com.pml.booking.web.graphql.dto.checkin.CheckInConflictPage;
 import com.pml.booking.web.graphql.dto.checkin.CheckInSummary;
-import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -17,19 +18,13 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Gate reads for organizers.
+ * Gate reads: admissions, recent scans and scan conflicts for one event.
  *
  * <h2>Security</h2>
- * Every query is scoped to the organizer id taken from the JWT, never from an
- * argument. An organizer asking about an event they do not own gets an empty
- * result rather than a refusal — the difference between "no attendance" and
- * "not yours" is itself information about someone else's event.
- *
- * <p>This is the coarse gate. ET-TKT-003 also requires a per-event
- * {@code ticket:scan} grant from ET-ORG-003, which does not exist yet; until it
- * does, any of an organization's organizers can read any of its gates.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/003-validation-and-checkin/spec.md">ET-TKT-003</a>
+ * Each query needs {@code ticket:scan} on the event, checked by {@link EventGateAccess}. The
+ * figures are then read for the event's own organizer, taken from catalog rather than from an
+ * argument. A caller outside the event's organization is refused as if the event did not exist,
+ * so a query cannot be used to learn whether someone else's event has attendance.
  */
 @Slf4j
 @DgsComponent
@@ -38,11 +33,12 @@ public class CheckInQueryResolver {
 
     private final CheckInService checkInService;
     private final TicketRepository ticketRepository;
+    private final EventGateAccess gates;
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<CheckInSummary> checkInSummary(@InputArgument String eventId) {
-        return SecurityContextUtils.requireCurrentUserId()
+        return gates.requireScan(eventId).map(EventSummaryDto::getOrganizerId)
                 .flatMap(organizerId -> ticketRepository
                         .countByEventIdAndOrganizerId(eventId, organizerId)
                         .flatMap(issued -> checkInService.summary(eventId, organizerId, issued)))
@@ -50,21 +46,21 @@ public class CheckInQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public Flux<CheckIn> recentCheckIns(@InputArgument String eventId,
                                         @InputArgument Integer limit) {
-        return SecurityContextUtils.requireCurrentUserId()
+        return gates.requireScan(eventId).map(EventSummaryDto::getOrganizerId)
                 .flatMapMany(organizerId -> checkInService.recentCheckIns(
                         eventId, organizerId, limit == null ? 25 : limit));
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<CheckInConflictPage> checkInConflicts(@InputArgument String eventId,
                                                       @InputArgument OffsetPaginationInput pagination) {
         OffsetPaginationInput page = pagination == null ? OffsetPaginationInput.defaults() : pagination;
 
-        return SecurityContextUtils.requireCurrentUserId()
+        return gates.requireScan(eventId).map(EventSummaryDto::getOrganizerId)
                 .flatMap(organizerId -> Mono.zip(
                         checkInService.conflicts(eventId, organizerId, page.page(), page.size())
                                 .collectList(),

@@ -13,8 +13,6 @@ package com.pml.booking.domain.enums;
  * <p>Keeping them distinct is what makes the manual-ratio alert possible: a gate
  * where a large share of admissions are MANUAL is either broken or being worked
  * around, and both are worth knowing about during the event rather than after.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/003-validation-and-checkin/spec.md">ET-TKT-003</a>
  */
 public enum ValidationMethod {
 

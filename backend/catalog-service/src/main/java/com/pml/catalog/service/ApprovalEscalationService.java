@@ -1,7 +1,8 @@
 package com.pml.catalog.service;
 
+
 import com.pml.catalog.domain.model.ApprovalEscalation;
-import com.pml.catalog.dto.*;
+import com.pml.catalog.web.graphql.dto.*;
 import reactor.core.publisher.Mono;
 
 /**
@@ -70,7 +71,7 @@ public interface ApprovalEscalationService {
      * @return the created escalation
      */
     Mono<ApprovalEscalation> createEscalation(String eventId, String eventTitle, String escalateTo,
-                                               String escalateToName, String reason, java.time.LocalDateTime slaDeadline,
+                                               String escalateToName, String reason, java.time.Instant slaDeadline,
                                                String originalReviewerId, String originalReviewerName,
                                                int reminderIntervalHours);
 
@@ -92,16 +93,6 @@ public interface ApprovalEscalationService {
     // Cursor Pagination Queries
     // ==========================================
 
-    /**
-     * Find active escalations with cursor pagination.
-     */
-    Mono<ApprovalEscalationConnection> findActiveCursorPagination(CursorPaginationInput pagination);
-
-    /**
-     * Find escalations for a specific admin with cursor pagination.
-     */
-    Mono<ApprovalEscalationConnection> findByAdminCursorPagination(String adminId, CursorPaginationInput pagination);
-
     // ==========================================
     // Count Operations
     // ==========================================
@@ -110,9 +101,4 @@ public interface ApprovalEscalationService {
      * Count all active escalations.
      */
     Mono<Long> countActive();
-
-    /**
-     * Count active escalations for a specific admin.
-     */
-    Mono<Long> countByAdmin(String adminId);
 }

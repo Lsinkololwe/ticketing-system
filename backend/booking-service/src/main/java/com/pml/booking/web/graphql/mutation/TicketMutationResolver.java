@@ -1,5 +1,6 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -12,6 +13,13 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
+import com.pml.booking.domain.model.Ticket;
+import com.pml.shared.error.DomainRefusal;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TenantBoundary;
+import com.pml.shared.security.Permission;
 
 /**
  * GraphQL Mutation Resolver for Ticket Operations
@@ -27,48 +35,55 @@ import java.util.List;
  * </ul>
  */
 @Slf4j
+
+
 @DgsComponent
+@FailClosedOnRevocation
+@Validated
 @RequiredArgsConstructor
 public class TicketMutationResolver {
 
     private final TicketService ticketService;
+    private final com.pml.booking.repository.TicketRepository ticketRepository;
+    private final com.pml.booking.security.OrganizerAccess access;
+    private final com.pml.booking.workflow.refund.RefundProcess refundProcess;
 
-    // validateTicket lives in CheckInMutationResolver now.
+    // Admission is not here: it is CheckInMutationResolver's scan. A read-modify-write on
+    // the ticket (load, check, set VALIDATED, save) lets two stewards scanning the same
+    // ticket a moment apart both read it as admissible before either writes, and admits it
+    // twice; it also has no event id, so a valid ticket for a different show would pass.
+    // The scan records a booking_checkins row, whose unique ticketId makes admission single.
     //
-    // The version that stood here was a read-modify-write on the ticket: load
-    // it, see PURCHASED, set VALIDATED, save. Two stewards scanning the same
-    // ticket a moment apart both read PURCHASED before either wrote, so both
-    // were told the ticket was good and the ticket admitted twice. It also had
-    // no event id, so a valid ticket for a different show passed at this gate.
-    // See ET-TKT-003 and booking_checkins.
-
-    // useTicket is gone with the USED state.
-    //
-    // It marked a VALIDATED ticket as USED, which described a two-phase gate the
-    // platform never had: nothing called it during a scan, and CheckInServiceImpl
-    // treated VALIDATED and USED identically as "already admitted". ET-TKT-002 R7
-    // declares seven states and USED is not one of them, so the mutation had no
-    // reachable target. Admission is CheckInMutationResolver's scan; there is no
-    // second phase.
+    // There is no second admission phase: VALIDATED is the only admitted state.
 
     /**
-     * Refund a ticket.
-     * processedBy is extracted from JWT - OWASP A01:2021 compliance
+     * Refund a ticket, in full or in part, to whoever paid for it.
+     *
+     * <p>The caller must hold {@code ticket:refund} on the ticket's event (an organizer's team member
+     * with that permission, or platform staff). They are the decision, so the refund goes straight to
+     * the refund workflow approved, which debits the event's escrow, claws back the matching share of
+     * the commission, and sends the money back through the provider under one id. An {@code amount}
+     * is checked against what remains refundable on the seat before anything is written; leaving it
+     * out refunds what remains. The ticket returned is its state now: it turns {@code REFUNDED} when the
+     * provider confirms, and a part refund leaves it admissible with {@code refundedAmount} raised.
+     * Anyone else is told the ticket does not exist.
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<RefundTicketMutationResponse> refundTicket(
+    @PreAuthorize("isAuthenticated()")
+    public Mono<Ticket> refundTicket(
             @InputArgument String ticketNumber,
-            @InputArgument String reason
+            @InputArgument String reason,
+            @InputArgument java.math.BigDecimal amount
     ) {
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(processedBy -> log.info("Refunding ticket: {} by: {} reason: {}", ticketNumber, processedBy, reason))
-                .flatMap(processedBy -> ticketService.refundTicket(ticketNumber, reason, processedBy)
-                        .map(ticket -> new RefundTicketMutationResponse(true, "Ticket refunded successfully", ticket, List.of(), null)))
-                .onErrorResume(e -> {
-                    log.error("Refund ticket failed: {}", e.getMessage());
-                    return Mono.just(new RefundTicketMutationResponse(false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
+                .flatMap(actor -> ticketRepository.findByTicketNumber(ticketNumber)
+                        .switchIfEmpty(Mono.error(() -> TenantBoundary.refuse(ErrorCode.TICKET_UNKNOWN, "ticket " + ticketNumber)))
+                        .flatMap(ticket -> access.requireEvent(ticket.getEventId(), Permission.TICKET_REFUND)
+                                .onErrorMap(DomainRefusal.class, refusal -> TenantBoundary.refuse(ErrorCode.TICKET_UNKNOWN, "ticket " + ticketNumber))
+                                .thenReturn(ticket))
+                        .doOnNext(ticket -> log.info("Refunding ticket {} by {} amount {} reason {}", ticketNumber, actor, amount, reason))
+                        .flatMap(ticket -> refundProcess.requestAsOperator(ticket.getId(), reason, actor, amount)
+                                .then(ticketRepository.findByTicketNumber(ticketNumber))));
     }
 
     /**
@@ -77,18 +92,13 @@ public class TicketMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<CancelTicketMutationResponse> cancelTicket(
+    public Mono<Ticket> cancelTicket(
             @InputArgument String ticketNumber,
             @InputArgument String reason
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(processedBy -> log.info("Cancelling ticket: {} by: {} reason: {}", ticketNumber, processedBy, reason))
-                .flatMap(processedBy -> ticketService.cancelTicket(ticketNumber, reason, processedBy)
-                        .map(ticket -> new CancelTicketMutationResponse(true, "Ticket cancelled successfully", ticket, List.of(), null)))
-                .onErrorResume(e -> {
-                    log.error("Cancel ticket failed: {}", e.getMessage());
-                    return Mono.just(new CancelTicketMutationResponse(false, e.getMessage(), null, List.of(e.getMessage()), null));
-                });
+                .flatMap(processedBy -> ticketService.cancelTicket(ticketNumber, reason, processedBy));
     }
 
     // ========================================================================
@@ -101,17 +111,12 @@ public class TicketMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<TicketMutationResponse> adminUpdateTicket(
+    public Mono<Ticket> adminUpdateTicket(
             @InputArgument String ticketId,
-            @InputArgument AdminTicketUpdateInput input
+            @Valid @InputArgument AdminTicketUpdateInput input
     ) {
         log.info("Admin updating ticket: {}", ticketId);
-        return ticketService.adminUpdateTicket(ticketId, input)
-                .map(ticket -> TicketMutationResponse.success("Ticket updated successfully", ticket))
-                .onErrorResume(e -> {
-                    log.error("Admin update ticket failed: {}", e.getMessage());
-                    return Mono.just(TicketMutationResponse.error(e.getMessage()));
-                });
+        return ticketService.adminUpdateTicket(ticketId, input);
     }
 
     /**
@@ -120,14 +125,9 @@ public class TicketMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<TicketMutationResponse> regenerateTicketQrCode(@InputArgument String ticketId) {
+    public Mono<Ticket> regenerateTicketQrCode(@InputArgument String ticketId) {
         log.info("Regenerating QR code for ticket: {}", ticketId);
-        return ticketService.regenerateTicketQrCode(ticketId)
-                .map(ticket -> TicketMutationResponse.success("QR code regenerated successfully", ticket))
-                .onErrorResume(e -> {
-                    log.error("Regenerate QR code failed: {}", e.getMessage());
-                    return Mono.just(TicketMutationResponse.error(e.getMessage()));
-                });
+        return ticketService.regenerateTicketQrCode(ticketId);
     }
 
     /**

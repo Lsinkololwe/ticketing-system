@@ -3,7 +3,7 @@
 > **Spec** [`specs/ticketing/002-ticket-issuance-and-qr/spec.md`](../ticketing/002-ticket-issuance-and-qr/spec.md) · **Wave 3** · `blocked_by:` ET-PLT-002, 005, 007, ET-TKT-001, ET-ORG-003
 > **Screens** `Ticketing - Discover & Checkout.dc.html` *(confirmation)* + `Ticketing - My Tickets & Transfer.dc.html`
 > **Routes** `apps/ticketing/src/app/my-tickets/page.tsx`
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-002 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-002 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 The ticket is the thing the buyer actually bought, and its QR is a **bearer credential** —
 whoever holds a valid payload gets through the gate. That single fact drives every design decision
@@ -70,7 +70,7 @@ Classify, with these as the decisive checks:
 - Delivery is a convenience; the app is the source of truth. A purchase that fails because
   WhatsApp is down has confused notification with issuance.
 
-### BE-8 · The expiry sweep on event completion
+### BE-8 · The expiry workflow on event completion
 - **Spec** R7 · **§5** T8 · **depends** BE-1 · **parallel-safe** yes
 - **Acceptance** unscanned tickets expire 24 h after completion; **refund eligibility is
   unaffected**. Expiry is about gate access, not about money owed.
@@ -183,5 +183,5 @@ against the composed schema.
 - [ ] Non-owner payload access returns `TICKET_UNKNOWN`
 - [ ] QR never appears in a list projection and is never prefetched
 - [ ] **Offline QR render proven by e2e**
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-002 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-002 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

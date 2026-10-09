@@ -1,12 +1,12 @@
 package com.pml.identity.domain.model;
 
+import com.pml.identity.persistence.IdentityCollections;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
@@ -30,13 +30,12 @@ import java.util.Map;
  * - PCI-DSS requires at least 1 year of audit logs
  * - Recommend 3-7 years for financial audit trails
  */
-@Document(collection = "payout_config_audit_logs")
+@Document(collection = IdentityCollections.PAYOUT_CONFIG_AUDIT_LOGS)
+@TypeAlias("payout_config_audit_logs")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndex(name = "org_timestamp_idx", def = "{'organizationId': 1, 'timestamp': -1}")
-@CompoundIndex(name = "user_timestamp_idx", def = "{'userId': 1, 'timestamp': -1}")
 public class PayoutConfigAuditLog {
 
     @Id
@@ -45,13 +44,11 @@ public class PayoutConfigAuditLog {
     /**
      * Organization whose payout config was modified
      */
-    @Indexed
     private String organizationId;
 
     /**
      * User who made the change
      */
-    @Indexed
     private String userId;
 
     /**
@@ -62,13 +59,11 @@ public class PayoutConfigAuditLog {
     /**
      * Action type
      */
-    @Indexed
     private AuditAction action;
 
     /**
      * Timestamp of the change
      */
-    @Indexed
     private Instant timestamp;
 
     /**
@@ -152,6 +147,9 @@ public class PayoutConfigAuditLog {
         COMMISSION_RATE_CHANGED,        // Commission rate changed (admin only)
         PAYOUT_ACCOUNT_VERIFIED,        // Admin verified payout account
         PAYOUT_ACCOUNT_UNVERIFIED,      // Admin unverified payout account
+        PAYOUT_ACCOUNT_REJECTED,        // Admin rejected payout account
+        PAYOUT_ACCOUNT_SUSPENDED,       // Admin froze payouts to the account
+        PAYOUT_ACCOUNT_REINSTATED,      // Admin lifted the freeze
         PAYOUT_CONFIG_ACCESS_ATTEMPTED, // Unauthorized access attempt
         PAYOUT_CONFIG_DECRYPTION_FAILED // Decryption failure (security incident)
     }

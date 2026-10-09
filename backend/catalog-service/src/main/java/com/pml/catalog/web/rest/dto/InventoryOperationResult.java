@@ -26,40 +26,15 @@ public class InventoryOperationResult {
     private String tierId;
 
     /**
-     * Quantity affected by the operation
-     */
-    private int quantityAffected;
-
-    /**
      * Error message if operation failed
      */
     private String errorMessage;
 
-    /**
-     * Current available quantity after operation
-     */
-    private int currentAvailable;
-
-    /**
-     * Current reserved quantity after operation
-     */
-    private int currentReserved;
-
-    /**
-     * Current sold quantity after operation
-     */
-    private int currentSold;
-
-    public static InventoryOperationResult success(String operation, String tierId, int quantityAffected,
-                                                    int currentAvailable, int currentReserved, int currentSold) {
+    public static InventoryOperationResult success(String operation, String tierId) {
         return InventoryOperationResult.builder()
                 .success(true)
                 .operation(operation)
                 .tierId(tierId)
-                .quantityAffected(quantityAffected)
-                .currentAvailable(currentAvailable)
-                .currentReserved(currentReserved)
-                .currentSold(currentSold)
                 .build();
     }
 

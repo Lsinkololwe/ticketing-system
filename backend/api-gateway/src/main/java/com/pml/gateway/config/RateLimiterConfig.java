@@ -65,45 +65,4 @@ public class RateLimiterConfig {
             return Mono.just(ip);
         };
     }
-
-    /**
-     * User-based key resolver: Rate limits by authenticated user ID.
-     *
-     * Use case: Fair rate limiting when many users share an IP (office, mobile carrier).
-     * Falls back to IP for unauthenticated requests.
-     *
-     * Requires: OAuth2TokenRelayFilter to add X-User-Id header (runs at order -50).
-     */
-    @Bean
-    public KeyResolver userKeyResolver() {
-        return exchange -> {
-            // X-User-Id is added by OAuth2TokenRelayFilter for authenticated requests
-            String userId = exchange.getRequest().getHeaders().getFirst("X-User-Id");
-            if (userId != null && !userId.isEmpty()) {
-                return Mono.just("user:" + userId);
-            }
-            // Fallback to IP for unauthenticated requests (public endpoints)
-            String ip = exchange.getRequest().getRemoteAddress() != null
-                    ? exchange.getRequest().getRemoteAddress().getAddress().getHostAddress()
-                    : "unknown";
-            return Mono.just("ip:" + ip);
-        };
-    }
-
-    /**
-     * Path-based key resolver: Rate limits by IP + path combination.
-     *
-     * Use case: Different rate limits per endpoint.
-     * Example: /api/auth/login gets stricter limit than /graphql.
-     */
-    @Bean
-    public KeyResolver pathKeyResolver() {
-        return exchange -> {
-            String path = exchange.getRequest().getPath().value();
-            String ip = exchange.getRequest().getRemoteAddress() != null
-                    ? exchange.getRequest().getRemoteAddress().getAddress().getHostAddress()
-                    : "unknown";
-            return Mono.just(ip + ":" + path);
-        };
-    }
 }

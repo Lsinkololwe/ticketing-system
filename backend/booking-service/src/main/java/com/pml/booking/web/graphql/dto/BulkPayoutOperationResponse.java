@@ -17,11 +17,8 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class BulkPayoutOperationResponse {
-    private boolean success;
-    private String message;
     private int processedCount;
     private int failedCount;
     private List<PayoutRequest> processedPayouts;
     private List<String> failedPayoutIds;
-    private List<String> errors;
 }

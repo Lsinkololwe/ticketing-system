@@ -1,5 +1,6 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -7,7 +8,6 @@ import com.pml.booking.domain.model.JournalEntry;
 import com.pml.booking.domain.model.JournalLine;
 import com.pml.booking.service.JournalService;
 import com.pml.booking.web.graphql.dto.CreateJournalEntryInput;
-import com.pml.booking.web.graphql.dto.JournalEntryMutationResponse;
 import com.pml.booking.web.graphql.dto.JournalLineInput;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +16,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.stream.Collectors;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for Journal Entry Operations.
@@ -46,7 +48,11 @@ import java.util.stream.Collectors;
  * @since 1.0.0
  */
 @Slf4j
+
+
 @DgsComponent
+@FailClosedOnRevocation
+@Validated
 @RequiredArgsConstructor
 public class JournalEntryMutationResolver {
 
@@ -63,8 +69,8 @@ public class JournalEntryMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<JournalEntryMutationResponse> createJournalEntry(
-            @InputArgument CreateJournalEntryInput input
+    public Mono<JournalEntry> createJournalEntry(
+            @Valid @InputArgument CreateJournalEntryInput input
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(createdBy -> log.info("GraphQL mutation: createJournalEntry(correlationId={}, createdBy={})",
@@ -91,12 +97,6 @@ public class JournalEntryMutationResolver {
                             createdBy,
                             metadata
                     );
-                })
-                .map(entry -> JournalEntryMutationResponse.success(
-                        "Journal entry " + entry.getEntryNumber() + " created successfully", entry))
-                .onErrorResume(e -> {
-                    log.error("Failed to create journal entry: {}", e.getMessage());
-                    return Mono.just(JournalEntryMutationResponse.error(e.getMessage()));
                 });
     }
 
@@ -111,18 +111,12 @@ public class JournalEntryMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<JournalEntryMutationResponse> postJournalEntry(
+    public Mono<JournalEntry> postJournalEntry(
             @InputArgument String id
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(postedBy -> log.info("GraphQL mutation: postJournalEntry(id={}, postedBy={})", id, postedBy))
-                .flatMap(postedBy -> journalService.postEntry(id, postedBy)
-                        .map(entry -> JournalEntryMutationResponse.success(
-                                "Journal entry " + entry.getEntryNumber() + " posted successfully", entry)))
-                .onErrorResume(e -> {
-                    log.error("Failed to post journal entry {}: {}", id, e.getMessage());
-                    return Mono.just(JournalEntryMutationResponse.error(e.getMessage()));
-                });
+                .flatMap(postedBy -> journalService.postEntry(id, postedBy));
     }
 
     /**
@@ -137,21 +131,14 @@ public class JournalEntryMutationResolver {
      */
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<JournalEntryMutationResponse> reverseJournalEntry(
+    public Mono<JournalEntry> reverseJournalEntry(
             @InputArgument String id,
             @InputArgument String reason
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(reversedBy -> log.info("GraphQL mutation: reverseJournalEntry(id={}, reversedBy={}, reason={})",
                         id, reversedBy, reason))
-                .flatMap(reversedBy -> journalService.reverseEntry(id, reversedBy, reason)
-                        .map(reversalEntry -> JournalEntryMutationResponse.success(
-                                "Journal entry reversed. Reversal entry: " + reversalEntry.getEntryNumber(),
-                                reversalEntry)))
-                .onErrorResume(e -> {
-                    log.error("Failed to reverse journal entry {}: {}", id, e.getMessage());
-                    return Mono.just(JournalEntryMutationResponse.error(e.getMessage()));
-                });
+                .flatMap(reversedBy -> journalService.reverseEntry(id, reversedBy, reason));
     }
 
     // ========================================================================

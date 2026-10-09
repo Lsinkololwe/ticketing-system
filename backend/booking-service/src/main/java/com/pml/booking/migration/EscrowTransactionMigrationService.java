@@ -13,8 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -64,6 +62,8 @@ public class EscrowTransactionMigrationService {
     private final EventEscrowAccountRepository escrowAccountRepository;
     private final StandaloneEscrowTransactionRepository transactionRepository;
 
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     /**
      * Migrate all embedded escrow transactions to standalone collection.
      *
@@ -106,8 +106,6 @@ public class EscrowTransactionMigrationService {
 
         log.info("Migrating {} transactions for account: {}",
                 account.getTransactions().size(), account.getEventId());
-
-        BigDecimal runningBalance = BigDecimal.ZERO;
 
         return Flux.fromIterable(account.getTransactions())
                 .concatMap(embeddedTx -> {
@@ -182,10 +180,10 @@ public class EscrowTransactionMigrationService {
                 .description(embedded.getDescription())
                 .timestamp(embedded.getTimestamp() != null
                         ? embedded.getTimestamp()
-                        : Instant.now())
+                        : clock.instant())
                 .createdAt(embedded.getTimestamp() != null
                         ? embedded.getTimestamp()
-                        : Instant.now())
+                        : clock.instant())
                 .version(0L)
                 .build();
     }
@@ -204,58 +202,6 @@ public class EscrowTransactionMigrationService {
             return StandaloneEscrowTransaction.TransactionType.DEBIT;
         }
         return StandaloneEscrowTransaction.TransactionType.CREDIT;
-    }
-
-    /**
-     * Verify that migrated transactions match account balance.
-     *
-     * @param accountId Account to verify
-     * @return true if balance matches, false otherwise
-     */
-    public Mono<Boolean> verifyMigration(String accountId) {
-        log.info("Verifying migration for account: {}", accountId);
-
-        return Mono.zip(
-                escrowAccountRepository.findById(accountId)
-                        .map(EventEscrowAccount::getCurrentBalance)
-                        .defaultIfEmpty(BigDecimal.ZERO),
-                transactionRepository.calculateBalanceByEscrowAccountId(accountId)
-                        .defaultIfEmpty(BigDecimal.ZERO)
-        ).map(tuple -> {
-            BigDecimal accountBalance = tuple.getT1();
-            BigDecimal calculatedBalance = tuple.getT2();
-            boolean matches = accountBalance.compareTo(calculatedBalance) == 0;
-
-            if (!matches) {
-                log.warn("Balance mismatch for account {}: recorded={}, calculated={}",
-                        accountId, accountBalance, calculatedBalance);
-            } else {
-                log.info("Balance verified for account {}: {}", accountId, accountBalance);
-            }
-
-            return matches;
-        });
-    }
-
-    /**
-     * Verify migration for all accounts.
-     *
-     * @return Number of accounts with mismatched balances
-     */
-    public Mono<Long> verifyAllMigrations() {
-        log.info("Verifying migration for all accounts...");
-
-        return escrowAccountRepository.findAll()
-                .flatMap(account -> verifyMigration(account.getId())
-                        .map(matches -> matches ? 0L : 1L))
-                .reduce(0L, Long::sum)
-                .doOnSuccess(mismatches -> {
-                    if (mismatches == 0) {
-                        log.info("All accounts verified successfully");
-                    } else {
-                        log.warn("{} accounts have balance mismatches", mismatches);
-                    }
-                });
     }
 
     /**

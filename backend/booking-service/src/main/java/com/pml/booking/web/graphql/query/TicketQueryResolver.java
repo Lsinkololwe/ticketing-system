@@ -1,5 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
+import com.pml.booking.service.TicketSearch;
+import org.springframework.data.mongodb.core.query.Criteria;
+import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -40,7 +43,9 @@ import java.util.Objects;
 public class TicketQueryResolver {
 
     private final TicketService ticketService;
+    private final TenantReads tenantReads;
     private final TicketStatsService ticketStatsService;
+    private final TicketSearch ticketSearch;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
@@ -55,7 +60,7 @@ public class TicketQueryResolver {
     public Mono<Ticket> ticket(@InputArgument String id) {
         log.debug("GraphQL query: ticket(id={})", id);
         Objects.requireNonNull(id, "Ticket ID is required");
-        return ticketService.findById(id);
+        return tenantReads.ticketForCaller(id);
     }
 
     /**
@@ -67,7 +72,7 @@ public class TicketQueryResolver {
     public Mono<Ticket> ticketByNumber(@InputArgument String ticketNumber) {
         log.debug("GraphQL query: ticketByNumber({})", ticketNumber);
         Objects.requireNonNull(ticketNumber, "Ticket number is required");
-        return ticketService.findByTicketNumber(ticketNumber);
+        return tenantReads.ticketByNumberForCaller(ticketNumber);
     }
 
     // ========================================================================
@@ -76,15 +81,15 @@ public class TicketQueryResolver {
 
     /**
      * Get tickets by event with offset pagination.
-     * Schema: ticketsByEventOffsetPagination(eventId: String!, pagination: OffsetPaginationInput): TicketOffsetPage!
+     * Schema: ticketsByEvent(eventId: String!, pagination: OffsetPaginationInput): TicketOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
-    public Mono<TicketOffsetPage> ticketsByEventOffsetPagination(
+    public Mono<TicketOffsetPage> ticketsByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: ticketsByEventOffsetPagination(eventId={})", eventId);
+        log.debug("GraphQL query: ticketsByEvent(eventId={})", eventId);
         Objects.requireNonNull(eventId, "Event ID is required");
         return buildOffsetPage(ticketService.findByEventId(eventId), pagination);
     }
@@ -112,60 +117,46 @@ public class TicketQueryResolver {
 
     /**
      * Get tickets by organizer with offset pagination.
-     * Schema: ticketsByOrganizerOffsetPagination(organizerId: String!, filter: TicketFilterInput, pagination: OffsetPaginationInput): TicketOffsetPage!
+     * Schema: ticketsByOrganizer(organizerId: String!, filter: TicketFilterInput, pagination: OffsetPaginationInput): TicketOffsetPage!
      *
      * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService to validate
      * that the requesting user is either the organizer or a team member with access.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
-    public Mono<TicketOffsetPage> ticketsByOrganizerOffsetPagination(
+    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN,FINANCE', #organizerId)")
+    public Mono<TicketOffsetPage> ticketsByOrganizer(
             @InputArgument String organizerId,
             @InputArgument TicketFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: ticketsByOrganizerOffsetPagination(organizerId={})", organizerId);
+        log.debug("GraphQL query: ticketsByOrganizer(organizerId={})", organizerId);
         Objects.requireNonNull(organizerId, "Organizer ID is required");
 
-        Flux<Ticket> ticketFlux = applyFilters(ticketService.findByOrganizerId(organizerId), filter);
-        return buildOffsetPage(ticketFlux, pagination);
+        // The organizer in the path is the scope; a filter naming another organizer narrows to nothing.
+        return ticketSearch.page(Criteria.where("organizerId").is(organizerId), filter, pagination)
+                .map(page -> new TicketOffsetPage(page.tickets(), page.pagination()));
     }
 
     /**
      * Search tickets with offset pagination.
-     * Schema: searchTicketsOffsetPagination(filter: TicketFilterInput!, pagination: OffsetPaginationInput): TicketOffsetPage!
+     * Schema: searchTickets(filter: TicketFilterInput!, pagination: OffsetPaginationInput): TicketOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<TicketOffsetPage> searchTicketsOffsetPagination(
+    public Mono<TicketOffsetPage> searchTickets(
             @InputArgument TicketFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: searchTicketsOffsetPagination");
+        log.debug("GraphQL query: searchTickets");
         Objects.requireNonNull(filter, "Filter is required for search");
 
-        Flux<Ticket> ticketFlux = applyFilters(ticketService.findAll(), filter);
-        return buildOffsetPage(ticketFlux, pagination);
+        return ticketSearch.page(new Criteria(), filter, pagination)
+                .map(page -> new TicketOffsetPage(page.tickets(), page.pagination()));
     }
 
     // ========================================================================
     // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
     // ========================================================================
-
-    /**
-     * Get tickets by event with cursor pagination.
-     * Schema: ticketsByEventCursorPagination(eventId: String!, pagination: CursorPaginationInput): TicketConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
-    public Mono<TicketConnection> ticketsByEventCursorPagination(
-            @InputArgument String eventId,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: ticketsByEventCursorPagination(eventId={})", eventId);
-        Objects.requireNonNull(eventId, "Event ID is required");
-        return buildCursorConnection(ticketService.findByEventId(eventId), pagination);
-    }
 
     /**
      * Get tickets by buyer with cursor pagination.
@@ -185,44 +176,6 @@ public class TicketQueryResolver {
                 ? ticketService.findByBuyerIdAndStatus(buyerId, status)
                 : ticketService.findByBuyerId(buyerId);
 
-        return buildCursorConnection(ticketFlux, pagination);
-    }
-
-    /**
-     * Get tickets by organizer with cursor pagination.
-     * Schema: ticketsByOrganizerCursorPagination(organizerId: String!, filter: TicketFilterInput, pagination: CursorPaginationInput): TicketConnection!
-     *
-     * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService to validate
-     * that the requesting user is either the organizer or a team member with access.</p>
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
-    public Mono<TicketConnection> ticketsByOrganizerCursorPagination(
-            @InputArgument String organizerId,
-            @InputArgument TicketFilterInput filter,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: ticketsByOrganizerCursorPagination(organizerId={})", organizerId);
-        Objects.requireNonNull(organizerId, "Organizer ID is required");
-
-        Flux<Ticket> ticketFlux = applyFilters(ticketService.findByOrganizerId(organizerId), filter);
-        return buildCursorConnection(ticketFlux, pagination);
-    }
-
-    /**
-     * Search tickets with cursor pagination.
-     * Schema: searchTicketsCursorPagination(filter: TicketFilterInput!, pagination: CursorPaginationInput): TicketConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<TicketConnection> searchTicketsCursorPagination(
-            @InputArgument TicketFilterInput filter,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: searchTicketsCursorPagination");
-        Objects.requireNonNull(filter, "Filter is required for search");
-
-        Flux<Ticket> ticketFlux = applyFilters(ticketService.findAll(), filter);
         return buildCursorConnection(ticketFlux, pagination);
     }
 
@@ -355,42 +308,5 @@ public class TicketQueryResolver {
 
                     return new TicketConnection(edges, pageInfo, totalCount);
                 });
-    }
-
-    /**
-     * Apply filters to a Flux of tickets.
-     */
-    private Flux<Ticket> applyFilters(Flux<Ticket> tickets, TicketFilterInput filter) {
-        if (filter == null) {
-            return tickets;
-        }
-
-        return tickets.filter(ticket -> {
-            if (filter.eventId() != null && !filter.eventId().equals(ticket.getEventId())) {
-                return false;
-            }
-            if (filter.buyerId() != null && !filter.buyerId().equals(ticket.getBuyerId())) {
-                return false;
-            }
-            if (filter.status() != null && filter.status() != ticket.getStatus()) {
-                return false;
-            }
-            if (filter.category() != null && !filter.category().equals(ticket.getTicketCategoryCode())) {
-                return false;
-            }
-            if (filter.purchaseDateAfter() != null && ticket.getPurchaseDate() != null) {
-                if (ticket.getPurchaseDate().isBefore(
-                        java.time.LocalDateTime.ofInstant(filter.purchaseDateAfter(), java.time.ZoneOffset.UTC))) {
-                    return false;
-                }
-            }
-            if (filter.purchaseDateBefore() != null && ticket.getPurchaseDate() != null) {
-                if (ticket.getPurchaseDate().isAfter(
-                        java.time.LocalDateTime.ofInstant(filter.purchaseDateBefore(), java.time.ZoneOffset.UTC))) {
-                    return false;
-                }
-            }
-            return true;
-        });
     }
 }

@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Refund Calculation DTO
@@ -32,7 +32,7 @@ public class RefundCalculation {
     private String eventId;
 
     /** The event date (used to calculate days before event) */
-    private LocalDateTime eventDate;
+    private Instant eventDate;
 
     /** The original ticket price */
     private BigDecimal originalAmount;
@@ -52,9 +52,6 @@ public class RefundCalculation {
     /** Amount the platform retains (processing fees) */
     private BigDecimal platformRetains;
 
-    /** Processing fee charged to customer (if applicable) */
-    private BigDecimal processingFee;
-
     /** Whether the ticket is eligible for refund */
     private boolean eligible;
 
@@ -71,14 +68,13 @@ public class RefundCalculation {
             String ticketId,
             String ticketNumber,
             String eventId,
-            LocalDateTime eventDate,
+            Instant eventDate,
             BigDecimal originalAmount,
             int daysBeforeEvent,
             float refundPercentage,
             BigDecimal refundAmount,
             BigDecimal commissionRefund,
             BigDecimal platformRetains,
-            BigDecimal processingFee,
             String policyDetails
     ) {
         return RefundCalculation.builder()
@@ -92,7 +88,6 @@ public class RefundCalculation {
                 .refundAmount(refundAmount)
                 .commissionRefund(commissionRefund)
                 .platformRetains(platformRetains)
-                .processingFee(processingFee)
                 .eligible(true)
                 .policyDetails(policyDetails)
                 .build();
@@ -105,7 +100,7 @@ public class RefundCalculation {
             String ticketId,
             String ticketNumber,
             String eventId,
-            LocalDateTime eventDate,
+            Instant eventDate,
             BigDecimal originalAmount,
             String reason
     ) {
@@ -120,7 +115,6 @@ public class RefundCalculation {
                 .refundAmount(BigDecimal.ZERO)
                 .commissionRefund(BigDecimal.ZERO)
                 .platformRetains(BigDecimal.ZERO)
-                .processingFee(BigDecimal.ZERO)
                 .eligible(false)
                 .ineligibilityReason(reason)
                 .build();

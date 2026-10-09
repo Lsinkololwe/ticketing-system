@@ -29,10 +29,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the service config looks reasonable, the realm looks reasonable, and only the pair is wrong.
  *
  * <h2>Where the truth lives</h2>
- * {@code docker-resources/} is a sibling repository ({@code specs/README.md}: infrastructure
- * lives elsewhere, and a spec proposing to recreate it inside {@code ticketing-system} is
- * wrong). Its {@code keycloak/myticketzm-realm.json} is the realm import, parameterised by
- * {@code .env.ticketing}. This test reads the identifiers from there and compares.
+ * {@code docker-resources/} is a sibling repository: infrastructure lives there, never inside
+ * {@code ticketing-system}. Its {@code keycloak/myticketzm-realm.json} is the realm import, parameterised by
+ * {@code env/ticketing.env}. This test reads the identifiers from there and compares.
  *
  * <h2>Identifiers only — never values</h2>
  * Client ids and realm names are compared. Secrets are not read, printed, or asserted on: the
@@ -43,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A CI checkout of {@code ticketing-system} alone cannot see {@code docker-resources}. Skipping
  * is honest there; failing would train people to ignore it.
  */
+@Tag("L1")
 @Tag("ET-PLT-001")
 @DisplayName("ET-PLT-001-R6 · service config matches the provisioned Keycloak realm")
 class DockerResourcesAlignmentTest {
@@ -53,7 +53,7 @@ class DockerResourcesAlignmentTest {
 
     private static final Path REALM = DOCKER_RESOURCES.resolve("keycloak/myticketzm-realm.json");
 
-    private static final Path ENV = DOCKER_RESOURCES.resolve(".env.ticketing");
+    private static final Path ENV = DOCKER_RESOURCES.resolve("env/ticketing.env");
 
     /** {@code client-id: ${SOME_VAR:the-default}} — the default is what local development uses. */
     private static final Pattern CLIENT_ID =
@@ -96,7 +96,7 @@ class DockerResourcesAlignmentTest {
                 .as("""
                     A service defaulting to a client id the realm does not contain cannot obtain \
                     a token, and neither repository looks wrong on its own. The provisioned ids \
-                    come from docker-resources/.env.ticketing and are substituted into \
+                    come from docker-resources/env/ticketing.env and are substituted into \
                     keycloak/myticketzm-realm.json at import.""")
                 .isEmpty();
     }
@@ -108,7 +108,7 @@ class DockerResourcesAlignmentTest {
                 "docker-resources is not checked out beside this repository — skipping");
 
         String provisionedRealm = readEnv().get("TICKETING_REALM_NAME");
-        assertThat(provisionedRealm).as("TICKETING_REALM_NAME is absent from .env.ticketing").isNotBlank();
+        assertThat(provisionedRealm).as("TICKETING_REALM_NAME is absent from env/ticketing.env").isNotBlank();
 
         List<String> mismatches = new ArrayList<>();
         for (Path config : baseConfigFiles()) {
@@ -119,7 +119,7 @@ class DockerResourcesAlignmentTest {
                 Matcher matcher = Pattern.compile("/realms/([a-z0-9-]+)").matcher(line);
                 while (matcher.find()) {
                     String declared = matcher.group(1);
-                    // The admin realm is a deliberate second realm (ET-IDN-003 trusted issuers).
+                    // The admin realm is a deliberate second realm, trusted as a separate issuer.
                     if (!declared.equals(provisionedRealm)
                             && !declared.equals(provisionedRealm + "-admin")) {
                         mismatches.add("%s → /realms/%s".formatted(
@@ -175,7 +175,7 @@ class DockerResourcesAlignmentTest {
                 continue;
             }
             String[] parts = trimmed.split("=", 2);
-            // Values may carry a trailing `# comment`, as .env.ticketing does throughout.
+            // Values may carry a trailing `# comment`, as env/ticketing.env does throughout.
             String value = parts[1].split("\\s+#", 2)[0].strip().replaceAll("^[\"']|[\"']$", "");
             values.put(parts[0].strip(), value);
         }

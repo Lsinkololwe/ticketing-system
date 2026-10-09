@@ -70,27 +70,6 @@ public interface JournalEntryRepository extends ReactiveMongoRepository<JournalE
      */
     Mono<JournalEntry> findByEntryNumber(String entryNumber);
 
-    /**
-     * Check if an entry number exists.
-     *
-     * <p>Use before generating new entry numbers to ensure uniqueness.</p>
-     *
-     * @param entryNumber The entry number to check
-     * @return Mono<Boolean> true if exists
-     */
-    Mono<Boolean> existsByEntryNumber(String entryNumber);
-
-    /**
-     * Find entries with entry number starting with prefix.
-     *
-     * <p>Useful for finding entries in a specific month:
-     * findByEntryNumberStartingWith("JE-2024-01")</p>
-     *
-     * @param prefix Entry number prefix
-     * @return Flux of matching entries
-     */
-    Flux<JournalEntry> findByEntryNumberStartingWith(String prefix);
-
     // ========================================================================
     // CORRELATION ID LOOKUPS (Transaction Tracking)
     // ========================================================================
@@ -113,19 +92,6 @@ public interface JournalEntryRepository extends ReactiveMongoRepository<JournalE
      * @return Flux of related entries
      */
     Flux<JournalEntry> findByCorrelationId(String correlationId);
-
-    /**
-     * Find posted entries for a correlation ID.
-     *
-     * <p>Excludes draft and reversed entries.</p>
-     *
-     * @param correlationId The correlation identifier
-     * @return Flux of posted entries for this transaction
-     */
-    Flux<JournalEntry> findByCorrelationIdAndStatus(
-            String correlationId,
-            JournalEntryStatus status
-    );
 
     // ========================================================================
     // DATE RANGE QUERIES (Financial Reporting)
@@ -158,23 +124,6 @@ public interface JournalEntryRepository extends ReactiveMongoRepository<JournalE
             JournalEntryStatus status
     );
 
-    /**
-     * Find entries on a specific date.
-     *
-     * @param entryDate The entry date
-     * @return Flux of entries for that date
-     */
-    Flux<JournalEntry> findByEntryDate(LocalDate entryDate);
-
-    /**
-     * Find entries on a specific date with status.
-     *
-     * @param entryDate The entry date
-     * @param status Entry status filter
-     * @return Flux of matching entries
-     */
-    Flux<JournalEntry> findByEntryDateAndStatus(LocalDate entryDate, JournalEntryStatus status);
-
     // ========================================================================
     // STATUS QUERIES
     // ========================================================================
@@ -186,18 +135,6 @@ public interface JournalEntryRepository extends ReactiveMongoRepository<JournalE
      * @return Flux of entries with that status
      */
     Flux<JournalEntry> findByStatus(JournalEntryStatus status);
-
-    /**
-     * Find entries with status, ordered by entry date (descending).
-     *
-     * @param status The entry status
-     * @param pageable Pagination parameters
-     * @return Flux of entries
-     */
-    Flux<JournalEntry> findByStatusOrderByEntryDateDesc(
-            JournalEntryStatus status,
-            Pageable pageable
-    );
 
     /**
      * Count entries by status.
@@ -218,15 +155,6 @@ public interface JournalEntryRepository extends ReactiveMongoRepository<JournalE
      * @return Flux of entries of that type
      */
     Flux<JournalEntry> findByType(JournalEntryType type);
-
-    /**
-     * Find entries by type and status.
-     *
-     * @param type Entry type
-     * @param status Entry status
-     * @return Flux of matching entries
-     */
-    Flux<JournalEntry> findByTypeAndStatus(JournalEntryType type, JournalEntryStatus status);
 
     // ========================================================================
     // ACCOUNT QUERIES (Embedded Document Queries)
@@ -251,21 +179,6 @@ public interface JournalEntryRepository extends ReactiveMongoRepository<JournalE
     Flux<JournalEntry> findByAccountCode(String accountCode);
 
     /**
-     * Find posted entries containing a specific account code.
-     *
-     * <p>For account balance calculations, only consider POSTED entries.</p>
-     *
-     * @param accountCode The account code
-     * @param status Entry status filter
-     * @return Flux of matching entries
-     */
-    @Query("{ 'lines.accountCode': ?0, 'status': ?1 }")
-    Flux<JournalEntry> findByAccountCodeAndStatus(
-            String accountCode,
-            JournalEntryStatus status
-    );
-
-    /**
      * Find entries for an account within a date range.
      *
      * <p>For account ledger reports within a period.</p>
@@ -281,66 +194,6 @@ public interface JournalEntryRepository extends ReactiveMongoRepository<JournalE
             LocalDate startDate,
             LocalDate endDate
     );
-
-    /**
-     * Find posted entries for an account within a date range.
-     *
-     * <p>The typical query for account ledger reports.</p>
-     *
-     * @param accountCode The account code
-     * @param startDate Start of date range
-     * @param endDate End of date range
-     * @param status Entry status (typically POSTED)
-     * @return Flux of matching entries
-     */
-    @Query("{ 'lines.accountCode': ?0, 'entryDate': { $gte: ?1, $lte: ?2 }, 'status': ?3 }")
-    Flux<JournalEntry> findByAccountCodeAndEntryDateBetweenAndStatus(
-            String accountCode,
-            LocalDate startDate,
-            LocalDate endDate,
-            JournalEntryStatus status
-    );
-
-    // ========================================================================
-    // REVERSAL QUERIES
-    // ========================================================================
-
-    /**
-     * Find the reversal entry for a given original entry.
-     *
-     * <p>If an entry has been reversed, find the reversal entry.</p>
-     *
-     * @param originalEntryId The ID of the original (reversed) entry
-     * @return Mono containing the reversal entry if it exists
-     */
-    Mono<JournalEntry> findByReversalOfEntryId(String originalEntryId);
-
-    /**
-     * Find entries that have been reversed.
-     *
-     * @return Flux of entries with REVERSED status
-     */
-    Flux<JournalEntry> findByReversedByEntryIdNotNull();
-
-    // ========================================================================
-    // USER QUERIES
-    // ========================================================================
-
-    /**
-     * Find entries created by a specific user.
-     *
-     * @param userId The user ID
-     * @return Flux of entries created by that user
-     */
-    Flux<JournalEntry> findByCreatedBy(String userId);
-
-    /**
-     * Find entries posted by a specific user.
-     *
-     * @param userId The user ID
-     * @return Flux of entries posted by that user
-     */
-    Flux<JournalEntry> findByPostedBy(String userId);
 
     // ========================================================================
     // ENTRY NUMBER GENERATION SUPPORT
@@ -358,28 +211,6 @@ public interface JournalEntryRepository extends ReactiveMongoRepository<JournalE
      * @return Mono containing the last entry for that prefix
      */
     Mono<JournalEntry> findFirstByEntryNumberStartingWithOrderByEntryNumberDesc(String prefix);
-
-    /**
-     * Count entries with a specific prefix.
-     *
-     * <p>Alternative approach for entry number generation.</p>
-     *
-     * @param prefix Entry number prefix
-     * @return Mono<Long> count of entries
-     */
-    Mono<Long> countByEntryNumberStartingWith(String prefix);
-
-    // ========================================================================
-    // PAGINATION SUPPORT
-    // ========================================================================
-
-    /**
-     * Find all entries with pagination, ordered by entry date descending.
-     *
-     * @param pageable Pagination parameters
-     * @return Flux of entries
-     */
-    Flux<JournalEntry> findAllByOrderByEntryDateDesc(Pageable pageable);
 
     /**
      * Find entries by status with pagination.

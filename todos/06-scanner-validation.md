@@ -1,5 +1,7 @@
 # Phase 6: Scanner & Ticket Validation
 
+> **HISTORICAL — superseded by `specs/tasks` FE-* items; kept for reference. Role names in this file are pre-spec** (see `specs/` for the current role and permission vocabulary). Unticked boxes here are not a backlog.
+
 ## Overview
 Implement ticket scanning and validation features for event check-in staff (SCANNER role).
 

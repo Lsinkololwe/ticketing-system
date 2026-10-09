@@ -86,27 +86,4 @@ public enum BalanceDirection {
      * </ul>
      */
     CREDIT;
-
-    /**
-     * Returns the opposite direction.
-     *
-     * <p>Useful for creating reversal entries where all debits become credits
-     * and all credits become debits.</p>
-     *
-     * @return CREDIT if this is DEBIT, DEBIT if this is CREDIT
-     */
-    public BalanceDirection opposite() {
-        return this == DEBIT ? CREDIT : DEBIT;
-    }
-
-    /**
-     * Determines the effect of this direction on a given account type.
-     *
-     * @param accountType The type of account being affected
-     * @return positive 1 if this direction increases the account, negative -1 if it decreases
-     */
-    public int effectOn(AccountType accountType) {
-        boolean isNormalBalance = accountType.getNormalBalance() == this;
-        return isNormalBalance ? 1 : -1;
-    }
 }

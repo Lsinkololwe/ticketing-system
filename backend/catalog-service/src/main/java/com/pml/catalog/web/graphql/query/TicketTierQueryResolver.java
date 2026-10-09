@@ -31,7 +31,7 @@ public class TicketTierQueryResolver {
     @DgsQuery
     public Mono<TicketTier> ticketTier(@InputArgument String id) {
         log.debug("Fetching ticket tier {}", id);
-        return tierService.findById(id);
+        return tierService.findVisibleToCaller(id);
     }
 
     /**
@@ -44,7 +44,7 @@ public class TicketTierQueryResolver {
     ) {
         boolean include = includeHidden != null && includeHidden;
         log.debug("Fetching ticket tiers for event {} (includeHidden: {})", eventId, include);
-        return tierService.findByEventId(eventId, include);
+        return tierService.findForCaller(eventId, include);
     }
 
     /**
@@ -54,7 +54,6 @@ public class TicketTierQueryResolver {
     @DgsQuery
     public Flux<TicketTier> availableTicketTiers(@InputArgument String eventId) {
         log.debug("Fetching available ticket tiers for event {}", eventId);
-        return tierService.findByEventId(eventId, false)
-                .filter(tier -> tier.isActive() && tier.getAvailableQuantity() > 0);
+        return tierService.findAvailableForPurchase(eventId);
     }
 }

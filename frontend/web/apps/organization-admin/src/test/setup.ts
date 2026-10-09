@@ -9,16 +9,14 @@ import { afterEach, vi } from 'vitest';
  *
  * There is no MSW server here and no fixture data anywhere in this app. Any
  * test that needs a backend talks to a real one in a container — see
- * `src/lib/auth/__tests__/revocation.integration.test.ts` for the pattern, and
  * `backend/booking-service/.../OrganizerDashboardAnalyticsIntegrationTest.java`
  * for the server-side equivalent.
  *
  * The rationale is not purity. A hand-written fixture encodes what we *believe*
  * the backend returns, so it keeps passing after the backend changes shape —
- * which is precisely when a test should fail. The BigDecimal-stored-as-String
- * defect (see docs/ORG_ADMIN_REDESIGN_NOTES.md §1.1) survived in production
- * code for exactly that reason: nothing ever ran the pipeline against a real
- * MongoDB.
+ * which is precisely when a test should fail. A BigDecimal stored as a String
+ * is exactly such a defect: it passes every hand-written fixture and shows
+ * only when the pipeline runs against a real MongoDB.
  *
  * What remains below are ENVIRONMENT SHIMS, not mocks: jsdom has no Next.js
  * router, no `matchMedia` and no `IntersectionObserver`, so rendering any

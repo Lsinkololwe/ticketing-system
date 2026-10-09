@@ -1,61 +1,11 @@
 'use client';
 
-import { ZambianMobileProvider, MobileProviderInfo } from '@/types/payment';
-
 /**
- * Mobile-money helpers (MTN / Airtel / Zamtel).
- *
- * Pure client-side utilities for the checkout: provider metadata, phone-number
- * validation and E.164 formatting, and prefix-based provider detection. The
- * actual payment is driven by the backend reservation pipeline
- * (`useReserveTickets` / `usePayReservation`) — this hook never touches
- * card data or logs payment details.
+ * Phone-number helpers for the mobile-money checkout. Which operators exist, and which number
+ * ranges are theirs, is platform reference data: see `useMobileOperators`. Nothing here lists them.
  */
-export const MOBILE_PROVIDERS: Record<ZambianMobileProvider, MobileProviderInfo> = {
-  [ZambianMobileProvider.MTN]: {
-    name: 'MTN MoMo',
-    shortName: 'MTN',
-    colorVar: 'var(--momo-mtn)',
-    prefix: ['096', '076'],
-  },
-  [ZambianMobileProvider.AIRTEL]: {
-    name: 'Airtel Money',
-    shortName: 'Airtel',
-    colorVar: 'var(--momo-airtel)',
-    prefix: ['097', '077'],
-  },
-  [ZambianMobileProvider.ZAMTEL]: {
-    name: 'Zamtel Kwacha',
-    shortName: 'Zamtel',
-    colorVar: 'var(--momo-zamtel)',
-    prefix: ['095', '075'],
-  },
-};
-
-export const MOBILE_PROVIDER_LIST = Object.values(ZambianMobileProvider);
-
-/** Strip non-digits from a phone number. */
-export function normalizeDigits(phone: string): string {
-  return phone.replace(/\D/g, '');
-}
-
-/** Validate a 10-digit local number against a provider's prefixes. */
-export function validatePhoneNumber(phone: string, provider: ZambianMobileProvider): boolean {
-  const digits = normalizeDigits(phone);
-  if (digits.length !== 10) return false;
-  return MOBILE_PROVIDERS[provider].prefix.some((p) => digits.startsWith(p));
-}
-
-/** Detect the provider from a phone number's prefix, if recognisable. */
-export function detectProvider(phone: string): ZambianMobileProvider | null {
-  const digits = normalizeDigits(phone);
-  if (digits.length < 3) return null;
-  const three = digits.slice(0, 3);
-  for (const provider of MOBILE_PROVIDER_LIST) {
-    if (MOBILE_PROVIDERS[provider].prefix.includes(three)) return provider;
-  }
-  return null;
-}
+export { normalizeDigits } from './useMobileOperators';
+import { normalizeDigits } from './useMobileOperators';
 
 /** Format a local number to display E.164, e.g. "+260 96 123 4567". */
 export function formatPhoneDisplay(phone: string): string {

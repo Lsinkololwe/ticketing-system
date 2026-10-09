@@ -96,6 +96,13 @@ location SHALL reference a seeded city.
 - [ ] Seeding is idempotent — running the migration twice produces the same rows
 - [ ] A city carries `provinceId`, `name`, `latitude`, `longitude` and `active`
 
+> **Amended 2026-09-19.** There is one reference-data engine ([ET-PLT-014](../../_platform/014-reference-data-engine/)),
+> and geography is not duplicated outside it: cities are `CITY` rows of `catalog_reference_data`,
+> parented by `PROVINCE`, with `latitude` and `longitude` as metadata. `catalog_provinces` and
+> `catalog_cities` are not read or seeded. A venue's `cityId` and an event's `cityId` are the `CITY`
+> code. The organizer app's typed city is resolved to an active `CITY` row by name or code, ignoring
+> case, and refused with `LOCATION_UNKNOWN` otherwise — it is never stored as typed.
+
 ### ET-CAT-003-R2 · Venues are organization-created within a seeded city
 
 WHEN an organizer creates a venue, THE SYSTEM SHALL require an existing city and SHALL
@@ -120,6 +127,24 @@ THE SYSTEM SHALL file every event under exactly one category from a flat seeded 
 - [ ] A deactivated category keeps resolving for events already filed under it and disappears from the selection list
 - [ ] `categories` is `PUBLIC`, bounded, and cached
 - [ ] A test asserts no category document carries a parent or children field
+
+> **Amended 2026-09-19.** An event's `categoryId` is an active `EVENT_CATEGORY` code of the reference
+> data, checked on create and edit. `tags` on `CreateEventInput`, `UpdateEventInput` and
+> `EventDiscoveryFilterInput` was `@deprecated` and is **removed (2026-10-06, product owner — F-045)**;
+> it is no longer stored.
+>
+> **Amended 2026-09-19 (product owner).** A category is a reference-data row and nothing more: a
+> code and a name. It carries **no colour, icon or display styling** — how a category looks is
+> each application's design, not the reference engine's. `iconUrl`, `color` and `sortOrder` on
+> `EventCategory` and its two inputs were `@deprecated` and are **removed (2026-10-06 — F-045)**; the
+> seed's colours are removed and existing rows cleared (`strip-reference-presentation`).
+>
+> **Amended 2026-10-06 (product owner).** The catalog-specific category, city and province
+> pagination operations (`activeEventCategories…`, `eventCategories…`, the city and province
+> connections) are removed. A category is read as `categories` (public) and administered through
+> `referenceDataAll(type: EVENT_CATEGORY)` and the reference-data mutations; `EventCategory.id`
+> equals the category code. The admin Categories screen therefore edits name and description only
+> (the code is fixed once created), and shows no event count for a deactivated category.
 
 ### ET-CAT-003-R4 · Every discovery filter combination is indexed
 
@@ -170,6 +195,15 @@ retain it.
 
 ## 4. Model
 
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 3 operation names below adopt the
+> shipped names: `createCategory` → `createEventCategory`, `deactivateCategory` → `deactivateEventCategory`, `updateCategory` → `updateEventCategory`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
+
 ### Documents
 
 | Collection | Owner | Key fields |
@@ -177,7 +211,7 @@ retain it.
 | `catalog_provinces` | platform | `name`, `code`, `active` |
 | `catalog_cities` | platform | `provinceId`, `name`, `latitude`, `longitude`, `active` |
 | `catalog_locations` | organization | `organizationId`, `cityId`, `name`, `addressLine`, `latitude`, `longitude`, `capacity`, `active`, `createdById` |
-| `catalog_categories` | platform | `name`, `slug`, `iconName`, `displayOrder`, `active` — **no parent** |
+| `catalog_categories` | platform | `name`, `slug`, `displayOrder`, `active` — **no parent**, no presentation (amended 2026-09-19) |
 | `catalog_reference_data` | platform | typed lookup lists that are not worth their own collection |
 
 ### Seeded categories
@@ -231,9 +265,9 @@ Subgraph `catalog`. Every field carries `@auth` explicitly.
 | `createCity(input)` | mutation | `SUPER_ADMIN` | `City!` |
 | `updateCity(id, input)` | mutation | `SUPER_ADMIN` | `City!` |
 | `deactivateCity(id)` | mutation | `SUPER_ADMIN` | `City!` |
-| `createCategory(input)` | mutation | `SUPER_ADMIN` | `Category!` |
-| `updateCategory(id, input)` | mutation | `SUPER_ADMIN` | `Category!` |
-| `deactivateCategory(id)` | mutation | `SUPER_ADMIN` | `Category!` |
+| `createEventCategory(input)` | mutation | `SUPER_ADMIN` | `Category!` |
+| `updateEventCategory(id, input)` | mutation | `SUPER_ADMIN` | `Category!` |
+| `deactivateEventCategory(id)` | mutation | `SUPER_ADMIN` | `Category!` |
 
 `Province`, `City`, `Location` and `Category` are catalog-owned `@key` types. None is
 extended by another subgraph.

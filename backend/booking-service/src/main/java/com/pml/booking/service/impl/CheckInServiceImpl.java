@@ -1,5 +1,6 @@
 package com.pml.booking.service.impl;
 
+import com.pml.shared.graphql.PageSize;
 import com.pml.booking.domain.enums.CheckInConflictStatus;
 import com.pml.booking.domain.enums.CheckInConflictType;
 import com.pml.booking.domain.enums.ValidationMethod;
@@ -23,7 +24,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -46,8 +47,6 @@ import java.util.Set;
  * "already admitted" is an ordinary thing that happens several times a night and
  * the steward needs to know which refusal it was. Routing it through the error
  * channel collapses every refusal into the same red box.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/003-validation-and-checkin/spec.md">ET-TKT-003</a>
  */
 @Slf4j
 @Service
@@ -55,7 +54,7 @@ import java.util.Set;
 public class CheckInServiceImpl implements CheckInService {
 
     /**
-     * The statuses a ticket may be admitted from — ET-TKT-002 R7 leaves exactly one.
+     * The statuses a ticket may be admitted from — exactly one.
      *
      * <p>VALIDATED is deliberately absent, and that is the whole re-entry
      * defence: a ticket that has been through a gate is no longer admissible,
@@ -65,6 +64,9 @@ public class CheckInServiceImpl implements CheckInService {
             EnumSet.of(TicketStatus.ISSUED);
 
     private final ReactiveMongoTemplate mongoTemplate;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final TicketRepository ticketRepository;
     private final CheckInRepository checkInRepository;
     private final CheckInConflictRepository conflictRepository;
@@ -107,11 +109,11 @@ public class CheckInServiceImpl implements CheckInService {
                             "This ticket is for a different event."));
         }
 
-        if (!ADMISSIBLE.contains(ticket.getStatus())) {
+        if (!ADMISSIBLE.contains(ticket.getStatus()) || ticket.getActiveTransferId() != null) {
             // A ticket already marked VALIDATED is the common case here, and it
             // reads as a duplicate rather than a bad ticket — the person in
             // front of the steward has a real ticket that has already been used.
-            boolean alreadyAdmitted = ticket.getStatus().isAdmitted();
+            boolean alreadyAdmitted = ticket.getStatus().isAdmitted() && ticket.getActiveTransferId() == null;
 
             CheckInConflictType type = alreadyAdmitted
                     ? CheckInConflictType.DUPLICATE_SCAN
@@ -119,18 +121,20 @@ public class CheckInServiceImpl implements CheckInService {
 
             return checkInRepository.findByTicketId(ticket.getId())
                     .map(CheckIn::getRecordedAt)
-                    .defaultIfEmpty(ticket.getValidatedAt() == null ? LocalDateTime.MIN : ticket.getValidatedAt())
+                    .defaultIfEmpty(ticket.getValidatedAt() == null ? Instant.MIN : ticket.getValidatedAt())
                     .flatMap(originalAt -> recordConflict(command, ticket, type,
-                            LocalDateTime.MIN.equals(originalAt) ? null : originalAt))
+                            Instant.MIN.equals(originalAt) ? null : originalAt))
                     .map(conflict -> new ScanResult(
                             alreadyAdmitted ? Outcome.ALREADY_ADMITTED : Outcome.INVALID_STATE,
                             null, conflict, ticket,
                             alreadyAdmitted
                                     ? "This ticket has already been admitted."
+                                    : ticket.getActiveTransferId() != null
+                                    ? "This ticket is in a transfer that has not resolved (TRANSFER_PENDING)."
                                     : "This ticket is not admissible (" + ticket.getStatus() + ")."));
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = clock.instant();
         CheckIn checkIn = CheckIn.builder()
                 .ticketId(ticket.getId())
                 .eventId(ticket.getEventId())
@@ -172,9 +176,11 @@ public class CheckInServiceImpl implements CheckInService {
      * overwrite {@code validatedAt} with its own, later timestamp and quietly
      * move the recorded admission time.
      */
-    private Mono<Ticket> markTicketValidated(Ticket ticket, LocalDateTime at) {
+    private Mono<Ticket> markTicketValidated(Ticket ticket, Instant at) {
         Query query = Query.query(Criteria.where("_id").is(ticket.getId())
-                .and("status").is(TicketStatus.ISSUED.name()));
+                .and("status").is(TicketStatus.ISSUED.name())
+                // A ticket held by an open transfer is not admitted, even by a scan racing the transfer.
+                .and("activeTransferId").is(null));
 
         Update update = new Update()
                 .set("status", TicketStatus.VALIDATED.name())
@@ -189,8 +195,8 @@ public class CheckInServiceImpl implements CheckInService {
     private Mono<CheckInConflict> recordConflict(ScanCommand command,
                                                  Ticket ticket,
                                                  CheckInConflictType type,
-                                                 LocalDateTime originalAt) {
-        LocalDateTime now = LocalDateTime.now();
+                                                 Instant originalAt) {
+        Instant now = clock.instant();
         CheckInConflict conflict = CheckInConflict.builder()
                 .eventId(command.eventId())
                 // From the ticket when there is one; otherwise the organizer
@@ -230,8 +236,8 @@ public class CheckInServiceImpl implements CheckInService {
         // resolves to the same winner every time.
         List<ScanCommand> ordered = new ArrayList<>(commands);
         ordered.sort((a, b) -> {
-            LocalDateTime left = a.scannedAt() == null ? LocalDateTime.MAX : a.scannedAt();
-            LocalDateTime right = b.scannedAt() == null ? LocalDateTime.MAX : b.scannedAt();
+            Instant left = a.scannedAt() == null ? Instant.MAX : a.scannedAt();
+            Instant right = b.scannedAt() == null ? Instant.MAX : b.scannedAt();
             int byTime = left.compareTo(right);
             if (byTime != 0) {
                 return byTime;
@@ -279,14 +285,14 @@ public class CheckInServiceImpl implements CheckInService {
 
     @Override
     public Flux<CheckIn> recentCheckIns(String eventId, String organizerId, int limit) {
-        int bounded = Math.min(Math.max(limit, 1), 100);
+        int bounded = PageSize.require(limit);
         return checkInRepository.findByEventIdAndOrganizerIdOrderByRecordedAtDesc(
                 eventId, organizerId, PageRequest.of(0, bounded));
     }
 
     @Override
     public Flux<CheckInConflict> conflicts(String eventId, String organizerId, int page, int size) {
-        int boundedSize = Math.min(Math.max(size, 1), 100);
+        int boundedSize = PageSize.require(size);
         int boundedPage = Math.max(page, 0);
         return conflictRepository.findByEventIdAndOrganizerIdOrderByDetectedAtDesc(
                 eventId, organizerId, PageRequest.of(boundedPage, boundedSize));
@@ -295,6 +301,11 @@ public class CheckInServiceImpl implements CheckInService {
     @Override
     public Mono<Long> countConflicts(String eventId, String organizerId) {
         return conflictRepository.countByEventIdAndOrganizerId(eventId, organizerId);
+    }
+
+    @Override
+    public Mono<CheckInConflict> findConflict(String conflictId) {
+        return conflictRepository.findById(conflictId);
     }
 
     @Override
@@ -309,7 +320,7 @@ public class CheckInServiceImpl implements CheckInService {
                     conflict.setStatus(CheckInConflictStatus.REVIEWED);
                     conflict.setReviewNote(note);
                     conflict.setReviewedBy(reviewedBy);
-                    conflict.setReviewedAt(LocalDateTime.now());
+                    conflict.setReviewedAt(clock.instant());
                     return conflictRepository.save(conflict);
                 });
     }

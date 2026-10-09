@@ -1,55 +1,33 @@
 package com.pml.identity.service;
 
-import com.pml.identity.web.graphql.dto.SetEventReminderInput;
 import com.pml.identity.domain.model.EventReminder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
+
 /**
  * Service interface for managing event reminders.
- * Handles reminder scheduling, cancellation, and automated delivery.
+ *
+ * <p>The reads GraphQL uses and the writes {@code ReminderWorkflow}'s activities
+ * make. The timers themselves are the workflow's.
  */
 public interface EventReminderService {
 
-    /**
-     * Set a reminder for an event.
-     *
-     * @param userId the user ID
-     * @param input reminder details
-     * @return Mono containing the created/updated reminder
-     */
-    Mono<EventReminder> setReminder(String userId, SetEventReminderInput input);
-
-    /**
-     * Cancel a reminder.
-     *
-     * @param reminderId the reminder ID
-     * @return Mono containing true if cancelled successfully
-     */
-    Mono<Boolean> cancelReminder(String reminderId);
-
-    /**
-     * Find all reminders for a user.
-     *
-     * @param userId the user ID
-     * @return Flux of reminders
-     */
     Flux<EventReminder> findByUserId(String userId);
 
-    /**
-     * Find reminders for a user and specific event.
-     *
-     * @param userId the user ID
-     * @param eventId the event ID
-     * @return Flux of reminders for the event
-     */
     Flux<EventReminder> findByUserIdAndEventId(String userId, String eventId);
 
-    /**
-     * Process scheduled reminders that are due.
-     * Called by scheduler to send reminders.
-     *
-     * @return Mono signaling completion
-     */
-    Mono<Void> processScheduledReminders();
+    Mono<EventReminder> findById(String reminderId);
+
+    Mono<EventReminder> findByUserIdAndTicketId(String userId, String ticketId);
+
+    /** Upserts the reminder as {@code SCHEDULED} for an event starting at {@code eventStartsAt}. */
+    Mono<EventReminder> schedule(String reminderId, String userId, String ticketId, Instant eventStartsAt, Instant reminderAt);
+
+    /** {@code CANCELLED}; a cancelled reminder is returned unchanged. */
+    Mono<EventReminder> cancel(String reminderId);
+
+    /** {@code SCHEDULED} to {@code SENT}; any other status is returned unchanged. */
+    Mono<EventReminder> markSent(String reminderId);
 }

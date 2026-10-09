@@ -48,14 +48,11 @@ public interface TicketRepository extends ReactiveMongoRepository<Ticket, String
     /**
      * The tickets issued by a reservation's confirmation.
      *
-     * <p>ET-TKT-001 R7 requires that confirming an already-{@code CONFIRMED}
-     * reservation be a no-op <em>returning the existing tickets</em>. A duplicate
-     * provider callback is routine, so the second confirmation has to find what
+     * <p>Confirming an already-{@code CONFIRMED} reservation is a no-op
+     * <em>returning the existing tickets</em>. A duplicate provider callback is routine, so the second confirmation has to find what
      * the first one wrote rather than issue a second set.
      */
     Flux<Ticket> findByReservationId(String reservationId);
-
-    Mono<Boolean> existsByTicketNumber(String ticketNumber);
 
     // ========================================================================
     // STATUS-BASED QUERIES
@@ -78,12 +75,6 @@ public interface TicketRepository extends ReactiveMongoRepository<Ticket, String
      * Used for filtering sold/active tickets.
      */
     Flux<Ticket> findByEventIdAndStatusIn(String eventId, Collection<TicketStatus> statuses);
-
-    /**
-     * Find tickets by buyer ID with status in a set of statuses.
-     * Used for active ticket counts.
-     */
-    Flux<Ticket> findByBuyerIdAndStatusIn(String buyerId, Collection<TicketStatus> statuses);
 
     // ========================================================================
     // COUNT QUERIES
@@ -129,7 +120,7 @@ public interface TicketRepository extends ReactiveMongoRepository<Ticket, String
      *
      * This aggregation:
      * 1. Matches tickets for the given event ID
-     * 2. Filters to only sold statuses (ET-TKT-002 R7: ISSUED, VALIDATED, REFUND_PENDING)
+     * 2. Filters to only sold statuses (ISSUED, VALIDATED, REFUND_PENDING)
      * 3. Sums the price field
      *
      * NOTE: Returns a wrapper DTO (RevenueResult) instead of raw BigDecimal
@@ -157,4 +148,12 @@ public interface TicketRepository extends ReactiveMongoRepository<Ticket, String
             "{ $project: { _id: 0, totalSpent: 1 } }"
     })
     Mono<SpentResult> calculateTotalSpentByBuyerId(String buyerId);
+
+    Mono<Ticket> findByIdAndBuyerId(String id, String buyerId);
+
+    Mono<Ticket> findByTicketNumberAndBuyerId(String ticketNumber, String buyerId);
+
+    Mono<Ticket> findByIdAndOrganizationIdIn(String id, Collection<String> organizationIds);
+
+    Mono<Ticket> findByTicketNumberAndOrganizationIdIn(String ticketNumber, Collection<String> organizationIds);
 }

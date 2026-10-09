@@ -7,13 +7,11 @@
  * @example
  * ```tsx
  * import {
- *   useOrganizationsList,
  *   usePendingOrganizations,
+ *   useOrganization,
  *   useApproveOrganization,
  *   useRejectOrganization,
  *   useSuspendOrganization,
- *   type Organization,
- *   type OrganizationListItem,
  *   getStatusColor,
  *   getStatusLabel,
  * } from '@pml.tickets/shared/api/admin/modules/organization';

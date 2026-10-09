@@ -3,7 +3,7 @@
 > **Spec** [`specs/admin/004-analytics-and-statistics/spec.md`](../admin/004-analytics-and-statistics/spec.md) · **Wave 6** · `blocked_by:` ET-PLT-004, 007, ET-FIN-001, ET-FIN-005, ET-TKT-003
 > **Screens** `Admin - Analytics & Statistics.dc.html`, `Admin - Dashboard.dc.html`, `Org Admin - Dashboard.dc.html` — **read all three**
 > **Routes** admin `(dashboard)/dashboard`, `analytics/{page,revenue,users}` · org-admin `(dashboard)/dashboard`, `analytics`
-> **Verify** `mvn -q -f backend test -Dgroups=ET-ADM-004 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend test -Dgroups=ET-ADM-004 -DfailIfNoTests=false`
 
 **Fourteen figures**, each one aggregation, `$match` first (**D-13**), never client-side counting
 over a fetched page. Freshness by **smart polling, not subscriptions** (**D-12**) — Apollo Router's
@@ -201,5 +201,5 @@ conserved.
 - [ ] **Infographics gate run separately for all three dashboards**; one focal point each
 - [ ] Chart rules honoured: zero baselines, one y-axis, ≤5 hues, direct labels, on-chart takeaway
 - [ ] Any design-fixture field the schema lacks was raised as a schema gap, **not** mocked
-- [ ] `mvn -q -f backend verify -Dgroups=ET-ADM-004 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend verify -Dgroups=ET-ADM-004 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

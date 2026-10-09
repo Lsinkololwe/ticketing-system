@@ -39,11 +39,9 @@ export {
 export {
   useRecoveryQueue,
   usePayoutRecoverySummary,
-  useRecoveryActions,
   type RecoveryBucket,
   type UseRecoveryQueueResult,
   type UseRecoverySummaryResult,
-  type UseRecoveryActionsResult,
 } from './recovery.hooks';
 
 export {
@@ -51,8 +49,6 @@ export {
   STUCK_PAYOUT_REQUESTS,
   RETRYABLE_PAYOUT_REQUESTS,
   PAYOUTS_FOR_REVIEW,
-  RETRY_PAYOUT_REQUEST,
-  MARK_PAYOUT_FOR_REVIEW,
   PAYOUT_RECOVERY_FIELDS,
 } from './recovery.queries';
 

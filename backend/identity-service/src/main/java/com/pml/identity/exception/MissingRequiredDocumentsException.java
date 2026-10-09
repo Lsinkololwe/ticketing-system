@@ -9,14 +9,14 @@ import java.util.List;
  * document required by the applicant's business type has been supplied.
  *
  * <h2>Why this carries the missing types</h2>
- * Spec ET-ORG-001 R3: the refusal names exactly what is missing rather than a
+ * The refusal names exactly what is missing rather than a
  * generic "incomplete". An applicant told "your application is incomplete" has
  * to go hunting; an applicant told "we still need your certificate of
  * incorporation" knows what to do next. Verification is already the
  * highest-friction moment in the product — a refusal that cannot be acted on is
  * where the application gets abandoned.
  *
- * <p>Maps to the {@code DOCUMENT_REQUIRED} error code of ET-PLT-005 §4.</p>
+ * <p>Maps to the {@code DOCUMENT_REQUIRED} error code.</p>
  */
 public class MissingRequiredDocumentsException extends RuntimeException {
 

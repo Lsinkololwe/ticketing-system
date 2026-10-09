@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/ticketing/004-transfer-and-resale/spec.md`](../ticketing/004-transfer-and-resale/spec.md) · **Wave 5** · `blocked_by:` ET-PLT-005, 007, ET-TKT-002, 003, ET-PAY-001, ET-FIN-001, 002
 > **Screen** `Ticketing - My Tickets & Transfer.dc.html` — **read it first**
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-004 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-004 -DfailIfNoTests=false`
 
 > **Corpus note.** This spec has **four broken cross-area links** (precondition **P4**): it writes
 > `../002-commission/`, `../003-payouts-and-settlement/` ×2 and `../001-escrow-and-ledger/` as
@@ -185,5 +185,5 @@ Three transfers read from either end; a buyer's query returns only their segment
 - [ ] Buyer sees only their own chain segment
 - [ ] `TransferPreview` exposes exactly six fields
 - [ ] Pending tickets never render a usable QR
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-004 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-004 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

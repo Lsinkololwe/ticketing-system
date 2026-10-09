@@ -17,13 +17,10 @@ import java.math.BigDecimal;
 public record EscrowSummaryResult(
         // Counts by status
         long totalAccounts,
-        long createdAccounts,
         long activeAccounts,
         long lockedAccounts,
         long payoutEligibleAccounts,
-        long processingPayoutAccounts,
         long closedAccounts,
-        long cancelledAccounts,
 
         // Balance aggregations
         BigDecimal totalBalance,
@@ -34,7 +31,7 @@ public record EscrowSummaryResult(
 ) {
     public static EscrowSummaryResult empty() {
         return new EscrowSummaryResult(
-                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                0L, 0L, 0L, 0L, 0L,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, BigDecimal.ZERO
         );

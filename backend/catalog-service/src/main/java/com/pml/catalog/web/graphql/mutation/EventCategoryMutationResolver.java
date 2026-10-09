@@ -5,10 +5,7 @@ import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.CategoryMutationResponse;
 import com.pml.catalog.web.graphql.dto.CreateEventCategoryInput;
-import com.pml.catalog.web.graphql.dto.CreateEventCategoryMutationResponse;
-import com.pml.catalog.web.graphql.dto.DeleteEventCategoryMutationResponse;
 import com.pml.catalog.web.graphql.dto.UpdateEventCategoryInput;
-import com.pml.catalog.web.graphql.dto.UpdateEventCategoryMutationResponse;
 import com.pml.catalog.domain.model.EventCategory;
 import com.pml.catalog.service.EventCategoryService;
 import lombok.RequiredArgsConstructor;
@@ -16,8 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-import java.util.List;
+import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL Mutation Resolver for EventCategory Operations
@@ -27,46 +24,34 @@ import java.util.List;
  * filter events. All mutations are secured with admin role.
  */
 @Slf4j
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class EventCategoryMutationResolver {
 
     private final EventCategoryService eventCategoryService;
 
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
+
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<CreateEventCategoryMutationResponse> createEventCategory(
-            @InputArgument CreateEventCategoryInput input
+    public Mono<EventCategory> createEventCategory(
+            @Valid @InputArgument CreateEventCategoryInput input
     ) {
         log.info("Creating event category: {}", input.name());
 
         EventCategory category = mapInputToCategory(input);
 
-        return eventCategoryService.createCategory(category)
-                .map(created -> new CreateEventCategoryMutationResponse(
-                        true,
-                        "Event category created successfully",
-                        created,
-                        List.of(),
-                        null
-                ))
-                .onErrorResume(e -> {
-                    log.error("Create event category failed: {}", e.getMessage());
-                    return Mono.just(new CreateEventCategoryMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+        return eventCategoryService.createCategory(category);
     }
 
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<UpdateEventCategoryMutationResponse> updateEventCategory(
+    public Mono<EventCategory> updateEventCategory(
             @InputArgument String id,
-            @InputArgument UpdateEventCategoryInput input
+            @Valid @InputArgument UpdateEventCategoryInput input
     ) {
         log.info("Updating event category: {}", id);
 
@@ -74,51 +59,18 @@ public class EventCategoryMutationResolver {
                 .flatMap(existing -> {
                     updateCategoryFromInput(existing, input);
                     return eventCategoryService.updateCategory(id, existing);
-                })
-                .map(updated -> new UpdateEventCategoryMutationResponse(
-                        true,
-                        "Event category updated successfully",
-                        updated,
-                        List.of(),
-                        null
-                ))
-                .onErrorResume(e -> {
-                    log.error("Update event category failed: {}", e.getMessage());
-                    return Mono.just(new UpdateEventCategoryMutationResponse(
-                            false,
-                            e.getMessage(),
-                            null,
-                            List.of(e.getMessage()),
-                            null
-                    ));
                 });
     }
 
     @DgsMutation
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<DeleteEventCategoryMutationResponse> deleteEventCategory(
+    public Mono<String> deleteEventCategory(
             @InputArgument String id
     ) {
         log.info("Deleting event category: {}", id);
 
         return eventCategoryService.deleteCategory(id)
-                .then(Mono.just(new DeleteEventCategoryMutationResponse(
-                        true,
-                        "Event category deleted successfully",
-                        true,
-                        List.of(),
-                        null
-                )))
-                .onErrorResume(e -> {
-                    log.error("Delete event category failed: {}", e.getMessage());
-                    return Mono.just(new DeleteEventCategoryMutationResponse(
-                            false,
-                            e.getMessage(),
-                            false,
-                            List.of(e.getMessage()),
-                            null
-                    ));
-                });
+                .thenReturn(id);
     }
 
     @DgsMutation
@@ -170,6 +122,6 @@ public class EventCategoryMutationResolver {
         if (input.name() != null) category.setName(input.name());
         if (input.description() != null) category.setDescription(input.description());
         if (input.isActive() != null) category.setActive(input.isActive());
-        category.setUpdatedAt(LocalDateTime.now());
+        category.setUpdatedAt(clock.instant());
     }
 }

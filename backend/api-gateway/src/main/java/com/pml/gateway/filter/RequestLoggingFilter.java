@@ -10,8 +10,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Global filter that logs all requests and adds correlation IDs for distributed tracing.
@@ -64,8 +64,14 @@ public class RequestLoggingFilter implements GlobalFilter, Ordered {
             correlationId = UUID.randomUUID().toString();
         }
 
-        // Step 2: Store start time for duration calculation in response logging
-        long startTime = Instant.now().toEpochMilli();
+        // Step 2: Store start time for duration calculation in response logging.
+        //
+        // nanoTime, not the wall clock. This is an *elapsed* measurement, and the two ends of it
+        // are read seconds apart: an NTP correction or a DST step between them makes the wall-clock
+        // difference wrong, and a backward step makes it negative. nanoTime is monotonic and exists
+        // for exactly this. It is a counter, not a timestamp, and there is no Clock to inject
+        // because no wall time is being read.
+        long startTime = System.nanoTime();
         exchange.getAttributes().put(REQUEST_START_TIME_ATTR, startTime);
 
         // Step 3: Add correlation ID to request (mutate creates new immutable request)
@@ -93,7 +99,9 @@ public class RequestLoggingFilter implements GlobalFilter, Ordered {
      */
     private void logResponse(ServerWebExchange exchange, String correlationId) {
         Long startTime = exchange.getAttribute(REQUEST_START_TIME_ATTR);
-        long duration = startTime != null ? Instant.now().toEpochMilli() - startTime : -1;
+        long duration = startTime != null
+                ? TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime)
+                : -1;
 
         ServerHttpResponse response = exchange.getResponse();
         log.info("[RESPONSE] {} | Duration: {}ms | Correlation-ID: {}",

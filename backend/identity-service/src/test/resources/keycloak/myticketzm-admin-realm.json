@@ -1,0 +1,11 @@
+{
+  "realm": "myticketzm-admin",
+  "enabled": true,
+  "roles": {
+    "realm": [
+      { "name": "ADMIN" },
+      { "name": "SUPER_ADMIN" },
+      { "name": "FINANCE" }
+    ]
+  }
+}

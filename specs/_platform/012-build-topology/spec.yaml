@@ -1,6 +1,6 @@
 id: ET-PLT-012
 title: Backend build topology — one parent, one BOM set, one reactor
-status: in-progress      # draft | approved | in-progress | implemented | verified | deferred | withdrawn
+status: implemented      # draft | approved | in-progress | implemented | verified | deferred | withdrawn
 area: PLT
 service: all
 subgraph: null

@@ -7,8 +7,6 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
-
 /**
  * Repository for CommissionRecord entities.
  *
@@ -52,30 +50,6 @@ public interface CommissionRecordRepository extends ReactiveMongoRepository<Comm
      * Count commissions by event and status.
      */
     Mono<Long> countByEventIdAndStatus(String eventId, CommissionStatus status);
-
-    /**
-     * Count commissions by organizer and status.
-     */
-    Mono<Long> countByOrganizerIdAndStatus(String organizerId, CommissionStatus status);
-
-    /**
-     * Sum commission amounts for an event with a specific status.
-     * Note: For complex aggregations, use custom repository implementation.
-     */
-    default Mono<BigDecimal> sumAmountByEventIdAndStatus(String eventId, CommissionStatus status) {
-        return findByEventIdAndStatus(eventId, status)
-                .map(CommissionRecord::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    /**
-     * Sum commission amounts for an organizer with a specific status.
-     */
-    default Mono<BigDecimal> sumAmountByOrganizerIdAndStatus(String organizerId, CommissionStatus status) {
-        return findByOrganizerIdAndStatus(organizerId, status)
-                .map(CommissionRecord::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
 
     /**
      * Check if commission exists for a ticket.

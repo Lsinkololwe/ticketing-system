@@ -57,8 +57,8 @@ public class RevocationAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public RevocationMetrics revocationMetrics(MeterRegistry meterRegistry) {
-        return new RevocationMetrics(meterRegistry);
+    public RevocationMetrics revocationMetrics(MeterRegistry meterRegistry, Clock clock) {
+        return new RevocationMetrics(meterRegistry, clock);
     }
 
     /**
@@ -125,14 +125,20 @@ public class RevocationAutoConfiguration {
                                            RevocationProperties properties,
                                            RevocationMetrics metrics,
                                            CircuitBreaker revocationCacheCircuitBreaker,
-                                           TimeLimiter revocationCacheTimeLimiter,
-                                           Clock revocationClock) {
+                                           TimeLimiter revocationCacheTimeLimiter) {
         log.info("[Revocation] Enabled — Redis cache in front of {} (independent stores, "
                         + "fail-closed on @FailClosedOnRevocation operations)",
                 durable.name());
         return new CachedRevocationCheck(cache, revocationCacheTrust, durable, properties,
-                metrics, revocationCacheCircuitBreaker, revocationCacheTimeLimiter,
-                revocationClock);
+                metrics, revocationCacheCircuitBreaker, revocationCacheTimeLimiter);
+    }
+
+    @Bean
+    @ConditionalOnBean(RevocationCheck.class)
+    @ConditionalOnMissingBean
+    public RevocationRequestGuard revocationRequestGuard(RevocationCheck revocationCheck,
+                                                         RevocationMetrics metrics) {
+        return new RevocationRequestGuard(revocationCheck, metrics);
     }
 
     @Bean

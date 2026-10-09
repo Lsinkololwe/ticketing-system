@@ -4,22 +4,18 @@
  * React Hooks for Organizations (Admin App)
  *
  * Admin-specific hooks for managing organizations including:
- * - Organization list views with pagination
- * - Application review workflow
- * - Organization status management
- * - Document verification
+ * - Approvals-workbench queue (pending organizations)
+ * - Single-organization lookup
+ * - Application review workflow (approve / reject / request changes / suspend / reactivate)
  */
 
-import { useState, useEffect } from 'react';
 import {
   useQuery,
   useMutation,
 } from '@apollo/client/react';
 import {
-  ORGANIZATIONS_LIST,
   PENDING_ORGANIZATIONS,
   GET_ORGANIZATION,
-  ORGANIZATION_STATISTICS,
 } from './organization.queries';
 import {
   APPROVE_ORGANIZATION,
@@ -27,81 +23,37 @@ import {
   REQUEST_ORGANIZATION_CHANGES,
   SUSPEND_ORGANIZATION,
   REACTIVATE_ORGANIZATION,
-  VERIFY_ORGANIZATION_DOCUMENTS,
-  VERIFY_PAYOUT_ACCOUNT,
 } from './organization.mutations';
 import type {
-  Organization,
-  OrganizationListItem,
-  OrganizationFilters,
-  OrganizationStatistics,
-} from './organization.types';
+  PendingOrganizationsQuery,
+  PendingOrganizationsQueryVariables,
+  GetOrganizationQuery,
+  GetOrganizationQueryVariables,
+  ApproveOrganizationMutation,
+  ApproveOrganizationMutationVariables,
+  RejectOrganizationMutation,
+  RejectOrganizationMutationVariables,
+  RequestOrganizationChangesMutation,
+  RequestOrganizationChangesMutationVariables,
+  SuspendOrganizationMutation,
+  SuspendOrganizationMutationVariables,
+  UnsuspendOrganizationMutation,
+  UnsuspendOrganizationMutationVariables,
+} from '../../../../types/graphql';
 
-// ==========================================
-// Result Types
-// ==========================================
+/**
+ * The organization detail shape every mutation and the single-organization
+ * query return — all five select the same `AdminOrganizationFields` fragment,
+ * so `GetOrganizationQuery`'s row type describes them all.
+ */
+export type AdminOrganizationDetail = NonNullable<GetOrganizationQuery['organization']>;
 
-interface PaginatedResult<T> {
-  content: T[];
-  totalElements: number;
-  totalPages: number;
-  page: number;
-  size: number;
-  hasNext: boolean;
-  hasPrevious: boolean;
-}
+/** The row shape the approvals queue actually selects — see `PENDING_ORGANIZATIONS`. */
+export type PendingOrganizationRow = PendingOrganizationsQuery['organizations']['content'][number];
 
 // ==========================================
 // Admin Query Hooks
 // ==========================================
-
-/**
- * Hook to fetch organizations list with pagination (admin)
- */
-export function useOrganizationsList(
-  filter?: OrganizationFilters,
-  pagination?: { page?: number; size?: number }
-) {
-  const { data, loading, error, refetch, fetchMore } = useQuery<{
-    organizationsOffsetPagination: PaginatedResult<OrganizationListItem>;
-  }>(ORGANIZATIONS_LIST, {
-    variables: { filter, pagination },
-    fetchPolicy: 'cache-and-network',
-    errorPolicy: 'all',
-  });
-
-  const page = data?.organizationsOffsetPagination || {
-    content: [],
-    totalElements: 0,
-    totalPages: 0,
-    page: 0,
-    size: 20,
-    hasNext: false,
-    hasPrevious: false,
-  };
-
-  const loadPage = async (pageNumber: number) => {
-    return refetch({
-      filter,
-      pagination: { ...pagination, page: pageNumber },
-    });
-  };
-
-  return {
-    organizations: page.content,
-    totalElements: page.totalElements,
-    totalPages: page.totalPages,
-    currentPage: page.page,
-    pageSize: page.size,
-    hasNext: page.hasNext,
-    hasPrevious: page.hasPrevious,
-    loading,
-    error,
-    refetch,
-    loadPage,
-    fetchMore,
-  };
-}
 
 /**
  * Hook to fetch pending organizations (admin)
@@ -110,18 +62,10 @@ export function usePendingOrganizations(pagination?: {
   page?: number;
   size?: number;
 }) {
-  const { data, loading, error, refetch } = useQuery<{
-    organizationsOffsetPagination: {
-      content: OrganizationListItem[];
-      pageInfo: {
-        currentPage: number | null;
-        pageSize: number | null;
-        totalCount: number | null;
-        hasNext: boolean | null;
-        hasPrevious: boolean | null;
-      };
-    };
-  }>(PENDING_ORGANIZATIONS, {
+  const { data, loading, error, refetch } = useQuery<
+    PendingOrganizationsQuery,
+    PendingOrganizationsQueryVariables
+  >(PENDING_ORGANIZATIONS, {
     variables: {
       pagination: {
         page: pagination?.page ?? 0,
@@ -136,7 +80,7 @@ export function usePendingOrganizations(pagination?: {
     errorPolicy: 'all',
   });
 
-  const page = data?.organizationsOffsetPagination;
+  const page = data?.organizations;
   const info = page?.pageInfo;
   const size = info?.pageSize ?? 20;
   const total = info?.totalCount ?? 0;
@@ -155,10 +99,11 @@ export function usePendingOrganizations(pagination?: {
  * Hook to fetch a single organization by ID (admin)
  */
 export function useOrganization(id: string | null) {
-  const { data, loading, error, refetch } = useQuery<{
-    organization: Organization | null;
-  }>(GET_ORGANIZATION, {
-    variables: { id },
+  const { data, loading, error, refetch } = useQuery<
+    GetOrganizationQuery,
+    GetOrganizationQueryVariables
+  >(GET_ORGANIZATION, {
+    variables: { id: id ?? '' },
     skip: !id,
     fetchPolicy: 'cache-and-network',
     errorPolicy: 'all',
@@ -166,25 +111,6 @@ export function useOrganization(id: string | null) {
 
   return {
     organization: data?.organization || null,
-    loading,
-    error,
-    refetch,
-  };
-}
-
-/**
- * Hook to fetch organization statistics (admin dashboard)
- */
-export function useOrganizationStatistics() {
-  const { data, loading, error, refetch } = useQuery<{
-    organizationStatistics: OrganizationStatistics;
-  }>(ORGANIZATION_STATISTICS, {
-    fetchPolicy: 'cache-and-network',
-    errorPolicy: 'all',
-  });
-
-  return {
-    statistics: data?.organizationStatistics || null,
     loading,
     error,
     refetch,
@@ -199,22 +125,17 @@ export function useOrganizationStatistics() {
  * Hook to approve an organization (admin)
  */
 export function useApproveOrganization() {
-  const [approveMutation, { data, loading, error }] = useMutation<{
-    approveOrganization: Organization;
-  }>(APPROVE_ORGANIZATION, {
+  const [approveMutation, { data, loading, error }] = useMutation<
+    ApproveOrganizationMutation,
+    ApproveOrganizationMutationVariables
+  >(APPROVE_ORGANIZATION, {
     errorPolicy: 'all',
-    refetchQueries: [
-      { query: PENDING_ORGANIZATIONS },
-      { query: ORGANIZATION_STATISTICS },
-    ],
+    refetchQueries: [{ query: PENDING_ORGANIZATIONS }],
     awaitRefetchQueries: true,
   });
 
-  const approve = async (
-    id: string,
-    comments?: string
-  ): Promise<Organization | null> => {
-    const result = await approveMutation({ variables: { id, comments } });
+  const approve = async (id: string, commissionRate?: number | null): Promise<AdminOrganizationDetail | null> => {
+    const result = await approveMutation({ variables: { id, commissionRate: commissionRate ?? null } });
     return result.data?.approveOrganization || null;
   };
 
@@ -230,21 +151,19 @@ export function useApproveOrganization() {
  * Hook to reject an organization (admin)
  */
 export function useRejectOrganization() {
-  const [rejectMutation, { data, loading, error }] = useMutation<{
-    rejectOrganization: Organization;
-  }>(REJECT_ORGANIZATION, {
+  const [rejectMutation, { data, loading, error }] = useMutation<
+    RejectOrganizationMutation,
+    RejectOrganizationMutationVariables
+  >(REJECT_ORGANIZATION, {
     errorPolicy: 'all',
-    refetchQueries: [
-      { query: PENDING_ORGANIZATIONS },
-      { query: ORGANIZATION_STATISTICS },
-    ],
+    refetchQueries: [{ query: PENDING_ORGANIZATIONS }],
     awaitRefetchQueries: true,
   });
 
   const reject = async (
     id: string,
     reason: string
-  ): Promise<Organization | null> => {
+  ): Promise<AdminOrganizationDetail | null> => {
     const result = await rejectMutation({ variables: { id, reason } });
     return result.data?.rejectOrganization || null;
   };
@@ -261,21 +180,19 @@ export function useRejectOrganization() {
  * Hook to request changes to an organization (admin)
  */
 export function useRequestOrganizationChanges() {
-  const [requestMutation, { data, loading, error }] = useMutation<{
-    requestOrganizationChanges: Organization;
-  }>(REQUEST_ORGANIZATION_CHANGES, {
+  const [requestMutation, { data, loading, error }] = useMutation<
+    RequestOrganizationChangesMutation,
+    RequestOrganizationChangesMutationVariables
+  >(REQUEST_ORGANIZATION_CHANGES, {
     errorPolicy: 'all',
-    refetchQueries: [
-      { query: PENDING_ORGANIZATIONS },
-      { query: ORGANIZATION_STATISTICS },
-    ],
+    refetchQueries: [{ query: PENDING_ORGANIZATIONS }],
     awaitRefetchQueries: true,
   });
 
   const requestChanges = async (
     id: string,
     reason: string
-  ): Promise<Organization | null> => {
+  ): Promise<AdminOrganizationDetail | null> => {
     const result = await requestMutation({ variables: { id, reason } });
     return result.data?.requestOrganizationChanges || null;
   };
@@ -292,18 +209,17 @@ export function useRequestOrganizationChanges() {
  * Hook to suspend an organization (admin)
  */
 export function useSuspendOrganization() {
-  const [suspendMutation, { data, loading, error }] = useMutation<{
-    suspendOrganization: Organization;
-  }>(SUSPEND_ORGANIZATION, {
+  const [suspendMutation, { data, loading, error }] = useMutation<
+    SuspendOrganizationMutation,
+    SuspendOrganizationMutationVariables
+  >(SUSPEND_ORGANIZATION, {
     errorPolicy: 'all',
-    refetchQueries: [{ query: ORGANIZATION_STATISTICS }],
-    awaitRefetchQueries: true,
   });
 
   const suspend = async (
     id: string,
     reason: string
-  ): Promise<Organization | null> => {
+  ): Promise<AdminOrganizationDetail | null> => {
     const result = await suspendMutation({ variables: { id, reason } });
     return result.data?.suspendOrganization || null;
   };
@@ -320,189 +236,29 @@ export function useSuspendOrganization() {
  * Hook to reactivate a suspended organization (admin)
  */
 export function useReactivateOrganization() {
-  const [reactivateMutation, { data, loading, error }] = useMutation<{
-    reactivateOrganization: Organization;
-  }>(REACTIVATE_ORGANIZATION, {
+  const [reactivateMutation, { data, loading, error }] = useMutation<
+    UnsuspendOrganizationMutation,
+    UnsuspendOrganizationMutationVariables
+  >(REACTIVATE_ORGANIZATION, {
     errorPolicy: 'all',
-    refetchQueries: [{ query: ORGANIZATION_STATISTICS }],
-    awaitRefetchQueries: true,
   });
 
-  const reactivate = async (id: string): Promise<Organization | null> => {
+  const reactivate = async (id: string): Promise<AdminOrganizationDetail | null> => {
     const result = await reactivateMutation({ variables: { id } });
-    return result.data?.reactivateOrganization || null;
+    return result.data?.unsuspendOrganization || null;
   };
 
   return {
     reactivate,
-    organization: data?.reactivateOrganization || null,
-    loading,
-    error,
-  };
-}
-
-/**
- * Hook to fetch approved organizations (admin)
- */
-export function useApprovedOrganizations(pagination?: {
-  page?: number;
-  size?: number;
-}) {
-  return useOrganizationsList(
-    { status: ['APPROVED', 'ACTIVE'] },
-    pagination
-  );
-}
-
-/**
- * Hook to fetch suspended organizations (admin)
- */
-export function useSuspendedOrganizations(pagination?: {
-  page?: number;
-  size?: number;
-}) {
-  return useOrganizationsList(
-    { status: ['SUSPENDED'] },
-    pagination
-  );
-}
-
-/**
- * Hook to search organizations (admin)
- * Provides a search function and results state
- */
-export function useSearchOrganizations() {
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [results, setResults] = useState<OrganizationListItem[]>([]);
-
-  const { data, loading, error, refetch } = useQuery<{
-    organizationsOffsetPagination: PaginatedResult<OrganizationListItem>;
-  }>(ORGANIZATIONS_LIST, {
-    variables: {
-      filter: searchQuery ? { search: searchQuery } : undefined,
-      pagination: { page: 0, size: 50 },
-    },
-    skip: !searchQuery,
-    fetchPolicy: 'network-only',
-    errorPolicy: 'all',
-  });
-
-  useEffect(() => {
-    if (data) {
-      setResults(data?.organizationsOffsetPagination?.content || []);
-    }
-  }, [data]);
-
-  const search = async (query: string) => {
-    setSearchQuery(query);
-    if (query.trim()) {
-      await refetch({
-        filter: { search: query.trim() },
-        pagination: { page: 0, size: 50 },
-      });
-    } else {
-      setResults([]);
-    }
-  };
-
-  const clearSearch = () => {
-    setSearchQuery('');
-    setResults([]);
-  };
-
-  return {
-    search,
-    clearSearch,
-    results,
-    loading,
-    error,
-    searchQuery,
-  };
-}
-
-// ==========================================
-// Verification Mutation Hooks
-// ==========================================
-
-/**
- * Hook to verify organization documents (admin)
- */
-export function useVerifyOrganizationDocuments() {
-  const [verifyMutation, { data, loading, error }] = useMutation<{
-    verifyOrganizationDocuments: Organization;
-  }>(VERIFY_ORGANIZATION_DOCUMENTS, {
-    errorPolicy: 'all',
-  });
-
-  const verify = async (id: string): Promise<Organization | null> => {
-    const result = await verifyMutation({ variables: { id } });
-    return result.data?.verifyOrganizationDocuments || null;
-  };
-
-  return {
-    verify,
-    organization: data?.verifyOrganizationDocuments || null,
-    loading,
-    error,
-  };
-}
-
-/**
- * Hook to verify payout account (admin)
- */
-export function useVerifyPayoutAccount() {
-  const [verifyMutation, { data, loading, error }] = useMutation<{
-    verifyPayoutAccount: Organization;
-  }>(VERIFY_PAYOUT_ACCOUNT, {
-    errorPolicy: 'all',
-  });
-
-  const verify = async (id: string): Promise<Organization | null> => {
-    const result = await verifyMutation({ variables: { id } });
-    return result.data?.verifyPayoutAccount || null;
-  };
-
-  return {
-    verify,
-    organization: data?.verifyPayoutAccount || null,
+    organization: data?.unsuspendOrganization || null,
     loading,
     error,
   };
 }
 
 // ==========================================
-// Compatibility Aliases (for legacy code)
+// Shorter Name Used by the Approvals Screen
 // ==========================================
-
-/**
- * Alias for useOrganizationsList
- * @deprecated Use useOrganizationsList instead
- */
-export function useOrganizationApplications(
-  filter?: OrganizationFilters,
-  pagination?: { page?: number; size?: number }
-) {
-  const result = useOrganizationsList(filter, pagination);
-  return {
-    ...result,
-    applications: result.organizations,
-  };
-}
-
-/**
- * Alias for usePendingOrganizations
- * @deprecated Use usePendingOrganizations instead
- */
-export function usePendingApplications(pagination?: {
-  page?: number;
-  size?: number;
-}) {
-  const result = usePendingOrganizations(pagination);
-  return {
-    ...result,
-    applications: result.organizations,
-  };
-}
 
 /**
  * Alias for useReactivateOrganization

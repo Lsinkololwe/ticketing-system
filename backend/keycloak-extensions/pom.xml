@@ -10,13 +10,44 @@
     <packaging>jar</packaging>
 
     <name>Keycloak Extensions</name>
-    <description>Custom Keycloak extensions: Phone OTP Authenticator and User Sync EventListener for MongoDB synchronization</description>
+    <description>Keycloak extensions: contact-otp-authenticator (SCREEN and HANDOFF modes) and the slim user-sync event listener</description>
 
+    <!--
+        ET-PLT-012 R3 · this module deliberately declares no <parent>. A Keycloak SPI runs inside
+        Keycloak's own classloader, and inheriting spring-boot-starter-parent would put Spring's
+        dependency management on a JAR that must contain no Spring at all.
+
+        R5 and R6 still apply, and that is the difficulty: with nothing to inherit, every value
+        below is a copy of the parent's, and copies drift. `BuildTopologyTest` compares them,
+        because the module the topology exempts from inheritance is the one nothing else checks.
+    -->
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <!-- ET-PLT-012 R5 · Java 21, like every other module. `release` rather than
+             source/target: source/target compiles 21 syntax against the running JDK's class
+             library, so an API added after 21 links happily here and fails at runtime on the
+             JDK Keycloak actually ships. -->
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <keycloak.version>26.0.0</keycloak.version>
+
+        <!-- Must equal the parent's keycloak.version. Compiling the SPI against a different
+             Keycloak than the platform declares is how a provider loads and then fails on a
+             method that moved between patch releases. -->
+        <keycloak.version>26.5.2</keycloak.version>
+
+        <!-- Must equal the parent's. R6: one plugin version in one place, and two builds of one
+             commit resolving different compiler versions is exactly what that forbids. -->
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+        <maven-jar-plugin.version>3.3.0</maven-jar-plugin.version>
+        <maven-failsafe-plugin.version>3.5.3</maven-failsafe-plugin.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
+        <docker.api.version>1.44</docker.api.version>
+
+        <!-- Pinned even though this module has no tests yet. Without a <parent> nothing manages
+             surefire here, so it resolved to Maven's built-in default — 3.2.5, against the 3.5.3
+             every other module inherits from Boot. A default is deterministic for one Maven
+             version and drifts across them, which is precisely the "two machines, one commit,
+             different plugin" R6 forbids. -->
+        <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
     </properties>
 
     <dependencies>
@@ -42,18 +73,13 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- JSON Processing -->
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>2.10.1</version>
-        </dependency>
+        <!-- Jackson is provided by Keycloak (transitive of keycloak-core, provided scope); nothing
+             is shaded into the JAR any more. -->
 
-        <!-- Logging -->
         <dependency>
             <groupId>org.jboss.logging</groupId>
             <artifactId>jboss-logging</artifactId>
-            <version>3.5.3.Final</version>
+            <version>3.6.1.Final</version>
             <scope>provided</scope>
         </dependency>
 
@@ -61,7 +87,37 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.10.2</version>
+            <version>5.12.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.14.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.14.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.6</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -71,46 +127,55 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>${maven-compiler-plugin.version}</version>
                 <configuration>
-                    <source>17</source>
-                    <target>17</target>
+                    <release>${maven.compiler.release}</release>
                 </configuration>
             </plugin>
 
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <configuration>
+                    <!-- Unit tests only; the container tests are *IT and run in failsafe after the
+                         JAR exists. Layer tags (ET-IDN-001 + layer) select by -Dgroups. -->
+                    <excludes>
+                        <exclude>**/*IT.java</exclude>
+                    </excludes>
+                    <systemPropertyVariables>
+                        <api.version>${docker.api.version}</api.version>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>${maven-failsafe-plugin.version}</version>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <systemPropertyVariables>
+                        <api.version>${docker.api.version}</api.version>
+                        <plugin.jar>${project.build.directory}/${project.build.finalName}.jar</plugin.jar>
+                        <keycloak.image>quay.io/keycloak/keycloak:${keycloak.version}</keycloak.image>
+                        <repo.infra.dir>${project.basedir}/../../../docker-resources/keycloak</repo.infra.dir>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
-                <configuration>
-                    <archive>
-                        <manifestEntries>
-                            <Dependencies>org.keycloak.keycloak-services</Dependencies>
-                        </manifestEntries>
-                    </archive>
-                </configuration>
-            </plugin>
-
-            <!-- Shade plugin to create fat JAR with dependencies -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.1</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <artifactSet>
-                                <includes>
-                                    <include>com.google.code.gson:gson</include>
-                                </includes>
-                            </artifactSet>
-                        </configuration>
-                    </execution>
-                </executions>
+                <version>${maven-jar-plugin.version}</version>
             </plugin>
         </plugins>
 

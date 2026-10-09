@@ -1,79 +1,39 @@
 package com.pml.identity.service;
 
-import com.pml.identity.dto.sync.KeycloakEventDto;
-import com.pml.identity.dto.sync.KeycloakUserDataDto;
-import com.pml.identity.dto.sync.SyncResponse;
 import com.pml.identity.domain.model.User;
 import reactor.core.publisher.Mono;
 
 /**
- * Service for synchronizing user data between Keycloak and MongoDB.
+ * Brings accounts in step with what Keycloak holds, without ever deciding who a person is.
  *
- * Handles:
- * - Syncing user data from Keycloak to MongoDB
- * - Processing Keycloak events (login, profile updates, etc.)
- * - Bulk sync operations for recovery scenarios
- *
- * Architecture:
- * - Keycloak is the source of truth for authentication and user identity
- * - MongoDB stores business-specific user data that extends Keycloak
- * - This service ensures MongoDB stays in sync with Keycloak changes
+ * <ul>
+ *   <li>Keycloak is read by id, in the realm the event came from; the event itself carries no profile
+ *       data, so out-of-order events converge on the latest state.</li>
+ *   <li>Roles come from the user's <em>realm roles</em> only. User attributes such as {@code roles} or
+ *       {@code accountType} are user-editable in some flows and are never trusted.</li>
+ *   <li>A Keycloak user with no account is adopted or created only for platform staff (the staff
+ *       realm). A buyer's account is born by proving a contact, so a buyer-realm user nobody
+ *       recognises is recorded as an orphan and left alone.</li>
+ *   <li>Contacts are never written here, and nothing is hard-deleted: a Keycloak delete marks the
+ *       account DELETED and releases its contacts.</li>
+ * </ul>
  */
 public interface UserSyncService {
 
     /**
-     * Sync a single user from Keycloak to MongoDB.
-     * Fetches user data from Keycloak Admin API and upserts into MongoDB.
+     * Syncs one Keycloak user.
      *
-     * @param keycloakUserId The Keycloak user ID (sub claim)
-     * @return The synced user or error if sync failed
-     * @deprecated Use {@link #syncUserFromData(KeycloakUserDataDto)} instead.
-     *             This method requires admin credentials which is a security concern.
+     * @param realm the realm of the user; null or blank means the buyer realm
+     * @return the account, or empty when Keycloak holds no such user or none is to be created
      */
-    @Deprecated
-    Mono<User> syncUserFromKeycloak(String keycloakUserId);
+    Mono<User> syncUser(String realm, String keycloakUserId);
 
-    /**
-     * Sync a user from full data received from Keycloak EventListener.
-     * OWASP Best Practice: No admin credentials needed, data comes directly from Keycloak.
-     *
-     * @param userData The full user data from Keycloak
-     * @return The synced user
-     */
-    Mono<User> syncUserFromData(KeycloakUserDataDto userData);
+    /** A Keycloak delete: the account is marked DELETED and its contacts released; an unknown user is ignored. */
+    Mono<Void> markDeleted(String realm, String keycloakUserId);
 
-    /**
-     * Sync all users from Keycloak to MongoDB.
-     * Used for initial setup or recovery scenarios.
-     * This operation can take significant time for large user bases.
-     *
-     * @return Mono<Void> that completes when all users are synced
-     */
-    Mono<Void> syncAllUsersFromKeycloak();
+    /** Stamps {@code lastLoginAt}; an unknown user is ignored. */
+    Mono<User> updateLastLogin(String realm, String keycloakUserId);
 
-    /**
-     * Handle a Keycloak event.
-     * Processes the event and takes appropriate action (sync, update login, delete, etc.)
-     *
-     * @param event The Keycloak event data
-     * @return SyncResponse indicating the result
-     */
-    Mono<SyncResponse> handleKeycloakEvent(KeycloakEventDto event);
-
-    /**
-     * Delete a user from MongoDB by Keycloak user ID.
-     * Called when a user is deleted in Keycloak.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @return Mono<Void> that completes when deletion is done
-     */
-    Mono<Void> deleteUserByKeycloakId(String keycloakUserId);
-
-    /**
-     * Update the last login timestamp for a user.
-     *
-     * @param keycloakUserId The Keycloak user ID
-     * @return The updated user
-     */
-    Mono<User> updateLastLogin(String keycloakUserId);
+    /** Records that a change could not be applied, so the failure is data and not only a log line. */
+    Mono<Void> recordFailure(String realm, String keycloakUserId, String kind, String reason);
 }

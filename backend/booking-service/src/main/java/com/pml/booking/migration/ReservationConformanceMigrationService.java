@@ -1,5 +1,7 @@
 package com.pml.booking.migration;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -15,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Moves reservations onto ET-TKT-001's collection and five states.
+ * Moves reservations onto their current collection and five states.
  *
  * <h2>The one mapping that loses information</h2>
  * {@code CANCELLED → RELEASED} is safe: both mean the seats went back.
@@ -33,8 +35,6 @@ import java.util.Map;
  * "why did nobody chase this refund": the information was destroyed before this
  * migration ran, by a status set that had nowhere to put it. Going forward the
  * distinction exists.
- *
- * @see <a href="file:../../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001</a>
  */
 @Slf4j
 @Service
@@ -43,7 +43,7 @@ public class ReservationConformanceMigrationService {
 
     // The one place the pre-conformance name must survive a find-and-replace.
     private static final String OLD_COLLECTION = "ticket_reservations";
-    private static final String NEW_COLLECTION = "booking_reservations";
+    private static final String NEW_COLLECTION = BookingCollections.RESERVATIONS;
 
     private static final Map<String, String> STATUS_MAPPING = new LinkedHashMap<>(Map.of(
             "ACTIVE", "HELD",
@@ -107,7 +107,7 @@ public class ReservationConformanceMigrationService {
      * places recording when a purchase completed and no rule about which wins.
      * The old name also mislabelled what it held: a reservation is not
      * "converted", it is confirmed, and the distinction is the whole reason
-     * ET-TKT-001 §4 gives each terminal state its own timestamp.
+     * each terminal state has its own timestamp.
      *
      * <p>Reservations that ended any other way get no timestamp from this: the
      * old model had nowhere to record when a hold was released or failed, so

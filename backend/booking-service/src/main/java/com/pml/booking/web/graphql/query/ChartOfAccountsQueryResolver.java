@@ -6,9 +6,6 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.enums.AccountType;
 import com.pml.booking.domain.model.ChartOfAccountsEntry;
 import com.pml.booking.service.ChartOfAccountsService;
-import com.pml.booking.web.graphql.dto.ChartOfAccountsOffsetPage;
-import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
-import com.pml.booking.web.graphql.dto.PaginationInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -96,56 +93,8 @@ public class ChartOfAccountsQueryResolver {
     // OFFSET PAGINATION QUERIES
     // ========================================================================
 
-    /**
-     * Get chart of accounts entries with offset pagination.
-     * Schema: chartOfAccountsOffsetPagination(pagination: OffsetPaginationInput): ChartOfAccountsOffsetPage!
-     */
-    @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ChartOfAccountsOffsetPage> chartOfAccountsOffsetPagination(
-            @InputArgument OffsetPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: chartOfAccountsOffsetPagination");
-
-        return chartOfAccountsService.findAllActive()
-                .collectList()
-                .map(allAccounts -> buildOffsetPage(allAccounts, pagination));
-    }
-
     // ========================================================================
     // HELPER METHODS
     // ========================================================================
 
-    /**
-     * Build ChartOfAccountsOffsetPage from a list of accounts.
-     */
-    private ChartOfAccountsOffsetPage buildOffsetPage(
-            List<ChartOfAccountsEntry> allAccounts,
-            OffsetPaginationInput pagination
-    ) {
-        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
-        int limit = p.getLimit();
-        int offset = p.getOffset();
-
-        int totalCount = allAccounts.size();
-        int totalPages = (int) Math.ceil((double) totalCount / limit);
-        boolean hasNextPage = (offset + limit) < totalCount;
-        boolean hasPreviousPage = p.page() > 1;
-
-        List<ChartOfAccountsEntry> paginatedData = allAccounts.stream()
-                .skip(offset)
-                .limit(limit)
-                .toList();
-
-        PaginationInfo paginationInfo = new PaginationInfo(
-                totalCount,
-                limit,
-                p.page(),
-                totalPages,
-                hasNextPage,
-                hasPreviousPage
-        );
-
-        return new ChartOfAccountsOffsetPage(paginatedData, paginationInfo);
-    }
 }

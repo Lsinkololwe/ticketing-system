@@ -23,7 +23,7 @@
       },
       "organizerId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "OWASP A03 - ObjectId pattern validation"
       },
       "organizationId": {
@@ -122,6 +122,43 @@
           "SUSPENDED"
         ],
         "description": "OWASP A04 - Enum constraint"
+      },
+      "verificationStatus": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "PENDING",
+          "VERIFYING",
+          "VERIFIED",
+          "VERIFICATION_FAILED",
+          "DISABLED",
+          null
+        ],
+        "description": "BankAccount.VerificationStatus"
+      },
+      "microDepositAmount": {
+        "bsonType": [
+          "decimal",
+          "double",
+          "int",
+          "long",
+          "null"
+        ]
+      },
+      "verificationAttempts": {
+        "bsonType": [
+          "int",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "verificationLockedUntil": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
       },
       "createdAt": {
         "bsonType": "date"

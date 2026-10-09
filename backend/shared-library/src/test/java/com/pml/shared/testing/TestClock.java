@@ -9,7 +9,7 @@ import java.time.ZoneId;
  * A {@link Clock} that does not move unless a test moves it.
  *
  * <h2>Why the platform can be tested at all</h2>
- * ET-PLT-001 R3 removes every inline {@code Instant.now()} and injects a
+ * The platform has no inline {@code Instant.now()}; it injects a
  * {@code Clock} instead. This is what that buys: a reservation can be asserted
  * live at 9:59 and expired at 10:01 without sleeping for ten minutes, and a
  * sales window can be driven across its close in a millisecond.

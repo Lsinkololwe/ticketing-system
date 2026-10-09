@@ -41,6 +41,12 @@ forever.
 (P180D) — six months, because a mobile app that will not be updated for six months is the
 constraint, not a preference.
 
+> **Exception, 2026-10-06 (product owner).** Everything then `@deprecated` was removed at once,
+> ahead of the window, because the platform has no released client: nothing in production calls
+> it, and the only consumers were the three web apps in this repository, migrated in the same
+> change (F-045). The window applies from the first release of a client; from then on this
+> section binds without exception.
+
 **Field removal is gated by observed usage, not by elapsed time alone.** Apollo GraphOS
 reports which operations use a field. A deprecated field still being called at the end of
 its window stays, and the client is chased. Removing it because the calendar said so breaks
@@ -145,7 +151,7 @@ that does not contend with the write path.
 
 **Acceptance**
 - [ ] An eager migration is required when a new index, filter or aggregation depends on the new shape — the §4 table states which past migrations were eager and why
-- [ ] It runs under a lock, in batches of `schema.migration.batch-size` (1,000), resumable from a cursor
+- [ ] It runs as the service's migration workflow (`migration/{collection}/{version}`, `USE_EXISTING`) — one batch of `schema.migration.batch-size` (1,000) per activity, continuing as new from a cursor; no lock exists
 - [ ] It reads from a secondary where one exists and is scheduled off-peak
 - [ ] Progress, rate and remaining count are queryable and are metrics
 - [ ] It is idempotent — a restart re-migrates nothing already at the target version
@@ -191,7 +197,7 @@ has no way to know it is wrong.
 
 | Wire name | Live versions | Upcasters | Retired |
 |---|---|---|---|
-| all nineteen of [ET-PLT-003](../003-event-contract/) §4 | v1 | — | — |
+| all twenty-five of [ET-PLT-003](../003-event-contract/) §4 | v1 | — | — |
 
 The registry starts empty of history and is the artefact that grows. Each future row records
 the version, the change, the upcaster class and the retirement date.
@@ -260,7 +266,7 @@ public Document migrate(Document d) {
 | Mode | When | Mechanism |
 |---|---|---|
 | **lazy** | default | migrate on read, conditional write-back on `schemaVersion` |
-| **eager** | a new index, filter or aggregation needs the new shape | batched job, resumable, off-peak, secondary reads |
+| **eager** | a new index, filter or aggregation needs the new shape | a migration workflow: batched activities, continued as new from a cursor, off-peak, secondary reads |
 
 A lazy migration failure logs, alerts and returns the document unmigrated — a read must not
 fail because a migration is wrong.
@@ -350,9 +356,9 @@ None introduced. `UNSUPPORTED_SCHEMA_VERSION` is
   - parallel-safe: yes — one service per agent
   - depends: —
 
-- [ ] **T7 · The eager migration job: batched, resumable, off-peak**
+- [ ] **T7 · The eager migration workflow: batched, resumable, off-peak**
   - requirements: R6
-  - files: `backend/*/.../scheduler/DocumentMigrationJob.java`
+  - files: `backend/*/.../workflow/migration/`
   - verify: a restart re-migrates nothing; reservation latency is unaffected during a full run
   - parallel-safe: no
   - depends: T6

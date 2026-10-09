@@ -1,5 +1,7 @@
 # Phase 2: Dashboard & Overview
 
+> **HISTORICAL — superseded by `specs/tasks` FE-* items; kept for reference. Role names in this file are pre-spec** (see `specs/` for the current role and permission vocabulary). Unticked boxes here are not a backlog.
+
 ## Overview
 Implement role-based dashboard home pages with real-time statistics, quick actions, and activity feeds.
 

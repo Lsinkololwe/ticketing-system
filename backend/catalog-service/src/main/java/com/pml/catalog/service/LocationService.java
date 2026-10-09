@@ -1,7 +1,5 @@
 package com.pml.catalog.service;
 
-import com.pml.catalog.dto.CursorPaginationInput;
-import com.pml.catalog.dto.LocationConnection;
 import com.pml.catalog.domain.model.Location;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -33,16 +31,4 @@ public interface LocationService {
     Flux<Location> searchLocations(String query);
 
     Flux<Location> findNearbyLocations(Double latitude, Double longitude, Double radiusKm);
-
-    // ==========================================
-    // Cursor-based Pagination (for mobile infinite scroll)
-    // ==========================================
-
-    Mono<LocationConnection> findLocationsCursor(CursorPaginationInput pagination);
-
-    Mono<LocationConnection> findLocationsByCityCursor(String city, CursorPaginationInput pagination);
-
-    Mono<LocationConnection> findLocationsByCountryCursor(String country, CursorPaginationInput pagination);
-
-    Mono<LocationConnection> searchLocationsCursor(String query, CursorPaginationInput pagination);
 }

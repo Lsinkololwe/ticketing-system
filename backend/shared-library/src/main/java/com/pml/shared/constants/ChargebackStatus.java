@@ -233,17 +233,6 @@ public enum ChargebackStatus {
     }
 
     /**
-     * Checks if evidence can still be submitted in this status.
-     *
-     * <p>Evidence can only be submitted during RECEIVED or UNDER_REVIEW.</p>
-     *
-     * @return true if evidence submission is still possible
-     */
-    public boolean canSubmitEvidence() {
-        return this == RECEIVED || this == UNDER_REVIEW;
-    }
-
-    /**
      * Returns the recovery priority based on status.
      *
      * <p>Recovery should begin immediately after ACCEPTED or LOST.</p>

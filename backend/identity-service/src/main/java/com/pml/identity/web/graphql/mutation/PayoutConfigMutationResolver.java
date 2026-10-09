@@ -4,7 +4,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.enums.MobileMoneyProvider;
-import com.pml.identity.domain.enums.PayoutMethod;
+import com.pml.shared.constants.PayoutMethod;
 import com.pml.identity.domain.enums.PayoutSchedule;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.domain.model.PayoutConfigAuditLog;
@@ -16,18 +16,16 @@ import com.pml.identity.security.FieldEncryptionService;
 import com.pml.identity.service.AuthorizationService;
 import com.pml.identity.service.PayoutConfigAuditService;
 import com.pml.identity.validation.FinancialDataValidator;
-import com.pml.shared.constants.UserType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.graphql.execution.ErrorType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.util.HashMap;
 import java.util.Map;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * GraphQL mutation resolver for payout configuration.
@@ -49,7 +47,9 @@ import java.util.Map;
  * - OWASP Input Validation
  * - GDPR: Data minimization and privacy
  */
+
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 @Slf4j
 public class PayoutConfigMutationResolver {
@@ -138,16 +138,26 @@ public class PayoutConfigMutationResolver {
                                 }
 
                                 if (input.containsKey("minimumPayoutAmount")) {
-                                    Double newMinimum = ((Number) input.get("minimumPayoutAmount")).doubleValue();
+                                    // Via toString, not doubleValue: the string form is what the
+                                    // client sent, so the BigDecimal holds exactly that rather
+                                    // than the nearest binary approximation of it.
+                                    java.math.BigDecimal newMinimum = com.pml.shared.constants.Money.round(
+                                            new java.math.BigDecimal(
+                                                    ((Number) input.get("minimumPayoutAmount")).toString()));
 
                                     // Validate minimum amount
-                                    if (!FinancialDataValidator.isValidPayoutAmount(newMinimum, 100.0)) {
+                                    if (!FinancialDataValidator.isValidPayoutAmount(newMinimum.doubleValue(), 100.0)) {
                                         return Mono.error(new IllegalArgumentException(
                                             "Minimum payout amount must be at least 100.0 ZMW"
                                         ));
                                     }
 
-                                    if (!newMinimum.equals(payoutConfig.getMinimumPayoutAmount())) {
+                                    // compareTo, not equals. BigDecimal.equals is false for
+                                    // 100.0 against 100.00 — same amount, different scale — so
+                                    // equals here would report a change on every save and
+                                    // rewrite the document each time nothing happened.
+                                    java.math.BigDecimal current = payoutConfig.getMinimumPayoutAmount();
+                                    if (current == null || current.compareTo(newMinimum) != 0) {
                                         payoutConfig.setMinimumPayoutAmount(newMinimum);
                                         changed = true;
                                     }
@@ -461,9 +471,15 @@ public class PayoutConfigMutationResolver {
                         // Also update bank account or mobile account verification
                         if (payoutConfig.getBankAccount() != null) {
                             payoutConfig.getBankAccount().setVerified(verified);
+                            if (verified) {
+                                payoutConfig.getBankAccount().setRejectionReason(null);
+                            }
                         }
                         if (payoutConfig.getMobileMoneyAccount() != null) {
                             payoutConfig.getMobileMoneyAccount().setVerified(verified);
+                            if (verified) {
+                                payoutConfig.getMobileMoneyAccount().setRejectionReason(null);
+                            }
                         }
 
                         organization.setPayoutConfig(payoutConfig);

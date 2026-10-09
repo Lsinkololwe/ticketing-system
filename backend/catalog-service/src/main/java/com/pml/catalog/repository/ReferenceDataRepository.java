@@ -36,10 +36,6 @@ public interface ReferenceDataRepository extends ReactiveMongoRepository<Referen
 
     Mono<Long> countByType(ReferenceType type);
 
-    // ── Seeding support ───────────────────────────────────────────────────────
-
-    Mono<Boolean> existsByTypeAndCode(ReferenceType type, String code);
-
     /**
      * Give every row lacking {@code allowedTransitions} an empty array.
      *

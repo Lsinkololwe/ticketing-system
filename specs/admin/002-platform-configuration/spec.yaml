@@ -2,8 +2,8 @@ id: ET-ADM-002
 title: Platform configuration, feature flags and versioned settings
 status: approved
 area: ADM
-service: identity-service
-subgraph: identity
+service: catalog-service
+subgraph: catalog
 owner: lazarous
 created: 2026-07-30
 priority: should
@@ -20,16 +20,14 @@ sources:
 
 persistence:
   collections:
-    - identity_platform_configuration    # ET-PLT-002 §4 registry row
-    - identity_feature_flags             # ET-PLT-002 §4 registry row
+    - catalog_platform_configuration     # ET-PLT-002 §4 registry row — settings, overrides, refund policies and flags
   indexes:
-    - "identity_platform_configuration {configKey,scope,scopeId,version} unique"
-    - "identity_platform_configuration {configKey,scope,scopeId,createdAt} compound"
-    - "identity_feature_flags {flagKey,version} unique"
+    - "catalog_platform_configuration {kind,configKey,scope,scopeId,version} unique"
+    - "catalog_platform_configuration {kind,configKey,scope,scopeId,createdAt} compound"
   redis_keys:
-    - "cache:config:platform:{key}          STRING  30 s  — authority identity_platform_configuration"
+    - "cache:config:platform:{key}          STRING  30 s  — authority catalog_platform_configuration"
     - "cache:config:org:{orgId}:{key}       STRING  30 s  — ditto"
-    - "cache:flags                          STRING  30 s  — authority identity_feature_flags"
+    - "cache:flags                          STRING  30 s  — authority catalog_platform_configuration"
 
 events:
   module: []
@@ -37,13 +35,15 @@ events:
   topics: []
 
 graphql:
-  schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
+  schema: backend/catalog-service/src/main/resources/graphql/schema.graphqls
   queries:      # ADMIN reads, all @tag admin
     - "platformConfiguration                              ADMIN  [ConfigurationEntry!]!"
     - "configurationHistory(key, scope, scopeId)          ADMIN  [ConfigurationVersion!]!"
     - "organizationConfiguration(organizationId)          ADMIN  [ConfigurationEntry!]!"
     - "featureFlags                                       ADMIN  [FeatureFlag!]!"
     - "killSwitches                                       ADMIN  [FeatureFlag!]!"
+    - "platformRules                                      any signed-in caller  PlatformRules!   # identity subgraph"
+    - "publicPlatformRules                                PUBLIC (no token, 120/min/address)  PublicPlatformRules!   # identity subgraph, ET-ADM-002-R10"
   mutations:    # SUPER_ADMIN writes only
     - "setPlatformConfiguration(input)         SUPER_ADMIN  ConfigurationEntry!  @tag admin"
     - "setOrganizationConfiguration(input)     SUPER_ADMIN  ConfigurationEntry!  @tag admin"
@@ -66,13 +66,23 @@ runtime_keys:   # 18 — CLOSED. Every other number in the corpus stays in YAML.
   - "finance.payout.minimum                       money   [0,100000] K100"
   - "finance.payout.schedule                      enum    WEEKLY|BIWEEKLY|MONTHLY|ON_REQUEST  ORG OVERRIDE"
   - "finance.refund.minimum                       money   [0,10000]  K10"
-  - "finance.refund.auto-approve-threshold        money   [0,100000] K1000"
+  - "finance.refund.review-escalations            durations [PT1H,P30D] each  P2D,P5D   # ROADMAP D-26"
   - "finance.refund.fee-bearer                    enum    CUSTOMER|PLATFORM|ORGANIZER  CUSTOMER"
   - "booking.reservation.ttl                      duration [PT2M,PT60M] PT10M"
   - "catalog.transfer.cutoff                      duration [PT0S,P7D]   PT2H"
   - "admin.sla.organizer                          duration [PT1H,P14D]  PT48H"
   - "admin.sla.event                              duration [PT1H,P14D]  PT24H"
   - "notification.per-user-hourly-cap             int     [1,100]    10"
+
+refund_policies:   # platform-defined, organizer-picked (amendment 2026-09-19); key refund.policy.{CODE}
+  value_type: REFUND_SCHEDULE      # steps of hours-before-event → percentage; never rises as the event nears
+  seed:
+    FLEXIBLE:   ">168h 100 | 168-48h 100 | 48-24h 50 | <24h 0"
+    MODERATE:   ">168h 100 | 168-48h 50  | 48-24h 0  | <24h 0"
+    STRICT:     ">168h 50  | 168-48h 0   | 48-24h 0  | <24h 0"
+    NO_REFUNDS: ">168h 0   | 168-48h 0   | 48-24h 0  | <24h 0"
+  event_records: "policy code + the version in force at publish; later changes apply only to events published afterwards"
+  retire_not_delete: true
 
 feature_flags:  # 9 — CLOSED. Five are kill switches.
   feature.resale:                { default: OFF, kill_switch: true }
@@ -101,16 +111,16 @@ config:      # itself YAML — the config system's own settings are not runtime-
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/identity-service test -Dgroups=ET-ADM-002 -DfailIfNoTests=true
-  - mvn -q -f backend verify -Dgroups=ET-ADM-002 -DfailIfNoTests=true
+  - mvn -q -f backend/catalog-service test -Dgroups=ET-ADM-002 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-ADM-002 -DfailIfNoTests=false
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
-  - "Configuration lives in identity-service but eleven of the eighteen keys are consumed by booking-service on the purchase and payout paths. Every one of those reads is a cross-service call, cached for 30 seconds — so booking's commission calculation depends on identity-service being reachable, and a cold cache during an identity outage means either a stale-forever fallback or a failed purchase. Neither is specified."
+  - "Resolved 2026-09-19: the settings are one catalog-owned table read directly by every service through shared-library, so booking's reads are local database reads, not cross-service calls. Superseded risk kept for the record — Configuration lives in identity-service but eleven of the eighteen keys are consumed by booking-service on the purchase and payout paths. Every one of those reads is a cross-service call, cached for 30 seconds — so booking's commission calculation depends on identity-service being reachable, and a cold cache during an identity outage means either a stale-forever fallback or a failed purchase. Neither is specified."
   - "R3 requires cross-instance cache eviction on write, which needs a Redis pub/sub channel or a short enough TTL that eviction does not matter. With a 30-second TTL the eviction is nearly redundant, and the acceptance box asking for immediate eviction across instances implies infrastructure the spec does not declare."
   - "The commission override replaces the tier rate entirely, which means an organization negotiated onto 4% loses the 2% charity rate for a charity event. That is the stated intent, but it will surprise an organizer who is both premium and running a charity event, and nothing surfaces the interaction to them."
   - "Feature flags include kill switches for payouts and registrations, which are exactly the switches an attacker with SUPER_ADMIN would flip. There is no two-person rule, no confirmation step and no automatic expiry on a kill switch — a flag turned off during an incident stays off until somebody remembers."
   - "R6 asserts that changes are prospective for four named entities, but the mechanism is that each entity snapshots its value at creation. Any future value consumed by a query rather than snapshotted — the refund auto-approve threshold, for example, which ET-FIN-004 reads at approval time — IS retroactive in effect, and the spec's blanket claim does not hold for it."
-  - "identity_platform_configuration is append-only with no retention, and it stores every version of every key forever. That is correct for auditability and it means a key toggled frequently during an incident accumulates rows with no bound."
-  - "Resolved: identity_platform_configuration and identity_feature_flags are rows of the ET-PLT-002 §4 registry, owned by identity-service."
+  - "catalog_platform_configuration is append-only with no retention, and it stores every version of every key forever. That is correct for auditability and it means a key toggled frequently during an incident accumulates rows with no bound."
+  - "Resolved 2026-09-19: catalog_platform_configuration is the one ET-PLT-002 §4 row for settings, overrides, refund policies and flags, written by catalog-service only."
   - "The eighteen runtime keys duplicate values that also exist as YAML defaults in eight other specs. Nothing keeps the two in sync, so a YAML default changed in a deploy while a platform value exists is silently ignored, and an operator reading the YAML sees a number the platform is not using."

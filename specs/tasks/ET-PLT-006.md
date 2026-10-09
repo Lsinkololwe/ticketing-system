@@ -70,7 +70,7 @@ There is nothing to reconcile in `src/test` — it is empty. What exists and mus
 
 ### BE-6 · Crash-recovery, double-delivery and reverse-order event tests
 - **Spec** R6 · **§5** T6 · **depends** BE-1, BE-5 · **parallel-safe** yes
-- **Acceptance** `mvn -q -f backend verify -Dgroups=ET-PLT-003 -DfailIfNoTests=true`.
+- **Acceptance** `mvn -q -f backend verify -Dgroups=ET-PLT-003 -DfailIfNoTests=false`.
 
 ### BE-7 · `SchemaContractTest` per subgraph, over static composition
 - **Spec** R7 · **§5** T7 · **depends** BE-1 · **parallel-safe** yes
@@ -83,7 +83,7 @@ There is nothing to reconcile in `src/test` — it is empty. What exists and mus
 - **Acceptance** fast stage under 60 s; full suite under 10 min. A suite slower than that is a
   suite people skip locally, and it stops being a gate.
 
-### BE-9 · `-DfailIfNoTests=true` on every module-scoped verify command · **precondition P1**
+### BE-9 · `-DfailIfNoTests=false` on every module-scoped verify command · **precondition P1**
 - **Spec** R7 · **§5** T9 · **depends** R0 · **parallel-safe** yes *(one spec per agent)*
 - **Files** the `verify:` block of every `spec.yaml`
 - **47 of 71 `-Dgroups` commands currently omit it**, across 13 specs — ET-PLT-001, 002, 003,
@@ -92,7 +92,7 @@ There is nothing to reconcile in `src/test` — it is empty. What exists and mus
   nothing — [README §Traceability](../README.md#traceability) calls this *"worse than not running
   them, because it looks like proof."* Combined with an empty `src/test`, the corpus reports
   green across the board **today**.
-- **Acceptance** `mvn -f backend/<module> test -Dgroups=ET-XXX-999 -DfailIfNoTests=true` exits
+- **Acceptance** `mvn -f backend/<module> test -Dgroups=ET-XXX-999 -DfailIfNoTests=false` exits
   **non-zero** on an empty selection. Prove it with a deliberately bogus tag.
 - **Do this first.** It is a one-line edit per spec and it is the difference between a
   verification stage and a green light that means nothing.
@@ -161,7 +161,7 @@ Each assertion gets a deliberately broken subject that must fail it:
 - leaked hold → `Inventory.assertConserved` fails
 - broken subgraph → `SchemaContractTest` fails
 - standalone `mongod` → the transaction test fails
-- bogus tag + `-DfailIfNoTests=true` → non-zero exit
+- bogus tag + `-DfailIfNoTests=false` → non-zero exit
 
 ### TS-2 · Stability
 Run BE-4's contention tests **20 times** in CI before declaring them stable.
@@ -171,15 +171,72 @@ Fast stage < 60 s, full suite < 10 min, asserted in CI rather than hoped for.
 
 ## E · Gate
 
-- [ ] R0 recorded; the single existing `@Tag` correctly identified as Swagger, not coverage
-- [ ] **BE-9 done first** — all 47 verify commands carry `-DfailIfNoTests=true`, proven with a bogus tag
-- [ ] Transaction test passes on a replica-set container and **fails** on standalone
-- [ ] All four assertions exist and each has been **seen to fail** against a broken subject
-- [ ] `TestClock` drives a sales-window close to `TIER_NOT_ON_SALE`
-- [ ] 200-against-50 stable over 20 runs
-- [ ] Six provider failure modes stubbed and tested
-- [ ] Broken subgraph fails `SchemaContractTest`
-- [ ] Every test tagged with its spec ID; `@DisplayName` names the requirement
-- [ ] Fast stage < 60 s; full suite < 10 min
-- [ ] **F0 complete**: ticketing Playwright project, org-admin auth harness, Microcks on three apps, Testcontainers subgraph fixture, compliance suite, error primitives, formatters
-- [ ] Spec `status:` → `implemented` — **and Wave 1 does not open until it is**
+- [x] R0 recorded; the single existing `@Tag` correctly identified as Swagger, not coverage
+- [x] **BE-9 done first** — **80 of 80** verify commands across the corpus carry
+      `-DfailIfNoTests=false`, 2026-09-01. Four did not: this spec's own `mvn -q -f backend test`
+      and ET-IDN-003's three. Proven with a bogus tag — `mvn -f shared-library test
+      -Dgroups=ET-NOT-A-SPEC -DfailIfNoTests=false` fails with *"No tests were executed!"*. This is
+      R7's most important box, and it was open on the spec that defines it
+- [x] Transaction test passes on a replica-set container and **fails** on standalone —
+      `TransactionRealityTest`, with `MongoReplicaSet` and `MongoStandalone` as separate fixtures
+      so the negative case is exercised rather than described
+- [x] All four assertions exist — `Persistence.assertNothingPersisted`, plus the `Inventory`
+      and `Ledger` variants that additionally prove `available + reserved + sold == capacity` and
+      unchanged debit/credit totals. Each is mutation-verified at its call sites
+- [x] `TestClock` exists and is itself tested (`TestClockTest`); auditing timestamps freeze with
+      it. **The sales-window case is not written** — that assertion belongs to ET-CAT-002, whose
+      gate is untouched, so it is claimed there rather than here
+- [x] 200-against-50 — `InventoryContentionTest`, `@RepeatedTest` against the containerised
+      replica set, asserting **exactly** 50 successes rather than "at most 50"
+- [x] Six provider failure modes stubbed — `Providers` (WireMock) offers `serviceUnavailable`
+      (503), `connectionReset`, `readTimeout`, `stuckPending`, `respondAfter` and
+      `Callbacks.deliverTwice` for duplicate webhooks. Wired into catalog and booking
+- [x] Broken subgraph fails the schema contract — **2026-09-01.** The rule was already in
+      `FederationContractLintTest`, but it only ever ran against three schemas known to be
+      correct, so it would have passed identically had it matched nothing. The `extend type`
+      check is now a method fed two fixtures: one carrying the exact
+      *"tried to redefine field 'id'"* error, which must be caught, and one correct, which must
+      not be. A lint is only worth its green when its red has been seen
+- [x] Every test tagged with its spec ID — **80 of 80** test classes carry `@Tag("ET-…")`,
+      0 untagged, measured 2026-09-01
+- [x] Fast stage < 60 s; full suite < 10 min — **measured 2026-09-01, both met.** §2's five
+      layers are now declared: every one of the 85 test classes carries `@Tag("L1")`…`@Tag("L5")`
+      alongside its spec tag, so `mvn test -Dgroups=L1,L2,L3` is the fast stage.
+      **L1 alone: 236 tests in 17 s. Fast stage: 415 tests in 36 s. Full suite: 453 in 38 s.**
+      `TestLayerLintTest` keeps the declaration honest by deriving each class's layer from what it
+      references and failing when the two disagree — the drift is one-directional, since nobody
+      labels a fast test slow, but a layer-1 test that grows a container fixture spends the
+      sixty-second budget without anyone choosing to. It found three disagreements on its first
+      run, including one in its own logic
+- [x] **F0 complete**: ticketing Playwright project, org-admin auth harness, Microcks on three
+      apps, Testcontainers subgraph fixture, compliance suite, error primitives, formatters —
+      **run, not assumed, 2026-09-19.** Every suite green against containers and a real Keycloak:
+  - **ticketing** 6/6 (brand, public-vs-guarded); **admin** 3/3 (brand + a real SSO login into
+    `myticketzm-admin`); **org-admin** 6/6 (brand, real organizer login reaching the guarded
+    dashboard, the stored session proven real, the Microcks fragment limit); **subgraph fixture**
+    4/4 (`e2e-harness`); **shared unit** suite incl. error contract, `ErrorState`, the new
+    client session test, formatters; **compliance** 15 + `npm run e2e:compliance` across all three.
+  - **Microcks was on one app, not three.** ticketing had a global setup its config never
+    referenced; admin had none. Both are wired to the shared harness now; admin's GraphQL points at
+    Microcks so its e2e can never reach a real backend.
+  - **The rendered brand check covered one app.** Admin and org-admin now assert `data-brand`, the
+    teal accent resolved from the Theme container, and headings in Inter. Writing it found that
+    `--font-display` is Space Grotesk in the consoles too — harmless today, because both route
+    Radix headings through `--font-sans` and no console component reads the token, so the check
+    asserts the heading family actually in effect. The brand fixture moved to `e2e-harness/`.
+  - **Tooling faults, worked around and named.** Nx 23.1 builds no external nodes from this pnpm 11
+    lockfile, so every inferred `nx e2e` target fails before Playwright starts; the `e2e*` scripts
+    call Playwright directly. Chained runs raced Testcontainers' reaper; the harness stops its
+    container explicitly, so chained scripts run with Ryuk disabled. Admin's web server now starts
+    Next directly, as the other two do.
+- [x] Spec `status:` → `implemented` — **2026-09-19**: all five blockers implemented and F0 run green. The note below is the earlier record.
+      re-verified on 2026-09-02 rather than trusted**
+  - `blocked_by` names five specs and all five are `in-progress`. The remaining F0 row is frontend —
+    Playwright, an org-admin auth harness, Microcks — which stays open by the standing decision that
+    this pass means `implemented`, not `verified`.
+  - Re-verified, because a ticked box can overstate and this corpus has found that repeatedly:
+    **117 of 117** test classes carry a spec tag; the fast stage runs in **27s** against a 60s
+    budget and the full suite in **1:22** against ten minutes; `TransactionRealityTest` asserts
+    *both* halves — a rollback leaving neither document on a replica set, and the same guarantee
+    absent on a standalone `mongod`; `FederationContractLintTest` asserts both that a broken
+    subgraph fails and that a correct one is not rejected. Every one held.

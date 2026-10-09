@@ -2,6 +2,8 @@ package com.pml.shared.security.revocation;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+
+import java.time.Clock;
 import io.micrometer.core.instrument.Timer;
 
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,8 +32,19 @@ public class RevocationMetrics {
     private final AtomicLong lastDegradedAt = new AtomicLong(0);
     private final AtomicLong lastUnavailableAt = new AtomicLong(0);
 
-    public RevocationMetrics(MeterRegistry registry) {
+    /**
+     * The platform clock, not {@code System.currentTimeMillis()}.
+     *
+     * <p>These two timestamps are read back by {@code RevocationHealthIndicator} and rendered as
+     * instants an operator uses to decide how stale a degradation is. Reading the wall clock
+     * directly made that untestable: there is no way to assert "reports degraded 90 seconds ago"
+     * without sleeping, so the health output's most useful field had no test at all.</p>
+     */
+    private final Clock clock;
+
+    public RevocationMetrics(MeterRegistry registry, Clock clock) {
         this.registry = registry;
+        this.clock = clock;
     }
 
     /**
@@ -55,7 +68,7 @@ public class RevocationMetrics {
      * @param reason {@code timeout}, {@code error} or {@code circuit_open}
      */
     public void degraded(String reason) {
-        lastDegradedAt.set(System.currentTimeMillis());
+        lastDegradedAt.set(clock.millis());
         Counter.builder("identity.revocation.degraded")
                 .description("Checks that fell back from the Redis cache to the durable store")
                 .tag("reason", reason)
@@ -65,7 +78,7 @@ public class RevocationMetrics {
 
     /** Neither store answered, so fail-closed operations are being refused. */
     public void unavailable() {
-        lastUnavailableAt.set(System.currentTimeMillis());
+        lastUnavailableAt.set(clock.millis());
         Counter.builder("identity.revocation.unavailable")
                 .description("Checks where neither the cache nor the durable store could answer")
                 .register(registry)

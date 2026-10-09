@@ -1,11 +1,14 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.shared.constants.PayoutMethod;
 import com.pml.shared.constants.PayoutRequestStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
@@ -13,16 +16,13 @@ import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -42,39 +42,41 @@ import java.util.Map;
  * 7. REJECTED - Request rejected (manual review)
  * 8. CANCELLED - Request cancelled by organizer
  */
-@Document(collection = "booking_payout_requests")
+@Document(collection = BookingCollections.PAYOUT_REQUESTS)
+@TypeAlias("payout_requests")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "organizer_status_idx", def = "{'organizerId': 1, 'status': 1}"),
-    @CompoundIndex(name = "event_status_idx", def = "{'eventId': 1, 'status': 1}")
-})
 public class PayoutRequest {
 
     @Id
     private String id;
 
     @NotBlank(message = "Request ID is required")
-    @Indexed(unique = true)
     private String requestId;
 
     /**
      * Client-supplied idempotency key.
      *
-     * <p>UNIQUE and SPARSE: unique so a duplicate create is rejected by the
-     * database rather than by application logic that a concurrent request can
-     * race past; sparse so the historical rows that predate this field — all of
-     * which have a null key — do not collide with each other.
+     * <p>Uniqueness is enforced by {@code idx_idempotencyKey}, declared in
+     * {@code BookingIndexInitializer} — not by an annotation here. The index is <b>unique and partial</b>, matching
+     * only documents where this field holds a string.
      *
-     * <p>Required by specs/finance/003-payouts-and-settlement.
+     * <p>Partial is load-bearing and sparse would be wrong. The key is optional,
+     * so a request without one is stored as {@code idempotencyKey: null} — a
+     * present field. Sparse skips a document only where the field is
+     * <em>absent</em>, so it would index every stored null under the single key
+     * {@code null}: the first keyless payout takes it and every later one
+     * collides, leaving unrelated organizations unable to be paid. A
+     * {@code $type} test excludes the absent field and the stored null together.
+     *
+     * <p>A retried create carrying the same key is recognised as the request already
+     * recorded, never as a second payout.
      */
-    @Indexed(unique = true, sparse = true)
     private String idempotencyKey;
 
     @NotBlank(message = "Organizer ID is required")
-    @Indexed
     private String organizerId;
 
     private String organizerName;
@@ -88,16 +90,13 @@ public class PayoutRequest {
      *
      * OWASP A01:2021 Compliance: Used for tenant isolation in authorization.
      */
-    @Indexed
     private String organizationId;
 
-    @Indexed
     private String eventId;
 
     private String eventTitle;
 
     @NotBlank(message = "Escrow account ID is required")
-    @Indexed
     private String escrowAccountId;
 
     @NotBlank(message = "Bank account ID is required")
@@ -112,19 +111,14 @@ public class PayoutRequest {
     @Positive(message = "Requested amount must be positive")
     private BigDecimal requestedAmount;
 
-    private BigDecimal platformFee;
-    private BigDecimal processingFee;
     private BigDecimal taxAmount;
 
-    @NotNull(message = "Net payout amount is required")
     /**
-     * The amount actually settled, recomputed at approval (ET-FIN-003 §4).
-     *
-     * <p>Named {@code settledAmount} until now. The spec's name is better than
-     * a rename usually is: "net" invites the reading "gross minus fees, computed
-     * at request time", and the whole point of R2 is that this figure is
-     * RECOMPUTED at approval, because a credit or debit can land in between.
+     * The amount actually settled, recomputed at approval. It is the full escrow
+     * balance: the platform's income is the per-ticket commission, and a payout carries no fee
+     * of its own.
      */
+    @NotNull(message = "Settled amount is required")
     private BigDecimal settledAmount;
 
     @NotBlank(message = "Currency is required")
@@ -160,21 +154,18 @@ public class PayoutRequest {
      * is deliberate. A payout recorded as terminal should not silently become
      * in-flight because somebody edited a dropdown months later — the record of
      * what was true at the time is the point.
-     *
-     * @see specs/finance/003-payouts-and-settlement
      */
-    @Indexed
     private com.pml.shared.constants.WorkflowSemantic statusSemantic;
 
     private PayoutMethod payoutMethod;
 
     // Request details
     @NotNull(message = "Requested at timestamp is required")
-    private LocalDateTime requestedAt;
+    private Instant requestedAt;
 
     @NotBlank(message = "Requested by is required")
     /**
-     * Who requested it. ET-FIN-003 R3 compares this against {@code approvedById}
+     * Who requested it. Approval compares this against {@code approvedById}
      * to enforce that the approver is not the requester, so the {@code ...ById}
      * suffix is load-bearing: it is an identifier being compared, never a
      * display name.
@@ -182,22 +173,21 @@ public class PayoutRequest {
     private String requestedById;
 
     // Approval details
-    private LocalDateTime approvedAt;
+    private Instant approvedAt;
     private String approvedBy;
 
     // Rejection details
-    private LocalDateTime rejectedAt;
+    private Instant rejectedAt;
     private String rejectedBy;
     private String rejectionReason;
 
     // Processing details
-    private LocalDateTime processedAt;
+    private Instant processedAt;
     private String processedBy;
-    private LocalDateTime expectedPayoutDate;
-    private LocalDateTime actualPayoutDate;
+    private Instant expectedPayoutDate;
+    private Instant actualPayoutDate;
 
     // Payment provider references
-    @Indexed
     private String paymentReference;
     private String transactionId;
     private String externalTransactionId;
@@ -214,26 +204,46 @@ public class PayoutRequest {
     private String reviewStatus;       // PayoutReviewStatus enum value
     private boolean isStuck;
     private String stuckReason;
-    private LocalDateTime stuckAt;
+    private Instant stuckAt;
     private String reviewedBy;
-    private LocalDateTime reviewedAt;
+    private Instant reviewedAt;
     private String reviewNotes;
     private String resolvedBy;
-    private LocalDateTime resolvedAt;
+    private Instant resolvedAt;
     private String resolutionNotes;
+
+    /** The journal entry that moved the escrow for the current attempt. */
+    private String journalEntryId;
+
+    /**
+     * An operator's hold: while set, the request cannot be approved, retried or settled. It overlays
+     * the status rather than replacing it, so releasing it returns the request to exactly where it was.
+     */
+    private boolean onHold;
+    private String holdReason;
+    private String heldBy;
+    private Instant heldAt;
+    private String releasedBy;
+    private Instant releasedAt;
+
+    /** The reversing entry, when the attempt's transfer failed. */
+    private String reversalEntryId;
+
+    /** The provider or refusal code that ended the last attempt. */
+    private String failureCategory;
 
     // Retry tracking
     @Builder.Default
     private int retryCount = 0;
-    private LocalDateTime lastRetryAt;
+    private Instant lastRetryAt;
     private String lastError;
-    private LocalDateTime nextRetryAt;
+    private Instant nextRetryAt;
 
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @CreatedBy
     private String createdBy;
@@ -261,7 +271,7 @@ public class PayoutRequest {
     public static class PayoutRequestHistory {
         private String action;
         private String performedBy;
-        private LocalDateTime performedAt;
+        private Instant performedAt;
         private String comments;
         private PayoutRequestStatus previousStatus;
         private PayoutRequestStatus newStatus;
@@ -275,87 +285,73 @@ public class PayoutRequest {
     /**
      * Mark payout request for review with an issue type.
      */
-    public void markForReview(String issueType, String notes) {
+    public void markForReview(String issueType, String notes, Instant now) {
         this.issueType = issueType;
         this.reviewStatus = "PENDING_REVIEW";
         if (notes != null && !notes.isBlank()) {
             this.notes = (this.notes != null ? this.notes + "\n" : "") +
-                    "[" + LocalDateTime.now() + "] MARKED FOR REVIEW: " + notes;
+                    "[" + now + "] MARKED FOR REVIEW: " + notes;
         }
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = now;
     }
 
     /**
      * Start reviewing this payout request.
      */
-    public void startReview(String reviewerId) {
+    public void startReview(String reviewerId, Instant now) {
         this.reviewStatus = "UNDER_REVIEW";
         this.reviewedBy = reviewerId;
-        this.reviewedAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        this.reviewedAt = now;
+        this.updatedAt = now;
     }
 
     /**
      * Mark payout request as stuck.
      */
-    public void markAsStuck(String reason) {
+    public void markAsStuck(String reason, Instant now) {
         this.isStuck = true;
         this.stuckReason = reason;
-        this.stuckAt = LocalDateTime.now();
+        this.stuckAt = now;
         this.reviewStatus = "PENDING_REVIEW";
         this.notes = (this.notes != null ? this.notes + "\n" : "") +
-                "[" + LocalDateTime.now() + "] STUCK: " + reason;
-        this.updatedAt = LocalDateTime.now();
+                "[" + now + "] STUCK: " + reason;
+        this.updatedAt = now;
     }
 
     /**
      * Resume a stuck payout request.
      */
-    public void resume() {
+    public void resume(Instant now) {
         this.isStuck = false;
         this.status = PayoutRequestStatus.PROCESSING;
         this.notes = (this.notes != null ? this.notes + "\n" : "") +
-                "[" + LocalDateTime.now() + "] RESUMED";
-        this.updatedAt = LocalDateTime.now();
+                "[" + now + "] RESUMED";
+        this.updatedAt = now;
     }
 
     /**
      * Resolve the payout issue.
      */
-    public void resolveIssue(String resolutionType, String resolvedBy, String notes) {
+    public void resolveIssue(String resolutionType, String resolvedBy, String notes, Instant now) {
         this.resolutionType = resolutionType;
         this.resolvedBy = resolvedBy;
-        this.resolvedAt = LocalDateTime.now();
+        this.resolvedAt = now;
         this.resolutionNotes = notes;
         this.reviewStatus = "REVIEWED";
         this.isStuck = false;
         this.notes = (this.notes != null ? this.notes + "\n" : "") +
-                "[" + LocalDateTime.now() + "] RESOLVED (" + resolutionType + "): " + notes;
-        this.updatedAt = LocalDateTime.now();
+                "[" + now + "] RESOLVED (" + resolutionType + "): " + notes;
+        this.updatedAt = now;
     }
 
     /**
      * Escalate the payout request for higher review.
      */
-    public void escalate(String reason) {
+    public void escalate(String reason, Instant now) {
         this.reviewStatus = "ESCALATED";
         this.notes = (this.notes != null ? this.notes + "\n" : "") +
-                "[" + LocalDateTime.now() + "] ESCALATED: " + reason;
-        this.updatedAt = LocalDateTime.now();
-    }
-
-    /**
-     * Mark for retry.
-     */
-    public void markForRetry(String error) {
-        this.status = PayoutRequestStatus.PROCESSING;
-        this.retryCount++;
-        this.lastRetryAt = LocalDateTime.now();
-        this.lastError = error;
-        this.nextRetryAt = LocalDateTime.now().plusMinutes(5);
-        this.notes = (this.notes != null ? this.notes + "\n" : "") +
-                "[" + LocalDateTime.now() + "] RETRY #" + this.retryCount + ": " + error;
-        this.updatedAt = LocalDateTime.now();
+                "[" + now + "] ESCALATED: " + reason;
+        this.updatedAt = now;
     }
 
     /**
@@ -365,13 +361,6 @@ public class PayoutRequest {
         return "PENDING_REVIEW".equals(this.reviewStatus) ||
                "UNDER_REVIEW".equals(this.reviewStatus) ||
                "ESCALATED".equals(this.reviewStatus);
-    }
-
-    /**
-     * Check if this payout can be resumed.
-     */
-    public boolean canResume() {
-        return this.isStuck && this.retryCount < 3;
     }
 
     /**

@@ -3,178 +3,166 @@ package com.pml.identity.web.graphql.query;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.identity.domain.model.Permission;
-import com.pml.identity.service.PermissionService;
+import com.pml.identity.domain.valueobject.EventRole;
+import com.pml.identity.domain.valueobject.OrganizationRole;
+import com.pml.identity.domain.valueobject.OrganizationSettings;
+import com.pml.identity.service.PermissionResolutionService;
+import com.pml.shared.constants.UserType;
+import com.pml.shared.security.Permission;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.oauth2.jwt.Jwt;
-import reactor.core.publisher.Flux;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
- * GraphQL Query Resolver for Permission operations.
- *
- * <p>This resolver uses PermissionService for all operations,
- * following the interface-based design pattern.</p>
+ * Read-only views of the permission catalogue and of what the signed-in user may do. Everything
+ * here is computed from code — the catalogue on {@link Permission}, role sets on
+ * {@link OrganizationRole} and {@link EventRole} — so there is nothing stored to query.
  */
 @Slf4j
 @DgsComponent
 @RequiredArgsConstructor
 public class PermissionQueryResolver {
 
-    private final PermissionService permissionService;
+    private static final Set<String> PLATFORM_ROLES = Arrays.stream(UserType.values())
+            .map(UserType::name).collect(java.util.stream.Collectors.toUnmodifiableSet());
 
-    /**
-     * Get a permission by ID.
-     */
+    private final PermissionResolutionService permissionResolutionService;
+
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<Permission> permission(@InputArgument String id) {
-        log.debug("GraphQL query: permission(id={})", id);
-        return permissionService.findById(id);
+    public List<Map<String, Object>> permissions() {
+        return Arrays.stream(Permission.values()).map(PermissionQueryResolver::toGraphQl).toList();
     }
 
-    /**
-     * Get a permission by name.
-     */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<Permission> permissionByName(@InputArgument String name) {
-        log.debug("GraphQL query: permissionByName(name={})", name);
-        return permissionService.findByName(name);
+    public Map<String, Object> permission(@InputArgument String code) {
+        return Permission.fromCode(code).map(PermissionQueryResolver::toGraphQl).orElse(null);
     }
 
-    /**
-     * Get all active permissions.
-     */
+    /** What a named role carries; null when no platform, organization or event role has that name. */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Flux<Permission> permissions() {
-        log.debug("GraphQL query: permissions");
-        return permissionService.findAllActive();
+    public Map<String, Object> rolePermissions(@InputArgument String role) {
+        if (role == null) {
+            return null;
+        }
+        for (OrganizationRole organizationRole : OrganizationRole.values()) {
+            if (organizationRole.name().equals(role)) {
+                EnumSet<Permission> switchable = EnumSet.copyOf(organizationRole.permissions(allSwitchesOn()));
+                switchable.removeAll(organizationRole.permissions());
+                return rolePermissions(role, Permission.Scope.ORGANIZATION, organizationRole.permissions(), switchable);
+            }
+        }
+        for (EventRole eventRole : EventRole.values()) {
+            if (eventRole.name().equals(role)) {
+                return rolePermissions(role, Permission.Scope.EVENT, eventRole.permissions(), Set.of());
+            }
+        }
+        if (PLATFORM_ROLES.contains(role)) {
+            return rolePermissions(role, Permission.Scope.PLATFORM, Permission.grantedByPlatformRoles(List.of(role)), Set.of());
+        }
+        return null;
     }
 
-    /**
-     * Get permissions by category.
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Flux<Permission> permissionsByCategory(@InputArgument String category) {
-        log.debug("GraphQL query: permissionsByCategory(category={})", category);
-        return permissionService.findByCategory(category);
-    }
-
-    /**
-     * Get permissions assigned to a role.
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Flux<Permission> rolePermissions(@InputArgument String roleId) {
-        log.debug("GraphQL query: rolePermissions(roleId={})", roleId);
-        return permissionService.findPermissionsByRole(roleId);
-    }
-
-    /**
-     * Get permissions for the currently authenticated user based on their roles.
-     *
-     * <p>This query extracts roles from the JWT token (realm_access.roles,
-     * resource_access) and looks up the associated
-     * permissions from the role_permissions collection.</p>
-     *
-     * @return List of permission names the user has
-     */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
     public Mono<List<String>> currentUserPermissions() {
-        return SecurityContextUtils.getJwt()
-                .flatMap(jwt -> {
-                    List<String> userRoles = extractRolesFromJwt(jwt);
-                    log.info("GraphQL query: currentUserPermissions - extracted roles from JWT: {}", userRoles);
+        return callerRoles().map(roles -> List.copyOf(Permission.codes(Permission.grantedByPlatformRoles(roles))));
+    }
 
-                    if (userRoles.isEmpty()) {
-                        log.warn("GraphQL query: currentUserPermissions - no valid roles found in JWT. " +
-                                "JWT claims: realm_access={}, resource_access={}",
-                                jwt.getClaim("realm_access"),
-                                jwt.getClaim("resource_access"));
-                        return Mono.just(List.<String>of());
-                    }
+    @DgsQuery
+    @PreAuthorize("isAuthenticated()")
+    public Mono<Map<String, Object>> myPermissions() {
+        return callerRoles().map(roles -> {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("roles", List.copyOf(roles));
+            out.put("permissions", List.copyOf(Permission.codes(Permission.grantedByPlatformRoles(roles))));
+            return out;
+        });
+    }
 
-                    return permissionService.getPermissionsForRoles(userRoles);
-                })
-                .switchIfEmpty(Mono.defer(() -> {
-                    log.warn("GraphQL query: currentUserPermissions - no JWT present");
-                    return Mono.just(List.of());
-                }));
+    @DgsQuery
+    @PreAuthorize("isAuthenticated()")
+    public Mono<Map<String, Object>> myEffectivePermissions(
+            @InputArgument String organizationId,
+            @InputArgument String eventId) {
+        return SecurityContextUtils.requireCurrentUserId()
+                .flatMap(userId -> permissionResolutionService
+                        .getEffectivePermissions(userId, organizationId, eventId)
+                        .map(PermissionQueryResolver::toGraphQl));
     }
 
     /**
-     * Extract roles from JWT token.
-     *
-     * <p>Extracts from:</p>
-     * <ul>
-     *   <li>realm_access.roles (Keycloak realm roles)</li>
-     *   <li>resource_access.{client}.roles (Keycloak client roles)</li>
-     *   <li>realm_access.roles (realm-level roles)</li>
-     * </ul>
-     *
-     * <p>Note: Role names are normalized to UPPERCASE to match the role_permissions
-     * collection which stores roles as ADMIN, SUPER_ADMIN, CUSTOMER, etc.</p>
+     * The caller's platform roles, taken from the authorities the token was converted into, so
+     * the answer matches what {@code @PreAuthorize} checks on the same request.
      */
-    @SuppressWarnings("unchecked")
-    private List<String> extractRolesFromJwt(Jwt jwt) {
-        List<String> roles = new ArrayList<>();
+    private static Mono<Set<String>> callerRoles() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(context -> roleNames(context.getAuthentication() == null
+                        ? List.of() : context.getAuthentication().getAuthorities()))
+                .defaultIfEmpty(Set.of());
+    }
 
-        // Extract realm roles
-        Map<String, Object> realmAccess = jwt.getClaim("realm_access");
-        if (realmAccess != null) {
-            Object rolesObj = realmAccess.get("roles");
-            if (rolesObj instanceof List) {
-                List<String> realmRoles = (List<String>) rolesObj;
-                roles.addAll(realmRoles.stream()
-                        .filter(this::isValidRole)
-                        .map(String::toUpperCase)
-                        .toList());
+    static Set<String> roleNames(Collection<? extends GrantedAuthority> authorities) {
+        Set<String> roles = new TreeSet<>();
+        for (GrantedAuthority authority : authorities) {
+            String name = authority.getAuthority();
+            if (name != null && name.startsWith("ROLE_") && PLATFORM_ROLES.contains(name.substring("ROLE_".length()))) {
+                roles.add(name.substring("ROLE_".length()));
             }
         }
-
-        // Extract client roles from resource_access
-        Map<String, Object> resourceAccess = jwt.getClaim("resource_access");
-        if (resourceAccess != null) {
-            resourceAccess.forEach((clientId, access) -> {
-                if (access instanceof Map) {
-                    Map<String, Object> clientAccess = (Map<String, Object>) access;
-                    Object clientRolesObj = clientAccess.get("roles");
-                    if (clientRolesObj instanceof List) {
-                        List<String> clientRoles = (List<String>) clientRolesObj;
-                        roles.addAll(clientRoles.stream()
-                                .filter(this::isValidRole)
-                                .map(String::toUpperCase)
-                                .toList());
-                    }
-                }
-            });
-        }
-
-        return roles.stream().distinct().toList();
+        return roles;
     }
 
-    /**
-     * Validates if a role should be included (filters out Keycloak defaults).
-     */
-    private boolean isValidRole(String role) {
-        if (role == null || role.isBlank()) {
-            return false;
-        }
-        // Skip default Keycloak roles
-        if (role.startsWith("default-roles-")) {
-            return false;
-        }
-        return !List.of("offline_access", "uma_authorization").contains(role);
+    private static OrganizationSettings allSwitchesOn() {
+        OrganizationSettings settings = new OrganizationSettings();
+        settings.setManagersCanViewFinancials(true);
+        settings.setAdminsCanRequestPayouts(true);
+        return settings;
+    }
+
+    private static Map<String, Object> rolePermissions(String role, Permission.Scope scope,
+                                                       Set<Permission> permissions, Set<Permission> switchable) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("role", role);
+        out.put("scope", scope.name());
+        out.put("permissions", permissions.stream().map(PermissionQueryResolver::toGraphQl).toList());
+        out.put("switchable", switchable.stream().map(PermissionQueryResolver::toGraphQl).toList());
+        return out;
+    }
+
+    private static Map<String, Object> toGraphQl(Permission permission) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("code", permission.code());
+        out.put("module", permission.module());
+        out.put("description", permission.description());
+        out.put("scope", permission.scope().name());
+        return out;
+    }
+
+    private static Map<String, Object> toGraphQl(PermissionResolutionService.EffectivePermissions resolved) {
+        Object role = resolved.eventRole() != null ? resolved.eventRole() : resolved.organizationRole();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("userId", resolved.userId());
+        out.put("organizationId", resolved.organizationId());
+        out.put("eventId", resolved.eventId());
+        out.put("permissions", List.copyOf(Permission.codes(resolved.permissions())));
+        out.put("role", role == null ? null : role.toString());
+        out.put("source", resolved.source());
+        return out;
     }
 }

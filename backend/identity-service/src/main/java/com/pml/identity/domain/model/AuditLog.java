@@ -1,14 +1,13 @@
 package com.pml.identity.domain.model;
 
-import com.pml.identity.domain.base.Identifiable;
+import com.pml.identity.persistence.IdentityCollections;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
@@ -26,17 +25,13 @@ import java.util.Map;
  *
  * @see <a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Vocabulary_Cheat_Sheet.html">OWASP Logging Cheat Sheet</a>
  */
-@Document(collection = "audit_logs")
+@Document(collection = IdentityCollections.AUDIT_LOGS)
+@TypeAlias("audit_logs")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "user_action_idx", def = "{'userId': 1, 'action': 1, 'timestamp': -1}"),
-    @CompoundIndex(name = "action_timestamp_idx", def = "{'action': 1, 'timestamp': -1}"),
-    @CompoundIndex(name = "status_timestamp_idx", def = "{'status': 1, 'timestamp': -1}")
-})
-public class AuditLog implements Identifiable<String> {
+public class AuditLog {
 
     @Id
     private String id;
@@ -44,19 +39,16 @@ public class AuditLog implements Identifiable<String> {
     /**
      * Audit action type
      */
-    @Indexed
     private AuditAction action;
 
     /**
      * User ID who is the subject of the action (e.g., user whose role was changed)
      */
-    @Indexed
     private String userId;
 
     /**
      * User ID who performed the action (e.g., admin who granted the role)
      */
-    @Indexed
     private String performedBy;
 
     /**
@@ -72,7 +64,6 @@ public class AuditLog implements Identifiable<String> {
     /**
      * Action status (SUCCESS, FAILURE, PENDING)
      */
-    @Indexed
     private AuditStatus status;
 
     /**
@@ -88,7 +79,6 @@ public class AuditLog implements Identifiable<String> {
     /**
      * Timestamp when the action occurred
      */
-    @Indexed
     private Instant timestamp;
 
     /**
@@ -137,6 +127,23 @@ public class AuditLog implements Identifiable<String> {
         // Organization events
         ORGANIZATION_APPROVED("organization_approved"),
         ORGANIZATION_REJECTED("organization_rejected"),
+        ORGANIZATION_COMMISSION_CHANGED("organization_commission_changed"),
+        ORGANIZATION_SUSPENDED("organization_suspended"),
+        ORGANIZATION_UNSUSPENDED("organization_unsuspended"),
+        ORGANIZATION_DELETION_REQUESTED("organization_deletion_requested"),
+        ORGANIZATION_DELETION_CANCELLED("organization_deletion_cancelled"),
+        PAYOUT_ACCOUNT_REJECTED("payout_account_rejected"),
+        PAYOUT_ACCOUNT_SUSPENDED("payout_account_suspended"),
+        PAYOUT_ACCOUNT_REINSTATED("payout_account_reinstated"),
+
+        // Account lifecycle requested by the person or an administrator
+        ACCOUNT_DELETION_REQUESTED("account_deletion_requested"),
+        ACCOUNT_DELETION_CANCELLED("account_deletion_cancelled"),
+        SESSION_REVOKED("session_revoked"),
+
+        // Platform operations
+        SYSTEM_ALERT_ACKNOWLEDGED("system_alert_acknowledged"),
+        ANNOUNCEMENT_PUBLISHED("announcement_published"),
 
         // Sync events
         KEYCLOAK_SYNC_SUCCESS("keycloak_sync_success"),
@@ -166,26 +173,28 @@ public class AuditLog implements Identifiable<String> {
     /**
      * Create a success audit log entry
      */
-    public static AuditLog success(AuditAction action, String userId, String performedBy) {
+    public static AuditLog success(AuditAction action, String userId, String performedBy,
+                                   Instant now) {
         return AuditLog.builder()
                 .action(action)
                 .userId(userId)
                 .performedBy(performedBy)
                 .status(AuditStatus.SUCCESS)
-                .timestamp(Instant.now())
+                .timestamp(now)
                 .build();
     }
 
     /**
      * Create a failure audit log entry with sanitized error message
      */
-    public static AuditLog failure(AuditAction action, String userId, String performedBy, String errorMessage, String errorCode) {
+    public static AuditLog failure(AuditAction action, String userId, String performedBy,
+                                   String errorMessage, String errorCode, Instant now) {
         return AuditLog.builder()
                 .action(action)
                 .userId(userId)
                 .performedBy(performedBy)
                 .status(AuditStatus.FAILURE)
-                .timestamp(Instant.now())
+                .timestamp(now)
                 .errorMessage(sanitizeErrorMessage(errorMessage))
                 .errorCode(errorCode)
                 .build();

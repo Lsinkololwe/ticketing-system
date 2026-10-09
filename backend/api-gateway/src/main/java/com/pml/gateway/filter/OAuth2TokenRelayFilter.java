@@ -80,10 +80,10 @@ public class OAuth2TokenRelayFilter implements GlobalFilter, Ordered {
                     String email = jwt.getClaimAsString("email");
                     String username = jwt.getClaimAsString("username");
 
-                    // Fallback: use 'sub' claim if custom userId not present
-                    // 'sub' is the Keycloak user ID (UUID)
+                    // The application user id is the accountId claim (buyers), else sub
+                    // (staff/legacy). Keycloak's sub is NOT the account id for buyers.
                     if (userId == null) {
-                        userId = jwt.getSubject();
+                        userId = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
                     }
 
                     // Build modified request with user context headers

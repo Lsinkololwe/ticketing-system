@@ -75,6 +75,16 @@ public class PaymentAttemptQueryResolver {
         return paymentAttemptService.findByAttemptNumber(attemptNumber);
     }
 
+    /**
+     * Every attempt made against one payment intent.
+     */
+    @DgsQuery
+    @PreAuthorize("hasRole('ADMIN')")
+    public Flux<PaymentAttempt> paymentAttempts(@InputArgument String intentId) {
+        log.debug("GraphQL query: paymentAttempts(intentId={})", intentId);
+        return paymentAttemptService.findByPaymentIntentId(intentId);
+    }
+
     // ========================================================================
     // PAYMENT ATTEMPTS BY TICKET
     // ========================================================================

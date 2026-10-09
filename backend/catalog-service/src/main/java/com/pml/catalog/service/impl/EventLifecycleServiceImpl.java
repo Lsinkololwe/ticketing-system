@@ -1,8 +1,12 @@
 package com.pml.catalog.service.impl;
 
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.TenantGuard;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+
 import com.pml.catalog.domain.model.ApprovalTimeline;
 import com.pml.catalog.domain.valueobject.TimelineEvent;
-import com.pml.catalog.dto.EventLifecycleDto;
+import com.pml.catalog.web.graphql.dto.EventLifecycleDto;
 import com.pml.catalog.repository.ApprovalTimelineRepository;
 import com.pml.catalog.repository.EventRepository;
 import com.pml.catalog.service.EventLifecycleService;
@@ -13,8 +17,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.util.*;
-import java.util.stream.Collectors;
-
 /**
  * Implementation of EventLifecycleService.
  * Provides event lifecycle tracking and state machine logic.
@@ -35,7 +37,7 @@ public class EventLifecycleServiceImpl implements EventLifecycleService {
             // DRAFT can be submitted for review or deleted
             EventStatus.DRAFT, List.of(EventStatus.PENDING_APPROVAL),
 
-            // PENDING_REVIEW can be approved, rejected, or have changes requested
+            // PENDING_APPROVAL can be approved, rejected, or have changes requested
             EventStatus.PENDING_APPROVAL, List.of(
                     EventStatus.APPROVED,
                     EventStatus.REJECTED,
@@ -45,11 +47,12 @@ public class EventLifecycleServiceImpl implements EventLifecycleService {
             // CHANGES_REQUESTED can be resubmitted
             EventStatus.CHANGES_REQUESTED, List.of(EventStatus.PENDING_APPROVAL),
 
-            // APPROVED can be published
-            EventStatus.APPROVED, List.of(EventStatus.PUBLISHED),
+            // APPROVED is published by its organizer, or cancelled
+            EventStatus.APPROVED, List.of(EventStatus.PUBLISHED, EventStatus.CANCELLED),
 
-            // PUBLISHED can be cancelled or completed
+            // PUBLISHED is unpublished while nothing is sold, cancelled, or completed at its end
             EventStatus.PUBLISHED, List.of(
+                    EventStatus.APPROVED,
                     EventStatus.CANCELLED,
                     EventStatus.COMPLETED
             ),
@@ -68,8 +71,7 @@ public class EventLifecycleServiceImpl implements EventLifecycleService {
     public Mono<EventLifecycleDto> getEventLifecycle(String eventId) {
         log.debug("Getting lifecycle for event: {}", eventId);
 
-        return eventRepository.findById(eventId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + eventId)))
+        return eventForCaller(eventId)
                 .flatMap(event -> {
                     // Try to get approval timeline for status history
                     return approvalTimelineRepository.findByEventId(eventId)
@@ -84,9 +86,21 @@ public class EventLifecycleServiceImpl implements EventLifecycleService {
     public Mono<List<EventStatus>> getAllowedStatusTransitions(String eventId) {
         log.debug("Getting allowed transitions for event: {}", eventId);
 
-        return eventRepository.findById(eventId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + eventId)))
+        return eventForCaller(eventId)
                 .map(event -> getAllowedTransitionsForStatus(event.getStatus()));
+    }
+
+    /**
+     * The event, when it belongs to one of the caller's organizations or the caller is platform-wide.
+     * Another organization's event is refused exactly as an unknown one.
+     */
+    private Mono<com.pml.catalog.domain.model.Event> eventForCaller(String eventId) {
+        return CurrentTenantScope.get().flatMap(scope -> TenantGuard.locate(
+                scope,
+                eventRepository.findById(eventId),
+                organizationIds -> eventRepository.findByIdAndOrganizationIdIn(eventId, organizationIds),
+                ErrorCode.EVENT_UNKNOWN,
+                "event " + eventId));
     }
 
     @Override
@@ -103,7 +117,7 @@ public class EventLifecycleServiceImpl implements EventLifecycleService {
     private EventLifecycleDto buildLifecycleWithTimeline(
             String eventId,
             EventStatus currentStatus,
-            java.time.LocalDateTime createdAt,
+            java.time.Instant createdAt,
             String createdBy,
             ApprovalTimeline timeline) {
 
@@ -140,7 +154,7 @@ public class EventLifecycleServiceImpl implements EventLifecycleService {
         }
 
         // Find last status change timestamp
-        java.time.LocalDateTime lastStatusChange = transitions.isEmpty() ? createdAt :
+        java.time.Instant lastStatusChange = transitions.isEmpty() ? createdAt :
                 transitions.get(transitions.size() - 1).getTransitionedAt();
 
         return EventLifecycleDto.builder()
@@ -160,9 +174,9 @@ public class EventLifecycleServiceImpl implements EventLifecycleService {
     private EventLifecycleDto buildLifecycleWithoutTimeline(
             String eventId,
             EventStatus currentStatus,
-            java.time.LocalDateTime createdAt,
+            java.time.Instant createdAt,
             String createdBy,
-            java.time.LocalDateTime updatedAt) {
+            java.time.Instant updatedAt) {
 
         List<EventLifecycleDto.StatusTransitionDto> transitions = new ArrayList<>();
 

@@ -1,15 +1,15 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -95,16 +95,12 @@ import java.time.Instant;
  * @see JournalEntry
  * @since 1.0.0
  */
-@Document(collection = "escrow_transactions")
+@Document(collection = BookingCollections.ESCROW_TRANSACTIONS)
+@TypeAlias("escrow_transactions")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-@CompoundIndexes({
-    @CompoundIndex(name = "escrow_type_idx", def = "{'escrowAccountId': 1, 'type': 1}"),
-    @CompoundIndex(name = "escrow_category_idx", def = "{'escrowAccountId': 1, 'category': 1}"),
-    @CompoundIndex(name = "escrow_timestamp_idx", def = "{'escrowAccountId': 1, 'timestamp': -1}")
-})
 public class StandaloneEscrowTransaction {
 
     /**
@@ -121,7 +117,6 @@ public class StandaloneEscrowTransaction {
      * All transactions for an account share this ID.</p>
      */
     @NotBlank(message = "Escrow account ID is required")
-    @Indexed
     private String escrowAccountId;
 
     /**
@@ -133,7 +128,6 @@ public class StandaloneEscrowTransaction {
      * </ul>
      */
     @NotNull(message = "Transaction type is required")
-    @Indexed
     private TransactionType type;
 
     /**
@@ -150,7 +144,6 @@ public class StandaloneEscrowTransaction {
      * </ul>
      */
     @NotBlank(message = "Category is required")
-    @Indexed
     private String category;
 
     /**
@@ -191,7 +184,6 @@ public class StandaloneEscrowTransaction {
      *
      * <p>Links to the Ticket document in the tickets collection.</p>
      */
-    @Indexed
     private String ticketId;
 
     /**
@@ -199,7 +191,6 @@ public class StandaloneEscrowTransaction {
      *
      * <p>Links to the PaymentIntent document tracking the payment flow.</p>
      */
-    @Indexed
     private String paymentIntentId;
 
     /**
@@ -207,7 +198,6 @@ public class StandaloneEscrowTransaction {
      *
      * <p>Links to the RefundRequest document.</p>
      */
-    @Indexed
     private String refundRequestId;
 
     /**
@@ -215,13 +205,11 @@ public class StandaloneEscrowTransaction {
      *
      * <p>Links to the PayoutRequest document.</p>
      */
-    @Indexed
     private String payoutRequestId;
 
     /**
      * Reference to the chargeback record (if applicable).
      */
-    @Indexed
     private String chargebackId;
 
     // ========================================================================
@@ -240,7 +228,6 @@ public class StandaloneEscrowTransaction {
      *   <li>A journal entry with lines for gateway receivable, escrow, and commission</li>
      * </ul>
      */
-    @Indexed
     private String journalEntryId;
 
     // ========================================================================
@@ -270,7 +257,6 @@ public class StandaloneEscrowTransaction {
      * from createdAt if there's processing delay.</p>
      */
     @NotNull(message = "Timestamp is required")
-    @Indexed
     private Instant timestamp;
 
     /**
@@ -385,42 +371,6 @@ public class StandaloneEscrowTransaction {
         return CATEGORY_PAYOUT.equals(category);
     }
 
-    // ========================================================================
-    // FACTORY METHODS
-    // ========================================================================
-
-    /**
-     * Creates a ticket sale credit transaction.
-     *
-     * @param escrowAccountId The escrow account ID
-     * @param amount Amount to credit
-     * @param balanceAfter Balance after this credit
-     * @param ticketId The ticket ID
-     * @param paymentIntentId The payment intent ID
-     * @param description Transaction description
-     * @return New credit transaction
-     */
-    public static StandaloneEscrowTransaction creditForTicketSale(
-            String escrowAccountId,
-            BigDecimal amount,
-            BigDecimal balanceAfter,
-            String ticketId,
-            String paymentIntentId,
-            String description
-    ) {
-        return StandaloneEscrowTransaction.builder()
-                .escrowAccountId(escrowAccountId)
-                .type(TransactionType.CREDIT)
-                .category(CATEGORY_TICKET_SALE)
-                .amount(amount)
-                .balanceAfter(balanceAfter)
-                .ticketId(ticketId)
-                .paymentIntentId(paymentIntentId)
-                .description(description)
-                .timestamp(Instant.now())
-                .build();
-    }
-
     /**
      * Creates a refund debit transaction.
      *
@@ -432,14 +382,12 @@ public class StandaloneEscrowTransaction {
      * @param description Transaction description
      * @return New debit transaction
      */
-    public static StandaloneEscrowTransaction debitForRefund(
-            String escrowAccountId,
+    public static StandaloneEscrowTransaction debitForRefund(String escrowAccountId,
             BigDecimal amount,
             BigDecimal balanceAfter,
             String ticketId,
             String refundRequestId,
-            String description
-    ) {
+            String description, Instant now) {
         return StandaloneEscrowTransaction.builder()
                 .escrowAccountId(escrowAccountId)
                 .type(TransactionType.DEBIT)
@@ -449,7 +397,7 @@ public class StandaloneEscrowTransaction {
                 .ticketId(ticketId)
                 .refundRequestId(refundRequestId)
                 .description(description)
-                .timestamp(Instant.now())
+                .timestamp(now)
                 .build();
     }
 
@@ -463,13 +411,11 @@ public class StandaloneEscrowTransaction {
      * @param description Transaction description
      * @return New debit transaction
      */
-    public static StandaloneEscrowTransaction debitForPayout(
-            String escrowAccountId,
+    public static StandaloneEscrowTransaction debitForPayout(String escrowAccountId,
             BigDecimal amount,
             BigDecimal balanceAfter,
             String payoutRequestId,
-            String description
-    ) {
+            String description, Instant now) {
         return StandaloneEscrowTransaction.builder()
                 .escrowAccountId(escrowAccountId)
                 .type(TransactionType.DEBIT)
@@ -478,36 +424,7 @@ public class StandaloneEscrowTransaction {
                 .balanceAfter(balanceAfter)
                 .payoutRequestId(payoutRequestId)
                 .description(description)
-                .timestamp(Instant.now())
-                .build();
-    }
-
-    /**
-     * Creates a chargeback debit transaction.
-     *
-     * @param escrowAccountId The escrow account ID
-     * @param amount Amount to debit
-     * @param balanceAfter Balance after this debit
-     * @param chargebackId The chargeback record ID
-     * @param description Transaction description
-     * @return New debit transaction
-     */
-    public static StandaloneEscrowTransaction debitForChargeback(
-            String escrowAccountId,
-            BigDecimal amount,
-            BigDecimal balanceAfter,
-            String chargebackId,
-            String description
-    ) {
-        return StandaloneEscrowTransaction.builder()
-                .escrowAccountId(escrowAccountId)
-                .type(TransactionType.DEBIT)
-                .category(CATEGORY_CHARGEBACK)
-                .amount(amount)
-                .balanceAfter(balanceAfter)
-                .chargebackId(chargebackId)
-                .description(description)
-                .timestamp(Instant.now())
+                .timestamp(now)
                 .build();
     }
 
@@ -527,15 +444,13 @@ public class StandaloneEscrowTransaction {
      * @param description Transaction description
      * @return New credit transaction
      */
-    public static StandaloneEscrowTransaction credit(
-            String escrowAccountId,
+    public static StandaloneEscrowTransaction credit(String escrowAccountId,
             BigDecimal amount,
             BigDecimal balanceAfter,
             com.pml.booking.domain.enums.EscrowTransactionCategory category,
             String ticketId,
             String paymentIntentId,
-            String description
-    ) {
+            String description, Instant now) {
         return StandaloneEscrowTransaction.builder()
                 .escrowAccountId(escrowAccountId)
                 .type(TransactionType.CREDIT)
@@ -545,7 +460,7 @@ public class StandaloneEscrowTransaction {
                 .ticketId(ticketId)
                 .paymentIntentId(paymentIntentId)
                 .description(description)
-                .timestamp(Instant.now())
+                .timestamp(now)
                 .build();
     }
 
@@ -560,14 +475,12 @@ public class StandaloneEscrowTransaction {
      * @param description Transaction description
      * @return New debit transaction
      */
-    public static StandaloneEscrowTransaction debit(
-            String escrowAccountId,
+    public static StandaloneEscrowTransaction debit(String escrowAccountId,
             BigDecimal amount,
             BigDecimal balanceAfter,
             com.pml.booking.domain.enums.EscrowTransactionCategory category,
             String referenceId,
-            String description
-    ) {
+            String description, Instant now) {
         StandaloneEscrowTransactionBuilder builder = StandaloneEscrowTransaction.builder()
                 .escrowAccountId(escrowAccountId)
                 .type(TransactionType.DEBIT)
@@ -575,7 +488,7 @@ public class StandaloneEscrowTransaction {
                 .amount(amount)
                 .balanceAfter(balanceAfter)
                 .description(description)
-                .timestamp(Instant.now());
+                .timestamp(now);
 
         // Set the appropriate reference field based on category
         switch (category) {

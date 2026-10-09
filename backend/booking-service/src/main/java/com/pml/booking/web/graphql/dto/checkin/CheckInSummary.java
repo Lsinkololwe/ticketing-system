@@ -2,7 +2,7 @@ package com.pml.booking.web.graphql.dto.checkin;
 
 import com.pml.booking.service.CheckInService;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Attendance for one event's gate.
@@ -28,7 +28,7 @@ public record CheckInSummary(
         int conflicts,
         int openConflicts,
         int manualAdmissions,
-        LocalDateTime lastCheckInAt
+        Instant lastCheckInAt
 ) {
     public static CheckInSummary from(CheckInService.Summary summary) {
         return new CheckInSummary(

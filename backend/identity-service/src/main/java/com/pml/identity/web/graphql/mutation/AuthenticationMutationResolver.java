@@ -1,268 +1,81 @@
 package com.pml.identity.web.graphql.mutation;
 
-import com.pml.identity.web.graphql.dto.auth.AuthPayload;
-import com.pml.identity.web.graphql.dto.auth.RegisterInput;
-import com.pml.identity.web.graphql.dto.auth.TokenValidation;
-import com.pml.identity.domain.model.User;
-import com.pml.identity.infrastructure.keycloak.KeycloakAuthService;
-import com.pml.identity.infrastructure.keycloak.KeycloakService;
-import com.pml.identity.service.UserService;
-import com.pml.shared.constants.UserType;
-import com.pml.shared.security.SecurityContextUtils;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
-import com.netflix.graphql.dgs.InputArgument;
+import com.pml.identity.account.KeycloakUserAdminPort;
+import com.pml.identity.security.revocation.MongoRevocationStore;
+import com.pml.shared.security.SecurityContextUtils;
+import com.pml.shared.security.revocation.RevocationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.validation.annotation.Validated;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
-
 /**
- * GraphQL Mutation Resolver for Authentication operations.
+ * The one authentication operation GraphQL keeps: {@code logout}.
  *
- * Handles user authentication via Keycloak OAuth2/OIDC:
- * - login: Authenticate user with email/password
- * - register: Create new user account
- * - refreshToken: Get new tokens using refresh token
- * - logout: Invalidate user session
- * - validateToken: Verify token validity and extract claims
+ * <p>Signing in is Keycloak's - the browser flow with the contact authenticator - and the app server
+ * holds the tokens. The password {@code login}, {@code register}, {@code refreshToken} and
+ * {@code validateToken} mutations are gone: they could not be called without a token anyway, and a
+ * second way to obtain or check a token is a second thing to defend.
  */
 @Slf4j
 @DgsComponent
+@Validated
 @RequiredArgsConstructor
 public class AuthenticationMutationResolver {
 
-    private final KeycloakAuthService keycloakAuthService;
-    private final KeycloakService keycloakService;
-    private final UserService userService;
+    private final KeycloakUserAdminPort keycloak;
+    private final ObjectProvider<MongoRevocationStore> revocations;
 
     /**
-     * Authenticate user with email and password.
-     * Returns JWT access and refresh tokens along with user details.
-     *
-     * @param email    User's email address
-     * @param password User's password
-     * @return AuthPayload containing tokens and user
+     * Ends the caller's session: the access token's {@code jti} and the SSO session's {@code sid}
+     * are recorded as revoked, so the token stops working at once in every service, and the
+     * Keycloak session is ended so the next sign-in asks again.
      */
     @DgsMutation
-    public Mono<AuthPayload> login(@InputArgument String email, @InputArgument String password) {
-        log.info("Login attempt for user: {}", email);
-
-        return keycloakAuthService.authenticate(email, password, "openid profile email phone")
-                .flatMap(tokenResponse -> {
-                    // Find or sync user in local database
-                    return userService.findByEmail(email)
-                            .switchIfEmpty(Mono.defer(() -> {
-                                // User authenticated in Keycloak but doesn't exist locally
-                                // This could happen if user was created directly in Keycloak
-                                log.warn("User authenticated but not found locally: {}", email);
-                                return keycloakService.findUserByEmail(email)
-                                        .flatMap(keycloakUserOpt -> {
-                                            if (keycloakUserOpt.isEmpty()) {
-                                                return Mono.error(new RuntimeException("User not found"));
-                                            }
-                                            var keycloakUser = keycloakUserOpt.get();
-                                            // Create local user record
-                                            User newUser = User.builder()
-                                                    .id(keycloakUser.getId())  // Use Keycloak ID as MongoDB ID
-                                                    .email(email)
-                                                    .username(keycloakUser.getUsername())
-                                                    .firstName(keycloakUser.getFirstName())
-                                                    .lastName(keycloakUser.getLastName())
-                                                    .emailVerified(keycloakUser.isEmailVerified())
-                                                    .roles(java.util.EnumSet.of(UserType.CUSTOMER))
-                                                    .active(true)
-                                                    .createdAt(Instant.now())
-                                                    .updatedAt(Instant.now())
-                                                    .build();
-                                            return userService.createUser(newUser);
-                                        });
-                            }))
-                            .flatMap(user -> {
-                                // Update last login time
-                                return userService.updateLastLogin(user.getId())
-                                        .thenReturn(user);
-                            })
-                            .map(user -> new AuthPayload(
-                                    tokenResponse.getAccessToken(),
-                                    tokenResponse.getRefreshToken(),
-                                    (int) tokenResponse.getExpiresIn(),
-                                    user
-                            ));
-                })
-                .doOnSuccess(payload -> log.info("User logged in successfully: {}", email))
-                .doOnError(error -> log.error("Login failed for user {}: {}", email, error.getMessage()));
-    }
-
-    /**
-     * Register a new user account.
-     * Creates user in both Keycloak and local MongoDB database.
-     *
-     * @param input Registration details
-     * @return Created user
-     */
-    @DgsMutation
-    public Mono<User> register(@InputArgument RegisterInput input) {
-        log.info("Registering new user: {}", input.email());
-
-        // Check if user already exists
-        return userService.findByEmail(input.email())
-                .flatMap(existing -> Mono.<User>error(new RuntimeException("Email already registered")))
-                .switchIfEmpty(Mono.defer(() -> {
-                    // All new users get CUSTOMER role by default (via builder default)
-                    User newUser = User.builder()
-                            .username(input.username())
-                            .email(input.email())
-                            .firstName(input.firstName())
-                            .lastName(input.lastName())
-                            .phoneNumber(input.phoneNumber())
-                            .emailVerified(false)
-                            .phoneVerified(false)
-                            .active(true)
-                            .createdAt(Instant.now())
-                            .updatedAt(Instant.now())
-                            .build();
-
-                    // First create in Keycloak
-                    return keycloakService.createUser(newUser, input.password())
-                            .flatMap(keycloakId -> {
-                                // Set the Keycloak ID as the MongoDB ID
-                                newUser.setId(keycloakId);
-                                // Then save to local database
-                                return userService.createUser(newUser);
-                            })
-                            .flatMap(user -> {
-                                // Send email verification
-                                return keycloakService.sendVerificationEmail(user.getId())
-                                        .thenReturn(user)
-                                        .onErrorResume(e -> {
-                                            log.warn("Failed to send verification email: {}", e.getMessage());
-                                            return Mono.just(user);
-                                        });
-                            });
-                }))
-                .doOnSuccess(user -> log.info("User registered successfully: {}", user.getEmail()))
-                .doOnError(error -> log.error("Registration failed: {}", error.getMessage()));
-    }
-
-    /**
-     * Refresh access token using a refresh token.
-     * Returns new JWT access and refresh tokens.
-     *
-     * @param refreshToken The refresh token
-     * @return AuthPayload containing new tokens and user
-     */
-    @DgsMutation
-    public Mono<AuthPayload> refreshToken(@InputArgument String refreshToken) {
-        log.debug("Refreshing token");
-
-        return keycloakAuthService.refreshToken(refreshToken)
-                .flatMap(tokenResponse -> {
-                    // Introspect the new access token to get user info
-                    return keycloakAuthService.introspectToken(tokenResponse.getAccessToken())
-                            .flatMap(introspection -> {
-                                if (!introspection.isActive()) {
-                                    return Mono.error(new RuntimeException("Token introspection failed"));
-                                }
-                                String email = introspection.getEmail();
-                                return userService.findByEmail(email)
-                                        .map(user -> new AuthPayload(
-                                                tokenResponse.getAccessToken(),
-                                                tokenResponse.getRefreshToken(),
-                                                (int) tokenResponse.getExpiresIn(),
-                                                user
-                                        ));
-                            });
-                })
-                .doOnSuccess(payload -> log.debug("Token refreshed successfully"))
-                .doOnError(error -> log.error("Token refresh failed: {}", error.getMessage()));
-    }
-
-    /**
-     * Logout user and invalidate their session in Keycloak.
-     * Requires the user to be authenticated to get their refresh token from context.
-     *
-     * @return true if logout was successful
-     */
-    @DgsMutation
+    @PreAuthorize("isAuthenticated()")
     public Mono<Boolean> logout() {
-        return SecurityContextUtils.getAuthenticationContext()
-                .flatMap(ctx -> {
-                    log.info("Logging out user: {}", ctx.getEmail());
-
-                    // Get the refresh token from the session if available
-                    // Note: The actual refresh token should be passed by the client
-                    // This implementation logs out at the Keycloak level using session state
-                    return SecurityContextUtils.getClaim("session_state")
-                            .flatMap(sessionState -> keycloakService.endUserSession(sessionState)
-                                    .thenReturn(true)
-                                    .onErrorResume(e -> {
-                                        log.warn("Session invalidation failed: {}", e.getMessage());
-                                        return Mono.just(true); // Logout should not fail from user perspective
-                                    })
-                                    .doOnSuccess(v -> log.info("User logged out successfully: {}", ctx.getEmail())))
-                            .switchIfEmpty(Mono.just(true));
-                })
-                .switchIfEmpty(Mono.defer(() -> {
-                    log.warn("Logout called without authentication");
-                    return Mono.just(true); // No session to invalidate
-                }));
+        return SecurityContextUtils.getJwt().flatMap(this::end).defaultIfEmpty(true);
     }
 
-    /**
-     * Validate a token and extract its claims.
-     * Used by services to verify token validity.
-     *
-     * @param token The token to validate
-     * @return TokenValidation with validity status and claims
-     */
-    @DgsMutation
-    public Mono<TokenValidation> validateToken(@InputArgument String token) {
-        log.debug("Validating token");
+    private Mono<Boolean> end(Jwt jwt) {
+        String jti = jwt.getId();
+        String sid = jwt.getClaimAsString("sid");
+        String actor = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
+        MongoRevocationStore store = revocations.getIfAvailable();
 
-        return keycloakAuthService.introspectToken(token)
-                .map(introspection -> {
-                    if (!introspection.isActive()) {
-                        return new TokenValidation(false, null, null, null);
-                    }
-
-                    // Extract user roles from realm roles
-                    java.util.Set<String> roles = new java.util.HashSet<>();
-                    if (introspection.getRealmAccess() != null &&
-                        introspection.getRealmAccess().getRoles() != null) {
-                        for (String role : introspection.getRealmAccess().getRoles()) {
-                            // Filter to only include our defined user roles
-                            if (isValidUserRole(role)) {
-                                roles.add(role);
-                            }
-                        }
-                    }
-                    // Ensure CUSTOMER is always present
-                    roles.add("CUSTOMER");
-
-                    return new TokenValidation(
-                            true,
-                            introspection.getSub(),
-                            introspection.getEmail(),
-                            roles
-                    );
-                })
-                .onErrorResume(e -> {
-                    log.error("Token validation failed: {}", e.getMessage());
-                    return Mono.just(new TokenValidation(false, null, null, null));
+        Mono<Void> revoke = Mono.empty();
+        if (store != null) {
+            if (jti != null && !jti.isBlank()) {
+                revoke = revoke.then(store.revoke(RevocationType.TOKEN, jti, "logout", actor).then());
+            }
+            if (sid != null && !sid.isBlank()) {
+                revoke = revoke.then(store.revoke(RevocationType.SESSION, sid, "logout", actor).then());
+            }
+        } else {
+            log.warn("Token revocation is switched off; logout can only end the Keycloak session");
+        }
+        Mono<Void> endSession = sid == null || sid.isBlank()
+                ? Mono.empty()
+                : keycloak.endSession(realmOf(jwt), sid)
+                .onErrorResume(error -> {
+                    // The revocation above is what stops the token; a Keycloak that cannot be reached must not fail a logout.
+                    log.warn("Keycloak session {} could not be ended: {}", sid, error.toString());
+                    return Mono.empty();
                 });
+        return revoke.then(endSession).thenReturn(true);
     }
 
-    /**
-     * Check if a role name is a valid user role.
-     */
-    private boolean isValidUserRole(String role) {
-        return role.equals("CUSTOMER") ||
-               role.equals("ORGANIZER") ||
-               role.equals("ADMIN") ||
-               role.equals("SUPER_ADMIN") ||
-               role.equals("SCANNER") ||
-               role.equals("FINANCE");
+    /** The realm that issued the token: the last segment of its issuer. Null (buyers) when unreadable. */
+    private static String realmOf(Jwt jwt) {
+        String issuer = jwt.getIssuer() == null ? null : jwt.getIssuer().toString();
+        if (issuer == null || issuer.isBlank()) {
+            return null;
+        }
+        return issuer.substring(issuer.lastIndexOf('/') + 1);
     }
 }

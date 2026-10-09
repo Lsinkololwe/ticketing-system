@@ -1,5 +1,22 @@
 # ET-TKT-004 · Ticket transfer and controlled resale
 
+> **Amended 2026-10-05 (D-40, F-044; prototype requirements).** Transfers are **direct offers between two verified accounts**, not claim links.
+> The QR is fixed and is **not** rotated on transfer (D-40, see ET-TKT-002 R5): only the holder (`buyerId`) changes. Operations are
+> `transferRecipient(channel, value)` (looks up an ACTIVE account by WhatsApp number or email and answers only a masked display name, `First L.`,
+> and an opaque id; an unknown or ambiguous contact answers null so existence is not disclosed), `initiateTicketTransfer`, `cancelTicketTransfer`
+> (sender, while pending), `acceptTicketTransfer` / `declineTicketTransfer` (recipient only), `myTicketTransfers` and `ticketTransferChain`.
+> Rules (pure, `TransferRules`): holder only (otherwise `TICKET_UNKNOWN`), status ISSUED, no transfer already pending, not to self (`TRANSFER_TO_SELF`),
+> event not cancelled or ended, chain below `booking.transfer.max-chain` (5), and closed at `booking.transfer.cutoff` (2 h) before the start
+> (`TICKET_NOT_TRANSFERABLE` with reason). An offer lapses after `booking.transfer.ttl` (48 h) or at the event start, whichever is first, by the
+> `TicketTransferWorkflow` timer. Initiation is rate-limited per user in Redis. Resale (R6-R7) remains out of scope. Tests: `BookingOperationsRulesTest` (L1).
+>
+> **Verified 2026-10-05 (integration test `TicketTransferTest`: real Temporal server, activities, MongoDB replica set and Redis).** Only the holder can offer; only the recipient
+> can accept or decline; only the sender can cancel; every other caller is told `TICKET_TRANSFER_UNKNOWN` and nothing changes. Accept changes the holder exactly once
+> (twelve simultaneous accepts: one hand-over, one `booking.TicketTransferred`), keeps the QR, records the payer once (`originalBuyerId`) and drops the previous holder's cached
+> contact. Asking again for what was already done (accept, decline, cancel) is answered with the result, not a refusal. An offer past `expiresAt` cannot be accepted even
+> before its timer fires; the timer returns the ticket. Offers are capped at 10 per hour per user and 3 per ticket per hour, contact lookups at 20 per hour. A worker restart
+> mid-offer loses nothing and a settled history replays against the current workflow code.
+
 > **Conformance** · US-BUY-003 ticket transfer
 
 ## 1. Capability
@@ -124,7 +141,7 @@ transfer of that ticket.
 - [ ] A second `initiateTransfer` refuses with `TICKET_STATE_INVALID`
 - [ ] A refund request on a pending transfer refuses until it resolves
 - [ ] Expiry or cancellation returns the ticket to `ISSUED` with the sender as owner and **no** re-issue — the sender's QR keeps working
-- [ ] A sweep under `lock:sweep:transfer-expiry` returns expired transfers within one interval
+- [ ] The transfer's `TicketTransferWorkflow` (`ticket-transfer/{transferId}`) returns the ticket at `expiresAt` by timer; no sweep or lock exists
 - [ ] Both expiry and cancellation are idempotent
 
 ### ET-TKT-004-R4 · Transfer closes before the event
@@ -316,14 +333,15 @@ registry by this spec, making it ten.
 | Tier | Name | When | Consumers |
 |---|---|---|---|
 | bus | `booking.TicketTransferred` v1 | after a claim commits | identity → notify both parties |
-| module | `TransferInitiatedEvent` | initiation | send the claim link |
-| module | `TransferExpiredEvent` | sweep | notify the sender |
 
-### Sweeps
+Sending the claim link and telling the sender of an expiry are activities of the transfer's
+workflow, not in-memory events.
 
-| Sweep | Lock | Interval | Purpose |
-|---|---|---|---|
-| transfer expiry | `lock:sweep:transfer-expiry` | `PT5M` | return expired transfers to the sender |
+### Workflows
+
+| Workflow | Id | Queue | Start | Updates | Timer |
+|---|---|---|---|---|---|
+| `TicketTransferWorkflow` | `ticket-transfer/{transferId}` | `booking-checkout` | `initiateTransfer`, Update-with-Start, `USE_EXISTING` | `claim`, `cancel` | `expiresAt` → return the ticket to the sender |
 
 ### Configuration
 
@@ -368,8 +386,8 @@ registry by this spec, making it ten.
 
 - [ ] **T4 · Expiry and cancellation return the ticket without re-issuing**
   - requirements: R3
-  - files: `backend/booking-service/.../scheduler/TransferExpirySweeper.java`
-  - verify: the sender's QR still works after a return; both paths are idempotent
+  - files: `backend/booking-service/.../workflow/transfer/TicketTransferWorkflowImpl.java`
+  - verify: the sender's QR still works after a return; both paths are idempotent; a time-skipping test expires at `expiresAt`; the history replays
   - parallel-safe: yes
   - depends: T3
 

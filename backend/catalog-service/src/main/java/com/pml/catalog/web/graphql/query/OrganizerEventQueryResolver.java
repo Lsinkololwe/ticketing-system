@@ -3,10 +3,9 @@ package com.pml.catalog.web.graphql.query;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.catalog.dto.*;
+import com.pml.catalog.web.graphql.dto.*;
 import com.pml.catalog.domain.model.Event;
 import com.pml.catalog.service.EventService;
-import com.pml.catalog.util.CursorUtils;
 import com.pml.shared.constants.EventStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +17,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -43,13 +42,13 @@ public class OrganizerEventQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ORGANIZER')")
-    public Mono<EventOffsetPage> myEventsOffsetPagination(
+    public Mono<EventOffsetPage> myEvents(
             @InputArgument OrganizerEventFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
         return getCurrentUserId()
                 .flatMap(organizerId -> {
-                    log.debug("GraphQL query: myEventsOffsetPagination for organizer {}", organizerId);
+                    log.debug("GraphQL query: myEvents for organizer {}", organizerId);
 
                     Flux<Event> eventFlux = eventService.findEventsByOrganizer(organizerId);
 
@@ -71,12 +70,12 @@ public class OrganizerEventQueryResolver {
      */
     @DgsQuery
     @PreAuthorize("hasRole('ORGANIZER')")
-    public Mono<EventOffsetPage> myDraftEventsOffsetPagination(
+    public Mono<EventOffsetPage> myDraftEvents(
             @InputArgument OffsetPaginationInput pagination
     ) {
         return getCurrentUserId()
                 .flatMap(organizerId -> {
-                    log.debug("GraphQL query: myDraftEventsOffsetPagination for organizer {}", organizerId);
+                    log.debug("GraphQL query: myDraftEvents for organizer {}", organizerId);
 
                     return buildOffsetPage(
                             eventService.findDraftEventsByOrganizer(organizerId),
@@ -131,7 +130,7 @@ public class OrganizerEventQueryResolver {
                 .map(Authentication::getPrincipal)
                 .flatMap(principal -> {
                     if (principal instanceof Jwt jwt) {
-                        String userId = jwt.getClaimAsString("sub");
+                        String userId = com.pml.shared.security.AccountIdentity.userIdOf(jwt);
                         if (userId != null && !userId.isBlank()) {
                             return Mono.just(userId);
                         }
@@ -219,7 +218,7 @@ public class OrganizerEventQueryResolver {
             EventStatus status,
             List<EventStatus> statuses,
             String searchQuery,
-            LocalDateTime eventDateAfter,
-            LocalDateTime eventDateBefore
+            Instant eventDateAfter,
+            Instant eventDateBefore
     ) {}
 }

@@ -1,6 +1,5 @@
 package com.pml.shared.security;
 
-import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.ReactiveAuthenticationManagerResolver;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -39,9 +38,19 @@ import java.util.Map;
  *   <li>extracts Keycloak roles via {@link KeycloakJwtAuthenticationConverter}</li>
  * </ul>
  *
- * <p>This is OFF by default — services only build this resolver when more than one trusted
- * issuer is configured (see {@code keycloak.trusted-issuers}); otherwise they keep the plain
- * single-issuer {@code .jwt(...)} path unchanged.</p>
+ * <h2>One path, not two</h2>
+ * <p>Every service and the gateway route through this resolver, whether one issuer is trusted
+ * or several. There used to be a branch — {@code issuers.size() > 1} took this path and
+ * anything else fell back to a plain {@code .jwt(...)} decoder — and the fallback validated
+ * signature, issuer and expiry but <em>silently ignored the configured audience</em>. A
+ * security control that applies only in the multi-realm configuration is not a control; it is
+ * a coincidence. Collapsing the branch means the four checks in
+ * {@link #decoderFor(String, java.util.List)} are the only ones that exist.</p>
+ *
+ * <p>The branch was also mislabelled everywhere it appeared. Its comment read "OFF by default",
+ * while {@code keycloak.trusted-issuers} in fact defaults to the admin realm — so the branch
+ * nobody thought was live was the only one running, and the documented fallback never
+ * executed.</p>
  */
 public final class MultiIssuerJwtResolver {
 
@@ -112,18 +121,35 @@ public final class MultiIssuerJwtResolver {
         return out;
     }
 
-    private static ReactiveAuthenticationManager buildManager(
-            String issuer,
-            String clientId,
-            List<String> expectedAudiences) {
-
-        // Lazy JWKS (Keycloak standard path) — keys are fetched on first token, NOT at startup,
-        // so a service is not coupled to every trusted realm being reachable at boot. The issuer
-        // is still enforced below via createDefaultWithIssuer.
+    /**
+     * The one place a JWT decoder is built. Every check a token must pass is applied here:
+     *
+     * <ol>
+     *   <li><b>signature</b> — {@code NimbusReactiveJwtDecoder} against the realm's JWKS</li>
+     *   <li><b>issuer</b> — {@code createDefaultWithIssuer} pins {@code iss}</li>
+     *   <li><b>expiry</b> — {@code exp} and {@code nbf}, also from the default validator</li>
+     *   <li><b>audience</b> — {@code aud}, when {@code expectedAudiences} is non-empty</li>
+     * </ol>
+     *
+     * <p>The fourth is the one that is easy to omit, and omitting it is not a small gap: a
+     * signature-and-issuer check accepts a token the right realm minted for a completely
+     * different client. See {@link PlatformResourceServer}, which is where services configure
+     * the audience and where an unset one is announced rather than assumed.</p>
+     *
+     * <p><b>JWKS is fetched lazily</b>, on the first token rather than at startup, and from
+     * Keycloak's fixed {@code /protocol/openid-connect/certs} path rather than by OIDC
+     * discovery. Both are deliberate: discovery ({@code ReactiveJwtDecoders.fromIssuerLocation})
+     * performs a network call during bean creation, which makes every service unable to start
+     * whenever Keycloak is briefly unreachable — a boot-time coupling with no security benefit,
+     * since {@code iss} is pinned below either way.</p>
+     *
+     * @param issuer            the realm issuer URL
+     * @param expectedAudiences audiences to require in {@code aud}; empty disables the check
+     */
+    public static NimbusReactiveJwtDecoder decoderFor(String issuer, List<String> expectedAudiences) {
         String base = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
-        String jwkSetUri = base + "/protocol/openid-connect/certs";
         NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder
-                .withJwkSetUri(jwkSetUri)
+                .withJwkSetUri(base + "/protocol/openid-connect/certs")
                 .build();
 
         List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
@@ -133,8 +159,16 @@ public final class MultiIssuerJwtResolver {
             validators.add(audienceValidator);
         }
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
+        return decoder;
+    }
 
-        JwtReactiveAuthenticationManager manager = new JwtReactiveAuthenticationManager(decoder);
+    private static ReactiveAuthenticationManager buildManager(
+            String issuer,
+            String clientId,
+            List<String> expectedAudiences) {
+
+        JwtReactiveAuthenticationManager manager =
+                new JwtReactiveAuthenticationManager(decoderFor(issuer, expectedAudiences));
         manager.setJwtAuthenticationConverter(
                 KeycloakJwtAuthenticationConverter.reactiveConverter(clientId));
         return manager;

@@ -1,5 +1,6 @@
 package com.pml.identity.web.graphql.query;
 
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -7,6 +8,9 @@ import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.service.OrganizationMemberService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TenantBoundary;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
 import com.pml.identity.web.graphql.dto.pagination.*;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +24,7 @@ import java.util.Objects;
 
 /**
  * GraphQL Query Resolver for Organization Member operations.
- * Handles member-related queries with both offset and cursor pagination.
+ * Handles member-related queries with offset pagination.
  */
 @Slf4j
 @DgsComponent
@@ -34,8 +38,26 @@ public class OrganizationMemberQueryResolver {
     // ========================================================================
 
     /**
-     * Get specific member by organization and user ID.
-     * Schema: organizationMember(organizationId: ID!, userId: ID!): OrganizationMember
+     * One member of an organization the caller belongs to.
+     * OWASP A01:2021 · CWE-639.
+     *
+     * <h2>Why {@code TenantScope} and not a subject comparison</h2>
+     * Both arguments come from the client, and the question is not "is this row yours" — it is
+     * "are you in the organization this row belongs to". A caller may legitimately read a
+     * colleague's membership; they may not read a stranger's. That is a membership question about
+     * the <em>organization named in the argument</em>, which is exactly what {@code TenantScope}
+     * answers, and it is why the subject-comparison used for reservations and transfers is the
+     * wrong instrument here.
+     *
+     * <p>{@code organizationId} is a scope selector, not a grant: it can only narrow to an
+     * organization the token already established. Naming one the caller does not belong to
+     * refuses, and refuses the same way an organization that was never issued does.
+     *
+     * <h2>What it protected</h2>
+     * Unscoped, this read returned any user's role in any organization to any signed-in caller,
+     * and by enumeration the whole team roster. The paged sibling
+     * {@code organizationMembers(organizationId, …)} resolves the caller first; this is the one
+     * that did not.
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
@@ -46,7 +68,12 @@ public class OrganizationMemberQueryResolver {
         log.debug("GraphQL query: organizationMember(organizationId={}, userId={})", organizationId, userId);
         Objects.requireNonNull(organizationId, "Organization ID is required");
         Objects.requireNonNull(userId, "User ID is required");
-        return memberService.findByUserAndOrganization(userId, organizationId);
+
+        return CurrentTenantScope.get()
+                .flatMap(scope -> scope.platformAdmin() || scope.permits(organizationId)
+                        ? memberService.findByUserAndOrganization(userId, organizationId)
+                        : Mono.error(TenantBoundary.refuse(ErrorCode.ORGANIZATION_UNKNOWN,
+                                "organization " + organizationId + " requested by " + scope)));
     }
 
     /**
@@ -68,11 +95,11 @@ public class OrganizationMemberQueryResolver {
 
     /**
      * Get organization members with offset pagination.
-     * Schema: organizationMembersOffsetPagination(organizationId: ID!, role: OrganizationRole, status: MemberStatus, pagination: OffsetPaginationInput): OrganizationMemberOffsetPage!
+     * Schema: organizationMembers(organizationId: ID!, role: OrganizationRole, status: MemberStatus, pagination: OffsetPaginationInput): OrganizationMemberOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
-    public Mono<OrganizationMemberOffsetPage> organizationMembersOffsetPagination(
+    public Mono<OrganizationMemberOffsetPage> organizationMembers(
             @InputArgument String organizationId,
             @InputArgument OrganizationRole role,
             @InputArgument MemberStatus status,
@@ -81,14 +108,15 @@ public class OrganizationMemberQueryResolver {
         Objects.requireNonNull(organizationId, "Organization ID is required");
 
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.debug("GraphQL query: organizationMembersOffsetPagination(orgId={}, role={}, status={})",
+                .doOnNext(userId -> log.debug("GraphQL query: organizationMembers(orgId={}, role={}, status={})",
                         organizationId, role, status))
-                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied"));
-                            }
-
+                // A platform administrator reads any organization's team (the admin console's Team tab)
+                // without being a member of it; everyone else needs TEAM_VIEW inside it.
+                .flatMap(userId -> CurrentTenantScope.get()
+                        .flatMap(scope -> scope.platformAdmin()
+                                ? Mono.<Void>empty()
+                                : memberService.requirePermission(userId, organizationId, Permission.TEAM_VIEW))
+                        .then(Mono.defer(() -> {
                             Flux<OrganizationMember> memberFlux = memberService.findByOrganization(organizationId)
                                     .filter(member -> {
                                         if (role != null && member.getRole() != role) {
@@ -101,49 +129,7 @@ public class OrganizationMemberQueryResolver {
                                     });
 
                             return buildOffsetPage(memberFlux, pagination);
-                        }));
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Get organization members with cursor pagination (mobile/infinite scroll).
-     * Schema: organizationMembersCursorPagination(organizationId: ID!, role: OrganizationRole, status: MemberStatus, pagination: CursorPaginationInput): OrganizationMemberConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("isAuthenticated()")
-    public Mono<OrganizationMemberConnection> organizationMembersCursorPagination(
-            @InputArgument String organizationId,
-            @InputArgument OrganizationRole role,
-            @InputArgument MemberStatus status,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        Objects.requireNonNull(organizationId, "Organization ID is required");
-
-        return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(userId -> log.debug("GraphQL query: organizationMembersCursorPagination(orgId={}, role={}, status={})",
-                        organizationId, role, status))
-                .flatMap(userId -> memberService.hasPermission(userId, organizationId, "ORG_VIEW_MEMBERS")
-                        .flatMap(hasPermission -> {
-                            if (!hasPermission) {
-                                return Mono.error(new IllegalStateException("Permission denied"));
-                            }
-
-                            Flux<OrganizationMember> memberFlux = memberService.findByOrganization(organizationId)
-                                    .filter(member -> {
-                                        if (role != null && member.getRole() != role) {
-                                            return false;
-                                        }
-                                        if (status != null && member.getStatus() != status) {
-                                            return false;
-                                        }
-                                        return true;
-                                    });
-
-                            return buildCursorConnection(memberFlux, pagination);
-                        }));
+                        })));
     }
 
     // ========================================================================
@@ -183,52 +169,4 @@ public class OrganizationMemberQueryResolver {
                 });
     }
 
-    /**
-     * Build OrganizationMemberConnection from a Flux of members.
-     */
-    private Mono<OrganizationMemberConnection> buildCursorConnection(Flux<OrganizationMember> memberFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : CursorPaginationInput.defaults();
-        int limit = p.getLimit();
-
-        return memberFlux.collectList()
-                .map(allMembers -> {
-                    int totalCount = allMembers.size();
-
-                    // Find starting position based on cursor
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allMembers.size(); i++) {
-                            if (allMembers.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Get the page of members
-                    List<OrganizationMember> pageMembers = allMembers.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageMembers.isEmpty()) {
-                        return OrganizationMemberConnection.empty();
-                    }
-
-                    // Build edges
-                    List<OrganizationMemberEdge> edges = pageMembers.stream()
-                            .map(OrganizationMemberEdge::of)
-                            .toList();
-
-                    // Build page info
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.forCursor(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new OrganizationMemberConnection(edges, pageInfo, totalCount);
-                });
-    }
 }

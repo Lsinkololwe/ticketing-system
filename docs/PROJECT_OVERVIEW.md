@@ -1,5 +1,7 @@
 # Project Overview — Event Ticketing System
 
+> **Process mechanics (ROADMAP D-21).** Every multi-step, timed or cross-service process described below — sagas, `@Scheduled` sweeps, recovery jobs, Redis job locks, in-process event listeners — runs as a Temporal workflow or Schedule: see `specs/_platform/015-durable-execution/spec.md`, `specs/CONVENTIONS.md` §3 and §9, and `docs/architecture/DURABLE_EXECUTION.md`. Where this document and those disagree on how a process runs, they win.
+
 > Last updated: 2026-07-09
 
 ## What It Is
@@ -28,7 +30,7 @@ Apollo Router (:4000)                               ← GraphQL Federation 2 sup
         └── Identity Service (:8083) — Users, Organizers/Organizations, Roles, OTP
 ```
 
-Supporting infrastructure: **Keycloak** (:8084) for OAuth2/OIDC, **MongoDB** (reactive, business data), **PostgreSQL** (Keycloak + Spring Modulith event publication), **Redis** (sessions, OTP, rate limits), and **Azure Service Bus** (cross-service events).
+Supporting infrastructure: **Keycloak** (:8084) for OAuth2/OIDC, **MongoDB** (reactive, business data), **PostgreSQL** (Keycloak, and the self-hosted Temporal service outside development), **Temporal** (:7233, durable workflows and Schedules), **Redis** (sessions, OTP, rate limits), and **Azure Service Bus** (cross-service events).
 
 ## Technology Stack
 
@@ -36,8 +38,8 @@ Supporting infrastructure: **Keycloak** (:8084) for OAuth2/OIDC, **MongoDB** (re
 |-------|-----------|
 | Backend runtime | Java 21, Spring Boot 3.5.x, Spring WebFlux (fully reactive) |
 | GraphQL | Netflix DGS 10 with Federation 2, composed by Apollo Router |
-| Data | Spring Data MongoDB Reactive; PostgreSQL via JDBC only for Modulith events |
-| Eventing | Spring Modulith (intra-service, guaranteed delivery) + Azure Service Bus via Spring Cloud Stream (cross-service) |
+| Data | Spring Data MongoDB Reactive, with a transactional outbox per service; no service connects to PostgreSQL |
+| Events and processes | Transactional outbox in MongoDB, drained to Azure Service Bus for cross-service facts; Temporal workflows and Schedules for every multi-step, timed or cross-service process |
 | Auth | Keycloak 26 with a custom Phone OTP authenticator (WhatsApp/SMS passwordless login); Better Auth on the frontend |
 | Admin & Customer web | Next.js 16, React 19, Apollo Client 4, Nx monorepo |
 | Mobile | Expo 54 / React Native, Apollo Client 4 |
@@ -70,9 +72,9 @@ ticketing-system/
 
 ## Key Architectural Decisions
 
-1. **Hybrid reactive/blocking persistence** — business data is stored in reactive MongoDB, but Spring Modulith event publication requires blocking JDBC, so those events persist to a `modulith_events` schema in PostgreSQL. Two transaction managers coexist per service.
+1. **Reactive end to end** — business data and each service's outbox live in reactive MongoDB; no service holds a blocking relational connection. The build refuses Spring Modulith, JDBC and the PostgreSQL driver (ET-PLT-012 R7).
 
-2. **Two-tier eventing** — `@ApplicationModuleListener` (Modulith + PostgreSQL) for guaranteed in-service delivery; `StreamBridge` → Azure Service Bus topics (`catalog-events`, `booking-events`, `identity-events`) for cross-service communication with DLQ and retry.
+2. **Outbox plus workflows** — a fact for other services is staged in the service's `*_outbox` collection inside the business transaction and drained to Service Bus topics (`catalog-events`, `booking-events`, `identity-events`); a process within a service runs as a Temporal workflow (ET-PLT-015).
 
 3. **GraphQL Federation 2** — each service owns its types (`@key`) and extends types owned by others; Apollo Router composes the supergraph. Schema workflow is strict: **backend schema → supergraph composition/GraphOS publish → frontend codegen**. Frontend TypeScript types are never hand-written for GraphQL.
 

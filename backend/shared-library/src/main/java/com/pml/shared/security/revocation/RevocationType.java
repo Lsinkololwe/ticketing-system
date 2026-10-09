@@ -1,11 +1,9 @@
 package com.pml.shared.security.revocation;
 
-import com.pml.shared.security.TokenBlacklistConstants;
-
 /**
  * The three identifiers a JWT can be revoked by.
  *
- * <p>Each constant builds its own Redis cache key from {@link TokenBlacklistConstants}, which
+ * <p>Each constant builds its own Redis cache key from {@link RevocationKeys}, which
  * is the single key layout shared by the API Gateway, the backend services and the frontend
  * applications.</p>
  */
@@ -15,7 +13,7 @@ public enum RevocationType {
     TOKEN {
         @Override
         public String cacheKey(String value) {
-            return TokenBlacklistConstants.blacklistKey(value);
+            return RevocationKeys.token(value);
         }
     },
 
@@ -23,7 +21,7 @@ public enum RevocationType {
     SESSION {
         @Override
         public String cacheKey(String value) {
-            return TokenBlacklistConstants.sessionKey(value);
+            return RevocationKeys.session(value);
         }
     },
 
@@ -31,7 +29,7 @@ public enum RevocationType {
     USER {
         @Override
         public String cacheKey(String value) {
-            return TokenBlacklistConstants.userRevocationKey(value);
+            return RevocationKeys.user(value);
         }
     };
 

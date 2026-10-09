@@ -8,12 +8,9 @@ import com.pml.identity.service.PayoutConfigAuditService;
 import com.pml.identity.validation.FinancialDataValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,6 +30,8 @@ public class PayoutConfigAuditServiceImpl implements PayoutConfigAuditService {
 
     private final PayoutConfigAuditLogRepository auditLogRepository;
 
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
     @Override
     public Mono<PayoutConfigAuditLog> logPayoutConfigChange(
         String organizationId,
@@ -48,7 +47,7 @@ public class PayoutConfigAuditServiceImpl implements PayoutConfigAuditService {
             .userId(userId)
             .username(username)
             .action(action)
-            .timestamp(Instant.now())
+            .timestamp(clock.instant())
             .ipAddress(ipAddress)
             .userAgent(userAgent)
             .metadata(metadata)
@@ -86,7 +85,7 @@ public class PayoutConfigAuditServiceImpl implements PayoutConfigAuditService {
             .userId(userId)
             .username(username)
             .action(action)
-            .timestamp(Instant.now())
+            .timestamp(clock.instant())
             .ipAddress(ipAddress)
             .userAgent(userAgent)
             .previousPayoutMethod("BANK_TRANSFER")
@@ -130,7 +129,7 @@ public class PayoutConfigAuditServiceImpl implements PayoutConfigAuditService {
             .userId(userId)
             .username(username)
             .action(action)
-            .timestamp(Instant.now())
+            .timestamp(clock.instant())
             .ipAddress(ipAddress)
             .userAgent(userAgent)
             .previousPayoutMethod("MOBILE_MONEY")
@@ -170,7 +169,7 @@ public class PayoutConfigAuditServiceImpl implements PayoutConfigAuditService {
             .action(verified ?
                 PayoutConfigAuditLog.AuditAction.PAYOUT_ACCOUNT_VERIFIED :
                 PayoutConfigAuditLog.AuditAction.PAYOUT_ACCOUNT_UNVERIFIED)
-            .timestamp(Instant.now())
+            .timestamp(clock.instant())
             .ipAddress(ipAddress)
             .userAgent(userAgent)
             .verificationChanged(true)
@@ -200,7 +199,7 @@ public class PayoutConfigAuditServiceImpl implements PayoutConfigAuditService {
             .userId(userId)
             .username(username)
             .action(action)
-            .timestamp(Instant.now())
+            .timestamp(clock.instant())
             .ipAddress(ipAddress)
             .userAgent(userAgent)
             .success(false)
@@ -212,27 +211,6 @@ public class PayoutConfigAuditServiceImpl implements PayoutConfigAuditService {
                 "Failed operation logged: action={}, org={}, user={}, error={}",
                 action, organizationId, username, errorMessage
             ));
-    }
-
-    @Override
-    public Flux<PayoutConfigAuditLog> getAuditLogs(String organizationId, int limit) {
-        return auditLogRepository.findByOrganizationIdOrderByTimestampDesc(
-            organizationId,
-            PageRequest.of(0, limit)
-        );
-    }
-
-    @Override
-    public Flux<PayoutConfigAuditLog> getAuditLogsInRange(
-        String organizationId,
-        Instant startTime,
-        Instant endTime
-    ) {
-        return auditLogRepository.findByOrganizationIdAndTimestampBetweenOrderByTimestampDesc(
-            organizationId,
-            startTime,
-            endTime
-        );
     }
 
     // =========================================================================

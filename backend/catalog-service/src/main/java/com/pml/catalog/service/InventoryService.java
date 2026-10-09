@@ -72,6 +72,16 @@ public interface InventoryService {
     Mono<InventoryOperationResult> commitReservedToSold(String tierId, int quantity, String reservationId);
 
     /**
+     * Commit, and carry what booking charged so the event's sales totals follow: the event's
+     * {@code soldTickets}, {@code availableTickets}, {@code grossSales} and {@code commissionAmount}
+     * move once per reservation, with the tier. The totals are kept for display; booking's ledger is
+     * the record of money.
+     */
+    Mono<InventoryOperationResult> commitReservedToSold(String tierId, int quantity, String reservationId,
+                                                        java.math.BigDecimal grossAmount,
+                                                        java.math.BigDecimal commissionAmount);
+
+    /**
      * Restore sold inventory back to available pool.
      *
      * <p>Called on refunds or chargebacks. Atomically decrements sold
@@ -84,23 +94,8 @@ public interface InventoryService {
      */
     Mono<InventoryOperationResult> restoreSoldInventory(String tierId, int quantity, String reason);
 
-    /**
-     * Get current inventory snapshot for a tier.
-     *
-     * @param tierId Ticket tier ID
-     * @return Inventory snapshot with available, reserved, sold quantities
-     */
-    Mono<InventorySnapshot> getInventorySnapshot(String tierId);
-
-    /**
-     * Inventory snapshot DTO.
-     */
-    record InventorySnapshot(
-            String tierId,
-            int totalQuantity,
-            int availableQuantity,
-            int reservedQuantity,
-            int soldQuantity,
-            int trueAvailable  // available - reserved
-    ) {}
+    /** Restore, taking the refunded money back off the event's sales totals. */
+    Mono<InventoryOperationResult> restoreSoldInventory(String tierId, int quantity, String reason,
+                                                        java.math.BigDecimal grossAmount,
+                                                        java.math.BigDecimal commissionAmount);
 }

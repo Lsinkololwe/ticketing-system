@@ -22,7 +22,7 @@ period that has already been reported. Only the rare refund *after* recognition 
 clawback, and it is rare precisely because recognition waits.
 
 This spec declares the rate card and how a rate is resolved for a given event, the exact
-expression that computes the commission amount, the recognition sweep that moves money from
+expression that computes the commission amount, the recognition step that moves money from
 pending to earned, and the clawback path for the cases that get through. It does not move
 money itself — every movement is a journal entry through
 [ET-FIN-001](../001-escrow-and-ledger/).
@@ -61,10 +61,11 @@ charge commission on money nobody paid.
 ticket, not per order and then apportioned. Apportioning a rounded order-level figure across
 lines produces a residual that has to go somewhere, and wherever it goes is arbitrary.
 
-**Recognition is a sweep, and it is idempotent per commission record.**
-`booking_commission_records` carries a status; the sweep moves `PENDING` to `EARNED` for
-records whose event has completed and whose hold has elapsed, writes one journal entry per
-batch, and is safe to run twice.
+**Recognition is a step of the event's finance workflow, and it is idempotent per commission
+record.** `booking_commission_records` carries a status; when `EventFinanceWorkflow` makes the
+escrow `PAYOUT_ELIGIBLE` — the event completed, the hold elapsed, no dispute open — its
+`recogniseCommission` activity moves `PENDING` to `EARNED`, writes one journal entry per batch,
+and is safe to run twice.
 
 **Cancellation before recognition is a cancel, not a clawback.** The pending entry is
 reversed with a balanced journal entry, `EARNED_REVENUE` is never touched, and no reported
@@ -144,11 +145,11 @@ WHILE an event has completed and its hold period has elapsed, THE SYSTEM SHALL m
 pending commission to earned revenue exactly once.
 
 **Acceptance**
-- [ ] A sweep under `lock:sweep:commission-recognition` selects `PENDING` records whose event is `COMPLETED` and whose escrow `holdUntil` has passed
+- [ ] The event's `EventFinanceWorkflow` runs `recogniseCommission` once the escrow is `PAYOUT_ELIGIBLE`, selecting that event's `PENDING` records; no sweep or lock exists
 - [ ] Recognition writes one balanced entry per batch: `debit 2020` / `credit 4010`
 - [ ] Records move to `EARNED` with `recognisedAt` in the same transaction as the entry
-- [ ] Recognising an already-`EARNED` record is refused with `COMMISSION_ALREADY_RECOGNISED` carrying `recognisedAt`, and the sweep skips rather than fails
-- [ ] Two concurrent sweeps recognise each record exactly once, asserted under contention
+- [ ] Recognising an already-`EARNED` record is refused with `COMMISSION_ALREADY_RECOGNISED` carrying `recognisedAt`, and the activity skips rather than fails
+- [ ] Two concurrent recognitions for one event — a retried activity, or the manual trigger racing the workflow — recognise each record exactly once, asserted under contention
 - [ ] A cancelled event's records are never recognised, regardless of elapsed time
 - [ ] `Ledger.assertBalanced()` holds after every recognition batch
 
@@ -242,7 +243,7 @@ commissions is stable and no residual arises.
 | From | Trigger | To | Journal |
 |---|---|---|---|
 | — | purchase confirms | `PENDING` | `credit 2020` (part of the sale entry) |
-| `PENDING` | recognition sweep | `EARNED` | `debit 2020` / `credit 4010` |
+| `PENDING` | recognition, in `EventFinanceWorkflow` | `EARNED` | `debit 2020` / `credit 4010` |
 | `PENDING` | refund or event cancellation | `CANCELLED` | `debit 2020` / `credit 1010` |
 | `EARNED` | refund after recognition | `CLAWED_BACK` | `debit 4010` / `credit 1010` |
 
@@ -252,11 +253,11 @@ are.
 ### Recognition
 
 ```
-sweep, hourly, under lock:sweep:commission-recognition
+EventFinanceWorkflow, once the escrow is PAYOUT_ELIGIBLE
+  recogniseCommission(eventId)                       — an activity
   select booking_commission_records
-    where status = PENDING
-      and event.status = COMPLETED
-      and escrow.holdUntil <= now
+    where eventId = :eventId
+      and status = PENDING
     limit finance.commission.recognition-batch (500)
 
   per batch, one transaction:
@@ -281,7 +282,7 @@ organizer's own.
 | `platformCommissionSummary(from, to)` | query | `FINANCE` | `PlatformCommissionSummary!` `@tag(name: "admin")` |
 | `recogniseCommission(eventId)` | mutation | `FINANCE` | `RecognitionResult!` `@tag(name: "admin")` |
 
-`recogniseCommission` is a manual trigger for the same idempotent operation the sweep runs
+`recogniseCommission` is a manual trigger for the same idempotent operation the workflow's activity runs
 — it exists so finance can settle an event early with a recorded reason, not so recognition
 can be bypassed.
 
@@ -342,10 +343,10 @@ other.
   - parallel-safe: no — inside the confirmation transaction
   - depends: T2
 
-- [ ] **T4 · The recognition sweep, batched, idempotent, contended**
+- [ ] **T4 · Recognition in the finance workflow, batched, idempotent, contended**
   - requirements: R5
-  - files: `backend/booking-service/.../scheduler/CommissionRecognitionSweeper.java`
-  - verify: two concurrent sweeps recognise each record once; a cancelled event never recognises
+  - files: `backend/booking-service/.../workflow/finance/EventFinanceActivitiesImpl.java`, `.../service/impl/CommissionServiceImpl.java`
+  - verify: two concurrent recognitions recognise each record once; a cancelled event never recognises
   - parallel-safe: no
   - depends: T3
 

@@ -144,7 +144,7 @@ public class EventSecurityService {
     private String extractUserId(Authentication authentication) {
         Object principal = authentication.getPrincipal();
         if (principal instanceof Jwt jwt) {
-            return jwt.getSubject();
+            return com.pml.shared.security.AccountIdentity.userIdOf(jwt);
         }
         return null;
     }

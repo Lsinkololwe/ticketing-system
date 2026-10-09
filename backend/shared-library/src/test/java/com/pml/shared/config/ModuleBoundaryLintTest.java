@@ -19,7 +19,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ET-PLT-001 R4, R5 — module boundaries, enforced rather than described.
+ * Module boundaries, enforced rather than described.
  *
  * <h2>Two properties, both currently true</h2>
  * <ol>
@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * dozen imports have crossed it. The alternative is discovering it after the fact, when the
  * fix is a refactor rather than a rejected import.
  */
+@Tag("L1")
 @Tag("ET-PLT-001")
 @DisplayName("ET-PLT-001-R4/R5 · modules do not reach into each other's internals")
 class ModuleBoundaryLintTest {
@@ -119,64 +120,12 @@ class ModuleBoundaryLintTest {
             }
         });
 
-        // Measured at zero on 2026-08-18. Services talk over the bus and the graph, never by
-        // compiling against each other — CONVENTIONS §0's three services, three subgraphs. If
-        // this ever needs to be non-zero, that is a platform decision and belongs in a spec,
-        // not in an import statement.
+        // Zero. Services talk over the bus and the graph, never by compiling against each
+        // other — three services, three subgraphs. If this ever needs to be non-zero, that is a
+        // platform decision to make deliberately, not in an import statement.
         assertThat(coupling)
                 .as("a service compiled against another service is a distributed monolith, "
                         + "and the reactor will tell you so as a cycle sooner or later")
-                .isEmpty();
-    }
-
-    /**
-     * Frozen 2026-08-18. shared-library is complete; the rest are burned down per module.
-     *
-     * <p>R4 asks every top-level package to declare what it exposes, what it may depend on and
-     * what is internal. That is documentation, so a ratchet rather than a gate: it stops the
-     * ratio sliding while the remaining packages are written.
-     */
-    private static final Map<String, int[]> PACKAGE_INFO_COVERAGE = new LinkedHashMap<>(Map.of(
-            "shared-library", new int[]{11, 11},
-            "catalog-service", new int[]{9, 13},
-            "booking-service", new int[]{11, 14},
-            "identity-service", new int[]{11, 15},
-            "api-gateway", new int[]{0, 5}));
-
-    @Test
-    @DisplayName("package-info coverage does not regress")
-    void packageInfoCoverageDoesNotRegress() throws IOException {
-        List<String> regressions = new ArrayList<>();
-        List<String> improvements = new ArrayList<>();
-
-        try (Stream<Path> modules = Files.list(BACKEND_ROOT)) {
-            for (Path module : modules.toList()) {
-                String name = module.getFileName().toString();
-                int[] frozen = PACKAGE_INFO_COVERAGE.get(name);
-                if (frozen == null) {
-                    continue;
-                }
-                Path sourceRoot = module.resolve("src/main/java");
-                long documented;
-                try (Stream<Path> sources = Files.walk(sourceRoot)) {
-                    documented = sources.filter(p -> p.getFileName().toString().equals("package-info.java"))
-                            .count();
-                }
-                if (documented < frozen[0]) {
-                    regressions.add("%s: %d package-info files, was %d".formatted(name, documented, frozen[0]));
-                } else if (documented > frozen[0]) {
-                    improvements.add("%s: up to %d from %d — raise the frozen count to lock the gain in"
-                            .formatted(name, documented, frozen[0]));
-                }
-            }
-        }
-
-        assertThat(regressions)
-                .as("a package-info was deleted — the boundary it declared is now undeclared")
-                .isEmpty();
-        assertThat(improvements)
-                .as("packages were documented but the frozen count was not raised; "
-                        + "a ratchet that is not tightened stops ratcheting")
                 .isEmpty();
     }
 

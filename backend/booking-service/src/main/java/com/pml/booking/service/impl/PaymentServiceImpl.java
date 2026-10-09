@@ -1,56 +1,50 @@
 package com.pml.booking.service.impl;
 
-import com.pml.booking.event.domain.PaymentCompletedEvent;
-import com.pml.booking.event.domain.PaymentFailedEvent;
-import com.pml.booking.domain.model.PaymentAttempt;
+import com.pml.shared.constants.PlatformTime;
 import com.pml.booking.domain.model.PaymentIntent;
 import com.pml.booking.domain.model.PaymentIntent.PaymentProvider;
 import com.pml.booking.domain.model.PaymentIntent.PaymentStatus;
-import com.pml.booking.infrastructure.gateway.MobileMoneyGateway;
 import com.pml.booking.infrastructure.gateway.MobileMoneyGatewayFactory;
-import com.pml.booking.infrastructure.gateway.domain.MobileMoneyRequest;
-import com.pml.booking.infrastructure.gateway.domain.MobileNetwork;
-import com.pml.booking.infrastructure.gateway.domain.PaymentResult;
-import com.pml.booking.infrastructure.gateway.domain.PaymentResultStatus;
-import com.pml.booking.repository.PaymentAttemptRepository;
+import com.pml.booking.infrastructure.gateway.model.MobileMoneyRequest;
+import com.pml.booking.infrastructure.gateway.model.MobileNetwork;
+import com.pml.booking.infrastructure.gateway.model.PaymentResult;
 import com.pml.booking.repository.PaymentIntentRepository;
+import com.pml.booking.service.PaymentAttemptRecorder;
+import com.pml.booking.service.PaymentOutcomeService;
+import com.pml.booking.service.PaymentOutcomeService.Verdict;
 import com.pml.booking.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Payment Service Implementation
+ * Payment intents and their submission to a mobile-money provider.
  *
- * <p>Handles payment processing via the provider-agnostic MobileMoneyGateway abstraction.
- * Supports multiple mobile money providers (PawaPay, Flutterwave, etc.) with automatic failover.
- * Publishes domain events on payment completion/failure for downstream processing.</p>
+ * <h2>Where outcomes are decided</h2>
+ * This service creates intents and submits them. It does not decide what happened to the money:
+ * every terminal transition goes through {@link PaymentOutcomeService}, which verifies against the
+ * provider's status API and drives the purchase. Keeping that in one class is what makes a callback,
+ * a poll and an activity retry unable to disagree about the same deposit.
  *
- * <h2>Architecture Note</h2>
- * <p>This service uses both PaymentIntent and PaymentAttempt:</p>
- * <ul>
- *   <li><b>PaymentIntent</b>: High-level payment record per ticket (what user wants to pay)</li>
- *   <li><b>PaymentAttempt</b>: Low-level gateway interaction record (each API call to PawaPay)</li>
- * </ul>
+ * <h2>The deposit id is committed before the provider is called</h2>
+ * An intent carries its {@code depositId} from creation, and the provider receives exactly that id.
+ * The provider call never runs inside a transaction: a transaction waiting on a
+ * network round trip holds MongoDB locks for its duration, and a rollback cannot recall a charge.
  *
- * <p>The PaymentAttempt provides OWASP-compliant tracking with webhook signature verification,
- * while PaymentIntent provides backward compatibility and simplified event publishing.</p>
- *
+ * @see PaymentOutcomeService
  * @see MobileMoneyGateway
- * @see MobileMoneyGatewayFactory
- * @see PaymentAttempt
- * @since 1.0.0
  */
 @Slf4j
 @Service
@@ -58,15 +52,18 @@ import java.util.UUID;
 public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentIntentRepository paymentIntentRepository;
-    private final PaymentAttemptRepository paymentAttemptRepository;
+    private final ReactiveMongoTemplate mongoTemplate;
     private final MobileMoneyGatewayFactory gatewayFactory;
-    private final ApplicationEventPublisher eventPublisher;
+    private final PaymentOutcomeService outcomes;
+    private final PaymentAttemptRecorder attempts;
 
-    @Value("${payment.timeout.minutes:15}")
-    private int paymentTimeoutMinutes;
+    /** The injected platform clock, so every timestamp below is freezable. */
+    private final java.time.Clock clock;
+
+    @Value("${booking.payment.timeout:PT15M}")
+    private Duration paymentTimeout;
 
     @Override
-    @Transactional
     public Mono<PaymentIntent> createPaymentIntent(
             String reservationId,
             String eventId,
@@ -77,17 +74,11 @@ public class PaymentServiceImpl implements PaymentService {
     ) {
         log.info("Creating payment intent for reservation: {}, amount: {} {}", reservationId, amount, currency);
 
-        // Keyed on the reservation alone, with no timestamp.
-        //
-        // The old key mixed in System.currentTimeMillis(), which made every
-        // retry unique and so guaranteed the uniqueness constraint could never
-        // fire — an idempotency key that changes on retry defeats the one thing
-        // it exists for. A buyer whose first request timed out got a second
-        // charge. One reservation may be charged once (ET-TKT-001 R6).
+        // Keyed on the reservation alone, with no timestamp, so a retry reaches the same intent:
+        // one reservation may be charged once.
         String idempotencyKey = String.format("%s_%s", userId, reservationId);
-        String transactionRef = PaymentIntent.generateTransactionRef();
+        String transactionRef = PaymentIntent.generateTransactionRef(PlatformTime.dateAt(clock.instant()));
 
-        // Detect network from phone number using provider-agnostic enum
         MobileNetwork network = MobileNetwork.fromPhoneNumber(phoneNumber);
         PaymentProvider provider = mapNetworkToProvider(network);
         String correspondent = mapNetworkToCorrespondent(network);
@@ -95,6 +86,7 @@ public class PaymentServiceImpl implements PaymentService {
         PaymentIntent paymentIntent = PaymentIntent.builder()
                 .idempotencyKey(idempotencyKey)
                 .transactionRef(transactionRef)
+                .depositId(UUID.randomUUID().toString())
                 .reservationId(reservationId)
                 .eventId(eventId)
                 .userId(userId)
@@ -104,194 +96,126 @@ public class PaymentServiceImpl implements PaymentService {
                 .correspondent(correspondent)
                 .phoneNumber(phoneNumber)
                 .status(PaymentStatus.PENDING)
-                .expiresAt(Instant.now().plus(Duration.ofMinutes(paymentTimeoutMinutes)))
+                .expiresAt(clock.instant().plus(paymentTimeout))
                 .build();
 
-        // Return the existing intent rather than writing a second one.
-        //
-        // Making the key deterministic is only half of idempotency; without
-        // this half it is strictly worse than the timestamped key it replaced.
-        // A buyer tapping "pay" twice would hit the unique index and be shown a
-        // failure for a payment that is, at that moment, in flight — so they
-        // would try again, or complain, while their handset was ringing.
+        // The existing intent is returned rather than a second one written. A buyer tapping "pay"
+        // twice must see the payment in flight, not a unique-index failure.
         return paymentIntentRepository.findByReservationId(reservationId)
                 .doOnNext(existing -> log.info(
                         "Reservation {} already has payment intent {} ({}) — reusing it",
                         reservationId, existing.getTransactionRef(), existing.getStatus()))
                 .switchIfEmpty(Mono.defer(() -> paymentIntentRepository.save(paymentIntent)
                         .doOnSuccess(pi -> log.info("Payment intent created: {}", pi.getTransactionRef()))
-                        // Two concurrent taps can both reach the save. The index
-                        // refuses the second, and losing that race means the
-                        // intent exists — which is what the caller asked for.
+                        // Two concurrent taps can both reach the save. The index refuses the
+                        // second, and losing that race means the intent exists.
                         .onErrorResume(DuplicateKeyException.class,
                                 e -> paymentIntentRepository.findByReservationId(reservationId))));
     }
 
     @Override
-    @Transactional
     public Mono<PaymentIntent> initiatePayment(String paymentIntentId) {
         log.info("Initiating payment for intent: {}", paymentIntentId);
 
         return paymentIntentRepository.findById(paymentIntentId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Payment intent not found: " + paymentIntentId)))
-                .flatMap(paymentIntent -> {
-                    if (paymentIntent.getStatus() != PaymentStatus.PENDING) {
+                .flatMap(this::withDepositId)
+                .flatMap(intent -> {
+                    if (intent.getStatus() != PaymentStatus.PENDING) {
                         return Mono.error(new IllegalStateException(
-                                "Cannot initiate payment. Current status: " + paymentIntent.getStatus()));
+                                "Cannot initiate payment. Current status: " + intent.getStatus()));
+                    }
+                    if (intent.isExpired(clock.instant())) {
+                        // No state change here: an expired intent is settled by the expiry pass,
+                        // which asks the provider first in case an earlier submission landed.
+                        return Mono.error(new IllegalStateException("Payment intent expired"));
                     }
 
-                    if (paymentIntent.isExpired()) {
-                        paymentIntent.markExpired();
-                        return paymentIntentRepository.save(paymentIntent)
-                                .flatMap(pi -> Mono.error(new IllegalStateException("Payment intent expired")));
-                    }
-
-                    // Build provider-agnostic payment request
-                    String correlationId = UUID.randomUUID().toString();
                     MobileMoneyRequest request = MobileMoneyRequest.builder()
-                            .correlationId(correlationId)
-                            .phoneNumber(paymentIntent.getPhoneNumber())
-                            .amount(paymentIntent.getAmount())
-                            .currency(paymentIntent.getCurrency())
-                            .description("Ticket Purchase: " + paymentIntent.getReservationId())
+                            .correlationId(intent.getDepositId())
+                            .phoneNumber(intent.getPhoneNumber())
+                            .amount(intent.getAmount())
+                            .currency(intent.getCurrency())
+                            .description("Ticket Purchase: " + intent.getReservationId())
                             .build();
 
-                    // Use gateway factory to select appropriate provider
-                    return gatewayFactory.getGatewayForPhone(paymentIntent.getPhoneNumber())
-                            .flatMap(gateway -> gateway.initiatePayment(request))
-                            .flatMap(result -> handlePaymentResult(paymentIntent, result));
+                    // A booking_payment_attempts row is staged before the provider is
+                    // ever called, so a crash mid-call leaves evidence; the outcome is applied to
+                    // that same row once the provider answers.
+                    return attempts.beforeCollect(intent)
+                            .then(gatewayFactory.getGatewayForPhone(intent.getPhoneNumber())
+                                    .flatMap(gateway -> gateway.initiatePayment(request)))
+                            .flatMap(result -> attempts.afterCollect(intent.getDepositId(), result)
+                                    .then(recordSubmission(intent, result)));
                 });
     }
 
     /**
-     * Handle the result from the payment gateway.
-     * Maps the provider-agnostic PaymentResult to our PaymentIntent model.
+     * Gives an intent its deposit id if it has none, before anything is sent. Conditional on the
+     * field still being null, so two concurrent submissions settle on one id.
      */
-    private Mono<PaymentIntent> handlePaymentResult(PaymentIntent paymentIntent, PaymentResult result) {
-        if (result.isSuccessOrPending()) {
-            // Payment accepted by provider - mark as processing
-            paymentIntent.markProcessing(result.providerTransactionId());
-            return paymentIntentRepository.save(paymentIntent)
-                    .doOnSuccess(pi -> log.info("Payment processing started via {}: {}",
-                            result.providerId(), pi.getTransactionRef()));
-        } else {
-            // Payment rejected by provider
-            paymentIntent.markFailed(
-                    result.errorMessage() != null ? result.errorMessage() : "Payment rejected",
-                    result.errorCode() != null ? result.errorCode() : "REJECTED"
-            );
-            return paymentIntentRepository.save(paymentIntent)
-                    .doOnSuccess(this::publishPaymentFailed);
+    private Mono<PaymentIntent> withDepositId(PaymentIntent intent) {
+        if (intent.getDepositId() != null) {
+            return Mono.just(intent);
         }
+        return mongoTemplate.updateFirst(
+                        Query.query(Criteria.where("_id").is(intent.getId()).and("depositId").is(null)),
+                        new Update().set("depositId", UUID.randomUUID().toString()).inc("version", 1),
+                        PaymentIntent.class)
+                .then(paymentIntentRepository.findById(intent.getId()));
     }
 
     /**
-     * Handles payment callback from payment gateway.
+     * Records what the provider said when the deposit was submitted.
      *
-     * <p><b>Note:</b> The primary webhook handler is now in PawaPayWebhookController
-     * which uses PaymentAttemptService. This method provides backward compatibility
-     * for the PaymentIntent model.</p>
-     *
-     * <p>When a callback is received via the webhook controller:</p>
-     * <ol>
-     *   <li>PaymentAttemptService.processWebhook() is called first (OWASP-compliant)</li>
-     *   <li>This method updates the PaymentIntent for event publishing</li>
-     * </ol>
+     * <ul>
+     *   <li>Accepted: {@code PENDING → PROCESSING} by compare-and-set, so a callback that arrived
+     *       first and already settled the intent is never overwritten.</li>
+     *   <li>Declined by the provider: a real answer, applied through the outcome service, which
+     *       releases the reservation.</li>
+     *   <li>Anything else — a timeout, a 5xx, an open breaker — is no answer. The intent stays
+     *       {@code PENDING} with its deposit id, and resubmitting reuses that id, which the
+     *       provider deduplicates.</li>
+     * </ul>
      */
-    @Override
-    @Transactional
-    public Mono<PaymentIntent> handlePaymentCallback(
-            String depositId,
-            String status,
-            String providerTransactionId,
-            String failureCode,
-            String failureMessage
-    ) {
-        log.info("Handling payment callback for deposit: {}, status: {}", depositId, status);
-
-        // Try to find PaymentIntent via PaymentAttempt first (new model), then fall back to direct lookup
-        return paymentAttemptRepository.findByDepositId(depositId)
-                .flatMap(attempt -> paymentIntentRepository.findByReservationId(attempt.getReservationId()))
-                .switchIfEmpty(paymentIntentRepository.findByProviderTransactionId(depositId))
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Payment intent not found for deposit: " + depositId)))
-                .flatMap(paymentIntent -> processPaymentCallback(paymentIntent, status, failureCode, failureMessage));
-    }
-
-    private Mono<PaymentIntent> processPaymentCallback(
-            PaymentIntent paymentIntent,
-            String status,
-            String failureCode,
-            String failureMessage
-    ) {
-        paymentIntent.recordWebhook();
-
-        if (paymentIntent.isTerminal()) {
-            log.warn("Payment already in terminal state: {}", paymentIntent.getStatus());
-            return Mono.just(paymentIntent);
+    private Mono<PaymentIntent> recordSubmission(PaymentIntent intent, PaymentResult result) {
+        if (result.isSuccessOrPending()) {
+            return mongoTemplate.updateFirst(
+                            Query.query(Criteria.where("_id").is(intent.getId())
+                                    .and("status").is(PaymentStatus.PENDING)),
+                            new Update()
+                                    .set("status", PaymentStatus.PROCESSING)
+                                    .set("providerTransactionId", intent.getDepositId())
+                                    .set("updatedAt", clock.instant())
+                                    .inc("version", 1),
+                            PaymentIntent.class)
+                    .then(paymentIntentRepository.findById(intent.getId()))
+                    .doOnNext(fresh -> log.info("Payment {} submitted as deposit {} via {} — now {}",
+                            fresh.getId(), fresh.getDepositId(), result.providerId(), fresh.getStatus()));
         }
 
-        if ("COMPLETED".equals(status)) {
-            paymentIntent.markSucceeded();
-            return paymentIntentRepository.save(paymentIntent)
-                    .doOnSuccess(this::publishPaymentCompleted);
-        } else if ("FAILED".equals(status)) {
-            paymentIntent.markFailed(failureMessage, failureCode);
-            return paymentIntentRepository.save(paymentIntent)
-                    .doOnSuccess(this::publishPaymentFailed);
-        } else {
-            log.debug("Ignoring non-terminal status: {}", status);
-            return paymentIntentRepository.save(paymentIntent);
+        if (PaymentOutcomeService.verdictOf(result) == Verdict.FAILED) {
+            return outcomes.apply(intent, Verdict.FAILED, result.providerTransactionId(),
+                    result.errorCode(), result.errorMessage());
         }
+
+        log.warn("Payment {} submission outcome unknown ({}: {}) — left PENDING for the callback or poll",
+                intent.getId(), result.errorCode(), result.errorMessage());
+        return Mono.just(intent);
     }
 
     @Override
-    @Transactional
     public Mono<PaymentIntent> checkPaymentStatus(String paymentIntentId) {
         log.debug("Checking payment status for: {}", paymentIntentId);
 
         return paymentIntentRepository.findById(paymentIntentId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("Payment intent not found: " + paymentIntentId)))
-                .flatMap(paymentIntent -> {
-                    if (paymentIntent.isTerminal()) {
-                        return Mono.just(paymentIntent);
-                    }
-
-                    if (paymentIntent.getProviderTransactionId() == null) {
-                        return Mono.just(paymentIntent);
-                    }
-
-                    paymentIntent.recordPoll();
-
-                    // Use gateway factory to get the appropriate provider for status check
-                    return gatewayFactory.getGatewayForPhone(paymentIntent.getPhoneNumber())
-                            .flatMap(gateway -> gateway.checkPaymentStatus(paymentIntent.getProviderTransactionId()))
-                            .flatMap(result -> handleStatusCheckResult(paymentIntent, result));
-                });
-    }
-
-    /**
-     * Handle the result from a payment status check.
-     * Updates PaymentIntent based on the provider-agnostic PaymentResult.
-     */
-    private Mono<PaymentIntent> handleStatusCheckResult(PaymentIntent paymentIntent, PaymentResult result) {
-        if (result.status() == PaymentResultStatus.SUCCESS) {
-            paymentIntent.markSucceeded();
-            return paymentIntentRepository.save(paymentIntent)
-                    .doOnSuccess(this::publishPaymentCompleted);
-        } else if (result.isFailed()) {
-            String failureCode = result.errorCode() != null ? result.errorCode() : "UNKNOWN";
-            String failureMessage = result.errorMessage() != null ? result.errorMessage() : "Payment failed";
-            paymentIntent.markFailed(failureMessage, failureCode);
-            return paymentIntentRepository.save(paymentIntent)
-                    .doOnSuccess(this::publishPaymentFailed);
-        } else {
-            // Still pending/processing - just save the poll record
-            return paymentIntentRepository.save(paymentIntent);
-        }
+                .flatMap(intent -> intent.getDepositId() == null
+                        ? Mono.just(intent)
+                        : outcomes.verifyAndApply(intent.getDepositId()));
     }
 
     @Override
-    @Transactional
     public Mono<PaymentIntent> cancelPayment(String paymentIntentId) {
         log.info("Cancelling payment: {}", paymentIntentId);
 
@@ -302,13 +226,23 @@ public class PaymentServiceImpl implements PaymentService {
                         return Mono.error(new IllegalStateException(
                                 "Cannot cancel payment in terminal state: " + paymentIntent.getStatus()));
                     }
-
-                    paymentIntent.setStatus(PaymentStatus.CANCELLED);
-                    paymentIntent.setProcessedAt(Instant.now());
-                    paymentIntent.setFailureReason("Cancelled by user");
-
-                    return paymentIntentRepository.save(paymentIntent)
-                            .doOnSuccess(pi -> log.info("Payment cancelled: {}", pi.getTransactionRef()));
+                    if (paymentIntent.getStatus() == PaymentStatus.PROCESSING) {
+                        // Submitted to the provider: the buyer may approve the prompt after this
+                        // call returns. Only the provider's answer can close a submitted payment.
+                        return Mono.error(new IllegalStateException(
+                                "PAYMENT_IN_FLIGHT: payment " + paymentIntentId + " has been submitted to the provider"));
+                    }
+                    return mongoTemplate.updateFirst(
+                                    Query.query(Criteria.where("_id").is(paymentIntentId)
+                                            .and("status").is(PaymentStatus.PENDING)),
+                                    new Update()
+                                            .set("status", PaymentStatus.CANCELLED)
+                                            .set("processedAt", clock.instant())
+                                            .set("failureReason", "Cancelled by user")
+                                            .inc("version", 1),
+                                    PaymentIntent.class)
+                            .then(paymentIntentRepository.findById(paymentIntentId))
+                            .doOnNext(pi -> log.info("Payment {} is {}", pi.getTransactionRef(), pi.getStatus()));
                 });
     }
 
@@ -337,66 +271,6 @@ public class PaymentServiceImpl implements PaymentService {
         return paymentIntentRepository.findByEventId(eventId);
     }
 
-    @Override
-    public Flux<PaymentIntent> findExpiredPayments() {
-        return paymentIntentRepository.findByStatusInAndExpiresAtBefore(
-                java.util.List.of(PaymentStatus.PENDING, PaymentStatus.PROCESSING),
-                Instant.now()
-        );
-    }
-
-    @Override
-    @Transactional
-    public Mono<Long> processExpiredPayments() {
-        log.info("Processing expired payments");
-
-        return findExpiredPayments()
-                .flatMap(paymentIntent -> {
-                    paymentIntent.markExpired();
-                    return paymentIntentRepository.save(paymentIntent)
-                            .doOnSuccess(this::publishPaymentFailed);
-                })
-                .count()
-                .doOnSuccess(count -> log.info("Processed {} expired payments", count));
-    }
-
-    private void publishPaymentCompleted(PaymentIntent paymentIntent) {
-        PaymentCompletedEvent event = new PaymentCompletedEvent(
-                paymentIntent.getId(),
-                paymentIntent.getReservationId(),
-                paymentIntent.getEventId(),
-                paymentIntent.getUserId(),
-                paymentIntent.getAmount(),
-                paymentIntent.getCurrency(),
-                paymentIntent.getProvider().name(),
-                paymentIntent.getCorrespondent(),
-                paymentIntent.getProviderTransactionId(),
-                paymentIntent.getPhoneNumber(),
-                Instant.now()
-        );
-        eventPublisher.publishEvent(event);
-        log.info("Published PaymentCompletedEvent for reservation: {}", paymentIntent.getReservationId());
-    }
-
-    private void publishPaymentFailed(PaymentIntent paymentIntent) {
-        PaymentFailedEvent event = new PaymentFailedEvent(
-                paymentIntent.getId(),
-                paymentIntent.getReservationId(),
-                paymentIntent.getEventId(),
-                paymentIntent.getUserId(),
-                paymentIntent.getAmount(),
-                paymentIntent.getCurrency(),
-                paymentIntent.getProvider().name(),
-                paymentIntent.getFailureReason(),
-                paymentIntent.getFailureCode()
-        );
-        eventPublisher.publishEvent(event);
-        log.info("Published PaymentFailedEvent for reservation: {}", paymentIntent.getReservationId());
-    }
-
-    /**
-     * Map provider-agnostic MobileNetwork to PaymentProvider enum.
-     */
     private PaymentProvider mapNetworkToProvider(MobileNetwork network) {
         if (network == null) return PaymentProvider.PAWAPAY;
         return switch (network) {
@@ -406,10 +280,7 @@ public class PaymentServiceImpl implements PaymentService {
         };
     }
 
-    /**
-     * Map provider-agnostic MobileNetwork to correspondent code.
-     * This is the provider-specific code used by payment gateways.
-     */
+    /** The provider-specific correspondent code a payment gateway expects. */
     private String mapNetworkToCorrespondent(MobileNetwork network) {
         if (network == null) return "UNKNOWN";
         return switch (network) {

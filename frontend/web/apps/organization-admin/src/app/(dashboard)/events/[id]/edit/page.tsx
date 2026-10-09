@@ -1,0 +1,13 @@
+'use client';
+
+import { Suspense, use } from 'react';
+import { EventEditor } from '@/components/events-editor/EventEditor';
+
+export default function EditEventPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  return (
+    <Suspense fallback={null}>
+      <EventEditor eventId={id} />
+    </Suspense>
+  );
+}

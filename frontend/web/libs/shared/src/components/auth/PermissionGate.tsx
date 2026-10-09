@@ -7,28 +7,30 @@
  * based on user permissions. Integrates with TanStack Query for
  * efficient permission caching.
  *
- * Permissions use dot notation (e.g., "event.create", "user.view")
- * matching the backend MongoDB permission names.
+ * Permissions are catalogue codes in module:action form (e.g. "event:create",
+ * "payout:approve"), as returned by the myPermissions query. These are the
+ * caller's platform permissions; organization and event permissions come from
+ * myEffectivePermissions for a given organization or event.
  *
  * @example
  * ```tsx
- * // Single permission (use Permission constants or string literals)
- * <PermissionGate permission="event.create">
+ * // Single permission
+ * <PermissionGate permission="event:create">
  *   <CreateEventButton />
  * </PermissionGate>
  *
  * // Multiple permissions (any)
- * <PermissionGate permissions={["event.create", "event.update"]}>
+ * <PermissionGate permissions={["event:create", "event:edit"]}>
  *   <EventEditor />
  * </PermissionGate>
  *
  * // Multiple permissions (all required)
- * <PermissionGate permissions={["payout.view", "payout.approve"]} requireAll>
+ * <PermissionGate permissions={["financial:view", "payout:approve"]} requireAll>
  *   <PayoutApprovalPanel />
  * </PermissionGate>
  *
  * // With fallback
- * <PermissionGate permission="system.config.view" fallback={<AccessDenied />}>
+ * <PermissionGate permission="platform:configure" fallback={<AccessDenied />}>
  *   <AdminDashboard />
  * </PermissionGate>
  *
@@ -236,13 +238,13 @@ export const FinanceGate = memo(function FinanceGate({
  * const { canAccess, checkPermission } = useAccessControl();
  *
  * // Using dot notation strings
- * const canCreateEvent = checkPermission("event.create");
+ * const canCreateEvent = checkPermission("event:create");
  *
  * // Or using Permission constants
  * const canViewFinancials = checkPermission(Permission.FINANCIAL_VIEW);
  *
  * const handleClick = () => {
- *   if (!canAccess(["event.update"], true)) {
+ *   if (!canAccess(["event:edit"], true)) {
  *     showToast('You do not have permission to update events');
  *     return;
  *   }
@@ -264,7 +266,7 @@ export function useAccessControl() {
 
     /**
      * Check if user has a specific permission
-     * @param permission Permission name string (e.g., "EVENT_CREATE")
+     * @param permission a permission code, e.g. "event:create"
      */
     checkPermission: hasPermission,
 
@@ -344,7 +346,7 @@ interface PermissionLinkProps extends PermissionGateProps {
  * // Or using string literal
  * <PermissionLink
  *   href="/admin/events"
- *   permission="event.view"
+ *   permission="event:view"
  * >
  *   View Events
  * </PermissionLink>

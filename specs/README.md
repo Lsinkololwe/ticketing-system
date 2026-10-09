@@ -79,9 +79,25 @@ draft ──▶ approved ──▶ in-progress ──▶ implemented ──▶ v
 ticked *and* backed by a test tagged with the spec ID.
 
 A spec claiming `verified` while acceptance boxes remain unchecked is the failure mode this
-lifecycle exists to prevent. Nothing enforces it mechanically — the boxes are checked by
-the person who read the spec and ran its tests, and `verified` is their statement that both
-happened. That makes honesty about an unchecked box the whole safeguard.
+lifecycle exists to prevent. The boxes themselves are still ticked by the person who read the
+spec and ran its tests — no test can judge whether a requirement is genuinely met.
+
+What *is* enforced, by `SpecStatusLintTest`, is that the status and the gate agree, **in both
+directions**:
+
+| Rule | What it catches |
+|---|---|
+| `status:` is one of the seven lifecycle values | a typo that silently drops a spec out of every status query |
+| `implemented`/`verified` ⟹ every `## E · Gate` box ticked | claiming done early, which unblocks every spec listing it under `blocked_by` |
+| every gate box ticked ⟹ status is `implemented` | **finishing and not saying so** — the next agent re-reads a built spec, re-derives its decisions, and sometimes rebuilds part of it |
+| `implemented` ⟹ every `blocked_by` spec is too | building on a foundation that is not there |
+
+The third rule is the one that is easy to leave out and the one that pays. Forgetting is a far
+more common failure than dishonesty, and an unmarked finished spec is invisible in exactly the
+way an unfinished one is not.
+
+The final gate row — *Spec `status:` → `implemented`* — is excluded from the third rule, since it
+cannot be ticked before the change that ticks it.
 
 ---
 
@@ -96,12 +112,23 @@ call.
 
 ```bash
 grep -rn "ET-FIN-002" backend --include='*.java'    # what mentions it
-mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=true
+mvn -q -f backend/booking-service test -Dgroups=ET-FIN-002 -DfailIfNoTests=false
 ```
 
-`-DfailIfNoTests=true` is not optional. Without it a tag that matches nothing exits 0, and
-the spec verifies green having executed no tests at all — which is worse than not running
-them, because it looks like proof.
+`-DfailIfNoTests=false` is deliberate, and it used to be `true` for a good reason: a tag
+that matches nothing exits 0, and the spec verifies green having executed no tests at all —
+which is worse than not running them, because it looks like proof.
+
+**The flag could not deliver that.** In a five-module reactor `failIfNoTests` means *zero in
+each module*, not zero overall, so it fails on the first module with no test for that tag —
+and no spec has a test in all five. ET-PLT-005 runs 100 tagged tests and still failed, on
+`api-gateway`, which has three tests and none of them tagged. The command every gate in this
+corpus names could not succeed for any spec, ever. See [F-022](FINDINGS.md).
+
+The guarantee now lives in `SpecTagCoverageTest`, which fails the build if any spec at
+`implemented` or `verified` has no test carrying its tag — and, in the other direction, if any
+tag names a spec that does not exist. A flag can be left off by whoever types the command
+next; a test in the reactor cannot.
 
 ---
 
@@ -130,13 +157,17 @@ them, because it looks like proof.
 8. **Money statements cite `docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md`.** It is
    authoritative on the financial model; a spec that contradicts it is the spec that is
    wrong.
+9. **Processes are workflows.** A spec that needs a timer, a retry, a compensation or a
+   recurring job declares a Temporal workflow or Schedule in §4 and adds its row to the
+   [ET-PLT-015](_platform/015-durable-execution/) §4 registry — never a sweep, a lock or an
+   in-memory event.
 
 ## Precedence
 
 1. `specs/` — for anything `approved` or later
 2. [CONVENTIONS.md](CONVENTIONS.md) — on any construct, naming or stack question
 3. `docs/ARCHITECTURE_REDESIGN_V3_COMPLETE.md` — on any money question
-4. `docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md` — on transactional integrity
+4. `docs/PAYMENT_DATA_INTEGRITY_IMPLEMENTATION_PLAN.md` — on transactional integrity, except how a process runs: sagas, timers, retries and recovery are [ET-PLT-015](_platform/015-durable-execution/)
 5. `docs/USER_STORIES.md` — on roles, permissions and organizational hierarchy
 6. `CLAUDE.md`, then the rest of `docs/`
 
@@ -169,6 +200,27 @@ Reconciliation is a **separate, later pass**, run once the corpus is `approved`.
 audits each spec against the tree and classifies every requirement as
 `already-satisfied`, `partially-satisfied`, `contradicted` or `absent`. Only then does
 implementation planning happen, against real deltas rather than assumptions.
+
+**Status — [`RECONCILIATION.md`](RECONCILIATION.md), measured 2026-08-31.** The *mechanical*
+half is done: every §4 name in every spec is classified against the tree, with per-spec evidence
+in [`specs/reconciliation/`](reconciliation/). The *§3 requirement* half — whether the names that
+exist behave as the requirements demand — is open on all 43 specs. Presence is not conformance,
+and no spec advances to `implemented` on presence alone.
+
+**Current counts, 2026-10-04.** 43 specs (plus the template; ET-IDN-004 added by the buyer identity redesign, F-044): **8 `implemented`** (ET-PLT-001 to 006, 012 and
+015), **35 `approved`**, **0 `verified`**. The 2026-08-31 reconciliation snapshot predates this; live
+status is each `spec.yaml` and its task-file gates, and known defects are in the
+[open items index](FINDINGS.md#open-items-index).
+
+### The §3 half has a method — [`VERIFICATION.md`](VERIFICATION.md)
+
+*(Figures in this paragraph are from the first three verifications, 2026-09-01; later findings F-004 onward add to them. See [FINDINGS.md](FINDINGS.md).)* Three capability specs have been verified against §3 so far, and all three had defects: eighteen
+findings, eight of them OWASP A01. That rate is why the *how* is written down.
+[`VERIFICATION.md`](VERIFICATION.md) is the method, derived from what actually caught things —
+seven places to look before writing a test, the rules that make a test worth its green, and the
+traps that were fallen into on the way. **Read it before verifying a spec.** The highest-yield
+item takes five minutes: where several operations read one collection, open the one that does not
+filter. It is four for four.
 
 Doing it this way round is deliberate. A spec written by reading existing code inherits
 that code's decisions, including its mistakes — the target has to be described

@@ -6,7 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -29,10 +29,10 @@ public record CreatePromoCodeInput(
     Integer maxUses,
 
     @NotNull(message = "Valid from date is required")
-    LocalDateTime validFrom,
+    Instant validFrom,
 
     @NotNull(message = "Valid until date is required")
-    LocalDateTime validUntil,
+    Instant validUntil,
 
     BigDecimal minPurchaseAmount,
 

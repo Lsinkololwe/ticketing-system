@@ -12,11 +12,7 @@
 
 import { useMemo } from 'react';
 import { useQuery } from '@apollo/client/react';
-import type {
-  IdentityPendingCounts,
-  CatalogPendingCounts,
-  BookingPendingCounts,
-} from '../../../types/graphql';
+import type { PendingCountsQuery, PendingCountsQueryVariables } from '../../../types/graphql';
 import { PENDING_COUNTS } from './pending-counts.queries';
 
 // ============================================================================
@@ -42,23 +38,6 @@ const ZERO_COUNTS: PendingCounts = {
   'refund-requests': 0,
 };
 
-// ============================================================================
-// Query response shape — built from codegen'd subgraph schema types.
-// (Field selections in PENDING_COUNTS are a subset of these generated types.)
-// ============================================================================
-
-interface PendingCountsQueryResult {
-  identityPendingCounts?: Pick<
-    IdentityPendingCounts,
-    'organizerApplications' | 'documentVerifications'
-  > | null;
-  catalogPendingCounts?: Pick<CatalogPendingCounts, 'eventReviews'> | null;
-  bookingPendingCounts?: Pick<
-    BookingPendingCounts,
-    'payoutRequests' | 'refundRequests'
-  > | null;
-}
-
 // Poll interval consistent with other admin dashboard stat hooks.
 const POLL_INTERVAL_MS = 60_000;
 
@@ -77,7 +56,7 @@ export interface UsePendingCountsResult {
  * already-aggregated per-queue counts.
  */
 export function usePendingCounts(): UsePendingCountsResult {
-  const { data, loading, error } = useQuery<PendingCountsQueryResult>(
+  const { data, loading, error } = useQuery<PendingCountsQuery, PendingCountsQueryVariables>(
     PENDING_COUNTS,
     {
       pollInterval: POLL_INTERVAL_MS,

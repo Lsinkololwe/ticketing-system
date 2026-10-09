@@ -16,6 +16,8 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
+import com.pml.booking.security.CallerScope;
+import com.pml.shared.error.ErrorCode;
 
 /**
  * GraphQL Query Resolver for Escrow Account Operations.
@@ -78,15 +80,15 @@ public class EscrowAccountQueryResolver {
 
     /**
      * Get escrow accounts with offset pagination.
-     * Schema: escrowAccountsOffsetPagination(filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput): EscrowAccountOffsetPage!
+     * Schema: escrowAccounts(filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput): EscrowAccountOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<EscrowAccountOffsetPage> escrowAccountsOffsetPagination(
+    public Mono<EscrowAccountOffsetPage> escrowAccounts(
             @InputArgument EscrowAccountFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: escrowAccountsOffsetPagination");
+        log.debug("GraphQL query: escrowAccounts");
 
         Flux<EventEscrowAccount> accountFlux = applyFilters(escrowService.findAll(), filter);
         return buildOffsetPage(accountFlux, pagination);
@@ -94,63 +96,20 @@ public class EscrowAccountQueryResolver {
 
     /**
      * Get escrow accounts by organizer with offset pagination.
-     * Schema: escrowAccountsByOrganizerOffsetPagination(organizerId: String!, pagination: OffsetPaginationInput): EscrowAccountOffsetPage!
+     * Schema: escrowAccountsByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): EscrowAccountOffsetPage!
      *
      * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService for multi-tenant isolation.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.canViewFinancialData(#organizerId, authentication)")
-    public Mono<EscrowAccountOffsetPage> escrowAccountsByOrganizerOffsetPagination(
+    @PreAuthorize("@organizationSecurityService.rolesOrFinancialView(authentication, 'ADMIN,FINANCE', #organizerId)")
+    public Mono<EscrowAccountOffsetPage> escrowAccountsByOrganizer(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: escrowAccountsByOrganizerOffsetPagination(organizerId={})", organizerId);
+        log.debug("GraphQL query: escrowAccountsByOrganizer(organizerId={})", organizerId);
         Objects.requireNonNull(organizerId, "Organizer ID is required");
 
         return buildOffsetPage(escrowService.findByOrganizerId(organizerId), pagination);
-    }
-
-    // ========================================================================
-    // CURSOR PAGINATION QUERIES (Mobile/Infinite Scroll)
-    // ========================================================================
-
-    /**
-     * Get escrow accounts with cursor pagination.
-     * Schema: escrowAccountsCursorPagination(filter: EscrowAccountFilterInput, pagination: CursorPaginationInput): EscrowAccountConnection!
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<EscrowAccountConnection> escrowAccountsCursorPagination(
-            @InputArgument EscrowAccountFilterInput filter,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: escrowAccountsCursorPagination");
-
-        Flux<EventEscrowAccount> accountFlux = applyFilters(escrowService.findAll(), filter);
-        return buildCursorConnection(accountFlux, pagination);
-    }
-
-    /**
-     * Get escrow accounts by organizer with cursor pagination.
-     * Schema: escrowAccountsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EscrowAccountConnection!
-     */
-    /**
-     * Get escrow accounts by organizer with cursor pagination.
-     * Schema: escrowAccountsByOrganizerCursorPagination(organizerId: String!, pagination: CursorPaginationInput): EscrowAccountConnection!
-     *
-     * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService to validate
-     * that the requesting user is either the organizer or a team member with access.</p>
-     */
-    @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @organizationSecurityService.isOrganizerOrTeamMember(#organizerId, authentication)")
-    public Mono<EscrowAccountConnection> escrowAccountsByOrganizerCursorPagination(
-            @InputArgument String organizerId,
-            @InputArgument CursorPaginationInput pagination
-    ) {
-        log.debug("GraphQL query: escrowAccountsByOrganizerCursorPagination(organizerId={})", organizerId);
-        Objects.requireNonNull(organizerId, "Organizer ID is required");
-
-        return buildCursorConnection(escrowService.findByOrganizerId(organizerId), pagination);
     }
 
     // ========================================================================
@@ -234,51 +193,6 @@ public class EscrowAccountQueryResolver {
                 });
     }
 
-    /**
-     * Build EscrowAccountConnection from a Flux of accounts.
-     */
-    private Mono<EscrowAccountConnection> buildCursorConnection(Flux<EventEscrowAccount> accountFlux, CursorPaginationInput pagination) {
-        CursorPaginationInput p = pagination != null ? pagination : new CursorPaginationInput(20, null, null, null);
-        int limit = p.getLimit();
-
-        return accountFlux.collectList()
-                .map(allAccounts -> {
-                    int totalCount = allAccounts.size();
-
-                    int startIndex = 0;
-                    if (p.after() != null) {
-                        for (int i = 0; i < allAccounts.size(); i++) {
-                            if (allAccounts.get(i).getId().equals(p.after())) {
-                                startIndex = i + 1;
-                                break;
-                            }
-                        }
-                    }
-
-                    List<EventEscrowAccount> pageData = allAccounts.stream()
-                            .skip(startIndex)
-                            .limit(limit)
-                            .toList();
-
-                    if (pageData.isEmpty()) {
-                        return EscrowAccountConnection.empty();
-                    }
-
-                    List<EscrowAccountEdge> edges = pageData.stream()
-                            .map(EscrowAccountEdge::of)
-                            .toList();
-
-                    boolean hasNextPage = (startIndex + limit) < totalCount;
-                    boolean hasPreviousPage = startIndex > 0;
-                    String startCursor = edges.get(0).cursor();
-                    String endCursor = edges.get(edges.size() - 1).cursor();
-
-                    PageInfo pageInfo = PageInfo.of(hasNextPage, hasPreviousPage, startCursor, endCursor, totalCount);
-
-                    return new EscrowAccountConnection(edges, pageInfo, totalCount);
-                });
-    }
-
     private Flux<EventEscrowAccount> applyFilters(Flux<EventEscrowAccount> accounts, EscrowAccountFilterInput filter) {
         if (filter == null) {
             return accounts;
@@ -296,6 +210,12 @@ public class EscrowAccountQueryResolver {
             }
             if (filter.currency() != null && !filter.currency().equals(account.getCurrency())) {
                 return false;
+            }
+            if (filter.hasBalance() != null) {
+                boolean holdsMoney = account.getCurrentBalance() != null && account.getCurrentBalance().signum() > 0;
+                if (holdsMoney != filter.hasBalance()) {
+                    return false;
+                }
             }
             return true;
         });
@@ -321,5 +241,25 @@ public class EscrowAccountQueryResolver {
                 account.getCurrency(),
                 transactionCount
         );
+    }
+
+    /**
+     * The caller's own escrow accounts. OWASP A01:2021.
+     *
+     * <p>Deliberately <b>not</b> the same operation as {@code escrowAccounts}, which is
+     * {@code hasAnyRole('ADMIN','FINANCE')} over {@code escrowService.findAll()} — every escrow
+     * account on the platform. This one is organizer-scoped; merging the two would turn an
+     * organizer's view of their own money into a finance-wide one.
+     */
+    @DgsQuery
+    @PreAuthorize("isAuthenticated()")
+    public Mono<EscrowAccountOffsetPage> myEscrowAccounts(
+            @InputArgument String organizationId,
+            @InputArgument OffsetPaginationInput pagination
+    ) {
+        log.debug("GraphQL query: myEscrowAccounts(organizationId={})", organizationId);
+
+        return CallerScope.organizationIds(organizationId, ErrorCode.ESCROW_ACCOUNT_UNKNOWN)
+                .flatMap(ids -> buildOffsetPage(escrowService.findByOrganizationIdIn(ids), pagination));
     }
 }

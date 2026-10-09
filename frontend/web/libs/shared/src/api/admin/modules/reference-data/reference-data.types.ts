@@ -29,10 +29,8 @@ export type {
   ReferenceType,
   ReferenceTypeInfo,
   ReferenceDataOffsetPage,
-  ReferenceDataMutationResponse,
   CreateReferenceDataInput,
   UpdateReferenceDataInput,
-  DeleteMutationResponse,
   WorkflowSemantic,
 } from '../../../../types/graphql';
 
@@ -103,9 +101,9 @@ export const SEMANTIC_COLOR: Record<WorkflowSemantic, string> = {
  * edits for these; the UI hides the editor and says why, so an administrator
  * meets the explanation before the refusal rather than after it.
  *
- * - TICKET_STATUS — `TicketStateMachine`, ET-TKT-002 §4
- * - RESERVATION_STATUS — `ReservationStateMachine`, ET-TKT-001 R6
- * - EVENT_STATUS — the event lifecycle table, ET-CAT-001
+ * - TICKET_STATUS — `TicketStateMachine`
+ * - RESERVATION_STATUS — `ReservationStateMachine`
+ * - EVENT_STATUS — the event lifecycle table
  */
 export const CODE_OWNED_MACHINES = [
   'TICKET_STATUS',

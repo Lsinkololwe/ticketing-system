@@ -33,8 +33,5 @@ public record CreateRefundRequestInput(
         @Size(max = 1000, message = "Additional notes must not exceed 1000 characters")
         String additionalNotes,
 
-        @Size(max = 50, message = "Requested by must not exceed 50 characters")
-        String requestedBy,
-
         Map<String, Object> metadata
 ) {}

@@ -39,7 +39,7 @@ public class LiveDashboardQueryResolver {
      * @return Live dashboard data
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
     public Mono<LiveDashboard> eventLiveDashboard(@InputArgument String eventId) {
         log.debug("GraphQL query: eventLiveDashboard for event: {}", eventId);
         return liveDashboardService.getEventLiveDashboard(eventId);

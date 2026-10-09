@@ -1,21 +1,15 @@
 /**
  * Document Module Exports
  *
- * Re-exports all document-related types, schemas, queries, mutations, hooks, and REST operations
- * for verification document upload, review, and management workflows.
+ * Re-exports document-related validation schemas, GraphQL queries/mutations/
+ * hooks, and REST operations for verification document upload, review, and
+ * management workflows. Types come from codegen (`@pml.tickets/shared/types/graphql`)
+ * or from the individual query/mutation/REST files that select them — never
+ * hand-declared here.
  *
  * @example
  * ```tsx
  * import {
- *   // Types
- *   type VerificationDocument,
- *   type DocumentStatus,
- *   type DocumentType,
- *   getDocumentStatusLabel,
- *   getDocumentTypeLabel,
- *   getIndividualRequiredDocuments,
- *   getBusinessRequiredDocuments,
- *
  *   // Schemas
  *   documentUploadFormSchema,
  *   documentReviewSchema,
@@ -23,24 +17,17 @@
  *   validateFile,
  *
  *   // Hooks
- *   useMyVerificationDocuments,
- *   useDocumentUpload,
+ *   usePendingVerificationDocuments,
  *   useApproveVerificationDocument,
- *   useDocumentManagement,
+ *   useRejectVerificationDocument,
  *
  *   // REST Operations
  *   getDocument,
  *   downloadDocument,
  *   listAllDocuments,
- *
- *   // Query keys
- *   documentQueryKeys,
  * } from '@pml.tickets/shared/api/admin/modules/document';
  * ```
  */
-
-// Core types
-export * from './document.types';
 
 // Validation schemas
 export * from './document.schemas';
@@ -50,9 +37,6 @@ export * from './document.queries';
 
 // GraphQL mutations
 export * from './document.mutations';
-
-// Query keys
-export * from './document.keys';
 
 // React hooks
 export * from './document.hooks';

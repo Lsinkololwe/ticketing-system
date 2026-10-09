@@ -340,6 +340,7 @@
           },
           "minimumPayoutAmount": {
             "bsonType": [
+              "decimal",
               "double",
               "null"
             ],
@@ -384,7 +385,7 @@
                   "string",
                   "null"
                 ],
-                "maxLength": 50
+                "maxLength": 512
               },
               "accountHolderName": {
                 "bsonType": [
@@ -547,10 +548,10 @@
             ],
             "minimum": 1
           },
-          "managersCanRequestPayouts": {
+          "managersCanViewFinancials": {
             "bsonType": "bool"
           },
-          "marketersCanViewFinancials": {
+          "adminsCanRequestPayouts": {
             "bsonType": "bool"
           },
           "notifyOwnerOnMemberJoin": {

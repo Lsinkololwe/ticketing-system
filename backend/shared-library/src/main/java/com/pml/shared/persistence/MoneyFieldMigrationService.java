@@ -50,7 +50,7 @@ public class MoneyFieldMigrationService {
      * here would be wrong.
      */
     private static final Map<String, List<String>> MONEY_FIELDS = Map.ofEntries(
-            Map.entry("tickets", List.of(
+            Map.entry("booking_tickets", List.of(
                     "price", "originalPrice", "discountAmount", "commissionAmount", "netAmount")),
             Map.entry("booking_payout_requests", List.of(
                     "requestedAmount", "netPayoutAmount", "processingFee", "settledAmount")),
@@ -60,18 +60,25 @@ public class MoneyFieldMigrationService {
             Map.entry("escrow_accounts", List.of(
                     "currentBalance", "totalDeposits", "totalWithdrawals", "totalCommissions",
                     "minimumBalance", "maximumPayoutAmount")),
-            Map.entry("escrow_transactions", List.of("amount", "balanceAfter")),
-            Map.entry("journal_lines", List.of("amount")),
-            Map.entry("platform_accounts", List.of("currentBalance")),
-            Map.entry("commission_records", List.of(
+            Map.entry("booking_escrow_transactions", List.of("amount", "balanceAfter")),
+            Map.entry("booking_journal_lines", List.of("amount")),
+            Map.entry("booking_platform_accounts", List.of("currentBalance")),
+            Map.entry("booking_commission_records", List.of(
                     "grossAmount", "commissionAmount", "netAmount")),
-            Map.entry("payment_intents", List.of("amount", "capturedAmount", "refundedAmount")),
-            Map.entry("payment_attempts", List.of("amount")),
-            Map.entry("refund_requests", List.of("requestedAmount", "approvedAmount", "refundFee")),
-            Map.entry("chargebacks", List.of("amount", "feeAmount")),
-            Map.entry("bank_accounts", List.of("microDepositAmount")),
+            Map.entry("booking_payment_intents", List.of("amount", "capturedAmount", "refundedAmount")),
+            Map.entry("booking_payment_attempts", List.of("amount")),
+            Map.entry("booking_refund_requests", List.of("requestedAmount", "approvedAmount", "refundFee")),
+            Map.entry("booking_chargebacks", List.of("amount", "feeAmount")),
+            Map.entry("booking_bank_accounts", List.of("microDepositAmount")),
             Map.entry("booking_reservations", List.of("totalAmount")),
-            Map.entry("promo_codes", List.of("discountAmount", "minimumPurchaseAmount")));
+            Map.entry("booking_promo_codes", List.of("discountAmount", "minimumPurchaseAmount")),
+
+            // Nested under the organization's payoutConfig, and previously a Double. The
+            // threshold is compared against an escrow balance held as Decimal128, so leaving it
+            // a binary float means a payout of exactly the minimum can be refused with nothing
+            // in the figures to explain it.
+            Map.entry("identity_organizations", List.of("payoutConfig.minimumPayoutAmount")),
+            Map.entry("platform_configuration", List.of("payment.minimumPayoutAmount")));
 
     /** @param converted fields updated, @param failed fields whose values would not coerce */
     public record Result(long converted, long failed, List<String> failures) {}
@@ -97,7 +104,14 @@ public class MoneyFieldMigrationService {
     }
 
     private Mono<Result> convertField(String collection, String field) {
-        Document filter = new Document(field, new Document("$type", "string"));
+        // Every representation money has ever been stored in here, not just string.
+        //
+        // A field typed Double in Java lands in BSON as a double, and a filter matching only
+        // strings walks past it reporting zero conversions — the same output as "nothing to do".
+        // `decimal` is deliberately absent: a field already correct must not be rewritten, or
+        // every run reports work it did not need to do and the count stops meaning anything.
+        Document filter = new Document(field,
+                new Document("$type", List.of("string", "double", "int", "long")));
         // An aggregation-pipeline update, so the new value is derived from the
         // old one inside the server. Reading every document into the JVM to
         // rewrite it would be slower and would race with live traffic.

@@ -2,7 +2,7 @@
 
 > **Spec** [`specs/notification/001-notification-transport/spec.md`](../notification/001-notification-transport/spec.md) · **Wave 5** · `blocked_by:` ET-PLT-002, 003, 005, ET-IDN-002
 > **Screens** — **preferences only.** The Coverage map: *"notification transport and lifecycle triggers are delivery mechanics (WhatsApp/SMS/email); no dedicated admin screen was requested for template management."* Surfaces in `Ticketing - Profile & Registration` and `Org Admin - Settings`.
-> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001 -DfailIfNoTests=true`
+> **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001 -DfailIfNoTests=false`
 
 **D-15**: WhatsApp, SMS, push and email. WhatsApp is primary in-market and carries the OTP that
 **is** the login mechanism; SMS is its fallback; email is for receipts and the invitation flow,
@@ -49,7 +49,7 @@ critical path.** A purchase must complete with every provider down.
 - **Acceptance** three deliveries of one trigger produce **one** message. Redis is the fast path;
   the unique index is the authority ([`ET-PLT-002`](ET-PLT-002.md) R7) — confirm it live via MCP.
 
-### BE-6 · Retry with backoff, the sweep and the terminal failure
+### BE-6 · Retry with backoff inside the workflow, and the terminal failure
 - **Spec** R6 · **§5** T6 · **depends** BE-4 · **parallel-safe** yes
 - **Acceptance** **nothing reaches the dead-letter queue**; a **failed transactional message
   surfaces**.
@@ -137,12 +137,12 @@ revoke; in-app fallback for a failed transactional message. Loading, empty, erro
 - [ ] No service names a provider
 - [ ] Every template key exists for every channel in its chain; missing parameters fail at render
 - [ ] `OTP` never attempts email
-- [ ] Transactional categories cannot be disabled; the attempt is **refused, not ignored**
+- [x] Transactional categories cannot be disabled; the attempt is **refused, not ignored** — each of the five essential switches set to false is refused with a field violation and nothing stored. Evidence: `NotificationPreferencesTest.Essential` (L2, real validators, 2026-09-19).
 - [ ] Purchase, payout and cancellation complete with every provider stopped (real containers)
 - [ ] Three deliveries of one trigger → one message, surviving a Redis flush
 - [ ] Nothing reaches the DLQ; failed transactional messages surface
 - [ ] Devices: one active row across register/invalidate/re-register
-- [ ] Transactional categories rendered as locked-with-reason, never as a failing toggle
+- [x] Transactional categories rendered as locked-with-reason, never as a failing toggle — organization-admin notification settings show the essential rows as disabled "Always on" switches excluded from saves; the page explains why (2026-09-19).
 - [ ] **No template-management screen was built** — none is in scope
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

@@ -11,12 +11,28 @@ import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery } from '@apollo/client/react';
 import type {
   EscrowAccountStatus,
-  EventEscrowAccount,
-  PayoutRequest,
-  PayoutRequestStats,
   PayoutRequestStatus,
-  RefundRequest,
   RefundRequestStatus,
+  SortDirection,
+  AdminPayoutRequestsQuery,
+  AdminPayoutRequestsQueryVariables,
+  PayoutRequestStatsQuery,
+  AdminRefundRequestsQuery,
+  AdminRefundRequestsQueryVariables,
+  RefundStatusCountQuery,
+  RefundStatusCountQueryVariables,
+  AdminEscrowAccountsQuery,
+  AdminEscrowAccountsQueryVariables,
+  ApprovePayoutRequestMutation,
+  ApprovePayoutRequestMutationVariables,
+  RejectPayoutRequestMutation,
+  RejectPayoutRequestMutationVariables,
+  ApproveRefundRequestMutation,
+  ApproveRefundRequestMutationVariables,
+  RejectRefundRequestMutation,
+  RejectRefundRequestMutationVariables,
+  UpdateEscrowAccountStatusMutation,
+  UpdateEscrowAccountStatusMutationVariables,
 } from '../../../../types/graphql';
 import {
   ADMIN_ESCROW_ACCOUNTS,
@@ -32,25 +48,19 @@ import {
   REJECT_REFUND_REQUEST,
   UPDATE_ESCROW_ACCOUNT_STATUS,
 } from './finance.mutations';
+import type { OffsetPageInfo } from '../../../../types/pageInfo';
+import { resolveError, type GraphQLLikeError } from '../../../../lib/errors';
 
 // =============================================================================
 // SHARED SHAPES
 // =============================================================================
 
 /** The six pagination fields booking-service actually populates. */
-export interface FinancePageInfo {
-  totalCount: number;
-  pageSize: number;
-  currentPage: number;
-  totalPages: number;
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-}
-
-interface OffsetPage<T> {
-  data: T[];
-  pagination: Partial<FinancePageInfo> | null;
-}
+/**
+ * Page metadata for this surface, with the field set taken from the generated
+ * schema type rather than re-declared — see `types/pageInfo`.
+ */
+export type FinancePageInfo = OffsetPageInfo;
 
 export interface UseFinancePageOptions {
   page?: number;
@@ -60,7 +70,17 @@ export interface UseFinancePageOptions {
 const DEFAULT_SIZE = 20;
 
 function pageInfoOf(
-  pagination: Partial<FinancePageInfo> | null | undefined,
+  pagination:
+    | {
+        totalCount?: number | null;
+        pageSize?: number | null;
+        currentPage?: number | null;
+        totalPages?: number | null;
+        hasNextPage?: boolean | null;
+        hasPreviousPage?: boolean | null;
+      }
+    | null
+    | undefined,
   fallbackSize: number
 ): FinancePageInfo {
   return {
@@ -78,7 +98,7 @@ function paginationVars(options: UseFinancePageOptions, sortBy: string) {
     page: options.page ?? 0,
     size: options.size ?? DEFAULT_SIZE,
     sortBy,
-    sortDirection: 'DESC',
+    sortDirection: 'DESC' as SortDirection,
   };
 }
 
@@ -91,8 +111,11 @@ export interface UsePayoutRequestsOptions extends UseFinancePageOptions {
   organizerId?: string | null;
 }
 
+/** The row shape this screen actually selects — see `ADMIN_PAYOUT_REQUESTS`. */
+export type AdminPayoutRequestRow = AdminPayoutRequestsQuery['payoutRequests']['data'][number];
+
 export interface UsePayoutRequestsResult {
-  payouts: PayoutRequest[];
+  payouts: AdminPayoutRequestRow[];
   pageInfo: FinancePageInfo;
   loading: boolean;
   error?: Error;
@@ -103,15 +126,21 @@ export function useAdminPayoutRequests(
   options: UsePayoutRequestsOptions = {}
 ): UsePayoutRequestsResult {
   const size = options.size ?? DEFAULT_SIZE;
-  const { data, loading, error, refetch } = useQuery<{
-    payoutRequestsOffsetPagination: OffsetPage<PayoutRequest>;
-  }>(ADMIN_PAYOUT_REQUESTS, {
+  const { data, loading, error, refetch } = useQuery<
+    AdminPayoutRequestsQuery,
+    AdminPayoutRequestsQueryVariables
+  >(ADMIN_PAYOUT_REQUESTS, {
     variables: {
       // The server declares this filter non-null, so an unfiltered view sends
       // an object of nulls rather than omitting the argument.
       filter: {
         status: options.status ?? null,
         organizerId: options.organizerId ?? null,
+        endDate: null,
+        escrowAccountId: null,
+        eventId: null,
+        payoutMethod: null,
+        startDate: null,
       },
       pagination: paginationVars(options, 'requestedAt'),
     },
@@ -119,7 +148,7 @@ export function useAdminPayoutRequests(
     errorPolicy: 'all',
   });
 
-  const page = data?.payoutRequestsOffsetPagination;
+  const page = data?.payoutRequests as AdminPayoutRequestsQuery['payoutRequests'] | undefined;
 
   return {
     payouts: page?.data ?? [],
@@ -132,17 +161,18 @@ export function useAdminPayoutRequests(
   };
 }
 
+/** The stats shape this screen actually selects — see `PAYOUT_REQUEST_STATS`. */
+export type AdminPayoutRequestStats = PayoutRequestStatsQuery['payoutRequestStats'];
+
 export interface UsePayoutStatsResult {
-  stats: PayoutRequestStats | null;
+  stats: AdminPayoutRequestStats | null;
   loading: boolean;
   error?: Error;
   refetch: () => void;
 }
 
 export function usePayoutRequestStats(): UsePayoutStatsResult {
-  const { data, loading, error, refetch } = useQuery<{
-    payoutRequestStats: PayoutRequestStats;
-  }>(PAYOUT_REQUEST_STATS, {
+  const { data, loading, error, refetch } = useQuery<PayoutRequestStatsQuery>(PAYOUT_REQUEST_STATS, {
     fetchPolicy: 'cache-and-network',
     errorPolicy: 'all',
   });
@@ -168,8 +198,11 @@ export interface UseRefundRequestsOptions extends UseFinancePageOptions {
   eventId?: string | null;
 }
 
+/** The row shape this screen actually selects — see `ADMIN_REFUND_REQUESTS`. */
+export type AdminRefundRequestRow = AdminRefundRequestsQuery['refundRequests']['data'][number];
+
 export interface UseRefundRequestsResult {
-  refunds: RefundRequest[];
+  refunds: AdminRefundRequestRow[];
   pageInfo: FinancePageInfo;
   loading: boolean;
   error?: Error;
@@ -180,13 +213,20 @@ export function useAdminRefundRequests(
   options: UseRefundRequestsOptions = {}
 ): UseRefundRequestsResult {
   const size = options.size ?? DEFAULT_SIZE;
-  const { data, loading, error, refetch } = useQuery<{
-    refundRequestsOffsetPagination: OffsetPage<RefundRequest>;
-  }>(ADMIN_REFUND_REQUESTS, {
+  const { data, loading, error, refetch } = useQuery<
+    AdminRefundRequestsQuery,
+    AdminRefundRequestsQueryVariables
+  >(ADMIN_REFUND_REQUESTS, {
     variables: {
       filter: {
         status: options.status ?? null,
         eventId: options.eventId ?? null,
+        buyerId: null,
+        endDate: null,
+        organizerId: null,
+        requestType: null,
+        startDate: null,
+        ticketId: null,
       },
       pagination: paginationVars(options, 'requestedAt'),
     },
@@ -194,7 +234,7 @@ export function useAdminRefundRequests(
     errorPolicy: 'all',
   });
 
-  const page = data?.refundRequestsOffsetPagination;
+  const page = data?.refundRequests as AdminRefundRequestsQuery['refundRequests'] | undefined;
 
   return {
     refunds: page?.data ?? [],
@@ -218,15 +258,26 @@ export function useRefundStatusCount(status: RefundRequestStatus | null): {
   count: number | null;
   loading: boolean;
 } {
-  const { data, loading } = useQuery<{
-    refundRequestsOffsetPagination: { pagination: { totalCount: number | null } | null };
-  }>(REFUND_STATUS_COUNT, {
-    variables: { filter: { status } },
+  const { data, loading } = useQuery<RefundStatusCountQuery, RefundStatusCountQueryVariables>(
+    REFUND_STATUS_COUNT,
+    {
+    variables: {
+      filter: {
+        status,
+        buyerId: null,
+        endDate: null,
+        eventId: null,
+        organizerId: null,
+        requestType: null,
+        startDate: null,
+        ticketId: null,
+      },
+    },
     fetchPolicy: 'cache-and-network',
     errorPolicy: 'all',
   });
 
-  const total = data?.refundRequestsOffsetPagination?.pagination?.totalCount;
+  const total = data?.refundRequests?.pagination?.totalCount;
   return { count: total ?? null, loading };
 }
 
@@ -239,8 +290,11 @@ export interface UseEscrowAccountsOptions extends UseFinancePageOptions {
   organizerId?: string | null;
 }
 
+/** The row shape this screen actually selects — see `ADMIN_ESCROW_ACCOUNTS`. */
+export type AdminEscrowAccountRow = AdminEscrowAccountsQuery['escrowAccounts']['data'][number];
+
 export interface UseEscrowAccountsResult {
-  accounts: EventEscrowAccount[];
+  accounts: AdminEscrowAccountRow[];
   pageInfo: FinancePageInfo;
   loading: boolean;
   error?: Error;
@@ -251,13 +305,17 @@ export function useAdminEscrowAccounts(
   options: UseEscrowAccountsOptions = {}
 ): UseEscrowAccountsResult {
   const size = options.size ?? DEFAULT_SIZE;
-  const { data, loading, error, refetch } = useQuery<{
-    escrowAccountsOffsetPagination: OffsetPage<EventEscrowAccount>;
-  }>(ADMIN_ESCROW_ACCOUNTS, {
+  const { data, loading, error, refetch } = useQuery<
+    AdminEscrowAccountsQuery,
+    AdminEscrowAccountsQueryVariables
+  >(ADMIN_ESCROW_ACCOUNTS, {
     variables: {
       filter: {
         status: options.status ?? null,
         organizerId: options.organizerId ?? null,
+        currency: null,
+        eventId: null,
+        hasBalance: null,
       },
       pagination: paginationVars(options, 'createdAt'),
     },
@@ -265,7 +323,7 @@ export function useAdminEscrowAccounts(
     errorPolicy: 'all',
   });
 
-  const page = data?.escrowAccountsOffsetPagination;
+  const page = data?.escrowAccounts as AdminEscrowAccountsQuery['escrowAccounts'] | undefined;
 
   return {
     accounts: page?.data ?? [],
@@ -282,32 +340,35 @@ export function useAdminEscrowAccounts(
 // DECISIONS
 // =============================================================================
 
+/**
+ * The outcome of an approval decision, as this screen needs to render it.
+ *
+ * <p>`success` here is derived from whether the mutation *threw*, not from a
+ * field in the response. A refusal is a typed error carrying an error-registry
+ * code, so a caller cannot report an approval the server declined by
+ * forgetting to read a flag — the only way to get `success: true` is for the
+ * mutation to have returned.</p>
+ */
 export interface DecisionResult {
   success: boolean;
   message: string | null;
-  errors: string[];
-}
-
-interface MutationEnvelope {
-  success: boolean;
-  message: string | null;
-  errors: string[];
+  errorCode: string | null;
 }
 
 /**
- * A mutation returned `success: false` with an `errors` array rather than
- * throwing. Treating that as a success is how a UI ends up reporting an
- * approval that the server refused.
+ * Runs a decision mutation and reports what happened.
+ *
+ * <p>The copy comes from the registry code via `resolveError`, so a new refusal
+ * renders a sentence without this file changing.</p>
  */
-function envelopeOf(payload: MutationEnvelope | undefined, fallback: string): DecisionResult {
-  if (!payload) {
-    return { success: false, message: fallback, errors: [fallback] };
+async function decide(run: () => Promise<unknown>): Promise<DecisionResult> {
+  try {
+    await run();
+    return { success: true, message: null, errorCode: null };
+  } catch (error) {
+    const resolved = resolveError(error as GraphQLLikeError);
+    return { success: false, message: resolved.message, errorCode: resolved.code };
   }
-  return {
-    success: payload.success,
-    message: payload.message ?? null,
-    errors: payload.errors ?? [],
-  };
 }
 
 export interface UseFinanceDecisionsResult {
@@ -335,66 +396,57 @@ export function useFinanceDecisions(): UseFinanceDecisionsResult {
     []
   );
 
-  const [approvePayoutMutation, approvePayoutState] = useMutation(APPROVE_PAYOUT_REQUEST, {
+  const [approvePayoutMutation, approvePayoutState] = useMutation<
+    ApprovePayoutRequestMutation,
+    ApprovePayoutRequestMutationVariables
+  >(APPROVE_PAYOUT_REQUEST, {
     refetchQueries: refetchPayouts,
     awaitRefetchQueries: true,
   });
-  const [rejectPayoutMutation, rejectPayoutState] = useMutation(REJECT_PAYOUT_REQUEST, {
+  const [rejectPayoutMutation, rejectPayoutState] = useMutation<
+    RejectPayoutRequestMutation,
+    RejectPayoutRequestMutationVariables
+  >(REJECT_PAYOUT_REQUEST, {
     refetchQueries: refetchPayouts,
     awaitRefetchQueries: true,
   });
-  const [approveRefundMutation, approveRefundState] = useMutation(APPROVE_REFUND_REQUEST);
-  const [rejectRefundMutation, rejectRefundState] = useMutation(REJECT_REFUND_REQUEST);
-  const [escrowStatusMutation, escrowStatusState] = useMutation(UPDATE_ESCROW_ACCOUNT_STATUS);
+  const [approveRefundMutation, approveRefundState] = useMutation<
+    ApproveRefundRequestMutation,
+    ApproveRefundRequestMutationVariables
+  >(APPROVE_REFUND_REQUEST);
+  const [rejectRefundMutation, rejectRefundState] = useMutation<
+    RejectRefundRequestMutation,
+    RejectRefundRequestMutationVariables
+  >(REJECT_REFUND_REQUEST);
+  const [escrowStatusMutation, escrowStatusState] = useMutation<
+    UpdateEscrowAccountStatusMutation,
+    UpdateEscrowAccountStatusMutationVariables
+  >(UPDATE_ESCROW_ACCOUNT_STATUS);
 
   const approvePayout = useCallback(
     async (id: string, notes?: string): Promise<DecisionResult> => {
-      const { data } = await approvePayoutMutation({
-        variables: { payoutRequestId: id, notes: notes ?? null },
-      });
-      return envelopeOf(
-        (data as { approvePayoutRequest?: MutationEnvelope } | undefined)?.approvePayoutRequest,
-        'The server did not confirm the approval.'
-      );
+      return decide(() => approvePayoutMutation({ variables: { payoutRequestId: id, notes: notes ?? null } }));
     },
     [approvePayoutMutation]
   );
 
   const rejectPayout = useCallback(
     async (id: string, rejectionReason: string): Promise<DecisionResult> => {
-      const { data } = await rejectPayoutMutation({
-        variables: { payoutRequestId: id, rejectionReason },
-      });
-      return envelopeOf(
-        (data as { rejectPayoutRequest?: MutationEnvelope } | undefined)?.rejectPayoutRequest,
-        'The server did not confirm the rejection.'
-      );
+      return decide(() => rejectPayoutMutation({ variables: { payoutRequestId: id, rejectionReason } }));
     },
     [rejectPayoutMutation]
   );
 
   const approveRefund = useCallback(
     async (id: string, reviewComments?: string): Promise<DecisionResult> => {
-      const { data } = await approveRefundMutation({
-        variables: { refundRequestId: id, reviewComments: reviewComments ?? null },
-      });
-      return envelopeOf(
-        (data as { approveRefundRequest?: MutationEnvelope } | undefined)?.approveRefundRequest,
-        'The server did not confirm the approval.'
-      );
+      return decide(() => approveRefundMutation({ variables: { refundRequestId: id, reviewComments: reviewComments ?? null } }));
     },
     [approveRefundMutation]
   );
 
   const rejectRefund = useCallback(
     async (id: string, rejectionReason: string): Promise<DecisionResult> => {
-      const { data } = await rejectRefundMutation({
-        variables: { refundRequestId: id, rejectionReason },
-      });
-      return envelopeOf(
-        (data as { rejectRefundRequest?: MutationEnvelope } | undefined)?.rejectRefundRequest,
-        'The server did not confirm the rejection.'
-      );
+      return decide(() => rejectRefundMutation({ variables: { refundRequestId: id, rejectionReason } }));
     },
     [rejectRefundMutation]
   );
@@ -405,13 +457,8 @@ export function useFinanceDecisions(): UseFinanceDecisionsResult {
       status: EscrowAccountStatus,
       reason: string
     ): Promise<DecisionResult> => {
-      const { data } = await escrowStatusMutation({
-        variables: { accountId: id, status, reason },
-      });
-      return envelopeOf(
-        (data as { updateEscrowAccountStatus?: MutationEnvelope } | undefined)
-          ?.updateEscrowAccountStatus,
-        'The server did not confirm the status change.'
+      return decide(() =>
+        escrowStatusMutation({ variables: { accountId: id, status, reason } })
       );
     },
     [escrowStatusMutation]

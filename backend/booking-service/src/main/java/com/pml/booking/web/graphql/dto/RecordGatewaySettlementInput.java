@@ -1,7 +1,7 @@
 package com.pml.booking.web.graphql.dto;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Input for recording a gateway settlement in the accounting system.
@@ -42,7 +42,7 @@ public record RecordGatewaySettlementInput(
     BigDecimal grossAmount,
     BigDecimal feeAmount,
     BigDecimal netAmount,
-    LocalDateTime settlementDate,
+    Instant settlementDate,
     String bankReference,
     String currency
 ) {

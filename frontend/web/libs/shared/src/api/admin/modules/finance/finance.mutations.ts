@@ -26,12 +26,7 @@ export const APPROVE_PAYOUT_REQUEST = gql`
   ${PAYOUT_LIST_FIELDS}
   mutation ApprovePayoutRequest($payoutRequestId: ID!, $notes: String) {
     approvePayoutRequest(payoutRequestId: $payoutRequestId, notes: $notes) {
-      success
-      message
-      errors
-      data {
-        ...PayoutListFields
-      }
+      ...PayoutListFields
     }
   }
 `;
@@ -43,12 +38,7 @@ export const REJECT_PAYOUT_REQUEST = gql`
       payoutRequestId: $payoutRequestId
       rejectionReason: $rejectionReason
     ) {
-      success
-      message
-      errors
-      data {
-        ...PayoutListFields
-      }
+      ...PayoutListFields
     }
   }
 `;
@@ -60,12 +50,7 @@ export const APPROVE_REFUND_REQUEST = gql`
       refundRequestId: $refundRequestId
       reviewComments: $reviewComments
     ) {
-      success
-      message
-      errors
-      data {
-        ...RefundListFields
-      }
+      ...RefundListFields
     }
   }
 `;
@@ -77,12 +62,7 @@ export const REJECT_REFUND_REQUEST = gql`
       refundRequestId: $refundRequestId
       rejectionReason: $rejectionReason
     ) {
-      success
-      message
-      errors
-      data {
-        ...RefundListFields
-      }
+      ...RefundListFields
     }
   }
 `;
@@ -90,8 +70,8 @@ export const REJECT_REFUND_REQUEST = gql`
 /**
  * Suspend or reactivate an escrow account.
  *
- * ET-FIN-001 R4: SUSPENDED "ends when a person lifts it, not on a date" — which
- * is why this takes a reason and not an expiry. Locking for a fixed period is a
+ * A SUSPENDED account stays suspended until a person lifts it, not until a
+ * date — which is why this takes a reason and not an expiry. Locking for a fixed period is a
  * different operation (`lockEscrowAccount`) and is not this control.
  */
 export const UPDATE_ESCROW_ACCOUNT_STATUS = gql`
@@ -102,12 +82,7 @@ export const UPDATE_ESCROW_ACCOUNT_STATUS = gql`
     $reason: String
   ) {
     updateEscrowAccountStatus(accountId: $accountId, status: $status, reason: $reason) {
-      success
-      message
-      errors
-      data {
-        ...EscrowListFields
-      }
+      ...EscrowListFields
     }
   }
 `;

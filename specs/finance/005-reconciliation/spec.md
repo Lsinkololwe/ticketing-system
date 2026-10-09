@@ -181,6 +181,15 @@ THE SYSTEM SHALL run reconciliation without degrading the purchase path.
 
 ## 4. Model
 
+> **Amended 2026-09-01 under [D-19](../../ROADMAP.md).** 1 operation name below adopts the
+> shipped name: `resolveItem` → `resolveReconciliationItem`. D-19 rules that where the schema and §4 disagree on an operation's
+> *name*, the schema stands and §4 adopts it.
+>
+> **Only the names were adopted.** Argument lists and return types were not re-verified against
+> the schema, so a row here can now name a real operation and still describe it wrongly. That
+> gap is unmeasured, and calling it verified would be the same mistake as counting a file's
+> existence as proof it runs.
+
 ### The three reconciliations
 
 | Type | Question | Source | Cadence | Repairs? |
@@ -281,20 +290,32 @@ Subgraph `booking`. Every field is `FINANCE` and `@tag(name: "admin")`.
 | `financialSummary(from, to)` | query | `FINANCE` | `FinancialSummary!` |
 | `startReconciliation(type, windowStart, windowEnd)` | mutation | `FINANCE` | `ReconciliationRun!` |
 | `investigateItem(id, note)` | mutation | `FINANCE` | `ReconciliationItem!` |
-| `resolveItem(input)` | mutation | `FINANCE` | `ReconciliationItem!` |
+| `resolveReconciliationItem(input)` | mutation | `FINANCE` | `ReconciliationItem!` |
 | `writeOffItem(id, reason)` | mutation | `SUPER_ADMIN` | `ReconciliationItem!` |
 | `recordBankSettlement(input)` | mutation | `FINANCE` | `ReconciliationRun!` |
 
 `recordBankSettlement` is how a statement enters the platform — a finance operator supplies
 the settled amount and the window, and R4's entry is written.
 
-### Sweeps and schedules
+### Schedules
 
-| Job | Lock | Cadence |
-|---|---|---|
-| internal | `lock:sweep:reconciliation-internal` | `PT1H` |
-| provider | `lock:sweep:reconciliation-provider` | daily, off-peak |
-| escalation | `lock:sweep:reconciliation-escalation` | `PT1H` |
+Every scheduled run is a Temporal Schedule starting `ReconciliationWorkflow` with its type, on
+`booking-recon` ([ET-PLT-015](../../_platform/015-durable-execution/) §4). Overlap policy `SKIP` is
+the mutex, so two runs of one type never work the same window; no Redis lock exists. The workflow
+runs one activity per type under the run's budget, and a run past its budget is abandoned and
+retried by the next fire.
+
+| Schedule | Runs | Cadence (UTC) | Overlap |
+|---|---|---|---|
+| `booking-recon-escrow` | `ReconciliationWorkflow(ESCROW)` — each cached escrow balance against its transactions | hourly at :05 | `SKIP` |
+| `booking-recon-escrow-journal` | `ReconciliationWorkflow(ESCROW_JOURNAL)` — escrow balances against the journal | hourly at :20 | `SKIP` |
+| `booking-recon-alerts` | `ReconciliationWorkflow(ALERTS)` — alerts on the open discrepancies | hourly at :35 | `SKIP` |
+| `booking-recon-weekly-summary` | `ReconciliationWorkflow(WEEKLY_SUMMARY)` | Monday 05:00 | `SKIP` |
+| `recon-provider` | `ReconciliationWorkflow(PROVIDER)` — planned | daily 03:00, the previous day's window | `SKIP` |
+
+The two escrow checks are the `INTERNAL` reconciliation of the table above, and the alerts run is its
+escalation. The runs are staggered so no two start together (ROADMAP D-24). The boot runner creates a
+missing Schedule and moves an existing one to this cadence, keeping an operator's pause.
 
 Bank reconciliation has no schedule — it runs on `recordBankSettlement`.
 
@@ -302,9 +323,9 @@ Bank reconciliation has no schedule — it runs on `recordBankSettlement`.
 
 | Property | Value |
 |---|---|
-| `finance.reconciliation.internal-interval` | `PT1H` |
+| `finance.reconciliation.internal-schedule` | `5 * * * *` and `20 * * * *` UTC, alerts `35 * * * *` — Temporal Schedules |
 | `finance.reconciliation.internal-budget` | `PT5M` |
-| `finance.reconciliation.provider-cron` | daily, off-peak |
+| `finance.reconciliation.provider-schedule` | `0 3 * * *` UTC — a Temporal Schedule |
 | `finance.reconciliation.auto-correct-limit` | `K1,000.00` |
 | `finance.reconciliation.write-off-limit` | `K500.00` |
 | `finance.reconciliation.batch-size` | 1,000 |
@@ -363,7 +384,7 @@ Bank reconciliation has no schedule — it runs on `recordBankSettlement`.
 
 - [ ] **T7 · Escalation ageing, the metrics and the write-off gate**
   - requirements: R5, R6
-  - files: `backend/booking-service/.../scheduler/ReconciliationEscalationSweeper.java`
+  - files: `backend/booking-service/.../workflow/recon/ReconciliationWorkflowImpl.java` (the `ESCALATION` run), `.../workflow/recon/ReconciliationSchedules.java`
   - verify: each class escalates once at its threshold; a K501 write-off requires `SUPER_ADMIN`
   - parallel-safe: yes
   - depends: T4

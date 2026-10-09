@@ -1,24 +1,24 @@
-# ET-TKT-001 · Reservation, the inventory hold, and the purchase saga — tasks
+# ET-TKT-001 · Reservation, the inventory hold, and the purchase workflow — tasks
 
-> **Spec** [`specs/ticketing/001-reservation-and-hold/spec.md`](../ticketing/001-reservation-and-hold/spec.md) · **Wave 3** · `blocked_by:` ET-PLT-002, 003, 005, 006, 007, ET-CAT-002
+> **Spec** [`specs/ticketing/001-reservation-and-hold/spec.md`](../ticketing/001-reservation-and-hold/spec.md) · **Wave 3** · `blocked_by:` ET-PLT-002, 003, 005, 006, 007, 015, ET-CAT-002
 > **Screen** `Ticketing - Discover & Checkout.dc.html` — **read it first**
 > **Routes** `apps/ticketing/src/app/events/[id]/book/page.tsx`
-> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-001 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-001 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 The pivot of the whole platform. Between *I want this ticket* and *I have this ticket* sits a
 mobile-money payment taking eight seconds to four minutes and failing about one time in six.
-**D-09**: reserve first, pay second, ten-minute TTL.
+**D-09**: reserve first, pay second, ten-minute TTL. **D-21**: the purchase is one Temporal
+workflow, `purchase/{reservationId}`, and its timers are workflow timers.
 
 The property everything else depends on: **inventory is conserved**. A reservation that fails
 halfway gives back exactly what it took — whether the payment declined, the process died, the
-provider never answered, or the buyer closed the app and went to bed. Four release paths, all
-idempotent, and at least two of them will fire for the same reservation.
+provider never answered, or the buyer closed the app and went to bed. Every release is a
+compare-and-set, because confirmation, cancellation and the expiry timer can race.
 
 ## R0 · Reconcile *(the largest reconciliation in the corpus)*
 
-**55 code references to `ET-TKT-001` already exist**, plus untracked `PurchaseServiceImpl`,
-`ReservationStateMachine`, `ReservationTransitions`, `ReservationExpirationScheduler`,
-`PurchaseRecoveryScheduler`, `PurchaseEscalationService` and `ReservationConformanceMigrationService`.
+The purchase path is `PurchaseProcess` → `PurchaseWorkflowImpl` → `CheckoutActivitiesImpl` →
+`ReservationService` / `PaymentOutcomeService`, with `PurchaseAdoptionRunner` at boot.
 
 ```bash
 grep -rn 'ET-TKT-001' backend/booking-service --include='*.java' | wc -l
@@ -28,10 +28,10 @@ grep -rn 'ReservationStatus\.' backend/booking-service --include='*.java' | grep
 Classify all 8 requirements carefully. Check in particular:
 - Does `ReservationTransitions.LEGAL` hold **exactly 7** rows?
 - Is the hold a single `findAndModify`, or read-then-write?
-- Is the **TTL index longer than the sweep window**? If the TTL fires first it deletes the
-  reservation and frees nothing — **inventory is lost permanently**. This is the highest-severity
-  thing to check in the whole reconciliation pass.
-- Is `ReservationExpirationScheduler` actually invoked at boot, or is it an orphaned bean?
+- Does the **TTL index fire after the workflow's last possible release** (`expiresAt` + seat
+  grace)? If the TTL fires first it deletes the reservation and frees nothing — **inventory is
+  lost permanently**. This is the highest-severity thing to check in the whole reconciliation pass.
+- Does anything other than the purchase workflow move a payment's status? It must not.
 
 ## A · Backend
 
@@ -44,10 +44,11 @@ Classify all 8 requirements carefully. Check in particular:
   payments outage from a slow checkout.
 - **Acceptance** 7 legal rows, 23 refusals, **no status literal**.
 
-### BE-2 · `reserveTickets` — the atomic hold and the reservation, one transaction
+### BE-2 · The `hold` activity — the atomic hold and the reservation, one transaction
 - **Spec** R1, R3 · **§5** T2 · **depends** BE-1 · **parallel-safe** **no — the platform's most contended write**
 - The hold is [`ET-CAT-002`](ET-CAT-002.md) §4's single `findAndModify`. The reservation document
-  is written in the **same transaction** as the counter movement.
+  is written in the **same transaction** as the counter movement. A hold that fails part-way runs
+  `abandonHold`.
 - **Acceptance** 200-against-50 → exactly 50 reservations and 150 refusals; a multi-tier order
   takes every tier in one transaction and a failure on the second **returns the first**;
   `Persistence.assertNothingPersisted("booking_reservations")` on every refusal;
@@ -60,52 +61,54 @@ Classify all 8 requirements carefully. Check in particular:
 - **Acceptance** a tier price change during the ten minutes does **not** alter the reservation.
   The buyer agreed to a number; honour it.
 
-### BE-4 · The partial unique hold index and the idempotency guard
+### BE-4 · The workflow id, Update-with-Start, and the partial unique hold index
 - **Spec** R5, R6 · **§5** T4 · **depends** BE-2 · **parallel-safe** yes
+- The reservation id is `nameUUID("purchase:" + userId + ":" + idempotencyKey)`; the workflow id
+  is `purchase/{reservationId}`; `reserveTickets` is Update-with-Start under `USE_EXISTING`.
 - Partial unique index on `{ userId, tierId }` where `status = HELD` — **at the database, not by a
   check**. Verify it exists with its filter via MongoDB MCP.
-- Idempotency is [`ET-PLT-007`](ET-PLT-007.md) R6's guard. Fingerprint covers `tierId`,
-  `quantity`, `promoCode`, `userId` — **and nothing else**.
+- Fingerprint covers `tierId`, `quantity`, `promoCode`, `userId` — **and nothing else**.
 - **Acceptance** two parallel reservations by one buyer for one tier → **one** hold; a repeated
-  key returns the original; a changed fingerprint → `IDEMPOTENCY_KEY_REUSED`.
+  key reaches the original execution; a changed fingerprint → `IDEMPOTENCY_KEY_REUSED`.
 
-### BE-5 · The expiry sweep, the TTL grace, the double-release test
+### BE-5 · The expiry timer, the TTL backstop, the double-release test
 - **Spec** R4 · **§5** T5 · **depends** BE-2 · **parallel-safe** no
-- `expiresAt = clock.instant() + PT10M`. Sweep every `PT30S` under
-  `lock:sweep:reservation-expiry`, batch 500.
-- **The TTL index deletes; the sweep releases.** Set `expireAfterSeconds` to `ttl + PT1H` so the
-  TTL only ever removes rows the sweep has already released. **Getting this order wrong loses the
-  inventory permanently.**
-- **Acceptance** 100 expired reservations, sweep run **twice concurrently**, counters exactly
-  correct; releasing an already-released reservation is a **no-op, not an error**; frozen-clock
-  live at 9:59, expired at 10:01.
+- `expiresAt = clock.instant() + PT10M`. The workflow sleeps to `expiresAt` and, with no payment
+  started, runs `release(EXPIRE)`. No `@Scheduled` method, sweep or Redis lock.
+- **The TTL index deletes; only a release returns seats.** `expireAfterSeconds` is `ttl + PT1H`,
+  past the seat grace and the TTL monitor's period, so the TTL only ever removes reservations
+  already terminal.
+- **Acceptance** time-skipping test live at 9:59, expired at 10:01; 100 reservations released
+  **twice concurrently**, counters exactly correct; releasing an already-released reservation is
+  a **no-op, not an error**.
 
 ### BE-6 · Confirmation in one transaction; the five forced-failure tests
 - **Spec** R7 · **§5** T6 · **depends** BE-3 · **parallel-safe** **no — spans tickets, escrow and commission**
 - One transaction: `reserved → sold`, write tickets, credit escrow, record commission, mark
-  `CONFIRMED`. The event is staged into `booking_outbox` **inside** the transaction;
-  `StreamBridge` is reached only from the after-commit listener.
+  `CONFIRMED`, and stage `booking.TicketPurchased` into `booking_outbox`. Only the drain
+  publishes, after commit.
 - **Acceptance** a forced failure at **each of the five points** leaves none applied — five tests;
-  confirming an already-`CONFIRMED` reservation is a no-op returning the existing tickets; a
-  confirmation arriving **after expiry** is refused with `RESERVATION_EXPIRED` and the payment
-  refunded; `Ledger.assertBalanced()` and `Inventory.assertConserved()` both hold.
+  confirming an already-`CONFIRMED` reservation is a no-op returning the existing tickets; money
+  arriving **after the seats were released** confirms nothing and escalates `PAID_AFTER_EXPIRY`;
+  `Ledger.assertBalanced()` and `Inventory.assertConserved()` both hold.
 
-### BE-7 · The recovery sweep and the six kill-point tests
+### BE-7 · The payment polls, the seat grace, escalation, adoption and replay
 - **Spec** R8 · **§5** T7 · **depends** BE-6 · **parallel-safe** no
-- The saga's state is `ReservationStatus` **plus the payment intent's status** — no separate saga
-  collection.
-- **A `HELD` reservation with a `PENDING` intent past `booking.payment.max-pending` (PT30M) is
-  escalated to [`ET-ADM-003`](ET-ADM-003.md), not silently released — the money may still arrive.**
-  Releasing it is how a buyer is charged for a seat somebody else now has.
-- **Acceptance** killing the process after each of the six saga steps resolves correctly on
-  restart — six tests; no reservation remains `HELD` longer than
-  `ttl + sweep-interval + max-pending`.
+- The purchase's process state is its workflow execution; the reservation and intent documents
+  are its projection — no saga collection.
+- Polls 10 s doubling to 5 min, sooner on a verified callback; seats released at expiry + 5 min
+  with the money still watched; **a payment `PENDING` past `booking.payment.max-pending` (PT30M)
+  is escalated to [`ET-ADM-003`](ET-ADM-003.md) and polled hourly, never silently called paid or
+  unpaid**; polling stops after 7 days.
+- `PurchaseAdoptionRunner` starts an execution for every `HELD` reservation that has none.
+- **Acceptance** a layer-3 test for every branch of the spec's §4 diagram; a recorded purchase
+  history replays with `WorkflowReplayer`; no reservation stays `HELD` beyond `ttl + seat-grace`.
 
 ### BE-8 · The subgraph half; `@auth` on every field
 - **Spec** R1–R8 · **§5** T8 · **depends** BE-6 · **parallel-safe** **no — shared booking SDL**
-- **Acceptance** static composition; **no client-callable `confirmPurchase` exists.** Confirmation
-  is driven by the payment outcome ([`ET-PAY-002`](ET-PAY-002.md)), never by a client asserting
-  that it paid.
+- **Acceptance** static composition; **no client-callable `confirmPurchase` and no
+  payment-lifecycle mutation exists.** Confirmation is the verified payment outcome inside the
+  workflow ([`ET-PAY-002`](ET-PAY-002.md)), never a client asserting that it paid.
 
 ## B · Contract
 
@@ -125,7 +128,8 @@ Classify all 8 requirements carefully. Check in particular:
 ### FE-2 · Reserve — the idempotency key and the double-tap
 - **depends** FE-1, [`ET-PLT-007`](ET-PLT-007.md) FE-2 · **parallel-safe** no
 - Key generated client-side, **stable across retries of the same intent**, persisted so a reload
-  reuses it. Regenerating it per attempt defeats the mechanism entirely.
+  reuses it. Regenerating it per attempt defeats the mechanism entirely — the key names the
+  purchase's workflow.
 - Button disables during the request (`loading-buttons`), but the **key** is what actually
   prevents the double hold — a disabled button does not survive a page refresh.
 - **testids** `checkout-reserve`, `checkout-reserve-pending`
@@ -143,7 +147,9 @@ Classify all 8 requirements carefully. Check in particular:
 - **depends** FE-3 · **parallel-safe** yes
 - `RESERVATION_EXPIRED` → a designed screen offering to start again, with the current availability
   re-fetched. Not an error toast over a dead form.
-- `cancelReservation` returns the buyer to the event with inventory visibly restored.
+- `cancelReservation` returns the buyer to the event with inventory visibly restored. Once the
+  payment prompt is sent, cancel is refused (`RESERVATION_STATE_INVALID`, `PAYMENT_IN_FLIGHT`) —
+  show *waiting for your payment*, not a cancel button.
 - **testids** `reservation-expired`, `reservation-restart`, `checkout-cancel`
 
 ### FE-5 · Refusals from the registry
@@ -162,7 +168,7 @@ Classify all 8 requirements carefully. Check in particular:
 
 ## D · Tests
 
-### TS-1 · Atomicity *(L3, replica set)*
+### TS-1 · Atomicity *(L2, replica set)*
 200-against-50 → 50 and 150; conservation after every attempt; nothing persisted on refusal;
 multi-tier failure returns the first tier.
 
@@ -172,28 +178,29 @@ multi-tier failure returns the first tier.
 Price change mid-hold does not alter it; `HALF_UP` scale 2 applied once; the payment intent
 charges `totalAmount` exactly or `PAYMENT_AMOUNT_MISMATCH`.
 
-### TS-4 · Expiry *(L3, frozen clock — the highest-risk test here)*
-- Live at 9:59, expired at 10:01.
-- 100 expired reservations, **two concurrent sweeps**, counters exactly correct.
+### TS-4 · Expiry *(L3 time-skipping, and L2 — the highest-risk test here)*
+- Live at 9:59, expired at 10:01, under `TestWorkflowEnvironment`.
+- 100 reservations, **two concurrent releases**, counters exactly correct.
 - Double release is a no-op.
-- **Explicitly assert the TTL fires after the sweep window** — construct the inverted
-  configuration and prove it loses inventory, so the ordering is protected by a test rather than
-  by a comment.
+- **Explicitly assert the TTL fires after the workflow's last release** — construct the inverted
+  configuration and prove it is rejected, so the ordering is protected by a test rather than by a
+  comment.
 
-### TS-5 · One hold per buyer per tier *(L3)*
+### TS-5 · One hold per buyer per tier *(L2)*
 Partial unique index confirmed live via MCP; two parallel reservations → one hold.
 
-### TS-6 · Idempotency *(L3)*
-Replay → original; changed fingerprint → refuse; two parallel submissions of one key → one
-reservation and one hold.
+### TS-6 · Idempotency *(L2 against the Temporal dev server)*
+Replay → original execution; changed fingerprint → refuse; two parallel submissions of one key →
+one execution, one reservation and one hold.
 
-### TS-7 · Confirmation *(L3)*
-Five forced failures, five tests; already-confirmed is a no-op; post-expiry confirmation refunds;
+### TS-7 · Confirmation *(L2)*
+Five forced failures, five tests; already-confirmed is a no-op; paid-after-release escalates;
 ledger balanced and inventory conserved after every confirmation.
 
 ### TS-8 · Recovery *(L3)*
-Six kill points; `PENDING` past `max-pending` **escalates rather than releases**; no reservation
-stays `HELD` beyond the bound.
+Every branch of the workflow diagram under time skipping; `PENDING` past `max-pending`
+**escalates rather than releases**; adoption of a `HELD` reservation with no execution; the
+recorded history replays.
 
 ### TS-9 · e2e *(L5, ticketing — needs F0-1 and F0-4)*
 - Select → reserve → countdown → expire → restart.
@@ -205,19 +212,43 @@ stays `HELD` beyond the bound.
 
 ## E · Gate
 
-- [ ] R0 recorded across all 55 existing references; TTL-vs-sweep ordering explicitly verified
-- [ ] 7 legal transitions of 30 pairs; no status literal
+- [ ] R0 recorded across every existing reference; TTL-vs-release ordering explicitly verified
+- [x] 7 legal transitions of 30 pairs — `ReservationStateMachineTest`, 10 cases, layer 1 (no
+      Spring context, no database). All thirty `(status, action)` pairs are driven, legal and
+      illegal: the twenty-three refusals are where the money is, since `CONFIRM` on an already-
+      `CONFIRMED` hold writes tickets twice and credits escrow twice, and `RELEASE` on an
+      `EXPIRED` one returns the same seats twice. `ReservationTransitions` is the only writer and
+      it compare-and-sets, so no status literal reaches a document
 - [ ] 200-against-50 → exactly 50; conservation after every attempt
 - [ ] Nothing persisted on any refusal path
 - [ ] Quote immune to tier price change; rounded once
-- [ ] Partial unique hold index live, with its filter
+- [x] Partial unique hold index live, with its filter — `uniq_reservation_user_tier_held` on
+      `{userId, items.ticketTierId}`, unique, partial on `status = HELD`, asserted against a live
+      database by `BookingIndexRegistryTest`. The filter is what makes it a constraint rather than
+      a permanent ban: without it last month's released hold would occupy the key forever
 - [ ] Idempotency: replay, fingerprint, parallel-once
-- [ ] TTL index fires **after** the sweep window, proven by an inverted-config test
-- [ ] Double release is a no-op; two concurrent sweeps conserve
-- [ ] Five forced-failure tests; post-expiry confirmation refunds
-- [ ] Six kill points recover; `PENDING` past budget **escalates**, never silently releases
-- [ ] **No client-callable `confirmPurchase` in the composed schema**
+- [x] TTL index fires **after** the workflow's last release — `ttl + ttl-grace` = PT1H10M, past
+      the seat grace and MongoDB's TTL-monitor period. `ReservationTtlOrderingTest` is the
+      inverted-config test R4 asks for: a zero expiry must be rejected **and** the registry's own
+      spec accepted, so the rule cannot pass while comparing nothing. See
+      [F-009](../FINDINGS.md#f-009--the-reservation-ttl-raced-the-sweep-that-returns-the-seats)
+- [ ] Double release is a no-op; two concurrent releases conserve
+- [ ] Five forced-failure tests; paid-after-release escalates
+- [x] The purchase's timers, polls, escalation and seat grace run in `PurchaseWorkflow` — no
+      `@Scheduled` method, sweep or Redis lock remains in booking; `PurchaseWorkflowTest` (13 cases,
+      time skipping) covers every branch and replays its recorded history
+      ([F-031](../FINDINGS.md))
+- [x] **No client-callable `confirmPurchase`** — absent from all three subgraph SDLs and from
+      the composed supergraph, asserted by `ReservationScopeLintTest`; no mutation starts,
+      verifies, expires or fulfils a payment outside the workflow ([F-032](../FINDINGS.md))
 - [ ] Countdown derived from server `expiresAt`, correct after tab backgrounding
+- [x] A reservation is readable only by its buyer, or by support — **F-010, fixed 2026-09-01.**
+      OWASP A01 / CWE-639. `reservation(id)` carried `isAuthenticated()` and answered on the id
+      alone, publishing the buyer's identity, tier choices, promo code and exact money to any
+      signed-in caller. Both sibling operations already scoped; this was the third.
+      `ReservationVisibilityTest` (5 cases, replica set) and `ReservationScopeLintTest`
+      (mutation-verified). See
+      [F-010](../FINDINGS.md#f-010--the-one-reservation-read-that-did-not-check-who-was-asking)
 - [ ] Double-tap and reload produce one hold
-- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-001 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/booking-service test -Dgroups=ET-TKT-001 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

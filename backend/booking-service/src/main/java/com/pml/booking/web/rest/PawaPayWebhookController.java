@@ -3,14 +3,12 @@ package com.pml.booking.web.rest;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pml.booking.config.PawaPayProperties;
-import com.pml.booking.dto.DepositCallbackPayload;
-import com.pml.booking.dto.PayoutCallbackPayload;
-import com.pml.booking.dto.RefundCallbackPayload;
+import com.pml.booking.web.rest.dto.DepositCallbackPayload;
+import com.pml.booking.web.rest.dto.PayoutCallbackPayload;
+import com.pml.booking.web.rest.dto.RefundCallbackPayload;
 import com.pml.booking.infrastructure.logging.PciDssLogger;
 import com.pml.booking.infrastructure.metrics.PaymentMetrics;
-import com.pml.booking.service.PaymentAttemptService;
-import com.pml.booking.service.RefundService;
-import com.pml.booking.service.WebhookDeduplicationService;
+import com.pml.booking.service.PaymentOutcomeService;
 import com.pml.booking.service.WebhookSignatureVerificationService;
 import io.micrometer.core.instrument.Timer;
 import io.swagger.v3.oas.annotations.Operation;
@@ -61,15 +59,18 @@ import java.util.Map;
 @Tag(name = "Payment Webhooks", description = "PawaPay callback endpoints for mobile money transaction status updates")
 public class PawaPayWebhookController {
 
-    private final PaymentAttemptService paymentAttemptService;
-    private final RefundService refundService;
+    private final PaymentOutcomeService paymentOutcomeService;
+    private final com.pml.booking.workflow.refund.RefundProcess refundProcess;
+    private final com.pml.booking.workflow.purchase.PurchaseProcess purchaseProcess;
+    private final com.pml.booking.workflow.payout.PayoutProcess payoutProcess;
     private final WebhookSignatureVerificationService signatureVerificationService;
-    private final WebhookDeduplicationService webhookDeduplicationService;
     private final ObjectMapper objectMapper;
     private final PawaPayProperties pawaPayProperties;
     private final PaymentMetrics paymentMetrics;
     private final PciDssLogger pciDssLogger;
 
+    /** The injected platform clock. */
+    private final java.time.Clock clock;
     /**
      * Handle deposit callback from PawaPay.
      *
@@ -131,7 +132,7 @@ public class PawaPayWebhookController {
         if (!pawaPayProperties.getWebhook().isIpAllowed(sourceIp)) {
             log.error("SECURITY: Webhook IP not in allowlist. IP={}, path={}", sourceIp, path);
             // PCI DSS: Log IP rejection to security audit trail
-            pciDssLogger.logIpRejected(path, sourceIp, "PawaPay webhook allowlist");
+            pciDssLogger.logIpRejected(path, sourceIp, "PawaPay webhook allowlist", clock.instant());
             paymentMetrics.recordWebhookIpRejected(sourceIp);
             paymentMetrics.stopWebhookTimer(webhookTimer, "deposit", "ip_rejected");
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -170,68 +171,39 @@ public class PawaPayWebhookController {
         // PCI DSS: Log webhook received to audit trail
         pciDssLogger.logWebhookReceived("deposit", payload.depositId(), payload.status(), sourceIp, signatureValid);
 
-        // Check for duplicate webhook (OWASP: Prevent replay/duplicate processing)
-        return webhookDeduplicationService.tryMarkAsProcessed("deposit", payload.depositId(), payload.status())
-                .flatMap(isFirstTime -> {
-                    if (!isFirstTime) {
-                        log.warn("WEBHOOK: Duplicate deposit callback detected: depositId={}, status={}",
-                                payload.depositId(), payload.status());
-                        paymentMetrics.stopWebhookTimer(webhookTimer, "deposit", "duplicate");
-                        return Mono.just(ResponseEntity.ok(Map.of(
-                                "message", "Callback already processed",
-                                "duplicate", "true"
-                        )));
-                    }
-
-                    // Process webhook via PaymentAttemptService
-                    return paymentAttemptService.processWebhook(
-                        payload.depositId(),
-                        payload.status(),
-                        payload.providerTransactionId(),
-                        payload.failureReason() != null ? payload.failureReason().failureCode() : null,
-                        payload.failureReason() != null ? payload.failureReason().failureMessage() : null,
-                        rawBody,
-                        sourceIp,
-                        signatureValid
-                )
-                            .map(attempt -> {
-                                log.info("WEBHOOK: Deposit callback processed: depositId={}, newStatus={}",
-                                        attempt.getDepositId(), attempt.getStatus());
-                                paymentMetrics.stopWebhookTimer(webhookTimer, "deposit", "success");
-                                return ResponseEntity.ok(Map.of("message", "Callback processed successfully"));
-                            })
-                            .onErrorResume(error -> {
-                                log.error("WEBHOOK: Failed to process deposit callback: depositId={}",
-                                        payload.depositId(), error);
-                                paymentMetrics.stopWebhookTimer(webhookTimer, "deposit", "error");
-                                // Clear the deduplication marker so a retry of this callback is
-                                // not suppressed as a duplicate.
-                                //
-                                // ET-PLT-001 R1 / ET-PAY-002 R2. This was previously fire-and-forget
-                                // — `.subscribe()` followed by an immediate 200. Three things went
-                                // wrong at once: the response was returned before the clear had run,
-                                // a failure to clear went nowhere, and PawaPay was told "success" and
-                                // stopped retrying. A marker left set then suppresses the genuine
-                                // retry, so the callback is never processed and the money is in
-                                // flight with nobody looking for it.
-                                //
-                                // Composed instead: the clear is awaited, and its own failure is
-                                // logged rather than swallowed. The 200 still returns either way,
-                                // deliberately — PawaPay must not retry excessively, and the error
-                                // is already recorded for manual investigation.
-                                return webhookDeduplicationService
-                                        .clearProcessingMarker("deposit", payload.depositId(), payload.status())
-                                        .onErrorResume(clearError -> {
-                                            log.error("WEBHOOK: failed to clear deduplication marker; "
-                                                            + "a retry of this callback may be suppressed: depositId={}",
-                                                    payload.depositId(), clearError);
-                                            return Mono.empty();
-                                        })
-                                        .then(Mono.just(ResponseEntity.ok(Map.of(
-                                                "message", "Callback received",
-                                                "warning", "Processing error occurred"
-                                        ))));
-                            });
+        // The callback is evidence, not an outcome. The outcome service asks
+        // the provider's status API about this deposit, applies that answer once by compare-and-set,
+        // and drives the purchase. A replayed callback finds the intent settled and changes nothing,
+        // so no separate marker is needed to suppress duplicates.
+        return paymentOutcomeService.verifyAndApply(payload.depositId())
+                // The purchase's workflow checks now rather than at its next poll.
+                .flatMap(intent -> purchaseProcess.notifyPayment(intent.getReservationId(), intent.getId()).thenReturn(intent))
+                .map(intent -> {
+                    log.info("WEBHOOK: deposit {} verified — intent {} is {}",
+                            payload.depositId(), intent.getId(), intent.getStatus());
+                    paymentMetrics.stopWebhookTimer(webhookTimer, "deposit", "success");
+                    return ResponseEntity.ok(Map.of(
+                            "message", "Callback processed successfully",
+                            "status", intent.getStatus().name()));
+                })
+                .onErrorResume(PaymentOutcomeService.UnknownDeposit.class, unknown -> {
+                    // An unmatched callback is answered 200 and logged; the provider
+                    // reconciliation is what finds money the platform cannot attribute.
+                    log.warn("WEBHOOK: deposit callback names no known intent: depositId={}",
+                            payload.depositId());
+                    paymentMetrics.stopWebhookTimer(webhookTimer, "deposit", "orphaned");
+                    return Mono.just(ResponseEntity.ok(Map.of(
+                            "message", "Callback received",
+                            "status", "ORPHANED")));
+                })
+                .onErrorResume(error -> {
+                    // Verification needs the provider's status API. When it is unavailable the
+                    // answer is 503, so the provider redelivers; applying a claimed status on faith
+                    // would let a forged callback move money.
+                    log.error("WEBHOOK: deposit {} could not be verified now", payload.depositId(), error);
+                    paymentMetrics.stopWebhookTimer(webhookTimer, "deposit", "error");
+                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(Map.of("error", "Verification unavailable")));
                 });
     }
 
@@ -280,7 +252,7 @@ public class PawaPayWebhookController {
         if (!pawaPayProperties.getWebhook().isIpAllowed(sourceIp)) {
             log.error("SECURITY: Webhook IP not in allowlist. IP={}, path={}", sourceIp, path);
             // PCI DSS: Log IP rejection to security audit trail
-            pciDssLogger.logIpRejected(path, sourceIp, "PawaPay webhook allowlist");
+            pciDssLogger.logIpRejected(path, sourceIp, "PawaPay webhook allowlist", clock.instant());
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "IP not allowed")));
         }
@@ -314,20 +286,18 @@ public class PawaPayWebhookController {
         // PCI DSS: Log webhook received to audit trail
         pciDssLogger.logWebhookReceived("refund", payload.refundId(), payload.status(), sourceIp, signatureValid);
 
-        return refundService.handleRefundCallback(
-                        payload.refundId(),
-                        payload.status(),
-                        payload.providerTransactionId(),
-                        payload.failureReason() != null ? payload.failureReason().failureCode() : null,
-                        payload.failureReason() != null ? payload.failureReason().failureMessage() : null
-                )
-                .map(rr -> ResponseEntity.ok(Map.of("message", "Callback processed successfully")))
+        // The callback wakes the ticket's refund workflow, which asks the provider's status
+        // API; the callback body never completes or fails a refund by itself.
+        return refundProcess.providerCallback(payload.refundId(), payload.status())
+                .thenReturn(ResponseEntity.ok(Map.of("message", "Callback processed successfully")))
+                .onErrorResume(com.pml.booking.workflow.refund.RefundProcess.UnknownRefund.class, unknown -> {
+                    log.warn("WEBHOOK: refund callback names no refund sent here: {}", payload.refundId());
+                    return Mono.just(ResponseEntity.ok(Map.of("status", "ORPHANED")));
+                })
                 .onErrorResume(error -> {
-                    log.error("WEBHOOK: Failed to process refund callback: {}", payload.refundId(), error);
-                    return Mono.just(ResponseEntity.ok(Map.of(
-                            "message", "Callback received",
-                            "warning", "Processing error occurred"
-                    )));
+                    log.error("WEBHOOK: refund callback could not reach its workflow: {}", error.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(Map.of("error", "Refund verification unavailable")));
                 });
     }
 
@@ -377,7 +347,7 @@ public class PawaPayWebhookController {
         if (!pawaPayProperties.getWebhook().isIpAllowed(sourceIp)) {
             log.error("SECURITY: Webhook IP not in allowlist. IP={}, path={}", sourceIp, path);
             // PCI DSS: Log IP rejection to security audit trail
-            pciDssLogger.logIpRejected(path, sourceIp, "PawaPay webhook allowlist");
+            pciDssLogger.logIpRejected(path, sourceIp, "PawaPay webhook allowlist", clock.instant());
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "IP not allowed")));
         }
@@ -411,10 +381,19 @@ public class PawaPayWebhookController {
         // PCI DSS: Log webhook received to audit trail
         pciDssLogger.logWebhookReceived("payout", payload.payoutId(), payload.status(), sourceIp, signatureValid);
 
-        // Payout completion is handled by identity service via event
-        // We publish an event for cross-service communication
-        // TODO: Publish PayoutCompletedEvent to Azure Service Bus
-        return Mono.just(ResponseEntity.ok(Map.of("message", "Callback processed successfully")));
+        // The callback wakes the payout's workflow, which asks the provider's status
+        // API what happened; the callback body itself never settles or fails a payout.
+        return payoutProcess.providerCallback(payload.payoutId(), payload.status())
+                .thenReturn(ResponseEntity.ok(Map.of("message", "Callback processed successfully")))
+                .onErrorResume(com.pml.booking.workflow.payout.PayoutProcess.UnknownPayout.class, unknown -> {
+                    log.warn("WEBHOOK: payout callback names no payout begun here: {}", payload.payoutId());
+                    return Mono.just(ResponseEntity.ok(Map.of("status", "ORPHANED")));
+                })
+                .onErrorResume(error -> {
+                    log.error("WEBHOOK: payout callback could not reach its workflow: {}", error.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(Map.of("error", "Settlement unavailable")));
+                });
     }
 
     // ========================================================================

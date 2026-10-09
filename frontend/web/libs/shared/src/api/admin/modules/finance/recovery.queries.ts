@@ -60,7 +60,7 @@ export const STUCK_PAYOUT_REQUESTS = gql`
   ${PAYOUT_LIST_FIELDS}
   ${PAYOUT_RECOVERY_FIELDS}
   query StuckPayoutRequests($pagination: OffsetPaginationInput) {
-    stuckPayoutRequestsOffsetPagination(pagination: $pagination) {
+    stuckPayoutRequests(pagination: $pagination) {
       data {
         ...PayoutListFields
         ...PayoutRecoveryFields
@@ -81,7 +81,7 @@ export const RETRYABLE_PAYOUT_REQUESTS = gql`
   ${PAYOUT_LIST_FIELDS}
   ${PAYOUT_RECOVERY_FIELDS}
   query RetryablePayoutRequests($pagination: OffsetPaginationInput) {
-    retryablePayoutRequestsOffsetPagination(pagination: $pagination) {
+    retryablePayoutRequests(pagination: $pagination) {
       data {
         ...PayoutListFields
         ...PayoutRecoveryFields
@@ -105,7 +105,7 @@ export const PAYOUTS_FOR_REVIEW = gql`
     $reviewStatus: PayoutReviewStatus
     $pagination: OffsetPaginationInput
   ) {
-    payoutRequestsForReviewOffsetPagination(
+    payoutRequestsForReview(
       reviewStatus: $reviewStatus
       pagination: $pagination
     ) {
@@ -121,40 +121,6 @@ export const PAYOUTS_FOR_REVIEW = gql`
         hasNextPage
         hasPreviousPage
       }
-    }
-  }
-`;
-
-/**
- * Retry a payout the platform believes is recoverable.
- *
- * Idempotency is enforced by the unique sparse index on `idempotencyKey` — a
- * double-click cannot produce a second payout of the same money.
- */
-export const RETRY_PAYOUT_REQUEST = gql`
-  mutation RetryPayoutRequest($payoutRequestId: ID!) {
-    retryPayoutRequest(payoutRequestId: $payoutRequestId) {
-      success
-      message
-      errors
-    }
-  }
-`;
-
-export const MARK_PAYOUT_FOR_REVIEW = gql`
-  mutation MarkPayoutForReview(
-    $payoutRequestId: ID!
-    $issueType: PayoutIssueType!
-    $notes: String
-  ) {
-    markPayoutForReview(
-      payoutRequestId: $payoutRequestId
-      issueType: $issueType
-      notes: $notes
-    ) {
-      success
-      message
-      errors
     }
   }
 `;

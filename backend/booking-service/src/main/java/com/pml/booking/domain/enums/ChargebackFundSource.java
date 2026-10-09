@@ -205,15 +205,6 @@ public enum ChargebackFundSource {
     }
 
     /**
-     * Checks if this source impacts platform P&L directly.
-     *
-     * @return true if this source reduces platform profit
-     */
-    public boolean impactsPlatformPnL() {
-        return this == PLATFORM_RESERVE || this == WRITE_OFF;
-    }
-
-    /**
      * Checks if this is a true recovery (vs. expense recognition).
      *
      * <p>Write-off is not really "recovery" - it's acknowledging a loss.</p>

@@ -11,16 +11,15 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * The only writer permitted to move a reservation's status.
  *
  * <h2>Why a compare-and-set rather than read-check-save</h2>
- * Two writers race for the same reservation <em>by design</em>. ET-TKT-001 §2 says
- * so outright: the expiry sweep and an arriving payment callback will both reach a
+ * Two writers race for the same reservation <em>by design</em>: the expiry timer and an arriving payment callback will both reach a
  * hold that lapsed while the buyer was entering their PIN, and the TTL index and
- * the sweep will both fire for the same expired row. A read, then a legality
+ * the timer will both fire for the same expired row. A read, then a legality
  * check, then a save leaves a window between the read and the save in which the
  * other writer commits — and both writers then believe they moved it, so the
  * inventory is returned twice.
@@ -40,7 +39,6 @@ import java.time.LocalDateTime;
  * raise: that is a caller bug, not a race.
  *
  * @see ReservationStateMachine for which pairs are legal
- * @see <a href="file:../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001</a>
  */
 @Slf4j
 @Component
@@ -48,6 +46,9 @@ import java.time.LocalDateTime;
 public class ReservationTransitions {
 
     private final ReactiveMongoTemplate mongoTemplate;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
 
     /**
      * Applies {@code action} to the reservation, if and only if it is still in
@@ -58,14 +59,14 @@ public class ReservationTransitions {
      * @return {@code true} when this caller made the move and therefore owns the
      *         follow-up work; {@code false} when another writer got there first
      * @throws ReservationStateMachine.IllegalTransitionException when the pair is
-     *         not one of ET-TKT-001 R6's seven
+     *         not one of the seven legal transitions
      */
     public Mono<Boolean> compareAndSet(String reservationId,
                                        ReservationStatus from,
                                        ReservationStateMachine.Action action,
                                        String reason) {
         ReservationStatus to = ReservationStateMachine.require(from, action);
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = clock.instant();
 
         Update update = new Update()
                 .set("status", to)
@@ -77,12 +78,17 @@ public class ReservationTransitions {
                         update,
                         TicketReservation.class)
                 .map(result -> result.getModifiedCount() == 1)
+                // The booking follows the reservation in the same transaction, when there is one
+                // (the confirmation runs inside it), so the two never disagree about the outcome.
+                .flatMap(moved -> moved
+                        ? com.pml.booking.service.BookingStore.reservationMoved(mongoTemplate, reservationId, to, now).thenReturn(true)
+                        : Mono.just(false))
                 .doOnNext(moved -> {
                     if (moved) {
                         log.info("Reservation {}: {} -> {} ({})", reservationId, from, to, action);
                     } else {
                         // Not a warning. This is the designed outcome of a race
-                        // the spec expects to happen, and logging it as a problem
+                        // that is expected to happen, and logging it as a problem
                         // trains people to ignore the log.
                         log.debug("Reservation {} was no longer {} — another writer resolved it first",
                                 reservationId, from);
@@ -102,10 +108,10 @@ public class ReservationTransitions {
      *
      * <p>Each terminal state gets its own timestamp field rather than sharing a
      * {@code resolvedAt}, so that "expired unpaid" and "payment failed" stay
-     * separable in the reports — which is the whole reason ET-TKT-001 §4 keeps
-     * {@code EXPIRED} and {@code RELEASED} as distinct states.
+     * separable in the reports — which is the whole reason {@code EXPIRED} and
+     * {@code RELEASED} are distinct states.
      */
-    private void stampTerminal(Update update, ReservationStatus to, LocalDateTime now, String reason) {
+    private void stampTerminal(Update update, ReservationStatus to, Instant now, String reason) {
         switch (to) {
             case CONFIRMED -> update.set("confirmedAt", now);
             case RELEASED, EXPIRED -> update.set("releasedAt", now);

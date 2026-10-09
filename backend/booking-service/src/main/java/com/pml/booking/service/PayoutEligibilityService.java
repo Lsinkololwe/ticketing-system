@@ -12,7 +12,6 @@ import reactor.core.publisher.Mono;
  * request the server then rejects.
  *
  * @see PayoutEligibility
- * @see <a href="file:../../../../../../../specs/finance/003-payouts-and-settlement/spec.md">ET-FIN-003</a>
  */
 public interface PayoutEligibilityService {
 
@@ -24,13 +23,4 @@ public interface PayoutEligibilityService {
      * date.
      */
     Mono<PayoutEligibility> evaluate(String eventId, String organizerId);
-
-    /**
-     * Evaluate for the escrow account a payout request names.
-     *
-     * <p>The request path knows the escrow id, not the event id, and looking
-     * the event up only to look the escrow back up again would let the two
-     * diverge under a concurrent write.
-     */
-    Mono<PayoutEligibility> evaluateForEscrow(String escrowAccountId, String organizerId);
 }

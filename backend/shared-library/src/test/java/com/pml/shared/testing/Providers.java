@@ -19,7 +19,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
  * Every external provider, stubbed — and stubbed <strong>failure-first</strong>.
  *
  * <h2>Why failure-first</h2>
- * ET-PLT-006 R6. PawaPay's happy path is the case that already works; nobody ships a
+ * PawaPay's happy path is the case that already works; nobody ships a
  * checkout that cannot take a successful payment. What breaks the money is the other six:
  * a 503 during on-sale, a connection reset, a read timeout, the same callback delivered
  * twice, a callback that arrives <em>before</em> the call that triggered it has returned,
@@ -29,18 +29,15 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
  * than hand-rolling a stub and quietly getting it slightly wrong.
  *
  * <h2>No test reaches a real provider</h2>
- * R6's first acceptance box. PawaPay, the WhatsApp and SMS senders, S3 and the Keycloak
- * Admin API all terminate here.
+ * PawaPay, the WhatsApp and SMS senders, S3 and the Keycloak Admin API all terminate here.
  *
- * <p><strong>Open box:</strong> R6 also requires fixtures <em>recorded from real sandbox
- * responses, not hand-written from documentation</em>. The bodies below are shaped
- * placeholders — they are structurally right and they are not recordings. That box stays
- * unticked until someone records against the PawaPay sandbox, and it should not be ticked
- * on the strength of this class.
+ * <p><strong>Limitation:</strong> the response bodies below are shaped placeholders — they are
+ * structurally right and they are not recordings from a real sandbox. Fixtures recorded
+ * against the PawaPay sandbox would be stronger evidence than anything this class provides.
  */
 public final class Providers implements AutoCloseable {
 
-    /** The providers that terminate here (R6). */
+    /** The providers that terminate here. */
     public enum Provider {
         PAWAPAY, WHATSAPP, SMS, S3, KEYCLOAK_ADMIN
     }
@@ -114,7 +111,7 @@ public final class Providers implements AutoCloseable {
     }
 
     /**
-     * 6 — the status never leaves {@code PENDING}. ET-PAY-001 R5's never-answering provider:
+     * 6 — the status never leaves {@code PENDING}. The never-answering provider:
      * the seat stays held, the payment escalates, and no refund is attempted, because the
      * money may still arrive.
      */

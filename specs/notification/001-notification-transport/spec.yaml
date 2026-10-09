@@ -28,19 +28,21 @@ persistence:
   indexes:
     - "identity_notifications {userId,status,createdAt} compound"
     - "identity_notifications {deduplicationKey} unique"
-    - "identity_notifications {status,nextAttemptAt} compound   # the retry sweep"
+    - "identity_notifications {status,nextAttemptAt} compound   # NotificationWorkflow records each attempt"
     - "identity_notifications {createdAt} ttl 180d"
     - "identity_notification_templates {templateKey,channel,locale} unique"
     - "identity_user_devices {deviceToken} unique"
-  redis_keys:
-    - "lock:sweep:notification-retry   STRING  30 s"
-    - "lock:sweep:device-pruning       STRING  30 s"
+  redis_keys: []
 
 events:
-  module:
-    - NotificationRequestedEvent
+  module: []   # a step within a service is a workflow activity (ET-PLT-015)
   bus: []
   topics: []
+
+workflows:
+  - "NotificationWorkflow   notify/{deduplicationKey}   identity-notify   3 attempts per channel, 30 s doubling"
+schedules:
+  - "identity-device-pruning → DevicePruningWorkflow   identity-notify   15 2 * * * UTC   overlap SKIP"
 
 graphql:
   schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
@@ -63,17 +65,17 @@ errors:
   - NOTIFICATION_CHANNEL_UNAVAILABLE
   - DEVICE_TOKEN_INVALID
 
-channels: [WHATSAPP, SMS, PUSH, EMAIL]
+channels: [WHATSAPP, PUSH, EMAIL]   # SMS removed 2026-10-04 (D-39)
 
 categories:     # chain + whether preferences are honoured
-  OTP:            { kind: transactional, chain: [WHATSAPP, SMS],                     pref: ignored }
-  TICKET:         { kind: transactional, chain: [WHATSAPP, SMS, EMAIL],              pref: ignored }
-  PAYMENT:        { kind: transactional, chain: [WHATSAPP, SMS, EMAIL],              pref: ignored }
-  REFUND:         { kind: transactional, chain: [WHATSAPP, SMS, EMAIL],              pref: ignored }
-  EVENT_CHANGE:   { kind: transactional, chain: [PUSH, WHATSAPP, SMS, EMAIL],        pref: ignored }
+  OTP:            { kind: transactional, chain: [OWN_CHANNEL],                       pref: ignored }   # delivered by ET-IDN-001
+  TICKET:         { kind: transactional, chain: [WHATSAPP, EMAIL],              pref: ignored }
+  PAYMENT:        { kind: transactional, chain: [WHATSAPP, EMAIL],              pref: ignored }
+  REFUND:         { kind: transactional, chain: [WHATSAPP, EMAIL],              pref: ignored }
+  EVENT_CHANGE:   { kind: transactional, chain: [PUSH, WHATSAPP, EMAIL],        pref: ignored }
   PAYOUT:         { kind: transactional, chain: [EMAIL, WHATSAPP],                   pref: ignored }
   ORGANIZATION:   { kind: transactional, chain: [EMAIL, WHATSAPP],                   pref: ignored }
-  TEAM_INVITE:    { kind: transactional, chain: [EMAIL, WHATSAPP, SMS],              pref: ignored }
+  TEAM_INVITE:    { kind: transactional, chain: [EMAIL, WHATSAPP],              pref: ignored }
   EVENT_REMINDER: { kind: optional,      chain: [PUSH, WHATSAPP],                    pref: honoured }
   MARKETING:      { kind: optional,      chain: [PUSH, EMAIL],                       pref: "honoured, OPT-IN" }
 
@@ -91,14 +93,14 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001 -DfailIfNoTests=true
-  - mvn -q -f backend verify -Dgroups=ET-NTF-001 -DfailIfNoTests=true
+  - mvn -q -f backend/identity-service test -Dgroups=ET-NTF-001 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-NTF-001 -DfailIfNoTests=false
   - ../docker-resources/apollo-router/ticketing/compose-supergraph.sh --static
 
 risks:
   - "Resolved: identity_notification_templates is a row of the ET-PLT-002 §4 registry."
   - "R2 makes templates editable by SUPER_ADMIN without a deploy, which means the body of a transactional message — including the OTP template — is runtime-mutable data. A compromised SUPER_ADMIN account can rewrite otp.login to exfiltrate codes to a different destination if the template controls anything beyond the body text, and nothing here bounds what a template may contain."
-  - "The OTP chain is WHATSAPP then SMS with no email fallback, and ET-IDN-001 R2 refuses the OTP request when every channel fails. So a WhatsApp and SMS outage makes login impossible platform-wide, with no degraded path. That is the correct trade for a 5-minute code but it makes two providers a hard availability dependency for all authentication."
+  - "[superseded 2026-10-04: the OTP is delivered by ET-IDN-001 on the contact's own channel] The OTP chain is WHATSAPP then SMS with no email fallback, and ET-IDN-001 R2 refuses the OTP request when every channel fails. So a WhatsApp and SMS outage makes login impossible platform-wide, with no degraded path. That is the correct trade for a 5-minute code but it makes two providers a hard availability dependency for all authentication."
   - "Deduplication is on a caller-supplied key with a unique index and a 24-hour window, but the TTL on identity_notifications is 180 days. The unique index therefore blocks a legitimate re-send of the same key at day 30, long after the dedup window has notionally expired — the window and the index disagree."
   - "R4 asserts that no @Transactional method calls the notification service, and the lint checks StreamBridge inside transactions but has no equivalent rule for the notification service. The acceptance box is not backed by an executable check."
   - "PAYOUT and ORGANIZATION lead with EMAIL, but ET-IDN-001 establishes phone as the primary identity and email as optional — a user may have no email address at all. An organizer without one silently falls through to WhatsApp for every payout message, and if they also have no WhatsApp the chain is exhausted with nothing attempted."

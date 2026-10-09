@@ -83,54 +83,10 @@ public interface OrganizationOnboardingService {
     Mono<Organization> upgradeToBusinessOrganization(String organizationId, String businessName);
 
     /**
-     * Check if a user has an organization.
-     *
-     * @param userId The user's Keycloak ID
-     * @return true if the user has an organization
-     */
-    Mono<Boolean> hasOrganization(String userId);
-
-    /**
      * Get the organization for a user, if it exists.
      *
      * @param userId The user's Keycloak ID
      * @return The organization, or empty if user has no organization
      */
     Mono<Organization> findOrganizationByOwnerId(String userId);
-
-    // =========================================================================
-    // ADMIN OPERATIONS
-    // =========================================================================
-
-    /**
-     * Approve an organization application.
-     * Changes status from PENDING_REVIEW to APPROVED.
-     *
-     * @param organizationId The organization ID
-     * @param adminId The admin's Keycloak ID
-     * @return The approved organization
-     */
-    Mono<Organization> approve(String organizationId, String adminId);
-
-    /**
-     * Request changes to an organization application.
-     * Changes status from PENDING_REVIEW to CHANGES_REQUESTED.
-     *
-     * @param organizationId The organization ID
-     * @param reason The reason for requesting changes
-     * @param adminId The admin's Keycloak ID
-     * @return The organization with CHANGES_REQUESTED status
-     */
-    Mono<Organization> requestChanges(String organizationId, String reason, String adminId);
-
-    /**
-     * Reject an organization application.
-     * Changes status to REJECTED.
-     *
-     * @param organizationId The organization ID
-     * @param reason The reason for rejection
-     * @param adminId The admin's Keycloak ID
-     * @return The rejected organization
-     */
-    Mono<Organization> reject(String organizationId, String reason, String adminId);
 }

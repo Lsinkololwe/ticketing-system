@@ -112,7 +112,8 @@ public class InternalInventoryController {
         log.info("Commit inventory request: tier={}, qty={}, reservation={}",
                 tierId, request.quantity(), request.reservationId());
 
-        return inventoryService.commitReservedToSold(tierId, request.quantity(), request.reservationId())
+        return inventoryService.commitReservedToSold(tierId, request.quantity(), request.reservationId(),
+                        request.grossAmount(), request.commissionAmount())
                 .map(result -> {
                     if (result.isSuccess()) {
                         return ResponseEntity.ok(result);
@@ -139,7 +140,8 @@ public class InternalInventoryController {
         log.info("Restore inventory request: tier={}, qty={}, reason={}",
                 tierId, request.quantity(), request.reason());
 
-        return inventoryService.restoreSoldInventory(tierId, request.quantity(), request.reason())
+        return inventoryService.restoreSoldInventory(tierId, request.quantity(), request.reason(),
+                        request.grossAmount(), request.commissionAmount())
                 .map(result -> {
                     if (result.isSuccess()) {
                         return ResponseEntity.ok(result);
@@ -147,25 +149,5 @@ public class InternalInventoryController {
                         return ResponseEntity.badRequest().body(result);
                     }
                 });
-    }
-
-    /**
-     * Get current inventory snapshot.
-     *
-     * <p>Returns current state of inventory for monitoring/debugging.</p>
-     *
-     * @param tierId Ticket tier ID
-     * @return Inventory snapshot
-     */
-    @GetMapping("/{tierId}/snapshot")
-    public Mono<ResponseEntity<InventoryService.InventorySnapshot>> getInventorySnapshot(
-            @PathVariable String tierId) {
-
-        log.debug("Get inventory snapshot request: tier={}", tierId);
-
-        return inventoryService.getInventorySnapshot(tierId)
-                .map(ResponseEntity::ok)
-                .onErrorResume(IllegalArgumentException.class,
-                        e -> Mono.just(ResponseEntity.notFound().build()));
     }
 }

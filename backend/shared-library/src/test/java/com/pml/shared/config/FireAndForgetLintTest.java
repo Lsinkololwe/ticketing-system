@@ -17,24 +17,25 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ET-PLT-001 R1 — no fire-and-forget subscription.
+ * No fire-and-forget subscription.
  *
  * <h2>Why bare {@code .subscribe()} specifically</h2>
- * CONVENTIONS §1 names it: <em>"Fire-and-forget: the response is sent before the write happens
- * and the error goes nowhere."</em> Both halves are real, and the second is the one that hurts.
+ * Fire-and-forget means the response is sent before the write happens and the error goes
+ * nowhere. Both halves are real, and the second is the one that hurts.
  *
  * <p>Of the shapes Reactor offers, {@code .subscribe()} with no arguments is the only one where
  * a failure provably has nowhere to go — {@code .subscribe(onNext, onError)} at least hands the
  * error somewhere. That makes it a line a lint can actually draw, rather than a judgement about
  * whether a given lambda is "enough".
  *
- * <h2>The one this caught</h2>
- * {@code PawaPayWebhookController} cleared a webhook deduplication marker fire-and-forget inside
- * {@code onErrorResume}, then returned HTTP 200 immediately. Three failures compounded: the
- * response returned before the clear ran, a failed clear went nowhere, and PawaPay was told
- * "success" and stopped retrying. A marker left set then suppresses the genuine retry as a
+ * <h2>What it costs</h2>
+ * A webhook controller that clears its deduplication marker fire-and-forget inside
+ * {@code onErrorResume} and returns HTTP 200 immediately compounds three failures: the response
+ * returns before the clear runs, a failed clear goes nowhere, and PawaPay is told "success" and
+ * stops retrying. A marker left set then suppresses the genuine retry as a
  * duplicate — so the callback is never processed, and money is in flight with nobody looking
- * for it. Composed now, with the clear awaited and its own failure logged.
+ * for it. {@code PawaPayWebhookController} composes the clear, awaits it, and logs its own
+ * failure.
  *
  * <h2>Not every subscription is a defect</h2>
  * Establishing a long-lived consumer <em>is</em> subscribing. {@code AzureServiceBusConfig} wires
@@ -45,8 +46,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * judgement a regex should not be trusted to make.
  *
  * <p>So this is a ratchet over a triaged backlog, not a rule that pretends the backlog is
- * uniform. The triage lives in {@code specs/tasks/ET-PLT-001.md}.
+ * uniform.
  */
+@Tag("L1")
 @Tag("ET-PLT-001")
 @DisplayName("ET-PLT-001-R1 · no fire-and-forget subscription")
 class FireAndForgetLintTest {
@@ -57,18 +59,15 @@ class FireAndForgetLintTest {
     private static final Pattern FIRE_AND_FORGET = Pattern.compile("\\.subscribe\\s*\\(\\s*\\)");
 
     /**
-     * Frozen 2026-08-18, after the webhook fix took booking from 14 to 13. May only fall.
+     * The most bare subscriptions each module may hold. May only fall, and must be lowered when it does.
      *
-     * <p>Remaining, by kind: bus and boot wiring in {@code AzureServiceBusConfig} (5),
-     * {@code MongoSchemaValidationConfig} (1) and {@code RevocationCacheWarmer} (1) — arguably
-     * legitimate; {@code ReconciliationScheduler} (4), {@code FinancialJobListener} (3) and
-     * {@code ChargebackEventListener} (1) — scheduled and after-commit work whose errors vanish,
-     * owned by ET-FIN-005, ET-PLT-003 and ET-ADM-003.
+     * <p>The remaining ones are boot-time wiring in shared-library and identity-service, where no
+     * caller exists to hand an error to.</p>
      */
     private static final Map<String, Integer> BUDGET = new LinkedHashMap<>(Map.of(
-            "shared-library", 1,
+            "shared-library", 0,
             "catalog-service", 0,
-            "booking-service", 13,
+            "booking-service", 0,
             "identity-service", 1,
             "api-gateway", 0,
             "keycloak-extensions", 0));

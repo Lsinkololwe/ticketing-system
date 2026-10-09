@@ -1,5 +1,7 @@
 # Terminology Migration Guide
 
+> **HISTORICAL — superseded by `specs/tasks` FE-* items; kept for reference. Role names in this file are pre-spec** (see `specs/` for the current role and permission vocabulary). Unticked boxes here are not a backlog.
+
 ## Overview
 
 This document outlines the migration from e-commerce terminology ("Order") to event-specific terminology ("Booking") across the entire ticketing system.

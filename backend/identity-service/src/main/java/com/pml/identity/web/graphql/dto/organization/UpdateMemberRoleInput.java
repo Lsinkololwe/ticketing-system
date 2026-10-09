@@ -8,7 +8,7 @@ import java.util.Set;
  * Input for updating a member's role and permissions.
  */
 public record UpdateMemberRoleInput(
-        OrganizationRole role,
+        OrganizationRole newRole,
         Set<String> customPermissions,
         Set<String> deniedPermissions
 ) {}

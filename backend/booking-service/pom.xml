@@ -105,13 +105,6 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
-        <!-- Spring Modulith -->
-        <!-- JDBC Event Publication Registry Starter (for guaranteed event delivery)
-             Uses PostgreSQL as a separate database for event tracking.
-             This works with WebFlux because event publication uses blocking JDBC
-             while business data stays in reactive MongoDB.
-             The starter auto-configures EventSerializer and all required beans. -->
-
         <!-- JDBC and PostgreSQL for Event Publication Registry -->
 
         <!-- Azure Service Bus for cross-service events -->
@@ -159,6 +152,25 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            ET-PLT-001 R7 · the JWT rejection contract.
+
+            StubIssuer and JwtRejectionContract live in shared-library's test-jar so that the
+            four checks are asserted identically here, in booking and in identity. Three
+            copies of four assertions is how one of them quietly ends up checking three.
+        -->
+        <dependency>
+            <groupId>com.pml</groupId>
+            <artifactId>shared-library</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-test</artifactId>
@@ -186,6 +198,25 @@
             <artifactId>spring-boot-devtools</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- ET-PLT-015 · durable execution: workflow client, worker factory, auto-discovery -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-spring-boot-starter</artifactId>
+            <!-- The in-process test server belongs on the test classpath only; it is declared
+                 below at test scope, and the starter's auto-configuration is conditional on it. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>io.temporal</groupId>
+                    <artifactId>temporal-testing</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- ET-PLT-006 layer 3 · time-skipping TestWorkflowEnvironment -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -206,7 +237,7 @@
                         engine since 19.03. Override with -Ddocker.api.version=
                         if a newer feature is ever needed.
                     -->
-                    <argLine>-Dapi.version=${docker.api.version}</argLine>
+                    <argLine>@{argLine} -Dapi.version=${docker.api.version}</argLine>
                 </configuration>
             </plugin>
             <plugin>

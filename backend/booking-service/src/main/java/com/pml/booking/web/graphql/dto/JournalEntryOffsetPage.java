@@ -8,13 +8,13 @@ import java.util.List;
  * Offset-based pagination for Journal Entries.
  *
  * @param data List of entries for the current page
- * @param paginationInfo Pagination metadata
+ * @param pagination Pagination metadata
  *
  * @since 1.0.0
  */
 public record JournalEntryOffsetPage(
     List<JournalEntry> data,
-    PaginationInfo paginationInfo
+    PaginationInfo pagination
 ) {
     /**
      * Create an empty page.

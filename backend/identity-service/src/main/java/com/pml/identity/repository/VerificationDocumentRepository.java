@@ -1,5 +1,6 @@
 package com.pml.identity.repository;
 
+import java.util.Collection;
 import com.pml.shared.constants.DocumentStatus;
 import com.pml.identity.domain.model.VerificationDocument;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
@@ -44,17 +45,9 @@ public interface VerificationDocumentRepository extends ReactiveMongoRepository<
     Mono<Long> countByOrganizationIdAndStatus(String organizationId, DocumentStatus status);
 
     /**
-     * Delete all documents for an organization
-     */
-    Mono<Void> deleteByOrganizationId(String organizationId);
-
-    /**
-     * Find all pending documents (for admin review queue)
-     */
-    Flux<VerificationDocument> findByStatusOrderByUploadedAtAsc(DocumentStatus status);
-
-    /**
      * Find documents by status
      */
     Flux<VerificationDocument> findByStatus(DocumentStatus status);
+
+    Mono<VerificationDocument> findByIdAndOrganizationIdIn(String id, Collection<String> organizationIds);
 }

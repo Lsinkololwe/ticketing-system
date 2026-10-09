@@ -26,8 +26,6 @@ import java.util.Set;
  * request path and this query cannot drift apart, and so the rules can be
  * tested without a database. What this class contributes is the four reads and
  * the platform minimum.
- *
- * @see <a href="file:../../../../../../../specs/finance/003-payouts-and-settlement/spec.md">ET-FIN-003</a>
  */
 @Slf4j
 @Service
@@ -56,38 +54,35 @@ public class PayoutEligibilityServiceImpl implements PayoutEligibilityService {
     private final PayoutRequestRepository payoutRequestRepository;
     private final BigDecimal minimumPayout;
 
+    /** The injected platform clock. */
+    private final java.time.Clock clock;
     public PayoutEligibilityServiceImpl(
             EventEscrowAccountRepository escrowRepository,
             ChargebackRecordRepository chargebackRepository,
             PayoutRequestRepository payoutRequestRepository,
-            @Value("${payment.escrow.minimum-payout-amount:10.00}") BigDecimal minimumPayout) {
+            @Value("${payment.escrow.minimum-payout-amount:10.00}") BigDecimal minimumPayout,
+            java.time.Clock clock) {
         this.escrowRepository = escrowRepository;
         this.chargebackRepository = chargebackRepository;
         this.payoutRequestRepository = payoutRequestRepository;
         this.minimumPayout = minimumPayout;
+        this.clock = clock;
     }
 
     @Override
     public Mono<PayoutEligibility> evaluate(String eventId, String organizerId) {
         return escrowRepository.findByEventId(eventId)
-                .flatMap(escrow -> evaluateFor(escrow, organizerId))
-                .switchIfEmpty(Mono.fromSupplier(this::noEscrow));
+                .flatMap(escrow -> evaluateFor(escrow, organizerId, clock.instant()))
+                .switchIfEmpty(Mono.fromSupplier(() -> noEscrow(clock.instant())));
     }
 
-    @Override
-    public Mono<PayoutEligibility> evaluateForEscrow(String escrowAccountId, String organizerId) {
-        return escrowRepository.findById(escrowAccountId)
-                .flatMap(escrow -> evaluateFor(escrow, organizerId))
-                .switchIfEmpty(Mono.fromSupplier(this::noEscrow));
-    }
-
-    private Mono<PayoutEligibility> evaluateFor(EventEscrowAccount escrow, String organizerId) {
+    private Mono<PayoutEligibility> evaluateFor(EventEscrowAccount escrow, String organizerId, Instant now) {
         // An event belonging to someone else answers the same as an event that
         // does not exist. Anything more specific — "not yours" versus "no such
         // event" — tells a stranger which event ids are real and what their
         // hold dates are.
         if (organizerId == null || !organizerId.equals(escrow.getOrganizerId())) {
-            return Mono.fromSupplier(this::noEscrow);
+            return Mono.fromSupplier(() -> noEscrow(clock.instant()));
         }
 
         return Mono.zip(
@@ -103,11 +98,11 @@ public class PayoutEligibilityServiceImpl implements PayoutEligibilityService {
                 t.getT1(),
                 t.getT2(),
                 minimumPayout,
-                Instant.now()));
+                now));
     }
 
-    private PayoutEligibility noEscrow() {
+    private PayoutEligibility noEscrow(Instant now) {
         return PayoutEligibility.evaluate(
-                null, null, BigDecimal.ZERO, 0L, false, minimumPayout, Instant.now());
+                null, null, BigDecimal.ZERO, 0L, false, minimumPayout, now);
     }
 }

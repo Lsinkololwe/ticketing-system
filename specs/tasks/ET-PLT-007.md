@@ -146,13 +146,69 @@ Forged / wrong-issuer / wrong-audience / expired — each rejected at **each** s
 ## E · Gate
 
 - [ ] R0 recorded; `keycloakUserId` and every out-of-service permission check classified `contradicted`
-- [ ] Realm export reproduces §4 on a clean Keycloak
+- [x] Realm export reproduces §4 on a clean Keycloak — **F-047, 2026-10-09.** `RealmConformanceIT` (9 cases,
+      real Keycloak 26.5.2, both `docker-resources/keycloak` exports) reads settings back from the running
+      server: five-minute access tokens, refresh rotation with reuse detection (buyer and staff), `external`
+      TLS, no registration, no password grant on any client including `admin-cli`, exact redirect URIs,
+      PKCE, a required staff second factor, the staff password policy. Mutation-verified: reverting the old
+      values fails 7 of 8. The older copies under `docker-resources/keycloak` are not covered (F-047 Open).
 - [ ] Four token-rejection cases pass at each service directly
-- [ ] No `@auth`-less field composes; denied fields perform no repository call
-- [ ] Tenant filter in the repository; cross-tenant iteration returns nothing
-- [ ] `/api/internal/**` 401/403/200 per path
-- [ ] Idempotency: replay, fingerprint mismatch, parallel-once, and survives a Redis flush
+- [~] No `@auth`-less field composes; denied fields perform no repository call — **F-046, 2026-10-09.**
+      `OperationGateLintTest` (catalog, booking, identity) fails on any query or mutation with neither
+      `@auth` in the schema nor `@PreAuthorize` on its resolver, and the deliberately open reads now carry
+      `@auth(requires: PUBLIC)`. Mutation-verified (removing the gate on `validatePromoCode` fails it).
+      Not done: the spec's wording is `@auth` on *every* field (identity has two, booking about a third,
+      the rest rely on `@PreAuthorize`), and no spy test asserts a denied field makes no repository call.
+- [~] Tenant filter in the repository; cross-tenant iteration returns nothing — **the mechanism
+      exists; write paths shut in catalog, caller-scoped reads built in booking.** Three of the four §4 caller-scoped
+      operations now exist — `myPayoutRequests`, `myEscrowAccounts`, `myRefundRequests`. `TenantScope`
+      (a set, resolved once per request), `TenantGuard.locate` (which takes the scoped lookup as
+      an argument, so it cannot be called without writing the filter), `CallerScope` (which makes
+      an `organizationId` argument a selector over the caller's memberships rather than a grant),
+      and `findByIdAndOrganizationIdIn` / `findByOrganizationIdIn` finders. `TenantScopeWebFilter`
+      is installed in **all three services**. Proven by
+      `TicketTierTenantBoundaryTest` and `CallerScopedReadTest` against a Testcontainers replica
+      set, both mutation-verified. **The pre-existing read paths are not converted**:
+      `TenantBoundaryLintTest` freezes them at catalog 25 · identity 16 · booking 64, a budget
+      that may only fall. Catalog rose 24 → 25 for the guard built to close F-007, which is the
+      only movement upward this budget admits: one new `TenantGuard.locate` on the same commit.
+      See [F-001](../FINDINGS.md#f-001--organization-scoped-data-has-no-tenant-boundary)
+- [x] Event writes apply the tenant filter **and** the permission check — **D-20, 2026-09-01.**
+      All seven catalog event mutations now go through `EventWriteGuard.forWrite(id, permission)`:
+      `findByIdAndOrganizationIdIn` so another organization's event never comes back from the
+      query, then `checkEventAccess` for the D-10 permission this mutation needs. They answer
+      different questions and the platform needs both — a MARKETER cannot edit events and a
+      CONTRIBUTOR is view-only, so membership alone would give every team member owner-level
+      power. `TenantGuard.locateAndPermit` takes both as required arguments; `EventWriteGuardLintTest`
+      (comments stripped, so a javadoc cannot satisfy it) asserts the code is present and that no
+      mutation reaches `eventService.findById`; `EventWriteBothLocksTest` proves each lock refuses
+      with the other wide open, against a Testcontainers replica set. Mutation-verified both ways:
+      dropping the filter fails exactly the filter cases, stubbing the check fails exactly the
+      check cases. `duplicateEvent` moved to `findVisibleById` in the same pass — it copies the
+      source event's line-up, capacity and pricing, so reading it *is* the operation.
+      **The availability cost is accepted** (D-20): an identity-service outage stops event edits.
+- [x] The public single-event query applies a visibility filter — **F-007, closed 2026-09-01.**
+      `event(id: ID!)` sits in the schema's PUBLIC block beside a dozen list queries that all end
+      `PublishedTrueAndIsActiveTrue`, carried no `@auth` and no `@PreAuthorize`, and resolved to a
+      bare `findById`. Drafts, rejected events with their `rejectionReason`, and soft-deleted
+      events with `deletedBy` / `deletionReason` were readable by **any authenticated caller**
+      holding an id — a self-service `CUSTOMER` token is enough. (First recorded as
+      "unauthenticated"; corrected the same day. All three subgraphs require a token on
+      `/graphql/**`, whatever the schema's PUBLIC annotations say.) `EventService.findVisibleById` now filters — public first, tenancy only on a miss —
+      and is wired into both `event(id)` and the `Event` entity fetcher, since `_entities`
+      resolves a caller-supplied key the same way. `EventVisibilityTest`, 11 cases against a
+      Testcontainers replica set, mutation-verified twice. See
+      [F-007](../FINDINGS.md#f-007--the-one-public-query-that-took-an-id-did-not-filter-on-visibility)
+- [x] `/api/internal/**` 401/403/200 per path — **F-046, 2026-10-09.** `InternalSurfaceTest` in catalog,
+      booking and identity discovers every endpoint from the controllers and runs it through the service's
+      real chain with signed tokens (none 401, administrator user token 403, profile-scope token 403, the
+      intended scope 200). Mutation-verified with a `permitAll` placed ahead of the rule. A read-scoped token
+      can still call a write endpoint outside `/api/internal/auth/**`; see F-046 Open.
+- [~] Idempotency: replay, fingerprint mismatch, parallel-once, and survives a Redis flush — **F-046,
+      2026-10-09.** `IdempotencyGuard` and `MongoIdempotencyLedger` are built and proven on real Mongo and
+      Redis (`IdempotencyGuardTest`, 11 cases, mutation-verified; `FingerprintTest`). No mutation in the §4
+      registry calls it yet, so the nine call sites remain.
 - [ ] `idempotencyKey` client-supplied, stable across retries, survives reload
 - [ ] No `User.keycloakUserId` anywhere
-- [ ] `mvn -q -f backend verify -Dgroups=ET-PLT-007 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend verify -Dgroups=ET-PLT-007 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

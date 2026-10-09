@@ -1,15 +1,17 @@
 package com.pml.booking.domain.model;
 
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.enums.PlatformAccountType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Version;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -89,7 +91,8 @@ import java.time.Instant;
  * @see ChargebackFundSource#PLATFORM_RESERVE
  * @since 1.0.0
  */
-@Document(collection = "platform_accounts")
+@Document(collection = BookingCollections.PLATFORM_ACCOUNTS)
+@TypeAlias("platform_accounts")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -111,7 +114,6 @@ public class PlatformAccount {
      * @see PlatformAccountType
      */
     @NotNull(message = "Account type is required")
-    @Indexed(unique = true)
     private PlatformAccountType accountType;
 
     /**
@@ -305,13 +307,6 @@ public class PlatformAccount {
      */
     public void deactivate() {
         this.isActive = false;
-    }
-
-    /**
-     * Reactivates a previously deactivated account.
-     */
-    public void activate() {
-        this.isActive = true;
     }
 
     // ========================================================================

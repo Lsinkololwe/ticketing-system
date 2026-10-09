@@ -1,9 +1,10 @@
 package com.pml.booking.web.graphql.query;
 
+import com.pml.shared.constants.PlatformTime;
+
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.booking.domain.enums.ReconciliationStatus;
 import com.pml.booking.domain.enums.ReconciliationType;
 import com.pml.booking.domain.model.ReconciliationRun;
 import com.pml.booking.service.ReconciliationService;
@@ -19,7 +20,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 
@@ -90,15 +91,15 @@ public class ReconciliationQueryResolver {
 
     /**
      * Get reconciliation runs with filtering and offset pagination.
-     * Schema: reconciliationRunsOffsetPagination(filter: ReconciliationFilterInput, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage!
+     * Schema: reconciliationRuns(filter: ReconciliationFilterInput, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage!
      */
     @DgsQuery
     @PreAuthorize("hasRole('ADMIN')")
-    public Mono<ReconciliationRunOffsetPage> reconciliationRunsOffsetPagination(
+    public Mono<ReconciliationRunOffsetPage> reconciliationRuns(
             @InputArgument ReconciliationFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        log.debug("GraphQL query: reconciliationRunsOffsetPagination");
+        log.debug("GraphQL query: reconciliationRuns");
 
         Flux<ReconciliationRun> runFlux = getFilteredRuns(filter);
         return runFlux.collectList()
@@ -135,8 +136,8 @@ public class ReconciliationQueryResolver {
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<ReconciliationSummary> reconciliationSummary(
             @InputArgument ReconciliationType type,
-            @InputArgument LocalDateTime startDate,
-            @InputArgument LocalDateTime endDate
+            @InputArgument Instant startDate,
+            @InputArgument Instant endDate
     ) {
         log.debug("GraphQL query: reconciliationSummary(type={}, startDate={}, endDate={})",
                 type, startDate, endDate);
@@ -145,26 +146,22 @@ public class ReconciliationQueryResolver {
                 .map(this::mapToDto);
     }
 
-    /**
-     * Map service ReconciliationSummary to DTO ReconciliationSummary.
-     */
+    /** The service reports reconciliation days; the schema's {@code DateTime} wants instants. */
     private ReconciliationSummary mapToDto(ReconciliationService.ReconciliationSummary serviceSummary) {
         return new ReconciliationSummary(
                 serviceSummary.totalRuns(),
                 serviceSummary.completedRuns(),
-                serviceSummary.failedRuns(),
                 serviceSummary.pendingReviewRuns(),
-                0L, // totalItemsProcessed - not tracked in service summary
-                0L, // matchedItems - not tracked in service summary
-                0L, // unmatchedItems - not tracked in service summary
-                java.math.BigDecimal.ZERO, // totalExpectedAmount
-                java.math.BigDecimal.ZERO, // totalActualAmount
+                serviceSummary.failedRuns(),
                 serviceSummary.totalVariance(),
-                serviceSummary.lastCompletedDate() != null
-                        ? serviceSummary.lastCompletedDate().atStartOfDay()
-                        : null, // lastRunDate
-                java.math.BigDecimal.ZERO // averageMatchRate
-        );
+                serviceSummary.resolvedVariance(),
+                serviceSummary.unresolvedVariance(),
+                startOf(serviceSummary.lastCompletedDate()),
+                startOf(serviceSummary.oldestPendingDate()));
+    }
+
+    private static Instant startOf(java.time.LocalDate day) {
+        return day == null ? null : day.atStartOfDay(PlatformTime.ZONE).toInstant();
     }
 
     // ========================================================================
@@ -275,8 +272,8 @@ public class ReconciliationQueryResolver {
 
         if (filter.startDate() != null && filter.endDate() != null) {
             return reconciliationService.findByDateRange(
-                    filter.startDate().toLocalDate(),
-                    filter.endDate().toLocalDate()
+                    PlatformTime.dateAt(filter.startDate()),
+                    PlatformTime.dateAt(filter.endDate())
             );
         }
 

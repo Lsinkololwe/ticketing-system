@@ -42,8 +42,27 @@
         "maxLength": 50,
         "description": "IANA timezone (e.g., Africa/Lusaka)"
       },
+      "provinceName": {
+        "bsonType": ["string", "null"],
+        "description": "Denormalized from Province"
+      },
+      "country": {
+        "bsonType": ["string", "null"],
+        "description": "Denormalized from Province.country"
+      },
+      "eventCount": {
+        "bsonType": ["int", "null"],
+        "minimum": 0,
+        "description": "Denormalized count of events in this city"
+      },
       "isActive": {
         "bsonType": "bool"
+      },
+      "createdAt": {
+        "bsonType": ["date", "null"]
+      },
+      "updatedAt": {
+        "bsonType": ["date", "null"]
       }
     },
     "additionalProperties": false

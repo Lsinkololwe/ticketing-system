@@ -7,13 +7,9 @@ public record InventoryOperationResult(
         boolean success,
         String operation,
         String tierId,
-        int quantityAffected,
-        String errorMessage,
-        int currentAvailable,
-        int currentReserved,
-        int currentSold
+        String errorMessage
 ) {
     public static InventoryOperationResult failure(String operation, String tierId, String errorMessage) {
-        return new InventoryOperationResult(false, operation, tierId, 0, errorMessage, 0, 0, 0);
+        return new InventoryOperationResult(false, operation, tierId, errorMessage);
     }
 }

@@ -7,7 +7,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -23,12 +24,25 @@ public class HealthController {
     @Value("${spring.application.name}")
     private String applicationName;
 
+    /**
+     * The injected platform clock, not {@code LocalDateTime.now()}.
+     *
+     * <p>A <b>zone-less local</b> time in a response body would let a probe comparing the gateway's
+     * timestamp against a service's UTC one see them disagree by the host's offset with nothing to
+     * say which was which. {@link Instant} carries the zone, and the platform clock is UTC.</p>
+     */
+    private final Clock clock;
+
+    public HealthController(Clock clock) {
+        this.clock = clock;
+    }
+
     @GetMapping("/health")
     public Mono<ResponseEntity<Map<String, Object>>> health() {
         Map<String, Object> health = new HashMap<>();
         health.put("status", "UP");
         health.put("service", applicationName);
-        health.put("timestamp", LocalDateTime.now().toString());
+        health.put("timestamp", Instant.now(clock).toString());
         return Mono.just(ResponseEntity.ok(health));
     }
 

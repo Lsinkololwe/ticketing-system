@@ -3,16 +3,13 @@ package com.pml.identity.service.storage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
@@ -42,6 +39,16 @@ public class LocalFileStorageService implements FileStorageService {
 
     @Value("${server.port:8083}")
     private String serverPort;
+
+    /** Public base of this service as the browser reaches it (the upload URL is PUT directly). */
+    @Value("${file-storage.local.public-base-url:}")
+    private String publicBaseUrl;
+
+    private final LocalUploadSigner signer;
+
+    public LocalFileStorageService(LocalUploadSigner signer) {
+        this.signer = signer;
+    }
 
     // ========================================================================
     // PUBLIC API
@@ -73,12 +80,7 @@ public class LocalFileStorageService implements FileStorageService {
                                 byte[] fileBytes = Files.readAllBytes(path);
                                 String checksum = calculateMD5(fileBytes);
 
-                                // Generate file URL (use http://localhost:port/uploads/...)
-                                String fileUrl = String.format("http://localhost:%s/uploads/%s",
-                                        serverPort, fileKey);
-
                                 return new UploadResult(
-                                        fileUrl,
                                         fileKey,
                                         filename,
                                         fileSize,
@@ -95,9 +97,13 @@ public class LocalFileStorageService implements FileStorageService {
     public Mono<String> generatePresignedUrl(String fileKey, int expiryMinutes) {
         log.debug("Generating presigned URL for: {} (local storage ignores expiry)", fileKey);
 
-        // Local storage doesn't support presigned URLs - return direct URL
-        String fileUrl = String.format("http://localhost:%s/uploads/%s", serverPort, fileKey);
-        return Mono.just(fileUrl);
+        // Local storage: a signed, expiring URL served by LocalStorageController (PUT to upload, GET to read).
+        String base = publicBaseUrl == null || publicBaseUrl.isBlank()
+                ? "http://localhost:" + serverPort
+                : publicBaseUrl.replaceAll("/+$", "");
+        long expires = signer.expiryAfterMinutes(expiryMinutes);
+        return Mono.just(base + "/local-storage/" + fileKey + "?exp=" + expires
+                + "&sig=" + signer.sign(fileKey, expires));
     }
 
     @Override

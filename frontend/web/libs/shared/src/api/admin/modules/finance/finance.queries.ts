@@ -61,7 +61,7 @@ export const ADMIN_PAYOUT_REQUESTS = gql`
     $filter: PayoutRequestFilterInput!
     $pagination: OffsetPaginationInput
   ) {
-    payoutRequestsOffsetPagination(filter: $filter, pagination: $pagination) {
+    payoutRequests(filter: $filter, pagination: $pagination) {
       data {
         ...PayoutListFields
       }
@@ -127,7 +127,7 @@ export const ADMIN_REFUND_REQUESTS = gql`
     $filter: RefundRequestFilterInput!
     $pagination: OffsetPaginationInput
   ) {
-    refundRequestsOffsetPagination(filter: $filter, pagination: $pagination) {
+    refundRequests(filter: $filter, pagination: $pagination) {
       data {
         ...RefundListFields
       }
@@ -147,7 +147,7 @@ export const ADMIN_REFUND_REQUESTS = gql`
  */
 export const REFUND_STATUS_COUNT = gql`
   query RefundStatusCount($filter: RefundRequestFilterInput!) {
-    refundRequestsOffsetPagination(
+    refundRequests(
       filter: $filter
       pagination: { page: 0, size: 1 }
     ) {
@@ -191,7 +191,7 @@ export const ADMIN_ESCROW_ACCOUNTS = gql`
     $filter: EscrowAccountFilterInput
     $pagination: OffsetPaginationInput
   ) {
-    escrowAccountsOffsetPagination(filter: $filter, pagination: $pagination) {
+    escrowAccounts(filter: $filter, pagination: $pagination) {
       data {
         ...EscrowListFields
       }

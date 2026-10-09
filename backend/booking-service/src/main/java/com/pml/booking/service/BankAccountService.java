@@ -101,13 +101,4 @@ public interface BankAccountService {
      */
     Mono<Boolean> delete(String id);
 
-    /**
-     * Verifies a bank account (admin operation).
-     * Sets the verification status and records who verified it.
-     *
-     * @param id The bank account ID to verify
-     * @param verifiedBy The ID of the admin user who verified
-     * @return Mono containing the verified bank account
-     */
-    Mono<BankAccount> verify(String id, String verifiedBy);
 }

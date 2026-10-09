@@ -200,6 +200,13 @@ THE SYSTEM SHALL cache resolutions briefly and SHALL invalidate them when the in
 
 ## 4. Model
 
+> **As built, 2026-09-18.** `myPermissions` returns the caller's platform roles and permission
+> codes (what `PermissionGate` reads); `myEffectivePermissions(organizationId, eventId)` returns the
+> resolved set for a context and the step that decided it; `currentUserPermissions` returns the
+> platform codes alone. All three are computed from code. The internal
+> `/api/internal/permissions/resolve` endpoints and the per-role cache below are not built; catalog
+> and booking call `/api/internal/authorization/*` with catalogue codes instead.
+
 ### The permission catalogue — closed
 
 | Permission | Meaning |
@@ -223,7 +230,7 @@ THE SYSTEM SHALL cache resolutions briefly and SHALL invalidate them when the in
 | `team:remove` | remove a team member |
 | `team:role` | change a team member's role |
 | `team:view` | see the team list |
-| `event:access:grant` | grant event-level access |
+| `event_access:grant` | grant event-level access |
 | `organization:view` | see the organization's profile |
 | `organization:edit` | edit the organization's profile |
 | `organization:billing` | manage billing settings |
@@ -244,6 +251,7 @@ THE SYSTEM SHALL cache resolutions briefly and SHALL invalidate them when the in
 | `SUPER_ADMIN` | every catalogue permission |
 | `ADMIN` | everything except `platform:configure` |
 | `FINANCE` | `financial:view`, `payout:approve`, `ticket:refund`, `transaction:recover`, `audit:view`, `organization:view`, `event:view` |
+| `FINANCE_LEAD` | **nothing** — its holder also holds `FINANCE`; the role only addresses escalations (ROADMAP D-32) |
 | `ORGANIZER` | **nothing** — access comes from membership |
 | `CUSTOMER` | **nothing** |
 
@@ -259,19 +267,33 @@ The transitive closure declared in [ET-ORG-002 §4](../002-teams-and-invitations
 | `CONTRIBUTOR` | `event:view`, `attendee:view`, `ticket:scan`, `organization:view`, `team:view` |
 | `MARKETER` | `CONTRIBUTOR` + `analytics:view`, `promotion:manage` |
 | `MANAGER` | `CONTRIBUTOR` + `event:create`, `event:edit`, `event:publish`, `analytics:view`, `promotion:manage`, `financial:view`\* |
-| `ADMIN` | `MANAGER` ∪ `MARKETER` + `event:delete`, `event:cancel`, `ticket:refund`, `team:invite`, `team:remove`, `team:role`, `event:access:grant`, `organization:edit`, `bank:manage`, `payout:request`\* |
+| `ADMIN` | `MANAGER` ∪ `MARKETER` + `event:delete`, `event:cancel`, `ticket:refund`, `team:invite`, `team:remove`, `team:role`, `event_access:grant`, `organization:edit`, `bank:manage`, `financial:view`, `payout:request`\* |
 | `OWNER` | `ADMIN` + `organization:billing`, `organization:transfer`, `organization:delete`, `payout:request` |
 
 \* `financial:view` for `MANAGER` and `payout:request` for `ADMIN` are gated by
-`settings.managersCanViewFinancials` and `settings.adminsCanRequestPayouts`, both default
-`false`. **These two are the only permissions that are not a pure function of the role**,
-and any cache or test keyed on role alone is wrong for them.
+`settings.managersCanViewFinancials` and `settings.adminsCanRequestPayouts`. **These two are the
+only permissions that are not a pure function of the role**, and any cache or test keyed on role
+alone is wrong for them. `ADMIN` holds `financial:view` unconditionally; only `MANAGER`'s is
+switched.
+
+- A new organization starts with both switches **off** (ROADMAP D-35).
+- Every organization that existed before the switches was migrated with both **on**
+  (`permission-model-catalogue`), so no team lost access it had.
+- Changing either switch needs `organization:billing`, which only `OWNER` holds, so an `ADMIN`
+  cannot widen their own access.
+
+**Naming, as built (2026-09-18).** One colon per code, so `event:access:grant` is spelled
+`event_access:grant`. The catalogue is `com.pml.shared.security.Permission`; identity's
+`OrganizationRole` and `EventRole` hold the role sets, and `PermissionNameLintTest` fails the build
+on any permission spelled as a string outside the enum. Custom and denied permissions on a member or
+grant are catalogue codes (validator pattern `^[a-z_]+:[a-z_]+$`). A granter may store only codes
+they hold themselves, of the grant's scope or narrower (`requireDelegable`).
 
 ### Event role sets — step 2c
 
 | Role | Grants |
 |---|---|
-| `EVENT_OWNER` | `event:view`, `event:edit`, `event:publish`, `event:cancel`, `event:delete`, `attendee:view`, `ticket:scan`, `ticket:refund`, `analytics:view`, `event:access:grant` |
+| `EVENT_OWNER` | `event:view`, `event:edit`, `event:publish`, `event:cancel`, `event:delete`, `attendee:view`, `ticket:scan`, `ticket:refund`, `analytics:view`, `event_access:grant` |
 | `EVENT_ADMIN` | everything `EVENT_OWNER` has except `event:cancel`, `event:delete` |
 | `EDITOR` | `event:view`, `event:edit`, `attendee:view`, `ticket:scan`, `analytics:view` |
 | `CHECK_IN` | `event:view`, `attendee:view`, `ticket:scan` |
@@ -357,9 +379,10 @@ Rows 6 and 8 are the ones that make a grant an override rather than an addition.
 | `revokedById`, `revokedAt`, `revocationReason` | | |
 | `grantedAt`, `createdAt`, `updatedAt` | `Instant` | |
 
-`identity_permissions` and `identity_role_permissions` hold the catalogue and the role sets
-as reference data, seeded from the §4 tables and read-only at runtime — they exist so an
-administrator can *see* the model, not so it can be edited without a deploy.
+There is no stored copy of the catalogue or the role sets (ROADMAP D-37). They are declared in code
+and change only with a release; the `permissions`, `permission(code)` and `rolePermissions(role)`
+queries read them from code. `identity_permissions` and `identity_role_permissions` were dropped by
+the `permission-model-catalogue` migration.
 
 ### Internal API
 

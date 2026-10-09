@@ -140,18 +140,6 @@ public enum JournalEntryStatus {
     }
 
     /**
-     * Checks if this status allows the entry to be reversed.
-     *
-     * <p>Only POSTED entries can be reversed. DRAFT entries should be
-     * deleted instead. REVERSED entries are already nullified.</p>
-     *
-     * @return true if a reversal entry can be created against this entry
-     */
-    public boolean canBeReversed() {
-        return this == POSTED;
-    }
-
-    /**
      * Checks if this is a terminal status (no further transitions).
      *
      * <p>REVERSED is a terminal status - once reversed, an entry

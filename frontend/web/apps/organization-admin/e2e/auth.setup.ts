@@ -7,14 +7,13 @@ export const ORGANIZER_STORAGE_STATE = path.join(__dirname, '.auth', 'organizer.
  * A real login, through Keycloak, once per run.
  *
  * <h2>Why the login is not faked</h2>
- * The onboarding guard runs in a Server Component and calls Better Auth's
- * `auth.api.getSession()`, which validates against MongoDB rather than trusting
- * the cookie — that is the whole point of the "Layer 2" design. A synthesised
- * cookie is rejected there, so the only way to exercise the guard at all is to
- * hold a session it accepts.
+ * The onboarding guard runs in a Server Component and resolves the session through
+ * the BFF, which validates the opaque session cookie against its Redis store rather
+ * than trusting it. A synthesised cookie is rejected there, so the only way to
+ * exercise the guard at all is to hold a session it accepts.
  *
- * <p>This also means `auth.api.getAccessToken({ providerId: 'keycloak' })`
- * returns a real token, which the guard requires: the `myOwnedOrganization`
+ * <p>This also means the BFF attaches a real access token server-side, which the
+ * guard requires: the `myOwnedOrganization`
  * query is `hasRole('ORGANIZER')`-guarded, and a tokenless query returns an
  * authorization error rather than "no organization". Reproducing that
  * distinction was the point of the fix under test.</p>
@@ -25,7 +24,7 @@ export const ORGANIZER_STORAGE_STATE = path.join(__dirname, '.auth', 'organizer.
  * developer; it holds no real accounts.</p>
  *
  * <h2>What must be running</h2>
- * MongoDB (Better Auth's session store) and Keycloak on 8084. The stub API
+ * Redis (the BFF session store) and Keycloak on 8084. The stub API
  * server replaces the whole backend, so no Java service is needed.
  */
 const USERNAME = process.env.ORGANIZER_E2E_USERNAME ?? 'organizer';

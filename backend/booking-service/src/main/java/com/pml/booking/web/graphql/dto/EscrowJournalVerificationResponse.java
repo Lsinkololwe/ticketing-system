@@ -16,16 +16,6 @@ import java.util.List;
  */
 public record EscrowJournalVerificationResponse(
         /**
-         * Whether the operation was successful.
-         */
-        boolean success,
-
-        /**
-         * Human-readable status message.
-         */
-        String message,
-
-        /**
          * The event ID that was verified.
          */
         String eventId,
@@ -68,12 +58,7 @@ public record EscrowJournalVerificationResponse(
         /**
          * Detailed messages about the verification result.
          */
-        List<String> details,
-
-        /**
-         * Error messages if the operation failed.
-         */
-        List<String> errors
+        List<String> details
 ) {
     /**
      * Creates a successful response from a verification result.
@@ -88,8 +73,6 @@ public record EscrowJournalVerificationResponse(
                         result.status(), result.variance());
 
         return new EscrowJournalVerificationResponse(
-                true,
-                message,
                 result.eventId(),
                 result.escrowAccountId(),
                 result.journalAccountCode(),
@@ -98,8 +81,7 @@ public record EscrowJournalVerificationResponse(
                 result.variance(),
                 result.isConsistent(),
                 result.status(),
-                result.details(),
-                List.of()
+                result.details()
         );
     }
 
@@ -112,8 +94,6 @@ public record EscrowJournalVerificationResponse(
      */
     public static EscrowJournalVerificationResponse error(String eventId, String errorMessage) {
         return new EscrowJournalVerificationResponse(
-                false,
-                "Verification failed: " + errorMessage,
                 eventId,
                 null,
                 null,
@@ -122,30 +102,6 @@ public record EscrowJournalVerificationResponse(
                 null,
                 false,
                 null,
-                List.of(),
-                List.of(errorMessage)
-        );
-    }
-
-    /**
-     * Creates a "not found" response when the event doesn't have escrow tracking.
-     *
-     * @param eventId The event ID
-     * @return Response indicating no escrow account exists
-     */
-    public static EscrowJournalVerificationResponse notFound(String eventId) {
-        return new EscrowJournalVerificationResponse(
-                true,
-                "No escrow account found for event",
-                eventId,
-                null,
-                null,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                true,
-                VerificationStatus.NOT_FOUND,
-                List.of("Neither escrow account nor journal entries exist for this event"),
                 List.of()
         );
     }

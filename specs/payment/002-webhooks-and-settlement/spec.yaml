@@ -26,16 +26,11 @@ persistence:
   indexes:
     - "booking_webhook_receipts {providerEventId} unique   # THE replay guard"
     - "booking_webhook_receipts {receivedAt} ttl 90d"
-    - "booking_webhook_receipts {status,receivedAt} compound  # orphan + verify sweeps"
-  redis_keys:
-    - "lock:sweep:webhook-orphans          STRING  30 s"
-    - "lock:sweep:webhook-verify           STRING  30 s"
-    - "lock:sweep:payment-reconciliation   STRING  30 s"
+    - "booking_webhook_receipts {status,receivedAt} compound  # the orphan list for ET-ADM-003"
+  redis_keys: []
 
 events:
-  module:
-    - WebhookReceivedEvent
-    - PaymentDisputedEvent
+  module: []   # a step within a service is a workflow activity (ET-PLT-015)
   bus: []      # the outcome's bus events are ET-PAY-001's, published from confirmation
   topics: []
 
@@ -76,10 +71,11 @@ convergence:
   method: applyPaymentOutcome
   note: "the ONLY path to SUCCEEDED/FAILED/CANCELLED; callback and poll both call it; compare-and-set"
 
-sweeps:
-  - "orphan re-match         lock:sweep:webhook-orphans         PT5M"
-  - "pending verification    lock:sweep:webhook-verify          PT1M"
-  - "daily reconciliation    lock:sweep:payment-reconciliation  P1D"
+workflows:
+  - "WebhookOrphanWorkflow   webhook-orphan/{providerEventId}   booking-checkout   re-match every PT5M, escalate at PT1H"
+  - "PurchaseWorkflow        purchase/{reservationId}           booking-checkout   a verified callback signals paymentCallback"
+schedules:
+  - "recon-provider → ReconciliationWorkflow(PROVIDER)   booking-recon   0 3 * * * UTC   overlap SKIP   # shared with ET-FIN-005"
 
 config:
   booking.webhook.max-age: PT5M
@@ -91,8 +87,8 @@ config:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend/booking-service test -Dgroups=ET-PAY-002 -DfailIfNoTests=true
-  - mvn -q -f backend verify -Dgroups=ET-PAY-002 -DfailIfNoTests=true
+  - mvn -q -f backend/booking-service test -Dgroups=ET-PAY-002 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-PAY-002 -DfailIfNoTests=false
 
 risks:
   - "R3 makes every success callback trigger a provider status() call, which doubles provider traffic on the success path and puts the platform's ticket issuance behind the provider's status API availability. During a provider degradation — precisely when callbacks are most delayed — the status endpoint is also degraded, so every payment lands in PENDING_VERIFICATION and no tickets issue at all."

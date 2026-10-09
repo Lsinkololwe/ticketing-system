@@ -78,19 +78,16 @@ export const RESERVE_TICKETS = gql`
  *
  * This does NOT return tickets, and the absence is the point. Confirmation
  * follows the provider's callback, never a client asserting that it paid
- * (ET-TKT-001 §4), and mobile-money confirmation takes between eight seconds
+ * — and mobile-money confirmation takes between eight seconds
  * and four minutes. Poll `GET_RESERVATION` until its status reads CONFIRMED.
  */
 export const PAY_RESERVATION = gql`
   mutation PayReservation($input: PayReservationInput!) {
     payReservation(input: $input) {
-      success
-      message
       paymentIntentId
       transactionRef
       paymentStatus
       reservationId
-      errors
     }
   }
 `;

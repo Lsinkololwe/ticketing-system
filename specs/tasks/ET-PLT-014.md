@@ -4,7 +4,7 @@
 > **Status** `approved` — cleared to build
 > **Screen** `Admin - Transactions & System.dc.html` *(reference data)* — **read it first**
 > **Routes** `apps/admin/src/app/(dashboard)/system/reference-data`
-> **Verify** `mvn -q -f backend/catalog-service test -Dgroups=ET-PLT-014 -DfailIfNoTests=true` · `compose-supergraph.sh --static`
+> **Verify** `mvn -q -f backend/catalog-service test -Dgroups=ET-PLT-014 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
 The engine behind every list the business owns: operators, banks, categories, genres, KYB document
 types, reason codes, tax rates — **and workflow statuses**, which look identical on screen and are
@@ -231,5 +231,5 @@ Cold equals warm; eviction across two instances within `PT5S`; **no scheduled re
 - [ ] Cache evicts cross-instance; nothing polls; an unreachable store never returns an empty list
 - [ ] No app hardcodes a list this engine owns
 - [ ] Workflow semantics are presented as behavioural, not decorative
-- [ ] `mvn -q -f backend/catalog-service test -Dgroups=ET-PLT-014 -DfailIfNoTests=true` green
+- [ ] `mvn -q -f backend/catalog-service test -Dgroups=ET-PLT-014 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`

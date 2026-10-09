@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Finance overview for organizer's finance dashboard.
@@ -56,7 +56,7 @@ public class OrganizerFinanceOverview {
     /**
      * Date of the most recent completed payout
      */
-    private LocalDateTime lastPayoutDate;
+    private Instant lastPayoutDate;
 
     /**
      * Amount of the most recent completed payout

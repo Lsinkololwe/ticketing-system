@@ -2,116 +2,57 @@ package com.pml.identity.service;
 
 import com.pml.identity.domain.valueobject.EventRole;
 import com.pml.identity.domain.valueobject.OrganizationRole;
+import com.pml.shared.security.Permission;
 import reactor.core.publisher.Mono;
 
 import java.util.Set;
 
 /**
- * Permission Resolution Service Interface
+ * Decides what a user may do on the platform, in an organization, or on one event.
  *
- * Resolves effective permissions for users based on their roles and access grants.
- *
- * RESOLUTION ORDER:
- * 1. Platform role (super admin overrides all)
- * 2. Event-level access (if checking event permission)
- * 3. Organization role
- * 4. Custom permissions
- * 5. Denied permissions (explicit deny)
- * 6. Default: deny
+ * <p>The order is fixed:
+ * <ol>
+ *   <li>the user's platform roles ({@code ADMIN}, {@code SUPER_ADMIN}, {@code FINANCE});</li>
+ *   <li>for an event, an active access grant on that event — when one exists it is the whole
+ *       answer, and the user's organization role is not consulted;</li>
+ *   <li>active membership of the organization: the role's permissions under the organization's
+ *       settings, plus the member's custom permissions, minus the denied ones.</li>
+ * </ol>
+ * Anything not granted by one of these is refused.
  */
 public interface PermissionResolutionService {
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Organization Permission Checks
-    // ─────────────────────────────────────────────────────────────────────
+    Mono<Boolean> hasOrganizationPermission(String userId, String organizationId, Permission permission);
+
+    /** Completes when the user holds {@code permission} in the organization; otherwise refuses with {@code ACTOR_NOT_PERMITTED}. */
+    Mono<Void> requireOrganizationPermission(String userId, String organizationId, Permission permission);
+
+    Mono<Boolean> hasEventPermission(String userId, String eventId, String organizationId, Permission permission);
 
     /**
-     * Check if user has permission in organization
+     * Completes when every code in {@code codes} is a catalogue permission of {@code scope} or
+     * narrower that {@code userId} itself holds in the organization. Used before storing custom
+     * permissions, so nobody hands out a permission they do not have.
      */
-    Mono<Boolean> hasOrganizationPermission(String userId, String organizationId, String permission);
+    Mono<Void> requireDelegable(String userId, String organizationId, Set<String> codes, Permission.Scope scope);
 
-    /**
-     * Get user's effective organization permissions
-     */
-    Mono<Set<String>> getEffectiveOrganizationPermissions(String userId, String organizationId);
-
-    /**
-     * Get user's organization role
-     */
     Mono<OrganizationRole> getOrganizationRole(String userId, String organizationId);
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Event Permission Checks
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Check if user has permission for event
-     * Checks event-level access first, then falls back to organization role
-     */
-    Mono<Boolean> hasEventPermission(String userId, String eventId, String organizationId, String permission);
-
-    /**
-     * Get user's effective event permissions
-     */
-    Mono<Set<String>> getEffectiveEventPermissions(String userId, String eventId, String organizationId);
-
-    /**
-     * Get user's event role (or null if no event-level access)
-     */
     Mono<EventRole> getEventRole(String userId, String eventId);
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Platform Permission Checks
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Check if user has platform-level permission (admin operations)
-     */
-    Mono<Boolean> hasPlatformPermission(String userId, String permission);
-
-    /**
-     * Check if user is platform admin
-     */
-    Mono<Boolean> isPlatformAdmin(String userId);
-
-    /**
-     * Check if user is super admin
-     */
-    Mono<Boolean> isSuperAdmin(String userId);
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Combined Permission Checks
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Get all effective permissions for a user in a context
-     */
     Mono<EffectivePermissions> getEffectivePermissions(String userId, String organizationId, String eventId);
 
     /**
-     * Effective permissions result
+     * What a user may do in a context, and which step of the order decided it:
+     * {@code PLATFORM}, {@code EVENT}, {@code ORGANIZATION} or {@code NONE}.
      */
     record EffectivePermissions(
             String userId,
             String organizationId,
             String eventId,
-            Set<String> permissions,
+            Set<Permission> permissions,
             OrganizationRole organizationRole,
             EventRole eventRole,
-            String source // PLATFORM, ORGANIZATION, EVENT
+            String source
     ) {}
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Role Permission Mapping
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Get default permissions for an organization role
-     */
-    Set<String> getOrganizationRolePermissions(OrganizationRole role);
-
-    /**
-     * Get default permissions for an event role
-     */
-    Set<String> getEventRolePermissions(EventRole role);
 }

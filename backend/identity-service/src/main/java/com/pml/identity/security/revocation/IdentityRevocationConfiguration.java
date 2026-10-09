@@ -67,7 +67,7 @@ public class IdentityRevocationConfiguration {
      */
 
     @Bean
-    public RevocationMetrics revocationMetrics(MeterRegistry meterRegistry) {
-        return new RevocationMetrics(meterRegistry);
+    public RevocationMetrics revocationMetrics(MeterRegistry meterRegistry, Clock clock) {
+        return new RevocationMetrics(meterRegistry, clock);
     }
 }

@@ -44,8 +44,13 @@ per-service database would make the prefix redundant and the join impossible, bu
 would also make an aggregation across booking and catalog a two-connection problem for no
 gain — these services are one deployment unit's worth of data. The prefix is what keeps
 ownership legible: `booking_tickets` is booking's, and a query for it from catalog-service
-is a federation violation wearing a driver. **No service reads another service's
-collections**; it asks over the graph or listens for the event.
+is a federation violation wearing a driver. **No service writes another service's
+collections**, and none reads them either — it asks over the graph or listens for the event —
+with two named exceptions, the platform's shared engines: `catalog_reference_data` and
+`catalog_platform_configuration`. Each is one table for the whole platform with one writer
+(catalog), and every other service reads it directly, read-only, through a shared-library
+reader (`StatusSemanticResolver`, `PlatformConfigurationReader`). *(Amended 2026-09-19 — see
+the platform settings note below.)*
 
 **The collection registry in §4 is closed.** Every `@Document` names a row of it. A new
 collection is a change to this spec, in the same commit as the code, because a collection
@@ -137,7 +142,7 @@ public class EscrowAccount { … }
 - *Pessimistic locking on ticket tiers.* Serialises the on-sale minute — the one minute that must not serialise.
 - *An application-level sequence for ticket numbers.* A second document to contend on, and a single point of contention per event; ticket identity is the `ObjectId` and the human-facing reference is derived from it.
 - *An outbox in PostgreSQL, alongside the reactive MongoDB write.* Two transaction managers that cannot enlist together, so the document and the event row are not atomic — which is the entire guarantee an outbox exists to provide. It also puts a blocking JDBC pool inside a reactive stack. See [ET-PLT-003](../003-event-contract/).
-- *Draining the MongoDB outbox with Debezium.* Kafka Connect, a connector and an oplog dependency, where an indexed `@Scheduled` poll suffices at this volume.
+- *Draining the MongoDB outbox with Debezium.* Kafka Connect, a connector and an oplog dependency, where the drain's indexed poll suffices at this volume.
 - *Soft-delete flags (`deleted: true`) alongside a status enum.* Two fields answering one question, and every query then needs both predicates or it is wrong.
 
 ## 3. Requirements
@@ -275,11 +280,13 @@ discriminator, and no persisted document SHALL contain a fully-qualified Java cl
 | `catalog_provinces` | no | reference | ET-CAT-003 |
 | `catalog_categories` | no | event categories | ET-CAT-003 |
 | `catalog_reference_data` | no | typed lookup lists and workflow statuses, one row per `(type, code)` | ET-PLT-014 |
+| `catalog_platform_configuration` | no | the platform settings and feature flags — one table, read by every service | ET-ADM-002 |
 | `catalog_approval_timelines` | no | the audit of an event's approval steps | ET-ADM-001 |
 | `catalog_approval_escalations` | no | SLA escalation state | ET-ADM-001 |
 | `catalog_statistics_rollups` | no | precomputed catalog statistics — events by city, by category, growth | ET-ADM-004 |
 | `catalog_migration_runs` | no | this service's document-version backfills | ET-PLT-010 |
 | `catalog_outbox` | no | staged cross-service events, written in the business transaction | ET-PLT-003 |
+| `catalog_media` | **yes** | uploaded images: organizations' own and the platform's stock | ET-CAT-004 |
 
 **booking-service**
 
@@ -287,28 +294,33 @@ discriminator, and no persisted document SHALL contain a fully-qualified Java cl
 |---|---|---|---|
 | `booking_tier_inventory` | **yes** | the **authoritative counters** — available, reserved, sold | ET-TKT-001 |
 | `booking_reservations` | **yes** | the inventory hold and its TTL | ET-TKT-001 |
-| `booking_tickets` | no | the issued ticket, its owner, its QR identity | ET-TKT-002 |
+| `booking_tickets` | **yes** | the issued ticket, its owner, its QR identity | ET-TKT-002 |
 | `booking_payment_intents` | **yes** | one intent per purchase attempt, keyed by idempotency key | ET-PAY-001 |
-| `booking_payment_attempts` | no | one row per provider call, with the provider reference | ET-PAY-001 |
+| `booking_payment_attempts` | **yes** | one row per provider call, with the provider reference | ET-PAY-001 |
 | `booking_webhook_receipts` | no | every provider callback, for replay defence | ET-PAY-002 |
 | `booking_escrow_accounts` | **yes** | one per event (D-05) | ET-FIN-001 |
-| `booking_escrow_transactions` | no | the movements into and out of an escrow account | ET-FIN-001 |
+| `booking_escrow_transactions` | **yes** | the movements into and out of an escrow account | ET-FIN-001 |
 | `booking_platform_accounts` | **yes** | singleton revenue and fee accounts | ET-FIN-001 |
-| `booking_chart_of_accounts` | no | the account tree | ET-FIN-001 |
-| `booking_journal_entries` | no | the double-entry header | ET-FIN-001 |
+| `booking_chart_of_accounts` | **yes** | the account tree | ET-FIN-001 |
+| `booking_journal_entries` | **yes** | the double-entry header | ET-FIN-001 |
 | `booking_journal_lines` | no | the debit and credit lines | ET-FIN-001 |
-| `booking_commission_records` | no | pending and recognised commission | ET-FIN-002 |
-| `booking_bank_accounts` | no | organizer payout destinations | ET-FIN-003 |
+| `booking_commission_records` | **yes** | pending and recognised commission | ET-FIN-002 |
+| `booking_bank_accounts` | **yes** | organizer payout destinations | ET-FIN-003 |
 | `booking_payout_requests` | **yes** | the payout lifecycle | ET-FIN-003 |
-| `booking_refund_requests` | no | refund lifecycle and fees | ET-FIN-004 |
-| `booking_chargebacks` | no | provider-initiated reversals | ET-FIN-004 |
-| `booking_reconciliation_runs` | no | one per reconciliation execution | ET-FIN-005 |
+| `booking_refund_requests` | **yes** | refund lifecycle and fees | ET-FIN-004 |
+| `booking_chargebacks` | **yes** | provider-initiated reversals | ET-FIN-004 |
+| `booking_reconciliation_runs` | **yes** | one per reconciliation execution | ET-FIN-005 |
 | `booking_reconciliation_items` | no | per-transaction match state | ET-FIN-005 |
 | `booking_promo_codes` | **yes** | code, budget, redemption counter | ET-CAT-002 |
 | `booking_checkins` | no | one row per admitted ticket, with the gate and the scanner | ET-TKT-003 |
 | `booking_checkin_conflicts` | no | duplicate and offline-collision scans, for adjudication | ET-TKT-003 |
 | `booking_ticket_transfers` | **yes** | transfer and resale lifecycle between users | ET-TKT-004 |
-| `booking_recovery_proposals` | no | proposed dual-control recovery actions on stuck money | ET-ADM-003 |
+| `booking_recovery_proposals` | **yes** | proposed dual-control recovery actions on stuck money | ET-ADM-003 |
+| `booking_bookings` | **yes** | one durable booking per reservation: number, contact, items and lifecycle (the reservation itself is TTL-removed) | ET-TKT-005 |
+| `booking_counters` | no | monotonic counters behind human-facing numbers (booking numbers) | ET-TKT-005 |
+| `booking_holder_messages` | no | audit of organizer messages to ticket holders: who, what, how many | ET-TKT-005 |
+| `booking_platform_transfers` | no | moves between the platform's own accounts, one per idempotency key | ET-ADM-006 |
+| `booking_purchase_escalations` | no | a failed purchase somebody investigated and resolved | **unassigned — see below** |
 | `booking_statistics_rollups` | no | precomputed finance and sales statistics | ET-ADM-004 |
 | `booking_migration_runs` | no | this service's document-version backfills | ET-PLT-010 |
 | `booking_outbox` | no | staged cross-service events, written in the business transaction | ET-PLT-003 |
@@ -332,11 +344,10 @@ discriminator, and no persisted document SHALL contain a fully-qualified Java cl
 | `identity_user_devices` | no | push tokens | ET-NTF-001 |
 | `identity_event_reminders` | no | scheduled reminder state | ET-NTF-002 |
 | `identity_audit_logs` | no | the immutable audit trail | ET-PLT-009 |
+| `identity_payout_config_audit_logs` | no | changes to payout configuration, who made them | **unassigned — see below** |
 | `identity_notification_templates` | **yes** | versioned message bodies per channel and locale | ET-NTF-001 |
 | `identity_mass_sends` | no | bulk-send batches and their per-recipient outcome | ET-NTF-002 |
 | `identity_review_claims` | no | one claim per review subject — organizer, document or event | ET-ADM-001 |
-| `identity_platform_configuration` | no | append-only, versioned platform settings | ET-ADM-002 |
-| `identity_feature_flags` | no | flag state and its organization overrides | ET-ADM-002 |
 | `identity_temporary_blocks` | no | time-limited subject and IP blocks | ET-PLT-011 |
 | `identity_consent_records` | no | consent given and withdrawn, per purpose | ET-PLT-008 |
 | `identity_erasure_requests` | no | erasure lifecycle and the 30-day grace period | ET-PLT-008 |
@@ -345,16 +356,63 @@ discriminator, and no persisted document SHALL contain a fully-qualified Java cl
 | `identity_migration_runs` | no | this service's document-version backfills | ET-PLT-010 |
 | `identity_token_revocations` | no | revoked tokens, sessions and subjects — the system of record | ET-IDN-003 |
 | `identity_outbox` | no | staged cross-service events, written in the business transaction | ET-PLT-003 |
+| `identity_contacts` | no | verified WhatsApp numbers and emails, each owned by exactly one account | ET-IDN-004 |
+| `identity_consents` | no | consent granted per purpose and version, with withdrawal | ET-IDN-004 |
+| `identity_account_events` | no | account lifecycle and OTP-lock facts, no personal data | ET-IDN-004 |
+| `identity_system_alerts` | no | operational alerts raised by services and the health probe, with their acknowledgement | ET-ADM-005 |
+| `identity_announcements` | no | administrator announcements shown to a segment in a time window | ET-ADM-005 |
 
-**66 collections.** No other collection exists.
+**78 collections** — catalog 14, booking 32, identity 32. No other collection exists.
+
+**Ten rows marked versioned to match the code, 2026-09-19.** `booking_tickets`,
+`booking_journal_entries`, `booking_payment_attempts`, `booking_chargebacks`,
+`booking_commission_records`, `booking_chart_of_accounts`, `booking_bank_accounts`,
+`booking_refund_requests`, `booking_escrow_transactions` and `booking_reconciliation_runs` carried
+`@Version` while this table said unversioned. The table moved, not the code: optimistic locking
+only ever turns a lost update into a refused one, and removing it can only make concurrency worse.
+On the append-only rows it costs one integer per document; on `booking_tickets`, which is
+validated, transferred and refunded concurrently, it is the protection that matters.
+
+### Three rows opened from implementation, 2026-08-19
+
+The registry is closed, so a collection the code writes and the registry does not name is a
+contradiction in one direction or the other. Three were found by running the migrations against a
+live database. Two more — `escrow_accounts` and `approval_notifications` — were reachable from
+nothing but their own repositories and have been **deleted** rather than registered.
+
+**`booking_purchase_escalations` — added, owner unassigned.** Six files write it. It is *not*
+`booking_recovery_proposals` under another name, which was the standing guess: that row is a
+dual-control proposal (`confirmedById` ≠ `proposedById`, `PT2H` expiry, idempotency key) and this
+is a single-person resolution record (`reason`, `amount`, `resolved`, `resolvedBy`). Merging them
+would drop the four-eyes requirement ET-ADM-003 exists to impose. Note also that
+`booking_recovery_proposals` has a generated constant and **no implementing class** — so the two
+subjects are, between them, one specified-but-absent collection and one
+implemented-but-unspecified one.
+
+**`identity_payout_config_audit_logs` — added, owner unassigned.** A resolver, a service, an
+implementation and a repository write it. Distinct from `identity_audit_logs`, which
+ET-PLT-009 defines as the general immutable trail; this is a targeted record of payout
+configuration changes. It carries no service prefix on disk and must be renamed to the row above.
+
+**`platform_configuration` → `catalog_platform_configuration` — decided 2026-09-19.** The
+platform settings are **one table, like the reference data**: the database is shared, and the
+services differ in what they do, not in where the settings live. Catalog already wrote the
+document and stays its only writer; the table takes catalog's prefix. Identity's private
+`PlatformConfigurationView` and its repository are deleted, and identity reads the payment
+defaults through shared-library's `PlatformConfigurationReader`. The two rows this registry
+had reserved for ET-ADM-002 in identity — `identity_platform_configuration` and
+`identity_feature_flags` — are replaced by the one catalog row: a feature flag is a platform
+setting, so it lives in the same table. Catalog's migration step `platform-settings-rename`
+moves the data; both `CollectionRegistryLintTest` budgets it occupied drop to zero.
+
 
 **There is no `admin_` prefix.** `admin` is a persona, not a service. A collection is
 prefixed by the service that **writes** it, because that prefix is the only place
 write-ownership is recorded; prefixing by audience produces a name that lies the moment a
 second surface reads the data, and — worse — invites three services to write one
-collection. Administrative data therefore lives with its owning service: platform
-configuration, flags, blocks and review claims in `identity_`, recovery proposals in
-`booking_`. The two genuinely per-service concerns — statistics rollups and migration runs
+collection. Administrative data therefore lives with its owning service: blocks and review
+claims in `identity_`, recovery proposals in `booking_`, and the platform settings in
+`catalog_platform_configuration`. The two genuinely per-service concerns — statistics rollups and migration runs
 — are **one collection per service**, never one shared collection with three writers.
 
 ### Index registry
@@ -364,40 +422,72 @@ cannot win by checking first.
 
 | Collection | Index | Kind | Why |
 |---|---|---|---|
-| `identity_users` | `{ email: 1 }` | unique, sparse | one account per address |
-| `identity_users` | `{ phoneNumber: 1 }` | unique, sparse | phone is the login identity |
-| `identity_users` | `{ userType: 1, accountStatus: 1 }` | compound | the admin user list |
+| `identity_users` | `{ email: 1 }` | unique, partial `email: {$type: string}` | one account per address |
+| `identity_users` | `{ phoneNumber: 1 }` | unique, partial `phoneNumber: {$type: string}` | phone is the login identity |
+| `identity_users` | `{ username: 1 }` | unique, partial `username: {$type: string}` | one account per username; Better Auth creates the row before the username exists, so many nulls coexist |
+| `identity_users` | `{ keycloakUserId: 1 }` | unique, partial `keycloakUserId: {$type: string}` | ET-IDN-004 — one account per Keycloak user; orphans carry none |
+| `identity_users` | `{ status: 1 }` | single | ET-IDN-004 — the repair schedule and admin lists read by account state |
+| `identity_users` | `{ mergedInto: 1 }` | partial `mergedInto: {$type: string}` | ET-IDN-004 — find the accounts folded into a survivor |
+| `identity_contacts` | `{ type: 1, valueHash: 1 }` | unique, partial `verifiedAt` exists and `releasedAt` null | ET-IDN-004 — one verified owner per contact; built by migration `contacts-unique-index` after the backfill, never at startup |
+| `identity_contacts` | `{ accountId: 1 }` | single | ET-IDN-004 — an account's contacts |
+| `identity_consents` | `{ accountId: 1, purpose: 1 }` | compound | ET-IDN-004 — current consent per purpose |
+| `identity_account_events` | `{ accountId: 1, at: -1 }` | compound | ET-IDN-004 — an account's history, newest first |
+| `identity_account_events` | `{ kind: 1, at: -1 }` | compound | ET-IDN-004 — operational reads by kind |
 | `identity_organizations` | `{ slug: 1 }` | unique | the slug is a public URL and a Keycloak group name |
 | `identity_organizations` | `{ ownerId: 1 }` | single | "my organization" |
 | `identity_organizations` | `{ status: 1, submittedAt: 1 }` | compound | the approval queue, oldest first |
 | `identity_organization_members` | `{ userId: 1, organizationId: 1 }` | **unique** | one membership per user per org |
 | `identity_organization_members` | `{ organizationId: 1, role: 1, status: 1 }` | compound | the team list and the owner-count invariant |
+| `identity_organization_members` | `{ organizationId: 1 }` | **partial unique** where `role = OWNER` | ET-ORG-002 R2 — two transfers confirmed at once each write a second owner, and no check-first wins that race |
+| `identity_organization_members` | `{ mirrorPending: 1 }` | compound | ET-ORG-002 R8 — the `identity-group-mirror-repair` Schedule's repair runs every minute and this is its only query |
 | `identity_team_invitations` | `{ invitationToken: 1 }` | unique | token lookup on the acceptance page |
 | `identity_team_invitations` | `{ organizationId: 1, email: 1, status: 1 }` | compound | "is there already a pending invite" |
 | `identity_team_invitations` | `{ expiresAt: 1 }` | **TTL, `expireAfterSeconds: 0`** | expired invitations remove themselves |
+| `identity_team_invitations` | `{ phoneNumber: 1, status: 1 }` | compound | ET-ORG-002 R9 — pending invitations sent to a WhatsApp number |
+| `identity_system_alerts` | `{ status: 1, lastSeenAt: -1 }` | compound | ET-ADM-005 — the alert list, newest activity first |
+| `identity_system_alerts` | `{ source: 1, key: 1 }` | unique, partial `status` in `OPEN`, `ACKNOWLEDGED` | ET-ADM-005 — one live alert per condition, so concurrent raisers cannot open two |
+| `identity_announcements` | `{ startsAt: 1, endsAt: 1 }` | compound | ET-ADM-005 — announcements live now |
+| `identity_users` | `{ createdAt: 1 }` | single | ET-ADM-004 — the user-growth series scans a date range |
+| `identity_ownership_transfers` | `{ transferToken: 1 }` | unique | a duplicate token makes one acceptance link resolve to two handshakes |
+| `identity_ownership_transfers` | `{ organizationId: 1, status: 1 }` | compound | "is a transfer already in flight for this organization" |
 | `identity_event_access_grants` | `{ userId: 1, eventId: 1 }` | **unique** | one grant per user per event |
 | `identity_event_access_grants` | `{ eventId: 1, status: 1 }` | compound | who may scan this event |
 | `identity_verification_documents` | `{ organizationId: 1, documentType: 1 }` | compound | the review panel |
 | `identity_notifications` | `{ userId: 1, status: 1, createdAt: -1 }` | compound | the notification feed |
 | `identity_user_devices` | `{ deviceToken: 1 }` | unique | one registration per device |
 | `identity_audit_logs` | `{ createdAt: 1 }` | TTL, retention per ET-PLT-009 | bounded growth |
-| `catalog_events` | `{ status: 1, startsAt: 1 }` | compound | **hot** — public discovery |
+| `catalog_events` | `{ status: 1, eventDateTime: 1 }` | compound | **hot** — public discovery |
 | `catalog_events` | `{ organizationId: 1, status: 1 }` | compound | the organizer dashboard |
-| `catalog_events` | `{ categoryId: 1, cityId: 1, startsAt: 1 }` | compound | filtered discovery |
-| `catalog_events` | `{ title: "text", description: "text" }` | text | search |
+| `catalog_events` | `{ status: 1, categoryId: 1, eventDateTime: 1 }` | compound | discovery by category |
+| `catalog_events` | `{ status: 1, cityId: 1, eventDateTime: 1 }` | compound | discovery by city |
+| `catalog_events` | `{ status: 1, categoryId: 1, cityId: 1, eventDateTime: 1 }` | compound | discovery by category and city |
+| `catalog_events` | `{ title: "text", description: "text" }` | text, title weighted 5 | search |
 | `catalog_ticket_tiers` | `{ eventId: 1, salesStartAt: 1 }` | compound | the on-sale query |
+| `catalog_events` | `{ status: 1, publishedAt: -1 }` | compound | ET-CAT-004 — the feed, newest first |
+| `catalog_events` | `{ status: 1, lowestTicketPrice: 1, eventDateTime: 1 }` | compound | ET-CAT-004 — the feed, cheapest first |
+| `catalog_events` | `{ status: 1, lowestTicketPrice: -1, eventDateTime: 1 }` | compound | ET-CAT-004 — the feed, dearest first |
+| `catalog_events` | `{ status: 1, soldTickets: -1, eventDateTime: 1 }` | compound | ET-CAT-004 — the feed, most sold first; trending |
+| `catalog_events` | `{ organizationId: 1, createdAt: -1, _id: -1 }` | compound | ET-CAT-004 — an organization's events newest first, paged by cursor |
+| `catalog_media` | `{ fileKey: 1 }` | **unique** | ET-CAT-004 — the file a public URL names |
+| `catalog_media` | `{ organizationId: 1, createdAt: -1, _id: -1 }` | compound | ET-CAT-004 — an organization's library, paged by cursor |
+| `catalog_media` | `{ kind: 1, status: 1, createdAt: -1 }` | compound | ET-CAT-004 — the moderation queue |
+| `catalog_media` | `{ kind: 1, purpose: 1, categoryCode: 1, active: 1 }` | compound | ET-CAT-004 — the stock library and category tiles |
 | `catalog_locations` | `{ cityId: 1 }` | single | venue lookup |
 | `booking_tier_inventory` | `{ tierId: 1 }` | **unique** | **hot** — the reservation decrement targets this and only this |
 | `booking_tier_inventory` | `{ eventId: 1 }` | single | remaining capacity across an event |
 | `booking_reservations` | `{ expiresAt: 1 }` | **TTL, `expireAfterSeconds: 0`** | a hold nobody paid for releases itself |
 | `booking_reservations` | `{ tierId: 1, status: 1 }` | compound | **hot** — outstanding holds per tier |
 | `booking_reservations` | `{ userId: 1, status: 1 }` | compound | "my pending purchase" |
+| `booking_reservations` | `{ userId: 1, items.ticketTierId: 1 }` | unique, partial `status: HELD` | ET-TKT-001 R5 — one live hold per buyer per tier |
+| `booking_reservations` | `{ status: 1, expiresAt: 1 }` | compound | ET-TKT-001 R8 — boot adoption and the recovery queue read `HELD` reservations by expiry |
 | `booking_tickets` | `{ eventId: 1, status: 1 }` | compound | **hot** — check-in and sales counts |
 | `booking_tickets` | `{ ownerId: 1, status: 1 }` | compound | "my tickets" |
-| `booking_tickets` | `{ ticketReference: 1 }` | unique | the scanned identity |
+| `booking_tickets` | `{ ticketReference: 1 }` | unique, partial `ticketReference: {$type: string}` | the scanned identity; tickets that carry none coexist |
 | `booking_payment_intents` | `{ idempotencyKey: 1 }` | **unique** | the retry guard that Redis alone cannot give |
-| `booking_payment_intents` | `{ status: 1, createdAt: 1 }` | compound | the stuck-transaction sweep |
-| `booking_payment_attempts` | `{ providerReference: 1 }` | unique, sparse | webhook correlation |
+| `booking_payment_intents` | `{ status: 1, createdAt: 1 }` | compound | ET-ADM-003's stuck-transaction queue; the purchase workflow's escalation marks what it lists |
+| `booking_payment_intents` | `{ depositId: 1 }` | unique, partial `depositId: {$type: string}` | ET-PAY-002 R4 — the platform reference a provider callback correlates on |
+| `booking_payment_attempts` | `{ providerReference: 1 }` | unique, partial `providerReference: {$type: string}` | webhook correlation |
+| `booking_payment_attempts` | `{ paymentIntentId: 1 }` | | ET-PAY-001 §4's `paymentAttempts(intentId)` |
 | `booking_webhook_receipts` | `{ providerEventId: 1 }` | **unique** | replay defence |
 | `booking_webhook_receipts` | `{ receivedAt: 1 }` | TTL, 90 days | bounded growth |
 | `booking_escrow_accounts` | `{ eventId: 1 }` | **unique** | one escrow per event |
@@ -408,10 +498,279 @@ cannot win by checking first.
 | `booking_commission_records` | `{ eventId: 1, status: 1 }` | compound | recognition at event completion |
 | `booking_payout_requests` | `{ organizationId: 1, status: 1 }` | compound | the payout queue |
 | `booking_payout_requests` | `{ status: 1, requestedAt: 1 }` | compound | the finance workbench |
+| `booking_payout_requests` | `{ idempotencyKey: 1 }` | **unique**, partial `$type: string` | one payout per key; partial because a keyless request stores `null` and sparse would index it |
+| `booking_checkins` | `{ scanId: 1 }` | **unique**, partial `$type: string` | offline upload replay guard; online scans store `null`, so sparse would reject every scan after the first |
 | `booking_bank_accounts` | `{ organizationId: 1, isDefault: 1 }` | compound | the default destination |
 | `booking_promo_codes` | `{ code: 1 }` | unique | redemption lookup |
+| `catalog_outbox` | `{ status: 1, stagedAt: 1 }` | compound | **hot** — the drain's claim, every poll |
+| `booking_outbox` | `{ status: 1, stagedAt: 1 }` | compound | **hot** — the drain's claim, every poll |
+| `identity_outbox` | `{ status: 1, stagedAt: 1 }` | compound | **hot** — the drain's claim, every poll |
+| `catalog_approval_escalations` | `{ eventId: 1, level: 1 }` | **unique** | ET-ADM-001 R3 — one escalation per level, at the database rather than a read-then-write |
 
-The five **hot** rows are the queries R3's `explain()` box names.
+> **Partial, not sparse, on the three optional-field uniqueness rows.** Sparse excludes a document
+> in which the field is **absent**; it still indexes one that stores an explicit `null`, which is
+> what mapping an object with a null field produces. Under `unique` the second such document then
+> collides with the first on the key `null` — so one user without a phone number means no other
+> user may be created without one. This is not theoretical: building
+> `identity_users.idx_phoneNumber` against the live database fails with
+> `E11000 dup key: { phoneNumber: null }`. A `$type` test excludes both the absent field and the
+> stored null in one condition.
+
+
+The **hot** rows are the queries R3's `explain()` box names.
+
+The three outbox rows were added when ET-PLT-003 BE-1 landed. The drain claims with
+`status = PENDING` sorted by `stagedAt`, which without this index is a collection scan plus an
+in-memory sort — and MongoDB aborts an in-memory sort above 32MB. An outbox that has fallen
+behind is exactly when it is largest, so the failure arrives at the moment the drain is most
+needed.
+
+#### Lookups and constraints moved from model annotations (2026-09-18)
+
+These indexes were created at startup from `@Indexed`, `@CompoundIndex` and `@TextIndexed` on the
+model classes, and from two start-up helpers (booking's analytics indexes, catalog's reference-data
+seeder). They now live in each service's `*IndexInitializer` under the names the annotations gave
+them, so a database that already has them reports each as present. `auto-index-creation` is off.
+Two annotation indexes were not carried over because a registry TTL index on the same field
+replaces them: plain `{ expiresAt: 1 }` on `identity_team_invitations` and on `booking_reservations`.
+Five analytics indexes on `financial_transactions` were dropped with them: no service writes that
+collection, so there is nothing to index (FINDINGS F-037).
+`IndexCensusTest` in each service proves the registry produces every other index that existed before.
+
+| Collection | Index | Kind | Why |
+|---|---|---|---|
+| `identity_audit_logs` | `{ action: 1, timestamp: -1 }` | compound | lookup by `action`, `timestamp` |
+| `identity_audit_logs` | `{ action: 1 }` | single | lookup by `action` |
+| `identity_audit_logs` | `{ performedBy: 1 }` | single | lookup by `performedBy` |
+| `identity_audit_logs` | `{ status: 1, timestamp: -1 }` | compound | lookup by `status`, `timestamp` |
+| `identity_audit_logs` | `{ status: 1 }` | single | lookup by `status` |
+| `identity_audit_logs` | `{ timestamp: 1 }` | single | lookup by `timestamp` |
+| `identity_audit_logs` | `{ userId: 1, action: 1, timestamp: -1 }` | compound | lookup by `userId`, `action`, `timestamp` |
+| `identity_audit_logs` | `{ userId: 1 }` | single | lookup by `userId` |
+| `identity_event_access_grants` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `identity_event_access_grants` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `identity_event_access_grants` | `{ userId: 1 }` | single | lookup by `userId` |
+| `identity_event_reminders` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `identity_event_reminders` | `{ userId: 1 }` | single | lookup by `userId` |
+| `identity_notification_preferences` | `{ userId: 1 }` | unique | one row per `userId` |
+| `identity_notifications` | `{ userId: 1 }` | single | lookup by `userId` |
+| `identity_organization_members` | `{ organizationId: 1, role: 1 }` | compound | lookup by `organizationId`, `role` |
+| `identity_organization_members` | `{ organizationId: 1, status: 1 }` | compound | lookup by `organizationId`, `status` |
+| `identity_organization_members` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `identity_organization_members` | `{ userId: 1 }` | single | lookup by `userId` |
+| `identity_organizations` | `{ businessEmail: 1 }` | single | lookup by `businessEmail` |
+| `identity_organizations` | `{ status: 1 }` | single | lookup by `status` |
+| `identity_organizations` | `{ statusSemantic: 1 }` | single | lookup by `statusSemantic` |
+| `identity_ownership_transfers` | `{ expiresAt: 1 }` | single | lookup by `expiresAt` |
+| `identity_ownership_transfers` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `identity_payout_config_audit_logs` | `{ action: 1 }` | single | lookup by `action` |
+| `identity_payout_config_audit_logs` | `{ organizationId: 1, timestamp: -1 }` | compound | lookup by `organizationId`, `timestamp` |
+| `identity_payout_config_audit_logs` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `identity_payout_config_audit_logs` | `{ timestamp: 1 }` | single | lookup by `timestamp` |
+| `identity_payout_config_audit_logs` | `{ userId: 1, timestamp: -1 }` | compound | lookup by `userId`, `timestamp` |
+| `identity_payout_config_audit_logs` | `{ userId: 1 }` | single | lookup by `userId` |
+| `identity_team_invitations` | `{ email: 1, organizationId: 1 }` | compound | lookup by `email`, `organizationId` |
+| `identity_team_invitations` | `{ email: 1 }` | single | lookup by `email` |
+| `identity_team_invitations` | `{ organizationId: 1, status: 1 }` | compound | lookup by `organizationId`, `status` |
+| `identity_team_invitations` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `identity_token_revocations` | `{ expiresAt: 1 }` | TTL, `expireAfterSeconds: 0` | expires at `expiresAt` |
+| `identity_user_devices` | `{ deviceToken: 1 }` | single | lookup by `deviceToken` |
+| `identity_user_devices` | `{ userId: 1 }` | single | lookup by `userId` |
+| `identity_verification_documents` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `catalog_approval_escalations` | `{ escalatedTo: 1 }` | single | lookup by `escalatedTo` |
+| `catalog_approval_escalations` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `catalog_approval_escalations` | `{ nextReminderAt: 1 }` | single | lookup by `nextReminderAt` |
+| `catalog_approval_escalations` | `{ status: 1, escalatedTo: 1 }` | compound | lookup by `status`, `escalatedTo` |
+| `catalog_approval_escalations` | `{ status: 1 }` | single | lookup by `status` |
+| `catalog_approval_timelines` | `{ assignedReviewerId: 1 }` | single | lookup by `assignedReviewerId` |
+| `catalog_approval_timelines` | `{ currentStatus: 1, slaDeadline: 1 }` | compound | lookup by `currentStatus`, `slaDeadline` |
+| `catalog_approval_timelines` | `{ currentStatus: 1 }` | single | lookup by `currentStatus` |
+| `catalog_approval_timelines` | `{ eventId: 1 }` | unique | one row per `eventId` |
+| `catalog_approval_timelines` | `{ hasActiveEscalation: 1 }` | single | lookup by `hasActiveEscalation` |
+| `catalog_approval_timelines` | `{ isOverdue: 1 }` | single | lookup by `isOverdue` |
+| `catalog_approval_timelines` | `{ organizerId: 1, currentStatus: 1 }` | compound | lookup by `organizerId`, `currentStatus` |
+| `catalog_approval_timelines` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `catalog_approval_timelines` | `{ slaDeadline: 1 }` | single | lookup by `slaDeadline` |
+| `catalog_approval_timelines` | `{ submittedAt: 1 }` | single | lookup by `submittedAt` |
+| `catalog_categories` | `{ code: 1 }` | unique | one row per `code` |
+| `catalog_categories` | `{ name: 1 }` | unique | one row per `name` |
+| `catalog_cities` | `{ country: 1 }` | single | lookup by `country` |
+| `catalog_cities` | `{ name: 1 }` | single | lookup by `name` |
+| `catalog_cities` | `{ provinceId: 1 }` | single | lookup by `provinceId` |
+| `catalog_events` | `{ assignedReviewerId: 1 }` | single | lookup by `assignedReviewerId` |
+| `catalog_events` | `{ categoryId: 1 }` | single | lookup by `categoryId` |
+| `catalog_events` | `{ cityName: 1 }` | single | lookup by `cityName` |
+| `catalog_events` | `{ createdBy: 1 }` | single | lookup by `createdBy` |
+| `catalog_events` | `{ deletedBy: 1 }` | single | lookup by `deletedBy` |
+| `catalog_events` | `{ eventDateTime: 1 }` | single | lookup by `eventDateTime` |
+| `catalog_events` | `{ isDeleted: 1 }` | single | lookup by `isDeleted` |
+| `catalog_events` | `{ isFreeEvent: 1 }` | single | lookup by `isFreeEvent` |
+| `catalog_events` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `catalog_events` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `catalog_events` | `{ status: 1 }` | single | lookup by `status` |
+| `catalog_events` | `{ updatedBy: 1 }` | single | lookup by `updatedBy` |
+| `catalog_provinces` | `{ country: 1 }` | single | lookup by `country` |
+| `catalog_provinces` | `{ name: 1 }` | unique | one row per `name` |
+| `catalog_reference_data` | `{ type: 1, code: 1 }` | unique compound | one row per `type`, `code` |
+| `catalog_reference_data` | `{ type: 1, isActive: 1, displayOrder: 1 }` | compound | lookup by `type`, `isActive`, `displayOrder` |
+| `catalog_reference_data` | `{ type: 1, parentCode: 1 }` | compound | lookup by `type`, `parentCode` |
+| `catalog_ticket_tiers` | `{ eventId: 1, code: 1 }` | unique compound | one row per `eventId`, `code` |
+| `catalog_ticket_tiers` | `{ eventId: 1, isActive: 1, sortOrder: 1 }` | compound | lookup by `eventId`, `isActive`, `sortOrder` |
+| `catalog_ticket_tiers` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `catalog_ticket_tiers` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_bank_accounts` | `{ accountNumber: 1 }` | single | lookup by `accountNumber` |
+| `booking_bank_accounts` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_bank_accounts` | `{ organizerId: 1, isDefault: 1 }` | compound | lookup by `organizerId`, `isDefault` |
+| `booking_bank_accounts` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_chargebacks` | `{ chargebackId: 1 }` | unique | one row per `chargebackId` |
+| `booking_chargebacks` | `{ customerId: 1 }` | single | lookup by `customerId` |
+| `booking_chargebacks` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_chargebacks` | `{ journalEntryId: 1 }` | single | lookup by `journalEntryId` |
+| `booking_chargebacks` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_chargebacks` | `{ organizerId: 1, status: 1 }` | compound | lookup by `organizerId`, `status` |
+| `booking_chargebacks` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_chargebacks` | `{ originalTransactionId: 1 }` | single | lookup by `originalTransactionId` |
+| `booking_chargebacks` | `{ reason: 1 }` | single | lookup by `reason` |
+| `booking_chargebacks` | `{ receivedAt: 1 }` | single | lookup by `receivedAt` |
+| `booking_chargebacks` | `{ recoveryStatus: 1 }` | single | lookup by `recoveryStatus` |
+| `booking_chargebacks` | `{ status: 1, receivedAt: -1 }` | compound | lookup by `status`, `receivedAt` |
+| `booking_chargebacks` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_chargebacks` | `{ ticketId: 1 }` | single | lookup by `ticketId` |
+| `booking_chart_of_accounts` | `{ accountCode: 1 }` | unique | one row per `accountCode` |
+| `booking_chart_of_accounts` | `{ accountType: 1, isActive: 1 }` | compound | lookup by `accountType`, `isActive` |
+| `booking_chart_of_accounts` | `{ accountType: 1 }` | single | lookup by `accountType` |
+| `booking_chart_of_accounts` | `{ isActive: 1 }` | single | lookup by `isActive` |
+| `booking_chart_of_accounts` | `{ parentAccountCode: 1 }` | single | lookup by `parentAccountCode` |
+| `booking_chart_of_accounts` | `{ subType: 1, isActive: 1 }` | compound | lookup by `subType`, `isActive` |
+| `booking_checkin_conflicts` | `{ eventId: 1, detectedAt: -1 }` | compound | lookup by `eventId`, `detectedAt` |
+| `booking_checkin_conflicts` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_checkin_conflicts` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_checkins` | `{ eventId: 1, recordedAt: -1 }` | compound | lookup by `eventId`, `recordedAt` |
+| `booking_checkins` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_checkins` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_checkins` | `{ ticketId: 1 }` | unique | one row per `ticketId` |
+| `booking_commission_records` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_commission_records` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_commission_records` | `{ organizerId: 1, status: 1 }` | compound | lookup by `organizerId`, `status` |
+| `booking_commission_records` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_commission_records` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_commission_records` | `{ ticketId: 1 }` | unique | one row per `ticketId` |
+| `booking_escrow_accounts` | `{ accountNumber: 1 }` | unique | one row per `accountNumber` |
+| `booking_escrow_accounts` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_escrow_accounts` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_escrow_accounts` | `{ status: 1, organizerId: 1 }` | compound | lookup by `status`, `organizerId` |
+| `booking_escrow_accounts` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_escrow_accounts` | `{ statusSemantic: 1 }` | single | lookup by `statusSemantic` |
+| `booking_escrow_transactions` | `{ category: 1 }` | single | lookup by `category` |
+| `booking_escrow_transactions` | `{ chargebackId: 1 }` | single | lookup by `chargebackId` |
+| `booking_escrow_transactions` | `{ escrowAccountId: 1, category: 1 }` | compound | lookup by `escrowAccountId`, `category` |
+| `booking_escrow_transactions` | `{ escrowAccountId: 1, timestamp: -1 }` | compound | lookup by `escrowAccountId`, `timestamp` |
+| `booking_escrow_transactions` | `{ escrowAccountId: 1, type: 1 }` | compound | lookup by `escrowAccountId`, `type` |
+| `booking_escrow_transactions` | `{ escrowAccountId: 1 }` | single | lookup by `escrowAccountId` |
+| `booking_escrow_transactions` | `{ journalEntryId: 1 }` | single | lookup by `journalEntryId` |
+| `booking_escrow_transactions` | `{ paymentIntentId: 1 }` | single | lookup by `paymentIntentId` |
+| `booking_escrow_transactions` | `{ payoutRequestId: 1 }` | single | lookup by `payoutRequestId` |
+| `booking_escrow_transactions` | `{ refundRequestId: 1 }` | single | lookup by `refundRequestId` |
+| `booking_escrow_transactions` | `{ ticketId: 1 }` | single | lookup by `ticketId` |
+| `booking_escrow_transactions` | `{ timestamp: 1 }` | single | lookup by `timestamp` |
+| `booking_escrow_transactions` | `{ type: 1 }` | single | lookup by `type` |
+| `booking_journal_entries` | `{ correlationId: 1 }` | single | lookup by `correlationId` |
+| `booking_journal_entries` | `{ entryDate: 1, status: 1 }` | compound | lookup by `entryDate`, `status` |
+| `booking_journal_entries` | `{ entryDate: 1 }` | single | lookup by `entryDate` |
+| `booking_journal_entries` | `{ entryNumber: 1 }` | unique | one row per `entryNumber` |
+| `booking_journal_entries` | `{ lines.accountCode: 1, status: 1 }` | compound | lookup by `lines.accountCode`, `status` |
+| `booking_journal_entries` | `{ reversalOfEntryId: 1 }` | single | lookup by `reversalOfEntryId` |
+| `booking_journal_entries` | `{ reversedByEntryId: 1 }` | single | lookup by `reversedByEntryId` |
+| `booking_journal_entries` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_journal_entries` | `{ type: 1, status: 1 }` | compound | lookup by `type`, `status` |
+| `booking_journal_entries` | `{ type: 1 }` | single | lookup by `type` |
+| `booking_payment_attempts` | `{ attemptNumber: 1 }` | unique | one row per `attemptNumber` |
+| `booking_payment_attempts` | `{ buyerId: 1, createdAt: -1 }` | compound | lookup by `buyerId`, `createdAt` |
+| `booking_payment_attempts` | `{ buyerId: 1 }` | single | lookup by `buyerId` |
+| `booking_payment_attempts` | `{ correlationId: 1 }` | single | lookup by `correlationId` |
+| `booking_payment_attempts` | `{ depositId: 1 }` | unique | one row per `depositId` |
+| `booking_payment_attempts` | `{ eventId: 1, status: 1 }` | compound | lookup by `eventId`, `status` |
+| `booking_payment_attempts` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_payment_attempts` | `{ expiresAt: 1 }` | single | lookup by `expiresAt` |
+| `booking_payment_attempts` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_payment_attempts` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_payment_attempts` | `{ providerTransactionId: 1 }` | single | lookup by `providerTransactionId` |
+| `booking_payment_attempts` | `{ reservationId: 1, status: 1 }` | compound | lookup by `reservationId`, `status` |
+| `booking_payment_attempts` | `{ reservationId: 1 }` | single | lookup by `reservationId` |
+| `booking_payment_attempts` | `{ status: 1, createdAt: 1 }` | compound | lookup by `status`, `createdAt` |
+| `booking_payment_attempts` | `{ status: 1, expiresAt: 1 }` | compound | lookup by `status`, `expiresAt` |
+| `booking_payment_attempts` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_payment_intents` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_payment_intents` | `{ providerTransactionId: 1 }` | single | lookup by `providerTransactionId` |
+| `booking_payment_intents` | `{ reservationId: 1 }` | unique | one row per `reservationId` |
+| `booking_payment_intents` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_payment_intents` | `{ transactionRef: 1 }` | unique | one row per `transactionRef` |
+| `booking_payment_intents` | `{ userId: 1 }` | single | lookup by `userId` |
+| `booking_payout_requests` | `{ escrowAccountId: 1 }` | single | lookup by `escrowAccountId` |
+| `booking_payout_requests` | `{ eventId: 1, status: 1 }` | compound | lookup by `eventId`, `status` |
+| `booking_payout_requests` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_payout_requests` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_payout_requests` | `{ organizerId: 1, status: 1 }` | compound | lookup by `organizerId`, `status` |
+| `booking_payout_requests` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_payout_requests` | `{ paymentReference: 1 }` | single | lookup by `paymentReference` |
+| `booking_payout_requests` | `{ requestId: 1 }` | unique | one row per `requestId` |
+| `booking_payout_requests` | `{ status: 1, organizerId: 1 }` | compound | lookup by `status`, `organizerId` |
+| `booking_payout_requests` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_payout_requests` | `{ statusSemantic: 1 }` | single | lookup by `statusSemantic` |
+| `booking_platform_accounts` | `{ accountType: 1 }` | unique | one row per `accountType` |
+| `booking_promo_codes` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_promo_codes` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_promo_codes` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_purchase_escalations` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_purchase_escalations` | `{ reason: 1 }` | single | lookup by `reason` |
+| `booking_purchase_escalations` | `{ reservationId: 1 }` | unique | one row per `reservationId` |
+| `booking_purchase_escalations` | `{ resolved: 1 }` | single | lookup by `resolved` |
+| `booking_reconciliation_runs` | `{ reconciliationDate: 1 }` | single | lookup by `reconciliationDate` |
+| `booking_reconciliation_runs` | `{ runNumber: 1 }` | unique | one row per `runNumber` |
+| `booking_reconciliation_runs` | `{ status: 1, reconciliationDate: -1 }` | compound | lookup by `status`, `reconciliationDate` |
+| `booking_reconciliation_runs` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_reconciliation_runs` | `{ type: 1, reconciliationDate: -1 }` | compound | lookup by `type`, `reconciliationDate` |
+| `booking_reconciliation_runs` | `{ type: 1 }` | single | lookup by `type` |
+| `booking_refund_requests` | `{ buyerId: 1 }` | single | lookup by `buyerId` |
+| `booking_refund_requests` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_refund_requests` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_refund_requests` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_refund_requests` | `{ pawaPayRefundId: 1 }` | single | lookup by `pawaPayRefundId` |
+| `booking_refund_requests` | `{ requestId: 1 }` | unique | one row per `requestId` |
+| `booking_refund_requests` | `{ ticketId: 1 }` | single | lookup by `ticketId` |
+| `booking_refund_requests` | `{ ticketNumber: 1 }` | single | lookup by `ticketNumber` |
+| `booking_reservations` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_reservations` | `{ idempotencyKey: 1 }` | single | lookup by `idempotencyKey` |
+| `booking_reservations` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_reservations` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_reservations` | `{ paymentIntentId: 1 }` | single | lookup by `paymentIntentId` |
+| `booking_reservations` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_reservations` | `{ userId: 1 }` | single | lookup by `userId` |
+| `booking_tickets` | `{ buyerId: 1 }` | single | lookup by `buyerId` |
+| `booking_tickets` | `{ eventId: 1 }` | single | lookup by `eventId` |
+| `booking_tickets` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
+| `booking_tickets` | `{ organizerId: 1 }` | single | lookup by `organizerId` |
+| `booking_tickets` | `{ reservationId: 1 }` | single | lookup by `reservationId` |
+| `booking_tickets` | `{ status: 1 }` | single | lookup by `status` |
+| `booking_tickets` | `{ statusSemantic: 1 }` | single | lookup by `statusSemantic` |
+| `booking_tickets` | `{ ticketNumber: 1 }` | unique | one row per `ticketNumber` |
+| `booking_tickets` | `{ ticketTierId: 1 }` | single | lookup by `ticketTierId` |
+| `booking_tickets` | `{ bookingId: 1 }` | single | ET-TKT-002 — the tickets of one booking |
+| `booking_ticket_transfers` | `{ ticketId: 1, status: 1 }` | compound | ET-TKT-004 — the open offer of a ticket |
+| `booking_ticket_transfers` | `{ fromUserId: 1, createdAt: -1 }` | compound | ET-TKT-004 — a sender's offers, newest first |
+| `booking_ticket_transfers` | `{ toUserId: 1, createdAt: -1 }` | compound | ET-TKT-004 — a recipient's offers, newest first |
+| `booking_ticket_transfers` | `{ eventId: 1, status: 1 }` | compound | ET-TKT-004 — the organizer's view of an event's transfers |
+| `booking_ticket_transfers` | `{ ticketId: 1 }` | unique, partial `status: PENDING` | ET-TKT-004 — at most one open offer per ticket |
+| `booking_bookings` | `{ reservationId: 1 }` | unique | ET-TKT-005 — one booking per reservation |
+| `booking_bookings` | `{ bookingNumber: 1 }` | unique | ET-TKT-005 — the human booking number |
+| `booking_bookings` | `{ organizationId: 1, createdAt: -1 }` | compound | ET-TKT-005 — the organizer's booking list |
+| `booking_bookings` | `{ buyerId: 1, createdAt: -1 }` | compound | ET-TKT-005 — the buyer's booking list |
+| `booking_bookings` | `{ eventId: 1, status: 1 }` | compound | ET-TKT-005 — bookings of an event by status |
+| `booking_platform_transfers` | `{ idempotencyKey: 1 }` | unique | ET-ADM-006 — one platform transfer per idempotency key |
+| `booking_platform_transfers` | `{ createdAt: -1 }` | single | ET-ADM-006 — transfers, newest first |
+| `booking_recovery_proposals` | `{ status: 1, expiresAt: 1 }` | compound | ET-ADM-003 — proposals that can still be confirmed, soonest expiry first |
+| `booking_recovery_proposals` | `{ proposedById: 1, proposedAt: -1 }` | compound | ET-ADM-003 — a maker's own proposals |
+| `booking_holder_messages` | `{ eventId: 1, createdAt: -1 }` | compound | ET-TKT-005 — an event's holder-message history |
 
 ### Redis key registry
 
@@ -423,10 +782,11 @@ Every key has a TTL. For every row, the authority is elsewhere.
 | `otp:cooldown:{phone}` | STRING | 60 s | resend throttle | none |
 | `idem:{key}` | STRING | 24 h | in-flight idempotency guard | `booking_payment_intents.idempotencyKey` |
 | `evt:seen:{consumer}:{eventId}` | STRING | 7 d | consumer deduplication | the consumer's own write |
-| `lock:sweep:{name}` | STRING | 30 s | scheduled-sweep mutex | none |
 | `ratelimit:{scope}:{subject}` | STRING | window | gateway rate limiting | none |
 | `cache:event:{eventId}` | STRING | 300 s | discovery read-through | `catalog_events` |
 | `cache:tier:{tierId}` | STRING | 30 s | tier availability display | `booking_tier_inventory` |
+
+*Amended 2026-09-13 under [D-21](../../ROADMAP.md):* no sweep lock key remains — timers and recurring jobs are Temporal workflows and Schedules ([ET-PLT-015](../015-durable-execution/)), and a Schedule's overlap policy SKIP is the mutex.
 
 `cache:tier:{tierId}` is a **display** value with a deliberately short TTL. No reservation
 decision reads it; the decision is the conditional update against the document (R6).
@@ -436,6 +796,7 @@ decision reads it; the decision is the conditional update against the document (
 | Schema | Owner | Contents |
 |---|---|---|
 | Keycloak's schema | Keycloak | its own; **no service connects to it** |
+| `temporal`, `temporal_visibility` | the self-hosted Temporal service, staging and production | workflow history and visibility ([ET-PLT-015](../015-durable-execution/), ROADMAP D-28); the development server keeps its own SQLite file; **no service connects to them** |
 
 That is the entire relational footprint. No service declares a datasource, and there is no
 relational schema of its own — the outbox is `{service}_outbox` in MongoDB

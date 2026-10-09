@@ -14,23 +14,25 @@ import {
 import type { FetchPolicy } from '@apollo/client';
 import {
   MY_ORGANIZATION,
-  MY_ORGANIZATION_STATUS,
-  IS_SLUG_AVAILABLE,
 } from './organization.queries';
 import {
   APPLY_TO_BE_ORGANIZER,
   UPDATE_ORGANIZATION_APPLICATION,
   SUBMIT_ORGANIZATION_FOR_REVIEW,
-  UPDATE_ORGANIZATION_SETTINGS,
 } from './organization.mutations';
 
 // Import types from same module
+import type { Organization, OrganizationApplicationInput } from './organization.types';
 import type {
-  Organization,
-  OrganizationStatusInfo,
-  OrganizationApplicationInput,
-  OrganizationSettingsInput,
-} from './organization.types';
+  MyOrganizationQuery,
+  MyOrganizationQueryVariables,
+  ApplyToBeOrganizerMutation,
+  ApplyToBeOrganizerMutationVariables,
+  UpdateOrganizationApplicationMutation,
+  UpdateOrganizationApplicationMutationVariables,
+  SubmitOrganizationForReviewMutation,
+  SubmitOrganizationForReviewMutationVariables,
+} from '../../../../types/graphql';
 
 // ==========================================
 // Current User Organization Hooks
@@ -47,9 +49,7 @@ export function useMyOrganization(options?: {
   fetchPolicy?: FetchPolicy;
   skip?: boolean;
 }) {
-  const { data, loading, error, refetch, networkStatus } = useQuery<{
-    myOwnedOrganization: Organization | null;
-  }>(MY_ORGANIZATION, {
+  const { data, loading, error, refetch, networkStatus } = useQuery<MyOrganizationQuery, MyOrganizationQueryVariables>(MY_ORGANIZATION, {
     fetchPolicy: options?.fetchPolicy || 'cache-and-network',
     errorPolicy: 'all',
     notifyOnNetworkStatusChange: true,
@@ -69,58 +69,6 @@ export function useMyOrganization(options?: {
   };
 }
 
-/**
- * Lightweight hook for just checking organization status
- * Use this for routing decisions where you don't need full organization data
- */
-export function useMyOrganizationStatus() {
-  const { data, loading, error, refetch } = useQuery<{
-    myOwnedOrganization: OrganizationStatusInfo | null;
-  }>(MY_ORGANIZATION_STATUS, {
-    fetchPolicy: 'network-only',
-    errorPolicy: 'all',
-  });
-
-  const organization = data?.myOwnedOrganization || null;
-
-  return {
-    hasOrganization: organization !== null,
-    status: organization?.status || null,
-    name: organization?.name || null,
-    submittedAt: organization?.submittedAt || null,
-    approvedAt: organization?.approvedAt || null,
-    canSubmitForReview: organization?.canSubmitForReview || false,
-    isApproved: organization?.isApproved || false,
-    loading,
-    error,
-    refetch,
-  };
-}
-
-// ==========================================
-// Lookup Hooks
-// ==========================================
-
-/**
- * Hook to check if a slug is available
- */
-export function useIsSlugAvailable(slug: string | null) {
-  const { data, loading, error, refetch } = useQuery<{
-    isSlugAvailable: boolean;
-  }>(IS_SLUG_AVAILABLE, {
-    variables: { slug },
-    skip: !slug || slug.length < 3,
-    fetchPolicy: 'network-only',
-  });
-
-  return {
-    isAvailable: data?.isSlugAvailable ?? null,
-    loading,
-    error,
-    refetch,
-  };
-}
-
 // ==========================================
 // Organizer Self-Service Mutation Hooks
 // ==========================================
@@ -130,9 +78,7 @@ export function useIsSlugAvailable(slug: string | null) {
  * Creates a new organization with status: DRAFT
  */
 export function useApplyToBeOrganizer() {
-  const [applyMutation, { data, loading, error }] = useMutation<{
-    applyToBeOrganizer: Organization;
-  }>(APPLY_TO_BE_ORGANIZER, {
+  const [applyMutation, { data, loading, error }] = useMutation<ApplyToBeOrganizerMutation, ApplyToBeOrganizerMutationVariables>(APPLY_TO_BE_ORGANIZER, {
     errorPolicy: 'all',
     refetchQueries: [{ query: MY_ORGANIZATION }],
     awaitRefetchQueries: true,
@@ -158,9 +104,7 @@ export function useApplyToBeOrganizer() {
  * Only allowed when status is DRAFT or CHANGES_REQUESTED
  */
 export function useUpdateOrganizationApplication() {
-  const [updateMutation, { data, loading, error }] = useMutation<{
-    updateOrganizationApplication: Organization;
-  }>(UPDATE_ORGANIZATION_APPLICATION, {
+  const [updateMutation, { data, loading, error }] = useMutation<UpdateOrganizationApplicationMutation, UpdateOrganizationApplicationMutationVariables>(UPDATE_ORGANIZATION_APPLICATION, {
     errorPolicy: 'all',
     refetchQueries: [{ query: MY_ORGANIZATION }],
     awaitRefetchQueries: true,
@@ -187,9 +131,7 @@ export function useUpdateOrganizationApplication() {
  * Transitions status to PENDING_REVIEW
  */
 export function useSubmitOrganizationForReview() {
-  const [submitMutation, { data, loading, error }] = useMutation<{
-    submitOrganizationForReview: Organization;
-  }>(SUBMIT_ORGANIZATION_FOR_REVIEW, {
+  const [submitMutation, { data, loading, error }] = useMutation<SubmitOrganizationForReviewMutation, SubmitOrganizationForReviewMutationVariables>(SUBMIT_ORGANIZATION_FOR_REVIEW, {
     errorPolicy: 'all',
     refetchQueries: [{ query: MY_ORGANIZATION }],
     awaitRefetchQueries: true,
@@ -208,79 +150,3 @@ export function useSubmitOrganizationForReview() {
   };
 }
 
-/**
- * Hook to update organization settings (for approved organizations)
- */
-export function useUpdateOrganizationSettings() {
-  const [updateMutation, { data, loading, error }] = useMutation<{
-    updateOrganizationSettings: Organization;
-  }>(UPDATE_ORGANIZATION_SETTINGS, {
-    errorPolicy: 'all',
-    refetchQueries: [{ query: MY_ORGANIZATION }],
-    awaitRefetchQueries: true,
-  });
-
-  const update = async (
-    id: string,
-    input: OrganizationSettingsInput
-  ): Promise<Organization | null> => {
-    const result = await updateMutation({ variables: { id, input } });
-    return result.data?.updateOrganizationSettings || null;
-  };
-
-  return {
-    update,
-    organization: data?.updateOrganizationSettings || null,
-    loading,
-    error,
-  };
-}
-
-// ==========================================
-// Combined Application Hook
-// ==========================================
-
-/**
- * Combined hook for the entire organization application flow
- * Provides all operations needed for the apply wizard
- */
-export function useOrganizationApplication() {
-  const organizationQuery = useMyOrganization();
-  const applyMutation = useApplyToBeOrganizer();
-  const updateMutation = useUpdateOrganizationApplication();
-  const submitMutation = useSubmitOrganizationForReview();
-
-  const isLoading =
-    organizationQuery.loading ||
-    applyMutation.loading ||
-    updateMutation.loading ||
-    submitMutation.loading;
-
-  return {
-    // Organization state
-    organization: organizationQuery.organization,
-    hasOrganization: organizationQuery.hasOrganization,
-    status: organizationQuery.status,
-    organizationLoading: organizationQuery.loading,
-    organizationError: organizationQuery.error,
-    refetchOrganization: organizationQuery.refetch,
-
-    // Apply operation
-    apply: applyMutation.apply,
-    applying: applyMutation.loading,
-    applyError: applyMutation.error,
-
-    // Update operation
-    update: updateMutation.update,
-    updating: updateMutation.loading,
-    updateError: updateMutation.error,
-
-    // Submit operation
-    submit: submitMutation.submit,
-    submitting: submitMutation.loading,
-    submitError: submitMutation.error,
-
-    // Combined loading state
-    isLoading,
-  };
-}

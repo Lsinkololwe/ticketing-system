@@ -1,5 +1,7 @@
 package com.pml.identity.web.graphql.query;
 
+import com.pml.identity.security.IdentityTenantReads;
+import java.util.Objects;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -23,23 +25,43 @@ import reactor.core.publisher.Mono;
 public class VerificationDocumentQueryResolver {
 
     private final VerificationDocumentService documentService;
+    private final IdentityTenantReads reads;
     private final OrganizationService organizationService;
 
     /**
-     * Get document by ID.
+     * One verification document, readable only from the organization that owns it.
+     *
+     * <h2>Why the lookup is scoped</h2>
+     * {@code @PreAuthorize("isAuthenticated()")} alone is not enough: an unscoped
+     * {@code findById(id)} lets any account that can sign in read any organizer's KYC document by
+     * id — the document type ({@code ID_DOCUMENT}, {@code BUSINESS_LICENSE}, {@code TAX_CERT}), the
+     * filename, the review status and rejection reason, and {@code documentUrl}, where the file
+     * itself is stored. {@code reads.documentForCaller} answers only from the caller's own
+     * organizations.
+     *
+     * <p>Its sibling three methods below, {@code myVerificationDocuments}, scopes to the caller's
+     * own organizations too. A by-id lookup is the operation most easily left unguarded by someone
+     * who assumes the guard is elsewhere, so the scope lives here, next to the lookup.</p>
+     *
+     * <h2>Refuses as unknown, not as forbidden</h2>
+     * A document belonging to another organization answers {@code DOCUMENT_UNKNOWN}, exactly as an
+     * id that was never issued does. Anything finer is an oracle: a caller holding a list of
+     * candidate ids would learn which are real by watching the error change.
      */
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
     public Mono<VerificationDocument> verificationDocument(@InputArgument String id) {
         log.debug("GraphQL query: verificationDocument(id={})", id);
-        return documentService.findById(id);
+        Objects.requireNonNull(id, "Document ID is required");
+
+        return reads.documentForCaller(id);
     }
 
     /**
      * Get my verification documents (for organizer).
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Flux<VerificationDocument> myVerificationDocuments(
             @InputArgument DocumentStatus status) {
         return SecurityContextUtils.getCurrentUserId()
@@ -83,7 +105,7 @@ public class VerificationDocumentQueryResolver {
      * Get document by type for organizer.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<VerificationDocument> myVerificationDocumentByType(
             @InputArgument String documentType) {
         return SecurityContextUtils.getCurrentUserId()
@@ -96,7 +118,7 @@ public class VerificationDocumentQueryResolver {
      * Count my documents.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<Long> myVerificationDocumentCount() {
         return SecurityContextUtils.getCurrentUserId()
                 .doOnNext(userId -> log.debug("GraphQL query: myVerificationDocumentCount(userId={})", userId))
@@ -109,7 +131,7 @@ public class VerificationDocumentQueryResolver {
      * Count my approved documents.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<Long> myApprovedDocumentCount() {
         return SecurityContextUtils.getCurrentUserId()
                 .doOnNext(userId -> log.debug("GraphQL query: myApprovedDocumentCount(userId={})", userId))

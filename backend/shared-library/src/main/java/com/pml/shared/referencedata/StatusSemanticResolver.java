@@ -9,6 +9,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import reactor.core.publisher.Mono;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,19 +52,40 @@ import java.util.function.Supplier;
 @Slf4j
 public class StatusSemanticResolver {
 
-    private static final String COLLECTION = "reference_data";
+    /**
+     * The registered collection name, {@code catalog_reference_data}. It is a literal rather than
+     * {@code CatalogCollections.REFERENCE_DATA} because shared-library is a leaf and may not
+     * import from a service — which is itself the argument for moving this class into the
+     * reference data engine, where the constant is in scope and this string cannot
+     * drift away from the registry unnoticed.
+     */
+    private static final String COLLECTION = "catalog_reference_data";
     private static final Duration TTL = Duration.ofMinutes(15);
 
     private final Supplier<ReactiveMongoTemplate> mongoTemplate;
 
+    /**
+     * The platform clock, not {@code System.currentTimeMillis()}.
+     *
+     * <p>This one is a testability fix with teeth. The cache holds a 15-minute TTL, and the only
+     * ways to assert expiry against the wall clock are to sleep for a quarter of an hour or to
+     * trust that the arithmetic is right. So the behaviour that matters — a stale semantic is
+     * re-read rather than served forever — had no test, in a cache whose entries decide how a
+     * status is interpreted across three services.</p>
+     */
+    private final Clock clock;
+
     @Autowired
-    public StatusSemanticResolver(ObjectProvider<ReactiveMongoTemplate> mongoTemplateProvider) {
+    public StatusSemanticResolver(ObjectProvider<ReactiveMongoTemplate> mongoTemplateProvider,
+                                  Clock clock) {
         this.mongoTemplate = mongoTemplateProvider::getObject;
+        this.clock = clock;
     }
 
     /** Direct construction, for tests that build a template themselves. */
-    public StatusSemanticResolver(ReactiveMongoTemplate mongoTemplate) {
+    public StatusSemanticResolver(ReactiveMongoTemplate mongoTemplate, Clock clock) {
         this.mongoTemplate = () -> mongoTemplate;
+        this.clock = clock;
     }
 
     private record Entry(WorkflowSemantic semantic, long expiresAtMillis) {}
@@ -82,7 +104,7 @@ public class StatusSemanticResolver {
 
         String key = type + "/" + code;
         Entry cached = cache.get(key);
-        if (cached != null && cached.expiresAtMillis() > System.currentTimeMillis()) {
+        if (cached != null && cached.expiresAtMillis() > clock.millis()) {
             return Mono.justOrEmpty(cached.semantic());
         }
 
@@ -95,7 +117,7 @@ public class StatusSemanticResolver {
                 .mapNotNull(doc -> doc.getString("semantic"))
                 .map(WorkflowSemantic::valueOf)
                 .doOnNext(semantic -> cache.put(key,
-                        new Entry(semantic, System.currentTimeMillis() + TTL.toMillis())))
+                        new Entry(semantic, clock.millis() + TTL.toMillis())))
                 .doOnError(e -> log.warn("Could not resolve {}.{}: {}", type, code, e.getMessage()))
                 .onErrorResume(e -> Mono.empty());
     }

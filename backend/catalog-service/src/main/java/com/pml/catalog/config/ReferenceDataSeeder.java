@@ -1,5 +1,9 @@
 package com.pml.catalog.config;
 
+import com.pml.shared.persistence.IndexSpec;
+import com.pml.shared.persistence.IndexEnsurer;
+import com.pml.catalog.persistence.CatalogCollections;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pml.catalog.domain.model.ReferenceData;
 import lombok.RequiredArgsConstructor;
@@ -7,9 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
-import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -19,7 +21,7 @@ import com.pml.catalog.service.referencedata.ReferenceDataBootstrapper;
 import reactor.core.publisher.Mono;
 
 import java.io.InputStream;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -41,11 +43,14 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ReferenceDataSeeder implements ApplicationRunner {
 
-    private static final String COLLECTION = "reference_data";
+    private static final String COLLECTION = CatalogCollections.REFERENCE_DATA;
     private static final String CLASS_ALIAS = ReferenceData.class.getName();
     private static final String SYSTEM_ACTOR = "system";
 
     private final ReactiveMongoTemplate mongoTemplate;
+
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
     private final ObjectMapper objectMapper;
     private final ReferenceDataBootstrapper bootstrapper;
 
@@ -57,10 +62,10 @@ public class ReferenceDataSeeder implements ApplicationRunner {
             return;
         }
 
-        LocalDateTime now = LocalDateTime.now();
-        // Indexes first — the unique (type, code) index is the data-integrity backbone. Created
-        // explicitly here because catalog-service does not enable Mongo auto-index-creation, so the
-        // @CompoundIndex annotations on the model are not materialised on their own.
+        Instant now = clock.instant();
+        // Indexes first — the unique (type, code) index is the data-integrity backbone, and the
+        // upserts below rely on it. The registry declares them; this start-up step may run before
+        // the registry's own pass, so it ensures the reference-data subset itself.
         Long upserted = ensureIndexes()
                 .thenMany(Flux.fromIterable(rows).flatMap(row -> upsert(row, now)))
                 .count()
@@ -86,7 +91,7 @@ public class ReferenceDataSeeder implements ApplicationRunner {
      * <p>It runs after the file seed rather than before it because the
      * bootstrapper's whole "already exists" contract rests on the unique
      * {@code (type, code)} index, and {@link #ensureIndexes()} above is what
-     * creates it — catalog-service has no auto-index-creation.
+     * guarantees it exists before either runs.
      *
      * <p>A failure here aborts startup. The bootstrapper refuses to guess at a
      * missing {@code WorkflowSemantic}, and a service that starts without one is
@@ -106,23 +111,13 @@ public class ReferenceDataSeeder implements ApplicationRunner {
      * the database level, independent of any application-layer check.
      */
     private Mono<Void> ensureIndexes() {
-        var ops = mongoTemplate.indexOps(COLLECTION);
-        return ops.ensureIndex(new Index()
-                        .named("type_code_unique")
-                        .on("type", Sort.Direction.ASC)
-                        .on("code", Sort.Direction.ASC)
-                        .unique())
-                .then(ops.ensureIndex(new Index()
-                        .named("type_active_order")
-                        .on("type", Sort.Direction.ASC)
-                        .on("isActive", Sort.Direction.ASC)
-                        .on("displayOrder", Sort.Direction.ASC)))
-                .then(ops.ensureIndex(new Index()
-                        .named("type_parent")
-                        .on("type", Sort.Direction.ASC)
-                        .on("parentCode", Sort.Direction.ASC)))
-                .doOnError(e -> log.error("Failed ensuring reference_data indexes: {}", e.getMessage()))
-                .then();
+        List<IndexSpec> referenceData = CatalogIndexInitializer.specifications().stream()
+                .filter(spec -> COLLECTION.equals(spec.collection()))
+                .toList();
+        return new IndexEnsurer(mongoTemplate).ensure(referenceData)
+                .flatMap(report -> report.isClean()
+                        ? Mono.<Void>empty()
+                        : Mono.error(new IllegalStateException("reference_data indexes could not be created: " + report)));
     }
 
     @SuppressWarnings("unchecked")
@@ -136,7 +131,7 @@ public class ReferenceDataSeeder implements ApplicationRunner {
     }
 
     @SuppressWarnings("unchecked")
-    private reactor.core.publisher.Mono<?> upsert(Map<String, Object> row, LocalDateTime now) {
+    private reactor.core.publisher.Mono<?> upsert(Map<String, Object> row, Instant now) {
         String type = (String) row.get("type");
         String code = (String) row.get("code");
         if (type == null || code == null) {

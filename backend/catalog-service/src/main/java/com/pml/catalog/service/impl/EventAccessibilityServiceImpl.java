@@ -5,12 +5,13 @@ import com.pml.catalog.domain.model.Event;
 import com.pml.catalog.domain.valueobject.EventAccessibility;
 import com.pml.catalog.repository.EventRepository;
 import com.pml.catalog.service.EventAccessibilityService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
-
-import java.time.LocalDateTime;
 
 /**
  * Event Accessibility Service Implementation
@@ -25,11 +26,34 @@ public class EventAccessibilityServiceImpl implements EventAccessibilityService 
 
     private final EventRepository eventRepository;
 
+    /** Every timestamp comes from here, never from the wall clock. */
+    private final java.time.Clock clock;
+
+    /**
+     * An event the caller is entitled to act on, or {@code EVENT_UNKNOWN}.
+     *
+     * <p>{@code updateEventAccessibility}'s
+     * {@code @PreAuthorize("hasAnyRole('ADMIN','ORGANIZER')")} checks only the role, and the
+     * {@code eventId} it writes to is caller-supplied. Accessibility copy is what a venue's disabled
+     * attendees rely on to decide whether they can attend at all, so an organizer
+     * able to rewrite a rival's — announcing step-free access that does not exist,
+     * or removing the note that it does — is a safety problem before it is a
+     * security one. OWASP A01:2021, CWE-639.
+     */
+    private Mono<Event> eventVisibleToCaller(String eventId) {
+        return CurrentTenantScope.get().flatMap(scope -> TenantGuard.locate(
+                scope,
+                eventRepository.findById(eventId),
+                organizationIds -> eventRepository.findByIdAndOrganizationIdIn(eventId, organizationIds),
+                ErrorCode.EVENT_UNKNOWN,
+                "event " + eventId));
+    }
+
     @Override
     public Mono<Event> updateAccessibility(String eventId, EventAccessibilityInput input) {
         log.info("Updating accessibility information for event {}", eventId);
 
-        return eventRepository.findById(eventId)
+        return eventVisibleToCaller(eventId)
                 .flatMap(event -> {
                     EventAccessibility accessibility = event.getAccessibility();
                     if (accessibility == null) {
@@ -62,7 +86,7 @@ public class EventAccessibilityServiceImpl implements EventAccessibilityService 
                     }
 
                     event.setAccessibility(accessibility);
-                    event.setUpdatedAt(LocalDateTime.now());
+                    event.setUpdatedAt(clock.instant());
 
                     return eventRepository.save(event)
                             .doOnSuccess(updated -> log.info("Accessibility updated for event {}", eventId));

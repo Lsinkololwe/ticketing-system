@@ -1,15 +1,20 @@
 package com.pml.booking.domain.model;
 
+import com.pml.shared.constants.Money;
+
+import com.pml.booking.persistence.BookingCollections;
+
 import com.pml.booking.domain.enums.DiscountType;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -18,7 +23,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -28,7 +33,8 @@ import java.util.List;
  * Supports percentage-based and fixed-amount discounts with usage limits,
  * validity periods, and tier restrictions.
  */
-@Document(collection = "promo_codes")
+@Document(collection = BookingCollections.PROMO_CODES)
+@TypeAlias("promo_codes")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -38,16 +44,34 @@ public class PromoCode {
     @Id
     private String id;
 
+    /**
+     * Every monetary field carries a currency sibling. Launch is ZMW-only and the field still
+     * exists: adding a second currency later becomes a data
+     * migration rather than an audit of which amounts meant what.
+     */
+    @Builder.Default
+    private String currency = Money.DEFAULT_CURRENCY;
+
+    /**
+     * {@code booking_promo_codes} is versioned, and {@code currentUses} is why.
+     *
+     * <p>Redemption is read-check-increment against {@code maxUses}. Two checkouts that read the
+     * same {@code currentUses} both see room under the limit, both write back the same
+     * incremented value, and one redemption disappears — so a code capped at 100 settles more
+     * than 100 discounts, and the overspend is discovered in the commission reconciliation
+     * rather than at the point of sale. {@code @Version} turns the second write into an
+     * {@code OptimisticLockingFailureException} the caller can retry.</p>
+     */
+    @Version
+    private Long version;
+
     @NotBlank(message = "Promo code is required")
-    @Indexed(unique = true)
     private String code;
 
     @NotBlank(message = "Event ID is required")
-    @Indexed
     private String eventId;
 
     @NotBlank(message = "Organizer ID is required")
-    @Indexed
     private String organizerId;
 
     /**
@@ -57,7 +81,6 @@ public class PromoCode {
      *
      * OWASP A01:2021 Compliance: Used for tenant isolation in authorization.
      */
-    @Indexed
     private String organizationId;
 
     @NotNull(message = "Discount type is required")
@@ -74,10 +97,10 @@ public class PromoCode {
     private int currentUses = 0;
 
     @NotNull(message = "Valid from date is required")
-    private LocalDateTime validFrom;
+    private Instant validFrom;
 
     @NotNull(message = "Valid until date is required")
-    private LocalDateTime validUntil;
+    private Instant validUntil;
 
     private BigDecimal minPurchaseAmount;
 
@@ -89,16 +112,15 @@ public class PromoCode {
     private boolean isActive = true;
 
     @CreatedDate
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     /**
      * Check if promo code is currently valid.
      */
-    public boolean isCurrentlyValid() {
-        LocalDateTime now = LocalDateTime.now();
+    public boolean isCurrentlyValid(Instant now) {
         return isActive &&
                now.isAfter(validFrom) &&
                now.isBefore(validUntil) &&
@@ -128,12 +150,18 @@ public class PromoCode {
 
     /**
      * Calculate discount amount for a given total.
+     *
+     * <p>Rounded to the platform's scale <b>once</b>, at the end, after the cap and the total
+     * have been applied. A percentage of an arbitrary total does not land on a
+     * ngwee — 15% of K33.33 is K4.9995 — and an unrounded figure returned from here is stored
+     * as {@code Decimal128} at whatever scale it happens to have, then summed into a commission
+     * and a ledger line that no longer agree to the cent.</p>
      */
     public BigDecimal calculateDiscount(BigDecimal total) {
         BigDecimal discount;
 
         if (discountType == DiscountType.PERCENTAGE) {
-            discount = total.multiply(discountValue).divide(new BigDecimal("100"));
+            discount = Money.percentageOf(total, discountValue);
         } else {
             discount = discountValue;
         }
@@ -148,6 +176,6 @@ public class PromoCode {
             discount = total;
         }
 
-        return discount;
+        return Money.round(discount);
     }
 }

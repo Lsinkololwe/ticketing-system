@@ -16,20 +16,21 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * ET-PLT-001 R1 — the static half of the reactive contract, across every module.
+ * The static half of the reactive contract, across every module.
  *
- * <h2>The rule, as narrowed and approved on 2026-08-18</h2>
- * A blocking call is permitted in exactly two constructs and nowhere else:
+ * <h2>The rule</h2>
+ * A blocking call is permitted in exactly these constructs and nowhere else:
  *
  * <ul>
  *   <li>a class implementing {@code ApplicationRunner} or {@code CommandLineRunner}</li>
  *   <li>a class with an {@code @EventListener(ApplicationReadyEvent.class)} method</li>
+ *   <li>a {@code @Scheduled} method or an {@code @ActivityImpl} class (see
+ *       {@link #BOOT_TIME_CONSTRUCT})</li>
  * </ul>
  *
- * <p>Both run on the main thread at boot, so neither stalls a Netty worker — which is the harm
- * R1 exists to prevent. Reconciliation found seven blocking calls and six were already in these
- * constructs; a flat ban would have traded Spring Boot's native startup mechanism for a worse
- * one and lost the ordering the seeders depend on.
+ * <p>The boot-time constructs run on the main thread, so neither stalls a Netty worker — which is
+ * the harm the rule exists to prevent. A flat ban would trade Spring Boot's native startup
+ * mechanism for a worse one and lose the ordering the seeders depend on.
  *
  * <h2>This lint is coarse, and that is why BlockHound exists</h2>
  * The allowance is granted per <em>file</em>, not per method: a class that both listens for
@@ -40,11 +41,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>So the guarantee is the pair, not either half. This catches the explicit call anywhere in
  * the tree, cheaply, on every build; {@code BlockHoundGuardTest} catches what actually reaches
- * an event-loop thread at runtime, including code we did not write. Neither alone is R1.
+ * an event-loop thread at runtime, including code we did not write. Neither alone is enough.
  *
  * <p>Fire-and-forget {@code .subscribe()} is a separate defect with a separate triage
- * (ET-PLT-001 B3) and is deliberately not checked here.
+ * ({@code FireAndForgetLintTest}) and is deliberately not checked here.
  */
+@Tag("L1")
 @Tag("ET-PLT-001")
 @DisplayName("ET-PLT-001-R1 · blocking calls appear only in boot-time constructs")
 class BlockingCallLintTest {
@@ -56,34 +58,40 @@ class BlockingCallLintTest {
             "\\.block\\s*\\(|\\.blockFirst\\s*\\(|\\.blockLast\\s*\\(|\\.toFuture\\s*\\(\\s*\\)\\s*\\.get\\s*\\(");
 
     /**
-     * Pre-existing violations, frozen so the lint can be introduced without a flag day.
+     * Blocking calls outside the permitted constructs, frozen as a ratchet: new violations fail
+     * immediately, and this set may only shrink.
      *
-     * <p>This is a ratchet, not an exemption list: new violations fail immediately, and this
-     * set may only shrink. Each entry is real debt with a named owner, discovered by this lint
-     * after manual reconciliation missed all six — the R0 grep matched {@code .block()} with
-     * literal empty parentheses and every one of these is {@code .block(TIMEOUT)}.
+     * <p>The pattern matches {@code .block(TIMEOUT)} as well as {@code .block()}, since a grep for
+     * literal empty parentheses misses every timed block.
      *
-     * <p><b>High — the committing thread.</b> {@code @TransactionalEventListener(AFTER_COMMIT)}
-     * runs synchronously on whichever thread committed the transaction. On a request path that
-     * is a Netty worker, so these four are live stalls, not latent ones. Owned by
-     * <b>ET-PLT-003</b>, which moves after-commit work onto the outbox drain.
-     *
-     * <p><b>Medium — the scheduler pool.</b> {@code @Scheduled} runs on Spring's
-     * {@code TaskScheduler}, which defaults to a single thread: blocking there delays every
-     * other scheduled job, including the reservation expiry sweep that inventory conservation
-     * depends on. Owned by <b>ET-TKT-001</b> B5 and <b>ET-ADM-003</b>.
+     * <p>The set is empty. It is kept rather than deleted because the machinery around it is what
+     * makes the ratchet work — a new offender fails immediately, and anything added here must be
+     * justified rather than assumed.</p>
      */
     private static final Set<String> KNOWN_OFFENDERS = Set.of(
-            // high — after-commit listeners on the committing thread
-            "booking-service/src/main/java/com/pml/booking/event/listener/PaymentEventListener.java",
-            "booking-service/src/main/java/com/pml/booking/event/listener/ChargebackEventListener.java",
-            // medium — scheduled sweeps on the TaskScheduler pool
-            "booking-service/src/main/java/com/pml/booking/scheduler/ReservationExpirationScheduler.java",
-            "booking-service/src/main/java/com/pml/booking/scheduler/PurchaseRecoveryScheduler.java");
+            // An @TransactionalEventListener(AFTER_COMMIT) that blocks runs on the committing
+            // thread — a Netty worker on a request path. Taking one off this list is safe only
+            // when a durable recovery path sits underneath it, so that a failed follow-up is
+            // retried rather than lost.
+);
 
-    /** The two constructs the narrowed rule permits. Both execute on the main thread at boot. */
+    /** The constructs the rule permits: none of them executes on a Netty event loop. */
     private static final Pattern BOOT_TIME_CONSTRUCT = Pattern.compile(
-            "implements\\s+[^{]*\\b(ApplicationRunner|CommandLineRunner)\\b"
+            // @Scheduled is exempt. A scheduler thread is not an event loop, so the rule's reason
+            // ("one stalled worker stalls every request it is carrying") does not reach it. The cost a blocking
+            // scheduled task DOES carry is pool starvation, and that is addressed by sizing the
+            // pool rather than by removing the block — booking runs 10 threads, identity 4.
+            //
+            // BlockHound remains the arbiter: it fires only on an event-loop
+            // thread, so a @Scheduled method that somehow lands on a worker still fails.
+            //
+            // @ActivityImpl is exempt too. A Temporal activity runs on the worker's own
+            // activity executor, a bounded pool sized by `capacity.max-concurrent-activity-executors`,
+            // never on a Netty event loop; the activity method is synchronous by contract, so the
+            // reactive call it adapts has to be awaited there.
+            "@Scheduled\\b"
+                    + "|@ActivityImpl\\b"
+                    + "|implements\\s+[^{]*\\b(ApplicationRunner|CommandLineRunner)\\b"
                     + "|@EventListener\\s*\\(\\s*ApplicationReadyEvent\\.class\\s*\\)");
 
     @Test

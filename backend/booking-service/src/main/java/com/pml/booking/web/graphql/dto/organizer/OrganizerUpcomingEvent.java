@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Upcoming event summary for organizer's dashboard.
@@ -35,7 +35,7 @@ public class OrganizerUpcomingEvent {
     /**
      * Event date and time
      */
-    private LocalDateTime eventDateTime;
+    private Instant eventDateTime;
 
     /**
      * Number of tickets sold

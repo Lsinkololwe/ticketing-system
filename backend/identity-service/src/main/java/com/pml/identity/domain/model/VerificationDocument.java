@@ -1,14 +1,16 @@
 package com.pml.identity.domain.model;
 
+import com.pml.identity.persistence.IdentityCollections;
+
 import com.pml.shared.constants.DocumentStatus;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import jakarta.validation.constraints.NotBlank;
@@ -29,7 +31,8 @@ import java.time.Instant;
  * - PROOF_OF_ADDRESS: Utility bill, lease agreement
  * - OTHER: Any other supporting document
  */
-@Document(collection = "verification_documents")
+@Document(collection = IdentityCollections.VERIFICATION_DOCUMENTS)
+@TypeAlias("verification_documents")
 @Data
 @Builder(toBuilder = true)
 @NoArgsConstructor
@@ -43,7 +46,6 @@ public class VerificationDocument {
      * Organization ID this document belongs to
      */
     @NotBlank(message = "Organization ID is required")
-    @Indexed
     private String organizationId;
 
     /**

@@ -11,11 +11,9 @@ import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
-
 /**
  * The standard revocation composition: a fast Redis cache in front of an independent
  * {@link DurableRevocationStore}.
@@ -48,7 +46,6 @@ public class CachedRevocationCheck implements RevocationCheck {
     private final RevocationMetrics metrics;
     private final CircuitBreaker cacheCircuitBreaker;
     private final TimeLimiter cacheTimeLimiter;
-    private final Clock clock;
 
     @Override
     public Mono<RevocationDecision> check(String jti, String sid, String sub) {
@@ -62,7 +59,10 @@ public class CachedRevocationCheck implements RevocationCheck {
             return Mono.just(RevocationDecision.UNKNOWN);
         }
 
-        long startedAt = clock.millis();
+        // nanoTime, not the wall clock: this is an elapsed measurement, and NTP or a DST step
+        // between the two readings makes the difference wrong or negative. nanoTime is
+        // exempt from the platform-clock rule because it is a monotonic counter, not a timestamp.
+        long startedAt = System.nanoTime();
         return checkCache(identifiers)
                 .onErrorResume(error -> {
                     String reason = degradationReason(error);
@@ -78,7 +78,7 @@ public class CachedRevocationCheck implements RevocationCheck {
                     return checkDurable(identifiers);
                 }))
                 .doOnNext(decision -> metrics.checkTimer()
-                        .record(Duration.ofMillis(clock.millis() - startedAt)));
+                        .record(Duration.ofNanos(System.nanoTime() - startedAt)));
     }
 
     /**

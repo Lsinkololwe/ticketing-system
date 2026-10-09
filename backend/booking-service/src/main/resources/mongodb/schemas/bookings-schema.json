@@ -1,0 +1,206 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Bookings Schema",
+    "description": "One durable booking per reservation: number, contact, items and lifecycle. The booking number and reservation id are unique (see the index registry).",
+    "required": [
+      "bookingNumber",
+      "reservationId",
+      "eventId",
+      "buyerId"
+    ],
+    "properties": {
+      "_class": {
+        "bsonType": "string",
+        "description": "Spring Data's type hint, written on every document by the mapping converter"
+      },
+      "_id": {
+        "bsonType": "objectId"
+      },
+      "version": {
+        "bsonType": [
+          "long",
+          "int",
+          "null"
+        ]
+      },
+      "bookingNumber": {
+        "bsonType": "string",
+        "pattern": "^BK-[0-9]{4}-[0-9]+$",
+        "description": "BK-YYYY-NNNNNN"
+      },
+      "reservationId": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "eventId": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "eventTitle": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "eventDate": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "buyerId": {
+        "bsonType": "string",
+        "minLength": 1
+      },
+      "organizerId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "organizationId": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "contactName": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 200
+      },
+      "contactEmail": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 254
+      },
+      "contactPhone": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 40
+      },
+      "items": {
+        "bsonType": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "bsonType": "object"
+        }
+      },
+      "subtotal": {
+        "bsonType": [
+          "number",
+          "null"
+        ]
+      },
+      "discountAmount": {
+        "bsonType": [
+          "number",
+          "null"
+        ]
+      },
+      "totalAmount": {
+        "bsonType": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "currency": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "promoCode": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "status": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "PENDING",
+          "CONFIRMED",
+          "CANCELLED",
+          "EXPIRED",
+          "FAILED",
+          "PARTIALLY_REFUNDED",
+          "REFUNDED",
+          "PAID_AFTER_EXPIRY_AUTO_REFUNDED",
+          null
+        ]
+      },
+      "ticketCount": {
+        "bsonType": [
+          "int",
+          "long",
+          "null"
+        ]
+      },
+      "refundedAmount": {
+        "bsonType": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "cancelledTicketCount": {
+        "bsonType": [
+          "int",
+          "long",
+          "null"
+        ]
+      },
+      "lateRefundStatus": {
+        "bsonType": [
+          "string",
+          "null"
+        ]
+      },
+      "expiresAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "confirmedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "closedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "createdAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      },
+      "updatedAt": {
+        "bsonType": [
+          "date",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  }
+}

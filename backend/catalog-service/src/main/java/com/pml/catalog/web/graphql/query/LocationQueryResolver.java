@@ -3,7 +3,7 @@ package com.pml.catalog.web.graphql.query;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.pml.catalog.dto.*;
+import com.pml.catalog.web.graphql.dto.*;
 import com.pml.catalog.domain.model.Location;
 import com.pml.catalog.service.LocationService;
 import com.pml.catalog.util.CursorUtils;
@@ -44,19 +44,19 @@ public class LocationQueryResolver {
     // ==========================================
 
     @DgsQuery
-    public Mono<LocationConnection> locationsCursorPagination(
+    public Mono<LocationConnection> locations(
             @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: locationsCursorPagination");
+        log.debug("GraphQL query: locations");
         return buildCursorConnection(
                 locationService.findAllLocations(),
                 pagination != null ? pagination : new CursorPaginationInput());
     }
 
     @DgsQuery
-    public Mono<LocationConnection> locationsByCityCursorPagination(
+    public Mono<LocationConnection> locationsByCity(
             @InputArgument String city,
             @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: locationsByCityCursorPagination(city={})", city);
+        log.debug("GraphQL query: locationsByCity(city={})", city);
         Objects.requireNonNull(city, "City is required");
         return buildCursorConnection(
                 locationService.findLocationsByCity(city),
@@ -64,10 +64,10 @@ public class LocationQueryResolver {
     }
 
     @DgsQuery
-    public Mono<LocationConnection> locationsByCountryCursorPagination(
+    public Mono<LocationConnection> locationsByCountry(
             @InputArgument String country,
             @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: locationsByCountryCursorPagination(country={})", country);
+        log.debug("GraphQL query: locationsByCountry(country={})", country);
         Objects.requireNonNull(country, "Country is required");
         return buildCursorConnection(
                 locationService.findLocationsByCountry(country),
@@ -75,10 +75,10 @@ public class LocationQueryResolver {
     }
 
     @DgsQuery
-    public Mono<LocationConnection> searchLocationsCursorPagination(
+    public Mono<LocationConnection> searchLocations(
             @InputArgument String query,
             @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: searchLocationsCursorPagination(query={})", query);
+        log.debug("GraphQL query: searchLocations(query={})", query);
         Objects.requireNonNull(query, "Search query is required");
         return buildCursorConnection(
                 locationService.searchLocations(query),
@@ -86,10 +86,10 @@ public class LocationQueryResolver {
     }
 
     @DgsQuery
-    public Mono<LocationConnection> locationsNearbyCursorPagination(
+    public Mono<LocationConnection> locationsNearby(
             @InputArgument NearbyLocationInput input,
             @InputArgument CursorPaginationInput pagination) {
-        log.debug("GraphQL query: locationsNearbyCursorPagination");
+        log.debug("GraphQL query: locationsNearby");
         Objects.requireNonNull(input, "Nearby location input is required");
         return buildCursorConnection(
                 locationService.findNearbyLocations(input.latitude(), input.longitude(), input.radiusKm()),

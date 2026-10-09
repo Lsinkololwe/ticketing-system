@@ -197,7 +197,7 @@ GraphQL shape SHALL be declared by hand.
 | Type | Owner | Stubbed by | Extended by |
 |---|---|---|---|
 | `User` | identity | catalog, booking | booking (`purchasedTickets`, `totalSpent`) |
-| `Organization` | identity | catalog, booking | catalog (`events`), booking (`bankAccounts`, `payoutRequests`, `availableBalance`) |
+| `Organization` | identity | catalog, booking | catalog (`publishedEventCount`, `completedEventCount`), booking (`bankAccounts`, `payoutRequests`, `availableBalance`) |
 | `OrganizationMember` | identity | — | — |
 | `TeamInvitation` | identity | — | — |
 | `OwnershipTransfer` | identity | — | — |
@@ -285,6 +285,15 @@ type PageInfo { hasNextPage: Boolean!  hasPreviousPage: Boolean!
 | `payoutRequests` | booking | page | finance table |
 | `transactionsForReview`, `stuckTransactions` | booking | page | operator table |
 | `auditLogs` | identity | page | operator table |
+| `provinces` | catalog | **bounded list**, ≤ 10 | Zambia has ten provinces; paging a fixed constant is ceremony |
+| `categories` | catalog | **bounded list**, ≤ 50 | curated reference data, edited by admins, not user-generated |
+| `citiesWithEvents` | catalog | **bounded list**, ≤ 120 | bounded by the city table, itself reference data |
+| `currentUserPermissions` | identity | **bounded list**, ≤ 200 | one caller's own permission set — bounded by the role closure |
+
+The four rows above were added 2026-09-02. They were already implemented as bare lists, correctly:
+each is bounded reference data where a cursor would be ceremony over a constant. They were simply
+absent from this registry, so R5's "every list-returning field is a row of this registry" was false
+about the spec rather than about the code. `PagingShapeLintTest` now checks both directions.
 
 Maximum page size is 100 for offset pages and 100 for `first`/`last` on connections;
 a request above it is refused with `PAGE_SIZE_EXCEEDED`, never clamped — a clamped page is

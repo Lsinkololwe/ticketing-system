@@ -9,21 +9,17 @@ import java.util.List;
 /**
  * Carries a reservation to a ticket, or back to nothing.
  *
- * <h2>Why this is a service and not a listener</h2>
- * ET-TKT-001 R8 requires that a purchase interrupted by a crash be resolvable
- * afterwards. That means confirmation cannot live only in the payment listener:
- * the recovery sweep has to be able to run exactly the same confirmation, from
- * the same state, for a reservation whose callback arrived while the process was
- * dying. One implementation, two callers — otherwise the recovery path is a
- * second, less-tested copy of the money-moving code.
+ * <h2>Why this is a service the workflow calls</h2>
+ * A purchase interrupted by a crash has to be resolvable afterwards, so confirmation is an
+ * idempotent step the purchase workflow's activities run from durable state — the same code
+ * whether the callback arrived normally or the workflow resumed after a restart. One
+ * implementation — otherwise the recovery path is a second, less-tested copy of the
+ * money-moving code.
  *
  * <h2>What "no client mutation" means here</h2>
  * There is deliberately no way to reach {@link #confirm} from GraphQL.
- * ET-TKT-001 §4 puts it plainly: confirmation is driven by the payment outcome,
- * "never by a client asserting that it paid". The only callers are the payment
- * event listener and the recovery sweep.
- *
- * @see <a href="file:../../../../../../specs/ticketing/001-reservation-and-hold/spec.md">ET-TKT-001</a>
+ * Confirmation is driven by the payment outcome, never by a client asserting
+ * that it paid. The only caller is the purchase workflow's activities.
  */
 public interface PurchaseService {
 
@@ -45,7 +41,7 @@ public interface PurchaseService {
     /**
      * Gives the inventory back and moves the reservation to a terminal state.
      *
-     * <p>Safe to apply twice — the TTL index, the expiry sweep and a failed
+     * <p>Safe to apply twice — the TTL index, the expiry timer and a failed
      * payment callback will all reach the same reservation, and at least two of
      * them will fire for the same row. Only the writer that wins the
      * compare-and-set touches the counters.

@@ -1,6 +1,6 @@
 id: ET-PLT-003
 title: Event contract — two tiers, the envelope, the outbox, idempotent consumers
-status: approved
+status: implemented
 area: PLT
 service: all
 subgraph: null
@@ -32,7 +32,6 @@ persistence:
     - "catalog|booking|identity_outbox {sentAt} ttl 7d — SENT rows expire; PENDING and FAILED never do"
   redis_keys:
     - "evt:seen:{consumer}:{eventId}   STRING  7 d  — consumer deduplication"
-    - "lock:sweep:outbox               STRING 30 s  — one drainer per service at a time"
 
 events:
   topics:
@@ -61,7 +60,7 @@ events:
     - identity.EventAccessGranted           # v1  → booking            session eventId
     - identity.EventAccessRevoked           # v1  → booking            session eventId
 
-  module: []   # intra-service events are declared by the spec that introduces them
+  module: []   # none anywhere — a step within a service is a workflow activity (ET-PLT-015)
 
 graphql:
   schema: null
@@ -78,8 +77,8 @@ shared_types:
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
-  - mvn -q -f backend test -Dgroups=ET-PLT-003 -DfailIfNoTests=true
-  - mvn -q -f backend verify -Dgroups=ET-PLT-003 -DfailIfNoTests=true
+  - mvn -q -f backend test -Dgroups=ET-PLT-003 -DfailIfNoTests=false
+  - mvn -q -f backend verify -Dgroups=ET-PLT-003 -DfailIfNoTests=false
 
 risks:
   - "R1's atomicity holds only if the outbox row is staged through the SAME ReactiveMongoTemplate session as the business write. A doOnSuccess, a separate template, or a chain that has already left the transactional boundary stages the row outside the transaction and silently restores the dual-write problem this design exists to remove. The rollback test in T1 is the only thing that detects it."

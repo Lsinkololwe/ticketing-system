@@ -2,6 +2,10 @@
 
 > **Conformance** · US-SCN-001 · US Part I §3 event-level roles
 
+> **Amended 2026-10-04 (D-40, D-41; F-044).** The QR is fixed (no rotation); **first scan wins** online and offline. When a QR will not
+> scan, the **gate fallback** is: the steward enters the **ticket code** and the holder's **ID number**; the first valid entry
+> admits and every later scan or entry of that ticket is refused as already used. R6 (manual override) is extended accordingly.
+
 ## 1. Capability
 
 At eight in the evening, at a gate, with four hundred people queuing, a steward points a
@@ -150,6 +154,18 @@ THE SYSTEM SHALL authorise scanning by event access grant at key issue and again
 - [ ] Scans already uploaded before revocation stand
 - [ ] The permission resolution is [ET-ORG-003](../../organization/003-permission-resolution/)'s — this spec contains no role comparison
 - [ ] A test revokes a grant mid-batch and asserts the remainder refuses
+
+### ET-TKT-003-R6a · The gate fallback: ticket code plus ID, first scan wins *(added 2026-10-04)*
+
+WHEN a QR cannot be scanned, THE SYSTEM SHALL admit on a valid ticket code plus the holder's ID number, once.
+
+**Acceptance**
+- [ ] The steward holds `ticket:scan` for the event; entering a ticket code (not a guessable sequence; the reference alphabet of ET-TKT-002 R4) and an ID number admits the ticket if it is `PURCHASED`
+- [ ] The ID number is stored only as a keyed hash on the check-in row, never in the clear and never logged; it is not matched against buyer data unless the event is configured for named tickets (open item F-044)
+- [ ] The entry is a manual check-in (R6): same duplicate defence, reason `FALLBACK_CODE_ID`, separate in every report
+- [ ] A second entry or scan of the same ticket is refused with `TICKET_ALREADY_VALIDATED`; the first admission wins, online and offline (R4)
+- [ ] The ticket code alone, without an ID number, never admits
+- [ ] Five failed entries from one device in a minute lock the fallback for that device ([ET-PLT-011](../../_platform/011-rate-limiting-and-abuse/))
 
 ### ET-TKT-003-R6 · A manual override exists and is distinguishable everywhere
 
@@ -303,8 +319,10 @@ the code and its detail — everything the steward needs on one screen.
 
 | Tier | Name | When | Consumers |
 |---|---|---|---|
-| bus | `booking.TicketValidated` v1 | after commit | catalog → check-in counters |
-| module | `CheckInConflictDetectedEvent` | R4 | alerting, the organizer's report |
+| bus | `booking.TicketValidated` v1 | staged with the check-in | catalog → check-in counters |
+
+A detected conflict is written to `booking_checkin_conflicts` in the check-in's own transaction,
+which is what alerting and the organizer's report read; there is no in-memory event.
 
 ### Configuration
 

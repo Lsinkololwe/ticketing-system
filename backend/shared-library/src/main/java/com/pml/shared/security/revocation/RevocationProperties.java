@@ -69,6 +69,12 @@ public class RevocationProperties {
     /** How often the cache is reloaded from the durable store and the sentinel refreshed. */
     private Duration cacheWarmInterval = Duration.ofMinutes(2);
 
+    /**
+     * identity-service's base URL, for a service that does not own the revocation records and
+     * reads them over identity's internal API. Unset in identity itself.
+     */
+    private String identityUrl;
+
     /** The TTL a new revocation record gets: token lifespan plus skew. */
     public Duration recordTtl() {
         return accessTokenLifespan.plus(clockSkew);
