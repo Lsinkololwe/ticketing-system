@@ -41,9 +41,7 @@ workflows:
   - "AccountEnsureWorkflow   account-ensure/{contactKey}      identity-account   Update-with-Start, USE_EXISTING   implemented"
   - "AccountMergeWorkflow    account-merge/{mergedAccountId}  identity-account   USE_EXISTING                      planned"
   - "ContactChangeWorkflow   contact-change/{accountId}       identity-account   FAIL on a running id, updates authorise/acceptNew, signals failedAttempt/cancel, expiry PT48H   implemented"
-  - "AccountRepairWorkflow   account-repair/scheduled         identity-account   Schedule, overlap SKIP             implemented"
 schedules:
-  - "identity-account-repair → AccountRepairWorkflow   identity-account   every PT15M   overlap SKIP"
 
 events:
   module: []
@@ -126,8 +124,6 @@ tests:
   - "ContactChangeEndToEndTest (L2, real Redis, MongoDB, Temporal, Keycloak 26.5.2 behind a 503 proxy) - GraphQL add both ways, change with session revocation and quarantine, lost claim, wrong and expired codes, concurrent adds, removal, primary, IDOR, 503 mid change, Keycloak stopped mid change, no contact in logs, Redis or events"
   - "BuyerSignInEndToEndTest (L2) - crash after claim then retry, orphan Keycloak user adopted by username, Keycloak 5xx, Keycloak stopped"
   - "KeycloakServiceContainerTest (L2) - admin client 26.0.12 against server 26.5.2"
-  - "AccountRepairTest (L3) - stale CHANGING marker cleared (D8, change part)"
-  - "AccountRepairEndToEndTest (L2, real Mongo replica set, Temporal, Redis, Keycloak 26.5.2 behind a 503 proxy) - each drift class D1..D9 injected, repaired, audited, second run a no-op; Keycloak 503 mid repair; the Schedule and the workflow it starts"
 
 verify:
   - mvn -q -f backend/identity-service test -Dgroups=ET-IDN-004 -DfailIfNoTests=false

@@ -1,12 +1,11 @@
 package com.pml.identity.service.impl;
 
-import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.shared.security.Permission;
 import com.pml.identity.domain.model.Organization;
-import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.service.AuthorizationService;
-import com.pml.identity.service.EventAccessService;
+import com.pml.identity.service.PermissionResolutionService;
+import com.pml.identity.service.PermissionResolutionService.Decision;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.web.rest.InternalAuthorizationController.OrganizationMembershipInfo;
@@ -23,19 +22,17 @@ import reactor.core.publisher.Mono;
  * Answers the permission checks catalog and booking make before acting for a user.
  *
  * <p>Permissions are catalogue codes ({@code com.pml.shared.security.Permission}); a name outside
- * the catalogue is refused. On an event, an active access grant from the event's own organization
- * decides on its own; otherwise the user's membership of the organization decides, under that
- * organization's settings and lifecycle status. The role sets themselves live on
- * {@code OrganizationRole} and {@code EventRole}.
+ * the catalogue is refused. The decision itself is made by {@link PermissionResolutionService};
+ * this class only turns its outcome into the response the callers expect.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthorizationServiceImpl implements AuthorizationService {
 
+    private final PermissionResolutionService resolution;
     private final OrganizationMemberService memberService;
     private final OrganizationService organizationService;
-    private final EventAccessService eventAccessService;
 
     @Override
     public Mono<AuthorizationResult> checkAuthorization(AuthorizationRequest request) {
@@ -77,26 +74,9 @@ public class AuthorizationServiceImpl implements AuthorizationService {
         if (permission == null) {
             return Mono.just(AuthorizationResult.denied("Unknown permission " + permissionCode));
         }
-
-        // Two questions, both must pass: may this member do it (role, the organization's
-        // settings, custom and denied permissions), and may this organization do it at all
-        // (its lifecycle status — an unapproved organization cannot publish or request payouts).
-        return memberService.findByUserAndOrganization(userId, organizationId)
-                .filter(OrganizationMember::isActive)
-                .flatMap(member -> organizationService.findById(organizationId)
-                        .map(org -> decide(member, org, permission))
-                        .switchIfEmpty(Mono.just(AuthorizationResult.denied("Organization not found"))))
-                .switchIfEmpty(Mono.just(AuthorizationResult.deniedNotMember()));
-    }
-
-    private static AuthorizationResult decide(OrganizationMember member, Organization org, Permission permission) {
-        if (!member.hasPermission(permission, org.getSettings())) {
-            return AuthorizationResult.deniedInsufficientPermissions(permission.code(), member.getRole().name());
-        }
-        if (!org.canPerform(permission)) {
-            return AuthorizationResult.denied("Organization status " + org.getStatus() + " does not permit " + permission.code());
-        }
-        return AuthorizationResult.authorizedAsMember(org.getId(), member.getRole().name());
+        // Platform roles are not consulted: this check answers for membership of the organization.
+        return resolution.decideOrganization(userId, organizationId, permission, false)
+                .map(decision -> toResult(decision, permission, null));
     }
 
     @Override
@@ -107,19 +87,25 @@ public class AuthorizationServiceImpl implements AuthorizationService {
         if (permission == null) {
             return Mono.just(AuthorizationResult.denied("Unknown permission " + permissionCode));
         }
+        return resolution.decideEvent(userId, eventId, organizationId, permission, false)
+                .map(decision -> toResult(decision, permission, eventId));
+    }
 
-        // An active grant on the event decides on its own; the holder's organization role is not
-        // consulted. A grant only counts on an event of the organization that issued it, so a grant
-        // naming another organization's event id authorizes nothing there.
-        return eventAccessService.findByUserAndEvent(userId, eventId)
-                .filter(grant -> grant.getStatus() == AccessGrantStatus.ACTIVE)
-                .filter(grant -> organizationId == null || organizationId.equals(grant.getOrganizationId()))
-                .map(grant -> grant.hasPermission(permission)
-                        ? AuthorizationResult.authorizedByEventGrant(eventId, grant.getEventRole().name())
-                        : AuthorizationResult.deniedInsufficientPermissions(permission.code(), grant.getEventRole().name()))
-                .switchIfEmpty(Mono.defer(() -> organizationId != null
-                        ? checkEventPermission(userId, organizationId, permissionCode)
-                        : Mono.just(AuthorizationResult.denied("No event access grant and organization ID not provided"))));
+    /** Words the resolution's decision in this endpoint's response shape and refusal texts. */
+    private static AuthorizationResult toResult(Decision decision, Permission permission, String eventId) {
+        return switch (decision.outcome()) {
+            case EVENT_GRANT -> AuthorizationResult.authorizedByEventGrant(eventId, decision.role());
+            case MEMBER -> AuthorizationResult.authorizedAsMember(decision.organizationId(), decision.role());
+            case GRANT_LACKS_PERMISSION, MEMBER_LACKS_PERMISSION ->
+                    AuthorizationResult.deniedInsufficientPermissions(permission.code(), decision.role());
+            case ORGANIZATION_STATUS -> AuthorizationResult.denied(
+                    "Organization status " + decision.organizationStatus() + " does not permit " + permission.code());
+            case NOT_A_MEMBER -> AuthorizationResult.deniedNotMember();
+            case ORGANIZATION_UNKNOWN -> AuthorizationResult.denied("Organization not found");
+            case NO_ORGANIZATION -> AuthorizationResult.denied("No event access grant and organization ID not provided");
+            // Anything else, including a platform-role outcome this endpoint never asks for, refuses.
+            default -> AuthorizationResult.denied("Not authorized");
+        };
     }
 
     @Override
@@ -172,6 +158,14 @@ public class AuthorizationServiceImpl implements AuthorizationService {
                 .defaultIfEmpty(SharedOrganizationResponse.noSharedOrganization())
                 .doOnSuccess(result -> log.debug("Same organization check result: shares={}, orgId={}",
                         result.sharesOrganization(), result.sharedOrganizationId()));
+    }
+
+    @Override
+    public Mono<String> getOrganizationName(String organizationId) {
+        if (organizationId == null || organizationId.isBlank()) {
+            return Mono.empty();
+        }
+        return organizationService.findById(organizationId).map(Organization::getName);
     }
 
     @Override

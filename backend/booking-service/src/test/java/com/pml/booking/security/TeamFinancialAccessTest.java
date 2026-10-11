@@ -1,7 +1,10 @@
 package com.pml.booking.security;
 
 import com.pml.booking.domain.model.PayoutRequest;
-import com.pml.booking.exception.BusinessValidationException;
+import com.pml.shared.error.DomainRefusal;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantScope;
 import com.pml.booking.infrastructure.client.IdentityServiceClient;
 import com.pml.booking.infrastructure.client.IdentityServiceClient.SharedOrganizationResponse;
 import com.pml.booking.service.PayoutRecoveryService;
@@ -48,10 +51,13 @@ class TeamFinancialAccessTest {
 
     private IdentityServiceClient identity;
     private OrganizationSecurityService security;
+    private com.pml.booking.service.EscrowService escrows;
 
     @BeforeEach
     void setUp() {
         identity = mock(IdentityServiceClient.class);
+        escrows = mock(com.pml.booking.service.EscrowService.class);
+        when(escrows.findById("escrow-1")).thenReturn(Mono.just(escrow(ORG)));
         security = new OrganizationSecurityService(identity);
         when(identity.checkSameOrganization(anyString(), anyString())).thenReturn(Mono.just(SharedOrganizationResponse.noSharedOrganization()));
         when(identity.checkSameOrganization("user-manager", ORGANIZER))
@@ -89,16 +95,53 @@ class TeamFinancialAccessTest {
         when(identity.checkAuthorization(asked.capture())).thenReturn(Mono.just(AuthorizationResult.denied("switch off")));
 
         assertThatThrownBy(() -> as("user-admin", List.of(), resolver.createPayoutRequest(input())).block())
-                .isInstanceOf(BusinessValidationException.class);
+                .isInstanceOfSatisfying(DomainRefusal.class, refusal ->
+                        assertThat(refusal.errorCode()).as("a member who lacks the permission is told so")
+                                .isEqualTo(ErrorCode.ACTOR_NOT_PERMITTED));
         assertThat(asked.getValue().getUserId()).isEqualTo("user-admin");
-        assertThat(asked.getValue().getOrganizationOwnerId()).isEqualTo(ORGANIZER);
+        assertThat(asked.getValue().getOrganizationId()).as("the organization comes from the escrow account").isEqualTo(ORG);
+        assertThat(asked.getValue().getEventId()).isEqualTo("event-1");
         assertThat(asked.getValue().getRequiredPermission()).isEqualTo("payout:request");
-        verify(process, never()).request(any(), anyString());
+        verify(process, never()).request(any(), anyString(), anyString());
 
-        when(identity.checkAuthorization(any())).thenReturn(Mono.just(AuthorizationResult.authorizedAsOwner(ORG)));
-        when(process.request(any(), anyString())).thenReturn(Mono.just(new PayoutRequest()));
+        when(identity.checkAuthorization(any())).thenReturn(Mono.just(AuthorizationResult.authorizedAsMember(ORG, "ADMIN")));
+        when(process.request(any(), anyString(), anyString())).thenReturn(Mono.just(new PayoutRequest()));
         as("user-admin", List.of(), resolver.createPayoutRequest(input())).block();
-        verify(process).request(any(), org.mockito.ArgumentMatchers.eq("user-admin"));
+        verify(process).request(any(), org.mockito.ArgumentMatchers.eq("user-admin"), org.mockito.ArgumentMatchers.eq(ORG));
+    }
+
+    @Test
+    @DisplayName("A payout against an escrow account of another organization reads exactly like one that does not exist")
+    void anotherOrganizationsAccountIsRefusedLikeAMissingOne() {
+        PayoutProcess process = mock(PayoutProcess.class);
+        PayoutRequestMutationResolver resolver = resolver(process);
+        when(escrows.findById("escrow-elsewhere")).thenReturn(Mono.just(escrow("org-elsewhere")));
+        when(escrows.findById("escrow-missing")).thenReturn(Mono.empty());
+        when(identity.checkAuthorization(any())).thenReturn(Mono.just(AuthorizationResult.deniedNotMember()));
+
+        Throwable foreign = org.assertj.core.api.Assertions.catchThrowable(
+                () -> as("user-admin", List.of(), resolver.createPayoutRequest(inputFor("escrow-elsewhere"))).block());
+        Throwable missing = org.assertj.core.api.Assertions.catchThrowable(
+                () -> as("user-admin", List.of(), resolver.createPayoutRequest(inputFor("escrow-missing"))).block());
+
+        assertThat(foreign).isInstanceOf(DomainRefusal.class);
+        assertThat(missing).isInstanceOf(DomainRefusal.class);
+        assertThat(((DomainRefusal) foreign).errorCode()).isEqualTo(ErrorCode.ESCROW_ACCOUNT_UNKNOWN);
+        assertThat(((DomainRefusal) missing).errorCode()).as("the same answer").isEqualTo(ErrorCode.ESCROW_ACCOUNT_UNKNOWN);
+        verify(process, never()).request(any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Who created the event does not matter: any member holding the permission may request the payout")
+    void anyPermittedMemberMayRequest() {
+        PayoutProcess process = mock(PayoutProcess.class);
+        when(process.request(any(), anyString(), anyString())).thenReturn(Mono.just(new PayoutRequest()));
+        when(identity.checkAuthorization(any())).thenReturn(Mono.just(AuthorizationResult.authorizedAsMember(ORG, "FINANCE")));
+
+        as("someone-who-did-not-create-it", List.of(), resolver(process).createPayoutRequest(input())).block();
+
+        verify(process).request(any(), org.mockito.ArgumentMatchers.eq("someone-who-did-not-create-it"),
+                org.mockito.ArgumentMatchers.eq(ORG));
     }
 
     @Test
@@ -110,18 +153,33 @@ class TeamFinancialAccessTest {
 
         assertThatThrownBy(() -> as("user-finance", List.of(new SimpleGrantedAuthority("ROLE_FINANCE")),
                 resolver(process).createPayoutRequest(input())).block())
-                .isInstanceOf(BusinessValidationException.class);
+                .isInstanceOfSatisfying(DomainRefusal.class,
+                        refusal -> assertThat(refusal.errorCode()).isEqualTo(ErrorCode.ACTOR_NOT_PERMITTED));
         assertThat(asked.getValue().getUserId()).isEqualTo(ORGANIZER);
+    }
+
+    private static com.pml.booking.domain.model.EventEscrowAccount escrow(String organizationId) {
+        com.pml.booking.domain.model.EventEscrowAccount escrow = new com.pml.booking.domain.model.EventEscrowAccount();
+        escrow.setId("escrow-1");
+        escrow.setEventId("event-1");
+        escrow.setOrganizationId(organizationId);
+        return escrow;
     }
 
     private PayoutRequestMutationResolver resolver(PayoutProcess process) {
         return new PayoutRequestMutationResolver(mock(PayoutRequestService.class), mock(TenantReads.class),
-                mock(PayoutRecoveryService.class), identity, process);
+                mock(PayoutRecoveryService.class), identity, escrows, new com.pml.booking.security.PayoutAccess(identity), process,
+                com.pml.shared.testing.IdempotencyPassthrough.guard(),
+                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
     }
 
     private static CreatePayoutRequestInput input() {
-        return new CreatePayoutRequestInput(ORGANIZER, "event-1", "escrow-1", "bank-1", new BigDecimal("500.00"), "ZMW",
-                null, null, null, null);
+        return inputFor("escrow-1");
+    }
+
+    private static CreatePayoutRequestInput inputFor(String escrowAccountId) {
+        return new CreatePayoutRequestInput(ORGANIZER, "event-1", escrowAccountId, "bank-1", new BigDecimal("500.00"), "ZMW",
+                null, null, null, "idem-" + System.nanoTime());
     }
 
     private static JwtAuthenticationToken token(String userId) {
@@ -130,6 +188,8 @@ class TeamFinancialAccessTest {
 
     private static <T> Mono<T> as(String userId, List<SimpleGrantedAuthority> authorities, Mono<T> call) {
         Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject(userId).build();
-        return call.contextWrite(ReactiveSecurityContextHolder.withAuthentication(new JwtAuthenticationToken(jwt, authorities)));
+        // The caller is a member of the organization, whatever platform role they carry.
+        return call.contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.of(userId, java.util.Set.of(ORG)))))
+                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(new JwtAuthenticationToken(jwt, authorities)));
     }
 }

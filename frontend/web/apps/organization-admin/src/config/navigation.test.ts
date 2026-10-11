@@ -6,7 +6,7 @@ const all = NAV_SECTIONS.flatMap((s) => s.items);
 describe('console navigation', () => {
   it('lists the designed destinations in order', () => {
     expect(all.map((i) => i.label)).toEqual([
-      'Overview', 'Events', 'Bookings', 'Media', 'Onboarding', 'Payouts', 'Banks', 'Transactions', 'Team', 'Settings',
+      'Overview', 'Events', 'Bookings', 'Media', 'Onboarding', 'Escrow & payouts', 'Bank accounts', 'Transactions', 'Team', 'Settings',
     ]);
   });
   it('shows Onboarding only while the organization is not active', () => {

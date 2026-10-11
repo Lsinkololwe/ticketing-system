@@ -1,4 +1,4 @@
-import { harnessTest as test, expect, captureConsole, gqlErrors } from '../../../../e2e-harness/browser/playwright';
+import { harnessTest as test, expect, captureConsole, gqlErrors, delayed } from '../../../../e2e-harness/browser/playwright';
 import { BOOKINGS, bookings, iso, signedInBase, ticket, booking } from './fixtures';
 import { settle, shot } from './_kit';
 
@@ -64,6 +64,44 @@ test.describe('checkout', () => {
     await expect(page.getByText(/BK-2026-0099/)).toBeVisible({ timeout: 20_000 });
     await shot(page, 'checkout-5-confirmed', info);
     await settle(page, upstream, log, { a11y: false });
+  });
+
+  test('two rapid taps on Pay carry the same idempotency key (TS-6)', async ({ page, upstream, signInAs }, info) => {
+    const res = reservation();
+    // A delayed response widens the window a true double-tap race falls into: exactly the
+    // mobile-money scenario R6 exists for — a buyer unsure whether their first tap registered,
+    // tapping again before the screen has visibly changed.
+    upstream.gql({
+      ...signedInBase(),
+      ReserveTickets: () => ({ reserveTickets: res }),
+      GetReservation: () => ({ reservation: res }),
+      PayReservation: delayed(500, { payReservation: { __typename: 'PaymentInitiation', paymentIntentId: 'pi-1', transactionRef: 'TX-1', paymentStatus: 'PENDING', reservationId: 'res-0001' } }),
+    });
+    await signInAs({ roles: ['CUSTOMER'] });
+    await page.goto('/events/e1');
+    await page.getByRole('button', { name: 'Add one General ticket' }).click();
+    await page.getByRole('complementary', { name: 'Your tickets' }).getByRole('button', { name: 'Reserve tickets' }).click();
+    await expect(page).toHaveURL(/\/events\/e1\/book\?r=res-0001/);
+    await page.getByRole('button', { name: /continue/i }).first().click();
+    await page.getByRole('button', { name: 'Continue to payment' }).click();
+    await page.getByRole('textbox').first().fill('0961234567');
+    const pay = page.getByRole('button', { name: /pay|send/i }).last();
+    // Two synchronous DOM clicks in one task, bypassing Playwright's own actionability wait
+    // between clicks, so both land before React can flip the button to its disabled/loading state.
+    await pay.evaluate((el: HTMLButtonElement) => {
+      el.click();
+      el.click();
+    });
+    await page.waitForTimeout(700);
+    const calls = upstream.calls('PayReservation');
+    // The page holds the second tap while the first is in flight, so one request leaves; if a build ever lets
+    // both through, they must still carry the same key. Zero would mean the tap never registered.
+    expect(calls.length, 'the tap must reach the upstream').toBeGreaterThanOrEqual(1);
+    expect(calls.length, 'a second tap must not become a second charge request').toBeLessThanOrEqual(2);
+    const keys = calls.map((c) => (c.variables as { input?: { idempotencyKey?: string } }).input?.idempotencyKey);
+    expect(new Set(keys).size, 'every rapid tap on the same reservation must carry one key').toBe(1);
+    expect(keys[0], 'a real key, not an accidental empty string').toBeTruthy();
+    await shot(page, 'checkout-double-submit', info);
   });
 
   test('declined payment shows the reason and stays on pay', async ({ page, upstream, signInAs }, info) => {

@@ -113,7 +113,7 @@ public class IdentityIndexInitializer {
                         .partialWhereTypeIs("keycloakUserId", "string")
                         .build(),
 
-                // the repair schedule and admin lists read accounts by state
+                // admin lists read accounts by state
                 IndexSpec.on(IdentityCollections.USERS, "idx_status")
                         .asc("status")
                         .build(),
@@ -203,6 +203,17 @@ public class IdentityIndexInitializer {
                 // handful that are behind.
                 IndexSpec.on(IdentityCollections.ORGANIZATION_MEMBERS, "idx_mirrorPending")
                         .asc("mirrorPending")
+                        .build(),
+
+                // A person belongs to one organization at a time. Everything they see and do is scoped to
+                // the organization derived from them; a second membership would make that ambiguous and
+                // put one organization's money in front of another's member. The partial filter scopes
+                // the key to memberships that are currently ACTIVE, so a person who has left may join
+                // another. The service refuses first with a reason; this holds when two acceptances race.
+                IndexSpec.on(IdentityCollections.ORGANIZATION_MEMBERS, "uniq_one_active_organization_per_person")
+                        .asc("userId")
+                        .unique()
+                        .partial(new org.bson.Document("status", "ACTIVE"))
                         .build(),
 
                 IndexSpec.on(IdentityCollections.ORGANIZATION_MEMBERS, "uniq_organization_owner")

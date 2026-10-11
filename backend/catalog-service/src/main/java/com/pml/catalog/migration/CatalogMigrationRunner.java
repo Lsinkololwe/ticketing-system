@@ -154,6 +154,11 @@ public class CatalogMigrationRunner extends MigrationRunner {
         steps.put("event-sales-totals-backfill",
                 () -> new EventSalesTotalsBackfill(mongoTemplate, tierMirror).run());
 
+        // An organizer's contact details live in identity and reach a client through the federated
+        // `organization` and `organizer` references; the copies on events are removed.
+        steps.put("event-organizer-contact-strip",
+                () -> new EventOrganizerContactStrip(mongoTemplate).strip().map(n -> n + " events cleared"));
+
         // Reference data release 2 (ET-PLT-014-R12): the onboarding, access, communication and
         // reporting vocabularies, the corrected Zambian mobile-money prefixes, KYB document codes
         // aligned with identity, the 116 districts, and the country list from libphonenumber.

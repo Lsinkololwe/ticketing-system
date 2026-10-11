@@ -5,6 +5,9 @@ import com.pml.identity.domain.model.EventAccessGrant;
 import com.pml.identity.domain.valueobject.EventRole;
 import com.pml.identity.repository.EventAccessGrantRepository;
 import com.pml.identity.service.EventAccessService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -130,8 +133,16 @@ public class EventAccessServiceImpl implements EventAccessService {
             EventRole newRole,
             Set<String> customPermissions,
             Instant expiresAt) {
-        return accessGrantRepository.findById(accessId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Access grant not found: " + accessId)))
+        // The resolver's reads.grantForCaller(accessId) already proved ownership before calling
+        // this; reading the scope again here is defense in depth — a future caller that skips
+        // that read is refused here too, instead of silently updating across tenants.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        accessGrantRepository.findById(accessId),
+                        organizationIds -> accessGrantRepository.findByIdAndOrganizationIdIn(accessId, organizationIds),
+                        ErrorCode.ACCESS_GRANT_UNKNOWN,
+                        "event access grant " + accessId))
                 .flatMap(grant -> {
                     // Cannot change from/to EVENT_OWNER
                     if (grant.getEventRole() == EventRole.EVENT_OWNER || newRole == EventRole.EVENT_OWNER) {
@@ -157,8 +168,15 @@ public class EventAccessServiceImpl implements EventAccessService {
     public Mono<EventAccessGrant> revoke(String accessId, String reason, String revokedById) {
         log.info("Revoking event access: {} - Reason: {}", accessId, reason);
 
-        return accessGrantRepository.findById(accessId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Access grant not found: " + accessId)))
+        // The resolver's reads.grantForCaller(accessId) already proved ownership before calling
+        // this; reading the scope again here is defense in depth, same as update() above.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        accessGrantRepository.findById(accessId),
+                        organizationIds -> accessGrantRepository.findByIdAndOrganizationIdIn(accessId, organizationIds),
+                        ErrorCode.ACCESS_GRANT_UNKNOWN,
+                        "event access grant " + accessId))
                 .flatMap(grant -> {
                     // Cannot revoke EVENT_OWNER access
                     if (grant.getEventRole() == EventRole.EVENT_OWNER) {

@@ -9,7 +9,7 @@ import { ReasonDialog, useStaff } from '@/components/console';
 import { errorMessage } from './common';
 import { RolesDialog, UserFormDialog } from './UserDialogs';
 
-export type UserActionId = 'edit' | 'roles' | 'deactivate' | 'lock' | 'suspend' | 'activate' | 'unlock' | 'unsuspend' | 'sync' | 'delete';
+export type UserActionId = 'edit' | 'roles' | 'deactivate' | 'lock' | 'suspend' | 'activate' | 'unlock' | 'unsuspend' | 'delete';
 
 export interface UserActionDef {
   id: UserActionId;
@@ -32,7 +32,6 @@ export function userActionList(u: AdminUserRecord, staff: { id: string; can: (k:
     if (s === 'LOCKED') a.push({ id: 'unlock', label: 'Unlock account' });
     if (s === 'SUSPENDED') a.push({ id: 'unsuspend', label: 'Unsuspend' });
   }
-  a.push({ id: 'sync', label: 'Sync from Keycloak' });
   if (staff.can('deleteUser') && manage) {
     a.push({ id: 'delete', label: 'Delete user', danger: true });
   }
@@ -101,9 +100,6 @@ export function useUserActionController(): {
           break;
         case 'unsuspend':
           void attempt(() => api.unsuspendUser(u.id), `${n} unsuspended`);
-          break;
-        case 'sync':
-          void attempt(() => api.syncUser(u.id), `${n} synced from Keycloak`);
           break;
         default:
           setPending({ id, user: u });

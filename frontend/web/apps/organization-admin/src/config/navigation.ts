@@ -36,8 +36,8 @@ export const NAV_SECTIONS: ConsoleNavSection[] = [
     id: 'finance',
     label: 'Finance',
     items: [
-      { id: 'payouts', label: 'Payouts', href: '/finance', icon: 'wallet' },
-      { id: 'banks', label: 'Banks', href: '/finance/bank-accounts', icon: 'bank' },
+      { id: 'payouts', label: 'Escrow & payouts', href: '/finance', icon: 'wallet' },
+      { id: 'banks', label: 'Bank accounts', href: '/finance/bank-accounts', icon: 'bank' },
       { id: 'transactions', label: 'Transactions', href: '/finance/transactions', icon: 'list' },
     ],
   },

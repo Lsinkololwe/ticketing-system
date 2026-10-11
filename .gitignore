@@ -18,6 +18,7 @@
 **/dist/
 **/build/
 **/.next/
+**/.next-harness-*/
 **/.turbo/
 **/.cache/
 

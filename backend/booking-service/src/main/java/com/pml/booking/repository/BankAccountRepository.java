@@ -15,6 +15,10 @@ public interface BankAccountRepository extends ReactiveMongoRepository<BankAccou
 
     Flux<BankAccount> findByOrganizerId(String organizerId);
 
+    Flux<BankAccount> findByOrganizationIdAndStatusNot(String organizationId, String status);
+
+    Mono<BankAccount> findByOrganizationIdAndIsDefaultTrueAndStatusNot(String organizationId, String status);
+
     Mono<BankAccount> findByOrganizerIdAndIsDefaultTrue(String organizerId);
 
     Mono<BankAccount> findByAccountNumber(String accountNumber);

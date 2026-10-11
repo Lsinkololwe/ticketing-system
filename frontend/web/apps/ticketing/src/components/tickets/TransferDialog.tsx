@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { Button, Dialog } from '@pml.tickets/shared/components/m3';
-import { resolveServerError, useTicketTransferActions, useTransferRecipient, type MyTicketRow } from '@pml.tickets/shared';
+import { resolveServerError, useIdempotencyKey, useTicketTransferActions, useTransferRecipient, type MyTicketRow } from '@pml.tickets/shared';
 import { Form, FormActions, TextFieldRHF, useZodForm } from '@pml.tickets/shared/forms';
 import { fmtZmPhone, parseZmMobile } from '@/lib/format';
 
@@ -16,6 +16,10 @@ export function TransferDialog({ ticket, ownPhone, onClose, onDone }: { ticket: 
   const actions = useTicketTransferActions();
   const [to, setTo] = useState<{ value: string; shown: string; name: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A key per ticket opened, persisted so a reload mid-submission reuses it: a retry of this
+  // same offer should replay, but a transfer offer sent for a different ticket afterwards must
+  // never be mistaken for one.
+  const [transferIdem] = useIdempotencyKey(ticket ? `transfer:${ticket.id}` : null);
 
   useEffect(() => {
     if (ticket) {
@@ -46,7 +50,7 @@ export function TransferDialog({ ticket, ownPhone, onClose, onDone }: { ticket: 
     if (!ticket || !to) return;
     setError(null);
     try {
-      await actions.initiate(ticket.id, 'WHATSAPP', to.value);
+      await actions.initiate(ticket.id, 'WHATSAPP', to.value, transferIdem);
       onDone();
     } catch (e) {
       setError(resolveServerError(e).message);

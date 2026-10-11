@@ -5,7 +5,6 @@
     "description": "ET-FIN-001 escrow account. Rewritten: the previous validator required totalDeposited/availableBalance/pendingBalance and forbade every field the model actually writes, so every escrow write was rejected.",
     "required": [
       "eventId",
-      "organizerId",
       "organizationId",
       "status",
       "currency"
@@ -31,7 +30,7 @@
       "organizerId": {
         "bsonType": "string",
         "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
-        "description": "Event organizer user ID (Keycloak UUID format)"
+        "description": "Event organizer user ID (Keycloak UUID format). Optional: an escrow is opened from the event-published envelope, which names the organization and not a person, so the organization is the tenant key and this stays unset until a user-level owner is recorded."
       },
       "organizationId": {
         "bsonType": "string",
@@ -39,12 +38,6 @@
         "description": "OWASP A01 - Tenant isolation: Required for financial data"
       },
       "eventTitle": {
-        "bsonType": [
-          "string",
-          "null"
-        ]
-      },
-      "organizerName": {
         "bsonType": [
           "string",
           "null"

@@ -75,7 +75,8 @@ class CatalogLifecycleOutboxTest {
         service = new EventServiceImpl(events, clock, outbox,
                 TransactionalOperator.create(new ReactiveMongoTransactionManager(template.getMongoDatabaseFactory())),
                 CatalogWiring.venues(template, clock), CatalogWiring.tierFactory(), CatalogWiring.tiers(template),
-                CatalogWiring.mirror(template, clock), CatalogWiring.categories(template));
+                CatalogWiring.mirror(template, clock), CatalogWiring.categories(template),
+                org.mockito.Mockito.mock(com.pml.catalog.infrastructure.client.IdentityServiceClient.class));
     }
 
     @AfterAll

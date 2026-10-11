@@ -105,7 +105,7 @@ export function FinanceDashboard() {
           rows={dueRows.slice(0, 6).map((a) => ({
             id: a.id,
             title: a.eventTitle ?? a.accountNumber,
-            support: a.organizerName,
+            support: a.organization?.name,
             trailing: <b>{money(a.currentBalance)}</b>,
             go: { label: 'Open', href: '/finance/escrow' },
           }))}
@@ -119,7 +119,7 @@ export function FinanceDashboard() {
           loading={payouts.loading}
           rows={payouts.payouts.map((p) => ({
             id: p.id,
-            title: p.organizerName ?? p.requestId,
+            title: p.organization?.name ?? p.requestId,
             support: `${p.eventTitle ?? 'Payout'} · ${ago(p.requestedAt)}`,
             trailing: <b>{money(p.requestedAmount)}</b>,
             go: { label: 'Review', href: '/finance/payouts' },

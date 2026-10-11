@@ -27,6 +27,7 @@ import java.util.Set;
 /**
  * The one place identity turns a user, a context and a permission into a decision. Role tables
  * live on {@link OrganizationRole} and {@link EventRole}; platform roles on {@link Permission}.
+ * Every other entry point, including the cross-service authorization checks, delegates here.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,12 +46,7 @@ public class PermissionResolutionServiceImpl implements PermissionResolutionServ
 
     @Override
     public Mono<Boolean> hasOrganizationPermission(String userId, String organizationId, Permission permission) {
-        if (permission == null) {
-            return Mono.just(false);
-        }
-        return platformPermissions(userId).flatMap(platform -> platform.contains(permission)
-                ? Mono.just(true)
-                : memberPermissions(userId, organizationId).map(held -> held.contains(permission)).defaultIfEmpty(false));
+        return decideOrganization(userId, organizationId, permission, true).map(Decision::allowed);
     }
 
     @Override
@@ -61,21 +57,35 @@ public class PermissionResolutionServiceImpl implements PermissionResolutionServ
 
     @Override
     public Mono<Boolean> hasEventPermission(String userId, String eventId, String organizationId, Permission permission) {
+        return decideEvent(userId, eventId, organizationId, permission, true).map(Decision::allowed);
+    }
+
+    @Override
+    public Mono<Decision> decideOrganization(String userId, String organizationId, Permission permission,
+                                             boolean includePlatformRoles) {
         if (permission == null) {
-            return Mono.just(false);
+            return Mono.just(Decision.of(Outcome.PERMISSION_UNKNOWN));
         }
-        return platformPermissions(userId).flatMap(platform -> {
-            if (platform.contains(permission)) {
-                return Mono.just(true);
-            }
-            // A grant counts only on an event of the organization that issued it.
-            return activeGrant(userId, eventId)
-                    .filter(grant -> organizationId == null || organizationId.equals(grant.getOrganizationId()))
-                    .map(grant -> grant.hasPermission(permission))
-                    .switchIfEmpty(Mono.defer(() -> memberPermissions(userId, organizationId)
-                            .map(held -> held.contains(permission))
-                            .defaultIfEmpty(false)));
-        });
+        return platformDecision(userId, permission, includePlatformRoles)
+                .switchIfEmpty(Mono.defer(() -> memberDecision(userId, organizationId, permission)));
+    }
+
+    @Override
+    public Mono<Decision> decideEvent(String userId, String eventId, String organizationId, Permission permission,
+                                      boolean includePlatformRoles) {
+        if (permission == null) {
+            return Mono.just(Decision.of(Outcome.PERMISSION_UNKNOWN));
+        }
+        return platformDecision(userId, permission, includePlatformRoles)
+                .switchIfEmpty(Mono.defer(() -> activeGrant(userId, eventId)
+                        // A grant counts only on an event of the organization that issued it.
+                        .filter(grant -> organizationId == null || organizationId.equals(grant.getOrganizationId()))
+                        .map(grant -> new Decision(
+                                grant.hasPermission(permission) ? Outcome.EVENT_GRANT : Outcome.GRANT_LACKS_PERMISSION,
+                                grant.getEventRole() == null ? null : grant.getEventRole().name(), null, null))
+                        .switchIfEmpty(Mono.defer(() -> organizationId == null
+                                ? Mono.just(Decision.of(Outcome.NO_ORGANIZATION))
+                                : memberDecision(userId, organizationId, permission)))));
     }
 
     @Override
@@ -133,8 +143,9 @@ public class PermissionResolutionServiceImpl implements PermissionResolutionServ
             Mono<EffectivePermissions> fromMembership = organizationId == null
                     ? Mono.just(none)
                     : activeMember(userId, organizationId)
-                            .flatMap(member -> settingsOf(organizationId).map(settings -> new EffectivePermissions(
-                                    userId, organizationId, eventId, member.permissions(settings), member.getRole(), null, ORGANIZATION)))
+                            .flatMap(member -> organizationRepository.findById(organizationId)
+                                    .map(org -> new EffectivePermissions(userId, organizationId, eventId,
+                                            heldBy(member, org), member.getRole(), null, ORGANIZATION)))
                             .defaultIfEmpty(none);
             if (eventId == null || eventId.isBlank()) {
                 return fromMembership;
@@ -160,13 +171,60 @@ public class PermissionResolutionServiceImpl implements PermissionResolutionServ
                 .defaultIfEmpty(Set.of());
     }
 
-    /** The active member's permissions under the organization's current settings; empty when not an active member. */
+    /**
+     * What the active member holds in the organization, under its current settings and lifecycle
+     * status; empty when the user is not an active member or the organization cannot be found.
+     */
     private Mono<Set<Permission>> memberPermissions(String userId, String organizationId) {
         if (userId == null || organizationId == null) {
             return Mono.empty();
         }
         return activeMember(userId, organizationId)
-                .flatMap(member -> settingsOf(organizationId).map(member::permissions));
+                .flatMap(member -> organizationRepository.findById(organizationId).map(org -> heldBy(member, org)));
+    }
+
+    /** The platform step: allowed when a platform role grants the permission, empty to fall through. */
+    private Mono<Decision> platformDecision(String userId, Permission permission, boolean includePlatformRoles) {
+        if (!includePlatformRoles) {
+            return Mono.empty();
+        }
+        return platformPermissions(userId)
+                .filter(platform -> platform.contains(permission))
+                .map(platform -> Decision.of(Outcome.PLATFORM_ROLE));
+    }
+
+    /**
+     * The membership step: the role's permissions under the organization's settings decide first,
+     * then the organization's lifecycle status may still refuse what the role allows.
+     */
+    private Mono<Decision> memberDecision(String userId, String organizationId, Permission permission) {
+        if (userId == null || organizationId == null) {
+            return Mono.just(Decision.of(Outcome.NOT_A_MEMBER));
+        }
+        return activeMember(userId, organizationId)
+                .flatMap(member -> organizationRepository.findById(organizationId)
+                        .map(org -> {
+                            String role = member.getRole() == null ? null : member.getRole().name();
+                            String status = org.getStatus() == null ? null : org.getStatus().name();
+                            Outcome outcome;
+                            if (!member.hasPermission(permission, settingsOf(org))) {
+                                outcome = Outcome.MEMBER_LACKS_PERMISSION;
+                            } else if (!org.canPerform(permission)) {
+                                outcome = Outcome.ORGANIZATION_STATUS;
+                            } else {
+                                outcome = Outcome.MEMBER;
+                            }
+                            return new Decision(outcome, role, org.getId(), status);
+                        })
+                        .defaultIfEmpty(Decision.of(Outcome.ORGANIZATION_UNKNOWN)))
+                .defaultIfEmpty(Decision.of(Outcome.NOT_A_MEMBER));
+    }
+
+    /** The member's permissions with those the organization's status does not allow taken out. */
+    private static Set<Permission> heldBy(OrganizationMember member, Organization org) {
+        EnumSet<Permission> held = EnumSet.noneOf(Permission.class);
+        member.permissions(settingsOf(org)).stream().filter(org::canPerform).forEach(held::add);
+        return held;
     }
 
     private Mono<OrganizationMember> activeMember(String userId, String organizationId) {
@@ -175,10 +233,8 @@ public class PermissionResolutionServiceImpl implements PermissionResolutionServ
     }
 
     /** The organization's settings; a new organization's defaults, every switch off, when it has none. */
-    private Mono<OrganizationSettings> settingsOf(String organizationId) {
-        return organizationRepository.findById(organizationId)
-                .mapNotNull(Organization::getSettings)
-                .defaultIfEmpty(new OrganizationSettings());
+    private static OrganizationSettings settingsOf(Organization organization) {
+        return organization.getSettings() == null ? new OrganizationSettings() : organization.getSettings();
     }
 
     private Mono<EventAccessGrant> activeGrant(String userId, String eventId) {

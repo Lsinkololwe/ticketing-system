@@ -17,7 +17,7 @@ import {
 } from '@pml.tickets/shared/components/m3';
 import type { PayoutRowVM } from '@pml.tickets/shared/api/organization-admin/modules/finance';
 import type { EscrowAccountRow } from '@/lib/api/finance';
-import { OPEN_PAYOUT_STATUSES, escrowEligibilityLabel, maskAccount, sumAmounts } from '@/lib/finance/payouts';
+import { OPEN_PAYOUT_STATUSES, currentEventName, escrowEligibilityLabel, maskAccount, sumAmounts } from '@/lib/finance/payouts';
 import { formatEventDate, formatMoney } from '@/lib/format/figure';
 import { Status } from '@/components/console/Status';
 import { DataState } from '@/components/console/DataState';
@@ -64,14 +64,14 @@ export function PayoutsView(p: PayoutsViewProps) {
   const escList = useMemo(
     () =>
       p.accounts.filter(
-        (a) => (escSt === 'all' || a.status === escSt) && (!escQ || (a.eventTitle ?? '').toLowerCase().includes(escQ.toLowerCase()))
+        (a) => (escSt === 'all' || a.status === escSt) && (!escQ || `${a.eventTitle ?? ''} ${a.event?.title ?? ''}`.toLowerCase().includes(escQ.toLowerCase()))
       ),
     [p.accounts, escSt, escQ]
   );
   const poList = useMemo(
     () =>
       p.payouts.filter(
-        (x) => (poSt === 'all' || x.status === poSt) && (!poQ || `${x.requestId} ${x.eventTitle ?? ''}`.toLowerCase().includes(poQ.toLowerCase()))
+        (x) => (poSt === 'all' || x.status === poSt) && (!poQ || `${x.requestId} ${x.eventTitle ?? ''} ${x.event?.title ?? ''}`.toLowerCase().includes(poQ.toLowerCase()))
       ),
     [p.payouts, poSt, poQ]
   );
@@ -120,7 +120,16 @@ export function PayoutsView(p: PayoutsViewProps) {
               pagination={escPaged.pagination}
               actionsHeader="Actions"
               columns={[
-                { id: 'event', header: 'Event', rowHeader: true, cell: (a) => <b>{a.eventTitle ?? a.accountNumber}</b> },
+                { id: 'event', header: 'Event', rowHeader: true, cell: (a) => {
+                    const now = currentEventName(a.eventTitle, a.event);
+                    return (
+                      <>
+                        <b>{a.eventTitle ?? a.accountNumber}</b>
+                        {now ? <div className="m3-caption">Now: {now}</div> : null}
+                      </>
+                    );
+                  },
+                },
                 { id: 'status', header: 'Status', cell: (a) => <Status status={a.status} /> },
                 { id: 'balance', header: 'Balance', align: 'end', cell: (a) => <span className="m3-mono">{money(a.currentBalance, a.currency)}</span> },
                 { id: 'lock', header: 'Held until', cell: (a) => (a.lockUntil ? formatEventDate(a.lockUntil) : '—') },
@@ -166,7 +175,19 @@ export function PayoutsView(p: PayoutsViewProps) {
               pagination={poPaged.pagination}
               columns={[
                 { id: 'req', header: 'Request', rowHeader: true, cell: (x) => <span className="m3-mono">{x.requestId}</span> },
-                { id: 'event', header: 'Event', cell: (x) => x.eventTitle ?? '—' },
+                {
+                  id: 'event',
+                  header: 'Event',
+                  cell: (x) => {
+                    const now = currentEventName(x.eventTitle, x.event);
+                    return (
+                      <>
+                        {x.eventTitle ?? '—'}
+                        {now ? <div className="m3-caption">Now: {now}</div> : null}
+                      </>
+                    );
+                  },
+                },
                 { id: 'dest', header: 'Destination', cell: (x) => `${x.bankName ?? x.bankAccountName ?? '—'} ${maskAccount(x.accountNumber)}` },
                 { id: 'amount', header: 'Amount', align: 'end', cell: (x) => <span className="m3-mono">{money(x.requestedAmount, x.currency)}</span> },
                 {

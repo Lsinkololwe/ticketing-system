@@ -7,9 +7,6 @@
       "buyerId",
       "organizerId",
       "organizationId",
-      "eventTitle",
-      "eventDate",
-      "ticketCategory",
       "price",
       "status",
       "createdAt"
@@ -17,7 +14,7 @@
     "properties": {
       "_class": {
         "bsonType": "string",
-        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
+        "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes — silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
         "bsonType": [
@@ -43,7 +40,7 @@
       },
       "reservationId": {
         "bsonType": "string",
-        "pattern": "^[a-fA-F0-9]{24}$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "Links ticket to its original reservation"
       },
       "ticketTierId": {
@@ -172,7 +169,7 @@
       "status": {
         "bsonType": "string",
         "pattern": "^[A-Z][A-Z0-9_]{1,49}$",
-        "description": "The ticket's status code. Deliberately NOT a closed enum: platform administrators own this value set through reference data, so an enum here rejects every status they add \u2014 the database would veto the feature. The pattern still holds the shape (OWASP A03: no injection payload survives it), and the closed set moved to statusSemantic, which is the part code actually branches on."
+        "description": "The ticket's status code. Deliberately NOT a closed enum: platform administrators own this value set through reference data, so an enum here rejects every status they add — the database would veto the feature. The pattern still holds the shape (OWASP A03: no injection payload survives it), and the closed set moved to statusSemantic, which is the part code actually branches on."
       },
       "statusSemantic": {
         "enum": [
@@ -184,7 +181,7 @@
           "CANCELLED",
           null
         ],
-        "description": "What status MEANS, denormalised from reference data. THIS is the closed set (OWASP A04) \u2014 the vocabulary is fixed in code while the codes above are not. null is allowed on purpose: a code with no reference-data row is left unclassified, which is findable, rather than guessed, which is not."
+        "description": "What status MEANS, denormalised from reference data. THIS is the closed set (OWASP A04) — the vocabulary is fixed in code while the codes above are not. null is allowed on purpose: a code with no reference-data row is left unclassified, which is findable, rather than guessed, which is not."
       },
       "qrCode": {
         "bsonType": "string",
@@ -403,12 +400,12 @@
       },
       "createdBy": {
         "bsonType": "string",
-        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}|system)$",
         "description": "User who created the ticket"
       },
       "updatedBy": {
         "bsonType": "string",
-        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
+        "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}|system)$",
         "description": "User who last updated the ticket"
       },
       "isActive": {

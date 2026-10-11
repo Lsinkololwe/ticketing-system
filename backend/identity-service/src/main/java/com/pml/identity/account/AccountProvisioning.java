@@ -41,7 +41,7 @@ import java.util.UUID;
  * a second claim finds the contact already owned, a second Keycloak create reads the user back by
  * username, a second activation finds the account already ACTIVE. Nothing here deletes anything on
  * failure - an account that cannot be finished stays PROVISIONING and is completed forward by the
- * next ensure or by the repair schedule.</p>
+ * next ensure.</p>
  *
  * <p>The raw contact never leaves {@code valueEncrypted} except in {@link #applyAttributes}, which
  * hands the email (and only the email) to Keycloak.</p>

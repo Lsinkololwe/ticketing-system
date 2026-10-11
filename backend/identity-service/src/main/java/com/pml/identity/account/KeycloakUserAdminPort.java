@@ -52,14 +52,8 @@ public interface KeycloakUserAdminPort {
     /** Reads a user of {@code realm}; empty when Keycloak holds no user with that id. */
     Mono<KeycloakUserView> readUser(String realm, String keycloakUserId);
 
-    /** One page of the realm's users, for the repair scan. */
-    reactor.core.publisher.Flux<KeycloakUserView> listUsers(String realm, int first, int max);
-
     /** The first value of a user attribute, empty when the user or the attribute is absent. */
     Mono<Optional<String>> readAttribute(String realm, String keycloakUserId, String name);
-
-    /** Reads the user of {@code realm} with exactly this username, if any. */
-    Mono<Optional<KeycloakUserView>> readUserByUsername(String realm, String username);
 
     /**
      * Creates a platform staff user in the staff realm: enabled, with UPDATE_PASSWORD and

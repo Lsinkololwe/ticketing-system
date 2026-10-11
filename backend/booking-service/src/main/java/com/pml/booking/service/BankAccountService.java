@@ -51,6 +51,12 @@ public interface BankAccountService {
      */
     Mono<BankAccount> findById(String id);
 
+    /** The organization's payout accounts that have not been deleted. */
+    Flux<BankAccount> findByOrganizationId(String organizationId);
+
+    /** The organization's default payout account, if one is set. */
+    Mono<BankAccount> findDefaultByOrganizationId(String organizationId);
+
     /**
      * Retrieves the default bank account for automatic payouts.
      * Returns empty if no default is set (organizer must select one).

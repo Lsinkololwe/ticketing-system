@@ -17,7 +17,7 @@ import {
   IDENTITY_ORG_DOCUMENTS, IDENTITY_ORG_MEMBERS, IDENTITY_USER, IDENTITY_USERS, IDENTITY_USER_BY_EMAIL, IDENTITY_USER_BY_PHONE,
 } from './identity-admin.queries';
 import {
-  ACTIVATE_USER, CREATE_USER, DEACTIVATE_USER, LOCK_USER, SET_USER_ROLES, SUSPEND_ORG, SUSPEND_USER, SYNC_ALL_USERS, SYNC_USER,
+  ACTIVATE_USER, CREATE_USER, DEACTIVATE_USER, LOCK_USER, SET_USER_ROLES, SUSPEND_ORG, SUSPEND_USER,
   UNLOCK_USER, UNSUSPEND_ORG, UNSUSPEND_USER, UPDATE_ORG_STATUS, UPDATE_USER, VERIFY_PAYOUT_ACCOUNT,
 } from './identity-admin.mutations';
 
@@ -124,8 +124,6 @@ export function useUserAdminActions() {
   const [activate] = useMutation(ACTIVATE_USER, opts);
   const [deactivate] = useMutation(DEACTIVATE_USER, opts);
   const [setRoles] = useMutation(SET_USER_ROLES, opts);
-  const [sync] = useMutation(SYNC_USER, opts);
-  const [syncAll] = useMutation(SYNC_ALL_USERS, opts);
   return {
     createUser: async (input: { email: string; firstName: string; lastName: string; password?: string; phoneNumber?: string; role?: AdminUserRole }) =>
       (await create({ variables: { input } as IdentityAdminCreateUserMutationVariables })).data?.createUser ?? null,
@@ -138,8 +136,6 @@ export function useUserAdminActions() {
     activateUser: (id: string) => activate({ variables: { id } }),
     deactivateUser: (id: string) => deactivate({ variables: { id } }),
     setUserRoles: (userId: string, roles: AdminUserRole[]) => setRoles({ variables: { userId, roles } }),
-    syncUser: (userId: string) => sync({ variables: { userId } }),
-    syncAllUsers: () => syncAll(),
   };
 }
 

@@ -14,6 +14,12 @@ import { asNumber, Mono, TwoLine } from './shared';
 import { ESCROW_STATUS_LABELS, enumOptions } from '@/lib/enumLabels';
 
 
+/** The event's name now, when it is not the name the account was opened under. */
+function currentName(x: { eventTitle?: string | null; event?: { title?: string | null } | null }): string | undefined {
+  const now = x.event?.title;
+  return now && now !== x.eventTitle ? `now \u201c${now}\u201d` : undefined;
+}
+
 /** Escrow accounts: one per event, with lock/unlock in the row and everything else in the sheet. */
 export function EscrowTab() {
   const staff = useStaff();
@@ -31,7 +37,7 @@ export function EscrowTab() {
     const q = query.trim().toLowerCase();
     return list.accounts.filter(
       (x) =>
-        (!q || [x.accountNumber, x.eventTitle, x.organizerName].some((v) => (v ?? '').toLowerCase().includes(q))) &&
+        (!q || [x.accountNumber, x.eventTitle, x.event?.title, x.organization?.name].some((v) => (v ?? '').toLowerCase().includes(q))) &&
         (!filters.lock || filters.lock === 'all' || !!x.lockUntil === (filters.lock === 'locked'))
     );
   }, [list.accounts, query, filters.lock]);
@@ -73,7 +79,7 @@ export function EscrowTab() {
           empty={<EmptyState title="No escrow accounts yet." description={list.accounts.length > 0 ? 'No accounts match the filters.' : undefined} />}
           columns={[
             { id: 'acct', header: 'Account', rowHeader: true, cell: (x) => <Mono>{x.accountNumber}</Mono> },
-            { id: 'event', header: 'Event', cell: (x) => <TwoLine main={x.eventTitle ?? '—'} sub={x.organizerName} /> },
+            { id: 'event', header: 'Event', cell: (x) => <TwoLine main={x.eventTitle ?? '—'} sub={[x.organization?.name, currentName(x)].filter(Boolean).join(' · ')} /> },
             { id: 'status', header: 'Status', cell: (x) => <TwoLine main={<StatusPill status={x.status} />} sub={x.lockUntil ? `Locked until ${formatDate(x.lockUntil)}` : undefined} /> },
             { id: 'bal', header: 'Balance', align: 'end', cell: (x) => <Mono>{money(asNumber(x.currentBalance))}</Mono> },
             { id: 'dep', header: 'Deposits', align: 'end', cell: (x) => <Mono>{money(asNumber(x.totalDeposits))}</Mono> },

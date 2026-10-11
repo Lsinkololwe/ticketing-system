@@ -4,6 +4,7 @@ import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TenantBoundary;
 import com.pml.shared.error.TranslatedRefusal;
 import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import com.pml.shared.security.tenancy.TenantScope;
 import reactor.core.publisher.Mono;
 
@@ -49,11 +50,12 @@ public final class CallerScope {
     public static Mono<Set<String>> organizationIds(String requested, ErrorCode unknown) {
         return CurrentTenantScope.get().flatMap(scope -> {
             if (requested == null || requested.isBlank()) {
-                return scope.platformAdmin()
-                        // An administrator without the selector is asking across the platform.
-                        // Callers pass the empty set through to an unfiltered finder knowingly.
-                        ? Mono.just(Set.<String>of())
-                        : refuseIfNothing(scope, unknown);
+                return PlatformWideAccess.isPlatformWide(scope, PlatformWideAccess.Reason.CALLER_SCOPED_QUERY)
+                        .flatMap(platformWide -> platformWide
+                                // An administrator without the selector is asking across the platform.
+                                // Callers pass the empty set through to an unfiltered finder knowingly.
+                                ? Mono.just(Set.<String>of())
+                                : refuseIfNothing(scope, unknown));
             }
             if (scope.permits(requested)) {
                 return Mono.just(Set.of(requested));

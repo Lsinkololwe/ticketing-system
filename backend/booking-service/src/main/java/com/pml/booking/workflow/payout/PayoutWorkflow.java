@@ -89,6 +89,7 @@ public interface PayoutWorkflow {
 
     record Submit(String payoutRequestId,
                   String organizerId,
+                  String organizationId,
                   String eventId,
                   String escrowAccountId,
                   String bankAccountId,

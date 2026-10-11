@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import { z } from 'zod';
 import { referenceCode, useReferenceOptions } from '@pml.tickets/shared/api/graphql/shared/reference';
 import { Banner, Button, Dialog, ErrorState, Skeleton } from '@pml.tickets/shared/components/m3';
-import { resolveError, type GraphQLLikeError, type MyTicketRow } from '@pml.tickets/shared';
+import { resolveError, useIdempotencyKey, type GraphQLLikeError, type MyTicketRow } from '@pml.tickets/shared';
 import { hoursText, policyFor, useCreateRefund, usePlatformRules, useRefundQuote } from '@pml.tickets/shared';
 import { money } from '@/lib/format';
 import { Form, FormActions, SelectRHF, useZodForm } from '@pml.tickets/shared/forms';
@@ -23,6 +23,10 @@ export function RefundDialog({ ticket, buyerId, onClose, onDone }: { ticket: MyT
   const schema = useMemo(() => refundSchema(reasons.options.map((o) => o.value)), [reasons.options]);
   const form = useZodForm(schema, { defaultValues: { reason: '' } });
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // A key per ticket, persisted so a reload mid-submission reuses it: a retry of this same
+  // request should replay, but a refund request raised for a different ticket afterwards must
+  // never be mistaken for one.
+  const [refundIdem] = useIdempotencyKey(ticket ? `refund:${ticket.id}` : null);
 
   useEffect(() => {
     if (ticket) {
@@ -39,7 +43,7 @@ export function RefundDialog({ ticket, buyerId, onClose, onDone }: { ticket: MyT
     setSubmitError(null);
     try {
       // The request carries the reason in words, as the platform names it, for the reviewer to read.
-      await create(ticket.id, reasons.labelOf(reason));
+      await create(ticket.id, reasons.labelOf(reason), refundIdem);
       onDone();
     } catch (e) {
       setSubmitError(resolveError(e as GraphQLLikeError).message);

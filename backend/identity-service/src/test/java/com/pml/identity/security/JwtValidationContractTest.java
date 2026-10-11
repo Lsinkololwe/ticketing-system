@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -48,15 +49,21 @@ class JwtValidationContractTest {
     @Test
     @DisplayName("forged, wrong-issuer, expired and absent tokens are refused; a valid one is accepted")
     void refusesEveryInvalidToken() {
-        JwtRejectionContract.against(configuredWith(AUDIENCE)::securityWebFilterChain)
+        JwtRejectionContract.against(chainOf(configuredWith(AUDIENCE)))
                 .assertAllFour(realm, otherRealm, AUDIENCE);
     }
 
     @Test
     @DisplayName("a token minted for booking-service does not open identity-service")
     void refusesAnotherServicesToken() {
-        JwtRejectionContract.against(configuredWith(AUDIENCE)::securityWebFilterChain)
+        JwtRejectionContract.against(chainOf(configuredWith(AUDIENCE)))
                 .assertRejectsWrongAudience(realm, "myticketzm-booking-service");
+    }
+
+    /** This class always configures an audience, so the environment handed to the chain never matters. */
+    private static java.util.function.Function<org.springframework.security.config.web.server.ServerHttpSecurity,
+            org.springframework.security.web.server.SecurityWebFilterChain> chainOf(SecurityConfig config) {
+        return http -> config.securityWebFilterChain(http, new MockEnvironment());
     }
 
     /** The real configuration class, populated the way Spring populates it. */

@@ -3,6 +3,8 @@ package com.pml.identity.workflow.mirror;
 import com.pml.identity.domain.valueobject.OrganizationGroups;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.OrganizationMember;
+import com.pml.shared.constants.UserType;
+import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.infrastructure.temporal.TaskQueues;
 import com.pml.identity.repository.OrganizationMemberRepository;
@@ -11,6 +13,7 @@ import com.pml.shared.workflow.Refusals;
 import io.temporal.spring.boot.ActivityImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -89,11 +92,41 @@ public class GroupMirrorActivitiesImpl implements GroupMirrorActivities {
                 });
     }
 
-    /** A removed member leaves the group their role names; an active one joins it. */
+    /**
+     * A removed member leaves the group their role names; an active one joins it.
+     *
+     * <p>A team member also holds the {@code ORGANIZER} realm role while they belong to any
+     * organization. The platform's coarse gate (the organizer console and the {@code @auth(requires:
+     * ORGANIZER)} operations) reads that role, and an invited administrator, manager, marketer or
+     * contributor has a membership but was never an organization's applicant, so nothing else grants
+     * it. It is a coarse gate only: what the member may do is decided by identity's permission check on
+     * every operation. The owner's role is granted at approval, not here, so an applicant who has only
+     * an owner row is not made an organizer before the application is decided.
+     */
     private Mono<Void> apply(OrganizationMember member, String slug) {
         String group = OrganizationGroups.of(member.getRole());
-        return member.getStatus() == MemberStatus.REMOVED
-                ? keycloakService.leaveOrganizationGroup(member.getUserId(), slug, group)
-                : keycloakService.joinOrganizationGroup(member.getUserId(), slug, group);
+        boolean owner = member.getRole() == OrganizationRole.OWNER;
+        if (member.getStatus() == MemberStatus.REMOVED) {
+            return keycloakService.leaveOrganizationGroup(member.getUserId(), slug, group)
+                    .then(owner ? Mono.<Void>empty() : releaseOrganizerRole(member.getUserId()));
+        }
+        Mono<Void> grant = owner ? Mono.<Void>empty()
+                : keycloakService.grantRealmRole(member.getUserId(), UserType.ORGANIZER.name());
+        // A role change moves the member between the organization's role groups, so every other group
+        // is left before the current one is joined; leaving a group the member is not in holds nobody.
+        Mono<Void> leaveOthers = Flux.fromIterable(OrganizationGroups.TREE)
+                .filter(other -> !other.equals(group))
+                .concatMap(other -> keycloakService.leaveOrganizationGroup(member.getUserId(), slug, other))
+                .then();
+        return grant.then(leaveOthers).then(keycloakService.joinOrganizationGroup(member.getUserId(), slug, group));
+    }
+
+    /** Takes the role away once the user belongs to no organization at all, as owner or as member. */
+    private Mono<Void> releaseOrganizerRole(String userId) {
+        return memberRepository.findByUserIdAndStatus(userId, MemberStatus.ACTIVE)
+                .hasElements()
+                .flatMap(stillBelongs -> stillBelongs
+                        ? Mono.<Void>empty()
+                        : keycloakService.revokeRealmRole(userId, UserType.ORGANIZER.name()));
     }
 }

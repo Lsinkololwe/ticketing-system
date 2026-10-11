@@ -176,11 +176,11 @@ an operator's pause (ROADMAP D-34).
 | `booking-finance` | booking | EventFinance, CancellationRefunds, Payout, BankVerification, Refund, Chargeback workflows and activities | a mass refund must not starve checkout |
 | `booking-recon` | booking | ReconciliationWorkflow and its read-heavy activities | ET-FIN-005 R7: reconciliation does not contend with writes |
 | `catalog-lifecycle` | catalog | EventApproval, EventLifecycle workflows and activities | owned by catalog |
-| `identity-onboarding` | identity | OrganizerOnboarding, OwnershipTransfer, UserSync, UserBackfill workflows and activities; the GroupMirrorRepair Schedule's runs | Keycloak's admin API is the bottleneck |
+| `identity-onboarding` | identity | OrganizerOnboarding, OwnershipTransfer, UserSync workflows and activities; the GroupMirrorRepair Schedule's runs | Keycloak's admin API is the bottleneck |
 | `identity-notify` | identity | Notification, Reminder workflows and send activities | messaging providers fail independently of onboarding |
-| `identity-account` | identity | AccountEnsure workflow and its activities (AccountMerge, ContactChange, AccountRepair join in later waves) | the buyer's checkout waits on AccountEnsure; Keycloak admin latency from a bulk backfill must not queue ahead of it |
+| `identity-account` | identity | AccountEnsure workflow and its activities (AccountMerge, ContactChange join in later waves) | the buyer's checkout waits on AccountEnsure; Keycloak admin latency from a bulk backfill must not queue ahead of it |
 
-**Queue `identity-account`** (identity; registers `AccountEnsureWorkflow` now, `AccountMergeWorkflow`, `ContactChangeWorkflow` and `AccountRepairWorkflow` as they land; separate from `identity-onboarding` because the buyer's checkout waits on `AccountEnsureWorkflow`, and Keycloak admin latency from a bulk backfill must not queue ahead of it). The row above was added in the change that added the queue to `application.yml` and `TaskQueues.java` (ET-IDN-004 BE-3), as `TemporalRegistryLintTest` requires.
+**Queue `identity-account`** (identity; registers `AccountEnsureWorkflow` now, `AccountMergeWorkflow` and `ContactChangeWorkflow` as they land; separate from `identity-onboarding` because the buyer's checkout waits on `AccountEnsureWorkflow`, and Keycloak admin latency from a bulk backfill must not queue ahead of it). The row above was added in the change that added the queue to `application.yml` and `TaskQueues.java` (ET-IDN-004 BE-3), as `TemporalRegistryLintTest` requires.
 
 **Search attributes carry no personal data (D-46, 2026-10-04).** `BusinessId` is an opaque id (account id, ticket id, `contactKey`); a lint fails any workflow id or search attribute containing `@` or `+<digits>`, and workflow payloads and activity inputs carry ids and proof ids, never a contact value, name or code.
 
@@ -206,7 +206,6 @@ booking activities; there is no cross-service task queue.
 | `OrganizerOnboardingWorkflow` | `identity-onboarding` | `org-onboarding/{organizationId}` | USE_EXISTING | ET-ORG-001 | implemented |
 | `OwnershipTransferWorkflow` | `identity-onboarding` | `ownership/{transferId}` | USE_EXISTING | ET-ORG-002 | implemented |
 | `UserSyncWorkflow` | `identity-onboarding` | `user-sync/{keycloakUserId}` | USE_EXISTING; continues as new after 1,000 changes or when suggested | ET-IDN-002 | implemented |
-| `UserBackfillWorkflow` | `identity-onboarding` | `user-backfill`; the nightly `identity-user-reconciliation` Schedule suffixes it with its fire time | USE_EXISTING — a second request reaches the running backfill; one page of 100 per run, continued as new; each user becomes a SYNC change on their own `UserSyncWorkflow` | ET-IDN-002 | implemented |
 | `TicketExpiryWorkflow` | `booking-finance` | `ticket-expiry/{eventId}` | USE_EXISTING — started by the catalog-events consumer on `catalog.EventCompleted`; sleeps 24 h, then expires unscanned tickets in batches | ET-TKT-002 | **planned** |
 | `TicketTransferWorkflow` | `booking-checkout` | `ticket-transfer/{transferId}` | USE_EXISTING; `claim` and `cancel` updates; timer to `expiresAt` | ET-TKT-004 | **planned** |
 | `WebhookOrphanWorkflow` | `booking-checkout` | `webhook-orphan/{providerEventId}` | USE_EXISTING; re-match every PT5M, escalate at PT1H | ET-PAY-002 | **planned** |
@@ -228,7 +227,6 @@ booking activities; there is no cross-service task queue.
 | `AccountEnsureWorkflow` | `identity-account` | `account-ensure/{contactKey}` — the HMAC key, never the contact (D-46) | Update-with-Start, USE_EXISTING; update `ensure`; activities claimContact, createKeycloakUser, applyAttributesAndRoles, activateAccount, stageOutbox, all repeatable; completes forward, never deletes | ET-IDN-004 | implemented |
 | `AccountMergeWorkflow` | `identity-account` | `account-merge/{mergedAccountId}` | USE_EXISTING; `cancel` before MERGED | ET-IDN-004 | **planned** |
 | `ContactChangeWorkflow` | `identity-account` | `contact-change/{accountId}` — the opaque account id, never a contact | FAIL on a running id (`CONTACT_CHANGE_IN_PROGRESS`), ALLOW_DUPLICATE reuse — one open change per account. One workflow for ADD, CHANGE, REMOVE and PRIMARY. Input: ids, the contact key (keyed hash), a masked display value; never a contact or a code. CHANGE waits for updates `authorise` (code to the current primary accepted) and `acceptNew(proofId)` (code to the new contact accepted), signals `failedAttempt` (five abort with `OTP_ATTEMPTS_EXHAUSTED`), `codeResent(target, challengeId)` (a resent code has a new challenge id) and `cancel`, and a PT48H timer (`OTP_EXPIRED`). Activities `begin` (marker `CHANGING`), `claimContact` (new contact under the unique index BEFORE any release), `syncKeycloak` (full representation), `commit` (release, primary, flags, account event, outbox in ONE transaction), `endSessions`, `clearMarker`, `notifyContacts` (best effort); all repeatable, retried without limit; a refusal clears the marker and changes nothing. `Workflow.getVersion` marker `contact-change-steps` | ET-IDN-004 | implemented |
-| `AccountRepairWorkflow` | `identity-account` | `account-repair/scheduled`, suffixed by the Schedule with its fire time | Schedule `identity-account-repair` every PT15M, overlap SKIP, run timeout PT14M, created idempotently at boot behind `identity.account.repair.enabled` (prod); three idempotent activities (Keycloak users D2/D9, accounts D1/D3-D6, markers D7/D8) retried 3 times, each repair audited as `REPAIR_Dn`; `Workflow.getVersion` marker `account-repair-passes` | ET-IDN-004 | implemented |
 | `TicketDeliveryWorkflow` | `identity-notify` | `ticket-delivery/{ticketId}` | USE_EXISTING; WhatsApp then email with retries; gate fallback (ticket code plus ID) if neither confirms | ET-NTF-001 | **planned** |
 
 **Status column.** `implemented` means a `@WorkflowInterface` of that name exists under `backend/*/src/main`
@@ -242,8 +240,7 @@ Recurring jobs are Temporal Schedules, each starting a workflow on its service's
 policy SKIP: booking's four reconciliation schedules (`ReconciliationWorkflow`, ET-FIN-005) and
 identity's `identity-group-mirror-repair` schedule every minute, which starts the dynamic workflow type
 `GroupMirrorRepair` on `identity-onboarding` to run the Keycloak group-mirror repair activity
-(ET-ORG-002). The dynamic type accepts no other name. Identity's `identity-user-reconciliation`
-Schedule starts `UserBackfillWorkflow` nightly at 03:30 UTC (ET-IDN-002 R4); its `audit-verify` and
+(ET-ORG-002). The dynamic type accepts no other name. Identity has no user-reconciliation Schedule (removed 2026-10-10, ET-IDN-002 R4); its `audit-verify` and
 `audit-purge` Schedules start `AuditMaintenanceWorkflow` (ET-PLT-009), `identity-device-pruning`
 starts `DevicePruningWorkflow` (ET-NTF-001) and `organizer-digest` starts `OrganizerDigestWorkflow`
 (ET-NTF-002). Booking's reconciliation Schedules include `recon-provider` (ET-FIN-005, ET-PAY-002),

@@ -14,8 +14,8 @@ import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -41,6 +41,7 @@ public class TeamInvitationMutationResolver {
      * Invite a team member.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.inviteTeamMember")
     @PreAuthorize("isAuthenticated()")
     public Mono<TeamInvitation> inviteTeamMember(
             @InputArgument String organizationId,
@@ -77,14 +78,15 @@ public class TeamInvitationMutationResolver {
      * Bulk invite team members.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.bulkInviteTeamMembers")
     @PreAuthorize("isAuthenticated()")
-    public Flux<TeamInvitation> bulkInviteTeamMembers(
+    public Mono<List<TeamInvitation>> bulkInviteTeamMembers(
             @InputArgument String organizationId,
             @Valid @InputArgument List<@Valid InviteMemberInput> invitations) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(inviterId -> log.info("User {} bulk inviting {} members to organization {}", inviterId, invitations.size(), organizationId))
-                .flatMapMany(inviterId -> memberService.requirePermission(inviterId, organizationId, Permission.TEAM_INVITE)
-                        .thenMany(Flux.defer(() -> {
+                .flatMap(inviterId -> memberService.requirePermission(inviterId, organizationId, Permission.TEAM_INVITE)
+                        .then(Mono.defer(() -> {
                             List<TeamInvitationService.InviteRequest> requests = invitations.stream()
                                     .map(input -> {
                                         List<TeamInvitation.EventAccessInput> eventGrants = null;
@@ -108,7 +110,9 @@ public class TeamInvitationMutationResolver {
                                     })
                                     .collect(Collectors.toList());
 
-                            return invitationService.bulkInvite(organizationId, requests, inviterId);
+                            // @FailClosedOnRevocation requires a Mono-returning method, so the Flux the
+                            // service produces is collected into one list rather than streamed as elements.
+                            return invitationService.bulkInvite(organizationId, requests, inviterId).collectList();
                         })));
     }
 
@@ -116,6 +120,7 @@ public class TeamInvitationMutationResolver {
      * Resend invitation email.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.resendInvitation")
     @PreAuthorize("isAuthenticated()")
     public Mono<TeamInvitation> resendInvitation(@InputArgument String invitationId) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -131,6 +136,7 @@ public class TeamInvitationMutationResolver {
      * Revoke invitation.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.revokeInvitation")
     @PreAuthorize("isAuthenticated()")
     public Mono<TeamInvitation> revokeInvitation(@InputArgument String invitationId) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -146,6 +152,7 @@ public class TeamInvitationMutationResolver {
      * Accept invitation (creates member).
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.acceptInvitation")
     @PreAuthorize("isAuthenticated()")
     public Mono<OrganizationMember> acceptInvitation(@InputArgument String token) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -161,6 +168,7 @@ public class TeamInvitationMutationResolver {
      * holds the link; the acceptance page only needs to know the decline happened.</p>
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.declineInvitation")
     @PreAuthorize("isAuthenticated()")
     public Mono<Boolean> declineInvitation(@InputArgument String token) {
         log.info("Declining invitation");

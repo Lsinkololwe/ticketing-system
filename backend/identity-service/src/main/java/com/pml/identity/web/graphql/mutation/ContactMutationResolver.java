@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import reactor.core.publisher.Mono;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 
 /**
  * A buyer's own contacts (ET-IDN-004 R3, R5). There is no account argument anywhere: the account is the
@@ -42,6 +43,7 @@ public class ContactMutationResolver {
     }
 
     @DgsMutation
+    @FailClosedOnRevocation("account.confirmContactAdd")
     @PreAuthorize("isAuthenticated()")
     public Mono<ContactChangeResult> confirmContactAdd(@Valid @InputArgument ConfirmContactAddInput input) {
         return account().flatMap(id -> contacts.confirmAdd(id, input.challengeId(), input.code()));
@@ -54,6 +56,7 @@ public class ContactMutationResolver {
     }
 
     @DgsMutation
+    @FailClosedOnRevocation("account.confirmContactChange")
     @PreAuthorize("isAuthenticated()")
     public Mono<ContactChangeResult> confirmContactChange(@Valid @InputArgument ConfirmContactChangeInput input) {
         return account().flatMap(id -> contacts.confirmChange(id, input.changeId(), input.newContactCode(), input.currentContactCode()));
@@ -72,6 +75,7 @@ public class ContactMutationResolver {
     }
 
     @DgsMutation
+    @FailClosedOnRevocation("account.confirmContactRemoval")
     @PreAuthorize("isAuthenticated()")
     public Mono<ContactChangeResult> confirmContactRemoval(@Valid @InputArgument ConfirmContactRemovalInput input) {
         return account().flatMap(id -> contacts.confirmRemoval(id, input.challengeId(), input.code()));
@@ -84,6 +88,7 @@ public class ContactMutationResolver {
     }
 
     @DgsMutation
+    @FailClosedOnRevocation("account.setPrimaryContact")
     @PreAuthorize("isAuthenticated()")
     public Mono<ContactChangeResult> setPrimaryContact(@Valid @InputArgument SetPrimaryContactInput input) {
         return account().flatMap(id -> contacts.setPrimary(id, input.contactId(), input.challengeId(), input.code()));

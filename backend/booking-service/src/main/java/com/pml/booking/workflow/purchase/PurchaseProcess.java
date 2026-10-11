@@ -18,8 +18,11 @@ import com.pml.booking.workflow.purchase.PurchaseWorkflow.ReservationView;
 import com.pml.booking.workflow.purchase.PurchaseWorkflow.ReserveCommand;
 import com.pml.booking.workflow.purchase.PurchaseWorkflow.Selection;
 import com.pml.booking.workflow.purchase.PurchaseWorkflow.Start;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pml.shared.constants.ReservationStatus;
 import com.pml.shared.error.ErrorCode;
+import com.pml.shared.idempotency.Fingerprint;
+import com.pml.shared.idempotency.IdempotencyGuard;
 import io.temporal.api.enums.v1.WorkflowIdConflictPolicy;
 import io.temporal.client.UpdateOptions;
 import io.temporal.client.WithStartWorkflowOperation;
@@ -48,14 +51,18 @@ public class PurchaseProcess {
     private final PaymentService payments;
     private final Clock clock;
     private final com.pml.booking.service.BookingStore bookings;
+    private final IdempotencyGuard idempotencyGuard;
+    private final ObjectMapper mapper;
 
     public PurchaseProcess(TemporalGateway temporal, ReservationService reservations, PaymentService payments, Clock clock,
-                           com.pml.booking.service.BookingStore bookings) {
+                           com.pml.booking.service.BookingStore bookings, IdempotencyGuard idempotencyGuard, ObjectMapper mapper) {
         this.bookings = bookings;
         this.temporal = temporal;
         this.reservations = reservations;
         this.payments = payments;
         this.clock = clock;
+        this.idempotencyGuard = idempotencyGuard;
+        this.mapper = mapper;
     }
 
     public Mono<TicketReservation> reserve(String userId, ReserveTicketsInput input) {
@@ -98,6 +105,17 @@ public class PurchaseProcess {
     }
 
     public Mono<PaymentInitiationResponse> pay(String userId, PayReservationInput input) {
+        String idempotencyKey = input.idempotencyKey();
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return Mono.error(new IllegalArgumentException(
+                    "IDEMPOTENCY_KEY_REQUIRED: payReservation needs a client-supplied key"));
+        }
+        String fingerprint = Fingerprint.of(mapper, input, Fingerprint.CLIENT_VARYING);
+        return idempotencyGuard.execute("booking:payReservation", idempotencyKey, fingerprint,
+                PaymentInitiationResponse.class, () -> payOnce(userId, input));
+    }
+
+    private Mono<PaymentInitiationResponse> payOnce(String userId, PayReservationInput input) {
         return reservations.findById(input.reservationId())
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("RESERVATION_UNKNOWN: " + input.reservationId())))
                 .flatMap(reservation -> {

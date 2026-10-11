@@ -30,21 +30,13 @@ import java.util.Map;
  *    Catalog Service's _entities query to fetch them
  * 4. Router merges our Ticket data with Catalog's Event data
  *
- * THE @provides OPTIMIZATION:
- * ---------------------------
+ * WHY Ticket.event PROVIDES NOTHING:
+ * ---------------------------------
  *
- * In the schema, we declared:
- *   event: Event! @provides(fields: "title eventDateTime organizerId")
- *
- * This tells Router: "When I return an Event stub, I ALSO include title,
- * eventDateTime, and organizerId from my cached data."
- *
- * Why? Because Ticket already stores eventTitle, eventDate for display purposes.
- * So if client only needs title, Router can use OUR cached value instead of
- * making an extra call to Catalog Service.
- *
- * We include these fields in the stub map, and Router decides whether to use
- * them or fetch fresh data from Catalog based on the query.
+ * The event's name and date are the event's current ones. The ticket carries no copy, and a value
+ * provided from one would be served by the router in place of catalog's, so a renamed or
+ * rescheduled event would still show its old name and date. The schema declares no @provides on
+ * {@code event}, and the router always asks catalog.
  *
  * ============================================================================
  */
@@ -58,25 +50,11 @@ public class TicketFieldResolver {
      * EVENT FIELD RESOLVER
      * ========================================================================
      *
-     * Resolves: Ticket.event: Event! @provides(fields: "title eventDateTime organizerId")
+     * Resolves: Ticket.event: Event!
      *
-     * Returns an Event "representation" (stub) that Apollo Router can use
-     * to fetch the full Event from Catalog Service if needed.
-     *
-     * The representation MUST include:
-     * - __typename: "Event" (tells Router what type this is)
-     * - id: The event's ID (the @key field)
-     *
-     * Because we use @provides, we ALSO include:
-     * - title: From ticket.eventTitle (cached)
-     * - eventDateTime: From ticket.eventDate (cached)
-     * - organizerId: From ticket (if we have it cached)
-     *
-     * Router will use these provided fields if:
-     * 1. The client only requested those fields
-     * 2. Router determines it's safe to use cached data
-     *
-     * Otherwise, Router calls Catalog Service for fresh data.
+     * Returns an Event reference ({@code __typename} and {@code id}) that the router resolves in
+     * catalog. Nothing is provided from the ticket: the event's name and date are its current ones,
+     * and a value cached here would be served in place of catalog's after a rename or reschedule.
      *
      * @param dfe The DataFetchingEnvironment containing the parent Ticket
      * @return Map representing an Event entity reference
@@ -95,15 +73,8 @@ public class TicketFieldResolver {
         eventRepresentation.put("__typename", "Event");
         eventRepresentation.put("id", ticket.getEventId());
 
-        // PROVIDED: These are optional but optimize queries via @provides
-        // If we have cached data, include it so Router doesn't need to call Catalog
-        if (ticket.getEventTitle() != null) {
-            eventRepresentation.put("title", ticket.getEventTitle());
-        }
-
-        if (ticket.getEventDate() != null) {
-            eventRepresentation.put("eventDateTime", ticket.getEventDate());
-        }
+        // Nothing is provided: a title or date cached on the ticket would be served by the router in place
+        // of catalog's, and show the old name after a rename or the old date after a reschedule.
 
         // organizerId might be stored on ticket for analytics
         // If we have it, include it
@@ -122,9 +93,8 @@ public class TicketFieldResolver {
      * Returns a User "representation" (stub) that Apollo Router can use
      * to fetch the full User from Identity Service if needed.
      *
-     * Because we use @provides, we include cached buyer data from the Ticket.
-     * This optimization allows queries that only need basic buyer info
-     * (name, email, phone) to be resolved without calling Identity Service.
+     * Because we use @provides, we include cached buyer data from the Ticket, but only for a
+     * caller entitled to it (see TicketHolderContactAccess); otherwise the router asks identity.
      *
      * Field Mapping:
      * - Ticket.buyerName -> User.fullName
@@ -135,31 +105,31 @@ public class TicketFieldResolver {
      * @return Map representing a User entity reference with provided fields
      */
     @DgsData(parentType = "Ticket", field = "buyer")
-    public Map<String, Object> getTicketBuyer(DgsDataFetchingEnvironment dfe) {
+    public reactor.core.publisher.Mono<Map<String, Object>> getTicketBuyer(DgsDataFetchingEnvironment dfe) {
         Ticket ticket = dfe.getSource();
 
         log.debug("Federation: Resolving Ticket.buyer for ticketId={}, buyerId={}",
                 ticket.getId(), ticket.getBuyerId());
 
-        // Build the User representation (stub)
-        Map<String, Object> userRepresentation = new HashMap<>();
-
-        // REQUIRED: These are necessary for federation to work
-        userRepresentation.put("__typename", "User");
-        userRepresentation.put("id", ticket.getBuyerId());
-
-        // PROVIDED: These fields are declared in @provides, so Router can use
-        // our cached values instead of calling Identity Service
-        if (ticket.getBuyerName() != null) {
-            userRepresentation.put("fullName", ticket.getBuyerName());
-        }
-        if (ticket.getBuyerEmail() != null) {
-            userRepresentation.put("email", ticket.getBuyerEmail());
-        }
-        if (ticket.getBuyerPhone() != null) {
-            userRepresentation.put("phoneNumber", ticket.getBuyerPhone());
-        }
-
-        return userRepresentation;
+        // The cached contact is offered to the router only to a caller entitled to it. Providing it
+        // unconditionally would answer fullName/email/phoneNumber without identity's own gate ever
+        // running; withheld, the router asks identity, which decides.
+        return com.pml.booking.security.TicketHolderContactAccess.mayRead(ticket).map(permitted -> {
+            Map<String, Object> userRepresentation = new HashMap<>();
+            userRepresentation.put("__typename", "User");
+            userRepresentation.put("id", ticket.getBuyerId());
+            if (permitted) {
+                if (ticket.getBuyerName() != null) {
+                    userRepresentation.put("fullName", ticket.getBuyerName());
+                }
+                if (ticket.getBuyerEmail() != null) {
+                    userRepresentation.put("email", ticket.getBuyerEmail());
+                }
+                if (ticket.getBuyerPhone() != null) {
+                    userRepresentation.put("phoneNumber", ticket.getBuyerPhone());
+                }
+            }
+            return userRepresentation;
+        });
     }
 }

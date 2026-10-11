@@ -33,5 +33,8 @@ public record CreateRefundRequestInput(
         @Size(max = 1000, message = "Additional notes must not exceed 1000 characters")
         String additionalNotes,
 
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+
+        @NotBlank(message = "Idempotency key is required")
+        String idempotencyKey
 ) {}

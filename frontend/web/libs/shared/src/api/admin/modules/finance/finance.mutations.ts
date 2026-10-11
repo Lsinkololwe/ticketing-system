@@ -24,8 +24,8 @@ import {
 
 export const APPROVE_PAYOUT_REQUEST = gql`
   ${PAYOUT_LIST_FIELDS}
-  mutation ApprovePayoutRequest($payoutRequestId: ID!, $notes: String) {
-    approvePayoutRequest(payoutRequestId: $payoutRequestId, notes: $notes) {
+  mutation ApprovePayoutRequest($payoutRequestId: ID!, $notes: String, $idempotencyKey: String!) {
+    approvePayoutRequest(payoutRequestId: $payoutRequestId, notes: $notes, idempotencyKey: $idempotencyKey) {
       ...PayoutListFields
     }
   }
@@ -45,10 +45,11 @@ export const REJECT_PAYOUT_REQUEST = gql`
 
 export const APPROVE_REFUND_REQUEST = gql`
   ${REFUND_LIST_FIELDS}
-  mutation ApproveRefundRequest($refundRequestId: ID!, $reviewComments: String) {
+  mutation ApproveRefundRequest($refundRequestId: ID!, $reviewComments: String, $idempotencyKey: String!) {
     approveRefundRequest(
       refundRequestId: $refundRequestId
       reviewComments: $reviewComments
+      idempotencyKey: $idempotencyKey
     ) {
       ...RefundListFields
     }

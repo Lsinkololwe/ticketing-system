@@ -15,8 +15,6 @@ public record CreateEscrowAccountInput(
 
     String eventTitle,
 
-    String organizerName,
-
     @NotBlank(message = "Currency is required")
     String currency
 ) {}

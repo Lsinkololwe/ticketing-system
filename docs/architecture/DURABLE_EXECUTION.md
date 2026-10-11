@@ -41,7 +41,7 @@ flowchart LR
 
   MDB[(MongoDB<br/>system of record + *_outbox)]
   SB{{Azure Service Bus<br/>facts between services}}
-  SCH([Schedules<br/>recon x4, group-mirror-repair,<br/>user-reconciliation])
+  SCH([Schedules<br/>recon x4, group-mirror-repair])
 
   GW --> ID & BK & CT
   ID & BK & CT -- "*Process facade, TemporalGateway" --> FE
@@ -62,7 +62,6 @@ Per-flow reference (current code; ids are the ET-PLT-015 §4 registry):
 | identity | `OrganizerOnboardingWorkflow` | `identity-onboarding` | `org-onboarding/{organizationId}` | approval to Keycloak roles |
 | identity | `OwnershipTransferWorkflow` | `identity-onboarding` | `ownership/{transferId}` | multi-step handover |
 | identity | `UserSyncWorkflow` | `identity-onboarding` | `user-sync/{keycloakUserId}` | long-lived, continues as new |
-| identity | `UserBackfillWorkflow` | `identity-onboarding` | `user-backfill` | nightly Schedule `identity-user-reconciliation` |
 | identity | `GroupMirrorRepair` (dynamic type) | `identity-onboarding` | Schedule `identity-group-mirror-repair`, every 60 s | repair |
 | identity | `NotificationWorkflow` | `identity-notify` | `notify/{deduplicationKey}` | send with retries |
 | identity | `ReminderWorkflow` | `identity-notify` | `reminder/{reminderId}` | timer |
@@ -114,12 +113,12 @@ so any pod can carry any execution and a crashed pod's work goes to the next pol
 | booking | `booking-finance` | `PayoutWorkflow`, `BankVerificationWorkflow`, `EventFinanceWorkflow`, `CancellationRefundsWorkflow`, `RefundWorkflow`, `ChargebackWorkflow` | — |
 | booking | `booking-recon` | `ReconciliationWorkflow` | escrow, escrow-journal and alerts hourly; a weekly summary (D-24) |
 | catalog | `catalog-lifecycle` | `EventLifecycleWorkflow`, `EventApprovalWorkflow` | — |
-| identity | `identity-onboarding` | `OrganizerOnboardingWorkflow`, `OwnershipTransferWorkflow`, `UserSyncWorkflow`, `UserBackfillWorkflow`, `GroupMirrorRepair` (dynamic) | `identity-group-mirror-repair` (every 60 s), `identity-user-reconciliation` (03:30 UTC) |
+| identity | `identity-onboarding` | `OrganizerOnboardingWorkflow`, `OwnershipTransferWorkflow`, `UserSyncWorkflow`, `GroupMirrorRepair` (dynamic) | `identity-group-mirror-repair` (every 60 s), `identity-user-reconciliation` (03:30 UTC) |
 | identity | `identity-notify` | `ReminderWorkflow`, `NotificationWorkflow` | — |
 
 Workflow ids are business ids: `purchase/{reservationId}`, `late-refund/{reservationId}`, `payout/{escrowAccountId}`,
 `event-finance/{eventId}`, `org-onboarding/{organizationId}`, `user-sync/{keycloakUserId}`,
-`user-backfill`, and so on — the complete list, with conflict policies, is the ET-PLT-015 §4 registry.
+`user-sync/{id}`, and so on — the complete list, with conflict policies, is the ET-PLT-015 §4 registry.
 The registry also declares workflows owned by specs not yet built (erasure, data export, audit
 maintenance, queue admission, ticket expiry and transfer, webhook orphans, rollups, migrations,
 device pruning, mass sends, organizer digests), each on a queue that already exists.
@@ -224,7 +223,6 @@ Operators find executions by business key through six Keyword search attributes,
 | An undecided chargeback alerts finance 24 h before its deadline, then is accepted | `ChargebackWorkflow` | D-25 |
 | Only a cancellation's refund approves itself; a waiting refund escalates at 2 and 5 days | `RefundWorkflow` | D-26 |
 | Each micro-deposit is booked to `5050 Account Verification Costs` | `BankVerificationWorkflow` | D-27 |
-| Reconciliation leaves users Keycloak no longer lists as they are | `UserBackfillWorkflow` | D-29 |
 | Only `SUPER_ADMIN` starts a full re-sync | `UserMutationResolver`, `KeycloakSyncController` | D-30 |
 | A deposit PawaPay confirms failed has its cost reversed and the verification ends | `BankVerificationWorkflow` | D-31 |
 | Escalations reach every `FINANCE_LEAD` by email and WhatsApp, copying the finance channel | `FinanceEscalations`, identity `FinanceLeadNotifier` | D-32 |

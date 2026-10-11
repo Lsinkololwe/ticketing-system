@@ -79,8 +79,6 @@ public class PayoutRequest {
     @NotBlank(message = "Organizer ID is required")
     private String organizerId;
 
-    private String organizerName;
-
     /**
      * Organization ID for multi-tenant payout tracking.
      * Critical for:

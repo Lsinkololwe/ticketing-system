@@ -50,7 +50,8 @@ class RefundAccessTest {
     static void start() {
         h = new RefundHarness(MongoReplicaSet.connectionString());
         world = new World();
-        refunds = new RefundRequestMutationResolver(h.process);
+        refunds = new RefundRequestMutationResolver(h.process, com.pml.shared.testing.IdempotencyPassthrough.guard(),
+                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
         tickets = new TicketMutationResolver(Mockito.mock(TicketService.class), h.ticketRepo, world.access, h.process);
     }
 
@@ -60,7 +61,7 @@ class RefundAccessTest {
     }
 
     private static CreateRefundRequestInput input(Sale sale) {
-        return new CreateRefundRequestInput(sale.ticket().getId(), "I cannot attend", null, null);
+        return new CreateRefundRequestInput(sale.ticket().getId(), "I cannot attend", null, null, "idem-" + System.nanoTime());
     }
 
     private static Sale open(Sale sale) {
@@ -124,7 +125,7 @@ class RefundAccessTest {
         Sale sale = h.sale(new BigDecimal("60.00"));
         RefundRequest asked = asCustomer(sale.buyerId(), refunds.createUserRefundRequest(input(sale))).block();
 
-        asAdmin("admin-1", refunds.approveRefundRequest(asked.getId(), "ok"), "ROLE_ADMIN").block();
+        asAdmin("admin-1", refunds.approveRefundRequest(asked.getId(), "ok", "idem-approve-" + System.nanoTime()), "ROLE_ADMIN").block();
 
         assertThat(refusal(asCustomer(sale.buyerId(), refunds.cancelRefundRequest(asked.getId(), "too late now"))).errorCode())
                 .isEqualTo(ErrorCode.REFUND_NOT_PERMITTED);
@@ -166,11 +167,11 @@ class RefundAccessTest {
     void staffRaise() {
         Sale sale = h.sale(new BigDecimal("80.00"));
 
-        RefundRequest pending = asAdmin("admin-1", refunds.createAdminRefundRequest(sale.ticket().getId(), "goodwill", false, new BigDecimal("20.00")), "ROLE_ADMIN").block();
+        RefundRequest pending = asAdmin("admin-1", refunds.createAdminRefundRequest(sale.ticket().getId(), "goodwill", false, new BigDecimal("20.00"), "idem-admin-" + System.nanoTime()), "ROLE_ADMIN").block();
         assertThat(pending.getStatus()).isEqualTo(RefundRequestStatus.PENDING);
         assertThat(pending.getRefundAmount()).isEqualByComparingTo("20.00");
 
-        DomainRefusal bad = refusal(asAdmin("admin-1", refunds.createAdminRefundRequest(sale.ticket().getId(), "goodwill", true, new BigDecimal("-1")), "ROLE_ADMIN"));
+        DomainRefusal bad = refusal(asAdmin("admin-1", refunds.createAdminRefundRequest(sale.ticket().getId(), "goodwill", true, new BigDecimal("-1"), "idem-admin-" + System.nanoTime()), "ROLE_ADMIN"));
         assertThat(bad.errorCode()).isIn(ErrorCode.COMMAND_NOT_WELL_FORMED, ErrorCode.REFUND_NOT_PERMITTED);
         assertThat(BookingFixture.class).isNotNull();
     }

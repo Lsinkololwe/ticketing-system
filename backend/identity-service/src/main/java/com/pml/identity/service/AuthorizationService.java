@@ -15,13 +15,9 @@ import reactor.core.publisher.Mono;
  * on resources owned by organizations.</p>
  *
  * <h2>Authorization Flow</h2>
- * <pre>
- * 1. Check if user is ADMIN → Authorized
- * 2. Check EventAccessGrant for event-specific permissions (OVERRIDES org membership)
- * 3. Check OrganizationMember for organization-level permissions
- * 4. Check if user is the organization owner
- * 5. Deny if none of the above
- * </pre>
+ * <p>The decision is made by {@link PermissionResolutionService}: an active event access grant
+ * decides alone on its event, otherwise active organization membership decides under the
+ * organization's settings and lifecycle status. Platform roles are not applied by these checks.</p>
  *
  * <h2>OWASP Compliance</h2>
  * <ul>
@@ -108,4 +104,13 @@ public interface AuthorizationService {
      * @return Flux of organization membership info
      */
     Flux<OrganizationMembershipInfo> getUserOrganizations(String userId);
+
+    /**
+     * The organization's public display name, for a caller (catalog, booking) that only holds
+     * the id and needs a name to show — never for an authorization decision.
+     *
+     * @param organizationId Organization ID
+     * @return Mono containing the name, or empty if the organization does not exist
+     */
+    Mono<String> getOrganizationName(String organizationId);
 }

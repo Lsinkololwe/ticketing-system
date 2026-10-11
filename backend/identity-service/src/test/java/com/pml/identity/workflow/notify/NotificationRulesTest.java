@@ -93,4 +93,17 @@ class NotificationRulesTest {
         assertThat(reason).contains("WHATSAPP=CHANNEL_UNAVAILABLE").contains("EMAIL=NO_DESTINATION");
         assertThat(NotificationRules.exhausted(List.of())).isEqualTo("no channel was attempted");
     }
+
+    @Test
+    @DisplayName("a template's placeholders are filled from params, fall back when absent, and never leak a raw placeholder")
+    void placeholdersAreFilled() {
+        String filled = NotificationRules.render("ticket.resend",
+                java.util.Map.of("ticketNumber", "TKT-1", "eventTitle", "Jazz {ticketNumber}")).body();
+        assertThat(filled).contains("TKT-1").contains("Jazz {ticketNumber}");
+
+        String fallback = NotificationRules.render("ticket.transfer.declined", java.util.Map.of()).body();
+        assertThat(fallback).contains("The recipient").contains("your event").doesNotContain("{").doesNotContain("null");
+
+        assertThat(NotificationRules.render("ticket.resend", null).body()).doesNotContain("{ticketNumber}");
+    }
 }

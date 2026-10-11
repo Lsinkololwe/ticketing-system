@@ -46,6 +46,7 @@ public class BankAccountMutationResolver {
     private final BankAccountService bankAccountService;
     private final TenantReads tenantReads;
     private final com.pml.booking.workflow.bank.BankVerificationProcess bankVerificationProcess;
+    private final com.pml.booking.security.BankAccountAccess access;
 
     /**
      * Create a new bank account for an organizer.
@@ -78,14 +79,14 @@ public class BankAccountMutationResolver {
      * @return UpdateBankAccountMutationResponse with success status and updated account
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<BankAccount> updateBankAccount(
             @InputArgument String id,
             @Valid @InputArgument UpdateBankAccountInput input
     ) {
         log.info("Updating bank account: {}", id);
 
-        return tenantReads.bankAccountForCaller(id).then(bankAccountService.update(id, input))
+        return managed(id).then(Mono.defer(() -> bankAccountService.update(id, input)))
                 .switchIfEmpty(Mono.error(new IllegalStateException("Bank account not found")));
     }
 
@@ -97,13 +98,13 @@ public class BankAccountMutationResolver {
      * @return DeleteBankAccountMutationResponse with success status
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<String> deleteBankAccount(
             @InputArgument String id
     ) {
         log.info("Deleting bank account: {}", id);
 
-        return tenantReads.bankAccountForCaller(id).then(bankAccountService.delete(id))
+        return managed(id).then(Mono.defer(() -> bankAccountService.delete(id)))
                 .flatMap(deleted -> deleted
                         ? Mono.just(id)
                         : Mono.error(new AccountNotFoundException(
@@ -129,7 +130,7 @@ public class BankAccountMutationResolver {
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(organizerId -> log.info("Setting default bank account: {} for organizer: {}", id, organizerId))
-                .flatMap(organizerId -> tenantReads.bankAccountForCaller(id).then(bankAccountService.setAsDefault(id, organizerId))
+                .flatMap(organizerId -> managed(id).then(Mono.defer(() -> bankAccountService.setAsDefault(id, organizerId)))
                         .switchIfEmpty(Mono.error(new IllegalStateException("Bank account not found"))));
     }
 
@@ -162,7 +163,7 @@ public class BankAccountMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<BankAccount> startBankVerification(@InputArgument String id) {
         return SecurityContextUtils.requireCurrentUserId()
-                .flatMap(ownerId -> tenantReads.bankAccountForCaller(id).then(bankVerificationProcess.start(id, ownerId)));
+                .flatMap(actorId -> managed(id).then(Mono.defer(() -> bankVerificationProcess.start(id, null))));
     }
 
     /** The owner confirms the amount that arrived; three wrong answers lock it for a day. */
@@ -170,6 +171,16 @@ public class BankAccountMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<BankAccount> confirmBankVerification(@InputArgument String id, @InputArgument java.math.BigDecimal amount) {
         return SecurityContextUtils.requireCurrentUserId()
-                .flatMap(ownerId -> tenantReads.bankAccountForCaller(id).then(bankVerificationProcess.confirm(id, ownerId, amount)));
+                .flatMap(actorId -> managed(id)
+                        .then(Mono.defer(() -> bankVerificationProcess.confirmAsMember(id, actorId, amount))));
+    }
+
+    /**
+     * The account, once the caller may manage its organization's payout accounts. An account of another
+     * organization, and one the caller may see but not manage, read as an account that does not exist.
+     */
+    private Mono<com.pml.booking.domain.model.BankAccount> managed(String id) {
+        return tenantReads.bankAccountForCaller(id)
+                .flatMap(account -> access.require(account.getOrganizationId()).thenReturn(account));
     }
 }

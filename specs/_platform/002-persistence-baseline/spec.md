@@ -439,6 +439,7 @@ cannot win by checking first.
 | `identity_organization_members` | `{ userId: 1, organizationId: 1 }` | **unique** | one membership per user per org |
 | `identity_organization_members` | `{ organizationId: 1, role: 1, status: 1 }` | compound | the team list and the owner-count invariant |
 | `identity_organization_members` | `{ organizationId: 1 }` | **partial unique** where `role = OWNER` | ET-ORG-002 R2 — two transfers confirmed at once each write a second owner, and no check-first wins that race |
+| `identity_organization_members` | `{ userId: 1 }` | **partial unique** where `status = ACTIVE` | a person belongs to one organization at a time: two acceptances racing each write a second membership, and the service's check-first cannot win that race |
 | `identity_organization_members` | `{ mirrorPending: 1 }` | compound | ET-ORG-002 R8 — the `identity-group-mirror-repair` Schedule's repair runs every minute and this is its only query |
 | `identity_team_invitations` | `{ invitationToken: 1 }` | unique | token lookup on the acceptance page |
 | `identity_team_invitations` | `{ organizationId: 1, email: 1, status: 1 }` | compound | "is there already a pending invite" |

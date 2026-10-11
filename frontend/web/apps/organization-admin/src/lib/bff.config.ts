@@ -2,9 +2,6 @@ import type { BffConfig } from '@pml.tickets/shared/auth/bff';
 
 type Env = Record<string, string | undefined>;
 
-/** Roles allowed into the organizer console. */
-export const ORGANIZER_ROLES = ['ORGANIZER', 'ADMIN'];
-
 /** Seconds since last interactive login within which money movement and bank changes are allowed. */
 export const FRESH_AUTH_SEC = 300;
 
@@ -32,8 +29,13 @@ export function organizerBffConfig(env: Env): BffConfig {
     // Any signed-in account may enter: applicants have no organizer role until their application is approved.
     access: { audience: env.API_AUDIENCE || undefined, ...(accountClaim ? { accountClaim } : {}) },
     guarded: [
+      // The console is for the members of an organization, not for holders of a realm role: the platform
+      // grants ORGANIZER to the owner when the application is approved, while an invited administrator,
+      // manager, marketer or contributor is an organization member with no realm role at all. Who may
+      // enter is decided by membership and the organization's status (the layouts, from the backend's own
+      // answer), and what they may do is decided by the backend's permissions on every operation.
       ...['/dashboard', '/events', '/bookings', '/finance', '/team', '/media', '/notifications', '/settings'].map(
-        (prefix) => ({ prefix, roles: ORGANIZER_ROLES })
+        (prefix) => ({ prefix })
       ),
       // The application flow needs a session only.
       { prefix: '/welcome' },

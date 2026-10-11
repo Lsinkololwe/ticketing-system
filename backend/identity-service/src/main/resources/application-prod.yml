@@ -26,8 +26,3 @@ spring:
     stream:
       default-binder: servicebus
 
-identity:
-  account:
-    repair:
-      # prod creates the identity-account-repair Schedule at boot (every PT15M, overlap SKIP)
-      enabled: true

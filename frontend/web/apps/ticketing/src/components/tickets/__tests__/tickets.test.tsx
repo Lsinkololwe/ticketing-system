@@ -112,7 +112,7 @@ describe('TicketsClient', () => {
     expect(await within(dlg).findByText(/Mulenga K\./)).toBeInTheDocument();
     expect(lookup).toHaveBeenCalledWith('WHATSAPP', '+260971234567');
     fireEvent.click(within(dlg).getByRole('button', { name: 'Transfer ticket' }));
-    await waitFor(() => expect(initiate).toHaveBeenCalledWith('1', 'WHATSAPP', '+260971234567'));
+    await waitFor(() => expect(initiate).toHaveBeenCalledWith('1', 'WHATSAPP', '+260971234567', expect.any(String)));
   });
   it('says so when no account matches the number', async () => {
     lookup.mockResolvedValue(null);
@@ -166,7 +166,7 @@ describe('TicketsClient', () => {
     fireEvent.change(within(dlg).getByLabelText('Reason'), { target: { value: 'CANNOT_ATTEND' } });
     fireEvent.click(within(dlg).getByRole('button', { name: 'Request refund of K 150' }));
     // the select holds the platform's code; the request carries the reason in the platform's words
-    await waitFor(() => expect(createRefund).toHaveBeenCalledWith('1', 'Cannot attend'));
+    await waitFor(() => expect(createRefund).toHaveBeenCalledWith('1', 'Cannot attend', expect.any(String)));
     expect(await screen.findByRole('tab', { name: /Refunds/, selected: true })).toBeInTheDocument();
   });
   it('explains why a ticket is not refundable', () => {

@@ -157,6 +157,27 @@ public class IdentityServiceClient {
                 });
     }
 
+    /**
+     * The organization's public display name, for denormalizing onto an event at creation
+     * (e.g. {@code Event.organizerName}). Display data, not an authorization decision: an
+     * outage or an unknown id must not block event creation, so the caller is expected to fall
+     * back rather than propagate this as a hard failure.
+     */
+    public Mono<String> getOrganizationName(String organizationId) {
+        return identityServiceWebClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/internal/authorization/organization-name")
+                        .queryParam("organizationId", organizationId)
+                        .build())
+                .exchangeToMono(response -> response.statusCode().is2xxSuccessful()
+                        ? response.bodyToMono(OrganizationNameResponse.class).map(OrganizationNameResponse::name)
+                        : Mono.empty())
+                .doOnError(e -> log.warn("Organization name lookup failed for {}: {}", organizationId, e.getMessage()));
+    }
+
+    public record OrganizationNameResponse(String name) {
+    }
+
     /** The organizations a user actively belongs to, as identity (the source of truth) reports them. */
     public Mono<UserOrganizationsResponse> getUserOrganizations(String userId) {
         return identityServiceWebClient.get()

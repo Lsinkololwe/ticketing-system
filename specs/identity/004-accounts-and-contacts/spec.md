@@ -74,7 +74,7 @@ erasure; this spec owns what the account does when erasure completes: contacts r
 deleted, a tombstone kept so financial records keep their foreign key.
 
 **Repair is scheduled, classified and bounded.** A Temporal Schedule scans for nine classes of drift
-(D1..D9), each with a defined fix, and every pending marker has a maximum age past which it alerts.
+(removed 2026-10-10: the platform writes Keycloak itself and keeps no sweep).
 Security-relevant heals (`enabled`, roles) are audited and never silent.
 
 **Rejected alternatives**
@@ -111,7 +111,7 @@ WHEN a proof for an unknown contact is presented to `ensure`, THE SYSTEM SHALL r
 - [ ] Steps are activities, each repeatable: `claimContact` (reads the encrypted contact from `proof:{proofId}`, mints the account id, inserts under the unique index, returns the existing account if taken), `createKeycloakUser` (a 409 is read back by username), `applyAttributesAndRoles` (full representation), `activateAccount` (compare-and-set PROVISIONING→ACTIVE, consents and outbox in ONE transaction), `stageOutbox`
 - [ ] Two concurrent proofs for one contact yield exactly one account and one Keycloak user
 - [ ] Killing the worker after each step and restarting converges to an ACTIVE account with no duplicate
-- [ ] A permanent failure leaves a PROVISIONING account that the repair schedule completes or alerts on after 10 minutes; nothing is deleted
+- [ ] A permanent failure leaves a PROVISIONING account that the next ensure for the same contact completesutes; nothing is deleted
 - [ ] Consents (`TERMS` and the version) are recorded in `identity_consents` in the activating transaction
 - [ ] Workflow ids, search attributes (`BusinessId` = account id, `ProcessKind`), payloads and logs contain no `@` and no `+<digits>`; a lint fails otherwise
 - [ ] **Against a real Keycloak 26.5.2** (`BuyerSignInEndToEndTest`, through a proxy that answers genuine HTTP 503 on demand): a crash right after the claim (Keycloak answers 503 to the user create) leaves a PROVISIONING account and the retry finishes it, one account and one Keycloak user; an orphan Keycloak user (created, the answer lost) is read back by its exact username and adopted, no second user; a 5xx on the attribute write is retried until the account is ACTIVE with its role and `accountId` attribute; Keycloak stopped and restarted completes the account (see *Real-Keycloak cases* below)
@@ -138,23 +138,19 @@ THE SYSTEM SHALL keep each verified contact on exactly one account, stored encry
 - [ ] Every operation acts on the token's own account (`AccountIdentity`); no operation takes an account id. A contact id or challenge of another account is `CONTACT_UNKNOWN` / `OTP_EXPIRED`, indistinguishable from one that does not exist
 - [ ] Only an ACTIVE buyer account may use the operations: others get `ACCOUNT_NOT_ACTIVE`, `ACCOUNT_MERGING` or `ACTOR_NOT_PERMITTED` (staff)
 
-### ET-IDN-004-R4 · Accounts made elsewhere are adopted, and drift is repaired
+### ET-IDN-004-R4 · Accounts made elsewhere are adopted; there is no drift sweep
 
-WHERE a Keycloak user exists with no matching account, or an account and its Keycloak user disagree, THE SYSTEM SHALL classify the drift and apply the defined repair.
+*(Amended 2026-10-10 on the owner's decision.)* The platform creates the account first and writes Keycloak itself, so
+the two cannot drift by design; the scheduled drift repair (`AccountRepairWorkflow`, Schedule
+`identity-account-repair`, classes D1..D9) was removed. A user that appears in Keycloak without an account is adopted
+when its event arrives, and a change made in the Keycloak console is adopted by the per-user workflow. Nothing scans
+every account or every Keycloak user.
 
 **Acceptance**
-- [ ] The Keycloak event path carries `eventId, eventType, userId, username, realm, enabled, emailVerified, timestamp` and no attributes, names, roles or phone
-- [ ] A user whose username is not a known account id is **adopted**: an account is created `createdVia=ADOPTED`, roles are taken from the database policy never from user-editable attributes, and the adoption is audited and flagged for review
-- [ ] The Schedule `identity-account-repair` runs every PT15M with overlap policy `SKIP` and classifies drift D1..D9 (§4); each class has exactly one repair
-- [ ] A change of `enabled` made in the Keycloak console is adopted into `status` (and audited) unless a pending marker shows identity-service initiated it, in which case Keycloak is corrected
-- [ ] Repairs of `enabled` and roles write an audit entry naming the class; none is silent
-- [ ] A PROVISIONING account older than 10 minutes raises an alert; `MERGING` older than 2 hours and `CHANGING` older than 48 hours do too
-- [ ] Re-running the repair on a clean state changes nothing
-- [ ] **Implemented 2026-10-04 (`AccountRepair`, `AccountRepairWorkflow`, Schedule `identity-account-repair`).** Three passes in order: the buyer realm's users (D2, D9), the accounts (D1, D3, D4, D5, D6), the markers (D7, D8). Each class has one repair and writes a `REPAIR_Dn` event to `identity_account_events` naming the class (ids and counts only, never a contact); a second run finds nothing and writes nothing; alerts (PROVISIONING past PT10M, MERGING past PT2H, CHANGING and DELETION_REQUESTED past PT48H) are the metric `identity.account.repair.alert` and a log line without personal data
-- [ ] The Schedule is created idempotently at boot when `identity.account.repair.enabled=true` (on in the `prod` profile): interval `identity.account.repair.interval` (PT15M), overlap `SKIP`, run timeout PT14M; an operator's pause survives a release. A pass that fails (Keycloak 5xx) is retried 3 times, then left to the next interval; every repair is idempotent so nothing is left half done
-- [ ] Which side wins, as built: D1 creates the missing user by username and links it; D3 links the user found by `username = accountId`; D4 reapplies `enabled=false` for a SUSPENDED account (and ends its sessions) but adopts a console-disabled ACTIVE account as SUSPENDED, never re-enabling (skipped while a pending marker is set); D5 resets realm roles to the database policy (CUSTOMER when none) and the `accountId` attribute; D6 rewrites email and `emailVerified` from the verified email contact (or clears them); D2 adopts a user with no account as `ADOPTED`, `CUSTOMER`, flagged `needsReview`; D9 disables a second Keycloak user that claims an already linked account and opens a support task, never merging or deleting; D7 resumes a stalled PROVISIONING account to ACTIVE; D8 clears an orphaned CHANGING marker and alerts on MERGING / DELETION_REQUESTED (their workflows arrive with BE-7 and BE-8)
-- [ ] Only accounts this service owns (`createdVia` OTP or ADOPTED) are repaired; staff and legacy accounts, for which Keycloak is the source, are left alone. *Open:* the other half of D9 (two accounts for one person) has no automatic signal and stays a human report; the per-account Keycloak read makes a pass cost one call per account, which needs sizing at scale
-
+- [ ] The Keycloak event path carries `eventId, eventType, userId, username, realm, enabled, emailVerified, timestamp` and no attributes, names, roles or contacts
+- [ ] A user whose username is not a known account id is **adopted** when its event arrives: an account is created `createdVia=ADOPTED`, roles are taken from the database policy and never from Keycloak
+- [ ] A change of `enabled` made in the Keycloak console is adopted into `status` (and audited) unless a pending marker shows identity-service initiated it
+- [x] No Schedule, workflow or service walks all accounts or all Keycloak users — `IdentityWorkflowRegistryTest`; the Keycloak port has no list-users operation
 
 ### ET-IDN-004-R5 · A contact changes only by re-proof, without a gap
 
@@ -170,7 +166,7 @@ WHEN a signed-in buyer asks to change a contact, THE SYSTEM SHALL prove the new 
 - [ ] On completion the Keycloak email and `emailVerified` are updated from the account's verified email contact, and the account's Keycloak sessions are ended ([ET-IDN-003](../003-token-revocation/)): a refresh token issued before the change no longer works. Access tokens already issued live until they expire (PT5M)
 - [ ] An account event `CONTACT_CHANGED` (also `CONTACT_ADDED`, `CONTACT_REMOVED`, `CONTACT_PRIMARY_SET`) is written to `identity_account_events` in the committing transaction, with the contact type and masked values, never raw values. The `AuditLog` action `CONTACT_CHANGED` of [ET-PLT-009](../../_platform/009-audit-trail/) joins when that registry row lands; until then the account event is the audit record
 - [ ] Both the old and new contact receive a notification of the change (fixed words, no personal data). Delivery is best effort and never holds the change open
-- [ ] A marker left behind (workflow gone, cleanup failed) is cleared by repair class D8 once older than `identity.account.repair.changing-max-age` (`AccountRepair.clearStaleChanging`); a marker whose workflow is still open is left alone and alerted
+- [ ] The marker cleanup of a refused change is retried until it lands (no attempt cap), so a failed cleanup cannot leave the account blocked
 
 ### ET-IDN-004-R6 · Two accounts that are one person merge safely — **WITHDRAWN 2026-10-09: accounts are not merged; see F-049**
 
@@ -202,8 +198,7 @@ THE SYSTEM SHALL honour the six consistency rules of §4 and SHALL pass three ga
 - [ ] No operation reads Keycloak to decide who may sign in; the database `status` decides
 - [ ] Creation gates (activation, plugin, app) hold in order: no login handle for a non-ACTIVE account, the plugin never creates a user, and the app sets no session unless the status is ACTIVE; a test removes the Keycloak user mid-flow and confirms no profile opens
 - [ ] Request gate 1: the token is valid for the audience and not revoked ([ET-IDN-003](../003-token-revocation/)); request gate 2: the account is ACTIVE with no merge pending; request gate 3: consent to the current terms version is on record; failing any gate returns a typed refusal and no profile fields
-- [ ] A test removes the Keycloak user, suspends in the database, and confirms the next request is refused and the repair restores or alerts according to class
-- [ ] The `identity-account-repair` run reports counts per class as metrics with no personal data
+- [ ] A test suspends in the database and confirms the next request is refused according to class
 
 ### Real-Keycloak cases
 
@@ -261,8 +256,8 @@ The account and contact processes are proved against a real Keycloak 26.5.2 cont
 | Change | First write | Second write | Pending marker | Max age before alert |
 |---|---|---|---|---|
 | Create | account `PROVISIONING` + contact claimed | Keycloak user + role + attributes, then `ACTIVE` | `status=PROVISIONING` | 10 min |
-| Suspend / unsuspend | `status` | Keycloak `enabled` + token revocation | `pendingKind` unset; drift D4 detects | 15 min (one repair interval) |
-| Role or type change | account / organization data | Keycloak realm roles | drift D5 detects | 15 min |
+| Suspend / unsuspend | `status` | Keycloak `enabled` + token revocation | `pendingKind` unset; the Keycloak event adopts a console change | next event |
+| Role or type change | account / organization data | Keycloak realm roles | reapplied by the account's workflow | next ensure |
 | Merge | both accounts `MERGING` | survivor receives contacts; merged → `MERGED`; Keycloak disabled | `pendingKind=MERGING` | 2 h |
 | Contact change | `CHANGING`; new contact claimed | old released; Keycloak email updated; sessions revoked | `pendingKind=CHANGING` | 48 h |
 | Deletion | `DELETION_REQUESTED` | at the date: contacts released, Keycloak user deleted, `DELETED` | `pendingKind=DELETION_REQUESTED` | scheduled date + 24 h |
@@ -293,20 +288,6 @@ If any step before a gate is unfinished the buyer sees "taking longer than usual
 2. **Account**: `status = ACTIVE`, no merge pending.
 3. **Consent**: acceptance of the current terms version is on record in `identity_consents`.
 
-### Drift classes
-
-| Class | Drift | Repair |
-|---|---|---|
-| D1 | account ACTIVE/PROVISIONING, no Keycloak user | resume `AccountEnsureWorkflow` steps (create user) |
-| D2 | Keycloak user with no account | adopt (R4) |
-| D3 | both exist, `keycloakUserId` unset | link by username = account id |
-| D4 | `enabled` disagrees with `status` | adopt console change, or reapply if a marker shows we initiated it; audit |
-| D5 | realm roles or `accountId` attribute disagree with database policy | reapply from the database; audit |
-| D6 | Keycloak email / `emailVerified` disagree with the primary email contact | rewrite Keycloak from the contact |
-| D7 | PROVISIONING older than 10 min | resume; alert |
-| D8 | `MERGING` / `CHANGING` / `DELETION_REQUESTED` past its max age | resume the workflow; alert |
-| D9 | duplicate: two Keycloak users for one account, or two accounts for one person | quarantine both, open a support task; never auto-merge |
-
 ### Events
 
 Cross-service facts staged in the outbox by the transaction that makes them true. Payloads carry ids only: the single key `userId` (the account id, which is `User._id`; the key is `userId` because the registry's payload lint forbids keys containing `account`).
@@ -331,7 +312,6 @@ The three contact events are registry rows (ET-PLT-003 §4, `EventType`) staged 
 | `AccountEnsureWorkflow` | `account-ensure/{contactKey}` | `identity-account` | Update-with-Start, `USE_EXISTING` | `ensure` | none |
 | `AccountMergeWorkflow` | `account-merge/{mergedAccountId}` | `identity-account` | `USE_EXISTING` | `cancel` before MERGED | none |
 | `ContactChangeWorkflow` | `contact-change/{accountId}` | `identity-account` | `FAIL` on a running id (`CONTACT_CHANGE_IN_PROGRESS`), reuse allowed after it closes | updates `authorise`, `acceptNew(proofId)` · signals `failedAttempt`, `cancel` · query `status` | expiry PT48H |
-| `AccountRepairWorkflow` | `account-repair/scheduled`, suffixed by the Schedule | `identity-account` | Schedule `identity-account-repair`, PT15M, overlap `SKIP` | none | none |
 
 `ErasureWorkflow` ([ET-PLT-008](../../_platform/008-data-protection/)) calls the deletion hook. All rows are rows of the [ET-PLT-015](../../_platform/015-durable-execution/) §4 registry; `AccountEnsureWorkflow` and `ContactChangeWorkflow` are `implemented`, the others `planned`.
 
@@ -366,7 +346,7 @@ None owned here; challenge, proof and handle keys belong to [ET-IDN-001](../001-
 proof → ensure → known+ACTIVE ? answer from DB
               → unknown ? AccountEnsureWorkflow: claim contact (unique index) → Keycloak user
                           → roles+attributes → ACTIVE (+consents+outbox, one transaction)
-Keycloak console change / drift → AccountRepairWorkflow (every 15 min) → classify D1..D9 → repair → audit
+Keycloak console change → the event → the user's workflow → adopt / link → audit
 ```
 
 ## 5. Tasks
@@ -399,12 +379,7 @@ Keycloak console change / drift → AccountRepairWorkflow (every 15 min) → cla
   - parallel-safe: yes
   - depends: T3
 
-- [ ] **T5 · `AccountRepairWorkflow` and Schedule; drift classes D1..D9; metrics**
-  - requirements: R4, R8
-  - files: `backend/identity-service/.../account/repair/`
-  - verify: each class seeded and repaired once; second run changes nothing; alerts at the max ages
-  - parallel-safe: yes
-  - depends: T3
+- [x] **T5 · Removed 2026-10-10** — the repair workflow, Schedule, drift classes and metrics were deleted on the owner's decision (R4).
 
 - [x] **T6 · `ContactChangeWorkflow`** - implemented 2026-10-04
   - requirements: R3 (add, remove, primary), R5

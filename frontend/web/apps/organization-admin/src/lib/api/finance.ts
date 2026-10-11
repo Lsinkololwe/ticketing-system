@@ -14,6 +14,8 @@ export interface EscrowAccountRow {
   accountNumber: string;
   eventId: string;
   eventTitle: string | null;
+  /** The event as it is now; `eventTitle` is its name when the account was opened. */
+  event?: { id: string; title: string } | null;
   currentBalance: string;
   totalDeposits: string;
   totalWithdrawals: string;
@@ -55,6 +57,10 @@ export const MY_ESCROW_ACCOUNTS = gql`
         accountNumber
         eventId
         eventTitle
+        event {
+          id
+          title
+        }
         currentBalance
         totalDeposits
         totalWithdrawals

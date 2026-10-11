@@ -362,18 +362,6 @@ public class KeycloakService implements KeycloakAccountPort, KeycloakUserAdminPo
     }
 
     @Override
-    public Flux<KeycloakUserView> listUsers(String realmName, int first, int max) {
-        return blocking(() -> {
-            UsersResource users = realm(realmName).users();
-            List<KeycloakUserView> page = new java.util.ArrayList<>();
-            for (UserRepresentation found : users.list(first, max)) {
-                page.add(view(found, realmRoleNames(users.get(found.getId()))));
-            }
-            return page;
-        }).flatMapMany(Flux::fromIterable);
-    }
-
-    @Override
     public Mono<Optional<String>> readAttribute(String realmName, String keycloakUserId, String name) {
         return Mono.<Optional<String>>fromCallable(() -> {
             try {
@@ -386,73 +374,9 @@ public class KeycloakService implements KeycloakAccountPort, KeycloakUserAdminPo
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
-    @Override
-    public Mono<Optional<KeycloakUserView>> readUserByUsername(String realmName, String username) {
-        return Mono.<Optional<KeycloakUserView>>fromCallable(() -> {
-            UsersResource users = realm(realmName).users();
-            return exactUser(users, username).map(found -> view(found, realmRoleNames(users.get(found.getId()))));
-        }).subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /** One page of the buyer realm's users, for the backfill. */
-    public Flux<UserRepresentation> getAllUsers(int first, int maxResults) {
-        return blocking(() -> buyers().users().list(first, maxResults))
-                .flatMapMany(Flux::fromIterable);
-    }
-
     // ========================================================================
     // Groups · a projection of organization membership, written from MongoDB
     // ========================================================================
-
-    /**
-     * Best-effort: adds a user to an organization role group. The user is the identity_users id,
-     * which is the Keycloak id for an account that predates ET-IDN-004 and the account id (the
-     * Keycloak username) for every later one.
-     */
-    public Mono<Void> addUserToOrganizationGroup(String userId, String organizationSlug, String roleName) {
-        return blocking(() -> {
-            RealmResource realm = buyers();
-            Optional<String> keycloakUserId = resolveUserId(realm, userId);
-            if (keycloakUserId.isEmpty()) {
-                log.warn("No Keycloak user for account {}; group {} not joined", userId, roleName);
-                return Boolean.FALSE;
-            }
-            String path = "/organizations/" + organizationSlug + "/" + roleName;
-            try {
-                GroupRepresentation group = realm.getGroupByPath(path);
-                if (group != null) {
-                    realm.users().get(keycloakUserId.get()).joinGroup(group.getId());
-                } else {
-                    log.warn("Group not found: {}", path);
-                }
-            } catch (RuntimeException e) {
-                log.warn("Failed to add account {} to group {}: {}", userId, path, e.getMessage());
-            }
-            return Boolean.TRUE;
-        }).then();
-    }
-
-    /** Best-effort counterpart of {@link #addUserToOrganizationGroup}. */
-    public Mono<Void> removeUserFromOrganizationGroup(String userId, String organizationSlug, String roleName) {
-        return blocking(() -> {
-            RealmResource realm = buyers();
-            Optional<String> keycloakUserId = resolveUserId(realm, userId);
-            if (keycloakUserId.isEmpty()) {
-                log.warn("No Keycloak user for account {}; group {} not left", userId, roleName);
-                return Boolean.FALSE;
-            }
-            String path = "/organizations/" + organizationSlug + "/" + roleName;
-            try {
-                GroupRepresentation group = realm.getGroupByPath(path);
-                if (group != null) {
-                    realm.users().get(keycloakUserId.get()).leaveGroup(group.getId());
-                }
-            } catch (RuntimeException e) {
-                log.warn("Failed to remove account {} from group {}: {}", userId, path, e.getMessage());
-            }
-            return Boolean.TRUE;
-        }).then();
-    }
 
     /**
      * Creates {@code /organizations/{slug}} and its role subgroups where missing.

@@ -18,7 +18,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 - The role below is resolved from the field's `@auth(requires: …)` directive when it has one, and from the resolver's `@PreAuthorize` when it does not. Catalog uses the directive, booking and identity use `@PreAuthorize`; neither source alone describes the platform.
 - **`AUTHENTICATED (endpoint floor only)` means neither check was found on the field.** It is not public: all three subgraphs carry `.pathMatchers("/graphql/**").authenticated()`, so a token is always required whatever a `# PUBLIC` comment in the schema says. It does mean *any* signed-in caller reaches it — a self-service `CUSTOMER` token included — which is where `event(id)` sat while it was returning other organizations' unpublished events (F-007).
 
-## Operations by required role (515 total)
+## Operations by required role (513 total)
 
 ### `@isEscrowOwner or ADMIN or FINANCE` — 3 operation(s)
 
@@ -82,7 +82,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 |---|---|---|---|
 | booking | Query | `ticket` | `id: ID!` |
 
-### `@isTicketOwnerByNumber or ADMIN or FINANCE or ORGANIZER or SCANNER` — 1 operation(s)
+### `@isTicketOwnerByNumber or ADMIN or FINANCE or ORGANIZER` — 1 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -96,12 +96,10 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Query | `payoutRequestStats` | `organizerId: ID` |
 | booking | Query | `payoutRequestsByOrganizer` | `organizerId: String!, pagination: OffsetPaginationInput` |
 
-### `@rolesOrTeamMember` — 4 operation(s)
+### `@rolesOrTeamMember` — 2 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
-| booking | Query | `bankAccountsByOrganizer` | `organizerId: String!` |
-| booking | Query | `defaultBankAccount` | `organizerId: String!` |
 | booking | Query | `organizerPromoCodes` | `organizerId: ID!` |
 | booking | Query | `ticketsByOrganizer` | `organizerId: String!, filter: TicketFilterInput, pagination: OffsetPaginationInput` |
 
@@ -112,7 +110,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Mutation | `acceptChargeback` | `id: ID!, reason: String` |
 | booking | Mutation | `addPaymentAttemptNote` | `depositId: String!, note: String!` |
 | booking | Mutation | `adminUpdateTicket` | `ticketId: ID!, input: AdminTicketUpdateInput!` |
-| booking | Mutation | `approveRefundRequest` | `refundRequestId: ID!, reviewComments: String` |
+| booking | Mutation | `approveRefundRequest` | `refundRequestId: ID!, reviewComments: String, idempotencyKey: String!` |
 | booking | Mutation | `bulkApproveRefunds` | `refundRequestIds: [ID!]!` |
 | booking | Mutation | `bulkCancelTickets` | `ticketIds: [ID!]!, reason: String!` |
 | booking | Mutation | `closeEscrowAccount` | `accountId: ID!, reason: String!` |
@@ -257,7 +255,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
-| booking | Mutation | `approvePayoutRequest` | `payoutRequestId: ID!, notes: String` |
+| booking | Mutation | `approvePayoutRequest` | `payoutRequestId: ID!, notes: String, idempotencyKey: String!` |
 | booking | Mutation | `bulkMarkPayoutsForReview` | `payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String` |
 | booking | Mutation | `bulkRetryFailedPayouts` | `payoutRequestIds: [ID!]!` |
 | booking | Mutation | `completePayoutRequest` | `payoutRequestId: ID!, bankReference: String!` |
@@ -267,7 +265,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Mutation | `rejectPayoutRequest` | `payoutRequestId: ID!, rejectionReason: String!` |
 | booking | Mutation | `resolvePayoutIssue` | `payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!` |
 | booking | Mutation | `resumePayoutRequest` | `payoutRequestId: ID!` |
-| booking | Mutation | `retryPayoutRequest` | `payoutRequestId: ID!` |
+| booking | Mutation | `retryPayoutRequest` | `payoutRequestId: ID!, idempotencyKey: String!` |
 | booking | Mutation | `verifyBankAccount` | `id: ID!` |
 | booking | Query | `escrowAccount` | `id: ID!` |
 | booking | Query | `escrowAccounts` | `filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput` |
@@ -289,14 +287,11 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Query | `stuckPayoutRequests` | `pagination: OffsetPaginationInput` |
 | booking | Query | `transactionStats` | `eventId: ID, organizerId: ID` |
 
-### `ADMIN or FINANCE or ORGANIZER` — 7 operation(s)
+### `ADMIN or FINANCE or ORGANIZER` — 4 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Mutation | `cancelPayoutRequest` | `payoutRequestId: ID!, reason: String!` |
-| booking | Mutation | `deleteBankAccount` | `id: ID!` |
-| booking | Mutation | `updateBankAccount` | `id: ID!, input: UpdateBankAccountInput!` |
-| booking | Query | `bankAccount` | `id: ID!` |
 | booking | Query | `escrowTransactions` | `escrowAccountId: String!, pagination: OffsetPaginationInput` |
 | booking | Query | `payoutRequest` | `id: ID!` |
 | booking | Query | `payoutRequestByRequestId` | `requestId: String!` |
@@ -345,7 +340,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `setMobileMoneyAccount` | `organizationId: ID!, input: SetMobileMoneyAccountInput!` |
 | identity | Mutation | `updatePayoutConfig` | `organizationId: ID!, input: UpdatePayoutConfigInput!` |
 
-### `ADMIN or SUPER_ADMIN` — 46 operation(s)
+### `ADMIN or SUPER_ADMIN` — 45 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -368,7 +363,6 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `setUserRoles` | `userId: ID!, roles: [UserType!]!` |
 | identity | Mutation | `suspendOrganization` | `id: ID!, reason: String!` |
 | identity | Mutation | `suspendUser` | `id: ID!, reason: String!` |
-| identity | Mutation | `syncUserFromKeycloak` | `userId: ID!` |
 | identity | Mutation | `unlockUser` | `id: ID!` |
 | identity | Mutation | `unsuspendOrganization` | `id: ID!` |
 | identity | Mutation | `unsuspendUser` | `id: ID!` |
@@ -396,22 +390,37 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Query | `usersByRole` | `role: UserType!, activeOnly: Boolean = true, pagination: OffsetPaginationInput` |
 | identity | Query | `verificationDocuments` | `organizationId: ID!, status: DocumentStatus` |
 
-### `AUTHENTICATED` — 112 operation(s)
+### `AUTHENTICATED` — 127 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Mutation | `confirmBankVerification` | `id: ID!, amount: BigDecimal!` |
 | booking | Mutation | `createBankAccount` | `input: CreateBankAccountInput!` |
 | booking | Mutation | `createPayoutRequest` | `input: CreatePayoutRequestInput!` |
+| booking | Mutation | `deleteBankAccount` | `id: ID!` |
 | booking | Mutation | `resendTicket` | `ticketId: ID!` |
 | booking | Mutation | `setDefaultBankAccount` | `id: ID!` |
 | booking | Mutation | `startBankVerification` | `id: ID!` |
+| booking | Mutation | `updateBankAccount` | `id: ID!, input: UpdateBankAccountInput!` |
+| booking | Query | `bankAccount` | `id: ID!` |
+| booking | Query | `bankAccountsByOrganizer` | `organizerId: String!` |
 | booking | Query | `booking` | `id: ID!` |
 | booking | Query | `bookingByNumber` | `bookingNumber: String!` |
 | booking | Query | `bookingsByBuyer` | `buyerId: String!, filter: BookingFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `defaultBankAccount` | `organizerId: String!` |
+| booking | Query | `myCheckInRate` | — |
+| booking | Query | `myDashboardStats` | — |
 | booking | Query | `myEscrowAccounts` | `organizationId: ID, pagination: OffsetPaginationInput` |
+| booking | Query | `myFinanceOverview` | — |
 | booking | Query | `myPayoutRequests` | `organizationId: ID, status: PayoutRequestStatus, pagination: OffsetPaginationInput` |
+| booking | Query | `myPayoutSources` | — |
+| booking | Query | `myPayoutWindow` | — |
+| booking | Query | `myRecentActivity` | `limit: Int` |
 | booking | Query | `myRefundRequests` | `pagination: OffsetPaginationInput` |
+| booking | Query | `myRevenueSeries` | `months: Int` |
+| booking | Query | `myTicketMix` | — |
+| booking | Query | `myTransactions` | `filter: OrganizerTransactionFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `myUpcomingEvents` | `limit: Int` |
 | booking | Query | `reservation` | `id: ID!` |
 | booking | Query | `ticketTransferChain` | `ticketId: ID!` |
 | booking | Query | `validatePromoCode` | `code: String!, eventId: ID!, amount: BigDecimal` |
@@ -537,7 +546,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Mutation | `confirmRecoveryAction` | `proposalId: ID!, reason: String!` |
-| booking | Mutation | `createAdminRefundRequest` | `ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal` |
+| booking | Mutation | `createAdminRefundRequest` | `ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal, idempotencyKey: String!` |
 | booking | Mutation | `holdPayoutRequest` | `payoutRequestId: ID!, reason: String!` |
 | booking | Mutation | `proposeRecoveryAction` | `input: ProposeRecoveryActionInput!` |
 | booking | Mutation | `releasePayoutHold` | `payoutRequestId: ID!, note: String` |
@@ -561,7 +570,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 |---|---|---|---|
 | catalog | Mutation | `completeEvent` | `id: ID!` |
 
-### `ORGANIZER` — 61 operation(s)
+### `ORGANIZER` — 51 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -574,16 +583,6 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Query | `bookingsByOrganizer` | `organizationId: ID, filter: BookingFilterInput, pagination: OffsetPaginationInput` |
 | booking | Query | `checkInConflicts` | `eventId: ID!, pagination: OffsetPaginationInput` |
 | booking | Query | `checkInSummary` | `eventId: ID!` |
-| booking | Query | `myCheckInRate` | — |
-| booking | Query | `myDashboardStats` | — |
-| booking | Query | `myFinanceOverview` | — |
-| booking | Query | `myPayoutSources` | — |
-| booking | Query | `myPayoutWindow` | — |
-| booking | Query | `myRecentActivity` | `limit: Int` |
-| booking | Query | `myRevenueSeries` | `months: Int` |
-| booking | Query | `myTicketMix` | — |
-| booking | Query | `myTransactions` | `filter: OrganizerTransactionFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `myUpcomingEvents` | `limit: Int` |
 | booking | Query | `payoutEligibility` | `eventId: ID!` |
 | booking | Query | `purchasesByDayAndHour` | `from: DateTime, to: DateTime, eventId: ID, organizationId: ID` |
 | booking | Query | `recentCheckIns` | `eventId: ID!, limit: Int = 25` |
@@ -658,9 +657,8 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Query | `invitationByToken` | `token: String!` |
 | identity | Query | `publicPlatformRules` | — |
 
-### `SUPER_ADMIN` — 2 operation(s)
+### `SUPER_ADMIN` — 1 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Mutation | `forceCompletePaymentAttempts` | `depositIds: [String!]!, reason: String!` |
-| identity | Mutation | `syncAllUsersFromKeycloak` | — |

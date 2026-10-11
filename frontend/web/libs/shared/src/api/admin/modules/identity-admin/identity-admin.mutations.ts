@@ -31,12 +31,6 @@ export const DEACTIVATE_USER = gql`
 export const SET_USER_ROLES = gql`
   mutation IdentityAdminSetUserRoles($userId: ID!, $roles: [UserType!]!) { setUserRoles(userId: $userId, roles: $roles) { id roles } }
 `;
-export const SYNC_USER = gql`
-  mutation IdentityAdminSyncUser($userId: ID!) { syncUserFromKeycloak(userId: $userId) { id } }
-`;
-export const SYNC_ALL_USERS = gql`
-  mutation IdentityAdminSyncAllUsers { syncAllUsersFromKeycloak }
-`;
 export const SUSPEND_ORG = gql`
   ${ADMIN_ORG_ROW_FIELDS}
   mutation IdentityAdminSuspendOrg($id: ID!, $reason: String!) { suspendOrganization(id: $id, reason: $reason) { ...AdminOrgRowFields } }

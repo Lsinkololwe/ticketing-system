@@ -115,4 +115,7 @@ public final class BookingCollections {
     /** Staged cross-service events, written in the business transaction */
     public static final String OUTBOX = "booking_outbox";
 
+    /** The durable half of IdempotencyGuard: one row per {scope, key}, authoritative over Redis */
+    public static final String IDEMPOTENCY_LEDGER = "booking_idempotency_ledger";
+
 }

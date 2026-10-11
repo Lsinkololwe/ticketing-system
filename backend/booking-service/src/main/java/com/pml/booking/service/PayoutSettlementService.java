@@ -94,8 +94,8 @@ public class PayoutSettlementService {
 
     private Mono<PayoutRequest> create(Submit command) {
         return template.findById(command.escrowAccountId(), EventEscrowAccount.class)
-                .filter(escrow -> command.organizerId() != null && command.organizerId().equals(escrow.getOrganizerId()))
-                .switchIfEmpty(refuse(ErrorCode.ESCROW_ACCOUNT_UNKNOWN, "no escrow account of this organizer matches the request"))
+                .filter(escrow -> command.organizationId() != null && command.organizationId().equals(escrow.getOrganizationId()))
+                .switchIfEmpty(refuse(ErrorCode.ESCROW_ACCOUNT_UNKNOWN, "no escrow account of this organization matches the request"))
                 .flatMap(escrow -> eligibility(escrow, command.payoutRequestId()).flatMap(eligibility -> {
                     if (!eligibility.eligible()) {
                         return refuseIneligible(eligibility);
@@ -105,7 +105,7 @@ public class PayoutSettlementService {
                         return refuse(ErrorCode.COMMAND_NOT_WELL_FORMED,
                                 "a payout is for the full available balance of " + available);
                     }
-                    return verifiedAccount(command.bankAccountId(), command.organizerId())
+                    return verifiedAccount(command.bankAccountId(), command.organizationId())
                             .flatMap(bank -> insert(command, escrow, bank, available));
                 }));
     }
@@ -116,7 +116,8 @@ public class PayoutSettlementService {
                 .id(command.payoutRequestId())
                 .requestId("PAY-" + command.payoutRequestId().replace("-", "").substring(0, 8).toUpperCase())
                 .idempotencyKey(blankToNull(command.idempotencyKey()))
-                .organizerId(command.organizerId())
+                // Who asked, from the authenticated caller; the input's organizer id is not an identity.
+                .organizerId(command.requestedById() != null ? command.requestedById() : command.organizerId())
                 .organizationId(escrow.getOrganizationId())
                 .eventId(escrow.getEventId())
                 .eventTitle(escrow.getEventTitle())
@@ -388,10 +389,10 @@ public class PayoutSettlementService {
                 t.getT1(), t.getT2(), minimumPayout, clock.instant()));
     }
 
-    private Mono<BankAccount> verifiedAccount(String bankAccountId, String organizerId) {
+    private Mono<BankAccount> verifiedAccount(String bankAccountId, String organizationId) {
         return template.findById(bankAccountId, BankAccount.class)
-                .filter(bank -> organizerId.equals(bank.getOrganizerId()) && !"DELETED".equals(bank.getStatus()))
-                .switchIfEmpty(refuse(ErrorCode.BANK_ACCOUNT_UNKNOWN, "no bank account of this organizer matches the request"))
+                .filter(bank -> organizationId.equals(bank.getOrganizationId()) && !"DELETED".equals(bank.getStatus()))
+                .switchIfEmpty(refuse(ErrorCode.BANK_ACCOUNT_UNKNOWN, "no bank account of this organization matches the request"))
                 .flatMap(bank -> bank.isVerified()
                         ? Mono.just(bank)
                         : refuse(ErrorCode.BANK_ACCOUNT_NOT_VERIFIED, "the bank account has not completed verification"));
@@ -422,10 +423,7 @@ public class PayoutSettlementService {
     }
 
     static String masked(String accountNumber) {
-        if (accountNumber == null || accountNumber.length() <= 4) {
-            return "****";
-        }
-        return "****" + accountNumber.substring(accountNumber.length() - 4);
+        return com.pml.booking.security.AccountNumberMask.of(accountNumber);
     }
 
     private static String blankToNull(String value) {

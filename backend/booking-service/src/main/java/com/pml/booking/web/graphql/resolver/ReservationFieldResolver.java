@@ -4,8 +4,10 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.pml.booking.domain.model.TicketReservation;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -19,9 +21,12 @@ import java.time.Instant;
  */
 @Slf4j
 @DgsComponent
+@RequiredArgsConstructor
 public class ReservationFieldResolver {
 
     private static final String DEFAULT_CURRENCY = "ZMW";
+
+    private final Clock clock;
 
     /**
      * Resolve TicketReservation.remainingSeconds - seconds until expiration.
@@ -30,9 +35,16 @@ public class ReservationFieldResolver {
      * @return Remaining seconds (0 if expired)
      */
     @DgsData(parentType = "TicketReservation", field = "remainingSeconds")
-    public Integer remainingSeconds(DgsDataFetchingEnvironment dfe, Instant now) {
-        TicketReservation reservation = dfe.getSource();
+    public Integer remainingSeconds(DgsDataFetchingEnvironment dfe) {
+        return remainingSecondsAt(dfe.getSource(), clock.instant());
+    }
 
+    /**
+     * The clock is the injected platform clock and not a resolver parameter: DGS fills a resolver's extra
+     * parameters from GraphQL arguments, so a declared {@code Instant now} arrived as null on every
+     * request and failed the whole reservation response.
+     */
+    static Integer remainingSecondsAt(TicketReservation reservation, Instant now) {
         if (reservation.getExpiresAt() == null) {
             return 0;
         }

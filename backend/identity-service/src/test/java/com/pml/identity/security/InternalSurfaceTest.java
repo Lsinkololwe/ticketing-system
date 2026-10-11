@@ -43,7 +43,8 @@ class InternalSurfaceTest {
         ReflectionTestUtils.setField(config, "keycloakClientId", AUDIENCE);
         ReflectionTestUtils.setField(config, "expectedAudiencesCsv", AUDIENCE);
         ReflectionTestUtils.setField(config, "allowedOrigins", List.of());
-        client = InternalSurface.clientBehind(config.securityWebFilterChain(InternalSurface.http()));
+        client = InternalSurface.clientBehind(
+                config.securityWebFilterChain(InternalSurface.http(), new org.springframework.mock.env.MockEnvironment()));
     }
 
     @AfterAll

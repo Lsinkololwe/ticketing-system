@@ -1,17 +1,18 @@
 package com.pml.identity.service.impl;
 
 import com.pml.shared.security.Permission;
-import com.pml.identity.domain.valueobject.OrganizationGroups;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
-import com.pml.identity.infrastructure.keycloak.KeycloakService;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.repository.EventAccessGrantRepository;
 import com.pml.identity.service.PermissionResolutionService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import org.springframework.transaction.reactive.TransactionalOperator;
 
 import java.time.Instant;
@@ -31,7 +32,7 @@ import java.util.Set;
  * - Adding/removing members
  * - Role management
  * - Permission checks
- * - Keycloak group synchronization
+ * - Keycloak group mirroring (marked on the row, applied by the group-mirror workflow)
  */
 @Slf4j
 @Service
@@ -39,8 +40,8 @@ import java.util.Set;
 public class OrganizationMemberServiceImpl implements OrganizationMemberService {
 
     private final OrganizationMemberRepository memberRepository;
+    private final com.pml.identity.service.OneOrganizationPerPerson oneOrganizationPerPerson;
     private final OrganizationRepository organizationRepository;
-    private final KeycloakService keycloakService;
     private final PermissionResolutionService permissionResolutionService;
 
     /** The grants a removal must revoke. */
@@ -110,7 +111,8 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
         log.info("Creating member from invitation for organization: {} user: {} role: {}",
                 organizationId, userId, role);
 
-        return memberRepository.existsByUserIdAndOrganizationId(userId, organizationId)
+        return oneOrganizationPerPerson.require(userId, organizationId)
+                .then(memberRepository.existsByUserIdAndOrganizationId(userId, organizationId))
                 .flatMap(exists -> {
                     if (exists) {
                         return Mono.error(new IllegalStateException("User is already a member of this organization"));
@@ -129,10 +131,10 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                             .invitedById(invitedById)
                             .joinedAt(clock.instant())
                             .lastActiveAt(clock.instant())
+                            .mirrorPending(true)
                             .build();
 
                     return memberRepository.save(member)
-                            .flatMap(saved -> addToKeycloakGroup(saved).thenReturn(saved))
                             .flatMap(saved -> updateOrganizationMemberCount(organizationId).thenReturn(saved))
                             .doOnSuccess(saved -> log.info("Member created from invitation: {}", saved.getId()));
                 });
@@ -144,8 +146,15 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
             OrganizationRole newRole,
             Set<String> customPermissions,
             Set<String> deniedPermissions) {
-        return memberRepository.findById(memberId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Member not found: " + memberId)))
+        // The resolver's reads.memberForCaller(memberId) already proved ownership before calling
+        // this; reading the scope again here is defense in depth, same as endMembership() below.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        memberRepository.findById(memberId),
+                        organizationIds -> memberRepository.findByIdAndOrganizationIdIn(memberId, organizationIds),
+                        ErrorCode.MEMBER_UNKNOWN,
+                        "organization member " + memberId))
                 .flatMap(member -> {
                     // Cannot demote OWNER through this method
                     if (member.getRole() == OrganizationRole.OWNER && newRole != OrganizationRole.OWNER) {
@@ -158,6 +167,7 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
 
                     OrganizationRole previousRole = member.getRole();
                     member.setRole(newRole);
+                    member.setMirrorPending(true);
 
                     if (customPermissions != null) {
                         member.setCustomPermissions(customPermissions);
@@ -167,7 +177,6 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                     }
 
                     return memberRepository.save(member)
-                            .flatMap(saved -> updateKeycloakGroup(saved, previousRole).thenReturn(saved))
                             .doOnSuccess(saved -> log.info("Member role updated: {} from {} to {}",
                                     saved.getId(), previousRole, newRole));
                 });
@@ -175,8 +184,15 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
 
     @Override
     public Mono<OrganizationMember> updateStatus(String memberId, MemberStatus status) {
-        return memberRepository.findById(memberId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Member not found: " + memberId)))
+        // Reached only through suspend()/reactivate(), both called after the resolver's
+        // reads.memberForCaller(memberId) already proved ownership; defense in depth here too.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        memberRepository.findById(memberId),
+                        organizationIds -> memberRepository.findByIdAndOrganizationIdIn(memberId, organizationIds),
+                        ErrorCode.MEMBER_UNKNOWN,
+                        "organization member " + memberId))
                 .flatMap(member -> {
                     // Cannot change owner status
                     if (member.getRole() == OrganizationRole.OWNER && status != MemberStatus.ACTIVE) {
@@ -203,8 +219,15 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
     @Override
     public Mono<Void> remove(String memberId, String reason) {
         log.info("Removing member: {} - Reason: {}", memberId, reason);
-        return memberRepository.findById(memberId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Member not found: " + memberId)))
+        // The resolver's reads.memberForCaller(memberId) already proved ownership before calling
+        // this; defense in depth here too.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        memberRepository.findById(memberId),
+                        organizationIds -> memberRepository.findByIdAndOrganizationIdIn(memberId, organizationIds),
+                        ErrorCode.MEMBER_UNKNOWN,
+                        "organization member " + memberId))
                 .flatMap(member -> {
                     // Cannot remove owner
                     if (member.getRole() == OrganizationRole.OWNER) {
@@ -256,14 +279,14 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
         Instant now = clock.instant();
         member.setStatus(MemberStatus.REMOVED);
         member.setRemovedAt(now);
+        member.setMirrorPending(true);
 
         return revokeEventGrants(member, now)
                 .then(memberRepository.save(member))
                 .as(transactionalOperator::transactional)
-                // Keycloak and the member count are outside the boundary deliberately: neither is
-                // the platform's source of truth, and a Keycloak outage must not prevent a removal.
-                // The group-mirror drift sweep is what repairs the mirror.
-                .flatMap(saved -> removeFromKeycloakGroup(saved).thenReturn(saved))
+                // The member count is outside the boundary deliberately: it is not the source of truth.
+                // Keycloak is not written here at all: the row carries the mirror marker, and the
+                // group-mirror workflow applies it, so a Keycloak outage cannot block a removal.
                 .flatMap(saved -> updateOrganizationMemberCount(saved.getOrganizationId())
                         .thenReturn(saved));
     }
@@ -303,79 +326,13 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
 
     @Override
     public Mono<Boolean> canModifyMember(String actorUserId, String targetMemberId, String organizationId) {
+        // The target is scoped to the same organization the actor belongs to: a target id from a
+        // different organization must never be compared against the actor's role as if it were
+        // one of their own teammates.
         return memberRepository.findByUserIdAndOrganizationId(actorUserId, organizationId)
-                .flatMap(actor -> memberRepository.findById(targetMemberId)
+                .flatMap(actor -> memberRepository.findByIdAndOrganizationIdIn(targetMemberId, Set.of(organizationId))
                         .map(target -> actor.canModifyMember(target)))
                 .defaultIfEmpty(false);
-    }
-
-    // ========================================================================
-    // KEYCLOAK INTEGRATION
-    // ========================================================================
-
-    private Mono<Void> addToKeycloakGroup(OrganizationMember member) {
-        return organizationRepository.findById(member.getOrganizationId())
-                .flatMap(org -> keycloakService.addUserToOrganizationGroup(
-                        member.getUserId(),
-                        org.getSlug(),
-                        OrganizationGroups.of(member.getRole())))
-                .onErrorResume(e -> markMirrorPending(member, "Failed to add user to Keycloak group", e));
-    }
-
-    private Mono<Void> removeFromKeycloakGroup(OrganizationMember member) {
-        return organizationRepository.findById(member.getOrganizationId())
-                .flatMap(org -> keycloakService.removeUserFromOrganizationGroup(
-                        member.getUserId(),
-                        org.getSlug(),
-                        OrganizationGroups.of(member.getRole())))
-                .onErrorResume(e -> markMirrorPending(member, "Failed to remove user from Keycloak group", e));
-    }
-
-    private Mono<Void> updateKeycloakGroup(OrganizationMember member, OrganizationRole previousRole) {
-        return organizationRepository.findById(member.getOrganizationId())
-                .flatMap(org -> keycloakService.removeUserFromOrganizationGroup(
-                                member.getUserId(),
-                                org.getSlug(),
-                                OrganizationGroups.of(previousRole))
-                        .then(keycloakService.addUserToOrganizationGroup(
-                                member.getUserId(),
-                                org.getSlug(),
-                                OrganizationGroups.of(member.getRole()))))
-                .onErrorResume(e -> markMirrorPending(member, "Failed to update Keycloak group", e));
-    }
-
-    /**
-     * Records that Keycloak is behind this membership, and lets the mutation succeed.
-     *
-     * <h2>The failure must not propagate, and must not vanish either</h2>
-     * The change completes anyway: Keycloak mirrors membership rather than owning
-     * it, and an organizer removing somebody cannot be blocked by a third party being down — that
-     * is precisely the operation you least want blocked.
-     *
-     * <p>Swallowing the error to a log line achieves the first half and loses the second. The
-     * drift is then real, invisible, and unrepairable except by reconciling every member on the
-     * platform. Marking the row is what makes the sweep's work finite.
-     *
-     * <p>Marking is itself best-effort. If MongoDB is unreachable too there is nothing further to
-     * do, and failing the mutation at that point would surface a Keycloak outage as a membership
-     * error — exactly the coupling this method exists to prevent.
-     */
-    private Mono<Void> markMirrorPending(OrganizationMember member, String what, Throwable cause) {
-        log.warn("securityIncident=false {} for user {} in organization {}: {} — membership "
-                        + "committed, mirror marked pending",
-                what, member.getUserId(), member.getOrganizationId(), cause.getMessage());
-
-        return memberRepository.findById(member.getId())
-                .flatMap(current -> {
-                    current.setMirrorPending(true);
-                    return memberRepository.save(current);
-                })
-                .onErrorResume(unreachable -> {
-                    log.error("Could not mark mirrorPending for member {}: {}",
-                            member.getId(), unreachable.getMessage());
-                    return Mono.empty();
-                })
-                .then();
     }
 
     // ========================================================================

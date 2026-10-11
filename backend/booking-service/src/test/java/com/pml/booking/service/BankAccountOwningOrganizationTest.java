@@ -40,12 +40,20 @@ class BankAccountOwningOrganizationTest {
         CreateBankAccountInput input = new CreateBankAccountInput("u1", "E2E Events Ltd", "Zanaco", null, null, null,
                 "0123456789012", null, "ZMW", null, null);
 
-        StepVerifier.create(new BankAccountServiceImpl(repository, identity).create(input, "u1"))
+        StepVerifier.create(new BankAccountServiceImpl(repository, identity, passAccess()).create(input, "u1"))
                 .expectNextCount(1).verifyComplete();
 
         ArgumentCaptor<BankAccount> saved = ArgumentCaptor.forClass(BankAccount.class);
         verify(repository).save(saved.capture());
         assertThat(saved.getValue().getOrganizationId()).isEqualTo("6ac424255e2b6cdaab5ce55d");
         assertThat(saved.getValue().getOrganizerId()).isEqualTo("u1");
+    }
+
+    /** Access is not what this test is about: every organization is manageable. */
+    private static com.pml.booking.security.BankAccountAccess passAccess() {
+        com.pml.booking.security.BankAccountAccess access = org.mockito.Mockito.mock(com.pml.booking.security.BankAccountAccess.class);
+        org.mockito.Mockito.when(access.require(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(call -> reactor.core.publisher.Mono.just(call.getArgument(0)));
+        return access;
     }
 }

@@ -25,7 +25,7 @@ vi.mock('@pml.tickets/shared/api/admin/modules/payments-ops', () => ({ usePayout
 import { PayoutsTab } from '../PayoutsTab';
 
 const row = (over: Record<string, unknown>) => ({
-  id: 'p1', requestId: 'PO-1', organizerId: 'o1', organizerName: 'Zambezi Events', eventId: 'e1', eventTitle: 'Lusaka Jazz', escrowAccountId: 'esc1', bankAccountId: 'b1',
+  id: 'p1', requestId: 'PO-1', organizerId: 'o1', organization: { id: 'org-fixture', name: 'Zambezi Events' }, eventId: 'e1', eventTitle: 'Lusaka Jazz', escrowAccountId: 'esc1', bankAccountId: 'b1',
   requestedAmount: 1500, taxAmount: 0, settledAmount: 1500, currency: 'ZMW', status: 'PENDING', payoutMethod: 'BANK_TRANSFER', requestedAt: '2026-09-01T08:00:00Z',
   requestedById: 'u-other', retryCount: 0, bankName: 'Zanaco', accountNumber: '****7890', reviewStatus: 'NONE', bankAccount: { id: 'b1', isVerified: true, status: 'VERIFIED', accountHolderName: 'Z' }, ...over,
 });

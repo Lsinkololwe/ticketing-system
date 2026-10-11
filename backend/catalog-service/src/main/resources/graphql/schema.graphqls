@@ -287,14 +287,8 @@ type Event @key(fields: "id") {
     # Public organizer name for attribution on event pages
     organizerName: String!
 
-    # Contact info - private, only for organizer dashboard and admin
-    organizerEmail: String @tag(name: "organizer") @auth(requires: AUTHENTICATED)
-    organizerPhone: String @tag(name: "organizer") @auth(requires: AUTHENTICATED)
-    organizerBusinessEmail: String @tag(name: "organizer") @auth(requires: AUTHENTICATED)
-    organizerBusinessPhone: String @tag(name: "organizer") @auth(requires: AUTHENTICATED)
-    organizerCompanyName: String @tag(name: "organizer") @auth(requires: AUTHENTICATED)
-    organizerFirstName: String @tag(name: "organizer") @auth(requires: AUTHENTICATED)
-    organizerLastName: String @tag(name: "organizer") @auth(requires: AUTHENTICATED)
+    # Contact details are not stored or served here: ask the federated `organization` (business
+    # contact, members and admins only) or `organizer` (the owning user) for them.
 
     # ─────────────────────────────────────────────────────────────────────────
     # STATUS FIELDS - Event lifecycle management

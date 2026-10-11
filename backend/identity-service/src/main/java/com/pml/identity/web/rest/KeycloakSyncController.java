@@ -4,7 +4,6 @@ import com.pml.identity.config.KeycloakProperties;
 import com.pml.identity.security.revocation.KeycloakSessionRevoker;
 import com.pml.identity.web.rest.dto.KeycloakEventDto;
 import com.pml.identity.web.rest.dto.SyncResponse;
-import com.pml.identity.workflow.usersync.UserBackfillProcess;
 import com.pml.identity.workflow.usersync.UserSyncProcess;
 import com.pml.identity.workflow.usersync.UserSyncRules;
 import com.pml.identity.workflow.usersync.UserSyncWorkflow.Change;
@@ -28,7 +27,6 @@ import reactor.core.publisher.Mono;
  * Security:
  * - All endpoints require internal service authentication
  * - Uses OAuth2 client credentials flow from Keycloak EventListener
- * - Full sync endpoint additionally requires ADMIN role
  *
  * These endpoints enable Keycloak → MongoDB synchronization, ensuring that
  * changes made in Keycloak (via Admin Console, custom authenticators, or
@@ -41,7 +39,6 @@ import reactor.core.publisher.Mono;
 public class KeycloakSyncController {
 
     private final UserSyncProcess userSyncProcess;
-    private final UserBackfillProcess userBackfillProcess;
     private final KeycloakProperties keycloak;
     private final KeycloakSessionRevoker sessionRevoker;
 
@@ -110,38 +107,6 @@ public class KeycloakSyncController {
                     log.error("Keycloak change for user {} could not be recorded: {}", userId, e.getMessage());
                     return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                             .body(SyncResponse.error(userId, "Change could not be recorded")));
-                });
-    }
-
-    /**
-     * Re-syncs every Keycloak user, for recovery after a restore or to resolve drift.
-     *
-     * <p>Answers {@code 202} once the {@code user-backfill} workflow's start is recorded; it pages
-     * through Keycloak and hands each user to their own {@code UserSyncWorkflow}. A backfill already
-     * running is reached rather than doubled.
-     *
-     * @return 202 when recorded, 503 when Temporal could not record it
-     */
-    @PostMapping("/all")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public Mono<ResponseEntity<SyncResponse>> syncAllUsers() {
-        log.info("Received request to sync all users from Keycloak");
-        return userBackfillProcess.start()
-                .thenReturn(ResponseEntity
-                        .status(HttpStatus.ACCEPTED)
-                        .body(SyncResponse.builder()
-                                .success(true)
-                                .action("STARTED")
-                                .message("Backfill recorded; progress is the user-backfill workflow's.")
-                                .build()))
-                .onErrorResume(e -> {
-                    log.error("Backfill could not be recorded: {}", e.getMessage());
-                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                            .body(SyncResponse.builder()
-                                    .success(false)
-                                    .action("NOT_STARTED")
-                                    .message("Backfill could not be recorded")
-                                    .build()));
                 });
     }
 }

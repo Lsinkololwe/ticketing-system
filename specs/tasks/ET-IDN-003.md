@@ -1,5 +1,7 @@
 # ET-IDN-003 · Token revocation — tasks
 
+> **Status 2026-10-09 · `in-progress`.** 8 of 13 gate rows are ticked. Open: propagation in 5 s (the `identity.TokenRevoked` event is not built), the audit rows on member removal and organization suspension, `TOKEN_REVOKED` sign-out checked app by app, the sessions list, and the status row, which waits on ET-PLT-007 and ET-IDN-001 being `implemented`.
+>
 > **Spec** [`specs/identity/003-token-revocation/spec.md`](../identity/003-token-revocation/spec.md) · **Wave 1** · `blocked_by:` ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-IDN-001
 > **Screens** — no screen of its own. It surfaces as **sign-out everywhere** in all three apps and as a session list in settings.
 > **Verify** `mvn -q -f backend/identity-service test` · `mvn -q -f backend/shared-library test` · `mvn -q -f backend verify`
@@ -146,16 +148,16 @@ writes an audit row.
 
 ## E · Gate
 
-- [ ] R0 recorded; a Redis-only store classified `contradicted`
-- [ ] Durable store in MongoDB; unique + TTL indexes confirmed **live** via MCP
-- [ ] One lookup covers all three identifier types
-- [ ] Revocation by each type refuses exactly the intended tokens, proven by negative tests
-- [ ] Redis `FLUSHALL` does not restore a revoked token
-- [ ] `allkeys-lru` yields an untrusted cache and a named health condition
-- [ ] Payout refuses and event query succeeds under store outage
+- [x] R0 recorded; a Redis-only store classified `contradicted` *(the store is MongoDB, so nothing is `contradicted` on durability; recorded in `reconciliation/ET-IDN-003.md`)*
+- [x] Durable store in MongoDB; unique + TTL indexes confirmed **live** via MCP *(2026-10-09, `dev_ticketing` through mongosh because the MongoDB MCP did not connect: `_id` unique, `expiresAt` TTL with `expireAfterSeconds: 0`; the `{revokedAt}` index is not created yet)*
+- [x] One lookup covers all three identifier types
+- [x] Revocation by each type refuses exactly the intended tokens, proven by negative tests
+- [x] Redis `FLUSHALL` does not restore a revoked token
+- [x] `allkeys-lru` yields an untrusted cache and a named health condition
+- [x] Payout refuses and event query succeeds under store outage
 - [ ] Effective in all three services within 5 s at p99
 - [ ] Member removal and org suspension revoke, each with an audit row
 - [ ] `TOKEN_REVOKED` signs out with **no** retry, in all three apps
 - [ ] Sessions list covers loading, empty, error, populated
-- [ ] `compose-supergraph.sh --static` green; codegen clean
+- [x] `compose-supergraph.sh --static` green; codegen clean *(2026-10-09; no schema change in this pass)*
 - [ ] Spec `status:` → `implemented`

@@ -66,6 +66,10 @@ export const PAYOUTS_BY_ORGANIZER = gql`
         organizerId
         eventId
         eventTitle
+        event {
+          id
+          title
+        }
         requestedAmount
         settledAmount
         currency

@@ -15,8 +15,8 @@ import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 
 import java.time.Instant;
 import java.util.List;
@@ -44,6 +44,7 @@ public class EventAccessMutationResolver {
      * Grant event access to a user.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.grantEventAccess")
     @PreAuthorize("isAuthenticated()")
     public Mono<EventAccessGrant> grantEventAccess(
             @InputArgument String eventId,
@@ -65,19 +66,20 @@ public class EventAccessMutationResolver {
      * Bulk grant event access.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.bulkGrantEventAccess")
     @PreAuthorize("isAuthenticated()")
-    public Flux<EventAccessGrant> bulkGrantEventAccess(
+    public Mono<List<EventAccessGrant>> bulkGrantEventAccess(
             @InputArgument String eventId,
             @InputArgument String organizationId,
             @Valid @InputArgument List<@Valid BulkEventAccessGrantInput> grants) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(granterId -> log.info("User {} bulk granting event {} access to {} users", granterId, eventId, grants.size()))
-                .flatMapMany(granterId -> memberService.requirePermission(granterId, organizationId, Permission.EVENT_ACCESS_GRANT)
+                .flatMap(granterId -> memberService.requirePermission(granterId, organizationId, Permission.EVENT_ACCESS_GRANT)
                         .then(Mono.defer(() -> permissions.requireDelegable(granterId, organizationId,
                                 grants.stream().filter(g -> g.customPermissions() != null)
                                         .flatMap(g -> g.customPermissions().stream()).collect(Collectors.toSet()),
                                 Permission.Scope.EVENT)))
-                        .thenMany(Flux.defer(() -> {
+                        .then(Mono.defer(() -> {
                             List<EventAccessService.GrantRequest> requests = grants.stream()
                                     .map(g -> new EventAccessService.GrantRequest(
                                             g.userId(),
@@ -88,7 +90,9 @@ public class EventAccessMutationResolver {
                                     ))
                                     .collect(Collectors.toList());
 
-                            return eventAccessService.bulkGrant(eventId, organizationId, requests, granterId);
+                            // @FailClosedOnRevocation requires a Mono-returning method, so the Flux the
+                            // service produces is collected into one list rather than streamed as elements.
+                            return eventAccessService.bulkGrant(eventId, organizationId, requests, granterId).collectList();
                         })));
     }
 
@@ -96,6 +100,7 @@ public class EventAccessMutationResolver {
      * Update event access.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.updateEventAccess")
     @PreAuthorize("isAuthenticated()")
     public Mono<EventAccessGrant> updateEventAccess(
             @InputArgument String accessId,
@@ -114,6 +119,7 @@ public class EventAccessMutationResolver {
      * Revoke event access.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.revokeEventAccess")
     @PreAuthorize("isAuthenticated()")
     public Mono<EventAccessGrant> revokeEventAccess(
             @InputArgument String accessId,

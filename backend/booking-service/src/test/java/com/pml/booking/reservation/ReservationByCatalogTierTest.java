@@ -102,7 +102,8 @@ class ReservationByCatalogTierTest {
         service = new ReservationServiceImpl(reservations, TestClock.frozenAt(Instant.parse("2026-10-01T09:00:00Z")),
                 new CatalogServiceClient(InternalServiceWebClients.unauthenticated(WebClient.builder()),
                         "http://localhost:" + catalog.port()),
-                mock(PurchaseService.class));
+                mock(PurchaseService.class),
+                com.pml.shared.testing.IdempotencyPassthrough.guard(), new com.fasterxml.jackson.databind.ObjectMapper());
     }
 
     private TicketReservation reserve(String tierId, int quantity, String key) {

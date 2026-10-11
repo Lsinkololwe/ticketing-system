@@ -44,14 +44,16 @@ public class TicketResendService {
     private final IdentityServiceClient identity;
     private final ActionRateLimiter limiter;
     private final Clock clock;
+    private final CurrentEventDetails events;
 
     public TicketResendService(ReactiveMongoTemplate tickets, OrganizerAccess access, IdentityServiceClient identity,
-                               ActionRateLimiter limiter, Clock clock) {
+                               ActionRateLimiter limiter, Clock clock, CurrentEventDetails events) {
         this.tickets = tickets;
         this.access = access;
         this.identity = identity;
         this.limiter = limiter;
         this.clock = clock;
+        this.events = events;
     }
 
     public Mono<ResendTicketResult> resend(String ticketId) {
@@ -76,7 +78,12 @@ public class TicketResendService {
                 }));
     }
 
-    private Mono<ResendTicketResult> send(com.pml.booking.domain.model.Ticket ticket) {
+    private Mono<ResendTicketResult> send(com.pml.booking.domain.model.Ticket stored) {
+        // The message names the event as it is now, so a renamed or rescheduled event is not announced by its old name.
+        return events.current(stored).flatMap(ticket -> notify(ticket));
+    }
+
+    private Mono<ResendTicketResult> notify(com.pml.booking.domain.model.Ticket ticket) {
         Map<String, Object> params = new HashMap<>();
         params.put("ticketNumber", ticket.getTicketNumber());
         params.put("eventId", ticket.getEventId());

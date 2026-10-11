@@ -104,8 +104,13 @@ public class RevocationAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public RevocationCacheTrust revocationCacheTrust(ReactiveStringRedisTemplate cache,
-                                                     RevocationProperties properties) {
-        return new RevocationCacheTrust(cache, properties.getCacheCompletenessTtl());
+                                                     RevocationProperties properties,
+                                                     RedisEvictionPolicyProbe evictionProbe) {
+        // A cache that may evict revocation keys cannot vouch for a token by lacking its key, so
+        // every miss goes to the durable store while the probe reports the policy as at risk.
+        return new RevocationCacheTrust(cache, properties.getCacheCompletenessTtl(),
+                () -> !properties.isRequireEvictionSafeCache()
+                        || evictionProbe.lastResult().safety() != RedisEvictionPolicyProbe.Safety.AT_RISK);
     }
 
     @Bean

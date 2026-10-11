@@ -136,8 +136,8 @@ export function useTicketTransferActions() {
   const [decline, d] = useMutation<BuyerDeclineTicketTransferMutation, BuyerDeclineTicketTransferMutationVariables>(DECLINE, opts);
   return {
     busy: i.loading || c.loading || a.loading || d.loading,
-    initiate: (ticketId: string, channel: TransferChannel, recipient: string, note?: string) =>
-      initiate({ variables: { input: { ticketId, channel, recipient, note: note || null } } }),
+    initiate: (ticketId: string, channel: TransferChannel, recipient: string, idempotencyKey: string, note?: string) =>
+      initiate({ variables: { input: { ticketId, channel, recipient, note: note || null, idempotencyKey } } }),
     cancel: (transferId: string) => cancel({ variables: { transferId } }),
     accept: (transferId: string) => accept({ variables: { transferId } }),
     decline: (transferId: string) => decline({ variables: { transferId } }),

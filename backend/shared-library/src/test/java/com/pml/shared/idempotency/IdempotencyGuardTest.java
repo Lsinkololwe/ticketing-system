@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.SimpleReactiveMongoDatabaseFactory;
+import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.redis.connection.ReactiveRedisConnection;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
@@ -33,6 +34,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Tag("ET-PLT-007")
 @DisplayName("a retried money-moving request applies once, whatever happens to Redis")
 class IdempotencyGuardTest {
+
+    /** A derived getter Jackson serializes but has no field to deserialize back into. */
+    record ReceiptWithATotal(String id, int amount, int tax) {
+        public int getGrandTotal() {
+            return amount + tax;
+        }
+    }
 
     record Receipt(String id, int amount) {
     }
@@ -93,6 +101,20 @@ class IdempotencyGuardTest {
         } finally {
             connection.close();
         }
+    }
+
+    @Test
+    @DisplayName("a response type with a derived getter and no backing field still replays")
+    void replayToleratesAComputedProperty() {
+        String key = newKey();
+        ReceiptWithATotal first = guard.execute("pay:computed", key, "fp-a", ReceiptWithATotal.class,
+                () -> Mono.just(new ReceiptWithATotal("r-1", 100, 20))).block();
+
+        ReceiptWithATotal second = guard.execute("pay:computed", key, "fp-a", ReceiptWithATotal.class,
+                () -> Mono.error(new AssertionError("must not run again"))).block();
+
+        assertThat(second).isEqualTo(first);
+        assertThat(second.getGrandTotal()).isEqualTo(120);
     }
 
     @Test
@@ -238,5 +260,17 @@ class IdempotencyGuardTest {
 
         assertThat(replay.amount()).isEqualTo(4200);
         assertThat(replay.id()).isEqualTo(first.id());
+    }
+
+    @Test
+    @DisplayName("the ledger's TTL index sits on expiresAt and expires each row at its own expiry instant")
+    void ledgerRowsExpireOnTheirOwnExpiresAt() {
+        java.util.List<IndexInfo> indexes = mongo.indexOps("platform_idempotency_probe").getIndexInfo().collectList().block();
+
+        assertThat(indexes).anySatisfy(index -> {
+            assertThat(index.getIndexFields()).hasSize(1);
+            assertThat(index.getIndexFields().get(0).getKey()).isEqualTo("expiresAt");
+            assertThat(index.getExpireAfter()).hasValue(Duration.ZERO);
+        });
     }
 }

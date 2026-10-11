@@ -28,6 +28,9 @@ import java.util.TreeMap;
  */
 public final class Fingerprint {
 
+    /** The explicit allowlist of fields a client may legitimately change between retries of one request. */
+    public static final Set<String> CLIENT_VARYING = Set.of("clientTimestamp", "deviceId");
+
     private static final String KEY_FIELD = "idempotencyKey";
 
     private Fingerprint() {

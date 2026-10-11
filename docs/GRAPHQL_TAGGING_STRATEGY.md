@@ -158,7 +158,6 @@ input ApproveOrganizerInput @tag(name: "admin") {
 | `platformStatistics` | admin | Platform-wide stats |
 | `myOrganization` | organizer | Organizer dashboard |
 | `approveOrganizer`, `rejectOrganizer` | admin | Admin approval |
-| `syncUserFromKeycloak` | internal | Service-to-service |
 | `inviteTeamMember` | organizer | Team management |
 
 ## Implementation Checklist

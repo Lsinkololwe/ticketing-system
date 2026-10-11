@@ -1,6 +1,6 @@
 id: ET-IDN-003
 title: Token revocation — cutting a live session before its token expires
-status: approved
+status: in-progress
 area: IDN
 service: identity-service
 subgraph: identity
@@ -21,14 +21,14 @@ persistence:
   collections:
     - identity_token_revocations
   indexes:
-    - "identity_token_revocations {type,value} unique"
+    - "identity_token_revocations {_id} unique  — _id is derived from type+value, so no second unique index is needed"
     - "identity_token_revocations {expiresAt} ttl 0"
-    - "identity_token_revocations {revokedAt} single"
+    - "identity_token_revocations {revokedAt} single  — not yet created; the admin revocation log (activeRevocations) is not built"
   redis_keys:
-    - "revoked:token:{jti}      STRING  lifespan+skew  — authority identity_token_revocations"
-    - "revoked:session:{sid}    STRING  lifespan+skew  — authority identity_token_revocations"
-    - "revoked:user:{sub}       STRING  lifespan+skew  — authority identity_token_revocations"
-    - "revoked:complete         STRING  10 min         — cache-completeness marker; absent means untrusted"
+    - "pml:blacklist:{jti}              STRING  lifespan+skew  — authority identity_token_revocations"
+    - "pml:session:{sid}                STRING  lifespan+skew  — authority identity_token_revocations"
+    - "pml:revoked:{sub}                STRING  lifespan+skew  — authority identity_token_revocations"
+    - "pml:revocation:cache-complete    STRING  10 min         — cache-completeness marker; absent means untrusted"
 
 events:
   module: []   # a step within a service is a workflow activity (ET-PLT-015)
@@ -80,8 +80,10 @@ triggers:
   # with reason keycloak-logout / keycloak-refresh-token-error; no new trigger value.
 
 eviction_policy:
-  trusted:   [noeviction, volatile-lru, volatile-lfu, volatile-ttl, volatile-random]
-  untrusted: [allkeys-lru, allkeys-lfu, allkeys-random]
+  # Every revocation key carries a TTL, so a volatile-* policy can evict it as readily as allkeys-*.
+  # The probe therefore treats any evicting policy as untrusted when maxmemory is set.
+  trusted:   [noeviction, "any policy with no maxmemory limit"]
+  untrusted: ["any evicting policy (allkeys-*, volatile-*) with maxmemory set"]
 
 config:
   identity.revocation.enabled: true

@@ -18,7 +18,11 @@
         "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
-        "bsonType": "objectId"
+        "bsonType": [
+          "objectId",
+          "string"
+        ],
+        "description": "A reservation is named by the buyer's idempotency key: its id is a name-based UUID string, so the same buyer and key always reach the same reservation. Declaring objectId alone refused every reservation the checkout workflow writes."
       },
       "eventId": {
         "bsonType": "string",

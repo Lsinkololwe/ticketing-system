@@ -7,7 +7,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -19,7 +18,11 @@ import reactor.core.publisher.Mono;
  * to verify user permissions on resources.</p>
  *
  * <h2>Security</h2>
- * <p>All endpoints require internal service scope. Not accessible to regular users.</p>
+ * <p>The shared {@code /api/internal/**} filter chain ({@code SecurityConfig}) requires {@code
+ * SCOPE_internal-read} for the GET endpoints below and {@code SCOPE_internal-write} for {@code
+ * /check} (or {@code ROLE_INTERNAL_SERVICE}/{@code ROLE_SYSTEM} for either), enforced once at the
+ * chain rather than repeated here where a mixed read/write class could only state one scope and
+ * be wrong for the other method.</p>
  *
  * <h2>OWASP Compliance</h2>
  * <ul>
@@ -33,7 +36,6 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/api/internal/authorization")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyAuthority('SCOPE_internal-read', 'SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE', 'ROLE_SYSTEM')")
 public class InternalAuthorizationController {
 
     private final AuthorizationService authorizationService;
@@ -139,6 +141,28 @@ public class InternalAuthorizationController {
     }
 
     /**
+     * The organization's public display name, for a caller (catalog, booking) that denormalizes
+     * it for display (e.g. the organizer name shown on an event) and only has the id.
+     *
+     * <p>Never used for an authorization decision — a blank or unknown id answers 404, not an
+     * error, since "no name on file" is routine (a deleted or bad-data organization id), not a
+     * fault the caller needs to retry.</p>
+     *
+     * @param organizationId Organization ID
+     * @return The organization's name, or 404 if blank or not found
+     */
+    @GetMapping("/organization-name")
+    public Mono<ResponseEntity<OrganizationNameResponse>> getOrganizationName(
+            @RequestParam String organizationId) {
+
+        log.debug("Get organization name: organizationId={}", organizationId);
+
+        return authorizationService.getOrganizationName(organizationId)
+                .map(name -> ResponseEntity.ok(new OrganizationNameResponse(name)))
+                .defaultIfEmpty(ResponseEntity.notFound().build());
+    }
+
+    /**
      * Response for same organization check.
      */
     public record SharedOrganizationResponse(
@@ -165,4 +189,9 @@ public class InternalAuthorizationController {
             String role,
             boolean isActive
     ) {}
+
+    /**
+     * Response for the organization name lookup.
+     */
+    public record OrganizationNameResponse(String name) {}
 }

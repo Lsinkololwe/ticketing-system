@@ -34,7 +34,7 @@ const APP_URL = `http://localhost:${APP_PORT}`;
 export default defineConfig({
   testDir: './e2e',
   // Network-fixture page checks run under playwright.visual.config.ts (no containers needed).
-  testIgnore: ['visual/**'],
+  testIgnore: ['visual/**', 'browser/**'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

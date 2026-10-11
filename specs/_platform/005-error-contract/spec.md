@@ -292,6 +292,7 @@ DGS's `com.netflix.graphql.types.errors.ErrorType`. These eight and no others.
 | `DOCUMENT_STATE_INVALID` | `DocumentNotInExpectedState` | `FAILED_PRECONDITION` | no | `currentStatus` |
 | `MEMBER_UNKNOWN` | `MemberUnknown` | `NOT_FOUND` | no | — |
 | `MEMBER_ALREADY_EXISTS` | `MemberAlreadyExists` | `FAILED_PRECONDITION` | no | — |
+| `MEMBER_IN_ANOTHER_ORGANIZATION` | `MemberBelongsToAnotherOrganization` | `FAILED_PRECONDITION` | no | — |
 | `ORGANIZATION_NOT_ACTIVE` | `OrganizationNotActive` | `FAILED_PRECONDITION` | no | — |
 | `OWNER_CANNOT_BE_REMOVED` | `OwnerCannotBeRemoved` | `FAILED_PRECONDITION` | no | — |
 | `OWNER_ROLE_IMMUTABLE` | `OwnerRoleImmutable` | `FAILED_PRECONDITION` | no | — |

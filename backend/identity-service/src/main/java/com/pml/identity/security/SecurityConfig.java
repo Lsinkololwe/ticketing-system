@@ -1,5 +1,6 @@
 package com.pml.identity.security;
 
+import com.pml.shared.security.AudienceRequirement;
 import com.pml.shared.security.KeycloakJwtAuthenticationConverter;
 import com.pml.shared.security.PlatformResourceServer;
 import com.pml.shared.security.revocation.RevocationRequestGuard;
@@ -7,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.security.config.annotation.method.configuration.EnableReactiveMethodSecurity;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
@@ -70,17 +72,24 @@ public class SecurityConfig {
     @Value("${keycloak.expected-audiences:}")
     private String expectedAudiencesCsv;
 
+    /**
+     * How long a fetched signing-key set is trusted before it is fetched again. Bounded to
+     * {@code 0 < ttl <= PT15M}; a value outside that stops startup.
+     */
+    @Value("${keycloak.jwks-cache-ttl:PT5M}")
+    private java.time.Duration jwksCacheTtl;
+
     /** Refuses revoked tokens on every request; absent when revocation is switched off. */
     @Autowired(required = false)
     private RevocationRequestGuard revocationRequestGuard;
 
     @Bean
     public ReactiveJwtDecoder reactiveJwtDecoder() {
-        return PlatformResourceServer.decoder(issuerUri, expectedAudiencesCsv);
+        return PlatformResourceServer.decoder(issuerUri, expectedAudiencesCsv, jwksCacheTtl);
     }
 
     @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http, Environment environment) {
         if (revocationRequestGuard != null) {
             // After authentication, so only a validly signed token is looked up.
             http.addFilterAfter(revocationRequestGuard.webFilter(), SecurityWebFiltersOrder.AUTHENTICATION);
@@ -99,8 +108,12 @@ public class SecurityConfig {
                         .pathMatchers(org.springframework.http.HttpMethod.GET, "/api/internal/auth/**").hasAuthority("SCOPE_internal-read")
                         .pathMatchers(org.springframework.http.HttpMethod.POST, "/api/internal/auth/**").hasAuthority("SCOPE_internal-write")
                         .pathMatchers("/api/internal/auth/**").denyAll()
-                        // Internal service-to-service calls - require internal scope
-                        .pathMatchers("/api/internal/**").hasAnyAuthority("SCOPE_internal-read", "SCOPE_internal-write", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM")
+                        // Internal service-to-service calls, read and write split by method so a
+                        // read-scoped caller cannot reach the same prefix with a different verb.
+                        .pathMatchers(org.springframework.http.HttpMethod.GET, "/api/internal/**")
+                            .hasAnyAuthority("SCOPE_internal-read", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM")
+                        .pathMatchers("/api/internal/**")
+                            .hasAnyAuthority("SCOPE_internal-write", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM")
                         // GraphQL - require authentication so JWT is parsed and available to resolvers
                         // Fine-grained access control is handled at resolver level with @PreAuthorize
                         // The one exception: a tokenless POST whose every top-level field is on
@@ -113,7 +126,8 @@ public class SecurityConfig {
                         .anyExchange().authenticated()
                 )
                 .oauth2ResourceServer(PlatformResourceServer.jwt(
-                        issuerUri, trustedIssuersCsv, keycloakClientId, expectedAudiencesCsv))
+                        issuerUri, trustedIssuersCsv, keycloakClientId, expectedAudiencesCsv,
+                        AudienceRequirement.outsideLocalOrTest(environment), jwksCacheTtl))
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .build();

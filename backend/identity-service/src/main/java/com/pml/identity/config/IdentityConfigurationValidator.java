@@ -32,12 +32,11 @@ public class IdentityConfigurationValidator {
     private final IdentityIdHashProperties idHash;
     private final IdentityLimitsProperties limits;
     private final IdentityDeliveryProperties delivery;
-    private final IdentityAccountRepairProperties repair;
 
     @PostConstruct
     void validateAtStartup() {
         boolean development = environment.acceptsProfiles(Profiles.of("local", "test"));
-        List<String> problems = validate(development, challenge, proof, loginHandle, contact, idHash, limits, delivery, repair);
+        List<String> problems = validate(development, challenge, proof, loginHandle, contact, idHash, limits, delivery);
         if (!problems.isEmpty()) {
             throw new IllegalStateException("identity-service configuration is invalid: " + String.join("; ", problems));
         }
@@ -51,8 +50,7 @@ public class IdentityConfigurationValidator {
                                         IdentityContactProperties contact,
                                         IdentityIdHashProperties idHash,
                                         IdentityLimitsProperties limits,
-                                        IdentityDeliveryProperties delivery,
-                                        IdentityAccountRepairProperties repair) {
+                                        IdentityDeliveryProperties delivery) {
         List<String> problems = new ArrayList<>();
 
         // Structural settings: wrong everywhere, including local.
@@ -68,10 +66,6 @@ public class IdentityConfigurationValidator {
         positive(problems, "identity.proof.ttl", proof.getTtl());
         positive(problems, "identity.proof.ensure-hold", proof.getEnsureHold());
         positive(problems, "identity.login-handle.ttl", loginHandle.getTtl());
-        positive(problems, "identity.account.repair.interval", repair.getInterval());
-        positive(problems, "identity.account.repair.provisioning-max-age", repair.getProvisioningMaxAge());
-        positive(problems, "identity.account.repair.merging-max-age", repair.getMergingMaxAge());
-        positive(problems, "identity.account.repair.changing-max-age", repair.getChangingMaxAge());
         if (limits.getAllowedCountries() == null || limits.getAllowedCountries().isEmpty()) {
             problems.add("identity.limits.allowed-countries must not be empty");
         }

@@ -73,7 +73,9 @@ class EventFieldVisibilityTest {
         Clock clock = Clock.fixed(Instant.parse("2026-10-01T10:00:00Z"), ZoneOffset.UTC);
         computed = new EventComputedFieldResolver(Mockito.mock(EventCategoryService.class), tierService, clock);
         tierFields = new TicketTierFieldResolver();
-        content = new EventContentFieldResolver(Mockito.mock(OrganizerProfileService.class));
+        content = new EventContentFieldResolver(Mockito.mock(OrganizerProfileService.class),
+                Mockito.mock(com.pml.catalog.infrastructure.client.IdentityServiceClient.class),
+                Mockito.mock(org.springframework.data.mongodb.core.ReactiveMongoTemplate.class));
         mediaFields = new MediaFieldResolver(Mockito.mock(MediaService.class));
     }
 
@@ -180,7 +182,9 @@ class EventFieldVisibilityTest {
         OrganizerProfileService profiles = Mockito.mock(OrganizerProfileService.class);
         Mockito.when(profiles.publishedEventCount(OWNER)).thenReturn(Mono.just(4));
         Mockito.when(profiles.completedEventCount(OWNER)).thenReturn(Mono.just(9));
-        EventContentFieldResolver resolver = new EventContentFieldResolver(profiles);
+        EventContentFieldResolver resolver = new EventContentFieldResolver(profiles,
+                Mockito.mock(com.pml.catalog.infrastructure.client.IdentityServiceClient.class),
+                Mockito.mock(org.springframework.data.mongodb.core.ReactiveMongoTemplate.class));
         Map<String, Object> representation = new HashMap<>(Map.of("__typename", "Organization", "id", OWNER));
 
         assertThat(resolver.publishedEventCount(source(representation)).block()).isEqualTo(4);

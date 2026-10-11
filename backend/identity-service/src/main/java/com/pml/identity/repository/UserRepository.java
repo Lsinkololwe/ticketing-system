@@ -35,7 +35,7 @@ public interface UserRepository extends ReactiveMongoRepository<User, String> {
 
     Flux<User> findByStatus(AccountState status);
 
-    /** Accounts stuck in a state since before {@code cutoff}: the repair schedule's query. */
+    /** Accounts in a state since before {@code cutoff}. */
     Flux<User> findByStatusAndCreatedAtBefore(AccountState status, Instant cutoff);
 
     Flux<User> findByPendingKindAndPendingSinceBefore(PendingKind pendingKind, Instant cutoff);

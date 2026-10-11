@@ -47,11 +47,25 @@
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
-        <!-- Shared Library (for Keycloak security converters) -->
+        <!-- Client-credentials token for the gateway's own calls to identity-service's revocation API -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
+
+        <!-- Shared Library (for Keycloak security converters and the revocation check) -->
         <dependency>
             <groupId>com.pml</groupId>
             <artifactId>shared-library</artifactId>
             <version>${project.version}</version>
+        </dependency>
+
+        <!-- AspectJ runtime for shared-library's RevocationGuardAspect (@Around advice on
+             @FailClosedOnRevocation) — every other module that pulls in that aspect declares
+             this explicitly rather than relying on a transitive resolution. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
         <!-- Lombok -->
@@ -73,6 +87,19 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            spring-boot-starter-test does not bring this in transitively on this Boot version, so
+            Surefire falls back to its own bundled JUnit Platform launcher instead of the project's
+            (junit-bom-managed) one. That fallback silently never runs a single @Nested test class —
+            no error, no "skipped" count, "Tests run" just reports the top-level methods only. Found
+            2026-10-10: TicketTierTenantBoundaryTest's whole Outsider/Owner attack scenario had never
+            executed. Declaring the launcher explicitly is this fix.
+        -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-test</artifactId>
@@ -81,6 +108,30 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- The shared Redis container and the revocation test fixtures live in the test-jar. -->
+        <dependency>
+            <groupId>com.pml</groupId>
+            <artifactId>shared-library</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
 

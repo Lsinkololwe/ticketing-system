@@ -150,8 +150,8 @@ export interface AdminEventTier {
 export interface AdminEventDetail extends Omit<AdminEventTableRow, 'category' | 'cityName'> {
   description: string;
   publishedAt: string | null;
-  organizerEmail: string | null;
-  organizerPhone: string | null;
+  /** Resolved from identity through the federated `Organization`; contact fields are members and admins only. */
+  organization: { id: string; name: string; businessEmail: string | null; businessPhone: string | null } | null;
   locationAddress: string | null;
   cityName: string | null;
   category: { id: string; name: string } | null;

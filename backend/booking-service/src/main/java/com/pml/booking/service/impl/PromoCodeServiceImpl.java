@@ -4,6 +4,9 @@ import com.pml.booking.web.graphql.dto.CreatePromoCodeInput;
 import com.pml.booking.domain.model.PromoCode;
 import com.pml.booking.repository.PromoCodeRepository;
 import com.pml.booking.service.PromoCodeService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -116,7 +119,9 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     public Mono<PromoCode> updatePromoCode(String id, CreatePromoCodeInput input) {
         log.info("Updating promo code: {}", id);
 
-        return promoCodeRepository.findById(id)
+        // The resolver's tenantReads.promoCodeForCaller(id) already proved ownership before
+        // calling this; defense in depth here too.
+        return promoCodeForCaller(id)
             .flatMap(existing -> {
                 existing.setDiscountType(input.discountType());
                 existing.setDiscountValue(input.discountValue());
@@ -135,7 +140,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     public Mono<PromoCode> activatePromoCode(String id) {
         log.info("Activating promo code: {}", id);
 
-        return promoCodeRepository.findById(id)
+        return promoCodeForCaller(id)
             .flatMap(promoCode -> {
                 promoCode.setActive(true);
                 return promoCodeRepository.save(promoCode);
@@ -146,7 +151,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     public Mono<PromoCode> deactivatePromoCode(String id) {
         log.info("Deactivating promo code: {}", id);
 
-        return promoCodeRepository.findById(id)
+        return promoCodeForCaller(id)
             .flatMap(promoCode -> {
                 promoCode.setActive(false);
                 return promoCodeRepository.save(promoCode);
@@ -167,8 +172,7 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     public Mono<Boolean> deletePromoCode(String id) {
         log.info("Deleting promo code: {}", id);
 
-        return promoCodeRepository.findById(id)
-            .switchIfEmpty(Mono.error(new IllegalArgumentException("Promo code not found: " + id)))
+        return promoCodeForCaller(id)
             .flatMap(promoCode -> {
                 // Only allow deletion of inactive or unused promo codes
                 if (promoCode.isActive() && promoCode.getCurrentUses() > 0) {
@@ -184,5 +188,18 @@ public class PromoCodeServiceImpl implements PromoCodeService {
     @Override
     public Mono<PromoCode> findById(String id) {
         return promoCodeRepository.findById(id);
+    }
+
+    /**
+     * The promo code the caller is entitled to act on, or {@code PROMO_CODE_UNKNOWN}. Reached
+     * only after the resolver's own {@code tenantReads.promoCodeForCaller}; defense in depth.
+     */
+    private Mono<PromoCode> promoCodeForCaller(String id) {
+        return CurrentTenantScope.get().flatMap(scope -> TenantGuard.locate(
+                scope,
+                promoCodeRepository.findById(id),
+                organizationIds -> promoCodeRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                ErrorCode.PROMO_CODE_UNKNOWN,
+                "promo code " + id));
     }
 }

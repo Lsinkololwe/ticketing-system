@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 import org.springframework.validation.annotation.Validated;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 
 /**
  * GraphQL Mutation Resolver for Ownership Transfer operations.
@@ -34,6 +35,7 @@ public class OwnershipTransferMutationResolver {
      * Only the current owner can initiate a transfer.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.initiateOwnershipTransfer")
     @PreAuthorize("isAuthenticated()")
     public Mono<OwnershipTransferRequest> initiateOwnershipTransfer(
             @InputArgument String organizationId,
@@ -58,6 +60,7 @@ public class OwnershipTransferMutationResolver {
      * Only the current owner can cancel.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.cancelOwnershipTransfer")
     @PreAuthorize("isAuthenticated()")
     public Mono<OwnershipTransferRequest> cancelOwnershipTransfer(@InputArgument String organizationId) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -70,6 +73,7 @@ public class OwnershipTransferMutationResolver {
      * requires it.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.requestOwnershipTransferCode")
     @PreAuthorize("isAuthenticated()")
     public Mono<Boolean> requestOwnershipTransferCode(@InputArgument String token) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -82,6 +86,7 @@ public class OwnershipTransferMutationResolver {
      * Only the designated new owner can accept, with the code sent to their phone.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.acceptOwnershipTransfer")
     @PreAuthorize("isAuthenticated()")
     public Mono<OwnershipTransferRequest> acceptOwnershipTransfer(
             @InputArgument String token,
@@ -96,6 +101,7 @@ public class OwnershipTransferMutationResolver {
      * Only the designated new owner can decline.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.declineOwnershipTransfer")
     @PreAuthorize("isAuthenticated()")
     public Mono<OwnershipTransferRequest> declineOwnershipTransfer(@InputArgument String token) {
         return SecurityContextUtils.requireCurrentUserId()

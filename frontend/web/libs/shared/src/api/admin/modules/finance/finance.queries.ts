@@ -36,8 +36,15 @@ export const PAYOUT_LIST_FIELDS = gql`
     id
     requestId
     organizerId
-    organizerName
+    organization {
+      id
+      name
+    }
     eventTitle
+    event {
+      id
+      title
+    }
     requestedAmount
     settledAmount
     currency
@@ -168,8 +175,15 @@ export const ESCROW_LIST_FIELDS = gql`
     accountNumber
     eventId
     eventTitle
+    event {
+      id
+      title
+    }
     organizerId
-    organizerName
+    organization {
+      id
+      name
+    }
     currentBalance
     totalDeposits
     totalWithdrawals

@@ -45,6 +45,7 @@ public class LiveDashboardServiceImpl implements LiveDashboardService {
     /** Every timestamp comes from here, never from the wall clock. */
     private final java.time.Clock clock;
     private final ReactiveMongoTemplate mongoTemplate;
+    private final com.pml.booking.service.CurrentEventDetails eventDetails;
 
     // Statuses that count as "sold" tickets
     private static final Set<TicketStatus> SOLD_STATUSES =
@@ -102,6 +103,7 @@ public class LiveDashboardServiceImpl implements LiveDashboardService {
     private Mono<BasicStats> getBasicStats(String eventId) {
         return ticketRepository.findByEventId(eventId)
                 .next()
+                .flatMap(eventDetails::current)
                 .flatMap(sampleTicket -> {
                     String eventTitle = sampleTicket.getEventTitle() != null
                             ? sampleTicket.getEventTitle()

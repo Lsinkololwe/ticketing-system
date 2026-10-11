@@ -18,9 +18,9 @@ public interface PayoutEligibilityService {
     /**
      * Evaluate eligibility for one event.
      *
-     * <p>Scoped by organizer: an event belonging to someone else answers
-     * {@code NO_ESCROW_ACCOUNT} rather than revealing their balance or hold
-     * date.
+     * <p>Decided by the organization that owns the event's money: the caller must hold the
+     * payout permission there. Anyone else is answered {@code NO_ESCROW_ACCOUNT} rather than
+     * being shown a balance or hold date.
      */
-    Mono<PayoutEligibility> evaluate(String eventId, String organizerId);
+    Mono<PayoutEligibility> evaluate(String eventId, String userId);
 }

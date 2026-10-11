@@ -9,6 +9,7 @@ import com.pml.shared.security.revocation.RevocationProperties;
 import com.pml.shared.security.revocation.RevocationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import reactor.core.publisher.Mono;
 
@@ -102,7 +103,7 @@ public class MongoRevocationStore implements DurableRevocationStore {
                 .expiresAt(now.plus(properties.recordTtl()))
                 .build();
 
-        return repository.save(record)
+        return insertOnce(record, now)
                 .timeout(properties.getDurableTimeout())
                 .doOnError(error -> {
                     metrics.writeCompleted("durable_failed");
@@ -111,6 +112,35 @@ public class MongoRevocationStore implements DurableRevocationStore {
                             new RevocationIdentifier(type, value).masked(), error);
                 })
                 .flatMap(saved -> primeCache(saved).thenReturn(saved));
+    }
+
+    /**
+     * Writes the record, or, if an active one already exists for the identifier, extends that
+     * one's window instead of inserting a second row: the original {@code reason}, {@code
+     * revokedBy} and {@code revokedAt} are kept — they describe the first cause — but {@code
+     * expiresAt} moves out to whichever of the two records runs later. A revocation that only
+     * returned the existing row unchanged would let a later cause (a suspension issued after an
+     * earlier logout) expire before the tokens it was meant to cover, as soon as the earlier
+     * row's own window ran out first. The id is derived from type and value, so two concurrent
+     * writers cannot both insert. A record that is past its expiry but not yet swept by the TTL
+     * monitor no longer revokes anything, so it is replaced rather than extended.
+     */
+    private Mono<RevocationRecord> insertOnce(RevocationRecord record, Instant now) {
+        return repository.insert(record)
+                .onErrorResume(DuplicateKeyException.class, duplicate -> repository.findById(record.getId())
+                        .flatMap(existing -> existing.isActiveAt(now)
+                                ? extendIfLater(existing, record.getExpiresAt())
+                                : repository.save(record))
+                        .switchIfEmpty(Mono.defer(() -> repository.save(record))));
+    }
+
+    /** Pushes {@code existing}'s expiry out to {@code candidateExpiresAt} when that is later. */
+    private Mono<RevocationRecord> extendIfLater(RevocationRecord existing, Instant candidateExpiresAt) {
+        if (!candidateExpiresAt.isAfter(existing.getExpiresAt())) {
+            return Mono.just(existing);
+        }
+        existing.setExpiresAt(candidateExpiresAt);
+        return repository.save(existing);
     }
 
     /**

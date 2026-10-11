@@ -1,12 +1,16 @@
 package com.pml.shared.security.tenancy;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+
+import java.time.Clock;
 
 /**
  * Installs the per-request tenant scope in every service that says how to find a caller's
@@ -21,10 +25,26 @@ import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 @EnableConfigurationProperties(TenancyProperties.class)
 public class TenantScopeAutoConfiguration {
 
+    /** Log-only by default; a service that wants a queryable row defines its own sink. */
+    @Bean
+    @ConditionalOnMissingBean(PlatformWideAuditSink.class)
+    public PlatformWideAuditSink platformWideAuditSink() {
+        return new LogOnlyPlatformWideAuditSink();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public PlatformWideAccess platformWideAccess(PlatformWideAuditSink sink, ObjectProvider<Clock> clock,
+                                                 TenancyProperties properties, Environment environment) {
+        return new PlatformWideAccess(environment.getProperty("spring.application.name"), sink,
+                clock.getIfAvailable(Clock::systemUTC), properties.platformWideAuthorities());
+    }
+
     @Bean
     @ConditionalOnBean(TenantMemberships.class)
     @ConditionalOnMissingBean
-    public TenantScopeWebFilter tenantScopeWebFilter(TenantMemberships memberships, TenancyProperties properties) {
-        return new TenantScopeWebFilter(memberships, properties.platformWideAuthorities());
+    public TenantScopeWebFilter tenantScopeWebFilter(TenantMemberships memberships, TenancyProperties properties,
+                                                     PlatformWideAccess platformWideAccess) {
+        return new TenantScopeWebFilter(memberships, properties.platformWideAuthorities(), platformWideAccess);
     }
 }

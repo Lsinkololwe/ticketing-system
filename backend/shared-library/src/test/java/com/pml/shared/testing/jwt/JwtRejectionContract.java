@@ -49,9 +49,11 @@ public final class JwtRejectionContract {
     public static final List<String> PROBE_PATHS = List.of("/graphql", "/api/v1/probe");
 
     private final WebTestClient client;
+    private final List<String> paths;
 
-    private JwtRejectionContract(WebTestClient client) {
+    private JwtRejectionContract(WebTestClient client, List<String> paths) {
         this.client = client;
+        this.paths = paths;
     }
 
     /**
@@ -61,10 +63,23 @@ public final class JwtRejectionContract {
      */
     public static JwtRejectionContract against(
             Function<ServerHttpSecurity, SecurityWebFilterChain> chainFactory) {
+        return against(chainFactory, PROBE_PATHS);
+    }
+
+    /**
+     * As {@link #against(Function)}, but probing only the given paths.
+     *
+     * <p>For a chain that deliberately leaves some paths open: asserting "no credentials is
+     * refused" on a path the chain permits would fail for the right reason and say nothing
+     * about the token checks, so such a chain is probed on its authenticated paths and its open
+     * paths are asserted separately.</p>
+     */
+    public static JwtRejectionContract against(
+            Function<ServerHttpSecurity, SecurityWebFilterChain> chainFactory, List<String> paths) {
 
         SecurityWebFilterChain chain = chainFactory.apply(ServerHttpSecurity.http());
         RouterFunctions.Builder routes = RouterFunctions.route();
-        PROBE_PATHS.forEach(path ->
+        paths.forEach(path ->
                 routes.GET(path, request -> ServerResponse.ok().bodyValue("reached")));
 
         WebTestClient client = WebTestClient
@@ -72,21 +87,39 @@ public final class JwtRejectionContract {
                 .webFilter(new WebFilterChainProxy(chain))
                 .configureClient()
                 .build();
-        return new JwtRejectionContract(client);
+        return new JwtRejectionContract(client, List.copyOf(paths));
     }
 
     /**
-     * Assert all four rejections, plus the acceptance that makes them meaningful.
+     * Assert every token-borne rejection, plus the acceptance that makes them meaningful, plus
+     * the absence of credentials.
      *
      * <p>The valid-token case is not decoration. Without it, a chain that rejected
      * <em>everything</em> — a typo in the JWKS URL, a decoder that never resolves — would pass
-     * the four rejection assertions perfectly while authenticating nobody.</p>
+     * the rejection assertions perfectly while authenticating nobody.</p>
+     *
+     * <p>The name predates the not-before case; it now also proves a token that is not yet
+     * valid is refused, so every service that calls this picks the case up unchanged.</p>
      *
      * @param trusted  the realm the service under test trusts
      * @param rogue    a second realm it does not
      * @param audience the audience the service expects, or null when audience is unchecked
      */
     public void assertAllFour(StubIssuer trusted, StubIssuer rogue, String audience) {
+        assertAllTokenRejections(trusted, rogue, audience);
+        assertRejects(noTokenAtAll(),
+                "no credentials at all");
+    }
+
+    /**
+     * Every rejection that arrives as a bearer token, without the no-credentials case.
+     *
+     * <p>Split out for a path that is open to anonymous callers by design: a bad token sent
+     * there must still be refused, because the bearer filter authenticates whatever token is
+     * presented before the path rules are consulted, and that is worth proving separately from
+     * whether the path needs a token at all.</p>
+     */
+    public void assertAllTokenRejections(StubIssuer trusted, StubIssuer rogue, String audience) {
         assertAccepts(trusted.validToken(audience), "a valid token from the trusted realm");
 
         assertRejects(trusted.forgedSignature(audience),
@@ -97,8 +130,13 @@ public final class JwtRejectionContract {
                 "a token with a verifiable signature that claims an untrusted issuer");
         assertRejects(trusted.expired(audience),
                 "a token that expired beyond the allowed clock skew");
-        assertRejects(noTokenAtAll(),
-                "no credentials at all");
+        assertRejectsNotYetValid(trusted, audience);
+    }
+
+    /** A correctly signed, unexpired token whose {@code nbf} is beyond the skew is refused. */
+    public void assertRejectsNotYetValid(StubIssuer trusted, String audience) {
+        assertRejects(trusted.notYetValid(audience),
+                "a token whose not-before time is still in the future beyond the allowed clock skew");
     }
 
     /** The audience check, asserted separately because it is off unless configured. */
@@ -108,7 +146,7 @@ public final class JwtRejectionContract {
     }
 
     public void assertAccepts(String token, String describedAs) {
-        for (String path : PROBE_PATHS) {
+        for (String path : paths) {
             assertThat(statusFor(path, token))
                     .as("the service must accept %s at %s — four rejections mean nothing if the "
                             + "chain also turns away everyone legitimate", describedAs, path)
@@ -117,7 +155,7 @@ public final class JwtRejectionContract {
     }
 
     public void assertRejects(String token, String describedAs) {
-        for (String path : PROBE_PATHS) {
+        for (String path : paths) {
             assertThat(statusFor(path, token))
                     .as("%s must be refused at %s — the service is reachable on the network "
                             + "without the gateway, and the gateway permits /graphql/** anyway",

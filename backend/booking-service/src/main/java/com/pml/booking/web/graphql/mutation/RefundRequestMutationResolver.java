@@ -9,7 +9,10 @@ import com.pml.booking.web.graphql.dto.BulkOperationResponse;
 import com.pml.booking.web.graphql.dto.CreateRefundRequestInput;
 import com.pml.booking.security.OrganizerAccess;
 import com.pml.booking.workflow.refund.RefundProcess;
+import com.pml.shared.idempotency.Fingerprint;
+import com.pml.shared.idempotency.IdempotencyGuard;
 import com.pml.shared.security.SecurityContextUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +20,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import reactor.core.publisher.Mono;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * GraphQL mutations for refund requests.
@@ -33,20 +38,30 @@ import java.util.List;
 public class RefundRequestMutationResolver {
 
     private final RefundProcess refundProcess;
+    private final IdempotencyGuard idempotencyGuard;
+    private final ObjectMapper mapper;
 
     @DgsMutation
     @PreAuthorize("isAuthenticated()")
     public Mono<RefundRequest> createUserRefundRequest(@Valid @InputArgument CreateRefundRequestInput input) {
+        String fingerprint = Fingerprint.of(mapper, input, Fingerprint.CLIENT_VARYING);
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(requestedBy -> log.info("Creating refund request for ticket: {} by: {}", input.ticketId(), requestedBy))
-                .flatMap(requestedBy -> refundProcess.request(input.ticketId(), input.reason(), requestedBy));
+                .flatMap(requestedBy -> idempotencyGuard.execute("booking:requestRefund", input.idempotencyKey(), fingerprint,
+                        RefundRequest.class, () -> refundProcess.request(input.ticketId(), input.reason(), requestedBy)));
     }
 
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<RefundRequest> approveRefundRequest(@InputArgument String refundRequestId, @InputArgument String reviewComments) {
+    public Mono<RefundRequest> approveRefundRequest(@InputArgument String refundRequestId, @InputArgument String reviewComments,
+                                                     @InputArgument String idempotencyKey) {
+        Map<String, Object> fingerprinted = new HashMap<>();
+        fingerprinted.put("refundRequestId", refundRequestId);
+        fingerprinted.put("reviewComments", reviewComments);
+        String fingerprint = Fingerprint.of(mapper, fingerprinted, Fingerprint.CLIENT_VARYING);
         return SecurityContextUtils.requireCurrentUserId()
-                .flatMap(reviewerId -> refundProcess.approve(refundRequestId, reviewerId, reviewComments));
+                .flatMap(reviewerId -> idempotencyGuard.execute("booking:approveRefund", idempotencyKey, fingerprint,
+                        RefundRequest.class, () -> refundProcess.approve(refundRequestId, reviewerId, reviewComments)));
     }
 
     @DgsMutation
@@ -73,12 +88,20 @@ public class RefundRequestMutationResolver {
     public Mono<RefundRequest> createAdminRefundRequest(@InputArgument String ticketId,
                                                         @InputArgument String reason,
                                                         @InputArgument Boolean bypassApproval,
-                                                        @InputArgument java.math.BigDecimal amount) {
+                                                        @InputArgument java.math.BigDecimal amount,
+                                                        @InputArgument String idempotencyKey) {
         boolean bypass = bypassApproval != null && bypassApproval;
+        Map<String, Object> fingerprinted = new HashMap<>();
+        fingerprinted.put("ticketId", ticketId);
+        fingerprinted.put("reason", reason);
+        fingerprinted.put("bypassApproval", bypass);
+        fingerprinted.put("amount", amount);
+        String fingerprint = Fingerprint.of(mapper, fingerprinted, Fingerprint.CLIENT_VARYING);
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(adminId -> log.info("Operator {} creating refund request for ticket: {} (bypass: {}, amount: {})",
                         adminId, ticketId, bypass, amount))
-                .flatMap(adminId -> refundProcess.requestAsAdmin(ticketId, reason, adminId, bypass, amount));
+                .flatMap(adminId -> idempotencyGuard.execute("booking:requestRefund:admin", idempotencyKey, fingerprint,
+                        RefundRequest.class, () -> refundProcess.requestAsAdmin(ticketId, reason, adminId, bypass, amount)));
     }
 
     /**

@@ -36,7 +36,7 @@ class InternalSurfaceTest {
     @BeforeAll
     static void start() {
         realm = StubIssuer.start("myticketzm");
-        ServiceSecurity security = new ServiceSecurity(realm.issuer(), "", AUDIENCE, AUDIENCE, List.of());
+        ServiceSecurity security = new ServiceSecurity(realm.issuer(), "", AUDIENCE, AUDIENCE, List.of(), false);
         client = InternalSurface.clientBehind(security.securityWebFilterChain(InternalSurface.http()));
     }
 

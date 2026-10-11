@@ -104,21 +104,10 @@ public class KeycloakGrantedAuthoritiesConverter implements Converter<Jwt, Colle
      */
     @SuppressWarnings("unchecked")
     private Collection<GrantedAuthority> extractRealmRoles(Jwt jwt) {
-        Map<String, Object> realmAccess = jwt.getClaim("realm_access");
-        if (realmAccess == null) {
+        if (!(jwt.getClaim("realm_access") instanceof Map<?, ?> realmAccess)) {
             return Collections.emptyList();
         }
-
-        Object rolesObj = realmAccess.get("roles");
-        if (!(rolesObj instanceof List)) {
-            return Collections.emptyList();
-        }
-
-        List<String> roles = (List<String>) rolesObj;
-        return roles.stream()
-                .filter(this::isValidRole)
-                .map(role -> new SimpleGrantedAuthority(ROLE_PREFIX + role))
-                .collect(Collectors.toList());
+        return roleAuthorities(realmAccess.get("roles"));
     }
 
     /**
@@ -127,26 +116,27 @@ public class KeycloakGrantedAuthoritiesConverter implements Converter<Jwt, Colle
      */
     @SuppressWarnings("unchecked")
     private Collection<GrantedAuthority> extractClientRoles(Jwt jwt, String clientId) {
-        Map<String, Object> resourceAccess = jwt.getClaim("resource_access");
-        if (resourceAccess == null) {
+        if (!(jwt.getClaim("resource_access") instanceof Map<?, ?> resourceAccess)
+                || !(resourceAccess.get(clientId) instanceof Map<?, ?> clientAccess)) {
             return Collections.emptyList();
         }
+        return roleAuthorities(clientAccess.get("roles"));
+    }
 
-        Object clientAccess = resourceAccess.get(clientId);
-        if (!(clientAccess instanceof Map)) {
+    /**
+     * Turns a claim's role list into authorities. A signed token is trusted for who it names, but a
+     * claim of the wrong shape must not fail the request: anything that is not a list of strings
+     * contributes nothing.
+     */
+    private Collection<GrantedAuthority> roleAuthorities(Object rolesObj) {
+        if (!(rolesObj instanceof List<?> roles)) {
             return Collections.emptyList();
         }
-
-        Map<String, Object> clientAccessMap = (Map<String, Object>) clientAccess;
-        Object rolesObj = clientAccessMap.get("roles");
-        if (!(rolesObj instanceof List)) {
-            return Collections.emptyList();
-        }
-
-        List<String> roles = (List<String>) rolesObj;
         return roles.stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
                 .filter(this::isValidRole)
-                .map(role -> new SimpleGrantedAuthority(ROLE_PREFIX + role))
+                .map(role -> (GrantedAuthority) new SimpleGrantedAuthority(ROLE_PREFIX + role))
                 .collect(Collectors.toList());
     }
 

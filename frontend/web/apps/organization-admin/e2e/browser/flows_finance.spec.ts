@@ -44,6 +44,37 @@ test('payout request: dialog, eligibility, submit; failure keeps dialog', async 
   expect(upstream.calls('CreatePayoutRequest')[0].variables).toMatchObject({ input: { escrowAccountId: 'esc-2' } });
 });
 
+test('payout request: two rapid submissions carry the same idempotency key (TS-6)', async ({ page, upstream, signInAs }, info) => {
+  // A delayed response widens the window a true double-tap race falls into: the mutation is
+  // still in flight when the second click lands — before React has re-rendered the button into
+  // its disabled/loading state, which is the one thing standing between a double-tap and two
+  // network calls. The frontend's job is not to stop the second call (it may well go out); it is
+  // to make sure both calls carry the identical idempotency key, so the backend's own guard
+  // collapses them into one applied payout request rather than two.
+  await setup(upstream, signInAs, { CreatePayoutRequest: delayed(400, { createPayoutRequest: { id: 'po-new', requestId: 'PO-2060', status: 'PENDING' } }) });
+  await page.goto('/finance');
+  await page.getByRole('button', { name: /request payout/i }).first().click();
+  const dlg = page.getByRole('dialog');
+  await dlg.getByLabel(/amount/i).fill('1000');
+  const submit = dlg.getByRole('button', { name: 'Request payout', exact: true });
+  // Two synchronous DOM clicks in one task, bypassing Playwright's own actionability wait
+  // between clicks, so both land before React can flip the button to its disabled/loading state.
+  await submit.evaluate((el: HTMLButtonElement) => {
+    el.click();
+    el.click();
+  });
+  await page.waitForTimeout(600);
+  const calls = upstream.calls('CreatePayoutRequest');
+  // The page holds the second submission while the first is in flight, so one request leaves; if a build ever
+  // lets both through, they must carry the same key. Zero would mean the submission never registered.
+  expect(calls.length, 'the submission must reach the upstream').toBeGreaterThanOrEqual(1);
+  expect(calls.length, 'a second submission must not become a second request').toBeLessThanOrEqual(2);
+  const keys = calls.map((c) => (c.variables as { input?: { idempotencyKey?: string } }).input?.idempotencyKey);
+  expect(new Set(keys).size, 'every rapid submission of the same intent must carry one key').toBe(1);
+  expect(keys[0], 'a real key, not an accidental empty string').toBeTruthy();
+  await shot(page, 'finance-payout-double-submit', info);
+});
+
 test('payout request: server refusal is shown, dialog stays open', async ({ page, upstream, signInAs }, info) => {
   await setup(upstream, signInAs, { CreatePayoutRequest: gqlErrors({ message: 'An open payout request already exists', code: 'PAYOUT_ALREADY_OPEN' }) });
   await page.goto('/finance');

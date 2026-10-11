@@ -8,6 +8,8 @@ import com.pml.booking.service.PayoutEligibilityService;
 import com.pml.booking.web.graphql.dto.organizer.PayoutEligibilityResult;
 import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
 import com.pml.booking.web.graphql.dto.organizer.*;
+import com.pml.booking.security.OrganizerAccess;
+import com.pml.shared.security.Permission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -39,6 +41,7 @@ public class OrganizerDashboardQueryResolver {
 
     private final OrganizerDashboardService organizerDashboardService;
     private final PayoutEligibilityService payoutEligibilityService;
+    private final OrganizerAccess access;
 
     /**
      * Get main dashboard statistics for the current organizer.
@@ -46,9 +49,9 @@ public class OrganizerDashboardQueryResolver {
      * @return Dashboard statistics including revenue, tickets sold, events, and attendees
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<OrganizerDashboardStats> myDashboardStats() {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.ANALYTICS_VIEW).then(getCurrentUserId())
                 .flatMap(organizerId -> {
                     log.debug("GraphQL query: myDashboardStats for organizer {}", organizerId);
                     return organizerDashboardService.getDashboardStats(organizerId);
@@ -61,9 +64,9 @@ public class OrganizerDashboardQueryResolver {
      * @return Finance overview including balances, payouts, and revenue breakdown
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<OrganizerFinanceOverview> myFinanceOverview() {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.FINANCIAL_VIEW).then(getCurrentUserId())
                 .flatMap(organizerId -> {
                     log.debug("GraphQL query: myFinanceOverview for organizer {}", organizerId);
                     return organizerDashboardService.getFinanceOverview(organizerId);
@@ -77,9 +80,9 @@ public class OrganizerDashboardQueryResolver {
      * @return List of recent activity items
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Flux<OrganizerActivityItem> myRecentActivity(@InputArgument Integer limit) {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.EVENT_VIEW).then(getCurrentUserId())
                 .flatMapMany(organizerId -> {
                     log.debug("GraphQL query: myRecentActivity for organizer {}, limit {}", organizerId, limit);
                     return organizerDashboardService.getRecentActivity(organizerId, limit);
@@ -93,9 +96,9 @@ public class OrganizerDashboardQueryResolver {
      * @return List of upcoming events with ticket sales progress
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Flux<OrganizerUpcomingEvent> myUpcomingEvents(@InputArgument Integer limit) {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.EVENT_VIEW).then(getCurrentUserId())
                 .flatMapMany(organizerId -> {
                     log.debug("GraphQL query: myUpcomingEvents for organizer {}, limit {}", organizerId, limit);
                     return organizerDashboardService.getUpcomingEvents(organizerId, limit);
@@ -110,12 +113,12 @@ public class OrganizerDashboardQueryResolver {
      * @return Paginated list of transactions
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<OrganizerTransactionOffsetPage> myTransactions(
             @InputArgument OrganizerTransactionFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
     ) {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.FINANCIAL_VIEW).then(getCurrentUserId())
                 .flatMap(organizerId -> {
                     log.debug("GraphQL query: myTransactions for organizer {}", organizerId);
                     return organizerDashboardService.getTransactions(
@@ -139,9 +142,9 @@ public class OrganizerDashboardQueryResolver {
      * @return Monthly revenue points, ascending by period
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Flux<OrganizerRevenuePoint> myRevenueSeries(@InputArgument Integer months) {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.ANALYTICS_VIEW).then(getCurrentUserId())
                 .flatMapMany(organizerId -> {
                     log.debug("GraphQL query: myRevenueSeries for organizer {}, months {}", organizerId, months);
                     return organizerDashboardService.getRevenueSeries(organizerId, months);
@@ -153,9 +156,9 @@ public class OrganizerDashboardQueryResolver {
      * computed against.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<OrganizerTicketMix> myTicketMix() {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.ANALYTICS_VIEW).then(getCurrentUserId())
                 .flatMap(organizerId -> {
                     log.debug("GraphQL query: myTicketMix for organizer {}", organizerId);
                     return organizerDashboardService.getTicketMix(organizerId);
@@ -168,9 +171,9 @@ public class OrganizerDashboardQueryResolver {
      * state rather than a 0% rate, which would be a false finding.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<OrganizerCheckInRate> myCheckInRate() {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.ANALYTICS_VIEW).then(getCurrentUserId())
                 .flatMap(organizerId -> {
                     log.debug("GraphQL query: myCheckInRate for organizer {}", organizerId);
                     return organizerDashboardService.getCheckInRate(organizerId);
@@ -181,9 +184,9 @@ public class OrganizerDashboardQueryResolver {
      * Withdrawable balance plus the escrow hold on the next tranche.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<OrganizerPayoutWindow> myPayoutWindow() {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.FINANCIAL_VIEW).then(getCurrentUserId())
                 .flatMap(organizerId -> {
                     log.debug("GraphQL query: myPayoutWindow for organizer {}", organizerId);
                     return organizerDashboardService.getPayoutWindow(organizerId);
@@ -198,9 +201,9 @@ public class OrganizerDashboardQueryResolver {
      * {@code createPayoutRequest} requires.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Flux<OrganizerPayoutSource> myPayoutSources() {
-        return getCurrentUserId()
+        return access.requireOrganizations(null, Permission.FINANCIAL_VIEW).then(getCurrentUserId())
                 .flatMapMany(organizerId -> {
                     log.debug("GraphQL query: myPayoutSources for organizer {}", organizerId);
                     return organizerDashboardService.getPayoutSources(organizerId);
@@ -219,7 +222,7 @@ public class OrganizerDashboardQueryResolver {
      * one shapes the button; that one guards the money.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<PayoutEligibilityResult> payoutEligibility(@InputArgument String eventId) {
         return getCurrentUserId()
                 .flatMap(organizerId -> payoutEligibilityService.evaluate(eventId, organizerId))

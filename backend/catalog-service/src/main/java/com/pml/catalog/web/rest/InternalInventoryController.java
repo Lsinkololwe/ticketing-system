@@ -6,7 +6,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -18,8 +17,10 @@ import reactor.core.publisher.Mono;
  * during the reservation and purchase flow.</p>
  *
  * <h2>Security</h2>
- * <p>All endpoints require internal service scope or INTERNAL_SERVICE role.
- * Not accessible to regular users or external clients.</p>
+ * <p>Every method here is a write, so the shared {@code /api/internal/**} filter chain
+ * ({@code ServiceSecurity}) requires {@code SCOPE_internal-write} (or {@code
+ * ROLE_INTERNAL_SERVICE}/{@code ROLE_SYSTEM}) before a request reaches this class — enforced once,
+ * at the chain, rather than repeated here where it could drift out of sync with it.</p>
  *
  * <h2>Endpoints</h2>
  * <ul>
@@ -27,14 +28,12 @@ import reactor.core.publisher.Mono;
  *   <li>POST /api/internal/inventory/tiers/{tierId}/release - Release reserved</li>
  *   <li>POST /api/internal/inventory/tiers/{tierId}/commit - Commit to sold</li>
  *   <li>POST /api/internal/inventory/tiers/{tierId}/restore - Restore sold</li>
- *   <li>GET /api/internal/inventory/tiers/{tierId}/snapshot - Get current state</li>
  * </ul>
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/internal/inventory/tiers")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyAuthority('SCOPE_internal-read', 'SCOPE_internal-write', 'ROLE_INTERNAL_SERVICE')")
 public class InternalInventoryController {
 
     private final InventoryService inventoryService;

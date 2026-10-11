@@ -20,6 +20,7 @@ import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -28,7 +29,8 @@ import java.util.List;
  * <p>Ordered before Spring Boot's reactive security, whose default chain would otherwise win.
  * Configured by the keys every service already states:
  * {@code spring.security.oauth2.resourceserver.jwt.issuer-uri}, {@code keycloak.client-id},
- * {@code keycloak.trusted-issuers}, {@code keycloak.expected-audiences}, and
+ * {@code keycloak.trusted-issuers}, {@code keycloak.expected-audiences},
+ * {@code keycloak.jwks-cache-ttl}, and
  * {@code platform.security.public-paths}.
  */
 @AutoConfiguration(beforeName = {
@@ -52,8 +54,13 @@ public class ServiceSecurityAutoConfiguration {
         List<String> publicPaths = Binder.get(environment)
                 .bind("platform.security.public-paths", Bindable.listOf(String.class))
                 .orElse(List.of());
+        Duration jwksCacheTtl = Binder.get(environment)
+                .bind("keycloak.jwks-cache-ttl", Bindable.of(Duration.class))
+                .orElse(MultiIssuerJwtResolver.DEFAULT_JWKS_CACHE_TTL);
         return new ServiceSecurity(issuerUri, trustedIssuersCsv, clientId, expectedAudiencesCsv,
-                publicPaths.stream().filter(path -> !path.isBlank()).toList());
+                publicPaths.stream().filter(path -> !path.isBlank()).toList(),
+                AudienceRequirement.outsideLocalOrTest(environment),
+                jwksCacheTtl);
     }
 
     @Configuration(proxyBeanMethods = false)

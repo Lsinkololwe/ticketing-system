@@ -116,6 +116,8 @@ public enum ErrorCode {
     MEMBER_UNKNOWN(ErrorClassification.NOT_FOUND, false),
     /** — · MemberAlreadyExists */
     MEMBER_ALREADY_EXISTS(ErrorClassification.FAILED_PRECONDITION, false),
+    /** A person belongs to one organization at a time · MemberBelongsToAnotherOrganization */
+    MEMBER_IN_ANOTHER_ORGANIZATION(ErrorClassification.FAILED_PRECONDITION, false),
 
     /**
      * The organization is not in a state that can take new members.

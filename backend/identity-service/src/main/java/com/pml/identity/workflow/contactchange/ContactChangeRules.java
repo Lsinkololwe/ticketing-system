@@ -12,7 +12,7 @@ public final class ContactChangeRules {
     /** Version marker of the step sequence, declared from the first release. */
     public static final String STEPS = "contact-change-steps";
 
-    /** How long a change may wait for its codes (spec 004 R5, repair D8 alerts at 48 h). */
+    /** How long a change may wait for its codes (spec 004 R5). */
     public static final Duration EXPIRY = Duration.ofHours(48);
 
     /** Wrong or expired codes tolerated before the change is abandoned. */
@@ -50,14 +50,18 @@ public final class ContactChangeRules {
                 .build();
     }
 
-    /** Cleanup after a refusal: a few tries, then the repair schedule (D8) takes it. */
+    /**
+     * Cleanup after a refusal: retried until it lands, backing off to a minute between tries. The marker blocks
+     * the account's next contact change, so giving up would leave it blocked with nothing left to clear it.
+     */
     static ActivityOptions cleanupOptions() {
         return ActivityOptions.newBuilder()
                 .setTaskQueue(TaskQueues.ACCOUNT)
                 .setStartToCloseTimeout(Duration.ofSeconds(30))
                 .setRetryOptions(RetryOptions.newBuilder()
                         .setInitialInterval(Duration.ofSeconds(1))
-                        .setMaximumAttempts(6)
+                        .setBackoffCoefficient(2.0)
+                        .setMaximumInterval(Duration.ofMinutes(1))
                         .build())
                 .build();
     }

@@ -9,7 +9,6 @@ import com.pml.identity.exception.UserNotFoundException;
 import com.pml.identity.service.UserService;
 import com.pml.identity.service.UserSyncService;
 import com.pml.identity.web.graphql.dto.UpdateUserInput;
-import com.pml.identity.workflow.usersync.UserBackfillProcess;
 import com.pml.shared.constants.UserType;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
@@ -20,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import reactor.core.publisher.Mono;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -41,8 +41,6 @@ public class UserMutationResolver {
 
     private final UserService userService;
     private final AccountService accounts;
-    private final UserSyncService userSyncService;
-    private final UserBackfillProcess userBackfillProcess;
 
     // ==========================================
     // Profile
@@ -81,6 +79,7 @@ public class UserMutationResolver {
      * agent calling it with an error rather than a suspended account.
      */
     @DgsMutation
+    @FailClosedOnRevocation("admin.suspendUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> suspendUser(@InputArgument String id, @InputArgument String reason) {
         return actor().flatMap(admin -> accounts.suspend(id, reason, admin))
@@ -92,6 +91,7 @@ public class UserMutationResolver {
      * way back is a support burden at best and a lock-out at worst, so the pair exists together.
      */
     @DgsMutation
+    @FailClosedOnRevocation("admin.unsuspendUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> unsuspendUser(@InputArgument String id) {
         return actor().flatMap(admin -> accounts.unsuspend(id, admin))
@@ -100,12 +100,14 @@ public class UserMutationResolver {
 
     /** Deactivation is a suspension: one state, one way in and out. */
     @DgsMutation
+    @FailClosedOnRevocation("admin.deactivateUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Boolean> deactivateUser(@InputArgument String id) {
         return actor().flatMap(admin -> accounts.suspend(id, "deactivated by an administrator", admin)).thenReturn(true);
     }
 
     @DgsMutation
+    @FailClosedOnRevocation("admin.activateUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Boolean> activateUser(@InputArgument String id) {
         return actor().flatMap(admin -> accounts.unsuspend(id, admin)).thenReturn(true);
@@ -113,6 +115,7 @@ public class UserMutationResolver {
 
     /** Locking is a suspension too; the reason is recorded. */
     @DgsMutation
+    @FailClosedOnRevocation("admin.lockUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Boolean> lockUser(@InputArgument String id, @InputArgument String reason) {
         return actor().flatMap(admin -> accounts.suspend(id, reason == null ? "locked by an administrator" : reason, admin))
@@ -120,6 +123,7 @@ public class UserMutationResolver {
     }
 
     @DgsMutation
+    @FailClosedOnRevocation("admin.unlockUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<Boolean> unlockUser(@InputArgument String id) {
         return actor().flatMap(admin -> accounts.unsuspend(id, admin)).thenReturn(true);
@@ -131,6 +135,7 @@ public class UserMutationResolver {
      * come into being by proving a contact.
      */
     @DgsMutation
+    @FailClosedOnRevocation("admin.createUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> createUser(@InputArgument Map<String, Object> input) {
         Object role = input.get("role");
@@ -149,6 +154,7 @@ public class UserMutationResolver {
      * Nothing is erased and the call is safe to repeat; there is no hard delete.
      */
     @DgsMutation
+    @FailClosedOnRevocation("admin.deleteUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> deleteUser(@InputArgument String id) {
         return actor().flatMap(admin -> userService.deleteUser(id, admin))
@@ -157,6 +163,7 @@ public class UserMutationResolver {
 
     /** Update a user's names (admin only). Contacts are not editable here, and roles have their own mutations. */
     @DgsMutation
+    @FailClosedOnRevocation("admin.updateUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> updateUser(@InputArgument String id, @Valid @InputArgument UpdateUserInput input) {
         return userService.updateProfile(id, profile(input))
@@ -173,6 +180,7 @@ public class UserMutationResolver {
      * <p>OWASP: A01 admin-only; A04 role combinations validated; A09 the actor is recorded.
      */
     @DgsMutation
+    @FailClosedOnRevocation("admin.addUserRole")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> addUserRole(@InputArgument String userId, @InputArgument UserType role) {
         if (userId == null || userId.isBlank()) {
@@ -188,6 +196,7 @@ public class UserMutationResolver {
     }
 
     @DgsMutation
+    @FailClosedOnRevocation("admin.removeUserRole")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> removeUserRole(@InputArgument String userId, @InputArgument UserType role) {
         if (userId == null || userId.isBlank()) {
@@ -203,6 +212,7 @@ public class UserMutationResolver {
     }
 
     @DgsMutation
+    @FailClosedOnRevocation("admin.setUserRoles")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<User> setUserRoles(@InputArgument String userId, @InputArgument List<UserType> roles) {
         if (userId == null || userId.isBlank()) {
@@ -219,30 +229,6 @@ public class UserMutationResolver {
             return Mono.error(new IllegalArgumentException("Invalid role combination"));
         }
         return actor().flatMap(admin -> userService.setRoles(userId, roleSet, admin));
-    }
-
-    // ==========================================
-    // Keycloak sync (admin only)
-    // ==========================================
-
-    /** Refresh one user from Keycloak; use it to fix drift. */
-    @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<User> syncUserFromKeycloak(@InputArgument String userId) {
-        log.info("Admin syncing user from Keycloak: {}", userId);
-        return userSyncService.syncUser(null, userId);
-    }
-
-    /**
-     * Re-syncs every Keycloak user, for recovery. Starts the {@code user-backfill} workflow and
-     * answers {@code true} once Temporal has recorded the start; one already running is reached
-     * rather than doubled.
-     */
-    @DgsMutation
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public Mono<Boolean> syncAllUsersFromKeycloak() {
-        log.info("Super-admin initiated full user sync from Keycloak");
-        return userBackfillProcess.start().thenReturn(true);
     }
 
     private static Mono<String> actor() {

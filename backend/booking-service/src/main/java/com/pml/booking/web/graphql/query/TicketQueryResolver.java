@@ -68,7 +68,7 @@ public class TicketQueryResolver {
      * Schema: ticketByNumber(ticketNumber: String!): Ticket
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER', 'SCANNER', 'FINANCE') or @ticketSecurityService.isTicketOwnerByNumber(#ticketNumber, authentication)")
+    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER', 'FINANCE') or @ticketSecurityService.isTicketOwnerByNumber(#ticketNumber, authentication)")
     public Mono<Ticket> ticketByNumber(@InputArgument String ticketNumber) {
         log.debug("GraphQL query: ticketByNumber({})", ticketNumber);
         Objects.requireNonNull(ticketNumber, "Ticket number is required");

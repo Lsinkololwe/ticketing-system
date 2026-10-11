@@ -122,7 +122,8 @@ class EventEditingTest {
         EventServiceImpl service = new EventServiceImpl(events, CLOCK, new Outbox(template, "catalog_outbox", CLOCK),
                 TransactionalOperator.create(new ReactiveMongoTransactionManager(template.getMongoDatabaseFactory())),
                 CatalogWiring.venues(template, CLOCK), CatalogWiring.tierFactory(), CatalogWiring.tiers(template),
-                CatalogWiring.mirror(template, CLOCK), CatalogWiring.categories(template));
+                CatalogWiring.mirror(template, CLOCK), CatalogWiring.categories(template),
+                Mockito.mock(com.pml.catalog.infrastructure.client.IdentityServiceClient.class));
         lifecycle = Mockito.mock(EventLifecycleProcess.class);
         schedules = Mockito.mock(com.pml.catalog.workflow.schedule.EventPublishScheduleProcess.class);
         Mockito.when(schedules.schedule(Mockito.anyString(), Mockito.any())).thenReturn(Mono.empty());

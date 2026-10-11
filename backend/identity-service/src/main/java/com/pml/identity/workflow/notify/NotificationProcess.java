@@ -42,6 +42,14 @@ public class NotificationProcess {
 
     /** The blocking start, for an activity thread. */
     public void startNow(Request request) {
+        start(request);
+    }
+
+    /**
+     * The blocking start, answering whether this call began the message; false when the key had
+     * already been used and the request was dropped.
+     */
+    public boolean start(Request request) {
         NotificationWorkflow workflow = temporal.newWorkflow(NotificationWorkflow.class,
                 WorkflowIds.notification(request.deduplicationKey()), TaskQueues.NOTIFY,
                 WorkflowIdConflictPolicy.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
@@ -49,8 +57,10 @@ public class NotificationProcess {
                 ProcessSearchAttributes.of("Notification", request.deduplicationKey()).build());
         try {
             WorkflowClient.start(workflow::run, request);
+            return true;
         } catch (WorkflowExecutionAlreadyStarted duplicate) {
             log.debug("Notification {} was already requested", request.deduplicationKey());
+            return false;
         }
     }
 }

@@ -65,12 +65,35 @@ public final class Refusals {
             // operator reading the workflow history needs; the code is what the caller receives.
             return refusal(translated.get().errorCode(), String.valueOf(root.getMessage()));
         }
+        if (isDocumentValidationFailure(error)) {
+            // The collection's validator refused the document itself: the same document is refused again,
+            // so retrying only delays the answer while the caller times out. Every other database error is
+            // left to retry: a write conflict is transient, and a create-or-get that lost a race on a
+            // duplicate key succeeds on its next attempt.
+            return ApplicationFailure.newNonRetryableFailure(String.valueOf(root.getMessage()), root.getClass().getName());
+        }
         if ((root instanceof IllegalStateException || root instanceof IllegalArgumentException)
                 && !String.valueOf(root.getMessage()).startsWith("Timeout on blocking read")) {
             // A refused business rule, not a transient fault: retrying it only repeats the refusal.
             return ApplicationFailure.newNonRetryableFailure(root.getMessage(), root.getClass().getName());
         }
         return root instanceof RuntimeException runtime ? runtime : new IllegalStateException(root);
+    }
+
+    /** MongoDB error 121: the document does not satisfy the collection's {@code $jsonSchema}. */
+    private static final int DOCUMENT_VALIDATION_FAILURE = 121;
+
+    static boolean isDocumentValidationFailure(Throwable error) {
+        for (Throwable cause = error; cause != null && cause != cause.getCause(); cause = cause.getCause()) {
+            if (cause instanceof com.mongodb.MongoException mongo && mongo.getCode() == DOCUMENT_VALIDATION_FAILURE) {
+                return true;
+            }
+            if (cause instanceof com.mongodb.MongoBulkWriteException bulk && bulk.getWriteErrors().stream()
+                    .anyMatch(failure -> failure.getCode() == DOCUMENT_VALIDATION_FAILURE)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Re-raises a failed activity inside an update handler as the refusal it carries. */

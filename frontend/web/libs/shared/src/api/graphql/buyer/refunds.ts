@@ -81,7 +81,8 @@ export function useCreateRefund(requestedById: string) {
   const [mutate, { loading }] = useMutation(CREATE, { refetchQueries: [LIST] });
   return {
     loading,
-    create: (ticketId: string, reason: string) => mutate({ variables: { input: { ticketId, reason, requestedById } } }),
+    create: (ticketId: string, reason: string, idempotencyKey: string) =>
+      mutate({ variables: { input: { ticketId, reason, requestedById, idempotencyKey } } }),
   };
 }
 

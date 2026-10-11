@@ -97,7 +97,11 @@ describe('CheckoutClient', () => {
     expect(payRes).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Mobile money number'), { target: { value: '96 123 4567' } });
     fireEvent.click(screen.getByRole('button', { name: 'Pay K 300' }));
-    await waitFor(() => expect(payRes).toHaveBeenCalledWith({ reservationId: 'r1', phoneNumber: '+260961234567' }));
+    await waitFor(() =>
+      expect(payRes).toHaveBeenCalledWith(
+        expect.objectContaining({ reservationId: 'r1', phoneNumber: '+260961234567', idempotencyKey: expect.any(String) })
+      )
+    );
     expect(await screen.findByText('Approve the payment on your phone')).toBeInTheDocument();
     expect(screen.getByText('+260 96 1234567')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Resend prompt in/ })).toBeDisabled();

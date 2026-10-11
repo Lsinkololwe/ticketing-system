@@ -42,7 +42,7 @@ export function PayoutsTab() {
     const q = query.trim().toLowerCase();
     return list.payouts.filter(
       (p) =>
-        (!q || [p.requestId, p.eventTitle, p.organizerName, p.requestedById].some((x) => (x ?? '').toLowerCase().includes(q))) &&
+        (!q || [p.requestId, p.eventTitle, p.event?.title, p.organization?.name, p.requestedById].some((x) => (x ?? '').toLowerCase().includes(q))) &&
         (!filters.review || filters.review === 'all' || (p.reviewStatus ?? 'NONE') === filters.review)
     );
   }, [list.payouts, query, filters.review]);
@@ -100,7 +100,7 @@ export function PayoutsTab() {
               onClick={() =>
                 void copyCsv([
                   ['Request', 'Event', 'Organization', 'Amount (K)', 'Status', 'Requested by', 'Created'],
-                  ...rows.map((p) => [p.requestId, eventOf(p), p.organizerName, asNumber(p.requestedAmount), humanize(p.status), p.requestedById, p.requestedAt]),
+                  ...rows.map((p) => [p.requestId, eventOf(p), p.organization?.name, asNumber(p.requestedAmount), humanize(p.status), p.requestedById, p.requestedAt]),
                 ])
               }
             >
@@ -128,7 +128,7 @@ export function PayoutsTab() {
           onSelectionChange={setSelected}
           columns={[
             { id: 'request', header: 'Request', rowHeader: true, cell: (p) => <TwoLine main={<Mono>{p.requestId}</Mono>} sub={formatDateTime(p.requestedAt)} /> },
-            { id: 'event', header: 'Event', cell: (p) => <TwoLine main={eventOf(p)} sub={p.organizerName} /> },
+            { id: 'event', header: 'Event', cell: (p) => <TwoLine main={eventOf(p)} sub={p.organization?.name} /> },
             { id: 'amount', header: 'Amount', align: 'end', cell: (p) => <Mono>{money(asNumber(p.requestedAmount))}</Mono> },
             { id: 'dest', header: 'Destination', cell: (p) => <TwoLine main={humanize(p.payoutMethod)} sub={destinationOf(p)} monoSub /> },
             { id: 'by', header: 'Requested by', cell: (p) => <Mono>{p.requestedById.slice(-8)}</Mono> },

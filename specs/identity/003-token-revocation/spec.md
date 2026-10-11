@@ -7,6 +7,16 @@
 > **server-side session** and never in a browser, and three new triggers revoke automatically: **contact change**,
 > **suspension** and **deletion**. Logout is end to end (R9 below).
 
+> **Status 2026-10-09 · `in-progress`.** Enforcement is built and tested end to end: the gateway, catalog, booking
+> and identity share one check (Redis, the completeness marker, identity's durable records), a Keycloak logout
+> revokes exactly that session's tokens, a flushed or evicting Redis cannot readmit one, identity's member, role,
+> grant, ownership, payout and credential mutations fail closed, and all of it runs against a real Keycloak token.
+> **Not built:** the administrator and self-service GraphQL surface (R1's `revokeToken`, `revokeSession`,
+> `revokeUserAccess`, `signOutEverywhere`, `signOutSession`, `activeRevocations`), the `identity.TokenRevoked` bus
+> event and its propagation test (R6), the audit rows (R7), the sessions list and removed-member screens. The spec
+> cannot be `implemented` until those exist and until ET-PLT-007 and ET-IDN-001, which it lists under `blocked_by`,
+> are `implemented` too.
+
 ## 1. Capability
 
 A JWT is a bearer credential that is valid because of its signature, not because anybody
@@ -90,13 +100,18 @@ THE SYSTEM SHALL revoke access by `jti`, by `sid` or by `sub`, and WHEN a revoke
 presented THEN THE SYSTEM SHALL refuse the request.
 
 **Acceptance**
-- [ ] Revoking by `TOKEN` refuses exactly the token whose `jti` matches, and no other token held by the same user
-- [ ] Revoking by `SESSION` refuses every token carrying that `sid`, including tokens minted after the revocation
-- [ ] Revoking by `USER` refuses every token carrying that `sub`, across every device and session
-- [ ] A token carrying none of the revoked identifiers is unaffected
-- [ ] A revocation takes effect on the next request; no test waits for a token to expire
+- [x] Revoking by `TOKEN` refuses exactly the token whose `jti` matches, and no other token held by the same user
+  - *2026-10-09: `LogoutRevokesTokenEndToEndTest.tokenRevocationIsExact` — a real token is refused, the next token of the same session is not*
+- [x] Revoking by `SESSION` refuses every token carrying that `sid`, including tokens minted after the revocation
+  - *2026-10-09: `sessionRevocationCoversLaterTokens`*
+- [x] Revoking by `USER` refuses every token carrying that `sub`, across every device and session
+  - *2026-10-09: `userRevocationCutsEverySession`, including a token Keycloak issues after the revocation*
+- [x] A token carrying none of the revoked identifiers is unaffected
+  - *2026-10-09: `logoutCutsOnlyThatSession` — the user's other session is untouched*
+- [x] A revocation takes effect on the next request; no test waits for a token to expire
 - [ ] Every revocation records `reason`, `revokedBy` and `revokedAt`, and `reason` is at least 20 characters
-- [ ] Revoking an already-revoked identifier is idempotent and does not extend or duplicate the record
+- [x] Revoking an already-revoked identifier is idempotent and does not extend or duplicate the record
+  - *2026-10-09: `MongoRevocationStore` inserts once and returns the active record unchanged; `repeatedEventIsIdempotent` asserts one row with the same `revokedAt`, `expiresAt` and reason*
 
 ### ET-IDN-003-R2 · Every service checks revocation on every authenticated request
 
@@ -104,8 +119,9 @@ THE SYSTEM SHALL evaluate the revocation list in each service independently, and
 service SHALL rely on another having checked.
 
 **Acceptance**
-- [ ] All three subgraphs and the gateway perform the check; a request sent directly to a subgraph, bypassing the gateway, is still refused
-  - *2026-09-19: catalog, booking and identity install `RevocationRequestGuard` after authentication; the gateway still checks the cache only (`SessionBlacklistFilter`, same keys via `RevocationKeys`).*
+- [x] All three subgraphs and the gateway perform the check; a request sent directly to a subgraph, bypassing the gateway, is still refused
+  - *2026-09-19: catalog, booking and identity install `RevocationRequestGuard` after authentication.*
+  - *2026-10-09: the gateway now runs the same `CachedRevocationCheck` (completeness marker, then identity's durable records) instead of a Redis-only lookup that failed open; a state-changing request is refused with 503 when no store answers (`GatewayRevocationEnforcementTest`, `SessionBlacklistFilterSidTest`).*
 - [x] The check evaluates every revocation identifier present on the token in one lookup, not three round trips *(2026-09-19: `RemoteRevocationEnforcementTest`)*
 - [ ] A refused request returns `TOKEN_REVOKED` with `retryable: false`, and never the provider or store's raw error
 - [ ] The check adds no more than 5 ms at p99 to an authenticated request when the cache is warm
@@ -118,8 +134,9 @@ THE SYSTEM SHALL hold the durable revocation record in MongoDB, and IF the cache
 emptied THEN THE SYSTEM SHALL continue to refuse every revoked token.
 
 **Acceptance**
-- [ ] `identity_token_revocations` is the system of record; no revocation exists only in Redis
-- [ ] Flushing Redis mid-suite loses no revocation — a previously revoked token is still refused afterwards
+- [x] `identity_token_revocations` is the system of record; no revocation exists only in Redis
+- [x] Flushing Redis mid-suite loses no revocation — a previously revoked token is still refused afterwards
+  - *2026-10-09: `LogoutRevokesTokenEndToEndTest.flushedCacheStillRefuses`, `GatewayRevocationEnforcementTest.flushedCacheDoesNotAdmitARevokedToken`; the warmer then rebuilds the keys and the marker from MongoDB*
 - [ ] The cache is rebuilt from MongoDB on startup before the service reports ready
 - [ ] Each service re-warms from the durable store on a bounded interval, so a missed event self-heals
 - [ ] A cache entry is written with a TTL that never outlives the durable record
@@ -131,12 +148,12 @@ THE SYSTEM SHALL verify that Redis cannot evict a revocation entry it did not ex
 IF the policy permits it THEN THE SYSTEM SHALL treat the cache as untrusted.
 
 **Acceptance**
-- [ ] The service probes `maxmemory-policy` at startup
-- [ ] `noeviction`, `volatile-lru`, `volatile-lfu`, `volatile-ttl` and `volatile-random` are accepted
-- [ ] `allkeys-lru`, `allkeys-lfu` and `allkeys-random` are refused as unsafe, because they can evict a key the platform did not expire
-- [ ] Under an unsafe policy the service starts but marks the cache untrusted, and every sensitive check goes to the durable store
-- [ ] The probe result is exposed on the health endpoint and is a named condition, not a boolean
-- [ ] A test asserts an unsafe policy produces an untrusted cache rather than a silent downgrade
+- [x] The service probes `maxmemory-policy` at startup *(`RedisEvictionPolicyProbe`, on `ApplicationReadyEvent`)*
+- [x] `noeviction`, and any policy while no `maxmemory` limit is set, are accepted *(amended 2026-10-09: the first draft also accepted `volatile-*`, but every revocation key carries a TTL, so a `volatile-*` policy evicts them exactly as `allkeys-*` does)*
+- [x] Any evicting policy (`allkeys-*`, `volatile-*`) with `maxmemory` set is refused as unsafe, because it can evict a key the platform did not expire
+- [x] Under an unsafe policy the service starts but marks the cache untrusted, and every check the cache cannot answer from a key goes to the durable store *(2026-10-09: `RevocationCacheTrust` consults the probe; before, the probe only changed the health status)*
+- [x] The probe result is exposed on the health endpoint and is a named condition, not a boolean *(`cacheEvictionSafety`, `cacheMaxmemoryPolicy`, status `DEGRADED`)*
+- [x] A test asserts an unsafe policy produces an untrusted cache rather than a silent downgrade *(`EvictionPolicyTrustTest`, against a Redis started with `allkeys-lru` and one with `noeviction`)*
 
 ### ET-IDN-003-R5 · The check fails closed for sensitive operations
 
@@ -144,7 +161,8 @@ THE SYSTEM SHALL refuse a sensitive operation WHEN revocation state cannot be
 established, and SHALL degrade to the cached answer for ordinary reads.
 
 **Acceptance**
-- [ ] Every money-moving mutation, role change, ticket issuance and ticket validation is marked sensitive
+- [x] Every money-moving mutation, role change, ticket issuance and ticket validation is marked sensitive
+  - *2026-10-09: identity's member, role, grant, ownership, invitation, payout, document and credential mutations are marked; `SensitiveMutationsTest` (identity) lists every mutation not marked and fails when a new one is added without a decision*
   - *2026-09-19: booking's money-moving, check-in and recovery mutations and catalog's platform configuration are marked (`SensitiveMutationsTest` in each); identity's member, role and grant mutations are not yet.*
 - [ ] A sensitive operation refuses with `REVOCATION_UNAVAILABLE` and `retryable: true` when neither cache nor durable store answers within its timeout
 - [x] An ordinary read proceeds on the cached answer when the durable store is unreachable *(2026-09-19: `RemoteRevocationEnforcementTest`)*
@@ -171,8 +189,9 @@ THE SYSTEM SHALL revoke automatically on the security events that invalidate exi
 access, and SHALL NOT require an administrator to remember.
 
 **Acceptance**
-- [ ] Keycloak logout revokes that `sid`: the `user-sync` listener forwards `LOGOUT` (and `REFRESH_TOKEN_ERROR`) with the session's `sid` to `POST /api/internal/keycloak/sync/event` ([ET-IDN-004](../004-accounts-and-contacts/) CONTRACT 4.6), and identity-service writes `SESSION:{sid}` (idempotent, durable first, no deletion, no personal data); an event with no `sid` revokes nothing, and a write failure answers `503` so the listener retries
-- [ ] The gateway refuses a token whose `sid` was revoked this way (401, `X-Token-Revoked`), still accepts the user's other sessions, and keys users on `sub`, never on the `accountId` claim
+- [x] Keycloak logout revokes that `sid`: the `user-sync` listener forwards `LOGOUT`
+  - *2026-10-09: `UserSyncEventListenerTest`, `KeycloakSyncControllerTest` (including the 503 retry) and `LogoutRevokesTokenEndToEndTest`; the listener plugin itself is not installed in the identity test container, so that test posts the event the listener would send* (and `REFRESH_TOKEN_ERROR`) with the session's `sid` to `POST /api/internal/keycloak/sync/event` ([ET-IDN-004](../004-accounts-and-contacts/) CONTRACT 4.6), and identity-service writes `SESSION:{sid}` (idempotent, durable first, no deletion, no personal data); an event with no `sid` revokes nothing, and a write failure answers `503` so the listener retries
+- [x] The gateway refuses a token whose `sid` was revoked this way (401, `X-Token-Revoked`), still accepts the user's other sessions, and keys users on `sub`, never on the `accountId` claim
 - [ ] A successful **contact change** revokes that `sub` and ends the account's Keycloak sessions ([ET-IDN-004](../004-accounts-and-contacts/) R5)
 - [ ] **Suspension** (`status` to `SUSPENDED`, including a console change adopted back, D-47) revokes that `sub` and disables the Keycloak user ([ET-IDN-004](../004-accounts-and-contacts/) R4)
 - [ ] A completed **merge** revokes the merged account's `sub`; **deletion** revokes it at the scheduled date ([ET-IDN-004](../004-accounts-and-contacts/) R6, R7)
@@ -193,7 +212,8 @@ WHEN a buyer or staff member signs out, THE SYSTEM SHALL end the Keycloak sessio
 - [ ] Keycloak's **back-channel logout** (`backchannel.logout.url` = `${APP_URL}/api/auth/backchannel-logout` on each shared-BFF client: `myticketzm-web`, the organizer client and the admin client) reaches the buyer app, which deletes the matching session by `sid` and answers within the logout token's validity; a logout initiated anywhere (console, another device, an admin) therefore ends the buyer app session
 - [ ] The back-channel logout token is validated (signature, issuer, audience, `events` claim, no `nonce`, `jti` replay-checked) before any session is deleted
 - [ ] After logout the refresh token held server-side is unusable: refresh-token reuse detection ([ET-PLT-007](../../_platform/007-security-and-authorization/)) and the `sid` revocation both refuse it
-- [ ] A test signs in, signs out from a second client, and asserts the first client's next request is refused within one access-token lifespan
+- [x] A test signs in, signs out from a second client, and asserts the first client's next request is refused within one access-token lifespan
+  - *2026-10-09: `LogoutRevokesTokenEndToEndTest` with two real Keycloak sessions; the refusal is immediate, not within a lifespan*
 
 ### ET-IDN-003-R8 · A revocation row outlives its token, and no longer
 
@@ -201,7 +221,8 @@ THE SYSTEM SHALL retain a revocation record until the revoked token could no lon
 presented, and SHALL then remove it.
 
 **Acceptance**
-- [ ] `expiresAt` is `revokedAt + accessTokenLifespan + clockSkew`
+- [x] `expiresAt` is `revokedAt + accessTokenLifespan + clockSkew`
+  - *2026-10-09: the lifespan defaults to PT5M in every service and in `RevocationProperties`, matching the realms; the E2E asserts the window is under 7 minutes*
 - [ ] A TTL index on `expiresAt` with `expireAfterSeconds: 0` removes the row
 - [ ] A `USER` or `SESSION` revocation covers tokens minted up to its `expiresAt`, so re-issue after a ban is refused for the full window
 - [ ] The collection does not grow without bound; a test asserts a row is gone after its window plus the TTL monitor's period
@@ -229,9 +250,9 @@ presented, and SHALL then remove it.
 
 | Index | Kind | Why |
 |---|---|---|
-| `{ type: 1, value: 1 }` | **unique** | one live record per identifier; the race a check-then-insert cannot win |
+| `{ _id: 1 }` | **unique** (implicit) | `_id` is derived from type and value, so one record per identifier and no check-then-insert race; a second unique index would add nothing |
 | `{ expiresAt: 1 }` | **TTL, `expireAfterSeconds: 0`** | the row dies with the token it revokes |
-| `{ revokedAt: -1 }` | single | the admin revocation log |
+| `{ revokedAt: -1 }` | single | the admin revocation log — **not yet created**, with `activeRevocations` |
 
 ### Enums
 
@@ -244,10 +265,10 @@ presented, and SHALL then remove it.
 
 | Key | TTL | Authority |
 |---|---|---|
-| `revoked:token:{jti}` | token lifespan + skew | `identity_token_revocations` |
-| `revoked:session:{sid}` | token lifespan + skew | `identity_token_revocations` |
-| `revoked:user:{sub}` | token lifespan + skew | `identity_token_revocations` |
-| `revoked:complete` | 10 min | the cache-completeness marker; absent means untrusted |
+| `pml:blacklist:{jti}` | token lifespan + skew | `identity_token_revocations` |
+| `pml:session:{sid}` | token lifespan + skew | `identity_token_revocations` |
+| `pml:revoked:{sub}` | token lifespan + skew | `identity_token_revocations` |
+| `pml:revocation:cache-complete` | 10 min | the cache-completeness marker; absent means untrusted |
 
 **Redis holds no revocation that MongoDB does not.** A flush costs latency, never
 correctness.
@@ -297,8 +318,8 @@ mutation ([ET-ORG-002](../../organization/002-teams-and-invitations/),
 
 | Policy | Verdict |
 |---|---|
-| `noeviction`, `volatile-lru`, `volatile-lfu`, `volatile-ttl`, `volatile-random` | trusted |
-| `allkeys-lru`, `allkeys-lfu`, `allkeys-random` | **untrusted** — can evict a key the platform did not expire |
+| `noeviction`, or any policy while `maxmemory` is unset | trusted |
+| any evicting policy (`allkeys-*`, `volatile-*`) with `maxmemory` set | **untrusted** — can evict a revocation key, which always carries a TTL |
 
 ### Error codes
 

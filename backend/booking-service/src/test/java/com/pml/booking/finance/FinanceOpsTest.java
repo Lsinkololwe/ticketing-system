@@ -20,6 +20,9 @@ import com.pml.booking.service.impl.JournalServiceImpl;
 import com.pml.booking.service.impl.PlatformAccountServiceImpl;
 import com.pml.shared.error.DomainRefusal;
 import com.pml.shared.error.ErrorCode;
+import com.pml.shared.idempotency.IdempotencyGuard;
+import com.pml.shared.idempotency.MongoIdempotencyLedger;
+import com.pml.shared.testing.RedisNode;
 import com.pml.shared.testing.TestClock;
 import com.pml.shared.testing.MongoReplicaSet;
 import org.junit.jupiter.api.AfterAll;
@@ -35,6 +38,8 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.data.mongodb.repository.support.ReactiveMongoRepositoryFactory;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
@@ -79,6 +84,8 @@ class FinanceOpsTest {
     private static Clock clock;
     private static PaymentOutcomeService outcomes;
     private static com.pml.booking.web.graphql.query.AdminOpsResolver resolver;
+    private static LettuceConnectionFactory redisFactory;
+    private static IdempotencyGuard guard;
 
     @BeforeAll
     static void start() {
@@ -100,14 +107,21 @@ class FinanceOpsTest {
         when(outcomes.resume(anyString())).thenReturn(Mono.empty());
         dual = new DualControlService(template, clock, outcomes, chargebacks, transfers);
         var risk = new com.pml.booking.service.PaymentRiskService(template, clock);
+        redisFactory = new LettuceConnectionFactory(RedisNode.host(), RedisNode.port());
+        redisFactory.afterPropertiesSet();
+        guard = new IdempotencyGuard(new ReactiveStringRedisTemplate(redisFactory),
+                new MongoIdempotencyLedger(template, "booking_idempotency_ledger_finance_ops", clock, Duration.ofHours(24)),
+                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules(), Duration.ofSeconds(5));
         resolver = new com.pml.booking.web.graphql.query.AdminOpsResolver(new com.pml.booking.service.AdminFinanceReads(template),
                 new com.pml.booking.service.PaymentOperations(template, outcomes, risk, clock), risk, dual, transfers,
-                Mockito.mock(com.pml.booking.service.ChargebackRecoveryOps.class), clock);
+                Mockito.mock(com.pml.booking.service.ChargebackRecoveryOps.class), clock, guard,
+                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
     }
 
     @AfterAll
     static void stop() {
         client.close();
+        redisFactory.destroy();
     }
 
     @BeforeEach

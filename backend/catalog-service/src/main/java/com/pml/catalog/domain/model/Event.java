@@ -100,18 +100,6 @@ public class Event {
 
     private String organizerName;
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ORGANIZER CONTACT INFORMATION
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    private String organizerFirstName;
-    private String organizerLastName;
-    private String organizerCompanyName;
-    private String organizerEmail;
-    private String organizerPhone;
-    private String organizerBusinessEmail;
-    private String organizerBusinessPhone;
-
     @NotNull(message = "Event status is required")
     private EventStatus status;
 

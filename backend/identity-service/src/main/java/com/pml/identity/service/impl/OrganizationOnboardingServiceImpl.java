@@ -58,6 +58,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
     private final OrganizationRepository organizationRepository;
     private final VerificationDocumentRepository verificationDocumentRepository;
     private final OrganizationMemberRepository organizationMemberRepository;
+    private final com.pml.identity.service.OneOrganizationPerPerson oneOrganizationPerPerson;
     private final UserRepository userRepository;
     private final PlatformConfigurationReader platformConfiguration;
 
@@ -462,7 +463,8 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                 .createdAt(now)
                 .build();
 
-        return organizationMemberRepository.save(member)
+        return oneOrganizationPerPerson.require(user.getId(), organization.getId())
+                .then(organizationMemberRepository.save(member))
                 .doOnSuccess(m -> log.debug(
                         "Created owner membership for user {} in organization {}",
                         user.getId(), organization.getId()));

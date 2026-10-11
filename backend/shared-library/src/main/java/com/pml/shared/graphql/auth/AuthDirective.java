@@ -5,6 +5,7 @@ import graphql.schema.idl.SchemaDirectiveWiring;
 import graphql.schema.idl.SchemaDirectiveWiringEnvironment;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -207,7 +208,10 @@ public class AuthDirective implements SchemaDirectiveWiring {
 
                     return hasAccess;
                 })
-                .defaultIfEmpty(requiredRole == Role.PUBLIC); // Allow if PUBLIC, deny otherwise
+                // No authentication at all is a different refusal from an actor who is
+                // authenticated and not permitted: the client's remedy is to sign in.
+                .switchIfEmpty(Mono.error(new AuthenticationCredentialsNotFoundException(
+                        "No authentication for " + typeName + "." + fieldName)));
     }
 
     /**

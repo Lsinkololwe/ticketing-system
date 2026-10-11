@@ -7,10 +7,11 @@
 
 import type { OffsetPageInfo } from '../../../../types/pageInfo';
 import type { BulkApproveRefundsMutation, BulkApproveRefundsMutationVariables, BulkRetryFailedPayoutsMutation, BulkRetryFailedPayoutsMutationVariables, ChargebackOpsListQuery, ChargebackOpsListQueryVariables, ChargebackOpsPendingQuery, ChargebackOpsPendingQueryVariables, ChargebackOpsStatsQuery, ChargebackOpsStatsQueryVariables, EscrowOpsDetailQuery, EscrowOpsDetailQueryVariables, EscrowOpsTransactionsQuery, EscrowOpsTransactionsQueryVariables, PayoutOpsDetailQuery, PayoutOpsDetailQueryVariables, PayoutOpsListQuery, PayoutOpsListQueryVariables, RefundOpsDetailQuery, RefundOpsDetailQueryVariables, RefundOpsListQuery, RefundOpsListQueryVariables } from '../../../../types/graphql';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useApolloClient, useMutation, useQuery } from '@apollo/client/react';
 import type { DocumentNode } from 'graphql';
 import { resolveError, type GraphQLLikeError } from '../../../../lib/errors';
+import { stableActionKey } from '../../../../lib/idempotency';
 import type { DecisionResult } from '../finance/finance.hooks';
 import * as Q from './finance-ops.queries';
 
@@ -34,7 +35,7 @@ export interface PayoutOpsRow {
   id: string;
   requestId: string;
   organizerId: string;
-  organizerName: string | null;
+  organization: { id: string; name: string } | null;
   eventId: string | null;
   eventTitle: string | null;
   escrowAccountId: string;
@@ -106,7 +107,7 @@ export interface EscrowDetail {
   eventId: string;
   eventTitle: string | null;
   organizerId: string;
-  organizerName: string | null;
+  organization: { id: string; name: string } | null;
   currentBalance: number | string;
   totalDeposits: number | string;
   totalWithdrawals: number | string;
@@ -239,6 +240,9 @@ export function usePayoutOpsDetail(id: string | null) {
 }
 
 export function usePayoutOps() {
+  // Keyed by payoutRequestId: a retry of the same stuck payout replays or cleanly re-runs; it
+  // never needs a different key for the same id, since retrying is always the same request.
+  const retryKeys = useRef(new Map<string, string>());
   const [process, s1] = useMutation(Q.PROCESS_PAYOUT_REQUEST);
   const [complete, s2] = useMutation(Q.COMPLETE_PAYOUT_REQUEST);
   const [retry, s3] = useMutation(Q.RETRY_PAYOUT_REQUEST);
@@ -250,7 +254,10 @@ export function usePayoutOps() {
   return {
     processPayout: useCallback((payoutRequestId: string) => decide(() => process({ variables: { payoutRequestId } })), [process]),
     completePayout: useCallback((payoutRequestId: string, bankReference: string) => decide(() => complete({ variables: { payoutRequestId, bankReference } })), [complete]),
-    retryPayout: useCallback((payoutRequestId: string) => decide(() => retry({ variables: { payoutRequestId } })), [retry]),
+    retryPayout: useCallback(
+      (payoutRequestId: string) => decide(() => retry({ variables: { payoutRequestId, idempotencyKey: stableActionKey(retryKeys.current, payoutRequestId) } })),
+      [retry]
+    ),
     resumePayout: useCallback((payoutRequestId: string) => decide(() => resume({ variables: { payoutRequestId } })), [resume]),
     markForReview: useCallback((payoutRequestId: string, issueType: PayoutIssueType, notes?: string) => decide(() => mark({ variables: { payoutRequestId, issueType, notes: notes ?? null } })), [mark]),
     resolveIssue: useCallback((payoutRequestId: string, resolutionType: PayoutResolutionType, notes: string) => decide(() => resolve({ variables: { payoutRequestId, resolutionType, notes } })), [resolve]),
@@ -319,6 +326,10 @@ export function useRefundOpsDetail(id: string | null) {
 }
 
 export function useRefundOps() {
+  // Keyed by (ticketId, reason): a retry of the same request replays or cleanly re-runs; a
+  // second, genuinely different refund raised for the same ticket later (a different reason)
+  // gets its own key rather than being mistaken for a repeat of the first.
+  const createKeys = useRef(new Map<string, string>());
   const [process, s1] = useMutation(Q.PROCESS_REFUND_REQUEST);
   const [bulk, s2] = useMutation<BulkApproveRefundsMutation, BulkApproveRefundsMutationVariables>(Q.BULK_APPROVE_REFUNDS);
   const [create, s3] = useMutation(Q.CREATE_ADMIN_REFUND_REQUEST);
@@ -326,7 +337,11 @@ export function useRefundOps() {
     processRefund: useCallback((refundRequestId: string) => decide(() => process({ variables: { refundRequestId } })), [process]),
     bulkApprove: useCallback((refundRequestIds: string[]) => decide(() => bulk({ variables: { refundRequestIds } })), [bulk]),
     /** Always created pending: a second person approves (bypassApproval is never sent as true). */
-    createAdminRefund: useCallback((ticketId: string, reason: string) => decide(() => create({ variables: { ticketId, reason, bypassApproval: false } })), [create]),
+    createAdminRefund: useCallback(
+      (ticketId: string, reason: string) =>
+        decide(() => create({ variables: { ticketId, reason, bypassApproval: false, idempotencyKey: stableActionKey(createKeys.current, ticketId, reason) } })),
+      [create]
+    ),
     submitting: s1.loading || s2.loading || s3.loading,
   };
 }

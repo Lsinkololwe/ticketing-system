@@ -52,7 +52,7 @@ class PublicGraphQlSecurityTest {
 
         @Bean
         ServiceSecurity serviceSecurity() {
-            return new ServiceSecurity("http://localhost:1/realms/none", "", "svc", "", List.of());
+            return new ServiceSecurity("http://localhost:1/realms/none", "", "svc", "", List.of(), false);
         }
 
         @Bean

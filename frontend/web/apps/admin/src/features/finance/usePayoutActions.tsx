@@ -61,7 +61,7 @@ export function usePayoutActions(onDone: () => void): { start: (action: PayoutAc
         : p.bankAccount && !p.bankAccount.isVerified
           ? {
               title: 'Destination not verified',
-              text: <>{p.organizerName ?? 'This organization'} has no verified payout account. Verify one in Finance, Payout accounts first.</>,
+              text: <>{p.organization?.name ?? 'This organization'} has no verified payout account. Verify one in Finance, Payout accounts first.</>,
             }
           : null
       : null;

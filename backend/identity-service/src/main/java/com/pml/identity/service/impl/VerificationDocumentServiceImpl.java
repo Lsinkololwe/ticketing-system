@@ -5,6 +5,9 @@ import com.pml.identity.domain.model.VerificationDocument;
 import com.pml.identity.repository.OrganizationRepository;
 import com.pml.identity.repository.VerificationDocumentRepository;
 import com.pml.identity.service.VerificationDocumentService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.pml.identity.workflow.notify.NotificationProcess;
@@ -159,8 +162,16 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
     public Mono<VerificationDocument> approve(String documentId, String verifiedById) {
         log.info("Approving document: {} by admin: {}", documentId, verifiedById);
 
-        return documentRepository.findById(documentId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Document not found: " + documentId)))
+        // Reached only from the ADMIN/SUPER_ADMIN-only approveVerificationDocument mutation: read
+        // the real request scope rather than assuming platform authority, so a future caller that
+        // is not admin-gated is refused here too.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        documentRepository.findById(documentId),
+                        organizationIds -> documentRepository.findByIdAndOrganizationIdIn(documentId, organizationIds),
+                        ErrorCode.DOCUMENT_UNKNOWN,
+                        "verification document " + documentId))
                 .flatMap(document -> {
                     if (document.getStatus() != DocumentStatus.PENDING) {
                         return Mono.error(new IllegalStateException("Document is not pending approval"));
@@ -182,8 +193,15 @@ public class VerificationDocumentServiceImpl implements VerificationDocumentServ
     public Mono<VerificationDocument> reject(String documentId, String reason, String rejectedById) {
         log.info("Rejecting document: {} - Reason: {}", documentId, reason);
 
-        return documentRepository.findById(documentId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Document not found: " + documentId)))
+        // Reached only from the ADMIN/SUPER_ADMIN-only rejectVerificationDocument mutation: same
+        // defense-in-depth reasoning as approve() above.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        documentRepository.findById(documentId),
+                        organizationIds -> documentRepository.findByIdAndOrganizationIdIn(documentId, organizationIds),
+                        ErrorCode.DOCUMENT_UNKNOWN,
+                        "verification document " + documentId))
                 .flatMap(document -> {
                     if (document.getStatus() != DocumentStatus.PENDING) {
                         return Mono.error(new IllegalStateException("Document is not pending approval"));

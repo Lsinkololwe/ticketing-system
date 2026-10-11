@@ -1,5 +1,6 @@
 package com.pml.booking.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pml.booking.domain.ReservationStateMachine;
 import com.pml.booking.domain.model.TicketReservation;
 import com.pml.booking.infrastructure.client.CatalogServiceClient;
@@ -10,6 +11,8 @@ import com.pml.booking.web.graphql.dto.ReserveTicketsInput;
 import com.pml.booking.web.graphql.dto.TicketSelectionInput;
 import com.pml.shared.constants.ReservationStatus;
 import com.pml.shared.dto.EventSummaryDto;
+import com.pml.shared.idempotency.Fingerprint;
+import com.pml.shared.idempotency.IdempotencyGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,6 +57,8 @@ public class ReservationServiceImpl implements ReservationService {
     private final java.time.Clock clock;
     private final CatalogServiceClient catalogServiceClient;
     private final PurchaseService purchaseService;
+    private final IdempotencyGuard idempotencyGuard;
+    private final ObjectMapper mapper;
 
     @Value("${booking.reservation.ttl-minutes:10}")
     private int reservationTtlMinutes;
@@ -74,15 +79,15 @@ public class ReservationServiceImpl implements ReservationService {
                     "IDEMPOTENCY_KEY_REQUIRED: reserveTickets needs a client-supplied key"));
         }
 
-        // Checked before anything moves. A repeat of a request whose response
-        // the client never saw must not take a second block of inventory —
-        // that is the entire failure mode the key exists to prevent.
-        return reservationRepository.findByIdempotencyKey(idempotencyKey)
-                .doOnNext(existing -> log.info(
-                        "Idempotency key {} already produced reservation {} — returning it unchanged",
-                        idempotencyKey, existing.getId()))
-                .switchIfEmpty(Mono.defer(() -> existingHoldFor(userId, input)
-                        .switchIfEmpty(Mono.defer(() -> reserveAfresh(userId, input, idempotencyKey, reservationId)))));
+        // The guard claims the key before anything moves: a repeat of a request whose response
+        // the client never saw replays that response instead of taking a second block of
+        // inventory, and a repeat that reuses the key for a different request is refused rather
+        // than silently handed someone else's hold.
+        String fingerprint = Fingerprint.of(mapper, input, Fingerprint.CLIENT_VARYING);
+        return idempotencyGuard.execute("booking:reserveTickets", idempotencyKey, fingerprint,
+                TicketReservation.class,
+                () -> existingHoldFor(userId, input)
+                        .switchIfEmpty(Mono.defer(() -> reserveAfresh(userId, input, idempotencyKey, reservationId))));
     }
 
     /**

@@ -11,6 +11,7 @@ import com.pml.identity.repository.VerificationDocumentRepository;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.security.SecurityContextUtils;
 import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import com.pml.shared.security.tenancy.TenantGuard;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -55,9 +56,11 @@ public class IdentityTenantReads {
 
     /** The event's grants that sit in the caller's organizations; every grant for a platform administrator. */
     public Flux<EventAccessGrant> grantsForEvent(String eventId) {
-        return CurrentTenantScope.get().flatMapMany(scope -> scope.platformAdmin()
-                ? grants.findByEventId(eventId)
-                : grants.findByEventIdAndOrganizationIdIn(eventId, scope.organizationIds()));
+        return CurrentTenantScope.get().flatMapMany(scope -> PlatformWideAccess
+                .isPlatformWide(scope, PlatformWideAccess.Reason.EVENT_ACCESS_GRANTS_READ)
+                .flatMapMany(platformWide -> platformWide
+                        ? grants.findByEventId(eventId)
+                        : grants.findByEventIdAndOrganizationIdIn(eventId, scope.organizationIds())));
     }
 
     /** Every grant in one organization, when the caller belongs to it or is a platform administrator. */
@@ -74,9 +77,11 @@ public class IdentityTenantReads {
     public Mono<EventAccessGrant> userGrantForCaller(String userId, String eventId) {
         return SecurityContextUtils.requireCurrentUserId().flatMap(caller -> caller.equals(userId)
                 ? grants.findByUserIdAndEventId(userId, eventId)
-                : CurrentTenantScope.get().flatMap(scope -> scope.platformAdmin()
-                        ? grants.findByUserIdAndEventId(userId, eventId)
-                        : grants.findByUserIdAndEventIdAndOrganizationIdIn(userId, eventId, scope.organizationIds()).next()));
+                : CurrentTenantScope.get().flatMap(scope -> PlatformWideAccess
+                        .isPlatformWide(scope, PlatformWideAccess.Reason.USER_EVENT_GRANT_READ)
+                        .flatMap(platformWide -> platformWide
+                                ? grants.findByUserIdAndEventId(userId, eventId)
+                                : grants.findByUserIdAndEventIdAndOrganizationIdIn(userId, eventId, scope.organizationIds()).next())));
     }
 
     public Mono<OrganizationMember> memberForCaller(String memberId) {

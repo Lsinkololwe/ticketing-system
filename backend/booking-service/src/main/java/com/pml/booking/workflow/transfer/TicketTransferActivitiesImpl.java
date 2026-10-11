@@ -49,10 +49,13 @@ public class TicketTransferActivitiesImpl implements TicketTransferActivities {
     private final Outbox outbox;
     private final IdentityServiceClient identity;
     private final Clock clock;
+    private final com.pml.booking.service.CurrentEventDetails events;
 
     public TicketTransferActivitiesImpl(ReactiveMongoTemplate template, TransactionalOperator transaction, Outbox outbox,
-                                        IdentityServiceClient identity, Clock clock) {
+                                        IdentityServiceClient identity, Clock clock,
+                                        com.pml.booking.service.CurrentEventDetails events) {
         this.template = template;
+        this.events = events;
         this.transaction = transaction;
         this.outbox = outbox;
         this.identity = identity;
@@ -204,6 +207,7 @@ public class TicketTransferActivitiesImpl implements TicketTransferActivities {
     public void notifyRecipient(String transferId) {
         await(template.findById(transferId, TicketTransfer.class)
                 .filter(transfer -> transfer.getStatus() == TicketTransferStatus.PENDING)
+                .flatMap(this::withCurrentEvent)
                 .flatMap(transfer -> identity.notifyUser("ticket.transfer.offered", transferId + ":offered", transfer.getToUserId(),
                         details(transfer))));
     }
@@ -213,8 +217,21 @@ public class TicketTransferActivitiesImpl implements TicketTransferActivities {
         await(template.findById(transferId, TicketTransfer.class)
                 // A sender who withdrew the offer themselves needs no message about it.
                 .filter(transfer -> transfer.getStatus() != TicketTransferStatus.CANCELLED && transfer.getStatus() != TicketTransferStatus.PENDING)
+                .flatMap(this::withCurrentEvent)
                 .flatMap(transfer -> identity.notifyUser("ticket.transfer." + transfer.getStatus().name().toLowerCase(),
                         transferId + ":" + transfer.getStatus().name().toLowerCase(), transfer.getFromUserId(), details(transfer))));
+    }
+
+    /** The transfer with its event's current name, in memory only: the message names the event as it is now. */
+    private Mono<TicketTransfer> withCurrentEvent(TicketTransfer transfer) {
+        return events.of(transfer.getEventId())
+                .map(details -> {
+                    if (details.title() != null && !details.title().isBlank()) {
+                        transfer.setEventTitle(details.title());
+                    }
+                    return transfer;
+                })
+                .defaultIfEmpty(transfer);
     }
 
     private static Map<String, Object> details(TicketTransfer transfer) {

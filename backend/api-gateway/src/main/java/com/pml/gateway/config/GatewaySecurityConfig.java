@@ -86,6 +86,13 @@ public class GatewaySecurityConfig {
     private String expectedAudiencesCsv;
 
     /**
+     * How long a fetched signing-key set is trusted before it is fetched again. Bounded to
+     * {@code 0 < ttl <= PT15M}; a value outside that stops startup.
+     */
+    @Value("${keycloak.jwks-cache-ttl:PT5M}")
+    private java.time.Duration jwksCacheTtl;
+
+    /**
      * Configures the security filter chain for reactive (WebFlux) gateway.
      *
      * @param http ServerHttpSecurity builder (reactive equivalent of HttpSecurity)
@@ -150,7 +157,7 @@ public class GatewaySecurityConfig {
                 // permitAll, so the requests that carry the platform's traffic are not
                 // authenticated here at all — each subgraph validates the same token itself.
                 .oauth2ResourceServer(PlatformResourceServer.jwt(
-                        issuerUri, trustedIssuersCsv, keycloakClientId, expectedAudiencesCsv))
+                        issuerUri, trustedIssuersCsv, keycloakClientId, expectedAudiencesCsv, false, jwksCacheTtl))
                 .build();
     }
 

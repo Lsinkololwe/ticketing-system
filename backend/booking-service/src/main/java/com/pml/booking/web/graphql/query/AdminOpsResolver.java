@@ -1,5 +1,6 @@
 package com.pml.booking.web.graphql.query;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
@@ -29,6 +30,8 @@ import com.pml.booking.web.graphql.dto.PaymentAttemptOffsetPage;
 import com.pml.booking.web.graphql.dto.PlatformTransferInput;
 import com.pml.booking.web.graphql.dto.ProposeRecoveryActionInput;
 import com.pml.booking.web.graphql.dto.UpdateChargebackRecoveryInput;
+import com.pml.shared.idempotency.Fingerprint;
+import com.pml.shared.idempotency.IdempotencyGuard;
 import com.pml.shared.security.SecurityContextUtils;
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import jakarta.validation.Valid;
@@ -60,6 +63,8 @@ public class AdminOpsResolver {
     private final PlatformTransferService transfers;
     private final ChargebackRecoveryOps chargebackRecovery;
     private final Clock clock;
+    private final IdempotencyGuard idempotencyGuard;
+    private final ObjectMapper mapper;
 
     public record PlatformTransferResult(boolean executed, boolean requiresSecondApprover, PlatformTransfer transfer,
                                          RecoveryProposal proposal) {
@@ -175,6 +180,11 @@ public class AdminOpsResolver {
     /**
      * Moves the platform's money between its operating and reserve accounts. Up to the single-approver limit
      * it happens now; above it, it becomes a proposal and waits for a second person.
+     *
+     * <p>Runs under the shared {@link IdempotencyGuard}: a retry with the same key and the same body gets the
+     * first answer back (the same transfer, or the same proposal) and moves nothing, and the same key with a
+     * different body is refused rather than answered with a transfer of another sum. The transfer record's own
+     * key stays beneath it as the last line.
      */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
@@ -183,6 +193,12 @@ public class AdminOpsResolver {
         if (malformed != null) {
             return Mono.error(malformed);
         }
+        String fingerprint = Fingerprint.of(mapper, input, Fingerprint.CLIENT_VARYING);
+        return idempotencyGuard.execute("booking:transferBetweenPlatformAccounts", input.idempotencyKey(), fingerprint,
+                PlatformTransferResult.class, () -> transferOnce(input));
+    }
+
+    private Mono<PlatformTransferResult> transferOnce(PlatformTransferInput input) {
         if (transfers.needsSecondPerson(input.amount())) {
             return dualControl.proposeTransfer(input.fromAccount(), input.toAccount(), input.amount(), input.reason())
                     .doOnSuccess(proposal -> audit("RECOVERY_PROPOSED", proposal))

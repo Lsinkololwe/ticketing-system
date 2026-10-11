@@ -97,20 +97,15 @@ class MemberRemovalLintTest {
     }
 
     @Test
-    @DisplayName("ET-ORG-002-R6 · Keycloak is outside the transaction")
-    void keycloakIsOutsideTheBoundary() {
-        // Keycloak mirrors membership; it is not the source of truth. Inside the boundary, a
-        // Keycloak outage would roll back a removal the platform had every reason to complete —
-        // and a removal is exactly the operation you least want blocked by a third party.
+    @DisplayName("ET-ORG-002-R6 · a removal writes no Keycloak state: it marks the row for the mirror workflow")
+    void keycloakIsNotWrittenByTheRemoval() {
+        // Keycloak mirrors membership; it is not the source of truth. A removal that called Keycloak,
+        // inside or after the transaction, would couple the one operation you least want blocked to a
+        // third party. The row carries the mirror marker and the group-mirror workflow applies it.
         String body = bodyOf("private Mono<OrganizationMember> endMembership");
-        int boundary = body.indexOf("transactionalOperator::transactional");
-        int keycloak = body.indexOf("removeFromKeycloakGroup");
 
-        assertThat(keycloak).as("removeFromKeycloakGroup has moved — re-point this lint")
-                .isGreaterThan(-1);
-        assertThat(keycloak)
-                .as("the Keycloak call must follow the transactional boundary, not sit inside it")
-                .isGreaterThan(boundary);
+        assertThat(body).contains("setMirrorPending(true)").doesNotContain("keycloak").doesNotContain("Keycloak.");
+        assertThat(service).as("the service holds no Keycloak client").doesNotContain("KeycloakService");
     }
 
     private static int countOf(String regex) {

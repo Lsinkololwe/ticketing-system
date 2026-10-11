@@ -1,5 +1,12 @@
 package com.pml.shared.security;
 
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKMatcher;
+import com.nimbusds.jose.jwk.JWKSelector;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.SignedJWT;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.ReactiveAuthenticationManagerResolver;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
@@ -7,13 +14,21 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
-import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtIssuerReactiveAuthenticationManagerResolver;
 import org.springframework.security.oauth2.server.resource.authentication.JwtReactiveAuthenticationManager;
 import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.util.function.Function;
+
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -54,7 +69,46 @@ import java.util.Map;
  */
 public final class MultiIssuerJwtResolver {
 
+    /**
+     * The platform's clock-skew ceiling (ET-PLT-007 R2). Narrower than Spring's own 60-second
+     * default, so the issuer and timestamp checks are composed explicitly below instead of
+     * reusing {@code JwtValidators.createDefaultWithIssuer}, which cannot be narrowed.
+     */
+    private static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
+
+    /** How long a fetched JWK set is trusted when {@code keycloak.jwks-cache-ttl} is not set. */
+    public static final Duration DEFAULT_JWKS_CACHE_TTL = Duration.ofMinutes(5);
+
+    /**
+     * The longest a signing key may stay trusted after Keycloak stops publishing it. A larger
+     * value means a key that was rotated out because it leaked is still accepted that much
+     * longer, so the setting is refused beyond this rather than merely discouraged.
+     */
+    public static final Duration MAX_JWKS_CACHE_TTL = Duration.ofMinutes(15);
+
+    /**
+     * The shortest gap between two network fetches of one realm's JWK set. Without it, a
+     * stream of tokens carrying made-up {@code kid} values (each one a deliberate cache miss)
+     * would turn into one request to Keycloak per token.
+     */
+    private static final Duration MIN_JWKS_REFRESH_INTERVAL = Duration.ofSeconds(10);
+
     private MultiIssuerJwtResolver() {
+    }
+
+    /**
+     * Refuse a JWK-set cache lifetime that is absent, zero, negative or beyond
+     * {@link #MAX_JWKS_CACHE_TTL}. Called when a decoder is built, so a misconfigured service
+     * stops at startup instead of running with a cache nobody chose.
+     *
+     * @return the same value, for use in an expression
+     */
+    public static Duration requireValidJwksCacheTtl(Duration ttl) {
+        if (ttl == null || ttl.toMillis() <= 0 || ttl.compareTo(MAX_JWKS_CACHE_TTL) > 0) {
+            throw new IllegalArgumentException("keycloak.jwks-cache-ttl must be greater than zero and at most "
+                    + MAX_JWKS_CACHE_TTL + ", but was " + ttl);
+        }
+        return ttl;
     }
 
     /**
@@ -69,7 +123,21 @@ public final class MultiIssuerJwtResolver {
             List<String> trustedIssuers,
             String clientId,
             List<String> expectedAudiences) {
+        return forIssuers(trustedIssuers, clientId, expectedAudiences, DEFAULT_JWKS_CACHE_TTL);
+    }
 
+    /**
+     * As {@link #forIssuers(List, String, List)}, with the JWK-set cache lifetime stated.
+     *
+     * @param jwksCacheTtl how long a fetched JWK set is trusted; see {@link #requireValidJwksCacheTtl}
+     */
+    public static ReactiveAuthenticationManagerResolver<ServerWebExchange> forIssuers(
+            List<String> trustedIssuers,
+            String clientId,
+            List<String> expectedAudiences,
+            Duration jwksCacheTtl) {
+
+        requireValidJwksCacheTtl(jwksCacheTtl);
         if (trustedIssuers == null || trustedIssuers.isEmpty()) {
             throw new IllegalArgumentException("At least one trusted issuer must be provided");
         }
@@ -80,7 +148,7 @@ public final class MultiIssuerJwtResolver {
             if (normalized.isEmpty() || managersByIssuer.containsKey(normalized)) {
                 continue;
             }
-            managersByIssuer.put(normalized, buildManager(normalized, clientId, expectedAudiences));
+            managersByIssuer.put(normalized, buildManager(normalized, clientId, expectedAudiences, jwksCacheTtl));
         }
 
         // JwtIssuerReactiveAuthenticationManagerResolver selects the manager by the token's
@@ -143,17 +211,46 @@ public final class MultiIssuerJwtResolver {
      * whenever Keycloak is briefly unreachable — a boot-time coupling with no security benefit,
      * since {@code iss} is pinned below either way.</p>
      *
+     * <p><b>The key cache is bounded.</b> Spring's own remote JWK source keeps the set it first
+     * fetched for the life of the process: a key Keycloak has since withdrawn would verify
+     * signatures until restart. The set is therefore read through Nimbus's
+     * {@link JWKSourceBuilder}, which discards it after {@code jwksCacheTtl}. A token whose
+     * {@code kid} is not in the cached set triggers one refetch regardless of the TTL — that is
+     * Nimbus's own behaviour, kept on purpose, and it is what makes a newly rotated-in key
+     * usable immediately instead of after the TTL.</p>
+     *
      * @param issuer            the realm issuer URL
      * @param expectedAudiences audiences to require in {@code aud}; empty disables the check
      */
     public static NimbusReactiveJwtDecoder decoderFor(String issuer, List<String> expectedAudiences) {
+        return decoderFor(issuer, expectedAudiences, DEFAULT_JWKS_CACHE_TTL);
+    }
+
+    /**
+     * As {@link #decoderFor(String, List)}, with the JWK-set cache lifetime stated.
+     *
+     * @param jwksCacheTtl how long a fetched JWK set is trusted; see {@link #requireValidJwksCacheTtl}
+     */
+    public static NimbusReactiveJwtDecoder decoderFor(
+            String issuer, List<String> expectedAudiences, Duration jwksCacheTtl) {
+        return decoderFor(issuer, expectedAudiences, jwksCacheTtl, MIN_JWKS_REFRESH_INTERVAL);
+    }
+
+    /**
+     * Seam for tests: a zero {@code minRefreshInterval} turns the refetch rate limit off, so a
+     * rotation can be exercised without waiting out the production interval.
+     */
+    static NimbusReactiveJwtDecoder decoderFor(
+            String issuer, List<String> expectedAudiences, Duration jwksCacheTtl, Duration minRefreshInterval) {
+        requireValidJwksCacheTtl(jwksCacheTtl);
         String base = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
         NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder
-                .withJwkSetUri(base + "/protocol/openid-connect/certs")
+                .withJwkSource(keySource(base + "/protocol/openid-connect/certs", jwksCacheTtl, minRefreshInterval))
                 .build();
 
         List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
-        validators.add(JwtValidators.createDefaultWithIssuer(issuer));
+        validators.add(new JwtIssuerValidator(issuer));
+        validators.add(new JwtTimestampValidator(CLOCK_SKEW));
         OAuth2TokenValidator<Jwt> audienceValidator = audienceValidator(expectedAudiences);
         if (audienceValidator != null) {
             validators.add(audienceValidator);
@@ -162,13 +259,52 @@ public final class MultiIssuerJwtResolver {
         return decoder;
     }
 
+    /**
+     * The keys a token's header selects from the realm's JWK set, fetched through a TTL cache.
+     *
+     * <p>Nimbus's source is blocking, so each lookup is moved to the elastic scheduler. Nothing
+     * is fetched until the first token arrives.</p>
+     */
+    private static Function<SignedJWT, Flux<JWK>> keySource(
+            String jwkSetUri, Duration ttl, Duration minRefreshInterval) {
+        JWKSourceBuilder<SecurityContext> builder;
+        try {
+            builder = JWKSourceBuilder.create(URI.create(jwkSetUri).toURL());
+        } catch (MalformedURLException | IllegalArgumentException e) {
+            throw new IllegalArgumentException("Not a usable JWK set URL: " + jwkSetUri, e);
+        }
+        builder.cache(ttl.toMillis(), JWKSourceBuilder.DEFAULT_CACHE_REFRESH_TIMEOUT);
+        // Refresh-ahead keeps a set alive past its TTL by refetching in the background, and it
+        // insists on a TTL longer than its own lead time. A plain TTL is what bounds the cache.
+        builder.refreshAheadCache(false);
+        if (minRefreshInterval.toMillis() > 0) {
+            builder.rateLimited(minRefreshInterval.toMillis());
+        } else {
+            builder.rateLimited(false);
+        }
+        JWKSource<SecurityContext> source = builder.build();
+
+        return jwt -> {
+            JWKMatcher matcher = JWKMatcher.forJWSHeader(jwt.getHeader());
+            if (matcher == null) {
+                // An algorithm no key can verify (none, HMAC): no keys, so the token is refused.
+                return Flux.empty();
+            }
+            JWKSelector selector = new JWKSelector(matcher);
+            return Mono.fromCallable(() -> source.get(selector, null))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flatMapMany(Flux::fromIterable);
+        };
+    }
+
     private static ReactiveAuthenticationManager buildManager(
             String issuer,
             String clientId,
-            List<String> expectedAudiences) {
+            List<String> expectedAudiences,
+            Duration jwksCacheTtl) {
 
         JwtReactiveAuthenticationManager manager =
-                new JwtReactiveAuthenticationManager(decoderFor(issuer, expectedAudiences));
+                new JwtReactiveAuthenticationManager(decoderFor(issuer, expectedAudiences, jwksCacheTtl));
         manager.setJwtAuthenticationConverter(
                 KeycloakJwtAuthenticationConverter.reactiveConverter(clientId));
         return manager;

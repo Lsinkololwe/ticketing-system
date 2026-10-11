@@ -123,6 +123,9 @@ public final class InternalSurface {
                     call(client, endpoint, realm.scopedToken(audience, "openid profile email phone")));
             expect(violations, endpoint, "the internal scope meant for it", 200,
                     call(client, endpoint, realm.scopedToken(audience, scopeFor.apply(endpoint))));
+            String wrongScope = "internal-read".equals(scopeFor.apply(endpoint)) ? "internal-write" : "internal-read";
+            expect(violations, endpoint, "the internal scope meant for a different method", 403,
+                    call(client, endpoint, realm.scopedToken(audience, wrongScope)));
         }
         return violations;
     }

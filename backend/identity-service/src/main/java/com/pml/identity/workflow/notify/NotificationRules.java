@@ -62,7 +62,15 @@ public final class NotificationRules {
     /** Sent to the event's organizer when a reviewer decides. */
     public static final Set<String> EVENT_DECISIONS = Set.of("event.approved", "event.rejected", "event.changes-requested");
 
-    /** What a template says. No template interpolates a name, a number or an address. */
+    /**
+     * What a template says. A template's text may hold {@code {name}} or {@code {name|fallback}}
+     * placeholders, filled from the text the caller stored with the notification (the workflow's request never
+     * carries it); a placeholder with neither a value nor a fallback is removed.
+     *
+     * <p>Wording rules for every template: lead with what happened, name the one thing to do next, say what
+     * becomes of the ticket, carry no link (a message with a link is what a phishing message looks like, so the
+     * person is sent to the app instead), and use another person's name only where the message is about them.
+     */
     public record Message(NotificationType type, String title, String body) {
     }
 
@@ -94,7 +102,22 @@ public final class NotificationRules {
             Map.entry("event.rejected", new Message(NotificationType.SYSTEM_ANNOUNCEMENT, "Event not approved",
                     "Your event was not approved. Open the app to see the reviewer's reason.")),
             Map.entry("event.changes-requested", new Message(NotificationType.SYSTEM_ANNOUNCEMENT, "Changes requested",
-                    "A reviewer asked for changes to your event. Open the app to see what to change and resubmit.")));
+                    "A reviewer asked for changes to your event. Open the app to see what to change and resubmit.")),
+            Map.entry("ticket.resend", new Message(NotificationType.TICKET_PURCHASED, "Your ticket",
+                    "Your ticket {ticketNumber} for {eventTitle|your event} is ready in the MyTicketZM app. Show it at the door.")),
+            Map.entry("ticket.transfer.offered", new Message(NotificationType.SYSTEM_ANNOUNCEMENT, "Ticket offered to you",
+                    "{fromDisplayName|Someone} sent you a ticket for {eventTitle|an event}. Open the MyTicketZM app to accept or decline it.")),
+            Map.entry("ticket.transfer.accepted", new Message(NotificationType.SYSTEM_ANNOUNCEMENT, "Ticket transfer accepted",
+                    "{toDisplayName|The recipient} accepted the ticket you sent for {eventTitle|your event}. The ticket is now theirs.")),
+            Map.entry("ticket.transfer.declined", new Message(NotificationType.SYSTEM_ANNOUNCEMENT, "Ticket transfer declined",
+                    "{toDisplayName|The recipient} declined the ticket you sent for {eventTitle|your event}. The ticket is back in your account.")),
+            Map.entry("ticket.transfer.expired", new Message(NotificationType.SYSTEM_ANNOUNCEMENT, "Ticket transfer expired",
+                    "The ticket you sent for {eventTitle|your event} was not accepted in time. The ticket is back in your account.")),
+            Map.entry("event.holders.message", new Message(NotificationType.EVENT_UPDATED, "{subject|Message from the organizer}",
+                    "{eventTitle|Your event} · message from the organizer: {message}")));
+
+    private static final java.util.regex.Pattern PLACEHOLDER =
+            java.util.regex.Pattern.compile("\\{([A-Za-z][A-Za-z0-9]*)(?:\\|([^}]*))?}");
 
     private NotificationRules() {
     }
@@ -114,11 +137,33 @@ public final class NotificationRules {
 
     /** A template that is not registered is refused, never sent as an empty message. */
     public static Message render(String templateKey) {
+        return render(templateKey, null);
+    }
+
+    /**
+     * The template with its placeholders filled from {@code params}. Values are inserted as text and
+     * never re-scanned, so a value that itself looks like a placeholder is sent as written.
+     */
+    public static Message render(String templateKey, Map<String, String> params) {
         Message message = TEMPLATES.get(templateKey);
         if (message == null) {
             throw new IllegalArgumentException("no template " + templateKey);
         }
-        return message;
+        if (params == null || params.isEmpty()) {
+            return new Message(message.type(), fill(message.title(), Map.of()), fill(message.body(), Map.of()));
+        }
+        return new Message(message.type(), fill(message.title(), params), fill(message.body(), params));
+    }
+
+    private static String fill(String text, Map<String, String> params) {
+        if (text.indexOf('{') < 0) {
+            return text;
+        }
+        return PLACEHOLDER.matcher(text).replaceAll(match -> {
+            String value = params.get(match.group(1));
+            String chosen = value != null && !value.isBlank() ? value : match.group(2);
+            return java.util.regex.Matcher.quoteReplacement(chosen == null ? "" : chosen);
+        });
     }
 
     /**

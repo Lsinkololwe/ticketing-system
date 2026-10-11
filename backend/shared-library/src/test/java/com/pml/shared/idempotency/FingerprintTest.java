@@ -71,4 +71,10 @@ class FingerprintTest {
         assertThat(of(Map.of("amount", 1))).isNotEqualTo(of(Map.of("amount", "1")));
         assertThat(of(Map.of("a", "bc"))).isNotEqualTo(of(Map.of("ab", "c")));
     }
+
+    @Test
+    @DisplayName("the client-varying allowlist names exactly clientTimestamp and deviceId")
+    void clientVaryingAllowlist() {
+        assertThat(Fingerprint.CLIENT_VARYING).containsExactlyInAnyOrder("clientTimestamp", "deviceId");
+    }
 }

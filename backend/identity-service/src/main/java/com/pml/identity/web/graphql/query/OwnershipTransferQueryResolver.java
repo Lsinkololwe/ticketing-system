@@ -8,17 +8,16 @@ import com.pml.identity.domain.model.OwnershipTransferRequest;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OwnershipTransferService;
 import com.pml.shared.security.SecurityContextUtils;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.Set;
 
 /**
  * GraphQL Query Resolver for Ownership Transfer operations.
@@ -57,29 +56,22 @@ public class OwnershipTransferQueryResolver {
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .flatMap(authentication -> transferService.findById(id)
-                        .filter(transfer -> isPartyTo(authentication, transfer)));
-    }
-
-    /** The current owner, the named recipient, or a platform administrator. */
-    private static boolean isPartyTo(Authentication authentication, OwnershipTransferRequest transfer) {
-        boolean administrator = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(PLATFORM_ADMINISTRATORS::contains);
-        String caller = authentication.getName();
-        return administrator
-                || caller.equals(transfer.getCurrentOwnerId())
-                || caller.equals(transfer.getNewOwnerId());
+                        .filterWhen(transfer -> isPartyTo(authentication, transfer)));
     }
 
     /**
-     * Roles that see a transfer they are not party to.
+     * The current owner, the named recipient, or a platform administrator.
      *
-     * <p>Deliberately not {@code ROLE_ORGANIZER}: every organizer holds that role, and holding it
-     * says nothing about this organization. Deliberately not {@code ROLE_FINANCE} either — a
-     * transfer is a control change rather than a money movement, and finance has no part in it.
+     * <p>An administrator reading a transfer they are not party to is the platform-wide reach, so
+     * it is the one branch that goes through {@link PlatformWideAccess} and is recorded.
      */
-    private static final Set<String> PLATFORM_ADMINISTRATORS =
-            Set.of("ROLE_ADMIN", "ROLE_SUPER_ADMIN");
+    private static Mono<Boolean> isPartyTo(Authentication authentication, OwnershipTransferRequest transfer) {
+        String caller = authentication.getName();
+        if (caller.equals(transfer.getCurrentOwnerId()) || caller.equals(transfer.getNewOwnerId())) {
+            return Mono.just(true);
+        }
+        return PlatformWideAccess.isPlatformWide(PlatformWideAccess.Reason.OWNERSHIP_TRANSFER_READ);
+    }
 
     /**
      * Get ownership transfer by token (for acceptance page).

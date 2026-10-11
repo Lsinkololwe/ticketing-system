@@ -40,7 +40,7 @@ class SchemaBindingTest {
             "me", "user", "userByEmail", "userByPhone", "users", "usersByRole", "userStats",
             "logout", "updateMyProfile", "createUser", "updateUser", "suspendUser", "unsuspendUser",
             "lockUser", "unlockUser", "deactivateUser", "activateUser", "addUserRole", "removeUserRole",
-            "setUserRoles", "syncUserFromKeycloak", "syncAllUsersFromKeycloak");
+            "setUserRoles");
 
     @Test
     @DisplayName("the schema parses")

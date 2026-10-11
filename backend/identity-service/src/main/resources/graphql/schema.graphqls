@@ -3093,8 +3093,6 @@ type Mutation {
     # Keycloak Sync (Internal)
     # ─────────────────────────────────────────────────────────────────────
     # ADMIN - Sync user from Keycloak
-    syncUserFromKeycloak(userId: ID!): User @tag(name: "admin")
 
     # ADMIN - Full sync all users
-    syncAllUsersFromKeycloak: Boolean! @tag(name: "admin")
 }

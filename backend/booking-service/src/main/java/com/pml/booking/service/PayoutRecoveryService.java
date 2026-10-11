@@ -8,6 +8,9 @@ import com.pml.booking.web.graphql.dto.stats.PayoutIssueTypeStats;
 import com.pml.booking.web.graphql.dto.stats.PayoutRecoverySummary;
 import com.pml.shared.constants.PayoutRequestStatus;
 import com.pml.shared.constants.PayoutReviewStatus;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -109,8 +112,7 @@ public class PayoutRecoveryService {
      * Mark a payout request for review.
      */
     public Mono<PayoutRequest> markForReview(String payoutRequestId, String issueType, String notes) {
-        return payoutRequestRepository.findById(payoutRequestId)
-                .switchIfEmpty(payoutRequestRepository.findByRequestId(payoutRequestId))
+        return payoutRequestForCaller(payoutRequestId)
                 .flatMap(payoutRequest -> {
                     payoutRequest.markForReview(issueType, notes, clock.instant());
                     return payoutRequestRepository.save(payoutRequest);
@@ -125,8 +127,7 @@ public class PayoutRecoveryService {
      */
     public Mono<PayoutRequest> resolveIssue(String payoutRequestId, String resolutionType,
                                             String resolvedBy, String notes) {
-        return payoutRequestRepository.findById(payoutRequestId)
-                .switchIfEmpty(payoutRequestRepository.findByRequestId(payoutRequestId))
+        return payoutRequestForCaller(payoutRequestId)
                 .flatMap(payoutRequest -> {
                     payoutRequest.resolveIssue(resolutionType, resolvedBy, notes, clock.instant());
                     return payoutRequestRepository.save(payoutRequest);
@@ -137,8 +138,7 @@ public class PayoutRecoveryService {
      * Escalate a payout request.
      */
     public Mono<PayoutRequest> escalatePayoutRequest(String payoutRequestId, String reason) {
-        return payoutRequestRepository.findById(payoutRequestId)
-                .switchIfEmpty(payoutRequestRepository.findByRequestId(payoutRequestId))
+        return payoutRequestForCaller(payoutRequestId)
                 .flatMap(payoutRequest -> {
                     payoutRequest.escalate(reason, clock.instant());
                     return payoutRequestRepository.save(payoutRequest);
@@ -150,12 +150,29 @@ public class PayoutRecoveryService {
      */
     public Flux<PayoutRequest> bulkMarkForReview(List<String> payoutRequestIds, String issueType, String notes) {
         return Flux.fromIterable(payoutRequestIds)
-                .flatMap(id -> payoutRequestRepository.findById(id)
-                        .switchIfEmpty(payoutRequestRepository.findByRequestId(id)))
+                .flatMap(id -> payoutRequestForCaller(id)
+                        .onErrorResume(refused -> Mono.empty()))
                 .flatMap(payout -> {
                     payout.markForReview(issueType, notes, clock.instant());
                     return payoutRequestRepository.save(payout);
                 });
+    }
+
+    /**
+     * The payout request the caller is entitled to act on, by its Mongo id or its human-readable
+     * request id, or {@code PAYOUT_REQUEST_UNKNOWN}. Reached only from the ADMIN/FINANCE-only
+     * recovery mutations; defense in depth, matching {@code TenantReads.payoutRequestForCaller}'s
+     * shape for the same repository.
+     */
+    private Mono<PayoutRequest> payoutRequestForCaller(String idOrRequestId) {
+        return CurrentTenantScope.get().flatMap(scope -> TenantGuard.locate(
+                scope,
+                payoutRequestRepository.findById(idOrRequestId)
+                        .switchIfEmpty(payoutRequestRepository.findByRequestId(idOrRequestId)),
+                organizationIds -> payoutRequestRepository.findByIdAndOrganizationIdIn(idOrRequestId, organizationIds)
+                        .switchIfEmpty(payoutRequestRepository.findByRequestIdAndOrganizationIdIn(idOrRequestId, organizationIds)),
+                ErrorCode.PAYOUT_REQUEST_UNKNOWN,
+                "payout request " + idOrRequestId));
     }
 
     /**

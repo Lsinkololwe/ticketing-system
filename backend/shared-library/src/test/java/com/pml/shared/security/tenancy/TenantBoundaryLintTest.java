@@ -98,11 +98,36 @@ class TenantBoundaryLintTest {
      * a mutation is converted. Raising it is only ever justified by a new call to
      * {@code TenantGuard.locate} on the same commit, and {@link #GUARDED_PATHS} is what
      * holds that claim to account afterwards.
+     *
+     * <h2>ET-PLT-007 Phase 6, 2026-10-10</h2>
+     * The same lesson, generalized: converting an unscoped {@code repo.findById(id)} to
+     * {@code TenantGuard.locate(scope, repo.findById(id), ...)} does not remove a match either —
+     * the guard's own {@code unscopedById} argument for the platform-admin path is textually the
+     * same call, now proven safe rather than left bare. {@code EventServiceImpl}'s lifecycle
+     * mutations (reached only from a Temporal workflow activity with no request, hence no
+     * {@code TenantScope} to read) now take an explicit
+     * {@code PlatformWideAccess.system(...)} scope rather than skip the guard, so the decision
+     * is auditable instead of silent; {@code setEventFeatured}, {@code sendPublishReminder},
+     * {@code deleteEventWithReason} and {@code ExportServiceImpl.exportEventData} (reached only
+     * from a real request) read the caller's actual {@code CurrentTenantScope}. None of this
+     * moves catalog-service's number, and it is not supposed to: every one of catalog's 21 is
+     * now either an already-guarded admin-fallback, one of the two documented dual-path
+     * exemptions below, a verified-inert internal/system/false-positive surface (see FINDINGS),
+     * or routed through {@code TenantGuard.locate} like these.
      */
     private static final Map<String, Integer> BUDGET = new LinkedHashMap<>(Map.of(
             "catalog-service", 21, // +2: scheduleEventPublish/clearPublishSchedule, post-guard and system-actor (publish workflow) paths
-            "identity-service", 20,
-            "booking-service", 50));
+            "identity-service", 18, // canModifyMember's target lookup scoped directly (-1); the inline Keycloak group
+            // writes in the member service went to the mirror workflow, which took one unscoped lookup with them (-1).
+            "booking-service", 36)); // ET-PLT-007 Phase 6, 2026-10-10: 21 of 50 call sites were genuine
+            // gaps (resolver already validated via reads.*ForCaller, service re-fetched unscoped);
+            // several were consolidated into one shared *ForCaller helper per service instead of an
+            // inline TenantGuard.locate per call site, so the count fell by more than the 21 fixed —
+            // a real reduction, not a measurement artifact (same mechanism as EventWriteGuard, in
+            // reverse). The other 29 are verified-correct: already-guarded, dead/unused passthroughs,
+            // platform-wide admin-only subsystems with no tenant concept (chargebacks, payment
+            // attempts), or buyer-identity-scoped entities (TicketReservation, Ticket's holder path)
+            // where organization membership is the wrong check. See FINDINGS.
 
     /**
      * The paths known to reach across tenants, and the helper each must route through.
@@ -117,20 +142,46 @@ class TenantBoundaryLintTest {
      * {@code findVisibleById} back to {@code findById} — the code still compiles, the
      * schema is unchanged, and the query still answers.
      */
-    private static final Map<String, List<String>> GUARDED_PATHS = new LinkedHashMap<>(Map.of(
-            "catalog-service/src/main/java/com/pml/catalog/service/impl/TicketTierServiceImpl.java",
-            List.of("tierVisibleToCaller", "eventOwnedByCaller"),
-            "catalog-service/src/main/java/com/pml/catalog/service/impl/EventAccessibilityServiceImpl.java",
-            List.of("eventVisibleToCaller"),
-            "catalog-service/src/main/java/com/pml/catalog/service/impl/EventServiceImpl.java",
-            List.of("findVisibleById"),
-            "catalog-service/src/main/java/com/pml/catalog/service/impl/EventLifecycleServiceImpl.java",
-            List.of("eventForCaller"),
-            "booking-service/src/main/java/com/pml/booking/security/TenantReads.java",
-            List.of("ticketForCaller", "ticketByNumberForCaller", "promoCodeForCaller", "promoCodeByCodeForCaller",
-                    "bankAccountForCaller", "payoutRequestForCaller", "payoutRequestByRequestIdForCaller"),
-            "identity-service/src/main/java/com/pml/identity/security/IdentityTenantReads.java",
-            List.of("grantForCaller", "memberForCaller", "invitationForCaller", "documentForCaller")));
+    private static final Map<String, List<String>> GUARDED_PATHS = new LinkedHashMap<>(Map.ofEntries(
+            Map.entry("catalog-service/src/main/java/com/pml/catalog/service/impl/TicketTierServiceImpl.java",
+                    List.of("tierVisibleToCaller", "eventOwnedByCaller")),
+            Map.entry("catalog-service/src/main/java/com/pml/catalog/service/impl/EventAccessibilityServiceImpl.java",
+                    List.of("eventVisibleToCaller")),
+            Map.entry("catalog-service/src/main/java/com/pml/catalog/service/impl/EventServiceImpl.java",
+                    List.of("findVisibleById", "publishEvent", "cancelEventWithDetails", "completeEvent",
+                            "setEventFeatured", "sendPublishReminder", "rescheduleEvent", "unpublishEvent",
+                            "deleteEventWithReason")),
+            Map.entry("catalog-service/src/main/java/com/pml/catalog/service/impl/EventLifecycleServiceImpl.java",
+                    List.of("eventForCaller")),
+            Map.entry("catalog-service/src/main/java/com/pml/catalog/service/impl/ExportServiceImpl.java",
+                    List.of("exportEventData")),
+            Map.entry("booking-service/src/main/java/com/pml/booking/security/TenantReads.java",
+                    List.of("ticketForCaller", "ticketByNumberForCaller", "promoCodeForCaller", "promoCodeByCodeForCaller",
+                            "bankAccountForCaller", "payoutRequestForCaller", "payoutRequestByRequestIdForCaller")),
+            Map.entry("booking-service/src/main/java/com/pml/booking/web/graphql/query/EscrowTransactionQueryResolver.java",
+                    List.of("accountVisibleToCaller")),
+            Map.entry("booking-service/src/main/java/com/pml/booking/service/PayoutRecoveryService.java",
+                    List.of("payoutRequestForCaller")),
+            Map.entry("booking-service/src/main/java/com/pml/booking/service/impl/BankAccountServiceImpl.java",
+                    List.of("bankAccountForCaller")),
+            Map.entry("booking-service/src/main/java/com/pml/booking/service/impl/EscrowServiceImpl.java",
+                    List.of("escrowAccountForCaller", "updateExpectedLockDate")),
+            Map.entry("booking-service/src/main/java/com/pml/booking/service/impl/PromoCodeServiceImpl.java",
+                    List.of("promoCodeForCaller")),
+            Map.entry("booking-service/src/main/java/com/pml/booking/service/impl/RefundServiceImpl.java",
+                    List.of("createAdminRefundRequest")),
+            Map.entry("booking-service/src/main/java/com/pml/booking/service/impl/TicketServiceImpl.java",
+                    List.of("ticketForCaller")),
+            Map.entry("identity-service/src/main/java/com/pml/identity/security/IdentityTenantReads.java",
+                    List.of("grantForCaller", "memberForCaller", "invitationForCaller", "documentForCaller")),
+            Map.entry("identity-service/src/main/java/com/pml/identity/service/impl/EventAccessServiceImpl.java",
+                    List.of("update", "revoke")),
+            Map.entry("identity-service/src/main/java/com/pml/identity/service/impl/OrganizationMemberServiceImpl.java",
+                    List.of("updateRole", "updateStatus", "remove", "canModifyMember")),
+            Map.entry("identity-service/src/main/java/com/pml/identity/service/impl/TeamInvitationServiceImpl.java",
+                    List.of("resend", "revoke")),
+            Map.entry("identity-service/src/main/java/com/pml/identity/service/impl/VerificationDocumentServiceImpl.java",
+                    List.of("approve", "reject"))));
 
     private static final Pattern TENANT_OWNED =
             Pattern.compile("\\bprivate\\s+String\\s+organizationId\\s*;");

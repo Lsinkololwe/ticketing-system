@@ -1,6 +1,7 @@
 package com.pml.booking.web.graphql.dto;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * Summary of an escrow account for dashboard display.
@@ -12,7 +13,8 @@ public record AccountSummary(
         String eventId,
         String eventTitle,
         String organizerId,
-        String organizerName,
+        /** The {@code Organization} entity reference identity resolves, or null. */
+        Map<String, Object> organization,
         BigDecimal currentBalance,
         BigDecimal totalDeposits,
         BigDecimal totalWithdrawals,

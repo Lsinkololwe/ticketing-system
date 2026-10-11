@@ -15,7 +15,8 @@ public final class HolderMessageRules {
     public static final int BODY_MAX = 500;
     /** More holders than this and the message is refused rather than sent in part. */
     public static final int MAX_RECIPIENTS = 5000;
-    public static final int BATCH = 200;
+    /** One identity call carries at most this many accounts; identity refuses a larger batch. */
+    public static final int BATCH = 100;
 
     private static final Pattern CONTROL = Pattern.compile("[\\p{Cntrl}&&[^\\r\\n\\t]]");
 

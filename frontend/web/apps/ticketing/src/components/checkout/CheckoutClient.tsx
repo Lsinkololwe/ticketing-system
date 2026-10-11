@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { resolveError, useBookingForReservation, usePayReservation, usePlatformRules, useReservation, useReserveTickets, type GraphQLLikeError } from '@pml.tickets/shared';
+import { resolveError, useBookingForReservation, useIdempotencyKey, usePayReservation, usePlatformRules, useReservation, useReserveTickets, type GraphQLLikeError } from '@pml.tickets/shared';
 import { ConfirmDialog, EmptyState, ErrorState, Stepper, useSnackbar } from '@pml.tickets/shared/components/m3';
 import { useBuyerAuth } from '@/lib/auth/session-context';
 import { useEventPage } from '@pml.tickets/shared';
@@ -51,7 +51,10 @@ export function CheckoutClient({ eventId, initialQuantities, reservationId }: Ch
   const [reserveError, setReserveError] = useState<GraphQLLikeError | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [released, setReleased] = useState(false);
-  const idem = useRef(crypto.randomUUID());
+  // Keyed by the event (no reservation exists yet), persisted so a reload mid-reservation reuses it.
+  const [idemKey, regenerateIdem] = useIdempotencyKey(`reserve:${eventId}`);
+  // Keyed by the reservation once it exists, persisted so a reload mid-payment reuses it.
+  const [payIdemKey, regeneratePayIdem] = useIdempotencyKey(resId ? `pay:${resId}` : null);
   const started = useRef(false);
 
   const effective = step ?? 1;
@@ -76,7 +79,7 @@ export function CheckoutClient({ eventId, initialQuantities, reservationId }: Ch
           eventId,
           selections: Object.entries(initialQuantities).map(([ticketTierId, quantity]) => ({ ticketTierId, quantity })),
           promoCode: null,
-          idempotencyKey: idem.current,
+          idempotencyKey: idemKey,
           contactName: null,
           contactEmail: null,
           contactPhone: null,
@@ -91,7 +94,7 @@ export function CheckoutClient({ eventId, initialQuantities, reservationId }: Ch
         setReserveError(e as GraphQLLikeError);
       }
     })();
-  }, [auth.authenticated, resId, hasParked, eventId, initialQuantities, reserveTickets, router]);
+  }, [auth.authenticated, resId, hasParked, eventId, initialQuantities, reserveTickets, router, idemKey]);
 
   // Where a resumed reservation belongs: a payment already started means we are waiting for approval.
   useEffect(() => {
@@ -124,7 +127,7 @@ export function CheckoutClient({ eventId, initialQuantities, reservationId }: Ch
       if (!resId) return;
       setDeclined(null);
       try {
-        await payReservation({ reservationId: resId, phoneNumber: toE164(local) });
+        await payReservation({ reservationId: resId, phoneNumber: toE164(local), idempotencyKey: payIdemKey });
         setProvider(prov);
         setNumber(fmtZmPhone(local.replace(/^0/, '')));
         setStep(4);
@@ -132,13 +135,20 @@ export function CheckoutClient({ eventId, initialQuantities, reservationId }: Ch
         setDeclined(resolveError(e as GraphQLLikeError).message);
       }
     },
-    [resId, payReservation]
+    [resId, payReservation, payIdemKey]
   );
 
   const resend = async () => {
     if (!resId || !number) return;
     try {
-      await payReservation({ reservationId: resId, phoneNumber: toE164(number.replace(/\D/g, '').replace(/^260/, '0')) });
+      // A deliberate new prompt, not a retry of one the guard already answered: a fresh key so
+      // the provider is actually called again rather than replaying the first prompt's response.
+      const fresh = regeneratePayIdem();
+      await payReservation({
+        reservationId: resId,
+        phoneNumber: toE164(number.replace(/\D/g, '').replace(/^260/, '0')),
+        idempotencyKey: fresh,
+      });
       snack.show(`Payment prompt sent again to ${number}`);
     } catch (e) {
       snack.show({ message: resolveError(e as GraphQLLikeError).message, tone: 'error' });
@@ -170,7 +180,7 @@ export function CheckoutClient({ eventId, initialQuantities, reservationId }: Ch
     if (reserveError) {
       return frame(
         <div className="m3-site-wrap buyer-narrow">
-          <ErrorState error={reserveError} onRetry={() => { started.current = false; setReserveError(null); idem.current = crypto.randomUUID(); }} />
+          <ErrorState error={reserveError} onRetry={() => { started.current = false; setReserveError(null); regenerateIdem(); }} />
           <div className="m3-row buyer-center">{again}</div>
         </div>
       );

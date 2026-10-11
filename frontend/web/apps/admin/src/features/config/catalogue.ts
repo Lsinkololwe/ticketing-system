@@ -6,7 +6,7 @@
 
 /** Order and names of the "Actions inside pages" rows of the role matrix. */
 export const MATRIX_ACTIONS = [
-  'decide', 'createAdmin', 'staffRoles', 'users', 'orgs', 'deleteUser', 'syncAll', 'featureEvent', 'mediaMod', 'stock',
+  'decide', 'createAdmin', 'staffRoles', 'users', 'orgs', 'deleteUser', 'featureEvent', 'mediaMod', 'stock',
   'payoutDecide', 'secondApprove', 'closeEscrow', 'postJournal', 'reconcile', 'forceComplete', 'announce', 'cfgEdit', 'cfgHolds', 'escalations',
 ] as const;
 
@@ -17,7 +17,6 @@ export const ACTION_LABELS: Record<(typeof MATRIX_ACTIONS)[number], string> = {
   users: 'Manage users',
   orgs: 'Manage organizations',
   deleteUser: 'Delete users',
-  syncAll: 'Sync every account from Keycloak',
   featureEvent: 'Feature events',
   mediaMod: 'Moderate media',
   stock: 'Manage stock images',

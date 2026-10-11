@@ -6,6 +6,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -43,7 +44,8 @@ public final class PlatformResourceServer {
     }
 
     /**
-     * Configure {@code oauth2ResourceServer} for a service or the gateway.
+     * Configure {@code oauth2ResourceServer} for a service or the gateway, logging rather than
+     * refusing to start when the audience check is off.
      *
      * @param primaryIssuer       {@code spring.security.oauth2.resourceserver.jwt.issuer-uri}
      * @param trustedIssuersCsv   additional realms to trust, comma-separated; may be blank
@@ -55,13 +57,56 @@ public final class PlatformResourceServer {
             String trustedIssuersCsv,
             String clientId,
             String expectedAudiencesCsv) {
+        return jwt(primaryIssuer, trustedIssuersCsv, clientId, expectedAudiencesCsv, false);
+    }
 
+    /**
+     * As {@link #jwt(String, String, String, String)}, but refuses to start at all when {@code
+     * requireAudience} is set and the audience check is off — a service a caller has marked as
+     * running somewhere other than local development or a test does not get to run with this
+     * check silently missing. The caller decides what "somewhere else" means; this method only
+     * acts on the answer.
+     */
+    public static Customizer<ServerHttpSecurity.OAuth2ResourceServerSpec> jwt(
+            String primaryIssuer,
+            String trustedIssuersCsv,
+            String clientId,
+            String expectedAudiencesCsv,
+            boolean requireAudience) {
+        return jwt(primaryIssuer, trustedIssuersCsv, clientId, expectedAudiencesCsv, requireAudience,
+                MultiIssuerJwtResolver.DEFAULT_JWKS_CACHE_TTL);
+    }
+
+    /**
+     * As the five-argument form, with {@code keycloak.jwks-cache-ttl} stated. An out-of-range
+     * value fails here, while the service is starting.
+     */
+    public static Customizer<ServerHttpSecurity.OAuth2ResourceServerSpec> jwt(
+            String primaryIssuer,
+            String trustedIssuersCsv,
+            String clientId,
+            String expectedAudiencesCsv,
+            boolean requireAudience,
+            Duration jwksCacheTtlOrNull) {
+
+        // A caller that predates the property (a test building the chain directly) gets the default.
+        Duration jwksCacheTtl = jwksCacheTtlOrNull != null
+                ? jwksCacheTtlOrNull : MultiIssuerJwtResolver.DEFAULT_JWKS_CACHE_TTL;
+        MultiIssuerJwtResolver.requireValidJwksCacheTtl(jwksCacheTtl);
         List<String> issuers = MultiIssuerJwtResolver.mergeIssuers(primaryIssuer, trustedIssuersCsv);
         List<String> audiences = MultiIssuerJwtResolver.csv(expectedAudiencesCsv);
+        if (audiences.isEmpty() && requireAudience) {
+            throw new IllegalStateException(
+                    "keycloak.expected-audiences is unset for " + clientId + " outside local "
+                            + "development or a test. Signature, issuer and expiry alone accept a "
+                            + "token this realm minted for any other client — set "
+                            + "KEYCLOAK_EXPECTED_AUDIENCES, with the matching oidc-audience-mapper "
+                            + "already in place on the client in the realm.");
+        }
         warnIfAudienceUnchecked(clientId, audiences);
 
         return oauth2 -> oauth2.authenticationManagerResolver(
-                MultiIssuerJwtResolver.forIssuers(issuers, clientId, audiences));
+                MultiIssuerJwtResolver.forIssuers(issuers, clientId, audiences, jwksCacheTtl));
     }
 
     /**
@@ -75,8 +120,14 @@ public final class PlatformResourceServer {
      * one carrying the same four checks rather than a weaker second opinion.</p>
      */
     public static ReactiveJwtDecoder decoder(String primaryIssuer, String expectedAudiencesCsv) {
+        return decoder(primaryIssuer, expectedAudiencesCsv, MultiIssuerJwtResolver.DEFAULT_JWKS_CACHE_TTL);
+    }
+
+    /** As {@link #decoder(String, String)}, with {@code keycloak.jwks-cache-ttl} stated. */
+    public static ReactiveJwtDecoder decoder(
+            String primaryIssuer, String expectedAudiencesCsv, Duration jwksCacheTtl) {
         return MultiIssuerJwtResolver.decoderFor(
-                primaryIssuer, MultiIssuerJwtResolver.csv(expectedAudiencesCsv));
+                primaryIssuer, MultiIssuerJwtResolver.csv(expectedAudiencesCsv), jwksCacheTtl);
     }
 
     private static void warnIfAudienceUnchecked(String clientId, List<String> audiences) {

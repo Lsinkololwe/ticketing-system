@@ -1,22 +1,17 @@
 package com.pml.gateway.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
-import com.pml.gateway.service.SessionBlacklistService;
-import com.pml.shared.security.revocation.RevocationKeys;
+import com.pml.shared.security.revocation.RevocationCheck;
+import com.pml.shared.security.revocation.RevocationDecision;
 import java.time.Instant;
-import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
@@ -27,27 +22,24 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import reactor.core.publisher.Mono;
 
 /**
- * ET-IDN-003 R7: a Keycloak logout is recorded by identity-service as {@code pml:session:{sid}};
- * this filter refuses a token carrying that {@code sid}, and keeps keying users on {@code sub}
- * (a buyer's {@code accountId} claim is never used). The Redis keys are the ones identity writes.
+ * What the gateway filter does with each answer of the revocation check, and which identifiers
+ * of the token it hands over. The check itself (Redis, the completeness marker, identity's
+ * durable records) is exercised against real stores in {@code GatewayRevocationEnforcementTest}.
  */
 @Tag("L1")
 @Tag("ET-IDN-003")
-@DisplayName("ET-IDN-003-R7 · gateway refuses a token whose sid was revoked by a Keycloak logout")
+@DisplayName("The gateway filter refuses revoked tokens and fails open when revocation cannot be established")
 class SessionBlacklistFilterSidTest {
 
-    private final Set<String> redisKeys = new HashSet<>();
-    private final Set<String> asked = new HashSet<>();
+    /** What the check was asked, as {@code jti|sid|sub}. */
+    private final List<String> asked = new ArrayList<>();
 
-    @SuppressWarnings("unchecked")
-    private SessionBlacklistFilter filter() {
-        ReactiveRedisTemplate<String, String> redis = mock(ReactiveRedisTemplate.class);
-        when(redis.hasKey(anyString())).thenAnswer(call -> {
-            String key = call.getArgument(0);
-            asked.add(key);
-            return Mono.just(redisKeys.contains(key));
-        });
-        return new SessionBlacklistFilter(new SessionBlacklistService(redis));
+    private SessionBlacklistFilter filterAnswering(RevocationDecision decision) {
+        RevocationCheck check = (jti, sid, sub) -> {
+            asked.add(jti + "|" + sid + "|" + sub);
+            return Mono.just(decision);
+        };
+        return new SessionBlacklistFilter(check);
     }
 
     private static Jwt token(String sub, String sid, String accountId) {
@@ -59,63 +51,76 @@ class SessionBlacklistFilterSidTest {
         return b.build();
     }
 
-    /** @return true when the request reached the next filter, false when it was answered 401 */
-    private boolean passes(SessionBlacklistFilter filter, Jwt jwt, MockServerWebExchange[] out) {
-        MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/graphql").build());
-        out[0] = exchange;
+    private record Outcome(boolean reachedBackend, MockServerWebExchange exchange) {
+    }
+
+    private Outcome run(SessionBlacklistFilter filter, HttpMethod method, Jwt jwt) {
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+                MockServerHttpRequest.method(method, "/api/v1/documents").build());
         AtomicInteger chained = new AtomicInteger();
-        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt, List.of());
+        var context = jwt == null ? Mono.<SecurityContextImpl>empty()
+                : Mono.just(new SecurityContextImpl(new JwtAuthenticationToken(jwt, List.of())));
         filter.filter(exchange, e -> {
             chained.incrementAndGet();
             return Mono.empty();
-        }).contextWrite(ReactiveSecurityContextHolder.withSecurityContext(Mono.just(new SecurityContextImpl(auth)))).block();
+        }).contextWrite(ReactiveSecurityContextHolder.withSecurityContext(context)).block();
         assertThat(chained.get()).as("the rest of the chain runs at most once").isLessThanOrEqualTo(1);
-        return chained.get() == 1;
+        return new Outcome(chained.get() == 1, exchange);
     }
 
     @Test
-    @DisplayName("a revoked sid is refused with 401 and X-Token-Revoked, for a buyer token and a staff token alike")
-    void revokedSidIsRefused() {
-        redisKeys.add(RevocationKeys.session("sid-buyer"));
-        redisKeys.add(RevocationKeys.session("sid-staff"));
-        MockServerWebExchange[] ex = new MockServerWebExchange[1];
+    @DisplayName("a revoked token is answered 401 with X-Token-Revoked and never reaches the backend, for buyer and staff alike")
+    void revokedIsRefused() {
+        for (Jwt jwt : List.of(token("kc-buyer", "sid-buyer", "acc-1"), token("kc-staff", "sid-staff", null))) {
+            Outcome outcome = run(filterAnswering(RevocationDecision.REVOKED), HttpMethod.GET, jwt);
 
-        assertThat(passes(filter(), token("kc-buyer", "sid-buyer", "acc-1"), ex)).isFalse();
-        assertThat(ex[0].getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(ex[0].getResponse().getHeaders().getFirst("X-Token-Revoked")).isEqualTo("true");
-
-        assertThat(passes(filter(), token("kc-staff", "sid-staff", null), ex)).isFalse();
-        assertThat(ex[0].getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(outcome.reachedBackend()).isFalse();
+            assertThat(outcome.exchange().getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(outcome.exchange().getResponse().getHeaders().getFirst("X-Token-Revoked")).isEqualTo("true");
+        }
     }
 
     @Test
-    @DisplayName("another session of the same user, with a different sid, is untouched by a session revocation")
-    void otherSessionPasses() {
-        redisKeys.add(RevocationKeys.session("sid-1"));
-        MockServerWebExchange[] ex = new MockServerWebExchange[1];
-        assertThat(passes(filter(), token("kc-user", "sid-2", null), ex)).isTrue();
+    @DisplayName("an active token goes through")
+    void activeIsServed() {
+        assertThat(run(filterAnswering(RevocationDecision.ACTIVE), HttpMethod.POST, token("kc", "s", null))
+                .reachedBackend()).isTrue();
     }
 
     @Test
-    @DisplayName("users are looked up by sub, never by the accountId claim")
-    void userIsKeyedOnSub() {
-        redisKeys.add(RevocationKeys.user("kc-sub"));
-        MockServerWebExchange[] ex = new MockServerWebExchange[1];
+    @DisplayName("the check gets jti, sid and the Keycloak sub, never the accountId claim")
+    void identifiersComeFromTheToken() {
+        run(filterAnswering(RevocationDecision.ACTIVE), HttpMethod.GET, token("kc-sub", "sid-9", "account-9"));
 
-        assertThat(passes(filter(), token("kc-sub", "sid-9", "account-9"), ex)).isFalse();
-        assertThat(asked).contains(RevocationKeys.user("kc-sub"), RevocationKeys.session("sid-9"))
-                .doesNotContain(RevocationKeys.user("account-9"));
-
-        // revoking the accountId is not a revocation of the user: it is not a key the platform writes
-        redisKeys.clear();
-        redisKeys.add(RevocationKeys.user("account-9"));
-        assertThat(passes(filter(), token("kc-sub", "sid-9", "account-9"), ex)).isTrue();
+        assertThat(asked).containsExactly("jti-sid-9|sid-9|kc-sub");
     }
 
     @Test
-    @DisplayName("the key layout is the contract with identity-service")
-    void keyLayout() {
-        assertThat(RevocationKeys.session("abc")).isEqualTo("pml:session:abc");
-        assertThat(Map.of("user", RevocationKeys.user("u")).get("user")).isEqualTo("pml:revoked:u");
+    @DisplayName("when no store can answer, every request proceeds — the gateway isn't the one deciding what's sensitive")
+    void unknownFailsOpen() {
+        Jwt jwt = token("kc", "sid-1", null);
+
+        for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE)) {
+            Outcome outcome = run(filterAnswering(RevocationDecision.UNKNOWN), method, jwt);
+            assertThat(outcome.reachedBackend()).as(method.name()).isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("a check that throws is treated as unknown, not as a refusal")
+    void failingCheckIsUnknown() {
+        SessionBlacklistFilter filter = new SessionBlacklistFilter((jti, sid, sub) -> Mono.error(new IllegalStateException("boom")));
+
+        assertThat(run(filter, HttpMethod.POST, token("kc", "s", null)).reachedBackend()).isTrue();
+        assertThat(run(filter, HttpMethod.GET, token("kc", "s", null)).reachedBackend()).isTrue();
+    }
+
+    @Test
+    @DisplayName("an anonymous request is not looked up at all")
+    void anonymousIsNotChecked() {
+        Outcome outcome = run(filterAnswering(RevocationDecision.REVOKED), HttpMethod.GET, null);
+
+        assertThat(outcome.reachedBackend()).isTrue();
+        assertThat(asked).isEmpty();
     }
 }

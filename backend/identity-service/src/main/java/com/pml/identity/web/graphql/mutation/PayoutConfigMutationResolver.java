@@ -23,6 +23,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 
 import java.util.Map;
 import org.springframework.validation.annotation.Validated;
@@ -72,6 +73,7 @@ public class PayoutConfigMutationResolver {
      * @return updated organization
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.updatePayoutConfig")
     @PreAuthorize("hasAnyAuthority('ROLE_ORGANIZER', 'ROLE_ADMIN')")
     public Mono<Organization> updatePayoutConfig(
         @InputArgument String organizationId,
@@ -197,6 +199,7 @@ public class PayoutConfigMutationResolver {
      * @return updated organization
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.setBankAccount")
     @PreAuthorize("hasAnyAuthority('ROLE_ORGANIZER', 'ROLE_ADMIN')")
     public Mono<Organization> setBankAccount(
         @InputArgument String organizationId,
@@ -325,6 +328,7 @@ public class PayoutConfigMutationResolver {
      * @return updated organization
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.setMobileMoneyAccount")
     @PreAuthorize("hasAnyAuthority('ROLE_ORGANIZER', 'ROLE_ADMIN')")
     public Mono<Organization> setMobileMoneyAccount(
         @InputArgument String organizationId,
@@ -439,6 +443,7 @@ public class PayoutConfigMutationResolver {
      * @return updated organization
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.verifyPayoutAccount")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_FINANCE', 'ROLE_SUPER_ADMIN')")
     public Mono<Organization> verifyPayoutAccount(
         @InputArgument String organizationId,

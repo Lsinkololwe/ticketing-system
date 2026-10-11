@@ -5,7 +5,7 @@ import { useMutation } from '@apollo/client/react';
 import { useSnackbar } from '@pml.tickets/shared/components/m3';
 import { CREATE_PAYOUT_REQUEST, type BankAccountVM } from '@pml.tickets/shared/api/organization-admin/modules/finance';
 import { usePayoutEligibility, type EscrowAccountRow } from '@/lib/api/finance';
-import { minorToKwachaString } from '@pml.tickets/shared';
+import { minorToKwachaString, useIdempotencyKey } from '@pml.tickets/shared';
 import { useStepUp } from '@/lib/useStepUp';
 import { PayoutRequestDialog, destinationLabel } from './PayoutRequestDialog';
 import type { PayoutRequestValues } from './schemas';
@@ -28,7 +28,8 @@ export function PayoutFlow({ organizerId, accounts, banks, initialEscrowId, onDo
   const [escrowId, setEscrowId] = useState(initialEscrowId ?? eligibleFirst?.id ?? '');
   const verified = useMemo(() => banks.filter((b) => b.isVerified || b.status === 'VERIFIED'), [banks]);
   const bankId = (verified.find((b) => b.isDefault) ?? verified[0])?.id ?? '';
-  const [key] = useState(() => `idem-${Math.random().toString(36).slice(2, 12)}`);
+  // Keyed by the escrow account being paid out, persisted so a reload mid-submission reuses it.
+  const [key] = useIdempotencyKey(escrowId ? `payout:${escrowId}` : null);
   const account = accounts.find((a) => a.id === escrowId) ?? null;
   const { eligibility, loading: checking } = usePayoutEligibility(account?.eventId ?? null);
 

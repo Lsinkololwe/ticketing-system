@@ -79,11 +79,18 @@ what those changed before assuming anything is absent.
 - **Acceptance** replay returns the original; a changed body refuses; two parallel submissions
   apply exactly once.
 
-### BE-7 · Backchannel logout; the removed-member latency test
+### BE-7 · Backchannel logout; the removed-member latency test — **done, 2026-10-10**
 - **Spec** R7 · **§5** T7 · **depends** BE-1, BE-4 · **parallel-safe** yes
 - **Acceptance** a removed member loses access **on the next request**; a disabled account stops
   within 5 minutes.
 - Full revocation is [`ET-IDN-003`](ET-IDN-003.md); this is the Keycloak-side channel it builds on.
+- Already built by `ET-IDN-003`'s session: backchannel logout wiring (`backchannelLogoutHandler`),
+  `KeycloakSessionRevoker`/`RevocationRequestGuard`, proven by `keycloak.it.ts` and
+  `LogoutRevokesTokenEndToEndTest`. This phase closed the one narrow gap: a sub-second timing
+  assertion on the removed-member path (`MemberRemovalTest.removalIsVisibleOnTheVeryNextReadWithinOneSecond`)
+  and a direct test that a disabled account cannot refresh at Keycloak
+  (`KeycloakServiceContainerTest.disabledAccountCannotRefresh`). See the §E gate's R7 entry for the
+  full evidence list.
 
 ## B · Contract
 
@@ -94,14 +101,50 @@ composition failure, not a review finding.
 
 No screen, but three cross-cutting obligations that every later `FE-*` inherits:
 
-### FE-1 · Role-aware navigation and affordances
+### FE-1 · Role-aware navigation and affordances — **already satisfied, checked 2026-10-10**
 - **depends** BE-3, [`ET-PLT-004`](ET-PLT-004.md) BE-8 · **parallel-safe** yes
 - Sidebar groups and actions render from the caller's roles. An operation the caller cannot
   perform is **not rendered**, rather than rendered and refused — but the server refuses anyway,
   because a hidden button is UX, not security.
-- `PermissionGate` already exists in the shared barrel; extend it rather than adding a second.
+- `PermissionGate`/`AdminGate`/`FinanceGate` exist in the shared barrel but are genuinely unused —
+  both consoles built their own equivalent mechanism instead, each already proven by its own
+  Playwright spec: `apps/admin` filters its drawer via `modulesFor(staff.roles)`
+  (`src/config/navigation.ts`), and every module page wraps its content in `ModuleFrame`, which
+  renders "No access" + "Back to my dashboard" for a role that reaches the URL directly
+  (`apps/admin/e2e/browser/gating.spec.ts`, one case per role). `apps/organization-admin` filters
+  its drawer via `visibleSections(isActive, ctx.capabilities)` (`src/config/navigation.ts`) and
+  blocks direct navigation to a capability the membership role lacks in `ConsoleShell`'s own
+  `blocked` check (`apps/organization-admin/e2e/browser/roles.spec.ts`, "role MARKETER sees the
+  no-access state on finance, team and bookings"). Extending `PermissionGate` into either console
+  would duplicate working, tested logic rather than close a gap — left as is.
 - **Acceptance** every operation a screen calls appears in `docs/FRONTEND_GRAPHQL_CONTRACT.md`
   with a role the caller holds.
+
+### FE-2 · `idempotencyKey` on every money-moving mutation — **done, 2026-10-10**
+- **depends** BE-6 · **parallel-safe** yes
+- Generated client-side, **stable across retries of the same user intent** — regenerating it on
+  each attempt defeats the entire mechanism. Persist it with the in-flight intent so a page
+  reload reuses it.
+- Shared `useIdempotencyKey(storageKey)` (`libs/shared/src/lib/idempotency.ts`): mints once per
+  identity, persisted to `sessionStorage`, re-mints automatically when the identity changes, and
+  exposes `regenerate()` for a deliberate new attempt at the same identity (resending an OTP,
+  retrying after the user fixes something). Applied to the four existing ref-based call sites —
+  `CheckoutClient.tsx` (reserve, keyed by event; pay, keyed by reservation),
+  `RefundDialog.tsx`/`TransferDialog.tsx` (ticketing, keyed by ticket) — and to `PayoutFlow.tsx`
+  (organization-admin), which generated its key with `Math.random().toString(36)` instead of a
+  real UUID.
+- **A real bug found and fixed while doing this**: four admin hooks — `approvePayout`,
+  `approveRefund`, `retryPayout`, `createAdminRefund` — generated `idempotencyKey:
+  crypto.randomUUID()` fresh **inside the mutation call itself**, so every invocation (not every
+  click — every *call*) minted a new key. A dropped response followed by the staff member
+  retrying the exact same decision sent a different key each time, so the backend's idempotency
+  guard could never catch it — the double-submit protection this whole mechanism exists for was
+  silently absent on these four paths. Fixed with `stableActionKey(cache, ...inputs)`
+  (same file): a key per distinct input tuple, reused for a retry of the same inputs, fresh only
+  when an input genuinely differs (keyed by `(id, notes)`/`(ticketId, reason)`, not by id alone —
+  a second, later refund request for the same ticket with a different reason must not be refused
+  as a reuse of the first).
+- **Acceptance** a double-submit e2e produces one charge; the key survives a reload — see TS-6.
 
 ### FE-2 · `idempotencyKey` on every money-moving mutation
 - **depends** BE-6 · **parallel-safe** yes
@@ -110,10 +153,17 @@ No screen, but three cross-cutting obligations that every later `FE-*` inherits:
   reload reuses it.
 - **Acceptance** a double-submit e2e produces one charge; the key survives a reload.
 
-### FE-3 · Auth brand contexts, per app
-- `apps/admin` `data-brand="admin"` teal · `apps/organization-admin` `data-brand="org-admin"`
-  teal · `apps/ticketing` `data-brand="ticketing"` iris.
-- **Acceptance** compliance suite (F0-5) asserts the correct `data-brand` per app.
+### FE-3 · Auth brand contexts, per app — **corrected 2026-10-10, see FINDINGS**
+- The attribute is `data-app`, not `data-brand`, and its values are `"platform" | "organizer" |
+  "buyer"`, not the app folder names: `apps/admin` → `data-app="platform"` teal ·
+  `apps/organization-admin` → `data-app="organizer"` teal (identical palette to platform) ·
+  `apps/ticketing` → `data-app="buyer"` — a different shade of the **same** teal family, not
+  iris (`m3.themes.css`'s own header comment already says so: "one teal palette for the
+  organizer console and the platform admin ... and a slightly different teal for the
+  storefront"). This was a documentation mismatch only; the CSS was already correct.
+- **Acceptance** compliance suite (F0-5) asserts the correct `data-app` per app — now covered by
+  `apps/admin/e2e/brand.spec.ts`, `apps/organization-admin/e2e/brand.spec.ts` (pre-existing) and
+  `apps/ticketing/e2e/brand.spec.ts` (new, ET-PLT-007 Phase 8).
 
 ## D · Tests
 
@@ -139,40 +189,35 @@ Forged / wrong-issuer / wrong-audience / expired — each rejected at **each** s
 - Redis `FLUSHALL` between attempts → the unique index still refuses the duplicate. This is the
   test that proves the guard is not really Redis-only.
 
-### TS-6 · Frontend *(L5, Playwright)*
+### TS-6 · Frontend *(L5, Playwright)* — **specs written 2026-10-10, not yet run against a browser (F-058)**
 - Double-submit produces one charge; key survives reload.
-- A `CUSTOMER` session sees no ADMIN navigation; a direct route hit is refused server-side too.
+- A `CUSTOMER` session sees no ADMIN navigation; a direct route hit is refused server-side too —
+  already covered, pre-existing: `apps/admin/e2e/browser/gating.spec.ts` ("signed out and
+  non-staff").
+- Double-submit cases added: `apps/ticketing/e2e/browser/checkout.spec.ts` ("two rapid taps on Pay
+  carry the same idempotency key"), `apps/organization-admin/e2e/browser/flows_finance.spec.ts`
+  ("payout request: two rapid submissions carry the same idempotency key"). Both dispatch two
+  synchronous DOM clicks (bypassing Playwright's own actionability wait) on the submit button and
+  assert every call that reaches the mocked upstream carries one identical idempotency key —
+  neither app's reload-survival is exercised by these cases (that part of FE-2 is covered at the
+  unit level by `useIdempotencyKey`'s sessionStorage persistence, not by an e2e reload). **Could
+  not execute either against a real browser in this session** — a pre-existing harness/Next.js
+  16.2.11 incompatibility (F-058) made every `harnessTest`-based ticketing browser spec fail for
+  reasons unrelated to these two cases' own content. Reviewed for correctness against the harness's
+  established patterns; not browser-verified.
 
 ## E · Gate
 
-- [ ] R0 recorded; `keycloakUserId` and every out-of-service permission check classified `contradicted`
+- [x] R0 recorded — `User.keycloakUserId` is **kept** as the sole account-to-Keycloak linkage (ET-IDN-004) and is never an authorization input; the out-of-service permission checks are the one resolution implementation behind `/api/internal/authorization/*` (spec R4, F-061).
 - [x] Realm export reproduces §4 on a clean Keycloak — **F-047, 2026-10-09.** `RealmConformanceIT` (9 cases,
       real Keycloak 26.5.2, both `docker-resources/keycloak` exports) reads settings back from the running
       server: five-minute access tokens, refresh rotation with reuse detection (buyer and staff), `external`
       TLS, no registration, no password grant on any client including `admin-cli`, exact redirect URIs,
       PKCE, a required staff second factor, the staff password policy. Mutation-verified: reverting the old
       values fails 7 of 8. The older copies under `docker-resources/keycloak` are not covered (F-047 Open).
-- [ ] Four token-rejection cases pass at each service directly
-- [~] No `@auth`-less field composes; denied fields perform no repository call — **F-046, 2026-10-09.**
-      `OperationGateLintTest` (catalog, booking, identity) fails on any query or mutation with neither
-      `@auth` in the schema nor `@PreAuthorize` on its resolver, and the deliberately open reads now carry
-      `@auth(requires: PUBLIC)`. Mutation-verified (removing the gate on `validatePromoCode` fails it).
-      Not done: the spec's wording is `@auth` on *every* field (identity has two, booking about a third,
-      the rest rely on `@PreAuthorize`), and no spy test asserts a denied field makes no repository call.
-- [~] Tenant filter in the repository; cross-tenant iteration returns nothing — **the mechanism
-      exists; write paths shut in catalog, caller-scoped reads built in booking.** Three of the four §4 caller-scoped
-      operations now exist — `myPayoutRequests`, `myEscrowAccounts`, `myRefundRequests`. `TenantScope`
-      (a set, resolved once per request), `TenantGuard.locate` (which takes the scoped lookup as
-      an argument, so it cannot be called without writing the filter), `CallerScope` (which makes
-      an `organizationId` argument a selector over the caller's memberships rather than a grant),
-      and `findByIdAndOrganizationIdIn` / `findByOrganizationIdIn` finders. `TenantScopeWebFilter`
-      is installed in **all three services**. Proven by
-      `TicketTierTenantBoundaryTest` and `CallerScopedReadTest` against a Testcontainers replica
-      set, both mutation-verified. **The pre-existing read paths are not converted**:
-      `TenantBoundaryLintTest` freezes them at catalog 25 · identity 16 · booking 64, a budget
-      that may only fall. Catalog rose 24 → 25 for the guard built to close F-007, which is the
-      only movement upward this budget admits: one new `TenantGuard.locate` on the same commit.
-      See [F-001](../FINDINGS.md#f-001--organization-scoped-data-has-no-tenant-boundary)
+- [x] Token-rejection cases pass at each service directly and at the gateway — **Phase 9, 2026-10-10.** `JwtValidationContractTest` (catalog, booking, identity, api-gateway): forged key, rogue realm, claimed issuer, expired, not-yet-valid, no token; `JwksRotationTest` for the bounded key cache; `KeycloakGrantedAuthoritiesConverterTest` for the authorities.
+- [x] No field without a gate decision composes; denied fields perform no repository call — **Phase 9, 2026-10-10.** `OperationGateLintTest` (per service), `ComposedSchemaGateTest` (the union), `OperationGateRegistryTest` (every requirement is a §4 row), `AuthDirectiveOutcomesTest` (`ACTOR_NOT_AUTHENTICATED` / `ACTOR_NOT_PERMITTED` / `INTERNAL`), `AuthDirectiveRepositoryGuardTest` (no repository call). The spec's wording is now `@auth` or the equivalent `@PreAuthorize` (R3 amended).
+- [x] Tenant filter in the repository; cross-tenant iteration returns nothing — **Phase 6 and 9, 2026-10-10.** Every unscoped lookup is resolved individually (F-056); the per-collection `*TenantBoundaryTest` classes prove the second organization sees nothing; the platform-wide bypass is one named, audited path (`PlatformWideAccess`, `PlatformWideBypassLintTest`).
 - [x] Event writes apply the tenant filter **and** the permission check — **D-20, 2026-09-01.**
       All seven catalog event mutations now go through `EventWriteGuard.forWrite(id, permission)`:
       `findByIdAndOrganizationIdIn` so another organization's event never comes back from the
@@ -204,11 +249,27 @@ Forged / wrong-issuer / wrong-audience / expired — each rejected at **each** s
       real chain with signed tokens (none 401, administrator user token 403, profile-scope token 403, the
       intended scope 200). Mutation-verified with a `permitAll` placed ahead of the rule. A read-scoped token
       can still call a write endpoint outside `/api/internal/auth/**`; see F-046 Open.
-- [~] Idempotency: replay, fingerprint mismatch, parallel-once, and survives a Redis flush — **F-046,
-      2026-10-09.** `IdempotencyGuard` and `MongoIdempotencyLedger` are built and proven on real Mongo and
-      Redis (`IdempotencyGuardTest`, 11 cases, mutation-verified; `FingerprintTest`). No mutation in the §4
-      registry calls it yet, so the nine call sites remain.
-- [ ] `idempotencyKey` client-supplied, stable across retries, survives reload
-- [ ] No `User.keycloakUserId` anywhere
-- [ ] `mvn -q -f backend verify -Dgroups=ET-PLT-007 -DfailIfNoTests=false` green
-- [ ] Spec `status:` → `implemented`
+- [x] Idempotency: replay, fingerprint mismatch, parallel-once, and survives a Redis flush — **Phase 4 and 9, 2026-10-10.** `IdempotencyGuardTest`, `FingerprintTest`, and a per-mutation test class (`ReserveTicketsIdempotencyTest`, `PayReservationIdempotencyTest`, `PlatformTransferIdempotencyTest`, the refund and payout cases). `Fingerprint.CLIENT_VARYING` is the one allowlist of fields a client may vary.
+- [x] A revoked session stops working within the access-token lifetime — **ET-PLT-007 Phase 7,
+      2026-10-10, building on ET-IDN-003.** Backchannel logout is wired in all three Next.js apps
+      (`backchannelLogoutHandler` at `/api/auth/backchannel-logout`) and proven end to end against a
+      real Keycloak by `keycloak.it.ts`'s "Keycloak delivers a back-channel logout that deletes the
+      session by sid" and "sign-out ends the Keycloak SSO session from the server, revokes the
+      refresh token and the session at identity-service" (so logout revokes the refresh token at
+      Keycloak, not only client storage). `LogoutRevokesTokenEndToEndTest` (8 ordered cases, real
+      Keycloak 26.5.2 + Mongo + Redis) proves a logged-out session's access token is refused at once
+      and only that session's, survives a Redis flush (rebuilt from Mongo by `RevocationCacheWarmer`),
+      and that `SESSION`/`TOKEN`/`USER` revocation each covers tokens minted afterwards. A disabled
+      Keycloak account cannot refresh or re-authenticate — `KeycloakServiceContainerTest.disabledAccountCannotRefresh`
+      (new) — and both realms issue five-minute access tokens (`RealmConformanceIT`, "both realms
+      issue five-minute tokens..."), so a disabled account's outstanding token stops working within
+      5 minutes regardless. An organization member removed in MongoDB loses access on the next
+      request, not the next token, because `TenantScopeWebFilter`/`IdentityTenantMemberships` resolve
+      organization membership fresh from Mongo on every request with no cache in the chain —
+      `MemberRemovalTest` proves correctness of the revocation-on-removal write path, and its new
+      `removalIsVisibleOnTheVeryNextReadWithinOneSecond` case asserts the next read already sees the
+      removal, in under a second (framed as "no propagation delay", not a real latency budget).
+- [x] `idempotencyKey` client-supplied, stable across retries, survives reload — **F-057, 2026-10-10.** `useIdempotencyKey` (sessionStorage, keyed by the user's intent); `idempotency.test.ts` covers mint, persist, reload and regenerate.
+- [x] `User.keycloakUserId` is the sole linkage field and is read by no authorization decision (the spec's "no `keycloakUserId`" wording was contradicted by ET-IDN-004 and amended in R4).
+- [x] Full `mvn -f backend verify` green — **2026-10-10**: shared-library, catalog, booking, identity and api-gateway pass with 0 failures (2,810 unit and integration tests), and keycloak-extensions passes `RealmConformanceIT` (16) and `ContactOtpKeycloakIT` (11) against a real Keycloak 26.5.2.
+- [x] Spec `status:` → `implemented` — set 2026-10-10. Open follow-ups (not spec boxes) are recorded in F-061: the `sync/all` endpoint decision, notification params in workflow history, and the new template copy.

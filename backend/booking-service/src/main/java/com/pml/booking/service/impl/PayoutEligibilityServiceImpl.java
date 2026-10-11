@@ -53,6 +53,7 @@ public class PayoutEligibilityServiceImpl implements PayoutEligibilityService {
     private final ChargebackRecordRepository chargebackRepository;
     private final PayoutRequestRepository payoutRequestRepository;
     private final BigDecimal minimumPayout;
+    private final com.pml.booking.security.PayoutAccess payoutAccess;
 
     /** The injected platform clock. */
     private final java.time.Clock clock;
@@ -61,30 +62,30 @@ public class PayoutEligibilityServiceImpl implements PayoutEligibilityService {
             ChargebackRecordRepository chargebackRepository,
             PayoutRequestRepository payoutRequestRepository,
             @Value("${payment.escrow.minimum-payout-amount:10.00}") BigDecimal minimumPayout,
+            com.pml.booking.security.PayoutAccess payoutAccess,
             java.time.Clock clock) {
         this.escrowRepository = escrowRepository;
         this.chargebackRepository = chargebackRepository;
         this.payoutRequestRepository = payoutRequestRepository;
         this.minimumPayout = minimumPayout;
+        this.payoutAccess = payoutAccess;
         this.clock = clock;
     }
 
     @Override
-    public Mono<PayoutEligibility> evaluate(String eventId, String organizerId) {
+    public Mono<PayoutEligibility> evaluate(String eventId, String userId) {
         return escrowRepository.findByEventId(eventId)
-                .flatMap(escrow -> evaluateFor(escrow, organizerId, clock.instant()))
+                .flatMap(escrow -> payoutAccess.mayRequest(userId, escrow.getOrganizationId(), escrow.getEventId())
+                        .flatMap(allowed -> allowed
+                                ? evaluateFor(escrow, clock.instant())
+                                // Not the caller's organization, or not permitted to request payouts there:
+                                // the same answer as an event that does not exist. Anything more specific
+                                // tells a stranger which event ids are real and what their hold dates are.
+                                : Mono.fromSupplier(() -> noEscrow(clock.instant()))))
                 .switchIfEmpty(Mono.fromSupplier(() -> noEscrow(clock.instant())));
     }
 
-    private Mono<PayoutEligibility> evaluateFor(EventEscrowAccount escrow, String organizerId, Instant now) {
-        // An event belonging to someone else answers the same as an event that
-        // does not exist. Anything more specific — "not yours" versus "no such
-        // event" — tells a stranger which event ids are real and what their
-        // hold dates are.
-        if (organizerId == null || !organizerId.equals(escrow.getOrganizerId())) {
-            return Mono.fromSupplier(() -> noEscrow(clock.instant()));
-        }
-
+    private Mono<PayoutEligibility> evaluateFor(EventEscrowAccount escrow, Instant now) {
         return Mono.zip(
                 chargebackRepository.countByEventIdAndStatusIn(escrow.getEventId(), OPEN_DISPUTES)
                         .defaultIfEmpty(0L),

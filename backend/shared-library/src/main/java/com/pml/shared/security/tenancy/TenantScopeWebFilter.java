@@ -42,14 +42,25 @@ public class TenantScopeWebFilter implements WebFilter, Ordered {
 
     private final TenantMemberships memberships;
     private final Set<String> platformAdminAuthorities;
+    private final PlatformWideAccess platformWideAccess;
 
     public TenantScopeWebFilter(TenantMemberships memberships) {
         this(memberships, Set.of("ROLE_ADMIN", "ROLE_SUPER_ADMIN"));
     }
 
     public TenantScopeWebFilter(TenantMemberships memberships, Set<String> platformAdminAuthorities) {
+        this(memberships, platformAdminAuthorities, null);
+    }
+
+    /**
+     * @param platformWideAccess the recorder platform-wide reaches in this request are written
+     *                           through; {@code null} leaves the log-only fallback in place
+     */
+    public TenantScopeWebFilter(TenantMemberships memberships, Set<String> platformAdminAuthorities,
+                                PlatformWideAccess platformWideAccess) {
         this.memberships = memberships;
         this.platformAdminAuthorities = Set.copyOf(platformAdminAuthorities);
+        this.platformWideAccess = platformWideAccess;
     }
 
     @Override
@@ -62,7 +73,7 @@ public class TenantScopeWebFilter implements WebFilter, Ordered {
                 .switchIfEmpty(Mono.fromSupplier(() -> TenantScope.denyAll(null)));
 
         return chain.filter(exchange)
-                .contextWrite(ctx -> CurrentTenantScope.seed(ctx, scope));
+                .contextWrite(ctx -> PlatformWideAccess.seed(CurrentTenantScope.seed(ctx, scope), platformWideAccess));
     }
 
     private Mono<TenantScope> resolve(Authentication authentication) {

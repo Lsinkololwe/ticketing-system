@@ -110,8 +110,9 @@ public class ContactChangeWorkflowImpl implements ContactChangeWorkflow {
         Workflow.newDetachedCancellationScope(() -> {
             try {
                 cleanup.clearMarker(command.accountId());
-            } catch (ActivityFailure leftToRepair) {
-                // drift class D8 clears a CHANGING marker nobody is working on
+            } catch (ActivityFailure cancelled) {
+                // The cleanup retries until it lands, so reaching here means the workflow itself was
+                // terminated mid-cleanup; the marker stays until the account's change is cleared by hand.
             }
         }).run();
     }

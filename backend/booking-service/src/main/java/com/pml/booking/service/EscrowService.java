@@ -24,7 +24,6 @@ public interface EscrowService {
      * @param eventId       The event ID
      * @param eventTitle    The event title
      * @param organizerId   The organizer's user ID
-     * @param organizerName The organizer's name
      * @param eventDate     The event date (used to calculate lock period)
      * @return Created escrow account
      */
@@ -32,7 +31,6 @@ public interface EscrowService {
             String eventId,
             String eventTitle,
             String organizerId,
-            String organizerName,
             Instant eventDate
     );
 

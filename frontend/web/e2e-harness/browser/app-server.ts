@@ -67,6 +67,14 @@ async function startTlsFront(targetPort: number): Promise<{ url: string; stop():
   };
 }
 
+const HARNESS_DIST_PREFIX = '.next-harness-';
+
+/** Removes a harness-created distDir; anything whose basename lacks the exact prefix is left alone. */
+async function removeHarnessDistDir(appDir: string, distDir: string): Promise<void> {
+  if (path.basename(distDir) !== distDir || !distDir.startsWith(HARNESS_DIST_PREFIX)) return;
+  await fs.promises.rm(path.join(appDir, distDir), { recursive: true, force: true });
+}
+
 export interface RunningApp {
   url: string;
   port: number;
@@ -86,6 +94,9 @@ export async function startApp(target: AppTarget, o: { upstreamUrl: string; redi
   if (mode === 'start' && !fs.existsSync(path.join(cwd, '.next', 'BUILD_ID'))) throw new Error(`HARNESS_MODE=start needs a build: run \`cd apps/${target.dir} && npx next build\` first (not nx: it writes to dist, next start reads .next)`);
   const tls = mode === 'start' ? await startTlsFront(port) : null;
   const url = tls ? tls.url : `http://localhost:${port}`;
+  // Dev mode gets its own distDir: Next's dev lock is per distDir, so a developer's live `next dev`
+  // on the app's default `.next` no longer blocks the harness. `start` must read the build in `.next`.
+  const distDir = mode === 'start' ? '.next' : `${HARNESS_DIST_PREFIX}${port}`;
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
     NODE_ENV: mode === 'start' ? 'production' : 'development',
@@ -102,6 +113,7 @@ export async function startApp(target: AppTarget, o: { upstreamUrl: string; redi
     IDENTITY_CLIENT_ID: 'harness',
     IDENTITY_CLIENT_SECRET: 'harness',
     NEXT_TELEMETRY_DISABLED: '1',
+    NEXT_DIST_DIR: distDir,
     ...o.extraEnv,
   };
   const child: ChildProcess = spawn('npx', ['next', mode, '--port', String(port)], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
@@ -140,8 +152,9 @@ export async function startApp(target: AppTarget, o: { upstreamUrl: string; redi
     stop: () =>
       new Promise<void>((resolve) => {
         void tls?.stop();
-        if (exited) return resolve();
-        child.on('exit', () => resolve());
+        const done = () => void removeHarnessDistDir(cwd, distDir).catch(() => undefined).then(() => resolve());
+        if (exited) return done();
+        child.on('exit', done);
         try {
           // The whole group: `npx` forks the real next process.
           process.kill(-(child.pid as number), 'SIGTERM');
@@ -154,7 +167,7 @@ export async function startApp(target: AppTarget, o: { upstreamUrl: string; redi
           } catch {
             /* gone */
           }
-          resolve();
+          done();
         }, 8000);
       }),
   } as RunningApp;

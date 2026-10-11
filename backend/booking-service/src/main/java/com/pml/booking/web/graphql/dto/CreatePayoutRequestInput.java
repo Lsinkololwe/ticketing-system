@@ -61,11 +61,10 @@ public record CreatePayoutRequestInput(
      * Client-supplied key that makes retrying this request safe.
      *
      * <p>Without it a retried create — a double-click, a dropped connection, a browser
-     * refresh — produces a SECOND payout for the same money.
-     *
-     * <p>Optional at the schema level so existing callers keep compiling, but
-     * a caller that omits it gets no retry protection. Send one.
+     * refresh — produces a SECOND payout for the same money. Enforced by the shared
+     * {@code IdempotencyGuard}, not by this field alone.
      */
+    @NotBlank(message = "Idempotency key is required")
     @Size(max = 100, message = "Idempotency key must not exceed 100 characters")
     String idempotencyKey
 ) {}

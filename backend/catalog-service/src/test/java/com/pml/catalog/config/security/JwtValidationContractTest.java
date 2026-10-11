@@ -65,6 +65,6 @@ class JwtValidationContractTest {
 
     /** The platform's service chain, populated as this service's configuration populates it. */
     private static ServiceSecurity configuredWith(String expectedAudiences) {
-        return new ServiceSecurity(realm.issuer(), "", AUDIENCE, expectedAudiences, List.of());
+        return new ServiceSecurity(realm.issuer(), "", AUDIENCE, expectedAudiences, List.of(), false);
     }
 }

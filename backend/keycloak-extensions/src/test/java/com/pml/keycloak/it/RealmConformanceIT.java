@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -89,6 +90,51 @@ class RealmConformanceIT {
     }
 
     @Test
+    @DisplayName("ADMIN and SUPER_ADMIN carry the platform's role hierarchy as Keycloak composites")
+    void roleHierarchyIsComposite() throws Exception {
+        assertThat(roleNames(json("/" + STAFF + "/roles/ADMIN/composites")))
+                .as("ADMIN inherits FINANCE").contains("FINANCE");
+        assertThat(roleNames(json("/" + STAFF + "/roles/SUPER_ADMIN/composites")))
+                .as("SUPER_ADMIN inherits ADMIN").contains("ADMIN");
+        assertThat(roleNames(json("/" + BUYERS + "/roles/ORGANIZER/composites")))
+                .as("an organizer is also a customer, so ORGANIZER inherits CUSTOMER").contains("CUSTOMER");
+    }
+
+    @Test
+    @DisplayName("each realm declares exactly the platform roles and nothing but Keycloak's own built-ins")
+    void realmRoleSetIsExact() throws Exception {
+        assertThat(declaredRoles(BUYERS, Set.of("default-roles-" + BUYERS, "offline_access", "uma_authorization")))
+                .as("buyers realm platform roles").containsExactlyInAnyOrder("CUSTOMER", "ORGANIZER");
+        assertThat(declaredRoles(STAFF, Set.of("default-roles-" + STAFF, "offline_access", "uma_authorization")))
+                .as("staff realm platform roles").containsExactlyInAnyOrder("ADMIN", "SUPER_ADMIN", "FINANCE", "FINANCE_LEAD");
+    }
+
+    private static List<String> declaredRoles(String realm, Set<String> keycloakBuiltIns) throws Exception {
+        List<String> declared = new ArrayList<>();
+        for (String name : roleNames(json("/" + realm + "/roles?max=200"))) {
+            if (!keycloakBuiltIns.contains(name)) {
+                declared.add(name);
+            }
+        }
+        return declared;
+    }
+
+    @Test
+    @DisplayName("a new buyer is a CUSTOMER because the realm's default role composite carries it")
+    void customerIsTheDefaultRole() throws Exception {
+        JsonNode defaultRole = json("/" + BUYERS).path("defaultRole");
+        assertThat(defaultRole.path("name").asText()).as("realm default role").isEqualTo("default-roles-" + BUYERS);
+        assertThat(roleNames(json("/" + BUYERS + "/roles-by-id/" + defaultRole.path("id").asText() + "/composites")))
+                .as("default role composites").contains("CUSTOMER");
+    }
+
+    private static List<String> roleNames(JsonNode roles) {
+        List<String> names = new ArrayList<>();
+        roles.forEach(role -> names.add(role.path("name").asText()));
+        return names;
+    }
+
+    @Test
     @DisplayName("staff passwords must be long, distinct from the username and email, and not recently used")
     void staffPasswordPolicy() throws Exception {
         String username = "policy-" + UUID.randomUUID().toString().substring(0, 8);
@@ -128,6 +174,29 @@ class RealmConformanceIT {
     }
 
     @Test
+    @DisplayName("every service-account client is confidential and holds its own non-blank secret")
+    void serviceClientsAreConfidentialWithOwnSecrets() throws Exception {
+        List<String> secrets = new ArrayList<>();
+        List<String> serviceClients = new ArrayList<>();
+        for (String realm : List.of(BUYERS, STAFF)) {
+            for (JsonNode client : json("/" + realm + "/clients?max=200")) {
+                if (!client.path("serviceAccountsEnabled").asBoolean()) {
+                    continue;
+                }
+                String clientId = client.path("clientId").asText();
+                serviceClients.add(realm + "/" + clientId);
+                assertThat(client.path("publicClient").asBoolean()).as("%s / %s is confidential", realm, clientId).isFalse();
+                String secret = json("/" + realm + "/clients/" + client.path("id").asText() + "/client-secret").path("value").asText();
+                assertThat(secret).as("%s / %s secret", realm, clientId).isNotBlank();
+                secrets.add(secret);
+            }
+        }
+        assertThat(serviceClients).as("catalog, booking, identity, api-gateway and the OTP authenticator")
+                .hasSizeGreaterThanOrEqualTo(5);
+        assertThat(secrets).as("no two service clients share a secret").doesNotHaveDuplicates();
+    }
+
+    @Test
     @DisplayName("every redirect URI is exact, no client allows the implicit flow, and no web origin is a wildcard")
     void redirectsAreExact() throws Exception {
         for (String realm : List.of(BUYERS, STAFF)) {
@@ -148,6 +217,76 @@ class RealmConformanceIT {
                 }
             }
         }
+    }
+
+    @Test
+    @DisplayName("sessions idle out after 1800 s; buyers last at most 36000 s, staff 28800 s; the mobile client sets no override")
+    void refreshLifetimesFollowTheTable() throws Exception {
+        JsonNode buyers = json("/" + BUYERS);
+        assertThat(buyers.path("ssoSessionIdleTimeout").asInt()).as("buyers idle (s)").isEqualTo(1800);
+        assertThat(buyers.path("ssoSessionMaxLifespan").asInt()).as("buyers max (s)").isEqualTo(36000);
+        assertThat(buyers.path("ssoSessionIdleTimeoutRememberMe").asInt()).as("no remember-me idle extension").isZero();
+        assertThat(buyers.path("ssoSessionMaxLifespanRememberMe").asInt()).as("no remember-me max extension").isZero();
+        assertThat(buyers.path("offlineSessionIdleTimeout").asInt()).as("buyers offline idle (s)").isEqualTo(2592000);
+        assertThat(buyers.path("offlineSessionMaxLifespan").asInt()).as("buyers offline max (s)").isEqualTo(5184000);
+        assertThat(buyers.path("offlineSessionMaxLifespanEnabled").asBoolean()).as("offline max lifespan is not enforced").isFalse();
+        assertThat(buyers.path("clientSessionIdleTimeout").asInt()).as("no realm-wide client idle override").isZero();
+        assertThat(buyers.path("clientSessionMaxLifespan").asInt()).as("no realm-wide client max override").isZero();
+
+        JsonNode staff = json("/" + STAFF);
+        assertThat(staff.path("ssoSessionIdleTimeout").asInt()).as("staff idle (s)").isEqualTo(1800);
+        assertThat(staff.path("ssoSessionMaxLifespan").asInt()).as("staff max (s)").isEqualTo(28800);
+
+        JsonNode mobile = ContactOtpKeycloakIT.client(BUYERS, "myticketzm-mobile");
+        assertThat(mobile.path("publicClient").asBoolean()).as("mobile is a public PKCE client").isTrue();
+        JsonNode attributes = mobile.path("attributes");
+        assertThat(attributes.path("pkce.code.challenge.method").asText()).isEqualTo("S256");
+        for (String override : List.of("client.session.idle.timeout", "client.session.max.lifespan",
+                "client.offline.session.idle.timeout", "client.offline.session.max.lifespan")) {
+            assertThat(attributes.path(override).asText("")).as("mobile client overrides " + override).isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("nobody can register, the registration flow grants no role, and no client mapper turns user input into roles")
+    void registrationCannotGrantRoles() throws Exception {
+        for (String realm : List.of(BUYERS, STAFF)) {
+            JsonNode r = json("/" + realm);
+            assertThat(r.path("registrationAllowed").asBoolean()).as(realm + " self-registration").isFalse();
+            String flow = r.path("registrationFlow").asText();
+            assertThat(flow).as(realm + " registration flow alias").isNotBlank();
+            for (JsonNode execution : json("/" + realm + "/authentication/flows/" + flow + "/executions")) {
+                String provider = execution.path("providerId").asText("");
+                assertThat(provider).as("%s registration execution %s", realm, execution.path("displayName").asText())
+                        .doesNotContainIgnoringCase("role").doesNotContainIgnoringCase("account-type");
+            }
+            List<String> roleGrantingTypes = List.of("oidc-hardcoded-role-mapper", "oidc-script-based-protocol-mapper",
+                    "oidc-hardcoded-claim-mapper");
+            for (JsonNode client : json("/" + realm + "/clients?max=200")) {
+                for (JsonNode mapper : client.path("protocolMappers")) {
+                    String type = mapper.path("protocolMapper").asText();
+                    assertThat(roleGrantingTypes).as("%s / %s mapper %s", realm, client.path("clientId").asText(), mapper.path("name").asText())
+                            .doesNotContain(type);
+                    if ("oidc-usermodel-attribute-mapper".equals(type)) {
+                        assertThat(mapper.path("config").path("claim.name").asText(""))
+                                .as("a user attribute must not be projected into a role claim")
+                                .doesNotContainIgnoringCase("role");
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the buyer browser flow is the session cookie, then the contact authenticator, and nothing else")
+    void buyerBrowserFlowHasExactlyTheContactAuthenticator() throws Exception {
+        String flow = json("/" + BUYERS).path("browserFlow").asText();
+        List<String> providers = new ArrayList<>();
+        for (JsonNode execution : json("/" + BUYERS + "/authentication/flows/" + flow + "/executions")) {
+            providers.add(execution.path("providerId").asText(""));
+        }
+        assertThat(providers).as("executions of the bound browser flow %s", flow)
+                .containsExactly("auth-cookie", "contact-otp-authenticator");
     }
 
     // ---- staff second factor ------------------------------------------------------------------

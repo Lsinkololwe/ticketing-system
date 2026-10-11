@@ -18,6 +18,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 
 /**
  * GraphQL Mutation Resolver for Organization Member operations.
@@ -38,6 +39,7 @@ public class OrganizationMemberMutationResolver {
      * Update member role and permissions.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.updateMemberRole")
     @PreAuthorize("isAuthenticated()")
     public Mono<OrganizationMember> updateMemberRole(
             @InputArgument String memberId,
@@ -69,6 +71,7 @@ public class OrganizationMemberMutationResolver {
      * Suspend a member.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.suspendMember")
     @PreAuthorize("isAuthenticated()")
     public Mono<OrganizationMember> suspendMember(
             @InputArgument String memberId,
@@ -93,6 +96,7 @@ public class OrganizationMemberMutationResolver {
      * Reactivate a suspended member.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.reactivateMember")
     @PreAuthorize("isAuthenticated()")
     public Mono<OrganizationMember> reactivateMember(@InputArgument String memberId) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -108,6 +112,7 @@ public class OrganizationMemberMutationResolver {
      * Remove member from organization.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.removeMember")
     @PreAuthorize("isAuthenticated()")
     public Mono<Boolean> removeMember(
             @InputArgument String memberId,
@@ -132,6 +137,7 @@ public class OrganizationMemberMutationResolver {
      * Leave organization (self-removal).
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.leaveOrganization")
     @PreAuthorize("isAuthenticated()")
     public Mono<Boolean> leaveOrganization(@InputArgument String organizationId) {
         return SecurityContextUtils.requireCurrentUserId()

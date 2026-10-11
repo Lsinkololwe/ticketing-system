@@ -321,9 +321,15 @@ class ContactOtpKeycloakIT {
         String role = admin("GET", "/myticketzm/roles/ADMIN", null).body();
         assertThat(admin("POST", "/myticketzm/users/" + id + "/role-mappings/realm", "[" + role + "]").status()).isEqualTo(204);
         stub.handles.put("hStaff", staff);
-        Browser.Step step = new Browser(base).authorize("myticketzm", WEB, Browser.REDIRECT, "login_hint=hStaff");
-        assertThat(step.hasCode()).isFalse();
-        assertThat(step.html()).contains("could not sign you in");
+        try {
+            Browser.Step step = new Browser(base).authorize("myticketzm", WEB, Browser.REDIRECT, "login_hint=hStaff");
+            assertThat(step.hasCode()).isFalse();
+            assertThat(step.html()).contains("could not sign you in");
+        } finally {
+            // The buyers realm declares no ADMIN role; this case added one only to model a staff account,
+            // and the server is shared with the realm-conformance cases that assert the exact role set.
+            admin("DELETE", "/myticketzm/roles/ADMIN", null);
+        }
     }
 
     @Test

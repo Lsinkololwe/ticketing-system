@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
+import com.pml.shared.security.revocation.FailClosedOnRevocation;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -68,6 +69,7 @@ public class VerificationDocumentMutationResolver {
      * - Generates audit trail
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.uploadVerificationDocument")
     @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<VerificationDocument> uploadVerificationDocument(
             @InputArgument("input") Map<String, Object> input) {
@@ -127,6 +129,7 @@ public class VerificationDocumentMutationResolver {
      * - Better for mobile clients (handles network interruptions)
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.requestDocumentUploadUrl")
     @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<DocumentUploadUrlResponse> requestDocumentUploadUrl(
             @InputArgument("input") Map<String, Object> input) {
@@ -178,6 +181,7 @@ public class VerificationDocumentMutationResolver {
      * Approve verification document (admin only).
      */
     @DgsMutation
+    @FailClosedOnRevocation("admin.approveVerificationDocument")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<VerificationDocument> approveVerificationDocument(
             @InputArgument String documentId) {
@@ -191,6 +195,7 @@ public class VerificationDocumentMutationResolver {
      * Reject verification document (admin only).
      */
     @DgsMutation
+    @FailClosedOnRevocation("admin.rejectVerificationDocument")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public Mono<VerificationDocument> rejectVerificationDocument(
             @InputArgument String documentId,
@@ -209,6 +214,7 @@ public class VerificationDocumentMutationResolver {
      * Delete verification document.
      */
     @DgsMutation
+    @FailClosedOnRevocation("organizer.deleteVerificationDocument")
     @PreAuthorize("isAuthenticated()") // application stage: any signed-in account, own application only (ORGANIZER is granted on approval)
     public Mono<Boolean> deleteVerificationDocument(
             @InputArgument String documentId) {

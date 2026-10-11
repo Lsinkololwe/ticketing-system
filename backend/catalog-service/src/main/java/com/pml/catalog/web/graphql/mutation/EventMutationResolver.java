@@ -17,6 +17,7 @@ import com.pml.catalog.workflow.lifecycle.EventLifecycleProcess;
 import com.pml.catalog.workflow.schedule.EventPublishScheduleProcess;
 import com.pml.catalog.domain.model.Event;
 import com.pml.catalog.exception.EventNotFoundException;
+import com.pml.catalog.security.Callers;
 import com.pml.catalog.security.EventWriteGuard;
 import com.pml.catalog.service.EventService;
 import com.pml.shared.constants.EventStatus;
@@ -26,7 +27,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -60,8 +60,6 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @RequiredArgsConstructor
 public class EventMutationResolver {
-
-    private static final java.util.Set<String> ADMIN_AUTHORITIES = java.util.Set.of("ROLE_ADMIN", "ROLE_SUPER_ADMIN");
 
     private final EventService eventService;
 
@@ -136,7 +134,7 @@ public class EventMutationResolver {
     ) {
         log.info("Updating event: {}", id);
         return eventWriteGuard.forWrite(id, Permission.EVENT_EDIT)
-                .flatMap(existingEvent -> Mono.zip(SecurityContextUtils.requireCurrentUserId(), platformAdmin())
+                .flatMap(existingEvent -> Mono.zip(SecurityContextUtils.requireCurrentUserId(), Callers.platformAdministrator())
                         .flatMap(caller -> {
                             boolean wasScheduled = existingEvent.isPublishScheduled();
                             return eventService.updateEvent(existingEvent, input, caller.getT1(), caller.getT2())
@@ -482,13 +480,5 @@ public class EventMutationResolver {
             return schedules.cancel(updated.getId());
         }
         return schedules.move(updated.getId(), updated.getPublishAt());
-    }
-
-    /** Whether the caller is a platform administrator, who alone may feature an event. */
-    private static Mono<Boolean> platformAdmin() {
-        return ReactiveSecurityContextHolder.getContext()
-                .map(context -> context.getAuthentication() != null && context.getAuthentication().getAuthorities().stream()
-                        .anyMatch(authority -> ADMIN_AUTHORITIES.contains(authority.getAuthority())))
-                .defaultIfEmpty(false);
     }
 }

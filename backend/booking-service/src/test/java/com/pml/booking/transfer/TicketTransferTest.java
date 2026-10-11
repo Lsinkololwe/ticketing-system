@@ -117,7 +117,7 @@ class TicketTransferTest {
         worker.registerWorkflowImplementationTypes(TicketTransferWorkflowImpl.class);
         worker.registerActivitiesImplementations(new TicketTransferActivitiesImpl(template,
                 TransactionalOperator.create(new ReactiveMongoTransactionManager(template.getMongoDatabaseFactory())), outbox,
-                world.identity, Clock.systemUTC()));
+                world.identity, Clock.systemUTC(), noCurrentEvent()));
         workers.start();
     }
 
@@ -155,7 +155,7 @@ class TicketTransferTest {
     }
 
     private TicketTransfer offer(Ticket ticket) {
-        return asCustomer(holder, process.initiate(new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, "enjoy"), holder))
+        return asCustomer(holder, process.initiate(new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, "enjoy", "idem-" + System.nanoTime()), holder))
                 .block();
     }
 
@@ -223,10 +223,10 @@ class TicketTransferTest {
     @DisplayName("only the holder can offer a ticket; anyone else is told the ticket is unknown, exactly as for an invented id")
     void onlyTheHolderOffers() {
         Ticket ticket = ticket();
-        var input = new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null);
+        var input = new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime());
         var thief = refusal(asCustomer("thief", process.initiate(input, "thief")));
         var invented = refusal(asCustomer("thief", process.initiate(
-                new InitiateTicketTransferInput(UUID.randomUUID().toString(), TransferChannel.EMAIL, recipientEmail, null), "thief")));
+                new InitiateTicketTransferInput(UUID.randomUUID().toString(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), "thief")));
 
         assertThat(thief.errorCode()).isEqualTo(ErrorCode.TICKET_UNKNOWN);
         assertThat(invented.errorCode()).isEqualTo(ErrorCode.TICKET_UNKNOWN);
@@ -296,32 +296,32 @@ class TicketTransferTest {
         Ticket ticket = ticket();
         offer(ticket);
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null), holder))).errorCode())
+                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), holder))).errorCode())
                 .isEqualTo(ErrorCode.TICKET_STATE_INVALID);
 
         Ticket refunded = ticket();
         refunded.setStatus(TicketStatus.REFUNDED);
         template.save(refunded).block();
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(refunded.getId(), TransferChannel.EMAIL, recipientEmail, null), holder))).errorCode())
+                new InitiateTicketTransferInput(refunded.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), holder))).errorCode())
                 .isEqualTo(ErrorCode.TICKET_STATE_INVALID);
 
         Ticket fresh = ticket();
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(fresh.getId(), TransferChannel.EMAIL, "nobody-" + UUID.randomUUID() + "@example.com", null), holder)))
+                new InitiateTicketTransferInput(fresh.getId(), TransferChannel.EMAIL, "nobody-" + UUID.randomUUID() + "@example.com", null, "idem-" + System.nanoTime()), holder)))
                 .errorCode()).isEqualTo(ErrorCode.TRANSFER_TARGET_INELIGIBLE);
 
         String selfEmail = holder + "@example.com";
         DIRECTORY.put(selfEmail, new UserLookup(holder, "Me M.", "m***@example.com"));
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(fresh.getId(), TransferChannel.EMAIL, selfEmail, null), holder))).errorCode())
+                new InitiateTicketTransferInput(fresh.getId(), TransferChannel.EMAIL, selfEmail, null, "idem-" + System.nanoTime()), holder))).errorCode())
                 .isEqualTo(ErrorCode.TRANSFER_TO_SELF);
 
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(fresh.getId(), TransferChannel.EMAIL, "not-an-email", null), holder))).errorCode())
+                new InitiateTicketTransferInput(fresh.getId(), TransferChannel.EMAIL, "not-an-email", null, "idem-" + System.nanoTime()), holder))).errorCode())
                 .isEqualTo(ErrorCode.COMMAND_NOT_WELL_FORMED);
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(fresh.getId(), TransferChannel.EMAIL, recipientEmail, "n".repeat(201)), holder))).errorCode())
+                new InitiateTicketTransferInput(fresh.getId(), TransferChannel.EMAIL, recipientEmail, "n".repeat(201), "idem-" + System.nanoTime()), holder))).errorCode())
                 .isEqualTo(ErrorCode.COMMAND_NOT_WELL_FORMED);
         assertThat(reload(fresh).getActiveTransferId()).isNull();
     }
@@ -332,20 +332,20 @@ class TicketTransferTest {
         Ticket ticket = ticket();
         event.setStartDate(Instant.now().plus(Duration.ofMinutes(90)));
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null), holder))).errorCode())
+                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), holder))).errorCode())
                 .isEqualTo(ErrorCode.TICKET_NOT_TRANSFERABLE);
 
         event.setStartDate(Instant.now().plus(Duration.ofDays(3)));
         event.setStatus(EventStatus.CANCELLED);
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null), holder))).errorCode())
+                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), holder))).errorCode())
                 .isEqualTo(ErrorCode.TICKET_NOT_TRANSFERABLE);
 
         event.setStatus(EventStatus.PUBLISHED);
         ticket.setTransferCount(5);
         template.save(ticket).block();
         assertThat(refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null), holder))).errorCode())
+                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), holder))).errorCode())
                 .isEqualTo(ErrorCode.TICKET_NOT_TRANSFERABLE);
         assertThat(reload(ticket).getActiveTransferId()).isNull();
         assertThat(template.count(Query.query(Criteria.where("ticketId").is(ticket.getId())), TicketTransfer.class).block()).isZero();
@@ -359,7 +359,7 @@ class TicketTransferTest {
         Ticket ticket = ticket();
         TicketTransferProcess brief = newProcess(Duration.ofSeconds(3));
         TicketTransfer transfer = asCustomer(holder, brief.initiate(
-                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null), holder)).block();
+                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), holder)).block();
         assertThat(transfer.getStatus()).isEqualTo(TicketTransferStatus.PENDING);
 
         await().atMost(Duration.ofSeconds(40)).untilAsserted(() ->
@@ -434,7 +434,7 @@ class TicketTransferTest {
         List<Mono<TicketTransfer>> offers = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             offers.add(asCustomer(holder, process.initiate(
-                    new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null), holder)));
+                    new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), holder)));
         }
 
         List<Object> outcomes = race(offers);
@@ -456,7 +456,7 @@ class TicketTransferTest {
             asCustomer(holder, process.cancel(transfer.getId(), holder)).block();
         }
         var refused = refusal(asCustomer(holder, process.initiate(
-                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null), holder)));
+                new InitiateTicketTransferInput(ticket.getId(), TransferChannel.EMAIL, recipientEmail, null, "idem-" + System.nanoTime()), holder)));
         assertThat(refused.errorCode()).isEqualTo(ErrorCode.RATE_LIMIT_EXCEEDED);
         assertThat(refused.details()).containsKey("retryAfterSeconds");
     }
@@ -540,5 +540,13 @@ class TicketTransferTest {
         return Flux.fromIterable(calls)
                 .flatMap(call -> call.<Object>map(v -> v).onErrorResume(e -> Mono.just(e)).defaultIfEmpty("empty"), calls.size())
                 .collectList().block(Duration.ofSeconds(90));
+    }
+
+    /** Catalog knows no event, so the ticket keeps what it carries. */
+    private static com.pml.booking.service.CurrentEventDetails noCurrentEvent() {
+        com.pml.booking.infrastructure.client.CatalogServiceClient catalog =
+                org.mockito.Mockito.mock(com.pml.booking.infrastructure.client.CatalogServiceClient.class);
+        org.mockito.Mockito.when(catalog.getEventById(org.mockito.ArgumentMatchers.any())).thenReturn(reactor.core.publisher.Mono.empty());
+        return new com.pml.booking.service.CurrentEventDetails(catalog, java.time.Clock.systemUTC());
     }
 }

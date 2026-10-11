@@ -3646,3 +3646,623 @@ the server on sign-out and on the revoked-token path; covered by unit tests and 
 shared library, admin and organizer apps, and verified in Chrome (stuck state healed in one bounce; sign-out logs
 `sso: ended`; Keycloak holds no session). The plan for denial-of-service and rate limiting is in
 `docs/operations/DOS_RATE_LIMITING_AND_SESSION_PLAN.md`.
+
+
+## F-052 · 2026-10-09 · Revocation: the gateway failed open, an evicting Redis was trusted, and the defaults were an hour stale
+
+Found while answering "when I log out of Keycloak, how is the access token stopped?". The enforcement chain from
+Keycloak's `LOGOUT` event to a refused token existed; four defects in it did not show until it was run against
+real tokens.
+
+- **The gateway admitted revoked tokens after any Redis loss.** `SessionBlacklistFilter` did three `EXISTS` and
+  swallowed every error as "not revoked", ignoring the completeness marker the other services use. After a flush,
+  restart or outage, a logged-out token passed for up to the 2-minute warm interval. **Fixed:** the gateway runs the
+  shared `CachedRevocationCheck` (cache, marker, then identity's durable records, through a client-credentials
+  registration `api-gateway` with `internal-read`); with no store answering, reads proceed and state-changing
+  requests get 503 `REVOCATION_UNAVAILABLE`. `GatewayRevocationEnforcementTest` (Redis container + WireMock),
+  `SessionBlacklistFilterSidTest`.
+- **An evicting Redis was trusted.** The eviction probe only changed the health status; `RevocationCacheTrust` still
+  treated a miss as "not revoked" while the sentinel was present, so under `allkeys-lru` with a memory limit one
+  revocation key could vanish and the token be admitted. The spec also accepted `volatile-*` policies as safe, but
+  every revocation key carries a TTL, so those evict them too. **Fixed:** an evicting policy with `maxmemory` set makes
+  every miss go to the durable store (`EvictionPolicyTrustTest`); the spec table is corrected.
+- **Defaults still assumed a one-hour token.** The realms set `accessTokenLifespan: 300`; identity, catalog and
+  booking defaulted `access-token-lifespan` to `1h`, `RevocationProperties` to one hour, and the web
+  `RevocationService` to a 3660 s cache TTL, so records and keys lived twelve times longer than needed. **Fixed:** 5
+  minutes everywhere; `revocation.it.ts` asserts the web TTL.
+- **Repeating a revocation extended it.** `save` replaced the record, resetting `revokedAt`, `expiresAt` and the first
+  reason. **Fixed:** insert once, return the active record unchanged, replace only a record past its expiry that the TTL
+  monitor has not swept yet.
+- **Identity's access-changing mutations were not fail-closed** (members, roles, grants, ownership, invitations,
+  payout accounts, verification documents, users, credential-changing contact steps). Marked, and
+  `SensitiveMutationsTest` now lists every unmarked mutation so a new one cannot be added without a decision.
+- **Spec drift:** the Redis keys in the spec (`revoked:*`) were never the ones in the code (`pml:*`); the unique
+  `{type,value}` index is unnecessary because `_id` is derived from them. Both corrected.
+
+**The method:** the logout path was proven with real material, not stubs: two real Keycloak 26.5.2 sessions of one
+user, a real Keycloak logout, the event the listener sends, MongoDB, Redis and the security chain
+(`LogoutRevokesTokenEndToEndTest`, 8 tests: only the logged-out session is cut, Keycloak refuses to refresh it, a flush
+loses nothing, a token and a session can be revoked alone, the user revocation covers tokens minted afterwards). The
+listener plugin is not installed in that container, so the test posts the event it would send; the listener is covered
+by `UserSyncEventListenerTest`.
+
+**Still open in ET-IDN-003** (spec stays `in-progress`): the GraphQL surface, the `identity.TokenRevoked` event, audit
+rows, the sessions list; and the rate-limiting work in `docs/operations/DOS_RATE_LIMITING_AND_SESSION_PLAN.md`
+(the gateway brute-force filter trusts the first `X-Forwarded-For` entry and counts non-atomically; booking's limiter
+fails closed against ET-PLT-011 R8).
+
+## F-053 · 2026-10-10 · ET-PLT-007: realm composites, the platform-wide audience, and a stale SCANNER dependency
+
+**Realm composites, fixed.** The admin realm's roles (`ADMIN`, `SUPER_ADMIN`, `FINANCE`, `FINANCE_LEAD`,
+`SCANNER`) carried no `composite`/`composites` block at all, contradicting §4's hierarchy table
+(`SUPER_ADMIN` includes `ADMIN`; `ADMIN` includes `FINANCE`). Added to both realm JSONs; a seeded
+`admin` user's direct `realmRoles: [SUPER_ADMIN, ADMIN]` grant is now redundant but harmless.
+`RealmConformanceIT.roleHierarchyIsComposite` reads the composites back from a real Keycloak.
+
+**Audience validation, turned on.** Only 4 of 11 clients across both realms carried an
+`oidc-audience-mapper`; the rest — every service-to-service client (`catalog-service`,
+`booking-service`, `api-gateway`, `identity-service`, `otp-authenticator`) — minted a token with
+**no `aud` claim at all** (checked live against `dev_keycloak`; `PlatformResourceServer`'s own comment
+saying Keycloak defaults to `"aud": "account"` does not hold for this realm's client-credentials
+grant, which carries no audience scope). Added the same mapper (aud = the gateway's client id) to
+all five, so the platform has one audience, matching the design the four already-mapped clients
+implied. `expected-audiences` in all four services now defaults to that client id instead of blank;
+`PlatformResourceServer`'s "off by default" WARN should no longer fire in any environment that
+imports the current realm export. Verified live: every client's token, service accounts included,
+now carries `aud: myticketzm-api-gateway`.
+
+### Open
+
+- **`TicketQueryResolver.ticketByNumber` still checks `hasAnyRole(..., 'SCANNER', ...)`** — a realm
+  role the spec's 2026-10-04 amendment (D-47) retired in favor of event-scoped grants
+  (`identity_event_access_grants`, ET-ORG-003). The realm role was **not removed** in this pass
+  because of this live reference: deleting it would silently cut off ticket-scanner lookups by
+  number with no grant-based equivalent wired in. `ticket(id)` next to it already excludes `SCANNER`
+  from its own check, so the two queries have drifted. Fixing this properly means giving
+  `ticketByNumber` the same event-grant check `GateScanAccessTest`/`CheckInServiceImpl` already use
+  for validation, not just deleting the role — that belongs to ET-ORG-003 or ET-TKT-003, not this
+  spec. Until then the realm's `SCANNER` role stays, undocumented by the spec it should have been
+  removed under.
+
+## F-054 · 2026-10-10 · IdempotencyGuard couldn't replay a response with a derived getter
+
+Found wiring `reserveTickets` onto the already-built `IdempotencyGuard` (ET-PLT-007 R6, first real call
+site): `TicketReservation.getNetAmount()` is computed from other fields, with no backing field.
+Jackson serializes it on the way into the ledger and then fails to deserialize it back
+(`UnrecognizedPropertyException`) on replay, because `FAIL_ON_UNKNOWN_PROPERTIES` is Jackson's
+default and nothing turns it off. This would have broken replay for any of the nine registry
+mutations whose response type carries even one derived getter — not specific to reservations.
+
+**Fixed in the guard itself**, not per call site: `deserialise` now reads with
+`FAIL_ON_UNKNOWN_PROPERTIES` off, via a per-call `ObjectMapper.readerFor(...).without(...)`
+rather than mutating the shared mapper a caller passed in (that mapper is used for other things
+too). The real fields a computed getter derives from come back correctly; the computed value
+itself is simply skipped and recomputes on its own. `IdempotencyGuardTest.replayToleratesAComputedProperty`
+pins it with a record carrying exactly this shape.
+
+Also found and fixed in the same pass: a test `ObjectMapper` built bare (`new ObjectMapper()`)
+has no JSR-310 module, so any response type carrying an `Instant` fails to serialize at all —
+unrelated to production, where Spring Boot's autoconfigured `ObjectMapper` already registers it,
+but worth knowing before writing the next seven call sites' tests: use
+`new ObjectMapper().findAndRegisterModules()`, not a bare one.
+
+## F-055 · 2026-10-10 · `@Nested` JUnit5 test classes never execute under this project's Maven Surefire setup
+
+Found while writing a cross-tenant proof for the ET-PLT-007 Phase 6 event-admin-operations fix
+(`EventAdminOperationsTenantBoundaryTest`): the test reported `Tests run: 0` with no error, no
+"skipped" count — Surefire simply never ran any `@Test` method declared inside a `@Nested` inner
+class. Confirmed with a minimal, dependency-free probe class (one top-level `@Test`, one `@Nested`
+class with one `@Test`): Surefire ran only the top-level method, every time, including a plain
+`mvn test` with no `-Dtest` filter at all.
+
+**Confirmed independent of my own code.** This is not new breakage from this session's work — it
+reproduces on a from-scratch class with zero project dependencies, and retroactively on pre-existing
+files: `TicketTierTenantBoundaryTest` reports "Tests run: 2" (its two top-level methods) while its
+`Outsider`/`Unaffiliated`/`Owner` nested classes — the actual cross-tenant attack scenarios the test
+exists to prove — have, as far as this investigation found, never executed. `EventVisibilityTest`
+shows the same shape (1 of its many nested cases). At least 20 test files across the backend use
+`@Nested`; every one of them is affected to some degree.
+
+**Confirmed it is a Surefire-specific defect, not a JUnit Platform one.** Using
+`org.junit.platform.launcher.core.LauncherFactory` directly, with the *exact* classpath Surefire's
+own JVM uses for the probe class, correctly discovers and runs both the top-level and the nested
+test (3 containers, 2 tests, both passing). Surefire's own invocation, every time, finds only the
+top-level one. Explicitly naming the nested class (`-Dtest='OuterTest$NestedClass'`) does run it —
+as a *separate* test suite report, not merged into the parent — which places the defect in how
+Surefire's directory/class scanner decides which `.class` files are test candidates: an inner
+class's compiled name (`Outer$Group.class`) does not match the default `**/*Test.class` family of
+patterns, so it is apparently never selected on its own, and is also excluded from whatever the
+outer class's own selection produces (unlike calling the JUnit Platform launcher directly).
+
+**Tried and ruled out:** declaring `org.junit.platform:junit-platform-launcher` explicitly (it was
+genuinely missing — `spring-boot-starter-test` does not bring it in transitively on Boot 3.5.5 —
+and is still worth keeping, since relying on Surefire's own bundled copy is not best practice
+regardless, but it did not fix this); bumping `maven-surefire-plugin` from 3.5.3 to 3.6.0 (made it
+worse — the probe's top-level method stopped running too); forcing the `surefire-junit-platform`
+provider as an explicit plugin dependency (no change).
+
+**Not fixed in this session** (user decision, 2026-10-10): root-causing a Surefire-internal defect
+was judged lower value than continuing ET-PLT-007 Phase 6's tenant-boundary conversions. The one
+new test this defect would have silently broken (`EventAdminOperationsTenantBoundaryTest`) was
+rewritten with flat `@Test` methods instead of `@Nested` groups, and now genuinely runs (4/4).
+`junit-platform-launcher` was added as an explicit test-scoped dependency to all five Spring Boot
+modules (`shared-library`, `catalog-service`, `booking-service`, `identity-service`, `api-gateway`)
+regardless, since it is correct independent of this bug.
+
+**Open, for a dedicated follow-up:** every pre-existing `@Nested` test class's grouped cases need
+re-verification (they may be silently untested, not merely passing) — in the near term by
+flattening to plain `@Test` methods (the only workaround confirmed to work), or longer term by
+actually root-causing Surefire's scanner behavior (a Surefire version newer than 3.6.0, a
+`<testSourceDirectory>`/`<includes>` configuration this investigation didn't try, or a filed
+upstream issue). `TicketTierTenantBoundaryTest` and `EventVisibilityTest` are the two confirmed
+affected files in catalog-service alone; the other ~18 files across the backend using `@Nested`
+were not individually re-verified.
+
+## F-056 · 2026-10-10 · ET-PLT-007 Phase 6: all 91 unscoped lookups individually resolved
+
+Converting a genuinely-unscoped `repo.findById(id)` to `TenantGuard.locate(scope, repo.findById(id),
+...)` does not reduce `TenantBoundaryLintTest`'s frozen count — the guard's own `unscopedById`
+argument, needed for the platform-admin branch, is textually still a `findById` call. The test's own
+javadoc already documented this for one case (`EventWriteGuard`, "+1 not -7"); this pass confirmed
+it generalizes. The actual deliverable for this phase was never "the count reaches zero" — it was
+"every one of the 91 flagged call sites is either genuinely tenant-scoped, or an explicit, auditable,
+documented exemption." All 91 were traced individually to one of five outcomes:
+
+1. **Genuinely unscoped, now fixed (33 of 91)** — a resolver already called `reads.*ForCaller(id)`
+   (a `TenantGuard`-backed, already-guarded lookup) before calling the service method, which then
+   re-fetched the same record by raw id with no filter at all. Defense in depth: the service now
+   reads `CurrentTenantScope.get()` itself rather than trusting every present and future caller to
+   guard first. Where several sibling write methods on one service shared this shape, they were
+   consolidated into one shared `*ForCaller` helper rather than an inline `TenantGuard.locate` per
+   method — a real reduction in the census, not just a wrap (booking-service's count fell by 14 more
+   than the 21 methods fixed, for exactly this reason).
+2. **Reached only from a Temporal workflow activity, no request ever exists (7 of 91)** — e.g.
+   catalog's `EventServiceImpl.publishEvent`/`cancelEventWithDetails`/`rescheduleEvent`/
+   `unpublishEvent`, escrow's `updateExpectedLockDate`, booking's `RefundServiceImpl
+   .createAdminRefundRequest`. `CurrentTenantScope.get()` *errors* (not empty) with no request, so
+   these construct an explicit `TenantScope.platformAdministrator("system:<workflow>", Set.of())`
+   instead — the system-actor decision becomes auditable through the same `TenantGuard.locate` path
+   rather than an ad hoc `IllegalArgumentException`.
+3. **Already correctly guarded, or a pre-existing documented exemption (18 of 91)** —
+   `EventWriteGuard`, `findVisibleById`, `eventVisibleToCaller`, `eventForCaller`,
+   `tierVisibleToCaller`/`eventOwnedByCaller`, identity's `IdentityTenantReads` (4 methods),
+   booking's `TenantReads` (4 methods) and `EscrowTransactionQueryResolver.accountVisibleToCaller`
+   were already routed through `TenantGuard.locate`; catalog's `scheduleEventPublish`/
+   `clearPublishSchedule` (reached from both a guarded resolver and a context-free workflow,
+   already documented in the budget's own javadoc) and identity's `markMirrorPending` (the
+   group-mirror sweep's own marking write, also pre-documented) were left exactly as they were.
+   Nothing to fix; added to `GUARDED_PATHS` for completeness where missing.
+4. **Dead or effectively unreachable (10 of 91)** — a public `findById` on the service interface
+   with zero real callers (catalog `EventServiceImpl`/`TicketTierServiceImpl`, identity's four
+   service impls, booking's `PayoutRequestServiceImpl`/`PromoCodeServiceImpl`/
+   `TicketServiceImpl.findById`); booking's `RefundServiceImpl.requestPartialRefund` and
+   `.bulkApproveRefunds` are reachable only through a `Submit.Kind.PARTIAL` or a direct service call
+   neither of which the live workflow or resolver ever constructs (`RefundProcess` only ever builds
+   `Kind.BUYER`/`Kind.ADMIN`; the real `bulkApproveRefunds` *mutation* calls `RefundProcess
+   .bulkApprove`, a different method, not this one). Left in place, undocumented further than this
+   entry — deleting unreferenced code is a separate decision from closing this spec.
+5. **A genuine false positive in the regex census (23 of 91, 20 of them in booking's
+   `RefundServiceImpl`/`PurchaseServiceImpl` alone)** — the model has an `organizationId`
+   field (so it mechanically matches "tenant-owned"), but the real authorization boundary is
+   something else entirely, and converting to an organization filter would be a regression, not a
+   fix:
+   - **Buyer/holder identity, not organization membership.** Booking's `TicketReservation`
+     (`ReservationServiceImpl`, all of `PurchaseServiceImpl`) and the holder-facing paths of
+     `Ticket`/`RefundRequest` (`RefundServiceImpl.requestRefund`/`findById`/`calculateRefundAmount`,
+     `TicketServiceImpl.findById`) are gated by `@PreAuthorize` SpEL expressions comparing the
+     caller's subject against `requestedBy`/`getRequestedBy()` (`@refundSecurityService
+     .isRefundRequestOwner`, `@ticketSecurityService.isTicketOwner`) — a customer belongs to no
+     organization and an org-based filter would refuse their own ticket.
+   - **Two-party identity, not organization membership.** Identity's `OwnershipTransferRequest`:
+     the schema resolver already restricts to exactly the current owner, the named recipient, or a
+     platform administrator (`isPartyTo`); an organization filter would let every other member of
+     either organization read a transfer that moves control of the business.
+   - **Attribution, not a security boundary.** Catalog's `Location.organizationId` records who
+     first added a shared venue; venues are deliberately public and reusable across organizations
+     (`location(id): Location @auth(requires: PUBLIC)`), so the field was never meant to gate
+     access.
+   - **No tenant-scoped access path exists at all.** Booking's `ChargebackServiceImpl` and
+     `PaymentAttemptServiceImpl`: every query and mutation across both schemas is
+     `@PreAuthorize("hasRole('ADMIN')")` with no organizer-facing equivalent anywhere — a platform
+     fraud/diagnostics subsystem by design. Building a `findByIdAndOrganizationIdIn` finder and a
+     new `ErrorCode` purely for a branch no caller can ever reach was judged not worth the new
+     surface, unlike the workflow cases in (2) where the finder/error code already existed for a
+     sibling guarded path.
+   - **An internal cross-reference, not a caller-supplied id.** `BankAccountServiceImpl.findById`
+     (a GraphQL field resolver reading the bank account referenced by an already-tenant-scoped
+     `PayoutRequest.bankAccountId`) and `RefundServiceImpl`'s `initiatePayaPayRefund`/
+     `updateTicketForCompletedRefund` (reading the ticket referenced by an already-loaded
+     `refundRequest.getTicketId()`) never take an id from the caller at all.
+   - **An inherently platform-wide batch job.** `ReconciliationServiceImpl.reconcileEscrowAccount`
+     is called only from `startEscrowReconciliation`'s sweep over *every* escrow account in the
+     platform — there is no single tenant whose request this is.
+
+New tests: `EventAdminOperationsTenantBoundaryTest` (catalog), `EventAccessServiceTenantBoundaryTest`
+(identity), `AdminFinanceOperationsTenantBoundaryTest` (booking: bank accounts, escrow accounts,
+promo codes) — each proves an outsider refused, the record unchanged, and a platform administrator
+still succeeding (so the guard is verified non-vacuous). `GUARDED_PATHS` extended for every
+newly-converted and newly-discovered-already-guarded method. Full `mvn -f backend verify` run clean
+after each service's batch (catalog, identity, booking) before moving to the next.
+
+## F-057 · 2026-10-10 · ET-PLT-007 Phase 8: four frontend mutations minted a fresh idempotency key on every call, and two plan items were already done by a different mechanism
+
+Three findings from the frontend half of R6/R7.
+
+**A real bug: idempotency keys that were never actually stable.** `useFinanceDecisions`
+(`finance.hooks.ts`) and `usePayoutOps`/`useRefundOps` (`finance-ops.hooks.ts`) — `approvePayout`,
+`approveRefund`, `retryPayout`, `createAdminRefund` — called `idempotencyKey: crypto.randomUUID()`
+**inside** the mutation call itself, so every invocation minted a new key, not every click. The
+button is disabled while its own mutation is in flight (`Button`'s `loading` prop drops `onClick`),
+which stops an immediate double-click, but it does nothing for the scenario R6 actually exists for:
+a response drops, the UI settles back to idle, the staff member clicks the same decision again —
+and the backend's `IdempotencyGuard` sees a different key each time, so it replays nothing and the
+decision is simply reprocessed. Compare the four buyer-facing dialogs
+(`CheckoutClient`/`RefundDialog`/`TransferDialog`), which already minted a key once per `useRef`
+and reused it — those were correct in spirit, just not persisted across a reload (the actual FE-2
+gap) and, in `PayoutFlow.tsx`, built with `Math.random().toString(36)` rather than a real UUID.
+Fixed with two small primitives in `libs/shared/src/lib/idempotency.ts`: `useIdempotencyKey
+(storageKey)` for a component holding one key for one identity (sessionStorage-backed, so a reload
+reuses it, with `regenerate()` for a deliberate new attempt at the same identity), and
+`stableActionKey(cache, ...inputs)` for an imperative hook-level call with no component lifetime to
+hang a ref off — keyed by the call's own inputs, not by id alone: `createAdminRefund` is keyed by
+`(ticketId, reason)` rather than `ticketId`, because a second, later refund request for the same
+ticket with a different reason is a genuinely new request, not a retry, and must not be refused as
+`IDEMPOTENCY_KEY_REUSED`.
+
+**FE-1 was already satisfied, by a different mechanism than the plan assumed.** The plan called for
+wiring `PermissionGate`/`AdminGate`/`FinanceGate` (shared, exported, unused) into both consoles'
+navigation. Both already have their own complete, tested mechanism instead: `apps/admin` filters
+its drawer from `MODULES[].roles` and refuses direct navigation per module via `ModuleFrame`'s own
+"No access" + "Back to my dashboard" state (proven by `e2e/browser/gating.spec.ts`, one case per
+staff role); `apps/organization-admin` filters its drawer and blocks direct navigation via
+`ConsoleShell`'s own `blocked` check against `ctx.capabilities` (proven by `e2e/browser/roles.spec.ts`,
+"role MARKETER sees the no-access state on finance, team and bookings"). Wiring the generic gate
+components in on top would have duplicated already-working, already-tested logic. (One attempt was
+made and reverted in this session: adding a second `blocked` guard to admin's `ConsoleShell` — it
+would have pre-empted `ModuleFrame`'s more specific "No access" render and broken
+`gating.spec.ts`'s exact-text assertions. Caught before committing; no harm done.)
+
+**FE-3's note was simply wrong, not the CSS.** The task file said `apps/ticketing` carries
+`data-brand="ticketing"` with an "iris" palette. Neither the attribute name nor the app name nor
+the color exist: the real attribute is `data-app`, the real values are `"platform"` (admin),
+`"organizer"` (organization-admin) and `"buyer"` (ticketing), and `m3.themes.css`'s own header
+comment already says the storefront gets "a slightly different teal" from the organizer/platform
+palette — not a different color family. Corrected the task file's wording to match the CSS rather
+than touching working, tested CSS to match a stale note. Added the missing
+`apps/ticketing/e2e/brand.spec.ts` (admin and organization-admin already had one); installed
+Playwright's Chromium (`pnpm exec playwright install chromium`, not present in this environment)
+and ran it alone — passes. See F-058 for why "alone" is load-bearing: running it together with
+`checkout.spec.ts` in one invocation, or `checkout.spec.ts` under more than one worker, fails for
+reasons unrelated to this spec's own content.
+
+## F-058 · 2026-10-10 · The ticketing e2e harness cannot run more than one `next dev` instance in `apps/ticketing` at a time, and Next 16's dev lock is per distDir
+
+Found trying to run the new TS-6 double-submit spec (`checkout.spec.ts`) against a real browser.
+Two separate, compounding problems, neither caused by anything this session changed:
+
+**1. `harnessTest`'s per-test app spawning and Playwright's own `fullyParallel` default collide.**
+`e2e-harness/browser/app-server.ts` starts a fresh `next dev` on a fresh `freePort()` for every
+test that uses the `harnessTest` fixture (as opposed to `brand.spec.ts`, which uses plain
+`@playwright/test` against the config's single shared `webServer`). With `fullyParallel: true`
+and Playwright's default worker count (5 on this machine), several `harnessTest`-based tests start
+their own `next dev` in `apps/ticketing` **at the same time** — and Next.js refuses a second `next
+dev` process in the same project directory outright, regardless of which port it was asked to
+bind. Only the first to win the race survives; every other test in the run fails with "Another
+`next dev` server is already running." `--workers=1` does not fix this on its own (see next
+finding).
+
+**2. Next 16.2.11's dev lock file (`.next/dev/lock`) records a *different* port than the one the
+process actually bound.** Confirmed by direct inspection: a `next dev --port 53671` process
+printed "✓ Ready" on `http://localhost:53671` (the port it actually listened on) in the same
+breath as writing `.next/dev/lock` with `{"port":3001,...}` — the fixed port this app is assigned
+in `docker-resources/local-e2e`'s generated `.env.local`/`.env`, not the ephemeral one it was
+invoked with. The *next* `next dev` invocation in the same directory — even run strictly serially,
+even with `.env.local` removed entirely — reads that lock, sees port 3001 "claimed" by a PID that
+may already be dead, and refuses to start. A stale lock from an abruptly-killed process (e.g. a
+plain `kill`/`pkill` rather than letting Next's own shutdown handler run) compounds this: the lock
+is never port-checked against reality, only presence-checked. **Open**: which of `publicOrigin`
+(`next.config.js`, falls back to `"localhost:3001"` when `APP_URL` is unset) or something else in
+Next 16/Turbopack's dev-lock writer is the actual source of the hardcoded port; not root-caused in
+this session.
+
+**Corrected cause**: the Next dev server lock is per distDir; the harness now uses its own distDir, so only a live incumbent on the same app's default `.next` was the collision.
+
+**Consequence**: any `harnessTest`-based ticketing spec (`checkout.spec.ts` and presumably the
+other `apps/ticketing/e2e/browser/*.spec.ts` files) cannot currently be run against a real browser
+in this environment without first stopping the local-e2e dev stack (which also generates the
+conflicting `.env.local`) and clearing `apps/ticketing/.next/dev/lock` by hand if a prior attempt
+left it stale — and even then, a single clean serial run still failed with a freshly-self-written
+stale-looking lock, which was not resolved in this session. `checkout.spec.ts`'s new TS-6 case
+(`two rapid taps on Pay carry the same idempotency key`) is therefore **unverified by an actual
+browser run** — it compiles, follows the harness's own established patterns exactly, and is
+reviewed for correctness, but has not executed. The parallel case for `organization-admin`
+(`flows_finance.spec.ts`, "payout request: two rapid submissions carry the same idempotency key")
+hit a related-but-different failure (the page's expected content never rendered) under the same
+investigation and is equally unverified by a browser run.
+
+**Process note, not a code finding**: while investigating this, a process on port 3001 was killed
+under the mistaken belief it was this session's own leftover test server; it was actually part of
+the user's long-running local-e2e stack. Caught immediately, disclosed, and the user chose to have
+it restarted via `docker-resources/local-e2e/apps.sh`, which is idempotent per app and did not
+disturb the other two already-running apps. See memory for the standing rule this produced: check
+a process's start time against the session's own before killing anything on a shared dev port.
+
+**Not fixed in this session** — this is a harness/tooling issue orthogonal to ET-PLT-007, and
+chasing Next 16/Turbopack's dev-lock internals further was judged lower value than finishing the
+spec's actual acceptance criteria. Left as a flagged follow-up: either pin the harness to run
+`apps/ticketing` browser specs with `--workers=1` **and** a guaranteed-clean `.next/dev/lock`
+(e.g. delete it in `global-setup.ts` before the run), or root-cause why Next 16.2.11's dev server
+lock ignores its own `--port` flag.
+
+## F-059 · 2026-10-10 · Service-to-service call audit: every direct call is a legitimate exception; the federation bypass is in the schema, as flat denormalized duplicates of federated entities
+
+**Question asked:** do the internal REST calls between catalog, booking, identity and the gateway
+duplicate what federation could do?
+
+**Inventory (all 4 services + shared-library; external providers — PawaPay, WhatsApp, Slack/SMS —
+excluded, they are not inter-service):**
+
+| Client | Calls | Kind | Verdict |
+|---|---|---|---|
+| booking → catalog `CatalogServiceClient` | `getEventById`; inventory `reserve`/`release`/`commit`/`restore` | server-side business reads and stateful commands | keep: callers are `ReservationServiceImpl`, `CheckoutActivitiesImpl`, `TicketTransferProcess`, `OrganizerAccess`, `EventGateAccess`, `TenantReads` — none is a GraphQL field resolver enriching a client response |
+| booking → identity `IdentityServiceClient` | `checkAuthorization`, `checkSameOrganization`, `getUserOrganizations` | authorization decisions | keep: access control, not data composition |
+| booking → identity | `notifyUser(s)`, `notifyFinanceLeads`, `financeLeadContacts`, `lookupByContact` | commands / search by contact (not by `@key`) | keep: federation resolves entities by key and does not send or search |
+| catalog → booking `BookingServiceClient` | `soldTicketCount`, `hasOpenPayoutRequest` | guards inside `EventLifecycleActivitiesImpl` (Temporal activity) | keep: workflow business rules needing an authoritative synchronous answer |
+| catalog → identity `IdentityServiceClient` | `checkAuthorization`, `checkEventAccess`, `getUserOrganizations`, `notifyApproval` | authz + command | keep |
+| catalog → identity (**new, this pass**) | `getOrganizationName` | write-time denormalization | keep: federation composes query-time reads and cannot populate a stored field at creation |
+| shared `RemoteTenantMemberships`, `HttpDurableRevocationStore` | tenancy and revocation | security boundary | keep, fail-closed by design (ET-PLT-007 R4/R7) |
+
+**Why none of the read calls should move to federation.** Federation composes a *client's* query
+across subgraphs through the router. These calls are a service's own business logic needing an
+authoritative answer inside a transaction or a workflow; routing them through the router would add a
+hop, lose the service-principal auth context, couple the service to the public schema, and still
+could not express a write. Where federation applies it is already used: `Event.organizer: User` and
+`Event.organization: Organization` return `{__typename, id}` stubs the router resolves against
+identity (`EventFieldResolver`, `EventContentFieldResolver`).
+
+**The real federation bypass — in the schema, not the call graph.** `Event` carries eight flat
+stored copies of data identity owns (`organizerName`, `organizerEmail`, `organizerPhone`,
+`organizerBusinessEmail`, `organizerBusinessPhone`, `organizerCompanyName`, `organizerFirstName`,
+`organizerLastName`) beside the federated `organization`/`organizer` references; booking carries
+`buyerName`/`buyerEmail`/`buyerPhone` the same way. They are what "defeats the purpose of
+federation" here, and also an OWASP A02/A04 concern: personal data duplicated across services, stale
+on change, impossible to erase from one place. `organizerName` was **never populated** by event
+creation at all, so every event list that selected it failed with `NullValueInNonNullableField`
+(found live: the admin approvals list returned "Something went wrong" for every event).
+
+**Done in this pass:** `createEvent` now denormalizes `organizerName` once, at creation, from a new
+read-only internal lookup (`GET /api/internal/authorization/organization-name`, `internal-read`
+scope, covered by the auto-discovering `InternalSurfaceTest` for 401/403/200); an identity outage
+falls back to "Unknown" and never blocks creation; `Event.organizerName` is null-safe on read so a
+legacy row can no longer fail a whole list. Tests: `EventAuthoringTest` (success + outage fallback,
+flat methods per F-055), `EventOrganizerNameFieldTest`, `CrossServicePermissionCheckTest`.
+
+**Migrated (2026-10-10, second pass):**
+
+| Field | Outcome | Why |
+|---|---|---|
+| `Event.organizerEmail/Phone/BusinessEmail/BusinessPhone/CompanyName/FirstName/LastName` | **Removed** from schema, entity, `EventFields`; stored values unset by migration `event-organizer-contact-strip` | Identity-owned PII; only consumer was the admin event detail, now `organization { id name businessEmail businessPhone }`. Identity returns those only to members and platform admins (`OrganizationPrivateFields`), so access is *narrower* than the old flat `@auth(AUTHENTICATED)`. |
+| `EventEscrowAccount.organizerName`, `PayoutRequest.organizerName`, `AccountSummary.organizerName` | **Replaced** by `organization: Organization` (booking reference stub, id only) | Admin money surfaces; name now identity's and always current. The escrow account never had the name populated. |
+
+**Kept on purpose, with the reason:**
+- `Event.organizerName` — public attribution on anonymous discover/event pages. The anonymous
+  `_entities` path to identity is not established (identity's public-operation rules would have to
+  allow it), it costs a cross-subgraph hop per card, and a name is not PII. Stored at write time,
+  null-safe on read. Revisit only if a rename-propagation requirement appears.
+- `Ticket.buyerName/Email/Phone` — booking's own holder snapshot, not a copy of an identity entity:
+  checkout contact details, rewritten by the transfer workflow, searched by `TicketSearch`
+  (search-by-contact cannot be federated). The federated `Ticket.buyer: User` already exists for
+  identity-owned data.
+
+**Closed (2026-10-10, third pass):**
+1. `Ticket.buyerName/Email/Phone` are now decided per read by `TicketHolderContactAccess`: the holder,
+   a caller whose tenant scope covers the ticket's organization, or a platform administrator; null for
+   everyone else. `Ticket.buyer` previously *provided* the cached name/email/phone to the router for any
+   caller, so identity's own gate never ran; it now provides them only to an entitled caller.
+   Tests: `TicketHolderContactAccessTest` (holder, member, admin, other buyer, other organization,
+   anonymous, missing scope, federation reference). `CheckInEvent.buyerName` is unchanged: its only
+   source is the organizer-gated live-dashboard query.
+2. The stored `organizerName` on `EventEscrowAccount` and `PayoutRequest`, the
+   `CreateEscrowAccountInput.organizerName` input, the service parameter and both collection validators
+   are removed; migration `organizer-name-copy-cleanup` unsets existing values (runs before validators
+   tighten). Test: `OrganizerNameCopyCleanupTest`.
+3. Legacy events with no stored organizer name are repaired on first read (identity lookup, written
+   back); an identity outage answers "Unknown" and writes nothing so the next read retries. No startup
+   dependency on identity. Test: `EventOrganizerNameFieldTest`.
+
+## F-060 · 2026-10-10 · The first live buyer checkout found six defects that no test could reach: validators and a resolver signature that only a real write or a real DGS call exercises
+
+**Found by:** driving a real buyer (sign-in → reserve → pay) through Chrome against the full local stack,
+with a double-tap on Reserve and Pay. Every one of these passed the suite, because the test template has
+no `$jsonSchema` validator and no test called the resolver.
+
+| # | Defect | Effect | Fix |
+|---|---|---|---|
+| 1 | `booking-reservations` validator: `_id` was `objectId` only; checkout names a reservation by a deterministic UUID string | every `reserveTickets` failed at `CheckoutHold` (3 retries, SERVICE_ERROR) | `_id` is `objectId` or `string`, as `tickets-schema` already was |
+| 2 | `ReservationFieldResolver.remainingSeconds(dfe, Instant now)`: DGS fills extra parameters from GraphQL arguments, so `now` was always null | the reserve response failed on `remainingSeconds`; the page never advanced | injected `Clock`; flat test `ReservationFieldResolverTest` incl. a signature guard |
+| 3 | `booking-escrow-accounts` validator required `organizerId`; the event-published envelope names only the organization | no event could ever open an escrow, so no payment could be credited | `organizerId` optional (see "Open" below) |
+| 4 | `tickets` validator: `reservationId` pattern ObjectId-only (it is a UUID now); `createdBy`/`updatedBy` rejected the platform actor `system` | ticket issue failed after the payment had succeeded | patterns accept ObjectId, UUID, and `system` |
+| 5 | `tickets` validator required `eventTitle`, `eventDate`, `ticketCategory`; issuance never sets them (the ticket carries tier id/name; the event is federated) | same | dropped from `required`, still allow-listed |
+| 6 | `journal-entries` and `chart-of-accounts` validators: per-event sub-account suffix `[A-Z0-9]+`; the code writes lowercase hex (`2010-6aca0c80`) | same | suffix `[A-Za-z0-9]+` |
+| 7 | `Ticket.eventTitle: String!` is a stored copy that issuance never sets (fix #5 made it absent); `My tickets` failed on it | the buyer's ticket list errored | `TicketEventFields`: stored value, else one catalog lookup written back, else "Unknown"; `TicketEventFieldsTest` (5) |
+
+**What the live run did prove (idempotency, the point of the exercise):**
+- Two `ReserveTickets` mutations fired in the same tick carried the same `idempotencyKey`, and the
+  server held exactly one reservation and one completed ledger row (`booking:reserveTickets|<key>`).
+- `PayReservation` double-tap: the UI sent one request (the button disables on the first), one
+  payment intent, one attempt, one ledger row.
+
+**Why the suite missed all of it:** `MongoSchemaValidationConfig` applies validators at startup, but the
+unit/integration templates write through a collection with no validator ("silently in tests, which use a
+template with no validator" is already written in the schema's own `_class` description). A write test
+that goes through the real validator is the missing layer.
+
+**Closed (2026-10-10, after the business decision "organization permissions, current event details"):**
+1. Payouts are decided by the organization. `createPayoutRequest` reads the organization from the escrow
+   account (never from the input) and asks identity for `payout:request` there, on the event, so a member
+   holding the permission may request regardless of who created the event; event grants still decide alone
+   where present; the organization's status still gates. An escrow account of another organization, an
+   unknown one, and a denied caller all read the same. Platform staff keep acting under the organizer's own
+   authority, and the organization they resolve to must be the escrow's. The settlement service matches the
+   escrow and the bank account on `organizationId`, `Submit` carries it, and the payout records who asked.
+   `payoutEligibility` and the escrow/event read checks (`EventSecurityService`) use the same decision and
+   the caller's tenant scope. New: `PayoutAccess`, `PayoutAccessTest`, `EventSecurityServiceTest`; changed:
+   `TeamFinancialAccessTest` (+2), `RequestPayoutIdempotencyTest`, `PayoutDecisionIdempotencyTest`,
+   `PayoutSettlementServiceTest`, `PayoutWorkflowTest`.
+2. Event name and date are the event's current ones. `CurrentEventDetails` asks catalog (30 s per-event
+   window, failures never kept); `Ticket.eventTitle/eventDate`, `TicketTransfer.eventTitle`, ticket resend,
+   transfer messages, the organizer activity feed and transactions, and the live dashboard title all use it,
+   in memory only. A stored value is the fallback on an outage. Tests: `CurrentEventDetailsTest`,
+   `TicketEventFieldsTest`, `TicketResendTest`, `TicketTransferTest`.
+
+3. Payout accounts belong to the organization (decision 2026-10-10). Adding, listing, viewing, changing,
+   deleting, setting the default and starting or confirming verification need the organization's
+   `payout:request` (`BankAccountAccess`: member of the organization + identity's decision; platform staff
+   act on all; every refusal reads as an unknown account). The default account is the organization's. The
+   list and default queries return the accounts of the organizations the caller manages whoever added them,
+   and the account number is masked on every read (`BankAccountFields`, `AccountNumberMask`); an update that
+   re-submits the masked number is not a new destination. Tests: `BankAccountAccessTest`,
+   `BankAccountFieldsTest`; `BankAccountOwningOrganizationTest`, `AdminFinanceOperationsTenantBoundaryTest`
+   updated.
+4. Finance records keep the event name recorded when the money moved (decision 2026-10-10); `event: Event`
+   on `EventEscrowAccount` and `PayoutRequest` is the event now, resolved by catalog, and the admin escrow
+   and payout lists search and show it beside the recorded name. `Ticket.event` no longer `@provides` a
+   cached title or date (the router would have served the old name); booking's unused `@external` Event
+   fields were removed so the supergraph composes. Tests: `EventReferenceFieldsTest`.
+
+**Open:**
+1. A validator-conformance test: save one real instance of each entity through a validator-enabled
+   collection (Testcontainers) so a schema/entity drift fails in the gate, not in front of a buyer.
+2. Not driven through the organizer web app: the live pass below used the buyer app's session (a member
+   added to the organization) calling the operations directly. The organizer UI for payout accounts and
+   payouts still needs a pass with a real organizer sign-in.
+3. `bank:manage` already exists as a permission (held by the organization's admin role by default); payout
+   accounts are gated by `payout:request` per the decision, so an admin cannot manage accounts until the
+   owner switches `adminsCanRequestPayouts` on. If admins should keep managing accounts, gate on
+   `bank:manage` instead.
+4. A refused payout request surfaces as `COMMAND_NOT_WELL_FORMED` (the existing mapping of the business
+   validation refusal); a non-transient validator failure inside `createRequest` is retried by Temporal
+   instead of refused at once, and the caller times out while the activity retries (the idempotency row
+   stays in flight until it expires).
+
+**Verified live (2026-10-10):** a buyer signed in through the ensure flow, double-tapped Reserve (one
+reservation, one ledger row), paid (one intent, one attempt), the reservation went `CONFIRMED`, one ticket
+`ISSUED`, one commission and one journal entry written, escrow credited the net K 142.50, and `My tickets`
+rendered it. A first purchase whose hold lapsed while these were being fixed settled `FAILED` with a
+`PAID_AFTER_EXPIRY` escalation, as designed. Targeted tests: 18/18.
+
+**Live pass on payout accounts and payouts (2026-10-10, after decisions A and B):** a second member (role
+ADMIN) was added to the test organization and the buyer app's session used to call the operations. With
+`adminsCanRequestPayouts` off: add account, read one account and request payout refused, list empty. With
+it on: account created (masked `****4567`, `organizationId` set, `organizerId` the member), listed by
+organization whatever organizer id was passed, verified by the member, and a payout of K 142.50 requested
+with a deliberately wrong `organizerId` (ignored; the payout records the requester) and the same request sent
+twice at once: one `PENDING` payout, one workflow. Two further validator defects found and fixed:
+
+| # | Defect | Fix |
+|---|---|---|
+| 8 | `booking-payout-requests` validator: `_id` objectId only; the payout workflow generates a UUID | `_id` objectId or string |
+| 9 | same validator: `accountNumber` `^[0-9]{10,20}$`; the payout stores the masked number `****4567` on purpose | pattern also allows `****` + 4 digits |
+
+The test fixtures (member, escrow state, account, payout, workflow) were removed afterwards.
+
+**Organizer console routing and the work it exposed (2026-10-10, against the design canvas "Showstop app designs"):**
+
+| # | Finding | Fix |
+|---|---|---|
+| 10 | The console gated every route on the `ORGANIZER`/`ADMIN` **realm role** (proxy, dashboard layout, step-up). The platform grants `ORGANIZER` to the owner at approval only; an invited admin, manager, marketer or contributor is a member with no realm role, so they looped `/dashboard` ↔ `/welcome` and could never enter | Routes need a session; who belongs is the organization lookup (owner or active member) and its status; the backend decides what they may do. Test: `bff.config.test.ts` |
+| 11 | The 52 `@auth(requires: ORGANIZER)` operations (booking 17, catalog 35) also read that realm role, so a team member passed no organizer operation | The membership mirror now grants `ORGANIZER` to a non-owner member when it mirrors an active membership, and releases it when the last membership goes (`GroupMirrorActivitiesImpl`; owner rows untouched, approval still grants the owner). Verified live: the sweep granted the role to the test member. Test: `GroupMirrorOrganizerRoleTest` |
+| 12 | The `my*` dashboard queries were gated on the realm role only and aggregated by the **person** (`organizerId` of the ticket, the event's creator), so a member saw zeros and the owner saw only events they created | Gated on the real permission per query (`analytics:view`, `event:view`, `financial:view`) through identity; all ticket-derived figures keyed by the organization. Upcoming events and activity take name/date from the event |
+| 13 | `EventEscrowAccount.totalDeposits/totalWithdrawals/totalRefunds/lockUntil` are non-null/served from fields the entity renamed (`totalCredited`, `totalDebited`, `totalRefunded`, `holdUntil`) with no mapping: the escrow list failed whole. `organizerId` non-null though escrows open by organization | Field resolvers for the four; `organizerId` nullable on `EventEscrowAccount` and `AccountSummary`. Guard: `EntityBackedFieldsParityTest` (every non-null field of an entity-backed type has a property or resolver) |
+| 14 | `payoutEligibility`, the payout-account and dashboard queries accepted any `ORGANIZER`-role holder | covered by 12 and the earlier payout/bank-account access work |
+| 15 | A class compiled by the IDE (Eclipse compiler, "Unresolved compilation problem") in `target/classes` is packaged by `mvn package` without being recompiled, and the error appears only at runtime. Hit twice here | Not a pom setting: IntelliJ's build writes `target/classes`. After editing, a `mvn compile`/`package` that recompiles the touched sources (they were newer) is the check; consider a CI build from clean |
+
+Design alignment: the finance sidebar entries are now "Escrow & payouts" and "Bank accounts", as drawn; the organizer's escrow and payout lists show the event's current name beside the recorded one.
+
+**Still open from this pass:** the design's "Viewing as <role>" chip and "Switch app" entry are not built; an invited member's role is granted by the next mirror sweep (about a minute), not at the instant of acceptance; existing members created before this change are repaired only when their `mirrorPending` is set.
+
+**Decisions on team access (2026-10-10):**
+- A person belongs to one organization at a time (service rule `OneOrganizationPerPerson`, partial unique index
+  `uniq_one_active_organization_per_person`, error `MEMBER_IN_ANOTHER_ORGANIZATION`; the booking resolver refuses
+  rather than choose between two). No "Viewing as" and no "Switch app" in production. No backfill code: the
+  platform is in development and the dev data was corrected by hand (it was already clean).
+- Access for a newly accepted member is asynchronous (option A): the membership exists at once, the platform
+  organizer role follows on the next mirror sweep (about a minute). The console shows "We're setting up your access"
+  with a re-check (`AccessSettingUp`, `hasOrganizerAccess`), and the acceptance page says it takes about a minute.
+- **Sending an invitation does not create an account.** The invitation records the addressee's email or phone and
+  sends a link. Accepting needs an account that already exists (`USER_UNKNOWN` otherwise), and that account must own
+  the contact the invitation was sent to (`INVITATION_NOT_ADDRESSED_TO_CALLER` otherwise). A person without an account
+  creates one by the ordinary sign-in with that contact (code by email or WhatsApp), which the acceptance page sends
+  them through; the account is created at that sign-in, then they accept.
+
+## F-061 · 2026-10-10 · ET-PLT-007 Phase 9: what the closing pass built, what it found, and what stays open
+
+**Built.** Explicit, bounded JWKS cache (`keycloak.jwks-cache-ttl`, default 5 min, at most 15; refresh-ahead off so the
+TTL is the bound; an unknown `kid` still refetches, rate limited to once per 10 s). A single named platform-wide path,
+`PlatformWideAccess`, with a fixed `Reason` per site and an audit sink interface; `PlatformWideBypassLintTest` fails
+the build on a bypass outside it. `transferBetweenPlatformAccounts` now goes through `IdempotencyGuard`. Three identity
+endpoints booking had been calling for a long time without them existing: `POST /api/internal/notifications/users`,
+`/users/batch` and `/api/internal/users/lookup` (internal-write scope, anti-enumeration lookup, masked contact).
+
+**Defects the new tests found and that are fixed.**
+- The authorities converter threw `ClassCastException` on a claim of the wrong shape (a signed token whose
+  `realm_access` was not an object failed the request with a 500 instead of contributing nothing).
+- `@auth` on a field with no authentication answered `ACTOR_NOT_PERMITTED`; it is now `ACTOR_NOT_AUTHENTICATED`.
+- The JWKS held the first key set it fetched for the life of the process: a withdrawn key verified until restart.
+- Booking's holder-message batch (200) exceeded what identity accepts (100); it is 100.
+- `ContactOtpKeycloakIT.staffRefused` left an `ADMIN` role in the buyers realm of the shared Keycloak; it now removes it.
+
+**Decisions recorded.**
+- `@auth` and method-level `@PreAuthorize` are the same decision; the build accepts either (R3 reworded).
+- Five lines of platform-staff checks remain in booking (`isPlatformStaff` x2, `SUPPORT_AUTHORITIES`, `DualControlRules`
+  x2). All include `FINANCE`, which is not a tenant-wide authority, so routing them through `PlatformWideAccess` would
+  have narrowed finance's access. `PlatformWideBypassLintTest` budgets them at 5.
+- The platform-wide record is a structured `audit.platform-wide` log line. A queryable row needs a new
+  `AuditAction` value and a validator change in identity (`audit-logs-schema.json`); that belongs with ET-PLT-009.
+- `processRefundRequest` / `rejectRefundRequest` take no key: both are state transitions that refuse or return the
+  stored request on a repeat, so no money moves twice.
+
+**Open.**
+1. **Closed:** the staff export's `SCANNER` role was removed (2026-10-10, on the owner's instruction). The running dev
+   Keycloak keeps the role until it is deleted by hand or the realm is re-imported, because the compose import skips
+   a realm that already exists.
+1a. **Closed, and the nightly sweep with it (2026-10-10, owner's decision):** `POST /api/internal/keycloak/sync/all`,
+   the `syncAllUsersFromKeycloak` mutation, `UserBackfillWorkflow` and the `identity-user-reconciliation` Schedule are
+   deleted (the Schedule was also deleted from the dev Temporal namespace). A profile is kept right by the listener's
+   per-user `UserSyncWorkflow` and the lazy repair on next sign-in; drift for someone who never signs in again is
+   accepted. The admin mutation `syncUserFromKeycloak(userId)` and the console's "Sync from Keycloak" action were
+   removed too: accounts are created platform-first, so there is nothing a manual pull repairs that the listener's
+   per-user workflow and the next sign-in do not. `UserSyncService.syncUser` is now reached only from
+   `UserSyncActivities` inside the per-user workflow.
+1c. **Every non-workflow synchronization was removed (2026-10-10, owner's instruction).**
+   - `AccountRepair` and its `AccountRepairWorkflow`, `identity-account-repair` Schedule, runner, activities and
+     `identity.account.repair.*` properties (drift classes D1..D9: a scan of every account and every Keycloak user every
+     15 minutes). The Keycloak port lost `listUsers` and `readUserByUsername`; `KeycloakService` lost `getAllUsers`.
+   - The member service's inline Keycloak group writes (`addToKeycloakGroup`, `removeFromKeycloakGroup`,
+     `updateKeycloakGroup`) and the two best-effort group methods they called. A membership change now carries
+     `mirrorPending` in the same save and the group-mirror workflow applies it; a role change leaves the member's other
+     role groups before joining the new one.
+   - The contact-change marker cleanup is retried until it lands (it was capped at six tries and then left to the repair
+     pass). A workflow terminated mid-cleanup leaves the marker; that is the one stuck state with no automatic clearing.
+   - Not changed: `UserServiceImpl` creates a staff user in Keycloak inline in the admin `createUser` mutation (idempotent,
+     a 409 reads the user back); moving it into a workflow changes that mutation's contract.
+   - Correction to an earlier statement: the "lazy repair on the person's next authenticated request" the spec describes
+     is not implemented as a separate pass; what exists is the per-login `AccountEnsureWorkflow`, which applies roles and
+     attributes when the person signs in with their contact.
+1b. **Permission resolution is one implementation now.** The organization-status gate applies on the GraphQL path
+   too (a member of an organization whose status does not permit an action is refused `event:create/edit/delete/
+   publish` and `payout:request`); the internal authorization endpoints still ignore platform roles; expired event
+   grants are ignored on both. An event-grant holder is not subject to the status gate on either path.
+2. **Closed (2026-10-10, owner's decision):** the workflow request carries ids only. `UserNotifier` renders the message
+   when the request arrives and stores it as the pending `identity_notifications` row (the row's id is also the
+   deduplication key); the workflow's `record` activity finds that row. A start that fails removes the row again.
+3. **Closed:** the six new templates were rewritten to the platform's wording rules (what happened, one next action,
+   what becomes of the ticket, no links, another person's name only where the message is about them); the rules are on
+   `NotificationRules.Message`.
+4. **Closed:** `NotificationWorkflow.Request` is its original five fields again, so existing histories replay unchanged.
+5. **Closed (2026-10-11):** the browser harness runs with its own `distDir` (a dev server on the same app no longer
+   blocks it) and both double-submit specs pass in real Chrome, desktop and phone: the buyer's two rapid taps on Pay
+   and the organizer's two rapid payout submissions each send one request carrying a real idempotency key. Two defects
+   in the specs themselves were fixed: the buyer fixture lacked the mobile-money operator list the pay step now needs
+   (so Pay stayed disabled), and the specs read the key from the wrong level (`input.idempotencyKey`). The specs also
+   assumed the page lets two requests through; it holds the second, which is the stronger result.

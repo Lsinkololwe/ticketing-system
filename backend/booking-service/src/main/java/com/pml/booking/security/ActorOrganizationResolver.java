@@ -20,13 +20,10 @@ import reactor.core.publisher.Mono;
  * that accepted {@code organizationId} would invite a caller to pass one, and
  * the next endpoint written against it would forget the guard.
  *
- * <h2>Multiple organizations</h2>
- * A user may belong to several. This returns the first, which is correct for
- * today's single-organization organizers and wrong the moment someone runs two.
- * Called out rather than hidden: the fix is an explicit organization selector in
- * the UI, and until that exists a silent "first" is the honest approximation —
- * but it is an approximation, and a user with two organizations will see one
- * dashboard and not be told why.
+ * <h2>One organization per person</h2>
+ * A person belongs to one organization at a time; identity refuses a second membership and its
+ * database holds the rule under a race. So the answer is never a choice. A person who somehow
+ * appears in two is a data fault and is refused (fail closed), not resolved by picking the first.
  *
  * <h2>No organization is an error, not an empty dashboard</h2>
  * An organizer with no organization cannot have escrow, so returning empty would
@@ -64,9 +61,13 @@ public class ActorOrganizationResolver {
                                 "Actor belongs to no organization"));
                     }
                     if (organizations.size() > 1) {
-                        log.warn("Actor {} belongs to {} organizations; showing the first. "
-                                        + "An organization selector is needed before this is correct.",
+                        // The platform keeps a person to one organization (the identity rule and its
+                        // unique index), so more than one is a data fault. Picking one would put one
+                        // organization's records in front of a member of another: refuse instead.
+                        log.error("Actor {} belongs to {} organizations; refusing to choose between them",
                                 actorUserId, organizations.size());
+                        return Mono.<String>error(new NoOrganizationException(
+                                "Actor belongs to more than one organization"));
                     }
                     return Mono.just(organizations.get(0).organizationId());
                 })

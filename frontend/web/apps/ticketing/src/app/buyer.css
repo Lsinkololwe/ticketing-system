@@ -107,10 +107,16 @@
 
 /* ------------------------------------------------------------ search */
 .buyer-search {
-  margin-top: calc(var(--m3-sp-28) * -1);
+  /* Clear of the sticky header and of whatever sits above: with no featured hero there is nothing to
+     overlap, and the lift below would pull the card up under the header. */
+  margin-top: var(--m3-sp-24);
   position: relative;
   z-index: 1;
   box-shadow: var(--m3-elev-search);
+}
+/* A hero above it: the card overlaps the hero's lower edge. */
+[data-hero='true'] > .buyer-search {
+  margin-top: calc(var(--m3-sp-28) * -1);
 }
 .buyer-search__more {
   grid-column: 1 / -1;

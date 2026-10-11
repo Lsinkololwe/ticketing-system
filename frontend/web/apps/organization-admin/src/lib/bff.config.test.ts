@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { organizerBffConfig } from './bff.config';
 
+describe('organizerBffConfig console access', () => {
+  const env = { KEYCLOAK_ISSUER: 'http://kc/realms/r', KEYCLOAK_CLIENT_ID: 'c', KEYCLOAK_CLIENT_SECRET: 's' };
+
+  it('lets any signed-in organization member in: a team member has no ORGANIZER realm role', () => {
+    const cfg = organizerBffConfig(env);
+    const prefixes = (cfg.guarded ?? []).map((g) => g.prefix);
+
+    expect(prefixes).toEqual(expect.arrayContaining(['/dashboard', '/finance', '/team', '/welcome', '/apply']));
+    expect((cfg.guarded ?? []).filter((g) => 'roles' in g && g.roles && g.roles.length > 0)).toEqual([]);
+  });
+});
+
 describe('organizerBffConfig account id', () => {
   const env = { KEYCLOAK_ISSUER: 'http://kc/realms/r', KEYCLOAK_CLIENT_ID: 'c', KEYCLOAK_CLIENT_SECRET: 's' };
 

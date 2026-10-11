@@ -10,6 +10,8 @@ import com.pml.identity.service.EventAccessService;
 import com.pml.identity.service.UserService;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -310,8 +312,15 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
     public Mono<TeamInvitation> resend(String invitationId) {
         log.info("Resending invitation: {}", invitationId);
 
-        return invitationRepository.findById(invitationId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Invitation not found: " + invitationId)))
+        // The resolver's reads.invitationForCaller(invitationId) already proved ownership before
+        // calling this; defense in depth here too.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        invitationRepository.findById(invitationId),
+                        organizationIds -> invitationRepository.findByIdAndOrganizationIdIn(invitationId, organizationIds),
+                        ErrorCode.INVITATION_UNKNOWN,
+                        "team invitation " + invitationId))
                 .flatMap(invitation -> {
                     if (invitation.getStatus() != InvitationStatus.PENDING) {
                         return Mono.error(new IllegalStateException(
@@ -331,8 +340,15 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
     public Mono<TeamInvitation> revoke(String invitationId) {
         log.info("Revoking invitation: {}", invitationId);
 
-        return invitationRepository.findById(invitationId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Invitation not found: " + invitationId)))
+        // The resolver's reads.invitationForCaller(invitationId) already proved ownership before
+        // calling this; defense in depth here too.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        invitationRepository.findById(invitationId),
+                        organizationIds -> invitationRepository.findByIdAndOrganizationIdIn(invitationId, organizationIds),
+                        ErrorCode.INVITATION_UNKNOWN,
+                        "team invitation " + invitationId))
                 .flatMap(invitation -> {
                     if (invitation.getStatus() != InvitationStatus.PENDING) {
                         return Mono.error(new IllegalStateException(

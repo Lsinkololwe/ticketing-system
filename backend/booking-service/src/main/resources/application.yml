@@ -190,12 +190,17 @@ keycloak:
   # Platform-admin realm split. The default below is NOT empty: the admin realm is trusted
   # out of the box, and tokens from both realms are validated per their `iss` claim.
   trusted-issuers: ${KEYCLOAK_TRUSTED_ISSUERS:http://localhost:8084/realms/myticketzm-admin}
-  # The audience check. Blank = `aud` is NOT validated, and the service logs
-  # that at WARN on every start. Enabling it takes BOTH halves: an oidc-audience-mapper on
-  # the client in docker-resources/keycloak/myticketzm-realm.json (without one,
-  # Keycloak emits `"aud": "account"`), and this variable. Set one without the other and
-  # every token is rejected.
-  expected-audiences: ${KEYCLOAK_EXPECTED_AUDIENCES:}
+  # Every client in both realms carries an oidc-audience-mapper naming the gateway
+  # (docker-resources/keycloak/*.json) — buyer, staff and every service-to-service client alike,
+  # so the platform has one audience, not one per service. Without the mapper Keycloak omits
+  # `aud` entirely rather than defaulting it to anything, so this value and that mapper are one
+  # change: set one without the other and every token is rejected.
+  expected-audiences: ${KEYCLOAK_EXPECTED_AUDIENCES:${API_GATEWAY_CLIENT_ID:myticketzm-api-gateway}}
+  # How long a fetched signing-key set is trusted before it is fetched again (ISO-8601, 0 < ttl <= PT15M;
+  # anything else stops startup). A token carrying a kid not in the cached set triggers one refetch
+  # regardless, so a rotation is visible before this elapses; a key withdrawn from the realm
+  # stays trusted at most this long.
+  jwks-cache-ttl: ${KEYCLOAK_JWKS_CACHE_TTL:PT5M}
 
 services:
   catalog:
@@ -501,8 +506,8 @@ pml:
     revocation:
       enabled: ${REVOCATION_ENABLED:true}
       identity-url: ${services.identity.url}
-      # Tracks the realm's accessTokenLifespan (myticketzm-realm.json: 3600).
-      access-token-lifespan: ${ACCESS_TOKEN_LIFESPAN:1h}
+      # Tracks the realm's accessTokenLifespan (myticketzm-realm.json: 300).
+      access-token-lifespan: ${ACCESS_TOKEN_LIFESPAN:5m}
       clock-skew: 60s
       cache-timeout: 250ms
       durable-timeout: 2s

@@ -55,7 +55,6 @@ public class EscrowMutationResolver {
                         input.eventId(),
                         input.eventTitle() != null ? input.eventTitle() : "Event " + input.eventId(),
                         input.organizerId(),
-                        input.organizerName() != null ? input.organizerName() : "Organizer",
                         clock.instant().plus(Duration.ofDays(30)) // Default event date, should be updated by catalog service
                 );
     }

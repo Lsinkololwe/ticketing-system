@@ -2,7 +2,6 @@ package com.pml.identity.web.rest;
 
 import com.pml.identity.config.KeycloakProperties;
 import com.pml.identity.security.revocation.KeycloakSessionRevoker;
-import com.pml.identity.workflow.usersync.UserBackfillProcess;
 import com.pml.identity.workflow.usersync.UserSyncProcess;
 import com.pml.identity.workflow.usersync.UserSyncWorkflow.Change;
 import com.pml.identity.workflow.usersync.UserSyncWorkflow.Kind;
@@ -47,7 +46,7 @@ class KeycloakSyncControllerTest {
         revoker = Mockito.mock(KeycloakSessionRevoker.class);
         when(revoker.revoke(any(), any(), any())).thenReturn(Mono.just(1));
         client = WebTestClient.bindToController(
-                new KeycloakSyncController(process, Mockito.mock(UserBackfillProcess.class), new KeycloakProperties(), revoker))
+                new KeycloakSyncController(process, new KeycloakProperties(), revoker))
                 .build();
     }
 

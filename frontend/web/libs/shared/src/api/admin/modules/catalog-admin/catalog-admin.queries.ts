@@ -63,8 +63,12 @@ export const ADMIN_EVENT_DETAIL = gql`
       organizerId
       organizerName
       organizationId
-      organizerEmail
-      organizerPhone
+      organization {
+        id
+        name
+        businessEmail
+        businessPhone
+      }
       locationName
       locationAddress
       cityName

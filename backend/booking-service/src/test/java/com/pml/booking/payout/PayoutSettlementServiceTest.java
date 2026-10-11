@@ -261,7 +261,7 @@ class PayoutSettlementServiceTest {
     }
 
     private static Submit submit(BigDecimal amount) {
-        return new Submit(REQUEST, ORGANIZER, "event-settle", ESCROW, BANK, amount, "ZMW", PayoutMethod.MOBILE_MONEY,
+        return new Submit(REQUEST, ORGANIZER, "organization-settle", "event-settle", ESCROW, BANK, amount, "ZMW", PayoutMethod.MOBILE_MONEY,
                 null, null, "idem-settle", ORGANIZER);
     }
 
@@ -269,6 +269,7 @@ class PayoutSettlementServiceTest {
         return BankAccount.builder()
                 .id(BANK)
                 .organizerId(ORGANIZER)
+                .organizationId("organization-settle")
                 .accountHolderName("Account Holder")
                 .bankName("MTN Mobile Money")
                 .accountNumber("260971234567")

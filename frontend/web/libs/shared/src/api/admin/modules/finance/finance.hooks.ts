@@ -7,8 +7,9 @@
  * the schema does not already declare.
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useMutation, useQuery } from '@apollo/client/react';
+import { stableActionKey } from '../../../../lib/idempotency';
 import type {
   EscrowAccountStatus,
   PayoutRequestStatus,
@@ -391,6 +392,12 @@ export interface UseFinanceDecisionsResult {
  * stays in the pending table invites a second approval of the same money.
  */
 export function useFinanceDecisions(): UseFinanceDecisionsResult {
+  // Keyed by the decision's own inputs: a retry of the exact same decision (network drop, the
+  // user unsure it went through) replays; the same id decided again with different inputs (a
+  // different note) is a genuinely different request and gets its own key. Never evicted — the
+  // cost is one UUID per distinct decision ever made in this page's lifetime.
+  const approvePayoutKeys = useRef(new Map<string, string>());
+  const approveRefundKeys = useRef(new Map<string, string>());
   const refetchPayouts = useMemo(
     () => [{ query: PAYOUT_REQUEST_STATS }],
     []
@@ -425,7 +432,10 @@ export function useFinanceDecisions(): UseFinanceDecisionsResult {
 
   const approvePayout = useCallback(
     async (id: string, notes?: string): Promise<DecisionResult> => {
-      return decide(() => approvePayoutMutation({ variables: { payoutRequestId: id, notes: notes ?? null } }));
+      const idempotencyKey = stableActionKey(approvePayoutKeys.current, id, notes ?? null);
+      return decide(() =>
+        approvePayoutMutation({ variables: { payoutRequestId: id, notes: notes ?? null, idempotencyKey } })
+      );
     },
     [approvePayoutMutation]
   );
@@ -439,7 +449,10 @@ export function useFinanceDecisions(): UseFinanceDecisionsResult {
 
   const approveRefund = useCallback(
     async (id: string, reviewComments?: string): Promise<DecisionResult> => {
-      return decide(() => approveRefundMutation({ variables: { refundRequestId: id, reviewComments: reviewComments ?? null } }));
+      const idempotencyKey = stableActionKey(approveRefundKeys.current, id, reviewComments ?? null);
+      return decide(() =>
+        approveRefundMutation({ variables: { refundRequestId: id, reviewComments: reviewComments ?? null, idempotencyKey } })
+      );
     },
     [approveRefundMutation]
   );

@@ -8,6 +8,8 @@ import com.pml.booking.domain.model.BankAccount;
 import com.pml.booking.service.BankAccountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -40,6 +42,7 @@ public class BankAccountQueryResolver {
 
     private final BankAccountService bankAccountService;
     private final TenantReads tenantReads;
+    private final com.pml.booking.security.BankAccountAccess access;
 
     /**
      * Get all bank accounts for an organizer.
@@ -52,10 +55,19 @@ public class BankAccountQueryResolver {
      * @return Flux of bank accounts belonging to the organizer
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN,FINANCE', #organizerId)")
+    @PreAuthorize("isAuthenticated()")
     public Flux<BankAccount> bankAccountsByOrganizer(@InputArgument String organizerId) {
-        log.debug("GraphQL query: bankAccountsByOrganizer(organizerId={})", organizerId);
-        return bankAccountService.findByOrganizerId(organizerId);
+        log.debug("GraphQL query: bankAccountsByOrganizer");
+        // The accounts belong to the organizations the caller manages, not to a person named in the
+        // request: a member sees the organization's accounts whoever added them, and an organization
+        // they cannot manage contributes nothing.
+        return CurrentTenantScope.get().flatMapMany(scope -> PlatformWideAccess
+                .isPlatformWide(scope, PlatformWideAccess.Reason.BANK_ACCOUNTS_READ)
+                .flatMapMany(platformWide -> platformWide
+                        ? bankAccountService.findByOrganizerId(organizerId)
+                        : Flux.fromIterable(scope.organizationIds())
+                                .concatMap(organizationId -> access.may(organizationId)
+                                        .flatMapMany(may -> may ? bankAccountService.findByOrganizationId(organizationId) : Flux.empty()))));
     }
 
     /**
@@ -66,10 +78,11 @@ public class BankAccountQueryResolver {
      * @return Mono containing the bank account or empty if not found
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<BankAccount> bankAccount(@InputArgument String id) {
         log.debug("GraphQL query: bankAccount(id={})", id);
-        return tenantReads.bankAccountForCaller(id);
+        return tenantReads.bankAccountForCaller(id)
+                .flatMap(account -> access.require(account.getOrganizationId()).thenReturn(account));
     }
 
     /**
@@ -83,9 +96,16 @@ public class BankAccountQueryResolver {
      * @return Mono containing the default bank account or empty if none set
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN,FINANCE', #organizerId)")
+    @PreAuthorize("isAuthenticated()")
     public Mono<BankAccount> defaultBankAccount(@InputArgument String organizerId) {
-        log.debug("GraphQL query: defaultBankAccount(organizerId={})", organizerId);
-        return bankAccountService.findDefaultByOrganizerId(organizerId);
+        log.debug("GraphQL query: defaultBankAccount");
+        return CurrentTenantScope.get().flatMap(scope -> PlatformWideAccess
+                .isPlatformWide(scope, PlatformWideAccess.Reason.DEFAULT_BANK_ACCOUNT_READ)
+                .flatMap(platformWide -> platformWide
+                        ? bankAccountService.findDefaultByOrganizerId(organizerId)
+                        : Flux.fromIterable(scope.organizationIds())
+                                .concatMap(organizationId -> access.may(organizationId)
+                                        .flatMapMany(may -> may ? bankAccountService.findDefaultByOrganizationId(organizationId).flux() : Flux.empty()))
+                                .next()));
     }
 }

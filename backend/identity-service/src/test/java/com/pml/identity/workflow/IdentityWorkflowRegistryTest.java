@@ -10,7 +10,6 @@ import com.pml.identity.workflow.onboarding.OnboardingKeycloakActivities;
 import com.pml.identity.workflow.ownership.OwnershipMirrorActivities;
 import com.pml.identity.workflow.ownership.OwnershipTransferActivities;
 import com.pml.identity.workflow.reminder.ReminderActivities;
-import com.pml.identity.workflow.usersync.UserBackfillActivities;
 import com.pml.identity.workflow.usersync.UserSyncActivities;
 import io.temporal.activity.ActivityInterface;
 import org.junit.jupiter.api.DisplayName;
@@ -32,7 +31,7 @@ class IdentityWorkflowRegistryTest {
     private static final List<Class<?>> ACTIVITIES = List.of(
             OnboardingActivities.class, OnboardingKeycloakActivities.class,
             OwnershipTransferActivities.class, OwnershipMirrorActivities.class,
-            UserSyncActivities.class, UserBackfillActivities.class, ReminderActivities.class,
+            UserSyncActivities.class, ReminderActivities.class,
             NotificationActivities.class, NotifyActivities.class,
             GroupMirrorActivities.class, AccountEnsureActivities.class);
 
@@ -42,7 +41,6 @@ class IdentityWorkflowRegistryTest {
         assertThat(WorkflowIds.organizerOnboarding("org-1")).isEqualTo("org-onboarding/org-1");
         assertThat(WorkflowIds.ownershipTransfer("t-1")).isEqualTo("ownership/t-1");
         assertThat(WorkflowIds.userSync("kc-1")).isEqualTo("user-sync/kc-1");
-        assertThat(WorkflowIds.userBackfill()).isEqualTo("user-backfill");
         assertThat(WorkflowIds.reminder("r-1")).isEqualTo("reminder/r-1");
         assertThat(WorkflowIds.notification("team.accepted:inv-1")).isEqualTo("notify/team.accepted:inv-1");
         assertThatThrownBy(() -> WorkflowIds.reminder(" ")).isInstanceOf(IllegalArgumentException.class);

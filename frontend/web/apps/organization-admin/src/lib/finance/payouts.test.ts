@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { blockedMessage, escrowEligibilityLabel, maskAccount, sumAmounts } from './payouts';
+import { blockedMessage, currentEventName, escrowEligibilityLabel, maskAccount, sumAmounts } from './payouts';
+
+describe('current event name', () => {
+  it('is shown only when the event has been renamed since the record was made', () => {
+    expect(currentEventName('Jazz Night', { title: 'Jazz Night (Late Show)' })).toBe('Jazz Night (Late Show)');
+    expect(currentEventName('Jazz Night', { title: ' Jazz Night ' })).toBeNull();
+    expect(currentEventName('Jazz Night', null)).toBeNull();
+    expect(currentEventName(null, { title: 'Jazz Night' })).toBe('Jazz Night');
+  });
+});
 
 describe('payout helpers', () => {
   it('masks account numbers', () => {

@@ -169,18 +169,8 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
     }
 
     @Override
-    public reactor.core.publisher.Flux<KeycloakUserView> listUsers(String realm, int first, int max) {
-        return reactor.core.publisher.Flux.empty();
-    }
-
-    @Override
     public Mono<Optional<String>> readAttribute(String realm, String keycloakUserId, String name) {
         return guard("readAttribute", () -> Optional.<String>empty());
-    }
-
-    @Override
-    public Mono<Optional<KeycloakUserView>> readUserByUsername(String realm, String username) {
-        return guard("readUserByUsername", () -> Optional.ofNullable(staff.get(username)));
     }
 
     @Override

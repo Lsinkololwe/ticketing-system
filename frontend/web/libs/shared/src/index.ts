@@ -212,3 +212,4 @@ export type { FormSubmit, UseGraphQLMutationFormOptions, UseRestMutationFormOpti
 // Buyer storefront GraphQL features (discovery, event page, reservations, refunds, reminders, notifications, profile, invitations).
 export * from './api/graphql/buyer';
 export { sanitizeRich, richView, richToText, isRichHtml, escapeText } from './lib/richtext';
+export { useIdempotencyKey, stableActionKey } from './lib/idempotency';

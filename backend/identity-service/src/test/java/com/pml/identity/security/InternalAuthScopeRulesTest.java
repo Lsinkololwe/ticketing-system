@@ -49,7 +49,8 @@ class InternalAuthScopeRulesTest {
                     request -> ServerResponse.ok().bodyValue("reached"));
         }
         client = WebTestClient.bindToRouterFunction(routes.build())
-                .webFilter(new WebFilterChainProxy(config.securityWebFilterChain(ServerHttpSecurity.http())))
+                .webFilter(new WebFilterChainProxy(
+                        config.securityWebFilterChain(ServerHttpSecurity.http(), new org.springframework.mock.env.MockEnvironment())))
                 .configureClient().build();
     }
 

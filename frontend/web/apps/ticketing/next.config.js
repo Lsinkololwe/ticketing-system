@@ -11,6 +11,7 @@ const publicOrigin = process.env.APP_URL
  * @type {import('next').NextConfig}
  **/
 const nextConfig = {
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   experimental: { serverActions: { allowedOrigins: [publicOrigin] } },
 };
 

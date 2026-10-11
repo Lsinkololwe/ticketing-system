@@ -81,7 +81,7 @@ export function PayoutSheet({ payout: seed, onClose, onAction }: PayoutSheetProp
         <KeyValue columns
           items={[
             { label: 'Event', value: eventOf(p) },
-            { label: 'Organization', value: p.organizerName ?? '—' },
+            { label: 'Organization', value: p.organization?.name ?? '—' },
             { label: 'Requested amount', value: <Mono>{money(asNumber(p.requestedAmount))}</Mono> },
             { label: 'Tax', value: <Mono>{money(asNumber(p.taxAmount))}</Mono> },
             { label: 'Settled amount', value: <Mono>{money(asNumber(p.settledAmount))}</Mono> },

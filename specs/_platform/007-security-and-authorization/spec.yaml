@@ -1,6 +1,6 @@
 id: ET-PLT-007
 title: Keycloak realm, roles, @auth, tenant scoping, idempotency
-status: approved
+status: implemented
 area: PLT
 service: all
 subgraph: all

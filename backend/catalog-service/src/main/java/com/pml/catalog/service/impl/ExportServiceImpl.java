@@ -11,6 +11,9 @@ import com.pml.catalog.web.graphql.dto.EventFilterInput;
 import com.pml.catalog.web.graphql.dto.ReportExportDto;
 import com.pml.catalog.repository.EventRepository;
 import com.pml.catalog.service.ExportService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -57,8 +60,16 @@ public class ExportServiceImpl implements ExportService {
     public Mono<ReportExportDto> exportEventData(String eventId, ExportFormat format) {
         log.info("Exporting event data: eventId={}, format={}", eventId, format);
 
-        return eventRepository.findById(eventId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + eventId)))
+        // Reached only from the ADMIN-only exportEventData query: read the real request scope
+        // rather than assuming platform authority, so a future non-admin caller is refused here
+        // too instead of exporting a rival's event by guessing its id.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        eventRepository.findById(eventId),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(eventId, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + eventId + " (export)"))
                 .flatMap(event -> generateExport(List.of(event), format, "event_" + eventId))
                 .onErrorResume(e -> {
                     log.error("Error exporting event data: {}", e.getMessage(), e);

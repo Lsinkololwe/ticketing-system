@@ -479,6 +479,12 @@ enum PaymentAttemptStatus @tag(name: "admin") {
 # User stub - owned by Identity Service
 # Includes fields we can @provides from cached Ticket buyer data
 # NOTE: @external field types MUST match the owning service (identity)
+# Identity owns organizations. Booking holds only the id a record belongs to and returns it as a
+# reference, so a client asks for `organization { name }` and the router resolves it there.
+type Organization @key(fields: "id", resolvable: false) {
+    id: ID!
+}
+
 type User @key(fields: "id", resolvable: false) {
     id: ID!
     # These fields can be provided from Ticket's cached buyer data
@@ -512,9 +518,6 @@ extend type User @key(fields: "id") {
 extend type Event @key(fields: "id") {
     # External fields from Catalog Service (needed for computation)
     totalCapacity: Int! @external
-    title: String! @external
-    eventDateTime: DateTime! @external
-    organizerId: String! @external
 
     # ORGANIZER/ADMIN - Full ticket list for event management
     tickets: [Ticket!]! @tag(name: "organizer")
@@ -546,7 +549,8 @@ type Ticket @key(fields: "id") {
     ticketNumber: String!
 
     # Event reference - public for ticket display
-    event: Event! @provides(fields: "title eventDateTime organizerId")
+    # No @provides: the name and date are the event's now, so the router asks catalog and never serves a copy.
+    event: Event!
     eventId: String!
 
     # Buyer reference - only own buyer sees full details
@@ -751,9 +755,15 @@ type EventEscrowAccount {
     id: ID!
     accountNumber: String!
     eventId: String!
+    # The event's name as it was when the account was opened: the record of what was true then.
     eventTitle: String
-    organizerId: String!
-    organizerName: String
+    # The event as it is now, resolved by catalog.
+    event: Event
+    # The person who opened the account, when one is recorded: an escrow is opened from the event's
+    # organization, which is the owner (see `organization`), so this is often absent.
+    organizerId: String
+    # The organization that owns the event; its name is identity's, resolved through the federated reference
+    organization: Organization
     currentBalance: BigDecimal!
     totalDeposits: BigDecimal!
     totalWithdrawals: BigDecimal!
@@ -806,9 +816,13 @@ type PayoutRequest @tag(name: "organizer") {
     requestId: String!
     organizerId: String!
     organizationId: String               # Multi-tenant tracking
-    organizerName: String
+    # The organization this payout belongs to; its name is identity's, resolved through the federated reference
+    organization: Organization
     eventId: String
+    # The event's name as it was when the payout was requested: the record of what was true then.
     eventTitle: String
+    # The event as it is now, resolved by catalog.
+    event: Event
     escrowAccountId: String!
     bankAccountId: String!
     bankAccount: BankAccount
@@ -1384,8 +1398,8 @@ type AccountSummary @tag(name: "admin") {
     accountNumber: String!
     eventId: String!
     eventTitle: String!
-    organizerId: String!
-    organizerName: String!
+    organizerId: String
+    organization: Organization
     currentBalance: BigDecimal!
     totalDeposits: BigDecimal!
     totalWithdrawals: BigDecimal!
@@ -1861,7 +1875,6 @@ input CreateEscrowAccountInput {
     eventId: String!
     organizerId: String!
     eventTitle: String
-    organizerName: String
     currency: String!
 }
 
@@ -1888,6 +1901,7 @@ input CreateRefundRequestInput {
     additionalNotes: String
     requestedById: String!
     metadata: JSON
+    idempotencyKey: String!
 }
 
 input PayoutRequestFilterInput {
@@ -1914,13 +1928,11 @@ input CreatePayoutRequestInput {
     # Client-supplied key that makes retrying this request safe.
     #
     # Sending the same key twice returns the ORIGINAL payout rather than
-    # creating a second one for the same money. Backed by a unique sparse
-    # index, so the guarantee holds under concurrent retries too.
-    #
-    # Optional so existing callers keep working, but a caller that omits it
-    # gets no retry protection — send one.
+    # creating a second one for the same money; sending the same key with a
+    # different body is refused rather than replayed. Enforced by the shared
+    # IdempotencyGuard (ET-PLT-007 R6), backed by its Mongo ledger.
     # Required by specs/finance/003-payouts-and-settlement.
-    idempotencyKey: String
+    idempotencyKey: String!
 }
 
 input CreateBankAccountInput {
@@ -1976,6 +1988,7 @@ input TicketSelectionInput {
 input PayReservationInput {
     reservationId: ID!
     phoneNumber: String!
+    idempotencyKey: String!
 }
 
 input CreatePromoCodeInput {
@@ -2514,6 +2527,7 @@ input InitiateTicketTransferInput @tag(name: "mobile") {
     # A WhatsApp number or an email, matching the channel
     recipient: String!
     note: String
+    idempotencyKey: String!
 }
 
 # ============================================================================
@@ -3301,10 +3315,10 @@ type Mutation {
     # MOBILE - Customer initiates refund request
     createUserRefundRequest(input: CreateRefundRequestInput!): RefundRequest! @auth(requires: CUSTOMER) @tag(name: "mobile")
     # ADMIN - Admin-initiated refund
-    createAdminRefundRequest(ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal): RefundRequest! @auth(requires: FINANCE) @tag(name: "admin")
+    createAdminRefundRequest(ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal, idempotencyKey: String!): RefundRequest! @auth(requires: FINANCE) @tag(name: "admin")
     # ADMIN - Refund approval workflow
     # NOTE: Actor IDs (reviewerId, processedBy, etc.) extracted from JWT - OWASP A01:2021
-    approveRefundRequest(refundRequestId: ID!, reviewComments: String): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
+    approveRefundRequest(refundRequestId: ID!, reviewComments: String, idempotencyKey: String!): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
     rejectRefundRequest(refundRequestId: ID!, rejectionReason: String!): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
     processRefundRequest(refundRequestId: ID!): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
     cancelRefundRequest(refundRequestId: ID!, reason: String!): RefundRequest! @auth(requires: CUSTOMER) @tag(name: "mobile") @tag(name: "admin")
@@ -3346,14 +3360,14 @@ type Mutation {
     # NOTE: Actor IDs extracted from JWT authentication - OWASP A01:2021
     createPayoutRequest(input: CreatePayoutRequestInput!): PayoutRequest! @tag(name: "organizer")
     # ADMIN - Payout approval workflow
-    approvePayoutRequest(payoutRequestId: ID!, notes: String): PayoutRequest! @tag(name: "admin")
+    approvePayoutRequest(payoutRequestId: ID!, notes: String, idempotencyKey: String!): PayoutRequest! @tag(name: "admin")
     rejectPayoutRequest(payoutRequestId: ID!, rejectionReason: String!): PayoutRequest! @tag(name: "admin")
     processPayoutRequest(payoutRequestId: ID!): PayoutRequest! @tag(name: "admin")
     # ADMIN - Complete payout after bank transfer (records accounting entries)
     completePayoutRequest(payoutRequestId: ID!, bankReference: String!): PayoutRequest! @tag(name: "admin")
     # ORGANIZER - Cancel own payout request
     cancelPayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @tag(name: "organizer")
-    retryPayoutRequest(payoutRequestId: ID!): PayoutRequest! @tag(name: "admin")
+    retryPayoutRequest(payoutRequestId: ID!, idempotencyKey: String!): PayoutRequest! @tag(name: "admin")
 
     # ADMIN - Payout Recovery Operations
     resumePayoutRequest(payoutRequestId: ID!): PayoutRequest! @tag(name: "admin")

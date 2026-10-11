@@ -55,7 +55,8 @@ export function InvitationClient({ token }: { token: string }) {
   } else if (done === 'ACCEPTED') {
     body = (
       <Result icon="check-circle" tone="ok" title={`You've joined ${org}`} actions={<>{ORGANIZER_URL ? <a className="m3-btn m3-state" data-variant="accent" href={ORGANIZER_URL}>Open organizer portal</a> : null}{back}</>}>
-        You are now a <b>{inv.invitation?.proposedRole}</b>. Open the organizer portal to start working with the team.
+        You are now a <b>{inv.invitation?.proposedRole}</b>. Open the organizer portal to start working with the team. Your access
+        is switched on within about a minute; if the portal asks you to wait, that is the reason.
       </Result>
     );
   } else if (done === 'DECLINED') {

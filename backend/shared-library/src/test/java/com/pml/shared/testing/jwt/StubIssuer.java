@@ -49,8 +49,11 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
  */
 public final class StubIssuer implements AutoCloseable {
 
-    /** Spring's {@code JwtTimestampValidator} allows 60s of clock skew, so "expired" must clear it. */
+    /** The platform allows 30s of clock skew, so "expired" must clear it by a wide margin. */
     private static final Duration WELL_PAST_EXPIRY = Duration.ofMinutes(10);
+
+    /** Likewise for {@code nbf}: far enough ahead that no skew allowance could excuse it. */
+    private static final Duration WELL_BEFORE_VALID = Duration.ofMinutes(10);
 
     private final WireMockServer server;
     private final RSAKey signingKey;
@@ -136,6 +139,24 @@ public final class StubIssuer implements AutoCloseable {
     /** Correctly signed by this realm, but expired well beyond the allowed clock skew. */
     public String expired(String audience) {
         return sign(signingKey, claims(issuer(), audience, Instant.now().minus(WELL_PAST_EXPIRY)));
+    }
+
+    /**
+     * Correctly signed and unexpired, but its {@code nbf} lies well beyond the allowed clock skew.
+     *
+     * <p>Every other claim is the same as {@link #validToken}'s, so the not-before claim is the
+     * only thing that can account for a refusal.</p>
+     */
+    public String notYetValid(String audience) {
+        JWTClaimsSet base = claims(issuer(), audience, Instant.now().plus(Duration.ofMinutes(30)));
+        return sign(signingKey, new JWTClaimsSet.Builder(base)
+                .notBeforeTime(Date.from(Instant.now().plus(WELL_BEFORE_VALID)))
+                .build());
+    }
+
+    /** A token whose {@code exp} fell exactly {@code amount} ago, for pinning a clock-skew boundary. */
+    public String expiredBy(Duration amount, String audience) {
+        return sign(signingKey, claims(issuer(), audience, Instant.now().minus(amount)));
     }
 
     /** Correctly signed and unexpired — for a different client entirely. */

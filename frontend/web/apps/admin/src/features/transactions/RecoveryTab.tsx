@@ -49,7 +49,7 @@ function PayoutsView() {
   const { items, loading, error, refetch } = useRecoveryQueue('stuck');
   const cols: Array<DataColumn<RecoveryPayoutRow>> = [
     { id: 'req', header: 'Request', cell: (p) => <span className="m3-mono">{p.requestId}</span> },
-    { id: 'org', header: 'Organizer', cell: (p) => <>{p.organizerName}<br /><span className="m3-muted">{p.eventTitle}</span></> },
+    { id: 'org', header: 'Organizer', cell: (p) => <>{p.organization?.name}<br /><span className="m3-muted">{p.eventTitle}</span></> },
     { id: 'amt', header: 'Amount', align: 'end', cell: (p) => <span className="m3-mono">{money(Number(p.requestedAmount))}</span> },
     { id: 'status', header: 'Status', cell: (p) => <StatusPill status={String(p.status)} /> },
     { id: 'req_at', header: 'Requested', cell: (p) => formatDateTime(p.requestedAt) },
@@ -63,7 +63,7 @@ function PayoutsView() {
       columns={cols}
       getRowId={(p) => p.id}
       searchLabel="Search stuck payouts"
-      searchText={(p) => `${p.requestId} ${p.organizerName} ${p.eventTitle}`}
+      searchText={(p) => `${p.requestId} ${p.organization?.name} ${p.eventTitle}`}
       loading={loading}
       error={error}
       onRetry={refetch}

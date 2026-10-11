@@ -1,6 +1,7 @@
 package com.pml.gateway.filter;
 
-import com.pml.gateway.service.SessionBlacklistService;
+import com.pml.shared.security.revocation.RevocationCheck;
+import com.pml.shared.security.revocation.RevocationDecision;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -15,147 +16,85 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 /**
- * Comprehensive Token/Session Blacklist Filter for Enterprise-Scale Systems.
+ * Refuses a request whose bearer token was revoked, whatever its signature and expiry say.
  *
- * <h2>Why This Filter Exists</h2>
- * <p>
- * JWTs are stateless - once issued, they're valid until expiry. Problem: if user logs out
- * on one device, their JWT on another device remains valid. This filter solves this by
- * checking THREE types of blacklists:
- * </p>
- * <ol>
- *   <li><b>Token Blacklist (JTI)</b> - Industry standard, O(1) lookup, immediate revocation</li>
- *   <li><b>Session Blacklist (SID)</b> - Keycloak session revocation</li>
- *   <li><b>User Blacklist (SUB)</b> - "Logout everywhere" functionality</li>
- * </ol>
+ * <p>A Keycloak access token is a signed JWT that stays valid until {@code exp}; logging out
+ * ends the SSO session but does not recall tokens already issued. identity-service keeps the
+ * list of revoked {@code jti}, {@code sid} and {@code sub} values, and this filter asks the
+ * shared {@link RevocationCheck} about all three on every authenticated request.</p>
  *
- * <h2>Flow</h2>
+ * <h2>Where the answer comes from</h2>
+ * <p>The check reads Redis first and trusts a miss only while identity's completeness marker is
+ * present. After a Redis flush, restart or eviction the marker is gone, so the check asks
+ * identity-service's durable records instead of treating the missing key as "not revoked".
+ * This is the same composition catalog, booking and identity use, so the edge and the services
+ * cannot disagree about whether a session is alive.</p>
+ *
+ * <h2>When no store can answer</h2>
+ * <p>The result is {@link RevocationDecision#UNKNOWN}, and the request proceeds — the same
+ * fail-open rule {@code RevocationRequestGuard} applies inside each service. The gateway routes
+ * every GraphQL operation as a POST to the same path, so it cannot tell a read from a write by
+ * HTTP method, and it has no knowledge of which mutations are sensitive enough to warrant
+ * refusing on an unresolved revocation. That decision belongs to the service that owns the
+ * operation: a method marked {@code @FailClosedOnRevocation} refuses with {@code
+ * REVOCATION_UNAVAILABLE} on the same {@code UNKNOWN} decision, where the request's actual shape
+ * is known. The gateway is a router, not a security boundary.</p>
+ *
+ * <h2>Filter order: -75</h2>
  * <pre>
- * 1. User clicks "Logout" in any application
- * 2. Application blacklists the token JTI in Redis
- * 3. Keycloak sends back-channel logout → session SID blacklisted
- * 4. This filter checks ALL blacklists on every request
- * 5. If ANY match → reject with 401 (even if JWT is technically valid)
+ * -100: Spring Security (signature, issuer, audience, expiry)
+ *  -75: THIS FILTER, so an unsigned token never costs a lookup
+ *  -50: OAuth2TokenRelayFilter
  * </pre>
- *
- * <h2>Filter Order: -75</h2>
- * <pre>
- * -200: RequestLoggingFilter (log request)
- * -100: Spring Security (validate JWT signature and claims)
- *  -75: THIS FILTER (check blacklists) ← runs AFTER JWT is validated
- *  -50: OAuth2TokenRelayFilter (extract user info)
- *    0: Route filters
- * </pre>
- *
- * <h2>Performance at Scale (20M users)</h2>
- * <pre>
- * - 3 parallel Redis EXISTS calls (~1-2ms total)
- * - O(1) lookup complexity
- * - Minimal memory: ~50 bytes per blacklisted token
- * - 100K+ requests/second supported
- * </pre>
- *
- * <h2>Fail-Open Behavior</h2>
- * <p>
- * If Redis is unavailable, requests are ALLOWED through. This prioritizes availability
- * over immediate revocation. Trade-off: revoked tokens may briefly work until Redis recovers.
- * </p>
- *
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SessionBlacklistFilter implements GlobalFilter, Ordered {
 
-    private final SessionBlacklistService sessionBlacklistService;
-
-    // Runs after Spring Security (-100) but before token relay (-50)
     private static final int FILTER_ORDER = -75;
+
+    private final RevocationCheck revocationCheck;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        // Step 1: Get security context (populated by Spring Security filter at -100)
         return ReactiveSecurityContextHolder.getContext()
-                // Step 2: Only proceed if authenticated (has valid JWT)
-                .filter(context -> context.getAuthentication() != null)
-                .filter(context -> context.getAuthentication().isAuthenticated())
                 .filter(context -> context.getAuthentication() instanceof JwtAuthenticationToken)
-                // Step 3: Extract JWT from authentication
                 .map(context -> (JwtAuthenticationToken) context.getAuthentication())
-                // Step 4: Check blacklist
-                // checkBlacklistAndFilter completes empty (Mono<Void>), so it reports "handled" explicitly:
-                // switchIfEmpty on its result would run the chain a second time, and after a 401.
-                .flatMap(auth -> checkBlacklistAndFilter(exchange, chain, auth).thenReturn(Boolean.TRUE))
-                // Step 5: If no auth context (public endpoint), allow through
-                .defaultIfEmpty(Boolean.FALSE)
-                .flatMap(handled -> handled ? Mono.<Void>empty() : chain.filter(exchange));
+                .filter(JwtAuthenticationToken::isAuthenticated)
+                // The decision, not the chain, is what this stage produces: running the chain
+                // from inside the lookup would run it twice when the lookup completes empty.
+                .flatMap(auth -> decide(auth.getToken()))
+                .defaultIfEmpty(RevocationDecision.ACTIVE)
+                .flatMap(decision -> decision == RevocationDecision.REVOKED
+                        ? refuseRevoked(exchange)
+                        : chain.filter(exchange));
     }
 
     /**
-     * Checks if token/session/user is blacklisted and either rejects or allows the request.
-     *
-     * <p>Checks three blacklist types in parallel:</p>
-     * <ol>
-     *   <li>Token blacklist (JTI) - immediate token revocation</li>
-     *   <li>Session blacklist (SID) - Keycloak session revocation</li>
-     *   <li>User blacklist (SUB) - logout everywhere</li>
-     * </ol>
+     * Looks up every identifier the token carries. {@code sub} is the Keycloak user id and is
+     * deliberately not the {@code accountId} claim: identity revokes a user by Keycloak id, which
+     * is what {@code sub} holds for buyers (whose account id differs) and for staff alike.
      */
-    private Mono<Void> checkBlacklistAndFilter(
-            ServerWebExchange exchange,
-            GatewayFilterChain chain,
-            JwtAuthenticationToken authentication
-    ) {
-        Jwt jwt = authentication.getToken();
-
-        // Extract all identifiers from JWT claims
-        // jti = JWT ID (unique per token - INDUSTRY STANDARD for blacklisting)
-        // sid = Keycloak session ID (unique per login session)
-        // sub = the KEYCLOAK user id (for "logout everywhere" scenarios). Deliberately NOT the
-        // accountId claim: identity revokes a user by keycloakUserId, which is what sub carries for
-        // buyers (whose account id differs) as well as for staff.
-        String jti = jwt.getId();  // JWT ID claim
-        String sid = jwt.getClaimAsString("sid");
-        String sub = jwt.getSubject();
-
-        // If no identifiers at all, can't check blacklist - allow through
-        if (jti == null && sid == null && sub == null) {
-            log.debug("[Blacklist] No jti/sid/sub in token, skipping check");
-            return chain.filter(exchange);
-        }
-
-        // Check all three blacklists in parallel for efficiency. FAIL-OPEN: if Redis fails, the
-        // request is allowed through. Only the check is guarded; an error from the rest of the
-        // chain must not run the chain again.
-        return sessionBlacklistService.isBlacklistedComprehensive(jti, sid, sub)
+    private Mono<RevocationDecision> decide(Jwt jwt) {
+        return revocationCheck.check(jwt.getId(), jwt.getClaimAsString("sid"), jwt.getSubject())
                 .onErrorResume(error -> {
-                    log.warn("[Blacklist] Redis check failed, allowing request (fail-open): {}",
-                            error.getMessage());
-                    return Mono.just(false);
-                })
-                .flatMap(isBlacklisted -> {
-                    if (isBlacklisted) {
-                        // Token/Session was revoked - reject request
-                        log.warn("[Blacklist] REJECTED revoked token: jti={}, sid={}, path={}",
-                                maskValue(jti), maskValue(sid), exchange.getRequest().getPath());
-
-                        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-                        exchange.getResponse().getHeaders().add("X-Token-Revoked", "true");
-                        exchange.getResponse().getHeaders().add("X-Session-Revoked", "true");
-                        return exchange.getResponse().setComplete();
-                    }
-                    // Token valid - continue to next filter
-                    return chain.filter(exchange);
+                    log.error("[Revocation] The check itself failed: {}", error.toString());
+                    return Mono.just(RevocationDecision.UNKNOWN);
                 });
+    }
+
+    private Mono<Void> refuseRevoked(ServerWebExchange exchange) {
+        log.warn("[Revocation] Refused {} {} — the presented token is revoked",
+                exchange.getRequest().getMethod(), exchange.getRequest().getPath());
+        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        exchange.getResponse().getHeaders().add("X-Token-Revoked", "true");
+        exchange.getResponse().getHeaders().add("X-Session-Revoked", "true");
+        return exchange.getResponse().setComplete();
     }
 
     @Override
     public int getOrder() {
         return FILTER_ORDER;
-    }
-
-    private String maskValue(String value) {
-        if (value == null || value.length() <= 8) return "****";
-        return value.substring(0, 4) + "..." + value.substring(value.length() - 4);
     }
 }

@@ -169,6 +169,30 @@ class MemberRemovalTest {
     }
 
     @Test
+    @Tag("ET-PLT-007")
+    @DisplayName("ET-PLT-007-R7 · the next read of membership status reflects a removal within the sub-second bound")
+    void removalIsVisibleOnTheVeryNextReadWithinOneSecond() {
+        // R7's "next request" box rests on there being no cache between a membership read and
+        // Mongo. Every per-request authorization check (AuthorizationServiceImpl, reached through
+        // IdentityTenantMemberships and seeded into the request by TenantScopeWebFilter) resolves
+        // tenancy with exactly this repository query, fresh, every time — there is no caching
+        // layer anywhere in that chain for this test to bypass. This isn't a real latency budget;
+        // it's proof the removal has no propagation delay for a request to race against.
+        endMembership("member-mwansa");
+
+        long start = System.nanoTime();
+        OrganizationMember reread = members.findByUserIdAndOrganizationId(MEMBER, ORG).block();
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        assertThat(reread.getStatus())
+                .as("the very next read already sees the removal")
+                .isEqualTo(MemberStatus.REMOVED);
+        assertThat(elapsedMs)
+                .as("sub-second, per the acceptance box's wording")
+                .isLessThan(1000);
+    }
+
+    @Test
     @DisplayName("ET-ORG-002-R6 · the revoked grants keep why and when")
     void revocationsAreExplained() {
         endMembership("member-mwansa");

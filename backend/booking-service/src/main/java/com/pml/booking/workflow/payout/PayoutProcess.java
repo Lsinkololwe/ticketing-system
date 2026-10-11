@@ -48,11 +48,11 @@ public class PayoutProcess {
         this.payoutRequests = payoutRequests;
     }
 
-    public Mono<PayoutRequest> request(CreatePayoutRequestInput input, String requesterId) {
+    public Mono<PayoutRequest> request(CreatePayoutRequestInput input, String requesterId, String organizationId) {
         if (input.escrowAccountId() == null || input.escrowAccountId().isBlank()) {
             return Mono.error(new TranslatedRefusal(ErrorCode.COMMAND_NOT_WELL_FORMED, "a payout request names its escrow account"));
         }
-        Submit submit = new Submit(UUID.randomUUID().toString(), input.organizerId(), input.eventId(),
+        Submit submit = new Submit(UUID.randomUUID().toString(), input.organizerId(), organizationId, input.eventId(),
                 input.escrowAccountId(), input.bankAccountId(), input.requestedAmount(), input.currency(),
                 input.payoutMethod(), input.notes(), input.metadata(), input.idempotencyKey(), requesterId);
 

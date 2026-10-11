@@ -89,8 +89,8 @@ export class RevocationService implements IRevocationService {
     this.redis = options.redis ?? null;
     this.client = options.client;
     this.cacheTimeoutMs = options.cacheTimeoutMs ?? 250;
-    // Default matches the realm's accessTokenLifespan (3600s) plus a minute of clock skew.
-    this.cacheTtlSeconds = options.cacheTtlSeconds ?? 3660;
+    // Default matches the realm's accessTokenLifespan (300s) plus a minute of clock skew.
+    this.cacheTtlSeconds = options.cacheTtlSeconds ?? 360;
     this.logger = options.logger ?? console;
   }
 

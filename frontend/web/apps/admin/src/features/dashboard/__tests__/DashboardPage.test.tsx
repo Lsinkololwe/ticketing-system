@@ -33,10 +33,10 @@ vi.mock('@pml.tickets/shared', async (orig) => ({
   usePendingOrganizations: () => ({ organizations: [{ id: 'o1', name: 'Acme Events', type: 'COMPANY', status: 'PENDING_REVIEW', submittedAt: '2020-01-01T00:00:00Z' }], loading: false }),
   useAdminEvents: () => ({ events: [{ id: 'e1', title: 'Summer Fest', status: 'PENDING_APPROVAL', submittedForApprovalAt: '2020-01-01T00:00:00Z', eventDateTime: new Date().toISOString(), cityName: 'Lusaka' }], pageInfo: { totalCount: 1 }, loading: false }),
   useAdminUsers: () => ({ users: [{ id: 'u1', fullName: 'Locked Person', email: 'l@x.test', accountStatus: 'LOCKED' }], loading: false }),
-  useAdminEscrowAccounts: () => ({ accounts: [{ id: 'x1', eventTitle: 'Gala', organizerName: 'Org', currentBalance: 250, lockUntil: null }], pageInfo: { totalCount: 1 }, loading: false }),
-  useAdminPayoutRequests: () => ({ payouts: [{ id: 'p1', requestId: 'PR-1', organizerName: 'Org', eventTitle: 'Gala', requestedAmount: 500, requestedAt: '2026-10-01T00:00:00Z' }], loading: false }),
+  useAdminEscrowAccounts: () => ({ accounts: [{ id: 'x1', eventTitle: 'Gala', organization: { id: 'org-fixture', name: 'Org' }, currentBalance: 250, lockUntil: null }], pageInfo: { totalCount: 1 }, loading: false }),
+  useAdminPayoutRequests: () => ({ payouts: [{ id: 'p1', requestId: 'PR-1', organization: { id: 'org-fixture', name: 'Org' }, eventTitle: 'Gala', requestedAmount: 500, requestedAt: '2026-10-01T00:00:00Z' }], loading: false }),
   useAdminRefundRequests: () => ({ refunds: [{ id: 'r1', requestId: 'RF-1', ticketNumber: 'T-1', refundAmount: 40, requestedAt: '2020-01-01T00:00:00Z' }], loading: false }),
-  useRecoveryQueue: () => ({ items: [{ id: 'p9', requestId: 'PR-9', requestedAmount: 70, organizerName: 'Org', status: 'FAILED' }], loading: false }),
+  useRecoveryQueue: () => ({ items: [{ id: 'p9', requestId: 'PR-9', requestedAmount: 70, organization: { id: 'org-fixture', name: 'Org' }, status: 'FAILED' }], loading: false }),
 }));
 
 

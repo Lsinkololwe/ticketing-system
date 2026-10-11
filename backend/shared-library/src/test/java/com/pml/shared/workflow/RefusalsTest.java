@@ -45,6 +45,33 @@ class RefusalsTest {
     }
 
     @Test
+    @DisplayName("a document the database refuses is not retried: the same document is refused again")
+    void validatorFailureIsNotRetried() {
+        RuntimeException raised = Refusals.forActivity(new org.springframework.dao.DataIntegrityViolationException(
+                "Write error", new com.mongodb.MongoException(121, "Document failed validation")));
+
+        assertThat(raised).isInstanceOf(ApplicationFailure.class);
+        assertThat(((ApplicationFailure) raised).isNonRetryable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a write conflict is transient and stays retryable, even wrapped as a data-integrity error")
+    void writeConflictStaysRetryable() {
+        RuntimeException conflict = new org.springframework.dao.DataIntegrityViolationException(
+                "Command failed with error 112 (WriteConflict)", new com.mongodb.MongoException(112, "WriteConflict"));
+
+        assertThat(Refusals.forActivity(conflict)).isSameAs(conflict);
+    }
+
+    @Test
+    @DisplayName("a duplicate key stays retryable: a create-or-get that lost a race succeeds next time")
+    void duplicateKeyStaysRetryable() {
+        RuntimeException duplicate = new org.springframework.dao.DuplicateKeyException("E11000 duplicate key");
+
+        assertThat(Refusals.forActivity(duplicate)).isSameAs(duplicate);
+    }
+
+    @Test
     @DisplayName("the client side reads the code back even when only the message survived")
     void codeSurvivesAWrapper() {
         ApplicationFailure wrapped = ApplicationFailure.newNonRetryableFailure(

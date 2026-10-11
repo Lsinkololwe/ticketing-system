@@ -2,7 +2,7 @@ import 'server-only';
 import { createBff } from '@pml.tickets/shared/auth/bff';
 import { CSP_OPTIONS, organizerBffConfig } from './bff.config';
 
-export { FRESH_AUTH_SEC, ORGANIZER_ROLES } from './bff.config';
+export { FRESH_AUTH_SEC } from './bff.config';
 
 /**
  * `next build` imports route modules to collect page data without any runtime secrets. Config is

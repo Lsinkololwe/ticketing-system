@@ -76,7 +76,7 @@ class TicketResendTest {
         world.event(eventId, "org-1");
         when(world.identity.notifyUser(anyString(), anyString(), anyString(), any()))
                 .thenReturn(Mono.just(NotificationReceipt.queued("WHATSAPP", "+260 97* *** *23", 1)));
-        resends = new TicketResendService(template, world.access, world.identity, BookingFixture.limiter(), TestClock.frozenAt(NOW));
+        resends = new TicketResendService(template, world.access, world.identity, BookingFixture.limiter(), TestClock.frozenAt(NOW), noCurrentEvent());
     }
 
     private Ticket ticket(TicketStatus status) {
@@ -198,4 +198,12 @@ class TicketResendTest {
     }
 
     private static final int TicketResendService_PER_TICKET = 3;
+
+    /** Catalog knows no event, so the ticket keeps what it carries. */
+    private static com.pml.booking.service.CurrentEventDetails noCurrentEvent() {
+        com.pml.booking.infrastructure.client.CatalogServiceClient catalog =
+                org.mockito.Mockito.mock(com.pml.booking.infrastructure.client.CatalogServiceClient.class);
+        org.mockito.Mockito.when(catalog.getEventById(org.mockito.ArgumentMatchers.any())).thenReturn(reactor.core.publisher.Mono.empty());
+        return new com.pml.booking.service.CurrentEventDetails(catalog, java.time.Clock.systemUTC());
+    }
 }

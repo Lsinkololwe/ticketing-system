@@ -137,4 +137,33 @@ class PublicGraphQlFilterTest {
                 .map(t -> t.getValue()).toList();
         assertThat(tagValues).allSatisfy(v -> assertThat(v).doesNotContain("203.0.113.9", "hunter2", "events", "me {"));
     }
+
+    @Test
+    @DisplayName("every outcome's meter carries only service, outcome and reason, and none of the request's content")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void meterTagsAreAFixedLowCardinalitySet() {
+        String secretQuery = "query($p: String) { events(token: \"s3cr3t-query-literal\") { id } }";
+        String secretVariable = "{\"query\":" + JSON.valueToTree("query($p: String) { events(filter: $p) { id } }")
+                + ",\"variables\":{\"p\":\"s3cr3t-variable-value\"}}";
+
+        marked(post(body("{ events { id } }")));                                  // allowed
+        marked(post(body(secretQuery.replace("events(", "me("))));               // rejected
+        marked(post(secretVariable));                                              // allowed, with a variable value
+        when(redis.execute(any(RedisScript.class), anyList(), anyList())).thenReturn((Flux) Flux.just(121L));
+        marked(post(secretVariable));                                              // rate_limited
+        when(redis.execute(any(RedisScript.class), anyList(), anyList()))
+                .thenReturn((Flux) Flux.error(new IllegalStateException("down")));
+        marked(post(secretVariable));                                              // limiter_unavailable
+
+        var requests = meters.find("platform.public_graphql.requests").counters();
+        assertThat(requests.stream().map(c -> c.getId().getTag("outcome")).collect(java.util.stream.Collectors.toSet()))
+                .contains("allowed", "rejected", "rate_limited", "limiter_unavailable");
+        assertThat(requests).isNotEmpty().allSatisfy(counter -> {
+            assertThat(counter.getId().getTags().stream().map(t -> t.getKey()).toList())
+                    .containsExactlyInAnyOrder("service", "outcome", "reason");
+            assertThat(counter.getId().getTags().stream().map(t -> t.getValue()).toList())
+                    .allSatisfy(value -> assertThat(value).doesNotContain("203.0.113.9", "10.0.0.", "s3cr3t",
+                            "events", "token", "filter", "{"));
+        });
+    }
 }

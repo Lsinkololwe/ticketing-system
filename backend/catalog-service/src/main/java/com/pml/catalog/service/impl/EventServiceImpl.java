@@ -1,6 +1,7 @@
 package com.pml.catalog.service.impl;
 
 import com.pml.catalog.domain.model.EventFields;
+import com.pml.catalog.infrastructure.client.IdentityServiceClient;
 import com.pml.catalog.repository.TicketTierRepository;
 import com.pml.catalog.service.EventCategories;
 import com.pml.catalog.service.EventDetails;
@@ -36,6 +37,7 @@ import com.pml.shared.event.EventEnvelopes;
 import com.pml.shared.event.EventType;
 import com.pml.shared.event.Outbox;
 import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -78,6 +80,7 @@ public class EventServiceImpl implements EventService {
     private final TicketTierRepository tierRepository;
     private final EventTierMirror tierMirror;
     private final EventCategories categories;
+    private final IdentityServiceClient identityServiceClient;
 
     // ==========================================
     // Single Event Operations
@@ -216,13 +219,22 @@ public class EventServiceImpl implements EventService {
                     return event;
                 });
         return placed
-                .flatMap(draft -> {
-                    draft.setCreatedAt(now);
-                    draft.setUpdatedAt(now);
-                    draft.setAvailableTickets(draft.getTotalCapacity());
-                    draft.setDeleted(false);
-                    return eventRepository.save(draft);
-                })
+                .flatMap(draft -> identityServiceClient.getOrganizationName(organizationId)
+                        .defaultIfEmpty("Unknown")
+                        .onErrorReturn("Unknown")
+                        .map(name -> {
+                            // Denormalized once, at creation, for the public discover feed and every
+                            // other list that reads many events per request: a federation hop per
+                            // event on a hot read path is what this field exists to avoid. Never
+                            // refreshed on an organization rename — see F-059.
+                            draft.setOrganizerName(name);
+                            draft.setCreatedAt(now);
+                            draft.setUpdatedAt(now);
+                            draft.setAvailableTickets(draft.getTotalCapacity());
+                            draft.setDeleted(false);
+                            return draft;
+                        }))
+                .flatMap(eventRepository::save)
                 .flatMap(saved -> Flux.range(0, tiers.size())
                         .concatMap(i -> tierRepository.save(tierFactory.build(saved, tiers.get(i),
                                 tiers.get(i).sortOrder() != null ? tiers.get(i).sortOrder() : i, now)))
@@ -376,8 +388,15 @@ public class EventServiceImpl implements EventService {
 
     @Override
     public Mono<Event> publishEvent(String id) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
+        // Reached only from EventLifecycleActivitiesImpl, a Temporal activity with no HTTP
+        // request and so no TenantScope to read: the caller is the lifecycle workflow itself,
+        // acting on a transition the resolver already authorized when it started the workflow.
+        return TenantGuard.locate(
+                        PlatformWideAccess.system(PlatformWideAccess.Reason.LIFECYCLE_WORKFLOW, clock),
+                        eventRepository.findById(id),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + id + " (publish)")
                 .flatMap(event -> {
                     if (event.getStatus() == EventStatus.PUBLISHED) {
                         // A retried publication finds its own committed write, envelope included.
@@ -486,8 +505,14 @@ public class EventServiceImpl implements EventService {
 
     @Override
     public Mono<Event> cancelEventWithDetails(String id, String reason, boolean notifyAttendees, boolean triggerRefunds) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
+        // Reached only from EventLifecycleActivitiesImpl: a Temporal activity, no HTTP request,
+        // the resolver already authorized the cancellation when it started the workflow.
+        return TenantGuard.locate(
+                        PlatformWideAccess.system(PlatformWideAccess.Reason.LIFECYCLE_WORKFLOW, clock),
+                        eventRepository.findById(id),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + id + " (cancel)")
                 .flatMap(event -> {
                     if (event.getStatus() == EventStatus.CANCELLED) {
                         // A retried cancellation finds its own committed write, envelope included.
@@ -525,8 +550,15 @@ public class EventServiceImpl implements EventService {
      */
     @Override
     public Mono<Event> completeEvent(String id) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
+        // Reached from the ADMIN/internal-write-only completeEvent mutation and from the
+        // lifecycle workflow's activity — every caller is already platform-level or a system
+        // actor, with no organization of its own to filter by.
+        return TenantGuard.locate(
+                        PlatformWideAccess.system(PlatformWideAccess.Reason.EVENT_COMPLETION, clock),
+                        eventRepository.findById(id),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + id + " (complete)")
                 .flatMap(event -> {
                     if (event.getStatus() == EventStatus.COMPLETED) {
                         // A retried completion finds its own committed write, envelope included.
@@ -554,8 +586,16 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional
     public Mono<Event> setEventFeatured(String id, boolean featured) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
+        // Reached only from the ADMIN-only featureEvent mutation, so this reads the real
+        // request scope rather than assuming platform authority: defense in depth if a future
+        // caller is ever added here without the same guarantee.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        eventRepository.findById(id),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + id + " (feature)"))
                 .flatMap(event -> {
                     event.setFeatured(featured);
                     event.setUpdatedAt(clock.instant());
@@ -570,8 +610,15 @@ public class EventServiceImpl implements EventService {
     @Transactional
     public Mono<Event> sendPublishReminder(String eventId, String triggeredBy) {
         log.info("Sending publish reminder for event: {} by: {}", eventId, triggeredBy);
-        return eventRepository.findById(eventId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + eventId)))
+        // Reached only from the ADMIN-only sendEventPublishReminder mutation: read the real
+        // request scope rather than assuming platform authority.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        eventRepository.findById(eventId),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(eventId, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + eventId + " (publish reminder)"))
                 .flatMap(event -> {
                     // Validate event is in a state that allows publish reminders (approved but not published)
                     if (event.getStatus() != EventStatus.APPROVED) {
@@ -604,8 +651,14 @@ public class EventServiceImpl implements EventService {
      */
     @Override
     public Mono<Event> rescheduleEvent(String id, Instant newDateTime, String reason) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new EventNotFoundException(id)))
+        // Reached only from EventLifecycleActivitiesImpl: a Temporal activity, no HTTP request,
+        // the resolver already authorized the reschedule when it started the workflow.
+        return TenantGuard.locate(
+                        PlatformWideAccess.system(PlatformWideAccess.Reason.LIFECYCLE_WORKFLOW, clock),
+                        eventRepository.findById(id),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + id + " (reschedule)")
                 .flatMap(event -> {
                     if (event.getStatus() != EventStatus.PUBLISHED) {
                         return Mono.error(new InvalidEventStateException(
@@ -643,8 +696,14 @@ public class EventServiceImpl implements EventService {
      */
     @Override
     public Mono<Event> unpublishEvent(String id, long soldCount) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new EventNotFoundException(id)))
+        // Reached only from EventLifecycleActivitiesImpl: a Temporal activity, no HTTP request,
+        // the resolver already authorized the unpublish when it started the workflow.
+        return TenantGuard.locate(
+                        PlatformWideAccess.system(PlatformWideAccess.Reason.LIFECYCLE_WORKFLOW, clock),
+                        eventRepository.findById(id),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + id + " (unpublish)")
                 .flatMap(event -> {
                     if (event.getStatus() == EventStatus.APPROVED && !event.isPublished()) {
                         return Mono.just(event);
@@ -693,8 +752,16 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional
     public Mono<Void> deleteEventWithReason(String id, String deletedBy, String reason) {
-        return eventRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Event not found: " + id)))
+        // The resolver's EventWriteGuard already proved ownership before calling this; reading
+        // the scope again here is defense in depth, not the only check — a future caller that
+        // skips the guard is refused here too, instead of silently deleting across tenants.
+        return CurrentTenantScope.get()
+                .flatMap(scope -> TenantGuard.locate(
+                        scope,
+                        eventRepository.findById(id),
+                        organizationIds -> eventRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                        ErrorCode.EVENT_UNKNOWN,
+                        "event " + id + " (delete)"))
                 .flatMap(event -> {
                     // BUSINESS RULE: Cannot delete events that have sold tickets
                     if (event.getSoldTickets() > 0) {

@@ -27,7 +27,10 @@ export const PAYOUT_OPS_FIELDS = gql`
     id
     requestId
     organizerId
-    organizerName
+    organization {
+      id
+      name
+    }
     eventId
     eventTitle
     escrowAccountId
@@ -112,8 +115,8 @@ export const COMPLETE_PAYOUT_REQUEST = gql`
 
 export const RETRY_PAYOUT_REQUEST = gql`
   ${PAYOUT_OPS_FIELDS}
-  mutation RetryPayoutRequest($payoutRequestId: ID!) {
-    retryPayoutRequest(payoutRequestId: $payoutRequestId) {
+  mutation RetryPayoutRequest($payoutRequestId: ID!, $idempotencyKey: String!) {
+    retryPayoutRequest(payoutRequestId: $payoutRequestId, idempotencyKey: $idempotencyKey) {
       ...PayoutOpsFields
     }
   }
@@ -244,8 +247,8 @@ export const BULK_APPROVE_REFUNDS = gql`
 
 export const CREATE_ADMIN_REFUND_REQUEST = gql`
   ${REFUND_OPS_FIELDS}
-  mutation CreateAdminRefundRequest($ticketId: ID!, $reason: String!, $bypassApproval: Boolean) {
-    createAdminRefundRequest(ticketId: $ticketId, reason: $reason, bypassApproval: $bypassApproval) {
+  mutation CreateAdminRefundRequest($ticketId: ID!, $reason: String!, $bypassApproval: Boolean, $idempotencyKey: String!) {
+    createAdminRefundRequest(ticketId: $ticketId, reason: $reason, bypassApproval: $bypassApproval, idempotencyKey: $idempotencyKey) {
       ...RefundOpsFields
     }
   }
@@ -261,7 +264,10 @@ export const ESCROW_OPS_DETAIL = gql`
       eventId
       eventTitle
       organizerId
-      organizerName
+      organization {
+        id
+        name
+      }
       currentBalance
       totalDeposits
       totalWithdrawals

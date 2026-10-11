@@ -1,7 +1,7 @@
 'use server';
 
 import { BffAuthError } from '@pml.tickets/shared/auth/bff';
-import { bff, FRESH_AUTH_SEC, ORGANIZER_ROLES } from '@/lib/bff';
+import { bff, FRESH_AUTH_SEC } from '@/lib/bff';
 
 export type FreshAuthResult = { ok: true } | { ok: false; reason: 'STEP_UP_REQUIRED' | 'UNAUTHENTICATED' | 'FORBIDDEN'; stepUpUrl?: string };
 
@@ -12,7 +12,7 @@ export type FreshAuthResult = { ok: true } | { ok: false; reason: 'STEP_UP_REQUI
  */
 export async function requireFreshAuth(next: string): Promise<FreshAuthResult> {
   try {
-    await bff.requireSession({ roles: ORGANIZER_ROLES, freshAuthSec: FRESH_AUTH_SEC, kind: 'action', returnTo: next });
+    await bff.requireSession({ freshAuthSec: FRESH_AUTH_SEC, kind: 'action', returnTo: next });
     return { ok: true };
   } catch (e) {
     if (e instanceof BffAuthError) return { ok: false, reason: e.code, stepUpUrl: e.stepUpUrl };

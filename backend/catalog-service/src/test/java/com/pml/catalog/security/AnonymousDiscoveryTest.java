@@ -92,7 +92,8 @@ class AnonymousDiscoveryTest {
                 org.springframework.transaction.reactive.TransactionalOperator.create(
                         new org.springframework.data.mongodb.ReactiveMongoTransactionManager(template.getMongoDatabaseFactory())),
                 CatalogWiring.venues(template, CLOCK), CatalogWiring.tierFactory(), CatalogWiring.tiers(template),
-                CatalogWiring.mirror(template, CLOCK), CatalogWiring.categories(template));
+                CatalogWiring.mirror(template, CLOCK), CatalogWiring.categories(template),
+                org.mockito.Mockito.mock(com.pml.catalog.infrastructure.client.IdentityServiceClient.class));
     }
 
     @AfterAll
@@ -103,7 +104,7 @@ class AnonymousDiscoveryTest {
     private static Event save(String id, EventStatus status, boolean published, boolean active, boolean deleted) {
         Instant starts = NOW.plusSeconds(10 * 86_400L);
         return template.save(Event.builder().id(id).title("Event " + id).organizationId("org-1").organizerId("user-1")
-                .organizerName("Kabwe Collective").organizerEmail("private@organizer.example").organizerPhone("+260970000000")
+                .organizerName("Kabwe Collective")
                 .rejectionReason(status == EventStatus.REJECTED ? "capacity unverified" : null)
                 .status(status).published(published).isActive(active).isDeleted(deleted).soldTickets(5).totalCapacity(500)
                 .eventDateTime(starts).endDateTime(starts.plusSeconds(4 * 3600)).createdAt(NOW).build()).block();
@@ -176,10 +177,11 @@ class AnonymousDiscoveryTest {
         }
 
         @Test
-        @DisplayName("the contact data is on the document, which is why the schema gates it with @auth")
-        void contactDataExistsOnTheDocument() {
-            Event stored = events.findById("published").block();
-            assertThat(stored.getOrganizerEmail()).isEqualTo("private@organizer.example");
+        @DisplayName("the document carries no organizer contact details: identity owns them and the graph federates them")
+        void contactDataIsNotOnTheDocument() {
+            assertThat(java.util.Arrays.stream(Event.class.getDeclaredFields()).map(java.lang.reflect.Field::getName))
+                    .doesNotContain("organizerEmail", "organizerPhone", "organizerBusinessEmail",
+                            "organizerBusinessPhone", "organizerFirstName", "organizerLastName", "organizerCompanyName");
         }
     }
 
@@ -198,7 +200,7 @@ class AnonymousDiscoveryTest {
 
             @Bean
             ServiceSecurity serviceSecurity() {
-                return new ServiceSecurity("http://localhost:1/realms/none", "", "myticketzm-catalog-service", "", List.of());
+                return new ServiceSecurity("http://localhost:1/realms/none", "", "myticketzm-catalog-service", "", List.of(), false);
             }
 
             @Bean

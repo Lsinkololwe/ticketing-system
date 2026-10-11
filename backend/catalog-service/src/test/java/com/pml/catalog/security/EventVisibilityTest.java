@@ -101,7 +101,8 @@ class EventVisibilityTest {
                         new org.springframework.data.mongodb.ReactiveMongoTransactionManager(
                                 template.getMongoDatabaseFactory())),
                 CatalogWiring.venues(template, clock), CatalogWiring.tierFactory(), CatalogWiring.tiers(template),
-                CatalogWiring.mirror(template, clock), CatalogWiring.categories(template));
+                CatalogWiring.mirror(template, clock), CatalogWiring.categories(template),
+                org.mockito.Mockito.mock(com.pml.catalog.infrastructure.client.IdentityServiceClient.class));
     }
 
     @AfterAll

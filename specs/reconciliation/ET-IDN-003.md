@@ -50,6 +50,12 @@ All 2 registered in `shared-library/.../error/ErrorCode.java`.
 
 ---
 
+## R0 · recorded 2026-10-09
+
+- **Durable store:** MongoDB (`identity_token_revocations`), Redis is a cache in front of it. Not Redis-only, so nothing is `contradicted` on durability. A `FLUSHALL` loses nothing: proven by `LogoutRevokesTokenEndToEndTest.flushedCacheStillRefuses` and `GatewayRevocationEnforcementTest`.
+- **Fails closed for sensitive operations:** yes, in catalog, booking and identity (`@FailClosedOnRevocation`, enumerated by `SensitiveMutationsTest` in each service); ordinary reads degrade to the cache. The gateway refused nothing when Redis failed until 2026-10-09; it now uses the same check and refuses state-changing requests with 503.
+- **Still absent:** `activeRevocations`, `revokeToken`, `revokeSession`, `revokeUserAccess`, `signOutEverywhere`, `signOutSession`, the `identity.TokenRevoked` event, audit rows for the automatic triggers, the sessions list.
+
 ## Still to do for this spec
 
 - [ ] Read §3 and classify **every requirement** `already-satisfied` / `partially-satisfied` / `contradicted` / `absent`

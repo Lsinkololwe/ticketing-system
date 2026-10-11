@@ -12,7 +12,7 @@ vi.mock('@pml.tickets/shared/api/admin/modules/finance', () => ({
   useRefundStatusCount: () => ({ count: 1, loading: false }),
   usePayoutRequestStats: () => ({ stats: null }),
   useAdminEscrowAccounts: () => ({
-    accounts: [{ id: 'a1', accountNumber: 'ESC-1001', eventTitle: 'Jazz', organizerName: 'Zambezi', status: 'ACTIVE', lockUntil: null, currentBalance: 900, totalDeposits: 1000, totalRefunds: 100, payoutEligibleAt: null }],
+    accounts: [{ id: 'a1', accountNumber: 'ESC-1001', eventTitle: 'Jazz', organization: { id: 'org-fixture', name: 'Zambezi' }, status: 'ACTIVE', lockUntil: null, currentBalance: 900, totalDeposits: 1000, totalRefunds: 100, payoutEligibleAt: null }],
     pageInfo: { totalCount: 1, pageSize: 20 }, loading: false, refetch: vi.fn(),
   }),
 }));

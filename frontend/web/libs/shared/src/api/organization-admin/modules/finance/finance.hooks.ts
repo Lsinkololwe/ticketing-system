@@ -183,14 +183,14 @@ export interface CreatePayoutInput {
    * Client-supplied key that makes retrying this request safe.
    *
    * Sending the same key twice returns the ORIGINAL payout rather than
-   * creating a second one for the same money. Backed by a unique index
-   * server-side, so it holds under concurrent retries too.
+   * creating a second one for the same money; sending it with a different
+   * body is refused rather than replayed. Required by the schema.
    *
    * The key must be stable across retries of the same user intent — generate
    * it once when the user opens the payout dialog, NOT per submit attempt, or
    * every retry carries a fresh key and the protection does nothing.
    */
-  idempotencyKey?: string;
+  idempotencyKey: string;
 }
 
 export function useCreatePayoutRequest() {
@@ -211,7 +211,7 @@ export function useCreatePayoutRequest() {
             currency: input.currency,
             payoutMethod: input.payoutMethod,
             notes: input.notes ?? null,
-            idempotencyKey: input.idempotencyKey ?? null,
+            idempotencyKey: input.idempotencyKey,
             metadata: null,
           },
         },

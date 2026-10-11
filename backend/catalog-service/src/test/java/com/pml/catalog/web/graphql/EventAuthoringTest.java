@@ -213,6 +213,7 @@ class EventAuthoringTest {
             assertThat(stored.getStatus().name()).isEqualTo("DRAFT");
             assertThat(stored.getOrganizationId()).isEqualTo(ORGANIZATION);
             assertThat(stored.getOrganizerId()).isEqualTo(ORGANIZER);
+            assertThat(stored.getOrganizerName()).as("denormalized from identity at creation").isEqualTo("Test Organization");
             assertThat(stored.getBannerImageUrl()).isEqualTo("https://cdn.example.com/jazz.jpg");
             assertThat(stored.isVirtual()).isFalse();
             assertThat(stored.getLocationName()).isEqualTo("Mulungushi Conference Centre");
@@ -499,6 +500,26 @@ class EventAuthoringTest {
     }
 
     @Test
+    @DisplayName("the organizer's name is denormalized from identity onto the event at creation")
+    void organizerNameIsDenormalizedAtCreation() {
+        Event created = create(newEventPayload());
+
+        assertThat(events.findById(created.getId()).block().getOrganizerName()).isEqualTo("Test Organization");
+    }
+
+    @Test
+    @DisplayName("an unreachable identity-service does not block event creation: the organizer name falls back to Unknown")
+    void creationSurvivesAnIdentityOutageWhenNamingTheOrganizer() {
+        identity.organizationNameFails = true;
+
+        Event created = create(newEventPayload());
+
+        Event stored = events.findById(created.getId()).block();
+        assertThat(stored).as("the event is written despite the failed name lookup").isNotNull();
+        assertThat(stored.getOrganizerName()).as("display data, not a precondition").isEqualTo("Unknown");
+    }
+
+    @Test
     @DisplayName("the event's lowest price and tier list follow its tiers when one is repriced or deleted")
     void mirrorFollowsTierWrites() {
         Event created = create(newEventPayload());
@@ -695,11 +716,11 @@ class EventAuthoringTest {
                 .isActive(active).isSystem(true).metadata(new HashMap<>(metadata)).build();
     }
 
-    private static EventService serviceWith(TicketTierFactory factory) {
+    private EventService serviceWith(TicketTierFactory factory) {
         return new EventServiceImpl(events, CLOCK, new Outbox(template, "catalog_outbox", CLOCK),
                 TransactionalOperator.create(new ReactiveMongoTransactionManager(template.getMongoDatabaseFactory())),
                 CatalogWiring.venues(template, CLOCK), factory, CatalogWiring.tiers(template),
-                CatalogWiring.mirror(template, CLOCK), CatalogWiring.categories(template));
+                CatalogWiring.mirror(template, CLOCK), CatalogWiring.categories(template), identity);
     }
 
     private EventMutationResolver resolverFor(EventService eventService) {
@@ -717,6 +738,7 @@ class EventAuthoringTest {
     /** identity-service, answering for the organization this test's organizer belongs to. */
     static final class StubIdentity extends IdentityServiceClient {
         boolean authorized = true;
+        boolean organizationNameFails;
         String organization = ORGANIZATION;
         AuthorizationRequest lastRequest;
 
@@ -738,6 +760,13 @@ class EventAuthoringTest {
             return Mono.just(authorized
                     ? AuthorizationResult.authorizedAsMember(ORGANIZATION, "OWNER")
                     : AuthorizationResult.denied("requires " + permission));
+        }
+
+        @Override
+        public Mono<String> getOrganizationName(String organizationId) {
+            return organizationNameFails
+                    ? Mono.error(new IllegalStateException("identity-service unreachable"))
+                    : Mono.just("Test Organization");
         }
     }
 }

@@ -12,7 +12,8 @@ public record InitiateTicketTransferInput(
         @NotBlank(message = "Ticket is required") String ticketId,
         @NotNull(message = "Say how you are naming the recipient") TransferChannel channel,
         @NotBlank(message = "Recipient is required") @Size(max = 254) String recipient,
-        @Size(max = 200, message = "Note must be at most 200 characters") String note
+        @Size(max = 200, message = "Note must be at most 200 characters") String note,
+        @NotBlank(message = "Idempotency key is required") String idempotencyKey
 ) {
 
     public enum TransferChannel { WHATSAPP, EMAIL }

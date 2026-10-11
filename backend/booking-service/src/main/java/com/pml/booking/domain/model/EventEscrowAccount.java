@@ -90,9 +90,6 @@ public class EventEscrowAccount {
     @NotBlank(message = "Organizer ID is required")
     private String organizerId;
 
-    /** Denormalised organizer name. Kept for the same reason as eventTitle. */
-    private String organizerName;
-
     /**
      * Commission collected from this event's sales.
      *
@@ -226,7 +223,7 @@ public class EventEscrowAccount {
     /**
      * Open the account for a published event, already {@code ACTIVE}.
      *
-     * <p>No eventTitle or organizerName: they are denormalised copies of catalog
+     * <p>No eventTitle or organizer name: they are denormalised copies of catalog
      * and identity data, which means they are two things that can go stale and
      * disagree with their source. The eventId resolves both when a screen needs them.
      */

@@ -57,6 +57,7 @@ public class DataMigrationRunner extends MigrationRunner {
     private final EscrowTransactionMigrationService escrowTransactions;
     private final PayoutConformanceMigrationService payouts;
     private final PayoutFeeFieldCleanupMigrationService payoutFeeFieldCleanup;
+    private final OrganizerNameCopyCleanupMigrationService organizerNameCopies;
     private final PromoCodeOwnershipBackfillMigrationService promoCodeOwnership;
     private final ReservationConformanceMigrationService reservations;
     private final PaymentSubjectMigrationService paymentSubjects;
@@ -121,6 +122,10 @@ public class DataMigrationRunner extends MigrationRunner {
         // Removes the per-payout fee fields a payout no longer carries; after payout-conformance so it
         // runs against booking_payout_requests rather than the pre-rename collection.
         steps.put("payout-fee-field-cleanup", payoutFeeFieldCleanup::migrate);
+
+        // The organization's name is identity's and reaches a client through the federated reference;
+        // the copies on escrow accounts and payout requests are removed.
+        steps.put("organizer-name-copy-cleanup", organizerNameCopies::migrate);
 
         // Promo codes are managed only within their owning organization; codes created before the
         // organization was recorded take it from their event's escrow account.

@@ -23,7 +23,11 @@
         "description": "Spring Data MongoDB's type hint. Written on every document by the mapping converter, so a validator with additionalProperties:false that omits it rejects every write the application makes \u2014 silently in tests, which use a template with no validator, and totally in production."
       },
       "_id": {
-        "bsonType": "objectId"
+        "bsonType": [
+          "objectId",
+          "string"
+        ],
+        "description": "A payout request is named by the payout workflow, which generates a UUID string; Spring generates an ObjectId when none is set."
       },
       "requestId": {
         "bsonType": "string",
@@ -34,13 +38,6 @@
         "bsonType": "string",
         "pattern": "^([a-fA-F0-9]{24}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$",
         "description": "OWASP A03 - ObjectId pattern validation"
-      },
-      "organizerName": {
-        "bsonType": [
-          "string",
-          "null"
-        ],
-        "maxLength": 200
       },
       "organizationId": {
         "bsonType": "string",
@@ -88,7 +85,7 @@
           "string",
           "null"
         ],
-        "pattern": "^[0-9]{10,20}$"
+        "pattern": "^(\\*{4}[0-9]{4}|[0-9]{10,20})$"
       },
       "requestedAmount": {
         "bsonType": "decimal",

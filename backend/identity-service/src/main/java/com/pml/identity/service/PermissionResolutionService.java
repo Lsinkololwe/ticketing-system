@@ -18,7 +18,13 @@ import java.util.Set;
  *   <li>active membership of the organization: the role's permissions under the organization's
  *       settings, plus the member's custom permissions, minus the denied ones.</li>
  * </ol>
- * Anything not granted by one of these is refused.
+ * Anything not granted by one of these is refused. A member's permission is further subject to
+ * the organization's lifecycle status: an organization that is not approved cannot publish or
+ * request payouts whatever its members' roles say, and an organization that cannot be found
+ * grants its members nothing.
+ *
+ * <p>This is the only implementation of that order. Other entry points (the cross-service
+ * authorization checks) map their own request and response shapes onto {@code decide…}.
  */
 public interface PermissionResolutionService {
 
@@ -41,6 +47,53 @@ public interface PermissionResolutionService {
     Mono<EventRole> getEventRole(String userId, String eventId);
 
     Mono<EffectivePermissions> getEffectivePermissions(String userId, String organizationId, String eventId);
+
+    /**
+     * The decision for an organization-level permission, with the step that made it.
+     *
+     * @param includePlatformRoles whether platform roles may grant the permission; a caller that
+     *                             answers only for organization membership passes {@code false}
+     */
+    Mono<Decision> decideOrganization(String userId, String organizationId, Permission permission,
+                                      boolean includePlatformRoles);
+
+    /**
+     * The decision for a permission on one event: an active grant from the event's organization
+     * decides alone; without one the organization membership decides. {@code organizationId} may be
+     * {@code null} when the caller does not know it, in which case only a grant can allow.
+     */
+    Mono<Decision> decideEvent(String userId, String eventId, String organizationId, Permission permission,
+                               boolean includePlatformRoles);
+
+    /**
+     * A decision and what produced it. {@code role} is the member's organization role or the
+     * grant's event role (as a name) when the outcome turned on one; {@code organizationId} and
+     * {@code organizationStatus} are set when an organization was consulted.
+     */
+    record Decision(Outcome outcome, String role, String organizationId, String organizationStatus) {
+
+        public boolean allowed() {
+            return outcome == Outcome.PLATFORM_ROLE || outcome == Outcome.EVENT_GRANT || outcome == Outcome.MEMBER;
+        }
+
+        public static Decision of(Outcome outcome) {
+            return new Decision(outcome, null, null, null);
+        }
+    }
+
+    /** Which step of the order decided, and whether it allowed or refused. */
+    enum Outcome {
+        PLATFORM_ROLE,
+        EVENT_GRANT,
+        MEMBER,
+        PERMISSION_UNKNOWN,
+        GRANT_LACKS_PERMISSION,
+        MEMBER_LACKS_PERMISSION,
+        ORGANIZATION_STATUS,
+        NOT_A_MEMBER,
+        ORGANIZATION_UNKNOWN,
+        NO_ORGANIZATION
+    }
 
     /**
      * What a user may do in a context, and which step of the order decided it:

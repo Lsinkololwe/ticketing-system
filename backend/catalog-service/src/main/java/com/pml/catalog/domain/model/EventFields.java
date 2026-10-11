@@ -27,9 +27,7 @@ public final class EventFields {
             "parkingInfo", "bagPolicy", "checkoutSettings", "publishAt");
 
     public static final Set<String> SYSTEM = Set.of(
-            "id", "currency", "lowestTicketPrice", "organizerId", "organizerName", "organizerFirstName",
-            "organizerLastName", "organizerCompanyName", "organizerEmail", "organizerPhone",
-            "organizerBusinessEmail", "organizerBusinessPhone", "status", "published", "publishedAt",
+            "id", "currency", "lowestTicketPrice", "organizerId", "organizerName", "status", "published", "publishedAt",
             "availableTickets", "soldTickets", "ticketCategories", "tags", "isRecurring", "recurrencePattern",
             "parentEventId", "hasWaitlist", "version", "submittedForApprovalAt", "approvalDeadline", "isOverdue",
             "assignedReviewerId", "assignedReviewerName", "approvedAt", "approvedBy", "rejectedAt", "rejectedBy",

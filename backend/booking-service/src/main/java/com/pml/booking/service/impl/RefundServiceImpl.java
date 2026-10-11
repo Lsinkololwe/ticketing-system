@@ -7,6 +7,8 @@ import com.pml.booking.domain.RefundSplit;
 import com.pml.booking.domain.model.CommissionRecord;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.security.tenancy.TenantGuard;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 
 import com.pml.booking.config.PaymentProperties;
 import com.pml.booking.infrastructure.client.PawaPayClient;
@@ -524,8 +526,15 @@ public class RefundServiceImpl implements RefundService {
         log.info("Operator creating refund request for ticket: {} by: {} (bypass: {}, amount: {})",
                 ticketId, adminId, bypassApproval, amount);
 
-        return ticketRepository.findById(ticketId)
-                .switchIfEmpty(Mono.error(new TranslatedRefusal(ErrorCode.TICKET_UNKNOWN, "no ticket " + ticketId)))
+        // Reached only from RefundActivitiesImpl (a Temporal activity, no HTTP request) for an
+        // operator acting platform-wide by design — staff raise a refund for any ticket. An
+        // explicit platform scope makes that decision auditable rather than silent.
+        return TenantGuard.locate(
+                        PlatformWideAccess.system(PlatformWideAccess.Reason.REFUND_WORKFLOW, clock),
+                        ticketRepository.findById(ticketId),
+                        organizationIds -> ticketRepository.findByIdAndOrganizationIdIn(ticketId, organizationIds),
+                        ErrorCode.TICKET_UNKNOWN,
+                        "ticket " + ticketId)
                 .flatMap(ticket -> {
                     RefundEligibility.Verdict verdict = RefundEligibility.of(ticket);
                     if (!verdict.eligible()) {

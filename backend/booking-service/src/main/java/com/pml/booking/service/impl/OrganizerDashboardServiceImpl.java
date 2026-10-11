@@ -47,7 +47,9 @@ import java.util.Arrays;
  * Implementation of OrganizerDashboardService.
  *
  * Uses MongoDB aggregation pipelines for efficient statistics computation.
- * All queries filter by organizerId to ensure data isolation (OWASP A01:2021).
+ * All queries are scoped to the actor's organization, derived from the authenticated actor and never
+ * accepted from input (OWASP A01:2021). What the organization sold does not depend on which member created
+ * the event or is looking at it.
  */
 @Slf4j
 @Service
@@ -61,6 +63,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
     private final PayoutRequestRepository payoutRequestRepository;
     private final EventEscrowAccountRepository escrowAccountRepository;
     private final ActorOrganizationResolver actorOrganizationResolver;
+    private final com.pml.booking.service.CurrentEventDetails eventDetails;
 
     private static final String TICKETS_COLLECTION = BookingCollections.TICKETS;
 
@@ -83,15 +86,15 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
         // Run multiple aggregations in parallel using Mono.zip
         return Mono.zip(
                 // 1. Revenue and tickets sold (current period)
-                getRevenueAndTicketStats(organizerId, thirtyDaysAgo, now),
+                getRevenueAndTicketStats(organizationId, thirtyDaysAgo, now),
                 // 2. Revenue and tickets sold (previous period for comparison)
-                getRevenueAndTicketStats(organizerId, sixtyDaysAgo, thirtyDaysAgo),
+                getRevenueAndTicketStats(organizationId, sixtyDaysAgo, thirtyDaysAgo),
                 // 3. Active events count (placeholder - would need catalog-service call)
                 Mono.just(Map.of("activeEvents", 0, "eventsEndingThisWeek", 0)),
                 // 4. Total attendees (checked in tickets)
-                getAttendeeStats(organizerId, thirtyDaysAgo, now),
+                getAttendeeStats(organizationId, thirtyDaysAgo, now),
                 // 5. Previous period attendees
-                getAttendeeStats(organizerId, sixtyDaysAgo, thirtyDaysAgo),
+                getAttendeeStats(organizationId, sixtyDaysAgo, thirtyDaysAgo),
                 // 6. Pending payouts and available balance
                 getPayoutStats(organizationId)
         ).map(tuple -> {
@@ -151,11 +154,11 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                 // 2. Payout information
                 getPayoutInfo(organizationId),
                 // 3. Revenue breakdown
-                getRevenueBreakdown(organizerId),
+                getRevenueBreakdown(organizationId),
                 // 4. This month's earnings
-                getMonthlyEarnings(organizerId, startOfMonth, now),
+                getMonthlyEarnings(organizationId, startOfMonth, now),
                 // 5. Last month's earnings
-                getMonthlyEarnings(organizerId, startOfLastMonth, endOfLastMonth)
+                getMonthlyEarnings(organizationId, startOfLastMonth, endOfLastMonth)
         ).map(tuple -> {
             Map<String, Object> balances = tuple.getT1();
             Map<String, Object> payoutInfo = tuple.getT2();
@@ -198,8 +201,8 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
         // Get recent tickets (sales), check-ins, and payouts
         return Flux.merge(
-                getRecentTicketSales(organizerId, activityLimit),
-                getRecentCheckIns(organizerId, activityLimit),
+                getRecentTicketSales(organizationId, activityLimit),
+                getRecentCheckIns(organizationId, activityLimit),
                 getRecentPayoutActivity(organizationId, activityLimit)
         )
         .sort(Comparator.comparing(OrganizerActivityItem::getTimestamp).reversed())
@@ -208,13 +211,18 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
     @Override
     public Flux<OrganizerUpcomingEvent> getUpcomingEvents(String organizerId, Integer limit) {
+        return actorOrganizationResolver.resolve(organizerId)
+                .flatMapMany(organizationId -> upcomingEventsFor(organizationId, limit));
+    }
+
+    private Flux<OrganizerUpcomingEvent> upcomingEventsFor(String organizationId, Integer limit) {
         int eventLimit = PageSize.require(limit, 20, 5);
-        log.debug("Getting upcoming events for organizer: {}, limit: {}", organizerId, eventLimit);
+        log.debug("Getting upcoming events for organizer: {}, limit: {}", organizationId, eventLimit);
 
         // This would typically aggregate ticket data with event data from catalog-service
         // For now, return aggregated ticket data grouped by event
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)),
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)),
                 Aggregation.group("eventId")
                         .first("eventId").as("eventId")
                         .first("eventTitle").as("title")
@@ -225,19 +233,18 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                 Aggregation.limit(eventLimit)
         );
 
+        // The event's name and date are catalog's: tickets carry no copy, so each row asks for them.
         return mongoTemplate.aggregate(aggregation, TICKETS_COLLECTION, Map.class)
-                .map(doc -> OrganizerUpcomingEvent.builder()
-                        .id((String) doc.get("eventId"))
-                        .title((String) doc.getOrDefault("title", "Untitled Event"))
-                        .eventDateTime(parseDateTime(doc.get("eventDateTime")))
-                        .ticketsSold(((Number) doc.getOrDefault("ticketsSold", 0)).intValue())
-                        .totalCapacity(100) // Would come from event data
-                        .status("published")
-                        .revenue(toBigDecimal(doc.get("revenue")))
-                        .currency("ZMW")
-                        .build())
+                .concatMap(row -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> doc = (Map<String, Object>) row;
+                    return eventDetails.of((String) doc.get("eventId"))
+                            .map(details -> upcomingEvent(doc, details.title(), details.startsAt()))
+                            .defaultIfEmpty(upcomingEvent(doc, (String) doc.get("title"),
+                                    doc.get("eventDateTime") == null ? null : parseDateTime(doc.get("eventDateTime"))));
+                })
                 .onErrorResume(e -> {
-                    log.error("Error getting upcoming events for organizer {}: {}", organizerId, e.getMessage());
+                    log.error("Error getting upcoming events for organizer {}: {}", organizationId, e.getMessage());
                     return Flux.empty();
                 });
     }
@@ -248,7 +255,16 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
             OrganizerTransactionFilterInput filter,
             OffsetPaginationInput pagination
     ) {
-        log.debug("Getting transactions for organizer: {}", organizerId);
+        return actorOrganizationResolver.resolve(organizerId)
+                .flatMap(organizationId -> transactionsFor(organizationId, filter, pagination));
+    }
+
+    private Mono<OrganizerTransactionOffsetPage> transactionsFor(
+            String organizationId,
+            OrganizerTransactionFilterInput filter,
+            OffsetPaginationInput pagination
+    ) {
+        log.debug("Getting transactions for organization: {}", organizationId);
 
         int page = pagination != null ? pagination.page() : 0;
         int size = pagination != null ? pagination.size() : 20;
@@ -256,7 +272,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
         // Build criteria
         List<Criteria> criteriaList = new ArrayList<>();
-        criteriaList.add(Criteria.where("organizerId").is(organizerId));
+        criteriaList.add(Criteria.where("organizationId").is(organizationId));
 
         if (filter != null) {
             if (filter.eventId() != null) {
@@ -288,6 +304,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
         Flux<OrganizerTransaction> transactionsFlux = mongoTemplate
                 .aggregate(aggregation, TICKETS_COLLECTION, Ticket.class)
+                .concatMap(eventDetails::current)
                 .map(this::ticketToTransaction);
 
         return Mono.zip(countMono, transactionsFlux.collectList())
@@ -307,7 +324,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                             .build();
                 })
                 .onErrorResume(e -> {
-                    log.error("Error getting transactions for organizer {}: {}", organizerId, e.getMessage());
+                    log.error("Error getting transactions for organizer {}: {}", organizationId, e.getMessage());
                     return Mono.just(OrganizerTransactionOffsetPage.empty());
                 });
     }
@@ -316,9 +333,9 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
     // PRIVATE HELPER METHODS - AGGREGATIONS
     // ========================================================================
 
-    private Mono<Map<String, Object>> getRevenueAndTicketStats(String organizerId, Instant from, Instant to) {
+    private Mono<Map<String, Object>> getRevenueAndTicketStats(String organizationId, Instant from, Instant to) {
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)
                         .and("purchaseDate").gte(from).lte(to)
                         .and("status").in(SOLD_STATES)),
                 Aggregation.group()
@@ -337,9 +354,9 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                 .defaultIfEmpty(new HashMap<>(Map.of("totalRevenue", BigDecimal.ZERO, "ticketsSold", 0)));
     }
 
-    private Mono<Map<String, Object>> getAttendeeStats(String organizerId, Instant from, Instant to) {
+    private Mono<Map<String, Object>> getAttendeeStats(String organizationId, Instant from, Instant to) {
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)
                         .and("validatedAt").gte(from).lte(to)
                         .and("status").is(TicketStatus.VALIDATED.name())),
                 Aggregation.group().count().as("checkedIn")
@@ -419,9 +436,9 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
         });
     }
 
-    private Mono<Map<String, Object>> getRevenueBreakdown(String organizerId) {
+    private Mono<Map<String, Object>> getRevenueBreakdown(String organizationId) {
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)),
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)),
                 Aggregation.group()
                         .sum(asDecimal("price")).as("grossRevenue")
                         .sum(asDecimal("commissionAmount")).as("fees")
@@ -447,9 +464,9 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                 )));
     }
 
-    private Mono<BigDecimal> getMonthlyEarnings(String organizerId, Instant from, Instant to) {
+    private Mono<BigDecimal> getMonthlyEarnings(String organizationId, Instant from, Instant to) {
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)
                         .and("purchaseDate").gte(from).lte(to)
                         .and("status").in(SOLD_STATES)),
                 Aggregation.group().sum(asDecimal("price")).as("totalRevenue")
@@ -461,15 +478,16 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                 .defaultIfEmpty(BigDecimal.ZERO);
     }
 
-    private Flux<OrganizerActivityItem> getRecentTicketSales(String organizerId, int limit) {
+    private Flux<OrganizerActivityItem> getRecentTicketSales(String organizationId, int limit) {
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)
                         .and("status").is(TicketStatus.ISSUED.name())),
                 Aggregation.sort(Sort.Direction.DESC, "purchaseDate"),
                 Aggregation.limit(limit)
         );
 
         return mongoTemplate.aggregate(aggregation, TICKETS_COLLECTION, Ticket.class)
+                .concatMap(eventDetails::current)
                 .map(ticket -> OrganizerActivityItem.builder()
                         .id(ticket.getId())
                         .type(OrganizerActivityItem.OrganizerActivityType.TICKET_SALE)
@@ -482,9 +500,9 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                         .build());
     }
 
-    private Flux<OrganizerActivityItem> getRecentCheckIns(String organizerId, int limit) {
+    private Flux<OrganizerActivityItem> getRecentCheckIns(String organizationId, int limit) {
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)
                         .and("status").is(TicketStatus.VALIDATED.name())
                         .and("validatedAt").exists(true)),
                 Aggregation.sort(Sort.Direction.DESC, "validatedAt"),
@@ -492,6 +510,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
         );
 
         return mongoTemplate.aggregate(aggregation, TICKETS_COLLECTION, Ticket.class)
+                .concatMap(eventDetails::current)
                 .map(ticket -> OrganizerActivityItem.builder()
                         .id(ticket.getId() + "-checkin")
                         .type(OrganizerActivityItem.OrganizerActivityType.CHECK_IN)
@@ -553,6 +572,19 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
      * migration: every existing document holds a string, and a numeric-only
      * pipeline would silently skip all of them. So it is not done here.
      */
+    private OrganizerUpcomingEvent upcomingEvent(Map<String, Object> doc, String title, Instant startsAt) {
+        return OrganizerUpcomingEvent.builder()
+                .id((String) doc.get("eventId"))
+                .title(title == null || title.isBlank() ? "Untitled Event" : title)
+                .eventDateTime(startsAt)
+                .ticketsSold(((Number) doc.getOrDefault("ticketsSold", 0)).intValue())
+                .totalCapacity(100) // Would come from event data
+                .status("published")
+                .revenue(toBigDecimal(doc.get("revenue")))
+                .currency("ZMW")
+                .build();
+    }
+
     private static AggregationExpression asDecimal(String field) {
         return ConvertOperators.Convert.convertValueOf(field)
                 .to("decimal")
@@ -577,6 +609,11 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
 
     @Override
     public Flux<OrganizerRevenuePoint> getRevenueSeries(String organizerId, Integer months) {
+        return actorOrganizationResolver.resolve(organizerId)
+                .flatMapMany(organizationId -> revenueSeriesFor(organizationId, months));
+    }
+
+    private Flux<OrganizerRevenuePoint> revenueSeriesFor(String organizationId, Integer months) {
         int window = months != null && months > 0 ? Math.min(months, 24) : 6;
 
         // Bound the series at the START of the current month, so the partial
@@ -588,10 +625,10 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
         Instant seriesStart = PlatformTime.atZone(seriesEnd).minusMonths(window).toInstant();
 
         log.debug("Getting {}-month revenue series for organizer {} ({} .. {})",
-                window, organizerId, seriesStart, seriesEnd);
+                window, organizationId, seriesStart, seriesEnd);
 
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)
                         .and("purchaseDate").gte(seriesStart).lt(seriesEnd)
                         .and("status").in(SOLD_STATES)),
                 Aggregation.project("price")
@@ -631,17 +668,22 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                             .build();
                 }))
                 .onErrorResume(e -> {
-                    log.error("Error building revenue series for organizer {}: {}", organizerId, e.getMessage());
+                    log.error("Error building revenue series for organizer {}: {}", organizationId, e.getMessage());
                     return Flux.empty();
                 });
     }
 
     @Override
     public Mono<OrganizerTicketMix> getTicketMix(String organizerId) {
-        log.debug("Getting ticket mix for organizer: {}", organizerId);
+        return actorOrganizationResolver.resolve(organizerId)
+                .flatMap(organizationId -> ticketMixFor(organizationId));
+    }
+
+    private Mono<OrganizerTicketMix> ticketMixFor(String organizationId) {
+        log.debug("Getting ticket mix for organizer: {}", organizationId);
 
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)
                         .and("status").in(SOLD_STATES)),
                 Aggregation.group("ticketCategoryName")
                         .count().as("count")
@@ -699,21 +741,26 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                             .build();
                 })
                 .onErrorResume(e -> {
-                    log.error("Error building ticket mix for organizer {}: {}", organizerId, e.getMessage());
+                    log.error("Error building ticket mix for organizer {}: {}", organizationId, e.getMessage());
                     return Mono.just(OrganizerTicketMix.empty());
                 });
     }
 
     @Override
     public Mono<OrganizerCheckInRate> getCheckInRate(String organizerId) {
-        log.debug("Getting check-in rate for organizer: {}", organizerId);
+        return actorOrganizationResolver.resolve(organizerId)
+                .flatMap(organizationId -> checkInRateFor(organizationId));
+    }
+
+    private Mono<OrganizerCheckInRate> checkInRateFor(String organizationId) {
+        log.debug("Getting check-in rate for organizer: {}", organizationId);
 
         Instant now = clock.instant();
 
         // Most recent event that has already run. Grouping by eventId and
         // sorting descending on the event date gives us that in one pass.
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("organizerId").is(organizerId)
+                Aggregation.match(Criteria.where("organizationId").is(organizationId)
                         .and("status").in(SOLD_STATES)),
                 // Flag scanned tickets in a projection first.
                 //
@@ -753,7 +800,7 @@ public class OrganizerDashboardServiceImpl implements OrganizerDashboardService 
                         .scanned(((Number) doc.getOrDefault("scanned", 0)).intValue())
                         .build())
                 .onErrorResume(e -> {
-                    log.error("Error building check-in rate for organizer {}: {}", organizerId, e.getMessage());
+                    log.error("Error building check-in rate for organizer {}: {}", organizationId, e.getMessage());
                     return Mono.empty();
                 });
     }

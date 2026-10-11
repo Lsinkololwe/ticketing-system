@@ -186,7 +186,6 @@ class CatalogPublicSurfaceTest {
         assertThat(seen).as("the walk must reach the event page's types").contains("Event", "TicketTier", "EventConnection", "EventCategory", "City", "Province");
         assertThat(ungated).as("fields tagged organizer/admin/internal that an anonymous caller could select").isEmpty();
         assertThat(gated).as("what the walk found gated").contains(
-                "Event.organizerEmail", "Event.organizerPhone", "Event.organizerBusinessEmail", "Event.organizerBusinessPhone",
                 "Event.rejectionReason", "Event.approvedBy", "Event.grossSales", "Event.commissionAmount", "Event.netSales",
                 "Event.createdBy", "Event.version", "Event.isActive", "Event.organizer", "Event.organizerId",
                 "Event.virtualEventUrl", "TicketTier.accessCode", "TicketTier.organizationId");

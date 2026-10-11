@@ -5,6 +5,10 @@ import com.pml.booking.domain.model.EventEscrowAccount;
 import com.pml.booking.repository.EventEscrowAccountRepository;
 import com.pml.booking.security.TenantAccessGuard;
 import com.pml.booking.service.EscrowService;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -50,7 +54,6 @@ public class EscrowServiceImpl implements EscrowService {
             String eventId,
             String eventTitle,
             String organizerId,
-            String organizerName,
             Instant eventDate
     ) {
         log.info("Creating escrow account for event: {}", eventId);
@@ -209,8 +212,7 @@ public class EscrowServiceImpl implements EscrowService {
     public Mono<EventEscrowAccount> updateEscrowAccountStatus(String accountId, EscrowStatus status, String reason) {
         log.info("Admin updating escrow account {} status to {} (reason: {})", accountId, status, reason);
 
-        return escrowRepository.findById(accountId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Escrow account not found: " + accountId)))
+        return escrowAccountForCaller(accountId)
                 .flatMap(escrow -> {
                     EscrowStatus oldStatus = escrow.getStatus();
                     escrow.setStatus(status);
@@ -231,8 +233,7 @@ public class EscrowServiceImpl implements EscrowService {
     public Mono<EventEscrowAccount> lockEscrowAccount(String accountId, Instant lockUntil, String reason) {
         log.info("Admin locking escrow account {} until {} (reason: {})", accountId, lockUntil, reason);
 
-        return escrowRepository.findById(accountId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Escrow account not found: " + accountId)))
+        return escrowAccountForCaller(accountId)
                 .flatMap(escrow -> {
                     if (escrow.isClosed()) {
                         return Mono.error(new IllegalStateException("Cannot lock a closed escrow account"));
@@ -252,8 +253,7 @@ public class EscrowServiceImpl implements EscrowService {
     public Mono<EventEscrowAccount> unlockEscrowAccount(String accountId, String reason) {
         log.info("Admin unlocking escrow account {} (reason: {})", accountId, reason);
 
-        return escrowRepository.findById(accountId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Escrow account not found: " + accountId)))
+        return escrowAccountForCaller(accountId)
                 .flatMap(escrow -> {
                     if (escrow.getStatus() != EscrowStatus.HOLD) {
                         return Mono.error(new IllegalStateException("Escrow account is not locked"));
@@ -274,8 +274,7 @@ public class EscrowServiceImpl implements EscrowService {
     public Mono<EventEscrowAccount> closeEscrowAccount(String accountId, String reason) {
         log.info("Admin closing escrow account {} (reason: {})", accountId, reason);
 
-        return escrowRepository.findById(accountId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Escrow account not found: " + accountId)))
+        return escrowAccountForCaller(accountId)
                 .flatMap(escrow -> {
                     if (escrow.getCurrentBalance().compareTo(java.math.BigDecimal.ZERO) > 0) {
                         return Mono.error(new IllegalStateException(
@@ -291,7 +290,21 @@ public class EscrowServiceImpl implements EscrowService {
 
     @Override
     public Mono<EventEscrowAccount> findById(String id) {
-        return escrowRepository.findById(id);
+        // Reached only from ADMIN/FINANCE-only queries and mutations: read the real request
+        // scope rather than assuming platform authority.
+        return escrowAccountForCaller(id);
+    }
+
+    /**
+     * The escrow account the caller is entitled to act on, or {@code ESCROW_ACCOUNT_UNKNOWN}.
+     */
+    private Mono<EventEscrowAccount> escrowAccountForCaller(String id) {
+        return CurrentTenantScope.get().flatMap(scope -> TenantGuard.locate(
+                scope,
+                escrowRepository.findById(id),
+                organizationIds -> escrowRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                ErrorCode.ESCROW_ACCOUNT_UNKNOWN,
+                "escrow account " + id));
     }
 
     @Override
@@ -353,9 +366,14 @@ public class EscrowServiceImpl implements EscrowService {
     public Mono<EventEscrowAccount> updateExpectedLockDate(String accountId, Instant newLockDate) {
         log.info("Updating expected lock date for escrow account: {} to {}", accountId, newLockDate);
 
-        return escrowRepository.findById(accountId)
-                .switchIfEmpty(Mono.error(new IllegalStateException(
-                        "Escrow account not found: " + accountId)))
+        // Reached only from EventFinanceActivitiesImpl: a Temporal activity, no HTTP request,
+        // the event's own lifecycle transition already authorized reaching this escrow.
+        return TenantGuard.locate(
+                        PlatformWideAccess.system(PlatformWideAccess.Reason.FINANCE_WORKFLOW, clock),
+                        escrowRepository.findById(accountId),
+                        organizationIds -> escrowRepository.findByIdAndOrganizationIdIn(accountId, organizationIds),
+                        ErrorCode.ESCROW_ACCOUNT_UNKNOWN,
+                        "escrow account " + accountId)
                 .flatMap(escrow -> {
                     escrow.setHoldUntil(newLockDate.plus(Duration.ofDays(7)));
                     return escrowRepository.save(escrow)

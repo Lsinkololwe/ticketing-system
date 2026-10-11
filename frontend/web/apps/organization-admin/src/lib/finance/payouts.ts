@@ -4,6 +4,18 @@ import { formatMoney } from '@/lib/format/figure';
 
 export { OPEN_PAYOUT_STATUSES } from '@/lib/format/enumLabels';
 
+/**
+ * The event's name now, when it differs from the name a money record was created under. The record
+ * keeps its own name; this is shown beside it so a renamed event can still be found.
+ */
+export function currentEventName(
+  recorded: string | null | undefined,
+  event: { title?: string | null } | null | undefined,
+): string | null {
+  const now = event?.title?.trim();
+  return now && now !== (recorded ?? '').trim() ? now : null;
+}
+
 /** "****7890" for account numbers; leaves short or empty values alone. */
 export function maskAccount(value: string | null | undefined): string {
   if (!value) return '—';

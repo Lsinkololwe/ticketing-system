@@ -10,6 +10,9 @@ import com.pml.booking.service.TicketService;
 import com.pml.booking.web.graphql.dto.AdminTicketUpdateInput;
 import com.pml.booking.web.graphql.dto.BulkOperationResponse;
 import com.pml.shared.constants.TicketStatus;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -196,8 +199,9 @@ public class TicketServiceImpl implements TicketService {
     public Mono<Ticket> adminUpdateTicket(String ticketId, AdminTicketUpdateInput input) {
         log.info("Admin updating ticket: {}", ticketId);
 
-        return ticketRepository.findById(ticketId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + ticketId)))
+        // Reached only from the ADMIN-only adminUpdateTicket mutation: read the real request
+        // scope rather than assuming platform authority.
+        return ticketForCaller(ticketId)
                 .flatMap(ticket -> {
                     // Only update non-null fields
                     if (input.buyerName() != null) {
@@ -231,8 +235,9 @@ public class TicketServiceImpl implements TicketService {
     public Mono<Ticket> regenerateTicketQrCode(String ticketId) {
         log.info("Regenerating QR code for ticket: {}", ticketId);
 
-        return ticketRepository.findById(ticketId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Ticket not found: " + ticketId)))
+        // Reached only from the ADMIN-only regenerateTicketQrCode mutation: read the real
+        // request scope rather than assuming platform authority.
+        return ticketForCaller(ticketId)
                 .flatMap(ticket -> {
                     // A validated ticket cannot be re-issued — it
                     // has already been used — and neither can a terminal one.
@@ -272,7 +277,8 @@ public class TicketServiceImpl implements TicketService {
 
         return Flux.fromIterable(ticketIds)
                 .flatMap(ticketId ->
-                    ticketRepository.findById(ticketId)
+                    ticketForCaller(ticketId)
+                        .onErrorResume(refused -> Mono.empty())
                         .flatMap(ticket -> {
                             // The same table the single-ticket path uses, so a
                             // bulk cancel cannot admit what a single one refuses.
@@ -329,5 +335,19 @@ public class TicketServiceImpl implements TicketService {
         // Generate a unique barcode
         // In production, this would be a proper barcode format
         return "BC-" + ticket.getTicketNumber() + "-" + clock.millis();
+    }
+
+    /**
+     * The ticket the caller is entitled to act on, or {@code TICKET_UNKNOWN}. For the ADMIN-only
+     * ticket-admin mutations, which have no upstream guard to rely on the way the resolver's
+     * {@code reads.*ForCaller} methods give other services.
+     */
+    private Mono<Ticket> ticketForCaller(String id) {
+        return CurrentTenantScope.get().flatMap(scope -> TenantGuard.locate(
+                scope,
+                ticketRepository.findById(id),
+                organizationIds -> ticketRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                ErrorCode.TICKET_UNKNOWN,
+                "ticket " + id));
     }
 }

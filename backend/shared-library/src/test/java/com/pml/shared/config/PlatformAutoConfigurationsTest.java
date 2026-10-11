@@ -267,9 +267,12 @@ class PlatformAutoConfigurationsTest {
     class ServiceSecurityChain {
 
 
+        // "test" exempts this context from the audience-required check (ET-PLT-007 R2): it is
+        // one, and carries no oidc-audience-mapper the way a real deployment's realm would.
         private final ReactiveWebApplicationContextRunner runner = new ReactiveWebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(ServiceSecurityAutoConfiguration.class))
                 .withPropertyValues(
+                        "spring.profiles.active=test",
                         "spring.application.name=booking-service",
                         "spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:8084/realms/myticketzm");
 

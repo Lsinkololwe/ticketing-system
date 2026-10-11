@@ -78,7 +78,7 @@ export function HomeClient() {
   return (
     <SiteShell>
       <FeaturedCarousel events={featured.events} />
-      <div className="m3-site-wrap">
+      <div className="m3-site-wrap" data-hero={featured.events.length > 0 ? 'true' : 'false'}>
         <DiscoverSearch
           form={form as never}
           onWhen={onWhen}

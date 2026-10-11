@@ -60,7 +60,8 @@ export function EscrowSheet({ accountId, onClose, onAction }: { accountId: strin
             <KeyValue columns
               items={[
                 { label: 'Event', value: x.eventTitle ?? '—' },
-                { label: 'Organization', value: x.organizerName ?? '—' },
+                { label: 'Event name now', value: x.event?.title ?? '—' },
+                { label: 'Organization', value: x.organization?.name ?? '—' },
                 { label: 'Current balance', value: <Mono>{money(asNumber(x.currentBalance))}</Mono> },
                 { label: 'Total deposits', value: <Mono>{money(asNumber(x.totalDeposits))}</Mono> },
                 { label: 'Total refunds', value: <Mono>{money(asNumber(x.totalRefunds))}</Mono> },

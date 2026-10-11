@@ -110,6 +110,27 @@ class IdentityIndexRegistryTest {
     }
 
     @Test
+    @DisplayName("a person has one active membership at a time; having left another organization does not count")
+    void onePersonOneActiveOrganization() {
+        String collection = IdentityCollections.ORGANIZATION_MEMBERS;
+        template.remove(new org.springframework.data.mongodb.core.query.Query(), collection).block();
+
+        template.insert(new Document("userId", "u-9").append("organizationId", "o-1").append("status", "REMOVED"), collection).block();
+        template.insert(new Document("userId", "u-9").append("organizationId", "o-2").append("status", "ACTIVE"), collection).block();
+
+        Throwable failure = template
+                .insert(new Document("userId", "u-9").append("organizationId", "o-3").append("status", "ACTIVE"), collection)
+                .then(Mono.<Throwable>empty())
+                .onErrorResume(Mono::just)
+                .block();
+
+        assertThat(failure)
+                .as("a second active membership for one person was accepted: the organization derived from "
+                        + "them would be ambiguous")
+                .isNotNull();
+    }
+
+    @Test
     @DisplayName("expired invitations carry a TTL that will actually expire them")
     void invitationsExpire() {
         // Asserted through assertAllPresent's expireAfterSeconds check rather than by waiting:

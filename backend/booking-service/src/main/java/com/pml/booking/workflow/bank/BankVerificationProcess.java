@@ -59,10 +59,22 @@ public class BankVerificationProcess {
     }
 
     public Mono<BankAccount> confirm(String bankAccountId, String ownerId, BigDecimal amount) {
+        return confirm(bankAccountId, ownerId, ownerId, amount);
+    }
+
+    /**
+     * Confirms the amount as {@code actorId}, for an account the caller has already been allowed to
+     * manage as a member of its organization: the account's recorded creator is not asked.
+     */
+    public Mono<BankAccount> confirmAsMember(String bankAccountId, String actorId, BigDecimal amount) {
+        return confirm(bankAccountId, null, actorId, amount);
+    }
+
+    private Mono<BankAccount> confirm(String bankAccountId, String ownerId, String actorId, BigDecimal amount) {
         return owned(bankAccountId, ownerId)
                 .flatMap(account -> temporal.call(() -> temporal.existingWorkflow(BankVerificationWorkflow.class,
                                         WorkflowIds.bankVerification(bankAccountId))
-                                .confirmAmount(new Confirmation(ownerId, amount)))
+                                .confirmAmount(new Confirmation(actorId, amount)))
                         .onErrorMap(error -> Refusals.fromTemporal(error, ErrorCode.BANK_ACCOUNT_NOT_VERIFIED)))
                 .flatMap(view -> verification.load(bankAccountId));
     }

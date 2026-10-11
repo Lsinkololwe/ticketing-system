@@ -13,7 +13,7 @@ import java.time.Duration;
  *   security:
  *     revocation:
  *       enabled: true
- *       access-token-lifespan: 1h
+ *       access-token-lifespan: 5m
  *       clock-skew: 60s
  *       cache-timeout: 250ms
  *       durable-timeout: 2s
@@ -31,11 +31,12 @@ public class RevocationProperties {
      * {@code accessTokenLifespan}. A revocation record must outlive the tokens it revokes, so
      * this drives the default record TTL.
      *
-     * <p>Keep this in sync with the realm: {@code myticketzm-realm.json} currently sets
-     * {@code accessTokenLifespan: 3600}. The value bounds how long a revoked token could remain
-     * usable if a revocation is ever missed.</p>
+     * <p>Keep this in sync with the realm: {@code myticketzm-realm.json} and the admin realm set
+     * {@code accessTokenLifespan: 300}. A value longer than the realm's only keeps records and
+     * cache keys longer than needed; a shorter one lets a record expire while a token it revokes
+     * is still valid, so it must never be below the realm's.</p>
      */
-    private Duration accessTokenLifespan = Duration.ofHours(1);
+    private Duration accessTokenLifespan = Duration.ofMinutes(5);
 
     /** Added to {@link #accessTokenLifespan} so clock drift cannot expire a record early. */
     private Duration clockSkew = Duration.ofSeconds(60);
@@ -52,11 +53,12 @@ public class RevocationProperties {
     private Duration durableTimeout = Duration.ofSeconds(2);
 
     /**
-     * Treat an evicting Redis {@code maxmemory-policy} as a health problem.
+     * Treat a Redis that can evict revocation keys as untrusted.
      *
-     * <p>Under an evicting policy a revocation key can be dropped without Redis reporting an
-     * error. The durable store still answers correctly; this flag surfaces the condition through
-     * the health endpoint.</p>
+     * <p>Under an evicting {@code maxmemory-policy} with a memory limit, a revocation key can be
+     * dropped without Redis reporting anything. While the probe reports that risk, a cache miss is
+     * not taken as "not revoked": every check a key does not answer goes to the durable store, and
+     * the health endpoint reports {@code DEGRADED} with the policy named.</p>
      */
     private boolean requireEvictionSafeCache = true;
 

@@ -59,8 +59,8 @@ means neither is.
 
 - [x] **BE-5 · the Schedule and the workflow, 2026-09-13** — `identity-user-reconciliation` fires daily
   at 03:30 UTC and starts `UserBackfillWorkflow`, which pages Keycloak 100 users a run and signals each
-  user's `UserSyncWorkflow`; the operator mutation and `POST /api/internal/keycloak/sync/all` start the
-  same workflow. `UserBackfillWorkflowTest` (7 cases, time skipping, replayed) and
+  user's `UserSyncWorkflow`; the operator mutation starts the same workflow (the REST `sync/all` door was
+  removed 2026-10-10: a full re-sync is only ever the workflow, nightly or by the operator mutation). `UserBackfillWorkflowTest` (7 cases, time skipping, replayed) and
   `UserReconciliationScheduleTest` (3 cases). Marking documents for users Keycloak no longer holds is
   not built ([F-032](../FINDINGS.md)).
 

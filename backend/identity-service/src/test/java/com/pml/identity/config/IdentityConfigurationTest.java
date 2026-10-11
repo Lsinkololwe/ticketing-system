@@ -35,10 +35,10 @@ class IdentityConfigurationTest {
     private record Bound(IdentityChallengeProperties challenge, IdentityProofProperties proof,
                          IdentityLoginHandleProperties loginHandle, IdentityContactProperties contact,
                          IdentityIdHashProperties idHash, IdentityLimitsProperties limits,
-                         IdentityDeliveryProperties delivery, IdentityAccountRepairProperties repair) {
+                         IdentityDeliveryProperties delivery) {
         List<String> validate(boolean development) {
             return IdentityConfigurationValidator.validate(development, challenge, proof, loginHandle, contact,
-                    idHash, limits, delivery, repair);
+                    idHash, limits, delivery);
         }
     }
 
@@ -51,8 +51,7 @@ class IdentityConfigurationTest {
                 b.bind("identity.contact", IdentityContactProperties.class).get(),
                 b.bind("identity.id-hash", IdentityIdHashProperties.class).get(),
                 b.bind("identity.limits", IdentityLimitsProperties.class).get(),
-                b.bind("identity.delivery", IdentityDeliveryProperties.class).get(),
-                b.bind("identity.account.repair", IdentityAccountRepairProperties.class).get());
+                b.bind("identity.delivery", IdentityDeliveryProperties.class).get());
     }
 
     @Test
@@ -76,10 +75,6 @@ class IdentityConfigurationTest {
         assertThat(c.delivery().getWhatsapp().getTimeout()).isEqualTo(Duration.ofSeconds(5));
         assertThat(c.delivery().getEmail().getTimeout()).isEqualTo(Duration.ofSeconds(5));
         assertThat(c.delivery().getCapture().isEnabled()).isFalse();
-        assertThat(c.repair().getInterval()).isEqualTo(Duration.ofMinutes(15));
-        assertThat(c.repair().getProvisioningMaxAge()).isEqualTo(Duration.ofMinutes(10));
-        assertThat(c.repair().getMergingMaxAge()).isEqualTo(Duration.ofHours(2));
-        assertThat(c.repair().getChangingMaxAge()).isEqualTo(Duration.ofHours(48));
     }
 
     @Test

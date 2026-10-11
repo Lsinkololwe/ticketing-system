@@ -155,19 +155,16 @@ create it from the token's claims before serving the request.
 - [ ] An integration test disables the listener entirely, logs a new user in, and asserts the platform is fully functional for them
 - [ ] The repair path is instrumented, so its rate is the signal that the listener has stopped working
 
-### ET-IDN-002-R4 · Reconciliation finds and repairs drift in both directions
+### ET-IDN-002-R4 · There is no full reconciliation
 
-THE SYSTEM SHALL periodically compare Keycloak's users against `identity_users` and repair
-every difference it finds.
+*(Amended 2026-10-10 on the owner's decision.)* The nightly sweep, `UserBackfillWorkflow`, its Schedule and the
+`syncAllUsersFromKeycloak` mutation are removed: a full scan of the identity provider every night costs more than
+the drift it repairs. A profile is kept right by the Keycloak listener's per-user `UserSyncWorkflow` and by the lazy
+repair on the person's next authenticated request (R3). The platform makes no claim that a user whose event was
+missed is repaired before they next sign in.
 
 **Acceptance**
-- [ ] The `identity-user-reconciliation` Schedule (daily 03:30 UTC, overlap `SKIP`) starts `UserBackfillWorkflow`, which pages through Keycloak's users 100 at a time, continuing as new per page, and signals each user's `UserSyncWorkflow`; at boot an existing Schedule takes this cadence and keeps an operator\'s pause (ROADMAP D-34)
-- [ ] A Keycloak user with no document is created; a document whose cached fields differ is updated; a document whose Keycloak user is absent is left as it is (ROADMAP D-29)
-- [ ] A fire while a run is open is skipped by the Schedule, and an operator request while a backfill runs reaches it (`user-backfill`, `USE_EXISTING`); no Redis lock exists
-- [ ] Counts of each repair kind are exported as metrics, and a non-zero created-or-drifted count alerts
-- [ ] An operator can trigger a full reconciliation on demand, and it is `SUPER_ADMIN`-only on both the mutation and `POST /api/internal/keycloak/sync/all` (ROADMAP D-30)
-- [ ] The reconciliation never writes a MongoDB-owned field — a reconciliation that overwrites an avatar is a data-loss bug
-- [ ] A test seeds drift of each kind and asserts one reconciliation run repairs all of them; the backfill's recorded history replays
+- [x] No Schedule, backfill workflow, REST door or GraphQL mutation starts a full user scan — `IdentityWorkflowRegistryTest`, `SchemaBindingTest`, `InternalSurfaceTableTest`
 
 ### ET-IDN-002-R5 · Profile writes go to exactly one owner per field
 
@@ -338,12 +335,7 @@ None. Reconciliation's mutex is its Schedule's overlap policy and the backfill's
   - parallel-safe: no — it is on every request path
   - depends: T2
 
-- [ ] **T5 · The reconciliation Schedule, the backfill workflow, its metrics and the operator mutation**
-  - requirements: R4
-  - files: `backend/identity-service/.../workflow/usersync/UserBackfillWorkflowImpl.java`, `.../workflow/usersync/UserReconciliationSchedule.java`
-  - verify: seeded drift of each kind is repaired in one run; overlap is `SKIP`; the history replays
-  - parallel-safe: yes
-  - depends: T2
+- [x] **T5 · Removed 2026-10-10** — the reconciliation Schedule, backfill workflow and operator mutation were deleted on the owner's decision (R4).
 
 - [ ] **T6 · `updateMyProfile` with the write-through order**
   - requirements: R5

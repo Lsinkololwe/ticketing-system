@@ -23,14 +23,6 @@ public final class WorkflowIds {
         return "user-sync/" + require(keycloakUserId);
     }
 
-    /**
-     * The one Keycloak backfill. A second request while it runs reaches it; once it has closed, a
-     * new request starts a new one under the same id.
-     */
-    public static String userBackfill() {
-        return "user-backfill";
-    }
-
     public static String reminder(String reminderId) {
         return "reminder/" + require(reminderId);
     }
@@ -61,11 +53,6 @@ public final class WorkflowIds {
     /** The one open contact change of an account: {@code contact-change/{accountId}}. The account id is opaque, never a contact. */
     public static String contactChange(String accountId) {
         return "contact-change/" + require(accountId);
-    }
-
-    /** The account repair a Schedule starts; the Schedule suffixes each run with its fire time. */
-    public static String accountRepair() {
-        return "account-repair/scheduled";
     }
 
     private static final java.util.regex.Pattern CONTACT_KEY = java.util.regex.Pattern.compile("[0-9a-f]{64}");

@@ -4,9 +4,15 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.pml.catalog.domain.model.Event;
+import com.pml.catalog.infrastructure.client.IdentityServiceClient;
 import com.pml.catalog.service.OrganizerProfileService;
 import com.pml.shared.security.tenancy.CurrentTenantScope;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
@@ -20,11 +26,16 @@ import java.util.Map;
  * everyone else gets null. The check is on the field, not the query, because an event reaches a
  * buyer's screen through a dozen queries and every one of them selects the same type.
  */
+@Slf4j
 @DgsComponent
 @RequiredArgsConstructor
 public class EventContentFieldResolver {
 
+    private static final String UNKNOWN = "Unknown";
+
     private final OrganizerProfileService organizers;
+    private final IdentityServiceClient identity;
+    private final ReactiveMongoTemplate mongo;
 
     /** The reference identity resolves: {@code verified}, the name and the rest are its. */
     @DgsData(parentType = "Event", field = "organization")
@@ -37,6 +48,46 @@ public class EventContentFieldResolver {
         reference.put("__typename", "Organization");
         reference.put("id", event.getOrganizationId());
         return reference;
+    }
+
+    /**
+     * The name stored when the event was created. {@code Event.organizerName} is non-null in the
+     * schema, and an event written before creation began denormalizing it has none: without this,
+     * one such row fails the whole list it appears in, not just its own field.
+     *
+     * <p>Such an event is repaired the first time it is read: the name is asked of identity and
+     * written back, so the lookup happens once per legacy event and not on every list. An identity
+     * outage answers "Unknown" and writes nothing, so the next read tries again.
+     */
+    @DgsData(parentType = "Event", field = "organizerName")
+    public Mono<String> organizerName(DgsDataFetchingEnvironment dfe) {
+        Event event = dfe.getSource();
+        String stored = event.getOrganizerName();
+        if (stored != null && !stored.isBlank()) {
+            return Mono.just(stored);
+        }
+        String organizationId = event.getOrganizationId();
+        if (organizationId == null || organizationId.isBlank()) {
+            return Mono.just(UNKNOWN);
+        }
+        return identity.getOrganizationName(organizationId)
+                .filter(name -> !name.isBlank())
+                .flatMap(name -> mongo.updateFirst(
+                                Query.query(Criteria.where("_id").is(event.getId())
+                                        .orOperator(Criteria.where("organizerName").exists(false),
+                                                Criteria.where("organizerName").is(null),
+                                                Criteria.where("organizerName").is(""))),
+                                Update.update("organizerName", name), Event.class)
+                        .onErrorResume(error -> {
+                            log.warn("Could not store organizer name for event {}: {}", event.getId(), error.toString());
+                            return Mono.empty();
+                        })
+                        .thenReturn(name))
+                .onErrorResume(error -> {
+                    log.warn("Organizer name lookup failed for organization {}: {}", organizationId, error.toString());
+                    return Mono.empty();
+                })
+                .defaultIfEmpty(UNKNOWN);
     }
 
     @DgsData(parentType = "Event", field = "grossSales")

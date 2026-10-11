@@ -1,6 +1,7 @@
 package com.pml.shared.idempotency;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pml.shared.error.FieldViolation;
 import com.pml.shared.error.ValidationRefusal;
@@ -129,12 +130,22 @@ public class IdempotencyGuard {
         }
     }
 
+    /**
+     * Unknown properties are tolerated here only, never on the shared {@link #mapper} a caller
+     * passed in for the rest of the application: the JSON being read back is this guard's own
+     * prior write of {@code type}, not external input, and a derived getter with no backing
+     * field (a computed total, a formatted label) serializes on the way out with nothing to
+     * assign it back to on the way in. The real fields it is derived from come back correctly;
+     * only the computed one is skipped, and it recomputes itself once they are set.
+     */
     private <T> Mono<T> deserialise(String json, Class<T> type) {
         if (json == null) {
             return Mono.empty();
         }
         try {
-            return Mono.just(mapper.readValue(json, type));
+            return Mono.just(mapper.readerFor(type)
+                    .without(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .readValue(json));
         } catch (JsonProcessingException e) {
             return Mono.error(new IllegalStateException("the recorded response could not be read back", e));
         }

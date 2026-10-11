@@ -34,6 +34,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantScope;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -110,15 +112,6 @@ class OrganizerApplicationWritePathEndToEndTest {
             return Mono.empty();
         }
 
-        @Override
-        public Mono<Void> addUserToOrganizationGroup(String userId, String organizationSlug, String roleName) {
-            return Mono.empty();
-        }
-
-        @Override
-        public Mono<Void> removeUserFromOrganizationGroup(String userId, String organizationSlug, String roleName) {
-            return Mono.empty();
-        }
     }
 
     @TestConfiguration
@@ -250,7 +243,13 @@ class OrganizerApplicationWritePathEndToEndTest {
         documents.upload(organizationId, "TAX_CERTIFICATE", "https://files.example.com/tax.pdf",
                 "tax.pdf", 4096L, "application/pdf").block();
         assertThat(id.getUploadedAt()).as("auditing filled uploadedAt").isNotNull();
-        assertThat(documents.approve(id.getId(), ADMIN).block().getStatus().name()).isEqualTo("APPROVED");
+        // documents.approve() is called directly rather than through the GraphQL mutation, so
+        // there is no TenantScopeWebFilter in play here; seed the scope an admin's real request
+        // would carry, same as the production code now requires.
+        VerificationDocument approved = documents.approve(id.getId(), ADMIN)
+                .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.platformAdministrator(ADMIN, java.util.Set.of()))))
+                .block();
+        assertThat(approved.getStatus().name()).isEqualTo("APPROVED");
 
         Map<String, Object> submitted = data(graphql(OWNER, "CUSTOMER",
                 "mutation { submitOrganizationForReview(id: \"" + organizationId + "\") { id status } }"),

@@ -8,17 +8,24 @@ import com.pml.identity.domain.model.OrganizationMember;
 import com.pml.identity.domain.valueobject.EventRole;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.domain.valueobject.OrganizationSettings;
-import com.pml.identity.service.EventAccessService;
+import com.pml.identity.repository.EventAccessGrantRepository;
+import com.pml.identity.repository.OrganizationMemberRepository;
+import com.pml.identity.repository.OrganizationRepository;
+import com.pml.identity.repository.UserRepository;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.service.impl.AuthorizationServiceImpl;
+import com.pml.identity.service.impl.PermissionResolutionServiceImpl;
 import com.pml.shared.constants.OrganizationStatus;
 import com.pml.shared.dto.authorization.AuthorizationResult;
+import com.pml.shared.testing.TestClock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
+
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -35,25 +42,31 @@ class CrossServicePermissionCheckTest {
 
     private static final String ORG = "org-1";
 
-    private OrganizationMemberService members;
+    private OrganizationMemberRepository memberRepository;
+    private OrganizationRepository organizationRepository;
+    private EventAccessGrantRepository grantRepository;
     private OrganizationService organizations;
-    private EventAccessService grants;
     private AuthorizationServiceImpl authorization;
     private Organization organization;
 
     @BeforeEach
     void setUp() {
-        members = mock(OrganizationMemberService.class);
+        memberRepository = mock(OrganizationMemberRepository.class);
+        organizationRepository = mock(OrganizationRepository.class);
+        grantRepository = mock(EventAccessGrantRepository.class);
         organizations = mock(OrganizationService.class);
-        grants = mock(EventAccessService.class);
-        authorization = new AuthorizationServiceImpl(members, organizations, grants);
+        PermissionResolutionServiceImpl resolution = new PermissionResolutionServiceImpl(
+                mock(UserRepository.class), memberRepository, organizationRepository, grantRepository,
+                TestClock.frozenAt(Instant.parse("2026-09-18T10:00:00Z")));
+        authorization = new AuthorizationServiceImpl(resolution, mock(OrganizationMemberService.class), organizations);
 
         organization = new Organization();
         organization.setId(ORG);
         organization.setStatus(OrganizationStatus.ACTIVE);
         organization.setSettings(new OrganizationSettings());
         when(organizations.findById(ORG)).thenReturn(Mono.just(organization));
-        when(grants.findByUserAndEvent("user-1", "event-1")).thenReturn(Mono.empty());
+        when(organizationRepository.findById(ORG)).thenReturn(Mono.just(organization));
+        when(grantRepository.findByUserIdAndEventId("user-1", "event-1")).thenReturn(Mono.empty());
     }
 
     @Test
@@ -96,8 +109,8 @@ class CrossServicePermissionCheckTest {
         foreign.setOrganizationId("org-elsewhere");
         foreign.setEventRole(EventRole.EVENT_OWNER);
         foreign.setStatus(AccessGrantStatus.ACTIVE);
-        when(grants.findByUserAndEvent("user-1", "event-1")).thenReturn(Mono.just(foreign));
-        when(members.findByUserAndOrganization("user-1", ORG)).thenReturn(Mono.empty());
+        when(grantRepository.findByUserIdAndEventId("user-1", "event-1")).thenReturn(Mono.just(foreign));
+        when(memberRepository.findByUserIdAndOrganizationId("user-1", ORG)).thenReturn(Mono.empty());
 
         assertThat(authorization.checkEventAccess("user-1", "event-1", ORG, "event:delete").block().isAuthorized()).isFalse();
 
@@ -113,7 +126,7 @@ class CrossServicePermissionCheckTest {
         viewer.setOrganizationId(ORG);
         viewer.setEventRole(EventRole.VIEWER);
         viewer.setStatus(AccessGrantStatus.ACTIVE);
-        when(grants.findByUserAndEvent("user-1", "event-1")).thenReturn(Mono.just(viewer));
+        when(grantRepository.findByUserIdAndEventId("user-1", "event-1")).thenReturn(Mono.just(viewer));
 
         assertThat(authorization.checkEventAccess("user-1", "event-1", ORG, "event:edit").block().isAuthorized()).isFalse();
     }
@@ -121,12 +134,12 @@ class CrossServicePermissionCheckTest {
     @Test
     @DisplayName("Gate staff hold ticket:scan through a check-in grant alone; a viewer grant is refused naming its role")
     void gateStaffScanThroughTheirGrant() {
-        when(members.findByUserAndOrganization("user-1", ORG)).thenReturn(Mono.empty());
+        when(memberRepository.findByUserIdAndOrganizationId("user-1", ORG)).thenReturn(Mono.empty());
         EventAccessGrant checkIn = new EventAccessGrant();
         checkIn.setOrganizationId(ORG);
         checkIn.setEventRole(EventRole.CHECK_IN);
         checkIn.setStatus(AccessGrantStatus.ACTIVE);
-        when(grants.findByUserAndEvent("user-1", "event-1")).thenReturn(Mono.just(checkIn));
+        when(grantRepository.findByUserIdAndEventId("user-1", "event-1")).thenReturn(Mono.just(checkIn));
 
         assertThat(authorization.checkAuthorization(scanRequest()).block().isAuthorized()).isTrue();
 
@@ -139,12 +152,24 @@ class CrossServicePermissionCheckTest {
     @Test
     @DisplayName("Someone with neither a grant nor a membership is refused without a role, as an outsider")
     void outsiderIsRefusedWithoutARole() {
-        when(members.findByUserAndOrganization("user-1", ORG)).thenReturn(Mono.empty());
+        when(memberRepository.findByUserIdAndOrganizationId("user-1", ORG)).thenReturn(Mono.empty());
 
         AuthorizationResult refused = authorization.checkAuthorization(scanRequest()).block();
 
         assertThat(refused.isAuthorized()).isFalse();
         assertThat(refused.getGrantingRole()).isNull();
+    }
+
+    @Test
+    @DisplayName("The organization name lookup returns the name, and nothing for a blank or unknown id")
+    void organizationNameLookup() {
+        organization.setName("Showstop Live Events");
+        when(organizations.findById("org-unknown")).thenReturn(Mono.empty());
+
+        assertThat(authorization.getOrganizationName(ORG).block()).isEqualTo("Showstop Live Events");
+        assertThat(authorization.getOrganizationName("org-unknown").block()).isNull();
+        assertThat(authorization.getOrganizationName("  ").block()).as("blank is not looked up at all").isNull();
+        assertThat(authorization.getOrganizationName(null).block()).isNull();
     }
 
     private static com.pml.shared.dto.authorization.AuthorizationRequest scanRequest() {
@@ -158,6 +183,6 @@ class CrossServicePermissionCheckTest {
         member.setOrganizationId(ORG);
         member.setRole(role);
         member.setStatus(MemberStatus.ACTIVE);
-        when(members.findByUserAndOrganization("user-1", ORG)).thenReturn(Mono.just(member));
+        when(memberRepository.findByUserIdAndOrganizationId("user-1", ORG)).thenReturn(Mono.just(member));
     }
 }

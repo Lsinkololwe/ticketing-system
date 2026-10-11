@@ -15,5 +15,8 @@ public record PayReservationInput(
 
         /** E.164, the handset that will be prompted. */
         @NotBlank(message = "Phone number is required for mobile money payment")
-        String phoneNumber
+        String phoneNumber,
+
+        @NotBlank(message = "Idempotency key is required")
+        String idempotencyKey
 ) {}

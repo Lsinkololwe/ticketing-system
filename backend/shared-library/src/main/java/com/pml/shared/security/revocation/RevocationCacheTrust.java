@@ -8,6 +8,7 @@ import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 /**
  * Tracks whether the cache holds every live revocation, which determines when a cache miss may
@@ -56,14 +57,27 @@ public class RevocationCacheTrust {
     private final Sinks.Many<Long> reloadRequests =
             Sinks.many().multicast().onBackpressureBuffer(1, false);
 
+    /**
+     * Whether Redis can silently drop a key it did not expire. When it can, an absent key proves
+     * nothing however fresh the sentinel is, because the sentinel cannot tell that one revocation
+     * key was evicted while the others stayed.
+     */
+    private final BooleanSupplier evictionSafe;
+
     public RevocationCacheTrust(ReactiveStringRedisTemplate cache, Duration sentinelTtl) {
+        this(cache, sentinelTtl, () -> true);
+    }
+
+    public RevocationCacheTrust(ReactiveStringRedisTemplate cache, Duration sentinelTtl,
+                                BooleanSupplier evictionSafe) {
         this.cache = cache;
         this.sentinelTtl = sentinelTtl;
+        this.evictionSafe = evictionSafe;
     }
 
     /** True when a cache miss may be taken as "not revoked". */
     public Mono<Boolean> isComplete() {
-        if (locallyIncomplete.get()) {
+        if (locallyIncomplete.get() || !evictionSafe.getAsBoolean()) {
             return Mono.just(false);
         }
         return cache.hasKey(SENTINEL_KEY);

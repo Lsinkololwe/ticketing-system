@@ -16,6 +16,7 @@ import com.pml.identity.repository.OrganizationMemberRepository;
 import com.pml.identity.repository.OrganizationRepository;
 import com.pml.identity.repository.UserRepository;
 import com.pml.identity.service.impl.PermissionResolutionServiceImpl;
+import com.pml.shared.constants.OrganizationStatus;
 import com.pml.shared.constants.UserType;
 import com.pml.shared.error.DomainRefusal;
 import com.pml.shared.error.ErrorCode;
@@ -90,6 +91,7 @@ class PermissionResolutionTest {
         Organization organization = new Organization();
         organization.setId(ORG);
         organization.setSettings(new OrganizationSettings());
+        organization.setStatus(OrganizationStatus.ACTIVE);
         organizations.save(organization).block();
 
         for (OrganizationRole role : OrganizationRole.values()) {

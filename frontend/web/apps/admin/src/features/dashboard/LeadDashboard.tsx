@@ -92,7 +92,7 @@ export function LeadDashboard() {
           rows={stuck.items.map((p) => ({
             id: p.id,
             title: `Payout ${p.requestId} · ${money(p.requestedAmount)}`,
-            support: p.organizerName ?? undefined,
+            support: p.organization?.name ?? undefined,
             trailing: <StatusPill status={p.status} />,
             go: { label: 'Open', href: '/finance/payouts' },
           }))}

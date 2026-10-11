@@ -13,6 +13,7 @@ import com.pml.shared.error.TenantBoundary;
 import com.pml.shared.security.tenancy.CurrentTenantScope;
 import com.pml.identity.web.graphql.dto.pagination.*;
 import com.pml.shared.security.SecurityContextUtils;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -70,10 +71,12 @@ public class OrganizationMemberQueryResolver {
         Objects.requireNonNull(userId, "User ID is required");
 
         return CurrentTenantScope.get()
-                .flatMap(scope -> scope.platformAdmin() || scope.permits(organizationId)
-                        ? memberService.findByUserAndOrganization(userId, organizationId)
-                        : Mono.error(TenantBoundary.refuse(ErrorCode.ORGANIZATION_UNKNOWN,
-                                "organization " + organizationId + " requested by " + scope)));
+                .flatMap(scope -> PlatformWideAccess
+                        .isPlatformWide(scope, PlatformWideAccess.Reason.ORGANIZATION_MEMBER_READ)
+                        .flatMap(platformWide -> platformWide || scope.permits(organizationId)
+                                ? memberService.findByUserAndOrganization(userId, organizationId)
+                                : Mono.<OrganizationMember>error(TenantBoundary.refuse(ErrorCode.ORGANIZATION_UNKNOWN,
+                                        "organization " + organizationId + " requested by " + scope))));
     }
 
     /**
@@ -113,9 +116,11 @@ public class OrganizationMemberQueryResolver {
                 // A platform administrator reads any organization's team (the admin console's Team tab)
                 // without being a member of it; everyone else needs TEAM_VIEW inside it.
                 .flatMap(userId -> CurrentTenantScope.get()
-                        .flatMap(scope -> scope.platformAdmin()
-                                ? Mono.<Void>empty()
-                                : memberService.requirePermission(userId, organizationId, Permission.TEAM_VIEW))
+                        .flatMap(scope -> PlatformWideAccess
+                                .isPlatformWide(scope, PlatformWideAccess.Reason.ORGANIZATION_TEAM_READ)
+                                .flatMap(platformWide -> platformWide
+                                        ? Mono.<Void>empty()
+                                        : memberService.requirePermission(userId, organizationId, Permission.TEAM_VIEW)))
                         .then(Mono.defer(() -> {
                             Flux<OrganizationMember> memberFlux = memberService.findByOrganization(organizationId)
                                     .filter(member -> {

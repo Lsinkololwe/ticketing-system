@@ -27,7 +27,7 @@ describe('ConsoleShell', () => {
     caps = { ...ALL, canViewBookings: false, canViewFinance: false, canViewTeam: false };
     render(<ConsoleShell><p>content</p></ConsoleShell>);
     const nav = screen.getAllByRole('navigation', { name: 'Main navigation' })[0];
-    for (const hidden of ['Bookings', 'Payouts', 'Banks', 'Transactions', 'Team']) expect(within(nav).queryByRole('link', { name: hidden })).toBeNull();
+    for (const hidden of ['Bookings', 'Escrow & payouts', 'Bank accounts', 'Transactions', 'Team']) expect(within(nav).queryByRole('link', { name: hidden })).toBeNull();
     for (const shown of ['Overview', 'Events', 'Media', 'Settings']) expect(within(nav).getByRole('link', { name: shown })).toBeInTheDocument();
     role = 'MANAGER';
     caps = ALL;
@@ -37,7 +37,7 @@ describe('ConsoleShell', () => {
     status = 'ACTIVE';
     render(<ConsoleShell><p>content</p></ConsoleShell>);
     const nav = screen.getAllByRole('navigation', { name: 'Main navigation' })[0];
-    for (const l of ['Overview', 'Events', 'Bookings', 'Media', 'Payouts', 'Banks', 'Transactions', 'Team', 'Settings']) {
+    for (const l of ['Overview', 'Events', 'Bookings', 'Media', 'Escrow & payouts', 'Bank accounts', 'Transactions', 'Team', 'Settings']) {
       expect(within(nav).getByRole('link', { name: l })).toBeInTheDocument();
     }
     expect(within(nav).queryByRole('link', { name: 'Onboarding' })).toBeNull();

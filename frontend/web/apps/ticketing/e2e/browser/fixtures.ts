@@ -74,6 +74,15 @@ const conn = (nodes: unknown[]) => ({
 export const catalog = (o: { events?: unknown[]; failDiscover?: boolean } = {}): Record<string, GqlHandler> => {
   const events = o.events ?? EVENTS;
   return {
+    // The platform's reference lists. Checkout needs the mobile-money operators; any other list is empty.
+    ReferenceOptions: (vars) => ({
+      referenceData: String((vars as { type?: string }).type) === 'MOBILE_MONEY_OPERATOR'
+        ? [
+            { __typename: 'ReferenceData', id: 'op-mtn', code: 'MTN', name: 'MTN', description: null, parentCode: null, displayOrder: 1, metadata: { msisdnPrefixes: ['26096', '26076'] } },
+            { __typename: 'ReferenceData', id: 'op-airtel', code: 'AIRTEL', name: 'Airtel', description: null, parentCode: null, displayOrder: 2, metadata: { msisdnPrefixes: ['26097', '26077'] } },
+          ]
+        : [],
+    }),
     DiscoverEvents: { discoverEvents: conn(events) },
     BuyerTrendingEvents: { trendingEvents: events },
     BuyerRecommendedEvents: { recommendedEvents: [] },

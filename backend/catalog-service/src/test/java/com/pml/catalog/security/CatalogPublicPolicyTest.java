@@ -67,7 +67,7 @@ class CatalogPublicPolicyTest {
                 "{ _entities(representations: []) { __typename } }" }) {
             assertThat(judge(query, null)).as(query).isNotEqualTo(Verdict.ALLOWED);
         }
-        assertThat(judge("query($r:[_Any!]!){_entities(representations:$r){...on Event{organizerEmail}}}",
+        assertThat(judge("query($r:[_Any!]!){_entities(representations:$r){...on Event{organizerId}}}",
                 "{\"representations\":[{\"__typename\":\"Event\",\"id\":\"e1\"}]}")).isNotEqualTo(Verdict.ALLOWED);
         assertThat(judge("query($r:[_Any!]!){_entities(representations:$r){...on Organization{publishedEventCount}}}",
                 "{\"representations\":[{\"__typename\":\"User\",\"id\":\"u1\"}]}")).isNotEqualTo(Verdict.ALLOWED);

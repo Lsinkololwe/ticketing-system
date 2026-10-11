@@ -2398,8 +2398,6 @@ export type Mutation = {
   suspendMember: Maybe<OrganizationMember>;
   suspendOrganization: Maybe<Organization>;
   suspendUser: User;
-  syncAllUsersFromKeycloak: Scalars['Boolean']['output'];
-  syncUserFromKeycloak: Maybe<User>;
   transferBetweenPlatformAccounts: PlatformTransferResult;
   triggerManualEscalation: ApprovalEscalation;
   unassignEventReviewer: ApprovalTimeline;

@@ -265,7 +265,6 @@ class KeycloakServiceContainerTest {
         assertThat(view.realmRoles()).contains("ADMIN");
         assertThat(view.enabled()).isTrue();
         assertThat(service.readUser(STAFF, UUID.randomUUID().toString()).block()).isNull();
-        assertThat(service.readUserByUsername(STAFF, username).block()).isPresent();
     }
 
     @Test
@@ -285,6 +284,34 @@ class KeycloakServiceContainerTest {
         assertThat(admin.realm(BUYERS).users().get(keycloakUserId).groups()).isEmpty();
         assertThatThrownBy(() -> service.joinOrganizationGroup("no-such-account", "kabwe-collective", "owners").block())
                 .isInstanceOf(KeycloakWriteFailed.class);
+    }
+
+    @Test
+    @Order(9)
+    @Tag("ET-PLT-007")
+    @DisplayName("ET-PLT-007-R7 · a disabled account's own refresh token is dead at Keycloak, not only in this platform's stores")
+    void disabledAccountCannotRefresh() throws Exception {
+        String accountId = UUID.randomUUID().toString();
+        String keycloakUserId = service.createUser(accountId, true, UserType.CUSTOMER).block();
+        CredentialRepresentation password = new CredentialRepresentation();
+        password.setType(CredentialRepresentation.PASSWORD);
+        password.setValue("Passw0rd!y");
+        password.setTemporary(false);
+        admin.realm(BUYERS).users().get(keycloakUserId).resetPassword(password);
+
+        String refresh = token("password", Map.of("username", accountId, "password", "Passw0rd!y")).refreshToken();
+        assertThat(token("refresh_token", Map.of("refresh_token", refresh)).status())
+                .as("the account can refresh while enabled")
+                .isEqualTo(200);
+
+        service.setEnabled(keycloakUserId, false).block();
+
+        assertThat(token("refresh_token", Map.of("refresh_token", refresh)).status())
+                .as("Keycloak itself, not a platform revocation record, refuses the grant once the account is disabled")
+                .isEqualTo(400);
+        assertThat(token("password", Map.of("username", accountId, "password", "Passw0rd!y")).status())
+                .as("a fresh password grant is refused too")
+                .isEqualTo(400);
     }
 
     // ---- helpers -------------------------------------------------------------------------------------

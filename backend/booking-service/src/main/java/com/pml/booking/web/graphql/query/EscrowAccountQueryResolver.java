@@ -230,7 +230,7 @@ public class EscrowAccountQueryResolver {
                 account.getEventId(),
                 account.getEventTitle() != null ? account.getEventTitle() : "",
                 account.getOrganizerId(),
-                account.getOrganizerName() != null ? account.getOrganizerName() : "",
+                com.pml.booking.web.graphql.resolver.OrganizationReferenceFields.reference(account.getOrganizationId()),
                 account.getCurrentBalance(),
                 account.getTotalCredited(),
                 account.getTotalDebited(),

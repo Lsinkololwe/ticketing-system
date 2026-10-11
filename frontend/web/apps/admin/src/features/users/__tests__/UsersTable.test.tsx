@@ -20,8 +20,6 @@ const actions = {
   activateUser: vi.fn(),
   deactivateUser: vi.fn(),
   setUserRoles: vi.fn().mockResolvedValue({}),
-  syncUser: vi.fn(),
-  syncAllUsers: vi.fn().mockResolvedValue({}),
 };
 const listState = { rows: [] as unknown[], total: 0, pageSize: 20, loading: false, error: undefined as Error | undefined, refetch: vi.fn() };
 const usersCall = vi.fn();
@@ -109,14 +107,12 @@ describe('Users table', () => {
     await waitFor(() => expect(usersCall).toHaveBeenLastCalledWith(expect.objectContaining({ role: 'ORGANIZER', accountStatus: 'LOCKED', search: 'banda', page: 0 })));
   });
 
-  it('super admin sees Create admin and Sync all; admin sees them disabled with the permission text', () => {
+  it('super admin sees Create admin; admin sees it disabled with the permission text', () => {
     const { unmount } = renderConsole(<UsersPage tab="users" />, { roles: ['SUPER_ADMIN'] });
     expect(screen.getByRole('button', { name: 'Create admin' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Sync all from Keycloak' })).toBeEnabled();
     unmount();
     renderConsole(<UsersPage tab="users" />, { roles: ['ADMIN'] });
     expect(screen.getByRole('button', { name: 'Create admin' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Sync all from Keycloak' })).toBeDisabled();
     expect(screen.getByText(/Only super admins can create staff accounts/)).toBeInTheDocument();
   });
 
@@ -184,13 +180,6 @@ describe('Users table', () => {
     fireEvent.change(within(dlg).getByLabelText('Staff role'), { target: { value: 'FINANCE' } });
     fireEvent.click(within(dlg).getByRole('button', { name: 'Create admin' }));
     await waitFor(() => expect(actions.createUser).toHaveBeenCalledWith(expect.objectContaining({ role: 'FINANCE', phoneNumber: '+260971234568' })));
-  });
-
-  it('confirms before starting the full Keycloak sync', async () => {
-    renderConsole(<UsersPage tab="users" />, { roles: ['SUPER_ADMIN'] });
-    fireEvent.click(screen.getByRole('button', { name: 'Sync all from Keycloak' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Start full sync' }));
-    await waitFor(() => expect(actions.syncAllUsers).toHaveBeenCalled());
   });
 
   it('only a super admin may edit staff roles', async () => {

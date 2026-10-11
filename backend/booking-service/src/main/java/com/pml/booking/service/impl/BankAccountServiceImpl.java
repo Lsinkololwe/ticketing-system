@@ -5,6 +5,9 @@ import com.pml.booking.repository.BankAccountRepository;
 import com.pml.booking.service.BankAccountService;
 import com.pml.booking.web.graphql.dto.CreateBankAccountInput;
 import com.pml.booking.web.graphql.dto.UpdateBankAccountInput;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,6 +30,7 @@ public class BankAccountServiceImpl implements BankAccountService {
 
     private final BankAccountRepository bankAccountRepository;
     private final com.pml.booking.infrastructure.client.IdentityServiceClient identityServiceClient;
+    private final com.pml.booking.security.BankAccountAccess access;
 
     @Override
     public Flux<BankAccount> findByOrganizerId(String organizerId) {
@@ -38,6 +42,16 @@ public class BankAccountServiceImpl implements BankAccountService {
     public Mono<BankAccount> findById(String id) {
         log.debug("Finding bank account by ID: {}", id);
         return bankAccountRepository.findById(id);
+    }
+
+    @Override
+    public Flux<BankAccount> findByOrganizationId(String organizationId) {
+        return bankAccountRepository.findByOrganizationIdAndStatusNot(organizationId, "DELETED");
+    }
+
+    @Override
+    public Mono<BankAccount> findDefaultByOrganizationId(String organizationId) {
+        return bankAccountRepository.findByOrganizationIdAndIsDefaultTrueAndStatusNot(organizationId, "DELETED");
     }
 
     @Override
@@ -53,7 +67,7 @@ public class BankAccountServiceImpl implements BankAccountService {
         // The document is owned by an organization as well as by the person who entered it, and the
         // validator requires both. The client names neither: the organization is the one this
         // caller owns, resolved from identity (the source of truth for membership).
-        return owningOrganizationId(organizerId).flatMap(organizationId -> {
+        return owningOrganizationId(organizerId).flatMap(access::require).flatMap(organizationId -> {
             BankAccount bankAccount = BankAccount.builder()
                     .organizerId(organizerId)
                     .organizationId(organizationId)
@@ -73,7 +87,7 @@ public class BankAccountServiceImpl implements BankAccountService {
 
             // If this is set as default, unset other default accounts first
             if (bankAccount.isDefault()) {
-                return bankAccountRepository.findByOrganizerIdAndIsDefaultTrue(organizerId)
+                return bankAccountRepository.findByOrganizationIdAndIsDefaultTrueAndStatusNot(organizationId, "DELETED")
                         .flatMap(existing -> {
                             BankAccount updated = existing.toBuilder().isDefault(false).build();
                             return bankAccountRepository.save(updated);
@@ -106,7 +120,9 @@ public class BankAccountServiceImpl implements BankAccountService {
     public Mono<BankAccount> update(String id, UpdateBankAccountInput input) {
         log.info("Updating bank account: {}", id);
 
-        return bankAccountRepository.findById(id)
+        // The resolver's tenantReads.bankAccountForCaller(id) already proved ownership before
+        // calling this; defense in depth here too.
+        return bankAccountForCaller(id)
                 .flatMap(existing -> {
                     BankAccount.BankAccountBuilder builder = existing.toBuilder();
 
@@ -125,7 +141,9 @@ public class BankAccountServiceImpl implements BankAccountService {
                     if (input.branchCode() != null) {
                         builder.branchCode(input.branchCode());
                     }
-                    if (input.accountNumber() != null && !input.accountNumber().equals(existing.getAccountNumber())) {
+                    if (input.accountNumber() != null && !input.accountNumber().equals(existing.getAccountNumber())
+                            // A form re-submitted with the masked number it was shown is not a new destination.
+                            && !input.accountNumber().equals(com.pml.booking.security.AccountNumberMask.of(existing.getAccountNumber()))) {
                         // A changed number is a different destination; it is verified again.
                         builder.accountNumber(input.accountNumber())
                                 .isVerified(false)
@@ -148,18 +166,16 @@ public class BankAccountServiceImpl implements BankAccountService {
 
     @Override
     public Mono<BankAccount> setAsDefault(String id, String organizerId) {
-        log.info("Setting default bank account: {} for organizer: {}", id, organizerId);
+        log.info("Setting default bank account: {} by: {}", id, organizerId);
 
-        return bankAccountRepository.findByOrganizerIdAndIsDefaultTrue(organizerId)
-                .flatMap(existing -> {
-                    BankAccount updated = existing.toBuilder().isDefault(false).build();
-                    return bankAccountRepository.save(updated);
-                })
-                .then(bankAccountRepository.findById(id))
-                .flatMap(account -> {
-                    BankAccount updated = account.toBuilder().isDefault(true).build();
-                    return bankAccountRepository.save(updated);
-                })
+        // The resolver's tenantReads.bankAccountForCaller(id) already proved the account is the caller's
+        // organization's; the default is the organization's, not the person's.
+        return bankAccountForCaller(id)
+                .flatMap(account -> bankAccountRepository
+                        .findByOrganizationIdAndIsDefaultTrueAndStatusNot(account.getOrganizationId(), "DELETED")
+                        .filter(existing -> !existing.getId().equals(account.getId()))
+                        .flatMap(existing -> bankAccountRepository.save(existing.toBuilder().isDefault(false).build()))
+                        .then(bankAccountRepository.save(account.toBuilder().isDefault(true).build())))
                 .doOnSuccess(updated -> log.info("Default bank account set: {}", id));
     }
 
@@ -167,7 +183,9 @@ public class BankAccountServiceImpl implements BankAccountService {
     public Mono<Boolean> delete(String id) {
         log.info("Deleting bank account: {}", id);
 
-        return bankAccountRepository.findById(id)
+        // The resolver's tenantReads.bankAccountForCaller(id) already proved ownership before
+        // calling this; defense in depth here too.
+        return bankAccountForCaller(id)
                 .flatMap(existing -> {
                     BankAccount updated = existing.toBuilder()
                             .status("DELETED")
@@ -177,6 +195,20 @@ public class BankAccountServiceImpl implements BankAccountService {
                 .map(saved -> true)
                 .defaultIfEmpty(false)
                 .doOnSuccess(result -> log.info("Bank account {} deleted: {}", id, result));
+    }
+
+    /**
+     * The bank account the caller is entitled to act on, or {@code BANK_ACCOUNT_UNKNOWN}.
+     * Reached only after the resolver's own {@code tenantReads.bankAccountForCaller}; defense in
+     * depth, matching that method's shape for the same repository.
+     */
+    private Mono<BankAccount> bankAccountForCaller(String id) {
+        return CurrentTenantScope.get().flatMap(scope -> TenantGuard.locate(
+                scope,
+                bankAccountRepository.findById(id),
+                organizationIds -> bankAccountRepository.findByIdAndOrganizationIdIn(id, organizationIds),
+                ErrorCode.BANK_ACCOUNT_UNKNOWN,
+                "bank account " + id));
     }
 
 }

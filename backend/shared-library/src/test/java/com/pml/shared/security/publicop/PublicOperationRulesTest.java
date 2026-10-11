@@ -99,6 +99,26 @@ class PublicOperationRulesTest {
     }
 
     @Test
+    @DisplayName("more fragment definitions than the policy allows is refused as too large even when each is tiny")
+    void fragmentCountLimit() {
+        int tooMany = policy.maxFragments() + 1;
+        StringBuilder spreads = new StringBuilder();
+        StringBuilder definitions = new StringBuilder();
+        for (int i = 0; i < tooMany; i++) {
+            spreads.append("...F").append(i).append(' ');
+            definitions.append("fragment F").append(i).append(" on Event { id } ");
+        }
+        String query = "{ events { " + spreads + "} } " + definitions;
+
+        assertThat(policy.maxNodes()).as("the node counter cannot be what trips this").isGreaterThan(tooMany);
+        assertThat(judge(query)).isEqualTo(Verdict.TOO_LARGE);
+
+        String atTheLimit = query.replace("...F" + (tooMany - 1) + " ", "")
+                .replace("fragment F" + (tooMany - 1) + " on Event { id } ", "");
+        assertThat(judge(atTheLimit)).isEqualTo(Verdict.ALLOWED);
+    }
+
+    @Test
     @DisplayName("_entities is admitted only for the named entity type and leaf fields, over bare representations")
     void entities() {
         String query = "query($representations:[_Any!]!){_entities(representations:$representations){...on Organization{publishedEventCount}}}";

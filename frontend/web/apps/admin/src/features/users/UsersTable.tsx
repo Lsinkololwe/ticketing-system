@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Card, CardHeader, ConfirmDialog, DataTable, EmptyState, ErrorState, StatusPill, useSnackbar } from '@pml.tickets/shared/components/m3';
+import { Button, Card, CardHeader, DataTable, EmptyState, ErrorState, StatusPill, useSnackbar } from '@pml.tickets/shared/components/m3';
 import { useIdentityUsers, useUserAdminActions, ADMIN_ACCOUNT_STATUSES, ADMIN_USER_ROLES, type AdminAccountStatus, type AdminUserRecord, type AdminUserRole } from '@pml.tickets/shared/api/admin/modules/identity-admin';
 import { RowActions } from '@/components/console/RowActions';
 import { FilterBar, useStaff } from '@/components/console';
@@ -31,7 +31,6 @@ export function UsersTable() {
   const [quick, setQuick] = useState<AdminUserRecord | null>(null);
   const [form, setForm] = useState<'create' | 'admin' | null>(null);
   const [busy, setBusy] = useState(false);
-  const [syncAsk, setSyncAsk] = useState(false);
   const [lookup, setLookup] = useState(false);
   const search = useDebounced(query);
 
@@ -58,28 +57,14 @@ export function UsersTable() {
     }
   };
 
-  const startSync = async () => {
-    setBusy(true);
-    try {
-      await api.syncAllUsers();
-      setSyncAsk(false);
-      snack.show('Full sync from Keycloak started');
-    } catch (e) {
-      snack.show({ message: errorMessage(e), tone: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const filtered = query !== '' || role !== 'all' || status !== 'all';
   const canCreateAdmin = staff.can('createAdmin');
-  const canSync = staff.can('syncAll');
   const canManage = staff.can('users');
 
   return (
     <>
       <Card>
-        <CardHeader title="Users" subtitle="Customers, organizers and platform staff. Accounts are synced from Keycloak." />
+        <CardHeader title="Users" subtitle="Customers, organizers and platform staff." />
         <FilterBar
           searchLabel="Search name, email or phone"
           query={query}
@@ -133,26 +118,13 @@ export function UsersTable() {
                   Create admin
                 </Button>
               )}
-              {canSync ? (
-                <Button variant="outlined" size="sm" onClick={() => setSyncAsk(true)}>
-                  Sync all from Keycloak
-                </Button>
-              ) : (
-                <Button variant="outlined" size="sm" disabled title={needText('syncAll')}>
-                  Sync all from Keycloak
-                </Button>
-              )}
               <Button variant="filled" size="sm" icon="add" disabled={!canManage} onClick={() => setForm('create')}>
                 New user
               </Button>
             </>
           }
         />
-        {!canCreateAdmin || !canSync ? (
-          <p className="m3-muted">
-            {[!canCreateAdmin && needText('createAdmin'), !canSync && needText('syncAll')].filter(Boolean).join(' ')}
-          </p>
-        ) : null}
+        {!canCreateAdmin ? <p className="m3-muted">{needText('createAdmin')}</p> : null}
         <DataTable<AdminUserRecord>
           caption="Users"
           loading={list.loading && list.rows.length === 0}
@@ -186,15 +158,6 @@ export function UsersTable() {
       </Card>
 
       <UserFormDialog open={form !== null} mode={form ?? 'create'} loading={busy} onClose={() => setForm(null)} onSubmit={submitForm} />
-      <ConfirmDialog
-        open={syncAsk}
-        onClose={() => setSyncAsk(false)}
-        title="Sync all users from Keycloak?"
-        description="Reads every account in the identity provider and updates the local records. This can take a minute on the live system."
-        confirmLabel="Start full sync"
-        loading={busy}
-        onConfirm={startSync}
-      />
       <BuyerLookupDialog open={lookup} onClose={() => setLookup(false)} />
       <UserQuickView
         user={quick}

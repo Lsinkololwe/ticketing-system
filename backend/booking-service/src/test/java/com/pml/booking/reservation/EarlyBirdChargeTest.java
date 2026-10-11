@@ -110,7 +110,8 @@ class EarlyBirdChargeTest {
                 .thenReturn(Mono.just(new InventoryReservationResult(true, null, "GA")));
 
         ReservationServiceImpl service = new ReservationServiceImpl(
-                reservations, clock, catalog, mock(PurchaseService.class));
+                reservations, clock, catalog, mock(PurchaseService.class),
+                com.pml.shared.testing.IdempotencyPassthrough.guard(), new com.fasterxml.jackson.databind.ObjectMapper());
 
         return service.createReservation("buyer-1",
                         new ReserveTicketsInput("evt-1", List.of(new TicketSelectionInput("GA", 2)), null, "key-1", null, null, null),

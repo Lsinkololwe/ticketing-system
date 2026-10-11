@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * `TicketTier` with `availableQuantity` is only true if the SDL says so, and a gap there means
  * booking gets the number some other way that nobody has reviewed as part of the graph.</p>
  *
- * <h2>Three known deviations, allowlisted with reasons</h2>
+ * <h2>Two known deviations, allowlisted with reasons</h2>
  * Each is a design decision, not a defect, and each changes the client contract — so none is
  * silently "fixed" to match the registry. They are pinned here so a fourth cannot appear unnoticed,
  * and {@link #theAllowlistDoesNotOutliveItsEntries()} fails if one is resolved and left behind.
@@ -57,13 +57,6 @@ class FederationRegistryTest {
                     + "POST /api/internal/inventory/tiers/{id}/reserve. That is coherent — one "
                     + "owner, one counter, no distributed decrement — and it is what ships. §4 is "
                     + "the stale half here, not the code.",
-
-            "Organization/booking",
-            "§4 says booking extends Organization with bankAccounts, payoutRequests and "
-                    + "availableBalance. Booking exposes these as root queries taking an "
-                    + "organizationId instead. Building the extension would change how every "
-                    + "client fetches an organisation's money, so it is a product decision rather "
-                    + "than a schema tidy-up.",
 
             "Event/identity",
             "§4 says identity extends Event with accessGrants. No such field exists in identity's "

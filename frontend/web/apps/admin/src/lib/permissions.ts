@@ -10,7 +10,6 @@ const FIN: StaffRole[] = ['SUPER_ADMIN', 'ADMIN', 'FINANCE', 'FINANCE_LEAD'];
 
 export const ACTIONS = {
   createAdmin: SA,
-  syncAll: SA,
   deleteUser: SA,
   staffRoles: SA,
   forceComplete: SA,
@@ -42,7 +41,6 @@ const LABELS: Record<StaffRole, string> = {
 
 const WHAT: Record<ActionKey, string> = {
   createAdmin: 'create staff accounts',
-  syncAll: 'sync every account from Keycloak',
   deleteUser: 'delete users',
   staffRoles: 'change staff roles',
   forceComplete: 'force-complete transactions',

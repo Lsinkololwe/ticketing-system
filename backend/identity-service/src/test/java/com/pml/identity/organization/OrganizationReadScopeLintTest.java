@@ -92,17 +92,18 @@ class OrganizationReadScopeLintTest {
 
     @Test
     @DisplayName("ET-ORG-002 · ROLE_ORGANIZER opens neither read")
-    void organizerRoleOpensNothing() {
-        Matcher administrators = Pattern.compile(
-                        "PLATFORM_ADMINISTRATORS\\s*=\\s*Set\\.of\\(([^)]*)\\)", Pattern.DOTALL)
-                .matcher(transfers);
-        assertThat(administrators.find())
-                .as("PLATFORM_ADMINISTRATORS has moved or changed shape — re-point this lint")
-                .isTrue();
+    void organizerRoleOpensNothing() throws IOException {
+        assertThat(transfers)
+                .as("the platform-wide branch of the transfer read must go through the one named, audited path")
+                .contains("PlatformWideAccess.isPlatformWide(PlatformWideAccess.Reason.OWNERSHIP_TRANSFER_READ)")
+                .doesNotContain("ROLE_ORGANIZER")
+                .doesNotContain("ROLE_FINANCE");
 
-        assertThat(administrators.group(1))
+        String authorities = Files.readString(Path.of(
+                "../shared-library/src/main/java/com/pml/shared/security/tenancy/TenancyProperties.java"));
+        assertThat(authorities)
                 .as("""
-                    Every organizer holds ROLE_ORGANIZER, so admitting it here would open every \
+                    Every organizer holds ROLE_ORGANIZER, so admitting it as platform-wide would open every \
                     ownership transfer on the platform to every organizer. FINANCE is absent for a \
                     different reason: a transfer is a control change, not a money movement.""")
                 .contains("ROLE_ADMIN")

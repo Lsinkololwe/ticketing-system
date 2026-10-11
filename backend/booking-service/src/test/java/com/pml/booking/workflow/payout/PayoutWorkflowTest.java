@@ -352,7 +352,7 @@ class PayoutWorkflowTest {
     private PayoutWorkflow open(PayoutMethod method) {
         WorkflowClient.start(starter()::run, new Start(ESCROW));
         PayoutWorkflow payout = client.newWorkflowStub(PayoutWorkflow.class, WorkflowIds.payout(ESCROW));
-        payout.submit(new Submit(REQUEST, ORGANIZER, "event-1", ESCROW, BANK, BALANCE, "ZMW", method,
+        payout.submit(new Submit(REQUEST, ORGANIZER, "organization-1", "event-1", ESCROW, BANK, BALANCE, "ZMW", method,
                 null, null, null, ORGANIZER));
         return payout;
     }
