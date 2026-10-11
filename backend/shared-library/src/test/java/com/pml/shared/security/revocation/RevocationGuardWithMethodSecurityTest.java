@@ -65,7 +65,7 @@ class RevocationGuardWithMethodSecurityTest {
         RevocationGuardAspect aspect() {
             RevocationCheck check = (jti, sid, sub) -> Mono.just(DECISION.get());
             return new RevocationGuardAspect(new SensitiveOperationGuard(check, new RevocationProperties(),
-                    new RevocationMetrics(new SimpleMeterRegistry(), Clock.systemUTC())));
+                    new RevocationMetrics(new SimpleMeterRegistry(), Clock.systemUTC()), Clock.systemUTC()));
         }
     }
 

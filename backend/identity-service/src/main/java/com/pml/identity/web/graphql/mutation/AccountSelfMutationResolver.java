@@ -5,6 +5,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.model.User;
+import com.pml.identity.security.revocation.AccessRevocationService;
 import com.pml.identity.service.AccountLifecycleService;
 import com.pml.shared.security.SecurityContextUtils;
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
@@ -22,6 +23,7 @@ import reactor.core.publisher.Mono;
 public class AccountSelfMutationResolver {
 
     private final AccountLifecycleService lifecycle;
+    private final AccessRevocationService revocations;
 
     /** Asks for the account to be deleted after the grace period; cancellable until then. */
     @DgsMutation
@@ -43,6 +45,10 @@ public class AccountSelfMutationResolver {
     @PreAuthorize("isAuthenticated()")
     @FailClosedOnRevocation("account.revokeSession")
     public Mono<Boolean> revokeSession(@InputArgument String sessionId) {
-        return SecurityContextUtils.requireCurrentUserId().flatMap(subject -> lifecycle.revokeSession(subject, sessionId));
+        // Keycloak ending the session reaches the platform only through its event listener, so the
+        // revocation is also written here: the tokens of the ended session stop working at once.
+        return SecurityContextUtils.requireCurrentUserId().flatMap(subject -> lifecycle
+                .revokeSession(subject, sessionId)
+                .flatMap(ended -> revocations.revokeOwnSession(sessionId, subject).thenReturn(ended)));
     }
 }

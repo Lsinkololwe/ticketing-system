@@ -374,10 +374,19 @@ pml:
       # Tracks the realm's accessTokenLifespan (myticketzm-realm.json: 300) so a
       # revocation record outlives every token it revokes.
       access-token-lifespan: ${ACCESS_TOKEN_LIFESPAN:5m}
+      # Every Redis key lives exactly as long as the token it blocks can still be presented:
+      # a token revocation until that token's own exp plus skew, a session or user revocation
+      # for one lifespan plus skew. Keys carry a TTL so Redis holds only what can still matter.
       clock-skew: 60s
+      # The cache budget is well under the durable one, so a slow Redis hands over to MongoDB
+      # instead of adding latency; the platform refuses to start when the order is reversed.
       cache-timeout: 250ms
       durable-timeout: 2s
       require-eviction-safe-cache: true
+      # The completeness marker lapses unless the warmer renews it, and the warmer renews it
+      # well inside that window (at least twice per TTL).
+      cache-completeness-ttl: 10m
+      cache-warm-interval: 2m
 
 file-upload:
   presigned-url:

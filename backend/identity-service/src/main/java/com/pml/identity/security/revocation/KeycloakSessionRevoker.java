@@ -30,10 +30,18 @@ public class KeycloakSessionRevoker {
     public static final String REFRESH_TOKEN_ERROR = "REFRESH_TOKEN_ERROR";
     private static final Set<String> SESSION_EVENTS = Set.of(LOGOUT, REFRESH_TOKEN_ERROR);
 
+    /** The Keycloak event types that change what proves who the person is. */
+    private static final Set<String> CREDENTIAL_EVENTS = Set.of("UPDATE_PASSWORD", "UPDATE_TOTP", "REMOVE_TOTP");
+
     private final ObjectProvider<MongoRevocationStore> store;
 
     public KeycloakSessionRevoker(ObjectProvider<MongoRevocationStore> store) {
         this.store = store;
+    }
+
+    /** Whether the Keycloak event type is a password or second-factor change. */
+    public static boolean changesCredential(String eventType) {
+        return eventType != null && CREDENTIAL_EVENTS.contains(eventType);
     }
 
     /** Whether the Keycloak event type ends a session. */

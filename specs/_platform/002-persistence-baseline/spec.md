@@ -575,6 +575,7 @@ collection, so there is nothing to index (FINDINGS F-037).
 | `identity_team_invitations` | `{ organizationId: 1, status: 1 }` | compound | lookup by `organizationId`, `status` |
 | `identity_team_invitations` | `{ organizationId: 1 }` | single | lookup by `organizationId` |
 | `identity_token_revocations` | `{ expiresAt: 1 }` | TTL, `expireAfterSeconds: 0` | expires at `expiresAt` |
+| `identity_token_revocations` | `{ revokedAt: -1 }` | single | the administrator's revocation log, newest first |
 | `identity_user_devices` | `{ deviceToken: 1 }` | single | lookup by `deviceToken` |
 | `identity_user_devices` | `{ userId: 1 }` | single | lookup by `userId` |
 | `identity_verification_documents` | `{ organizationId: 1 }` | single | lookup by `organizationId` |

@@ -41,6 +41,7 @@ public class KeycloakSyncController {
     private final UserSyncProcess userSyncProcess;
     private final KeycloakProperties keycloak;
     private final KeycloakSessionRevoker sessionRevoker;
+    private final com.pml.identity.security.revocation.AccessRevocationService accessRevocation;
 
     /**
      * A Keycloak event notification.
@@ -62,6 +63,9 @@ public class KeycloakSyncController {
         }
         if (KeycloakSessionRevoker.endsSession(event.getEventType())) {
             return revokeSession(event);
+        }
+        if (KeycloakSessionRevoker.changesCredential(event.getEventType())) {
+            return revokeOtherSessions(event);
         }
         long timestamp = event.getTimestamp() == null ? 0L : event.getTimestamp();
         return UserSyncRules.kindOf(event.getEventType())
@@ -91,6 +95,25 @@ public class KeycloakSyncController {
         return sessionRevoker.revoke(event.getEventType(), event.getSid(), event.getRealm())
                 .map(written -> ResponseEntity.status(HttpStatus.ACCEPTED)
                         .body(SyncResponse.success(event.getUserId(), "REVOKED", "Session revoked")))
+                .onErrorResume(e -> {
+                    log.error("Keycloak {} for user {} could not be recorded as a revocation: {}",
+                            event.getEventType(), event.getUserId(), e.toString());
+                    return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(SyncResponse.error(event.getUserId(), "Revocation could not be recorded")));
+                });
+    }
+
+    /**
+     * A password or second-factor change cuts every other session of the person: whoever held the
+     * old credential is signed out, while the session that made the change, named by the event's
+     * {@code sid}, stays so the person is not signed out of the page they are on. A failed write
+     * answers {@code 503} so the listener retries.
+     */
+    private Mono<ResponseEntity<SyncResponse>> revokeOtherSessions(KeycloakEventDto event) {
+        return accessRevocation.cutOtherSessions(event.getUserId(), event.getSid(),
+                        com.pml.identity.security.revocation.RevocationTrigger.CREDENTIAL_CHANGE)
+                .map(ended -> ResponseEntity.status(HttpStatus.ACCEPTED)
+                        .body(SyncResponse.success(event.getUserId(), "REVOKED", "Other sessions revoked")))
                 .onErrorResume(e -> {
                     log.error("Keycloak {} for user {} could not be recorded as a revocation: {}",
                             event.getEventType(), event.getUserId(), e.toString());

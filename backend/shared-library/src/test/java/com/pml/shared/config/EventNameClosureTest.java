@@ -70,14 +70,12 @@ class EventNameClosureTest {
     }
 
     /**
-     * Three published names the closed event registry does not carry.
+     * Two published names the closed event registry does not carry.
      *
-     * <p>The registry is meant to be the complete list of cross-service messages. These three are
+     * <p>The registry is meant to be the complete list of cross-service messages. These two are
      * each a real cross-service message all the same:</p>
      *
      * <ul>
-     *   <li>{@code identity.TokenRevoked} — invalidates each service's local token cache. Without
-     *       it a revoked token stays usable until it expires.</li>
      *   <li>{@code identity.RolePermissionsChanged} — invalidates the permission cache. The
      *       registry carries {@code MemberRoleChanged} for the same purpose at member granularity,
      *       so this is the role-level sibling.</li>
@@ -87,10 +85,9 @@ class EventNameClosureTest {
      * <p>This set is frozen and may only shrink. Either the registry grows to hold these rows or
      * their publishers stop publishing them, and whichever it is, it is a decision about the closed
      * registry rather than something a test should quietly absorb. A <b>fourth</b> invented name
-     * fails here immediately, which is the property worth keeping while the three are settled.</p>
+     * fails here immediately, which is the property worth keeping while the two are settled.</p>
      */
     private static final Set<String> KNOWN_OUTSIDE_THE_REGISTRY = Set.of(
-            "identity.TokenRevoked",
             "identity.RolePermissionsChanged",
             "catalog.ReferenceDataChanged");
 

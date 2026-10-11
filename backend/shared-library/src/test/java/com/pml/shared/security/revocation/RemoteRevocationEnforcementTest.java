@@ -92,8 +92,8 @@ class RemoteRevocationEnforcementTest {
                 properties, metrics,
                 CircuitBreaker.ofDefaults("revocation-cache-" + UUID.randomUUID()),
                 TimeLimiter.ofDefaults());
-        requests = new RevocationRequestGuard(check, metrics);
-        sensitive = new SensitiveOperationGuard(check, properties, metrics);
+        requests = new RevocationRequestGuard(check, metrics, properties, Clock.systemUTC());
+        sensitive = new SensitiveOperationGuard(check, properties, metrics, Clock.systemUTC());
         token = Jwt.withTokenValue("t").header("alg", "RS256")
                 .claim("jti", "jti-" + UUID.randomUUID()).subject("user-" + UUID.randomUUID()).claim("sid", "sid-1")
                 .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(300)).build();
@@ -185,5 +185,64 @@ class RemoteRevocationEnforcementTest {
 
         assertThat(reached).isTrue();
         identity.verify(0, postRequestedFor(urlEqualTo(CHECK)));
+    }
+
+    private void presentExpiredToken() {
+        token = Jwt.withTokenValue("t").header("alg", "RS256")
+                .claim("jti", "jti-" + UUID.randomUUID()).subject("user-" + UUID.randomUUID()).claim("sid", "sid-1")
+                .issuedAt(Instant.now().minusSeconds(900)).expiresAt(Instant.now().minusSeconds(600)).build();
+    }
+
+    @Test
+    @DisplayName("an expired token is refused as unauthenticated before any store is asked")
+    void expiredTokenIsRefusedWithoutALookup() {
+        presentExpiredToken();
+        identitySays("ACTIVE");
+        redis.opsForValue().set("pml:probe", "1", Duration.ofSeconds(5)).block();
+        MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/graphql"));
+
+        assertThat(reachedHandler(exchange)).isFalse();
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(exchange.getResponse().getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
+                .contains("invalid_token").contains("expired");
+        assertThat(exchange.getResponse().getBodyAsString().block())
+                .contains("\"code\":\"ACTOR_NOT_AUTHENTICATED\"").contains("\"retryable\":false")
+                .doesNotContain("TOKEN_REVOKED");
+        identity.verify(0, postRequestedFor(urlEqualTo(CHECK)));
+    }
+
+    @Test
+    @DisplayName("a token inside its lifetime but past its exp by less than the skew is still admitted")
+    void toleranceBeforeExpiry() {
+        token = Jwt.withTokenValue("t").header("alg", "RS256")
+                .claim("jti", "jti-" + UUID.randomUUID()).subject("user-" + UUID.randomUUID())
+                .issuedAt(Instant.now().minusSeconds(400)).expiresAt(Instant.now().minusSeconds(5)).build();
+        identitySays("ACTIVE");
+
+        assertThat(reachedHandler(MockServerWebExchange.from(MockServerHttpRequest.post("/graphql")))).isTrue();
+    }
+
+    @Test
+    @DisplayName("a sensitive operation refuses an expired token without asking a store")
+    void sensitiveOperationRefusesExpiredToken() {
+        presentExpiredToken();
+        identitySays("ACTIVE");
+
+        assertThatThrownBy(() -> sensitive.assertNotRevoked("approvePayoutRequest").contextWrite(signedIn()).block())
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .extracting(error -> ((org.springframework.web.server.ResponseStatusException) error).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        identity.verify(0, postRequestedFor(urlEqualTo(CHECK)));
+    }
+
+    @Test
+    @DisplayName("a refusal never carries the store's own error text")
+    void refusalHidesTheStoreError() {
+        identity.stubFor(post(urlEqualTo(CHECK)).willReturn(aResponse().withStatus(500)
+                .withBody("MongoTimeoutException: connect to 10.1.2.3:27017 failed")));
+
+        assertThatThrownBy(() -> sensitive.assertNotRevoked("approvePayoutRequest").contextWrite(signedIn()).block())
+                .isInstanceOf(RevocationUnavailableException.class)
+                .satisfies(error -> assertThat(error.getMessage()).doesNotContain("Mongo").doesNotContain("10.1.2.3"));
     }
 }

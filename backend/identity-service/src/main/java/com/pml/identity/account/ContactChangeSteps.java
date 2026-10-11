@@ -9,6 +9,8 @@ import com.pml.identity.domain.enums.PendingKind;
 import com.pml.identity.domain.model.AccountEvent;
 import com.pml.identity.domain.model.Contact;
 import com.pml.identity.domain.model.User;
+import com.pml.identity.security.revocation.AccessCutter;
+import com.pml.identity.security.revocation.RevocationTrigger;
 import com.pml.identity.security.ContactCrypto;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
@@ -67,11 +69,12 @@ public class ContactChangeSteps {
     private final DeliveryOrchestrator delivery;
     private final IdentityContactProperties properties;
     private final Clock clock;
+    private final AccessCutter access;
 
     public ContactChangeSteps(ReactiveMongoTemplate template, TransactionalOperator transaction, Outbox outbox,
                               ProofLookup proofs, KeycloakAccountPort keycloak, KeycloakUserAdminPort sessions,
                               ContactCrypto crypto, DeliveryOrchestrator delivery,
-                              IdentityContactProperties properties, Clock clock) {
+                              IdentityContactProperties properties, Clock clock, AccessCutter access) {
         this.template = template;
         this.transaction = transaction;
         this.outbox = outbox;
@@ -82,6 +85,7 @@ public class ContactChangeSteps {
         this.delivery = delivery;
         this.properties = properties;
         this.clock = clock;
+        this.access = access;
     }
 
     // ---- 1 · the marker -------------------------------------------------------------------------------
@@ -208,11 +212,19 @@ public class ContactChangeSteps {
                                 : keycloak.setEmail(account.getKeycloakUserId(), null, false)));
     }
 
-    /** Ends the account's Keycloak sessions so every device signs in again with the contacts as they now are. */
+    /**
+     * Revokes the account's current sessions and ends them in Keycloak so every device signs in
+     * again with the contacts as they now are. Sessions, not the subject: the person signs in again
+     * at once, and a revocation of the subject would refuse that sign-in. The revocation goes
+     * first: ending the sessions stops new tokens, and only the revocation stops the ones already
+     * issued.
+     */
     public Mono<Void> endSessions(String accountId) {
         return template.findById(accountId, User.class)
                 .flatMap(account -> account.getKeycloakUserId() == null || account.getKeycloakUserId().isBlank()
-                        ? Mono.<Void>empty() : sessions.endSessions(null, account.getKeycloakUserId()));
+                        ? Mono.<Void>empty()
+                        : access.cutSessions(accountId, RevocationTrigger.CONTACT_CHANGED, null)
+                                .then(Mono.defer(() -> sessions.endSessions(null, account.getKeycloakUserId()))));
     }
 
     // ---- 4 · the switch ------------------------------------------------------------------------------

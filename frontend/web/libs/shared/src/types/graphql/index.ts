@@ -107,7 +107,7 @@ export type AccountSummary = {
   eventId: Scalars['String']['output'];
   eventTitle: Scalars['String']['output'];
   organization: Maybe<Organization>;
-  organizerId: Scalars['String']['output'];
+  organizerId: Maybe<Scalars['String']['output']>;
   status: EscrowAccountStatus;
   totalCommissions: Scalars['BigDecimal']['output'];
   totalDeposits: Scalars['BigDecimal']['output'];
@@ -1473,7 +1473,7 @@ export type EventEscrowAccount = {
   id: Scalars['ID']['output'];
   lockUntil: Maybe<Scalars['DateTime']['output']>;
   organization: Maybe<Organization>;
-  organizerId: Scalars['String']['output'];
+  organizerId: Maybe<Scalars['String']['output']>;
   payoutEligibleAt: Maybe<Scalars['DateTime']['output']>;
   pendingWithdrawals: Maybe<Scalars['BigDecimal']['output']>;
   status: EscrowAccountStatus;
@@ -2281,6 +2281,9 @@ export type Mutation = {
   revokeEventAccess: Maybe<EventAccessGrant>;
   revokeInvitation: Maybe<TeamInvitation>;
   revokeSession: Scalars['Boolean']['output'];
+  revokeSessionAccess: RevocationRecord;
+  revokeToken: RevocationRecord;
+  revokeUserAccess: RevocationRecord;
   seedChartOfAccounts: Scalars['Boolean']['output'];
   sendBulkEventPublishReminders: BulkReminderResponse;
   sendEventPublishReminder: Event;
@@ -2317,6 +2320,7 @@ export type Mutation = {
    * The roles set must include CUSTOMER.
    */
   setUserRoles: User;
+  signOutEverywhere: Scalars['Int']['output'];
   startBankVerification: BankAccount;
   startChargebackReview: ChargebackRecord;
   startReconciliation: ReconciliationRun;
@@ -3285,6 +3289,24 @@ export type MutationRevokeSessionArgs = {
 };
 
 
+export type MutationRevokeSessionAccessArgs = {
+  reason: Scalars['String']['input'];
+  sid: Scalars['String']['input'];
+};
+
+
+export type MutationRevokeTokenArgs = {
+  jti: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
+export type MutationRevokeUserAccessArgs = {
+  reason: Scalars['String']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+
 export type MutationSendBulkEventPublishRemindersArgs = {
   eventIds: Array<Scalars['ID']['input']>;
   triggeredBy: Scalars['String']['input'];
@@ -3397,11 +3419,6 @@ export type MutationSuspendOrganizationArgs = {
 export type MutationSuspendUserArgs = {
   id: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
-};
-
-
-export type MutationSyncUserFromKeycloakArgs = {
-  userId: Scalars['ID']['input'];
 };
 
 
@@ -4868,6 +4885,7 @@ export type Query = {
   __typename: 'Query';
   accountSummary: Maybe<AccountSummary>;
   activeEscalations: ApprovalEscalationOffsetPage;
+  activeRevocations: RevocationRecordOffsetPage;
   allowedStatusTransitions: Array<EventStatus>;
   approvalEscalation: Maybe<ApprovalEscalation>;
   approvalStats: ApprovalStats;
@@ -5176,6 +5194,12 @@ export type QueryAccountSummaryArgs = {
 
 export type QueryActiveEscalationsArgs = {
   pagination: InputMaybe<OffsetPaginationInput>;
+};
+
+
+export type QueryActiveRevocationsArgs = {
+  pagination: InputMaybe<OffsetPaginationInput>;
+  type: InputMaybe<RevocationType>;
 };
 
 
@@ -6918,6 +6942,41 @@ export type ResolveReconciliationItemInput = {
   externalId: Scalars['String']['input'];
   resolution: Scalars['String']['input'];
 };
+
+export type RevocationRecord = {
+  __typename: 'RevocationRecord';
+  expiresAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  reason: Scalars['String']['output'];
+  revokedAt: Scalars['DateTime']['output'];
+  revokedBy: Maybe<Scalars['String']['output']>;
+  trigger: Maybe<RevocationTrigger>;
+  type: RevocationType;
+  value: Scalars['String']['output'];
+};
+
+export type RevocationRecordOffsetPage = {
+  __typename: 'RevocationRecordOffsetPage';
+  content: Array<RevocationRecord>;
+  pageInfo: PageInfo;
+};
+
+export type RevocationTrigger =
+  | 'ACCOUNT_ERASED'
+  | 'ACCOUNT_SUSPENDED'
+  | 'ADMIN_REVOKE'
+  | 'CONTACT_CHANGED'
+  | 'CREDENTIAL_CHANGE'
+  | 'GRANT_REVOKED'
+  | 'LOGOUT'
+  | 'MEMBER_REMOVED'
+  | 'ORGANIZATION_SUSPENDED'
+  | 'SUSPECTED_COMPROMISE';
+
+export type RevocationType =
+  | 'SESSION'
+  | 'TOKEN'
+  | 'USER';
 
 export type RevokeEventAccessInput = {
   accessId: Scalars['ID']['input'];
@@ -9280,7 +9339,7 @@ export type EscrowOpsDetailQueryVariables = Exact<{
 }>;
 
 
-export type EscrowOpsDetailQuery = { __typename: 'Query', escrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, organization: { __typename: 'Organization', id: string, name: string } | null } | null };
+export type EscrowOpsDetailQuery = { __typename: 'Query', escrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, organization: { __typename: 'Organization', id: string, name: string } | null } | null };
 
 export type EscrowOpsTransactionsQueryVariables = Exact<{
   escrowAccountId: Scalars['String']['input'];
@@ -9435,7 +9494,7 @@ export type UpdateEscrowAccountStatusMutationVariables = Exact<{
 }>;
 
 
-export type UpdateEscrowAccountStatusMutation = { __typename: 'Mutation', updateEscrowAccountStatus: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, event: { __typename: 'Event', id: string, title: string } | null, organization: { __typename: 'Organization', id: string, name: string } | null } };
+export type UpdateEscrowAccountStatusMutation = { __typename: 'Mutation', updateEscrowAccountStatus: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, event: { __typename: 'Event', id: string, title: string } | null, organization: { __typename: 'Organization', id: string, name: string } | null } };
 
 export type FinancePaginationFieldsFragment = { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null };
 
@@ -9471,7 +9530,7 @@ export type RefundStatusCountQueryVariables = Exact<{
 
 export type RefundStatusCountQuery = { __typename: 'Query', refundRequests: { __typename: 'RefundRequestOffsetPage', pagination: { __typename: 'PaginationInfo', totalCount: number | null } } };
 
-export type EscrowListFieldsFragment = { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, event: { __typename: 'Event', id: string, title: string } | null, organization: { __typename: 'Organization', id: string, name: string } | null };
+export type EscrowListFieldsFragment = { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, event: { __typename: 'Event', id: string, title: string } | null, organization: { __typename: 'Organization', id: string, name: string } | null };
 
 export type AdminEscrowAccountsQueryVariables = Exact<{
   filter: InputMaybe<EscrowAccountFilterInput>;
@@ -9479,7 +9538,7 @@ export type AdminEscrowAccountsQueryVariables = Exact<{
 }>;
 
 
-export type AdminEscrowAccountsQuery = { __typename: 'Query', escrowAccounts: { __typename: 'EscrowAccountOffsetPage', data: Array<{ __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, event: { __typename: 'Event', id: string, title: string } | null, organization: { __typename: 'Organization', id: string, name: string } | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+export type AdminEscrowAccountsQuery = { __typename: 'Query', escrowAccounts: { __typename: 'EscrowAccountOffsetPage', data: Array<{ __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, event: { __typename: 'Event', id: string, title: string } | null, organization: { __typename: 'Organization', id: string, name: string } | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
 
 export type PayoutRecoveryFieldsFragment = { __typename: 'PayoutRequest', issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, stuckAt: string | null, reviewedAt: string | null, reviewNotes: string | null, retryCount: number | null, lastError: string | null };
 

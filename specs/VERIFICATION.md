@@ -250,6 +250,25 @@ tag disagrees — it found three disagreements on its first run, one of them in 
 
 ---
 
+### 2.7 · A test that rebuilds the production path proves the rebuild
+
+`MemberRemovalTest` seeded members and grants and then ran a helper that re-implemented "end the
+membership" inside the test. It stayed green while the real `endMembership` gained, and could have lost,
+the step that cuts the member's tokens. When a requirement is about what a production method does, the
+test calls that method — through the wired service or, for a full flow, the Spring context with real
+containers — and a helper that mirrors the logic is deleted rather than extended. The revocation
+triggers are proven that way: `AccessRevocationEndToEndTest` removes a member through
+`OrganizationMemberService` and suspends an organization through the GraphQL mutation, then asserts on a
+real Keycloak token.
+
+### 2.8 · A window that also covers future tokens is the wrong response to "the person must sign in again"
+
+A `USER` revocation refuses every token of a subject for a full window, including ones minted after it.
+That is right for a ban and wrong for a password change, where the person signs in again within seconds
+and would be refused for six minutes. The class: when a trigger is followed by an expected fresh sign-in,
+revoke the *existing sessions* (and keep the one making the change) rather than the subject. Found by
+asking, for each trigger, "what does the person do next, and does the revocation refuse it?".
+
 ## 3 · Traps to avoid, all of them fallen into
 
 **Do not overstate a finding's reach.** F-007 was first written as "unauthenticated". It was not —

@@ -18,7 +18,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 - The role below is resolved from the field's `@auth(requires: …)` directive when it has one, and from the resolver's `@PreAuthorize` when it does not. Catalog uses the directive, booking and identity use `@PreAuthorize`; neither source alone describes the platform.
 - **`AUTHENTICATED (endpoint floor only)` means neither check was found on the field.** It is not public: all three subgraphs carry `.pathMatchers("/graphql/**").authenticated()`, so a token is always required whatever a `# PUBLIC` comment in the schema says. It does mean *any* signed-in caller reaches it — a self-service `CUSTOMER` token included — which is where `event(id)` sat while it was returning other organizations' unpublished events (F-007).
 
-## Operations by required role (513 total)
+## Operations by required role (518 total)
 
 ### `@isEscrowOwner or ADMIN or FINANCE` — 3 operation(s)
 
@@ -340,7 +340,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `setMobileMoneyAccount` | `organizationId: ID!, input: SetMobileMoneyAccountInput!` |
 | identity | Mutation | `updatePayoutConfig` | `organizationId: ID!, input: UpdatePayoutConfigInput!` |
 
-### `ADMIN or SUPER_ADMIN` — 45 operation(s)
+### `ADMIN or SUPER_ADMIN` — 49 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -359,6 +359,9 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `rejectVerificationDocument` | `documentId: ID!, reason: String!` |
 | identity | Mutation | `removeUserRole` | `userId: ID!, role: UserType!` |
 | identity | Mutation | `requestOrganizationChanges` | `id: ID!, reason: String!` |
+| identity | Mutation | `revokeSessionAccess` | `sid: String!, reason: String!` |
+| identity | Mutation | `revokeToken` | `jti: String!, reason: String!` |
+| identity | Mutation | `revokeUserAccess` | `userId: ID!, reason: String!` |
 | identity | Mutation | `setOrganizationCommissionRate` | `organizationId: ID!, rate: Float!, reason: String` |
 | identity | Mutation | `setUserRoles` | `userId: ID!, roles: [UserType!]!` |
 | identity | Mutation | `suspendOrganization` | `id: ID!, reason: String!` |
@@ -368,6 +371,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `unsuspendUser` | `id: ID!` |
 | identity | Mutation | `updateOrganizationStatus` | `id: ID!, status: OrganizationStatus!` |
 | identity | Mutation | `updateUser` | `id: ID!, input: UpdateUserInput!` |
+| identity | Query | `activeRevocations` | `type: RevocationType, pagination: OffsetPaginationInput` |
 | identity | Query | `auditLogs` | `filter: AuditLogFilterInput, pagination: OffsetPaginationInput` |
 | identity | Query | `identityPendingCounts` | — |
 | identity | Query | `organizationApplications` | `status: OrganizationStatus, pagination: OffsetPaginationInput` |
@@ -390,7 +394,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Query | `usersByRole` | `role: UserType!, activeOnly: Boolean = true, pagination: OffsetPaginationInput` |
 | identity | Query | `verificationDocuments` | `organizationId: ID!, status: DocumentStatus` |
 
-### `AUTHENTICATED` — 127 operation(s)
+### `AUTHENTICATED` — 128 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -467,6 +471,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `revokeSession` | `sessionId: ID!` |
 | identity | Mutation | `setEventReminder` | `input: SetEventReminderInput!` |
 | identity | Mutation | `setPrimaryContact` | `input: SetPrimaryContactInput!` |
+| identity | Mutation | `signOutEverywhere` | — |
 | identity | Mutation | `submitOrganizationForReview` | `id: ID!` |
 | identity | Mutation | `suspendMember` | `memberId: ID!, reason: String` |
 | identity | Mutation | `unregisterDevice` | `deviceId: ID!` |

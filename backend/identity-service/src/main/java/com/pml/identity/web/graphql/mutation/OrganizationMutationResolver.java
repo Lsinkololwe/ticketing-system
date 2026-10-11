@@ -45,6 +45,7 @@ public class OrganizationMutationResolver {
     private final OrganizationOnboardingService onboardingService;
     private final OrganizationMemberService memberService;
     private final com.pml.identity.service.OrganizationAdminService adminService;
+    private final com.pml.identity.security.revocation.AccessRevocationService accessRevocation;
 
     /** Submission and the three review decisions run in the organization's workflow. */
     private final OrganizerOnboardingProcess onboardingProcess;
@@ -275,6 +276,10 @@ public class OrganizationMutationResolver {
                 .doOnNext(adminId -> log.info("Admin {} suspending organization: {} - Reason: {}", adminId, id, reason))
                 .flatMap(adminId -> organizationService.suspend(id, reason)
                         .flatMap(suspended -> adminService.auditSuspension(id, reason, adminId, true)
+                                // Every member's live tokens end with the suspension.
+                                .then(accessRevocation.cutOrganizationMembers(id,
+                                        com.pml.identity.security.revocation.RevocationTrigger.ORGANIZATION_SUSPENDED,
+                                        adminId))
                                 .thenReturn(suspended)));
     }
 

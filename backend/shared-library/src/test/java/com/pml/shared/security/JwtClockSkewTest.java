@@ -55,4 +55,14 @@ class JwtClockSkewTest {
                 .as("45s past exp exceeds the 30s skew ceiling")
                 .isInstanceOf(JwtException.class);
     }
+
+    @Test
+    @DisplayName("a token that states no expiry is refused, because nothing would ever bound its life")
+    void tokenWithoutExpiryIsRefused() {
+        String token = issuer.withoutExpiry(AUDIENCE);
+
+        assertThatThrownBy(() -> MultiIssuerJwtResolver.decoderFor(issuer.issuer(), java.util.List.of())
+                .decode(token).block())
+                .isInstanceOf(JwtException.class);
+    }
 }

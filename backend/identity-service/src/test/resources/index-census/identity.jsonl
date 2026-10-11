@@ -42,6 +42,7 @@
 {"collection": "identity_team_invitations", "key": {"organizationId": 1, "status": 1}, "unique": false, "sparse": false}
 {"collection": "identity_team_invitations", "key": {"organizationId": 1}, "unique": false, "sparse": false}
 {"collection": "identity_token_revocations", "key": {"expiresAt": 1}, "unique": false, "sparse": false, "expireAfterSeconds": 0}
+{"collection": "identity_token_revocations", "key": {"revokedAt": -1}, "unique": false, "sparse": false}
 {"collection": "identity_user_devices", "key": {"deviceToken": 1}, "unique": false, "sparse": false}
 {"collection": "identity_user_devices", "key": {"userId": 1}, "unique": false, "sparse": false}
 {"collection": "identity_users", "key": {"email": 1}, "unique": true, "sparse": false}

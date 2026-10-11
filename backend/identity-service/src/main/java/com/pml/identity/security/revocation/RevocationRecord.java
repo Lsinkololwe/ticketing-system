@@ -42,11 +42,14 @@ public class RevocationRecord {
     /** The raw claim value: the {@code jti}, {@code sid} or {@code sub}. */
     private String value;
 
-    /** Free text for the audit trail, e.g. {@code "logout"}, {@code "admin-revoke"}. */
+    /** At least 20 characters: the written reason of a person, or the trigger's description. */
     private String reason;
 
     /** Who performed the revocation — a user id, an admin id, or {@code "system"}. */
     private String revokedBy;
+
+    /** What caused the revocation; null on rows written before triggers were recorded. */
+    private RevocationTrigger trigger;
 
     private Instant revokedAt;
 

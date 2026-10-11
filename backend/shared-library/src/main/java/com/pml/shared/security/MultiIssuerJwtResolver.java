@@ -15,6 +15,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtIssuerReactiveAuthenticationManagerResolver;
@@ -74,7 +76,7 @@ public final class MultiIssuerJwtResolver {
      * default, so the issuer and timestamp checks are composed explicitly below instead of
      * reusing {@code JwtValidators.createDefaultWithIssuer}, which cannot be narrowed.
      */
-    private static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
+    private static final Duration CLOCK_SKEW = com.pml.shared.security.revocation.AccessTokenLifetime.TOLERANCE;
 
     /** How long a fetched JWK set is trusted when {@code keycloak.jwks-cache-ttl} is not set. */
     public static final Duration DEFAULT_JWKS_CACHE_TTL = Duration.ofMinutes(5);
@@ -251,6 +253,12 @@ public final class MultiIssuerJwtResolver {
         List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
         validators.add(new JwtIssuerValidator(issuer));
         validators.add(new JwtTimestampValidator(CLOCK_SKEW));
+        // The timestamp validator accepts a token that states no expiry. A token that never
+        // expires cannot be bounded by any revocation window, so it is refused outright.
+        validators.add(jwt -> jwt.getExpiresAt() != null
+                ? OAuth2TokenValidatorResult.success()
+                : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token",
+                        "The token states no expiry", null)));
         OAuth2TokenValidator<Jwt> audienceValidator = audienceValidator(expectedAudiences);
         if (audienceValidator != null) {
             validators.add(audienceValidator);

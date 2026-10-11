@@ -41,6 +41,8 @@ public class MongoRevocationStore implements DurableRevocationStore {
     /** Every reader uses {@code EXISTS}, so the cached value is informational only. */
     private static final String CACHE_MARKER = "revoked";
 
+    private static final int MAX_REASON = 500;
+
     private final RevocationRepository repository;
     private final ReactiveStringRedisTemplate cache;
     private final RevocationCacheTrust cacheTrust;
@@ -87,20 +89,58 @@ public class MongoRevocationStore implements DurableRevocationStore {
      */
     public Mono<RevocationRecord> revoke(RevocationType type, String value,
                                          String reason, String revokedBy) {
+        return write(type, value, RevocationTrigger.fromCode(reason), reason, revokedBy, null, false);
+    }
+
+    /**
+     * Records a revocation with its trigger.
+     *
+     * <p>A trigger that a person answers for ({@link RevocationTrigger#requiresWrittenReason()})
+     * must come with a written reason of at least {@link RevocationTrigger#MIN_WRITTEN_REASON}
+     * characters, and is refused otherwise. Every other trigger is a machine event whose reason
+     * is a short code; the stored reason is then the trigger's description followed by the
+     * code, so no record is ever stored with less than a sentence of explanation.</p>
+     *
+     * @param tokenExpiresAt the revoked token's {@code exp}, when known, so a single-token
+     *                       revocation is remembered only until that token would have expired
+     */
+    public Mono<RevocationRecord> revoke(RevocationType type, String value, RevocationTrigger trigger,
+                                         String reason, String revokedBy, Instant tokenExpiresAt) {
+        return write(type, value, trigger, reason, revokedBy, tokenExpiresAt, true);
+    }
+
+    /**
+     * @param enforceWrittenReason false only for the reason-code entry point, whose callers are
+     *                             services and web apps sending machine codes, never a person
+     */
+    private Mono<RevocationRecord> write(RevocationType type, String value, RevocationTrigger trigger,
+                                         String reason, String revokedBy, Instant tokenExpiresAt,
+                                         boolean enforceWrittenReason) {
         if (value == null || value.isBlank()) {
             return Mono.error(new IllegalArgumentException(
                     "Cannot revoke a blank " + type + " identifier"));
         }
+        String written = reason == null ? "" : reason.trim();
+        if (enforceWrittenReason && trigger.requiresWrittenReason()
+                && written.length() < RevocationTrigger.MIN_WRITTEN_REASON) {
+            return Mono.error(new IllegalArgumentException("A written reason of at least "
+                    + RevocationTrigger.MIN_WRITTEN_REASON + " characters is required"));
+        }
+        String stored = written.length() >= RevocationTrigger.MIN_WRITTEN_REASON
+                ? written
+                : trigger.description() + (written.isEmpty() ? "" : " (" + written + ")");
+        stored = stored.substring(0, Math.min(stored.length(), MAX_REASON));
 
         Instant now = clock.instant();
         RevocationRecord record = RevocationRecord.builder()
                 .id(type.documentId(value))
                 .type(type)
                 .value(value)
-                .reason(reason)
+                .reason(stored)
+                .trigger(trigger)
                 .revokedBy(revokedBy)
                 .revokedAt(now)
-                .expiresAt(now.plus(properties.recordTtl()))
+                .expiresAt(now.plus(properties.ttlFor(type, tokenExpiresAt, now)))
                 .build();
 
         return insertOnce(record, now)

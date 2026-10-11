@@ -1,6 +1,6 @@
 id: ET-IDN-003
 title: Token revocation — cutting a live session before its token expires
-status: in-progress
+status: implemented
 area: IDN
 service: identity-service
 subgraph: identity
@@ -8,7 +8,7 @@ owner: lazarous
 created: 2026-08-17
 priority: must
 wave: 1
-blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-IDN-001]
+blocked_by: [ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007]
 conformance: "OWASP ASVS 3.3 session termination · PDI Phase 5"
 sources:
   - specs/CONVENTIONS.md
@@ -23,39 +23,40 @@ persistence:
   indexes:
     - "identity_token_revocations {_id} unique  — _id is derived from type+value, so no second unique index is needed"
     - "identity_token_revocations {expiresAt} ttl 0"
-    - "identity_token_revocations {revokedAt} single  — not yet created; the admin revocation log (activeRevocations) is not built"
+    - "identity_token_revocations {revokedAt} single  — the administrator's revocation log (activeRevocations)"
   redis_keys:
-    - "pml:blacklist:{jti}              STRING  lifespan+skew  — authority identity_token_revocations"
+    - "pml:blacklist:{jti}              STRING  token exp+skew (max lifespan+skew)  — authority identity_token_revocations"
     - "pml:session:{sid}                STRING  lifespan+skew  — authority identity_token_revocations"
     - "pml:revoked:{sub}                STRING  lifespan+skew  — authority identity_token_revocations"
-    - "pml:revocation:cache-complete    STRING  10 min         — cache-completeness marker; absent means untrusted"
+    - "pml:revocation:cache-complete    STRING  10 min, renewed every 2 min  — cache-completeness marker; absent means untrusted"
 
 events:
   module: []   # a step within a service is a workflow activity (ET-PLT-015)
-  bus:
-    - identity.TokenRevoked        # v1 -> catalog, booking (local cache invalidation)
+  bus: []      # a revocation is the MongoDB record plus the shared Redis key; no domain event (amended 2026-10-11)
   consumes: []
-  topics:
-    - identity-events
+  topics: []
 
 graphql:
   schema: backend/identity-service/src/main/resources/graphql/schema.graphqls
   queries:
-    - "activeRevocations(type, page)      ADMIN @tag(admin)  RevocationPage!"
+    - "activeRevocations(type, pagination)  ADMIN @tag(admin)  RevocationRecordOffsetPage!"
+    - "mySessions                           authenticated      [AccountSession!]!   # the sessions list"
   mutations:
-    - "revokeToken(jti, reason)           ADMIN @tag(admin)  RevocationRecord!"
-    - "revokeSession(sid, reason)         ADMIN @tag(admin)  RevocationRecord!"
-    - "revokeUserAccess(userId, reason)   ADMIN @tag(admin)  RevocationRecord!"
-    - "signOutEverywhere                  authenticated      Boolean!"
-    - "signOutSession(sid)                authenticated      Boolean!"
+    - "revokeToken(jti, reason)             ADMIN @tag(admin)  RevocationRecord!"
+    - "revokeSessionAccess(sid, reason)     ADMIN @tag(admin)  RevocationRecord!"
+    - "revokeUserAccess(userId, reason)     ADMIN @tag(admin)  RevocationRecord!"
+    - "signOutEverywhere                    authenticated      Int!   # the caller's other sessions"
+    - "revokeSession(sessionId)             authenticated      Boolean!   # one of the caller's own sessions"
 
 errors:
   - TOKEN_REVOKED
   - REVOCATION_UNAVAILABLE
 
 internal_api:
-  - "POST /api/internal/revocations/check            durable check for an untrusted cache"
-  - "GET  /api/internal/revocations/since/{instant}  the re-warm feed"
+  - "POST   /api/internal/revocations/check            durable check for an untrusted cache"
+  - "POST   /api/internal/revocations                  one revocation by type and value"
+  - "POST   /api/internal/revocations/logout           a sign-out's token, session and user"
+  - "DELETE /api/internal/revocations/{type}/{value}   lifts one revocation"
 
 revocation_types:
   TOKEN:   "jti — one access token"
@@ -71,10 +72,8 @@ triggers:
   - ACCOUNT_ERASED
   - ADMIN_REVOKE
   - SUSPECTED_COMPROMISE
-  - CONTACT_CHANGE      # added 2026-10-04 (F-044)
+  - CONTACT_CHANGED     # added 2026-10-04 (F-044)
   - ACCOUNT_SUSPENDED   # added 2026-10-04, D-47
-  - ACCOUNT_MERGED      # added 2026-10-04
-  - BACK_CHANNEL_LOGOUT # added 2026-10-04
   # Keycloak LOGOUT / REFRESH_TOKEN_ERROR reach identity-service through the user-sync listener
   # (POST /api/internal/keycloak/sync/event, field `sid`) and are recorded as a SESSION revocation
   # with reason keycloak-logout / keycloak-refresh-token-error; no new trigger value.
@@ -86,14 +85,14 @@ eviction_policy:
   untrusted: ["any evicting policy (allkeys-*, volatile-*) with maxmemory set"]
 
 config:
-  identity.revocation.enabled: true
-  identity.revocation.access-token-lifespan: PT5M   # amended 2026-10-04 (was PT1H)
-  identity.revocation.clock-skew: PT60S
-  identity.revocation.cache-timeout: PT0.25S
-  identity.revocation.durable-timeout: PT2S
-  identity.revocation.require-eviction-safe-cache: true
-  identity.revocation.cache-completeness-ttl: PT10M
-  identity.revocation.cache-warm-interval: PT2M
+  pml.security.revocation.enabled: true
+  pml.security.revocation.access-token-lifespan: PT5M   # amended 2026-10-04 (was PT1H)
+  pml.security.revocation.clock-skew: PT60S
+  pml.security.revocation.cache-timeout: PT0.25S
+  pml.security.revocation.durable-timeout: PT2S          # must exceed cache-timeout
+  pml.security.revocation.require-eviction-safe-cache: true
+  pml.security.revocation.cache-completeness-ttl: PT10M  # at least twice cache-warm-interval
+  pml.security.revocation.cache-warm-interval: PT2M
 
 # ---- executable predicate: run verbatim by the verify stage ----
 verify:
@@ -107,5 +106,5 @@ risks:
   - "A USER revocation must cover tokens minted AFTER the revocation, which means Keycloak can still issue a valid token for a banned subject and the platform refuses it only at use. Until ET-IDN-002 disables the Keycloak user in the same operation, ban is enforced downstream rather than at the source."
   - "Fail-closed depends on the sensitive-operation list in §4 being complete. It is enumerated by hand across nine specs, and a money-moving mutation added later without the marking degrades silently to fail-open — the failure is invisible until someone tests it."
   - "The TTL index removes rows on MongoDB's own schedule, roughly once a minute and imprecisely. A USER revocation whose row is swept slightly early reopens access for the remainder of the skew window. The clock-skew margin absorbs this only if it exceeds the sweep imprecision."
-  - "identity.TokenRevoked is published to the bus and the payload carries a sub, a sid or a jti. A sub is a stable user identifier, so ET-PLT-008's rule that no personal data leaves the platform in an event payload needs an explicit decision on whether a pseudonymous subject id counts."
-  - "Each service re-warms the whole revocation set on an interval. At the target scale of ET-PLT-011 the set is small, but a mass revocation — suspending a large organization — produces a warm payload proportional to its membership, on an interval, in three services at once."
+  - "Identity re-warms the whole live revocation set on an interval. At the target scale of ET-PLT-011 the set is small, but a mass revocation — suspending a large organization — makes one reload proportional to its membership."
+  - "A USER revocation refuses every token of that subject for a full window, so revoking an event grant or removing a member signs the person out of every organization they belong to for up to six minutes. The alternative, cutting only the sessions that used the grant, needs the grant to be a claim on the token, which it is not."

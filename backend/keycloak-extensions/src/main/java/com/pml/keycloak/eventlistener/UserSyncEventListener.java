@@ -33,7 +33,8 @@ public class UserSyncEventListener implements EventListenerProvider {
 
     static final Set<EventType> SYNC_EVENTS = Set.of(EventType.LOGIN, EventType.DELETE_ACCOUNT,
             EventType.UPDATE_PROFILE, EventType.UPDATE_EMAIL, EventType.VERIFY_EMAIL,
-            EventType.LOGOUT, EventType.REFRESH_TOKEN_ERROR);
+            EventType.LOGOUT, EventType.REFRESH_TOKEN_ERROR,
+            EventType.UPDATE_PASSWORD, EventType.UPDATE_TOTP, EventType.REMOVE_TOTP);
 
     /**
      * Events that end an SSO session. They are forwarded with the session id ({@code sid}) so
@@ -41,6 +42,14 @@ public class UserSyncEventListener implements EventListenerProvider {
      * session id they carry nothing to revoke and are dropped.
      */
     static final Set<EventType> SESSION_ENDING = Set.of(EventType.LOGOUT, EventType.REFRESH_TOKEN_ERROR);
+
+    /**
+     * Events that change what proves who the person is. They are forwarded with the session id of
+     * the session that made the change, so identity-service can cut every other session and keep
+     * that one, which is the person doing the change.
+     */
+    static final Set<EventType> CREDENTIAL_CHANGES =
+            Set.of(EventType.UPDATE_PASSWORD, EventType.UPDATE_TOTP, EventType.REMOVE_TOTP);
 
     private final KeycloakSession session;
     private final ContactOtpClient client;
@@ -71,7 +80,8 @@ public class UserSyncEventListener implements EventListenerProvider {
                 return;
             }
             boolean sessionEnding = SESSION_ENDING.contains(event.getType());
-            String sid = sessionEnding ? event.getSessionId() : null;
+            String sid = sessionEnding || CREDENTIAL_CHANGES.contains(event.getType())
+                    ? event.getSessionId() : null;
             if (sessionEnding && (sid == null || sid.isBlank())) {
                 return;
             }

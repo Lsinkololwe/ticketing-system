@@ -51,7 +51,9 @@ class OrganizationSettingsMutationTest {
         organizations = mock(OrganizationService.class);
         members = mock(OrganizationMemberService.class);
         resolver = new OrganizationMutationResolver(organizations, mock(OrganizationOnboardingService.class), members,
-                mock(com.pml.identity.service.OrganizationAdminService.class), mock(OrganizerOnboardingProcess.class));
+                mock(com.pml.identity.service.OrganizationAdminService.class),
+                mock(com.pml.identity.security.revocation.AccessRevocationService.class),
+                mock(OrganizerOnboardingProcess.class));
         Organization organization = new Organization();
         organization.setId(ORG);
         organization.setSettings(new OrganizationSettings());

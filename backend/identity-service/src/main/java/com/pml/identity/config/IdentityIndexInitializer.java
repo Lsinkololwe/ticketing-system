@@ -388,6 +388,7 @@ public class IdentityIndexInitializer {
 
                 // identity_token_revocations
                 IndexSpec.on(IdentityCollections.TOKEN_REVOCATIONS, "expiresAt").asc("expiresAt").expireAfter(Duration.ofSeconds(0)).build(),
+                IndexSpec.on(IdentityCollections.TOKEN_REVOCATIONS, "revokedAt").desc("revokedAt").build(),
 
                 // identity_user_devices
                 IndexSpec.on(IdentityCollections.USER_DEVICES, "deviceToken").asc("deviceToken").build(),

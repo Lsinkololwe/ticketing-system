@@ -142,8 +142,10 @@ public class RevocationAutoConfiguration {
     @ConditionalOnBean(RevocationCheck.class)
     @ConditionalOnMissingBean
     public RevocationRequestGuard revocationRequestGuard(RevocationCheck revocationCheck,
-                                                         RevocationMetrics metrics) {
-        return new RevocationRequestGuard(revocationCheck, metrics);
+                                                         RevocationMetrics metrics,
+                                                         RevocationProperties properties,
+                                                         Clock clock) {
+        return new RevocationRequestGuard(revocationCheck, metrics, properties, clock);
     }
 
     @Bean
@@ -151,8 +153,9 @@ public class RevocationAutoConfiguration {
     @ConditionalOnMissingBean
     public SensitiveOperationGuard sensitiveOperationGuard(RevocationCheck revocationCheck,
                                                            RevocationProperties properties,
-                                                           RevocationMetrics metrics) {
-        return new SensitiveOperationGuard(revocationCheck, properties, metrics);
+                                                           RevocationMetrics metrics,
+                                                           Clock clock) {
+        return new SensitiveOperationGuard(revocationCheck, properties, metrics, clock);
     }
 
     @Bean

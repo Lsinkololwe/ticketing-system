@@ -176,7 +176,7 @@ IF an audit write fails, THEN THE SYSTEM SHALL complete the action and raise an 
 | `AUDIT_TRAIL_EXPORTED` | — | **yes** | this spec R5 |
 | `USER_SUSPENDED` | user | **yes** | [ET-IDN-002](../../identity/002-keycloak-user-sync/) |
 | `CONTACT_CHANGED` | account | no | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R5 — replaces `PHONE_NUMBER_CHANGED`; records contact type and masked values only |
-| `ACCOUNT_MERGED` | account | **yes** | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R6 — names both ids |
+| `ACCESS_REVOKED` | account or token | **yes** | [ET-IDN-003](../../identity/003-token-revocation/) R5 — written only when a platform administrator revokes by hand; automatic triggers and a person's own sign-out are not audited here |
 | `ACCOUNT_DELETED` | account | no | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R7 — the tombstone step of an erasure |
 | `ACCOUNT_ADOPTED` | account | no | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R4 — a Keycloak user adopted into an account |
 | `ACCOUNT_REPAIRED` | account | no | [ET-IDN-004](../../identity/004-accounts-and-contacts/) R4 — a security heal (`enabled`, roles) of drift class D4/D5 |
@@ -223,7 +223,7 @@ IF an audit write fails, THEN THE SYSTEM SHALL complete the action and raise an 
 | `BULK_EVENT_APPROVAL` | events | **yes** | [ET-ADM-001](../../admin/001-approvals-workbench/) R6 |
 | `ALERT_ACKNOWLEDGED` | alert | no | [ET-ADM-005](../../admin/005-observability-and-health/) R8 |
 
-**Fifty actions as first written, plus the identity actions added 2026-10-04 (F-044): `PHONE_NUMBER_CHANGED` is replaced by `CONTACT_CHANGED`, and `ACCOUNT_MERGED`, `ACCOUNT_DELETED`, `ACCOUNT_ADOPTED`, `ACCOUNT_REPAIRED`, `SIGN_IN_REFUSED`, `STAFF_SIGNED_IN` are added (56 in all).** Nothing else is audited.
+**Fifty actions as first written, plus the identity actions added 2026-10-04 (F-044): `PHONE_NUMBER_CHANGED` is replaced by `CONTACT_CHANGED`, and `ACCESS_REVOKED` (an administrator's manual revocation), `ACCOUNT_DELETED`, `ACCOUNT_ADOPTED`, `ACCOUNT_REPAIRED`, `SIGN_IN_REFUSED`, `STAFF_SIGNED_IN` are added (56 in all). `ACCOUNT_MERGED` is not in the registry: accounts are not merged (F-049).** Nothing else is audited.
 
 **No personal data in audit rows or in ids (D-46).** `subjectId` is the account id; `previousValue` and `newValue` for contact actions hold masked values; the audit write never receives a raw contact, a code, a proof or a login handle.
 

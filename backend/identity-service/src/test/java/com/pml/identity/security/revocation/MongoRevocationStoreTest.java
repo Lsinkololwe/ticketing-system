@@ -121,7 +121,8 @@ class MongoRevocationStoreTest {
         clock.advance(Duration.ofMinutes(10)); // past the 5-minute TTL + 60s skew
         RevocationRecord second = store.revoke(RevocationType.USER, "sub-3", "second cause", "admin-1").block();
 
-        assertThat(second.getReason()).isEqualTo("second cause");
+        assertThat(second.getReason()).as("a short machine reason is stored with its explanation")
+                .contains("second cause").hasSizeGreaterThanOrEqualTo(20);
         assertThat(mongo.count(new Query(), RevocationRecord.class).block()).isEqualTo(1);
     }
 }

@@ -5,6 +5,8 @@ import com.pml.identity.security.IdentityTenantReads;
 import com.pml.identity.web.graphql.dto.organization.BulkEventAccessGrantInput;
 import com.pml.identity.domain.model.EventAccessGrant;
 import com.pml.identity.domain.valueobject.EventRole;
+import com.pml.identity.security.revocation.AccessRevocationService;
+import com.pml.identity.security.revocation.RevocationTrigger;
 import com.pml.identity.service.EventAccessService;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.PermissionResolutionService;
@@ -39,6 +41,7 @@ public class EventAccessMutationResolver {
     private final IdentityTenantReads reads;
     private final OrganizationMemberService memberService;
     private final PermissionResolutionService permissions;
+    private final AccessRevocationService accessRevocation;
 
     /**
      * Grant event access to a user.
@@ -128,6 +131,11 @@ public class EventAccessMutationResolver {
                 .doOnNext(userId -> log.info("User {} revoking event access: {} - Reason: {}", userId, accessId, reason))
                 .flatMap(userId -> reads.grantForCaller(accessId)
                         .flatMap(grant -> memberService.requirePermission(userId, grant.getOrganizationId(), Permission.EVENT_ACCESS_GRANT)
-                                .then(Mono.defer(() -> eventAccessService.revoke(accessId, reason, userId)))));
+                                .then(Mono.defer(() -> eventAccessService.revoke(accessId, reason, userId)))
+                                // The grant is what a scanner or editor acts through; their live
+                                // tokens must stop working with it, not at their expiry.
+                                .flatMap(revoked -> accessRevocation
+                                        .cutAccount(revoked.getUserId(), RevocationTrigger.GRANT_REVOKED, userId)
+                                        .thenReturn(revoked))));
     }
 }

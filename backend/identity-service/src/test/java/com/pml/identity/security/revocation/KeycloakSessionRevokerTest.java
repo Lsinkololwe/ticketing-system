@@ -97,7 +97,8 @@ class KeycloakSessionRevokerTest {
         assertThat(record).isNotNull();
         assertThat(record.getType()).isEqualTo(RevocationType.SESSION);
         assertThat(record.getValue()).isEqualTo("sid-A");
-        assertThat(record.getReason()).isEqualTo("keycloak-logout");
+        assertThat(record.getReason()).contains("keycloak-logout").hasSizeGreaterThanOrEqualTo(20);
+        assertThat(record.getTrigger()).isEqualTo(RevocationTrigger.LOGOUT);
         assertThat(record.getRevokedBy()).isEqualTo("keycloak:myticketzm-admin");
         assertThat(record.getExpiresAt()).isAfter(record.getRevokedAt());
 

@@ -159,6 +159,18 @@ public final class StubIssuer implements AutoCloseable {
         return sign(signingKey, claims(issuer(), audience, Instant.now().minus(amount)));
     }
 
+    /** Correctly signed by this realm but stating no expiry at all, so nothing bounds how long it lives. */
+    public String withoutExpiry(String audience) {
+        JWTClaimsSet base = claims(issuer(), audience, Instant.now().plus(Duration.ofMinutes(30)));
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder();
+        base.getClaims().forEach((name, value) -> {
+            if (!"exp".equals(name)) {
+                builder.claim(name, value);
+            }
+        });
+        return sign(signingKey, builder.build());
+    }
+
     /** Correctly signed and unexpired — for a different client entirely. */
     public String wrongAudience(String audience) {
         return sign(signingKey, claims(issuer(), audience, Instant.now().plus(Duration.ofMinutes(30))));

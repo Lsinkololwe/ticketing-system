@@ -104,6 +104,7 @@ persistence:
     - "identity_user_devices {deviceToken} unique"
     - "identity_token_revocations {type,value} unique"
     - "identity_token_revocations {expiresAt} ttl 0"
+    - "identity_token_revocations {revokedAt} single"
     - "booking_tier_inventory {tierId} unique"
     - "booking_reservations {expiresAt} ttl 0"
     - "booking_payment_intents {idempotencyKey} unique"

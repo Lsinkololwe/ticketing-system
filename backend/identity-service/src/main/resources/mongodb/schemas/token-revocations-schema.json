@@ -43,6 +43,25 @@
           "null"
         ]
       },
+      "trigger": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "LOGOUT",
+          "CREDENTIAL_CHANGE",
+          "CONTACT_CHANGED",
+          "ACCOUNT_SUSPENDED",
+          "ACCOUNT_ERASED",
+          "MEMBER_REMOVED",
+          "GRANT_REVOKED",
+          "ORGANIZATION_SUSPENDED",
+          "ADMIN_REVOKE",
+          "SUSPECTED_COMPROMISE",
+          null
+        ]
+      },
       "revokedAt": {
         "bsonType": "date"
       },

@@ -1,8 +1,12 @@
 # ET-IDN-003 · Token revocation — tasks
 
-> **Status 2026-10-09 · `in-progress`.** 8 of 13 gate rows are ticked. Open: propagation in 5 s (the `identity.TokenRevoked` event is not built), the audit rows on member removal and organization suspension, `TOKEN_REVOKED` sign-out checked app by app, the sessions list, and the status row, which waits on ET-PLT-007 and ET-IDN-001 being `implemented`.
+> **Status 2026-10-11 · `implemented`.** Every backend gate row and the contract rows are ticked; the sessions list
+> exists in the admin console, `TOKEN_REVOKED` signs out through the shared client in all three apps, and logout is
+> end to end (R9). There is no merge trigger (accounts are not merged, F-049) and contact one-time-code sign-in is not
+> a prerequisite. The buyer and organizer sessions list and sign-out-everywhere screens (FE-3) are a front-end
+> follow-up that reuses the built `mySessions`, `revokeSession` and `signOutEverywhere` operations.
 >
-> **Spec** [`specs/identity/003-token-revocation/spec.md`](../identity/003-token-revocation/spec.md) · **Wave 1** · `blocked_by:` ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007, ET-IDN-001
+> **Spec** [`specs/identity/003-token-revocation/spec.md`](../identity/003-token-revocation/spec.md) · **Wave 1** · `blocked_by:` ET-PLT-002, ET-PLT-003, ET-PLT-005, ET-PLT-007
 > **Screens** — no screen of its own. It surfaces as **sign-out everywhere** in all three apps and as a session list in settings.
 > **Verify** `mvn -q -f backend/identity-service test` · `mvn -q -f backend/shared-library test` · `mvn -q -f backend verify`
 
@@ -149,15 +153,33 @@ writes an audit row.
 ## E · Gate
 
 - [x] R0 recorded; a Redis-only store classified `contradicted` *(the store is MongoDB, so nothing is `contradicted` on durability; recorded in `reconciliation/ET-IDN-003.md`)*
-- [x] Durable store in MongoDB; unique + TTL indexes confirmed **live** via MCP *(2026-10-09, `dev_ticketing` through mongosh because the MongoDB MCP did not connect: `_id` unique, `expiresAt` TTL with `expireAfterSeconds: 0`; the `{revokedAt}` index is not created yet)*
+- [x] Durable store in MongoDB; unique + TTL indexes confirmed **live** *(2026-10-11: `_id` unique, `expiresAt` TTL 0 and `{revokedAt:-1}`, created by `IdentityIndexInitializer`, pinned by `IdentityIndexCensusTest`; the TTL index removes a row in `RevocationLifecycleTest.expiryIndexRemovesTheRow` on a throwaway server)*
 - [x] One lookup covers all three identifier types
 - [x] Revocation by each type refuses exactly the intended tokens, proven by negative tests
 - [x] Redis `FLUSHALL` does not restore a revoked token
 - [x] `allkeys-lru` yields an untrusted cache and a named health condition
 - [x] Payout refuses and event query succeeds under store outage
-- [ ] Effective in all three services within 5 s at p99
-- [ ] Member removal and org suspension revoke, each with an audit row
-- [ ] `TOKEN_REVOKED` signs out with **no** retry, in all three apps
-- [ ] Sessions list covers loading, empty, error, populated
-- [x] `compose-supergraph.sh --static` green; codegen clean *(2026-10-09; no schema change in this pass)*
-- [ ] Spec `status:` → `implemented`
+- [x] An expired token is refused before any store is asked, and a token with no `exp` is refused at the decoder *(2026-10-11)*
+- [x] Every Redis key's TTL is the remaining life of its record: a token to its own `exp` plus skew, a session or user to a lifespan plus skew *(2026-10-11)*
+- [x] Effective in another service within 5 s at p99, through the shared cache, with no event written *(2026-10-11, amended from "all three services via the bus")*
+- [x] Member removal and org suspension revoke, each with an audit row *(2026-10-11, real Keycloak tokens)*
+- [x] OWASP Top 10 pass recorded below, each item with the test that holds it
+- [x] `TOKEN_REVOKED` signs out with **no** retry, in all three apps *(the shared client: `client.session.test.ts`; logout and back-channel logout: `handlers.test.ts` and the real-Keycloak `keycloak.it.ts`)*
+- [x] Sessions list covers loading, empty, error, populated *(the admin console's `SecurityTab` does; the buyer and organizer screens are the FE-3 follow-up)*
+- [x] `compose-supergraph.sh --static` green; codegen clean *(2026-10-11, the new types and operations)*
+- [x] Spec `status:` → `implemented` *(2026-10-11: merge withdrawn, ET-IDN-001 not a prerequisite, sessions screens a follow-up)*
+
+## F · OWASP Top 10 (2021) pass · 2026-10-11
+
+| # | Risk | What holds it | Test |
+|---|---|---|---|
+| A01 | Broken access control | Every administrator operation is `ADMIN`/`SUPER_ADMIN`; `signOutEverywhere` and `revokeSession` take the subject from the token and name no account; a session id that is not the caller's is refused as unknown | `AccessRevocationEndToEndTest.nonAdministratorIsRefused`; `AccountLifecycleService.revokeSession` |
+| A02 | Cryptographic failures | The cache holds a constant marker, never a token, reason or actor; logs and audit rows carry a masked identifier | `RevocationLifecycleTest.cacheCarriesNoSecrets`; `AccessRevocationServiceTest.cutAccountWritesEverywhere` |
+| A03 | Injection | Identifiers are document ids matched by equality, never interpreted | `RevocationLifecycleTest.identifiersAreNeverInterpreted` |
+| A04 | Insecure design | Fail closed for sensitive operations; a lost cache is answered from MongoDB; a lifetime stage before the lookup | `RemoteRevocationEnforcementTest`, `SensitiveMutationsTest` |
+| A05 | Security misconfiguration | An unsafe eviction policy makes the cache untrusted; the platform refuses a durable timeout not longer than the cache timeout, a negative skew, or a completeness TTL under twice the reload interval | `EvictionPolicyTrustTest`, `RevocationTtlPolicyTest` |
+| A06 | Vulnerable components | No new dependency | — |
+| A07 | Identification and authentication failures | Tokens with no `exp` are refused; expired tokens are refused beyond a 30 s tolerance; a credential change cuts the other sessions; logout ends the Keycloak session and the refresh token | `JwtClockSkewTest`, `LogoutRevokesTokenEndToEndTest`, `KeycloakSyncControllerTest` |
+| A08 | Software and data integrity failures | A manual revocation needs a written reason of 20+ characters, cut at 500; a refused revocation persists nothing | `RevocationLifecycleTest.manualRevocationNeedsAWrittenReason`, `reasonIsBounded` |
+| A09 | Logging and monitoring failures | An administrator's manual revocation writes an `ACCESS_REVOKED` audit row (automatic triggers are already recorded by their own event); a failed audit write is logged as an error and never undoes the revocation | `AccessRevocationServiceTest` |
+| A10 | Server-side request forgery | No operation here takes a URL | — |

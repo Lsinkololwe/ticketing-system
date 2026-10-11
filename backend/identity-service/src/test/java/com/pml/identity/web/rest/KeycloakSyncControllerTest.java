@@ -1,7 +1,9 @@
 package com.pml.identity.web.rest;
 
 import com.pml.identity.config.KeycloakProperties;
+import com.pml.identity.security.revocation.AccessRevocationService;
 import com.pml.identity.security.revocation.KeycloakSessionRevoker;
+import com.pml.identity.security.revocation.RevocationTrigger;
 import com.pml.identity.workflow.usersync.UserSyncProcess;
 import com.pml.identity.workflow.usersync.UserSyncWorkflow.Change;
 import com.pml.identity.workflow.usersync.UserSyncWorkflow.Kind;
@@ -37,6 +39,7 @@ class KeycloakSyncControllerTest {
 
     private UserSyncProcess process;
     private KeycloakSessionRevoker revoker;
+    private AccessRevocationService access;
     private WebTestClient client;
 
     @BeforeEach
@@ -45,8 +48,10 @@ class KeycloakSyncControllerTest {
         when(process.accept(any(), any())).thenReturn(Mono.empty());
         revoker = Mockito.mock(KeycloakSessionRevoker.class);
         when(revoker.revoke(any(), any(), any())).thenReturn(Mono.just(1));
+        access = Mockito.mock(AccessRevocationService.class);
+        when(access.cutOtherSessions(any(), any(), any())).thenReturn(Mono.just(2L));
         client = WebTestClient.bindToController(
-                new KeycloakSyncController(process, new KeycloakProperties(), revoker))
+                new KeycloakSyncController(process, new KeycloakProperties(), revoker, access))
                 .build();
     }
 
@@ -165,5 +170,28 @@ class KeycloakSyncControllerTest {
                 assertThat(method.getAnnotation(PreAuthorize.class)).as(method.getName()).isNotNull();
             }
         }
+    }
+
+    @Test
+    @DisplayName("a password change cuts the person's other sessions and keeps the one that made it")
+    void passwordChangeCutsOtherSessions() {
+        client.post().uri("/api/internal/keycloak/sync/event").header("Content-Type", "application/json")
+                .bodyValue("{\"eventType\":\"UPDATE_PASSWORD\",\"userId\":\"kc-1\",\"realm\":\"myticketzm-admin\","
+                        + "\"sid\":\"sid-keep\"}")
+                .exchange().expectStatus().isAccepted().expectBody().jsonPath("$.action").isEqualTo("REVOKED");
+
+        verify(access).cutOtherSessions("kc-1", "sid-keep", RevocationTrigger.CREDENTIAL_CHANGE);
+        verify(process, never()).accept(any(), any());
+    }
+
+    @Test
+    @DisplayName("a second-factor change is a credential change too, and a failed write answers 503 so the listener retries")
+    void credentialChangeRetriesOnFailure() {
+        when(access.cutOtherSessions(any(), any(), any()))
+                .thenReturn(Mono.error(new IllegalStateException("mongo down")));
+
+        client.post().uri("/api/internal/keycloak/sync/event").header("Content-Type", "application/json")
+                .bodyValue("{\"eventType\":\"REMOVE_TOTP\",\"userId\":\"kc-1\"}")
+                .exchange().expectStatus().isEqualTo(503);
     }
 }

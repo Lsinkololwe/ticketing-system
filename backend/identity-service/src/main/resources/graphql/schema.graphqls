@@ -1481,6 +1481,44 @@ type AccountSession {
     current: Boolean!               # The session making this request
 }
 
+# What a revocation covers: one token (jti), one SSO session (sid) or every token of a user (sub)
+enum RevocationType {
+    TOKEN
+    SESSION
+    USER
+}
+
+# Why access was cut
+enum RevocationTrigger {
+    LOGOUT
+    CREDENTIAL_CHANGE
+    CONTACT_CHANGED
+    ACCOUNT_SUSPENDED
+    ACCOUNT_ERASED
+    MEMBER_REMOVED
+    GRANT_REVOKED
+    ORGANIZATION_SUSPENDED
+    ADMIN_REVOKE
+    SUSPECTED_COMPROMISE
+}
+
+# One revocation: the identifier is never the token itself
+type RevocationRecord @tag(name: "admin") {
+    id: ID!
+    type: RevocationType!
+    value: String!
+    reason: String!
+    trigger: RevocationTrigger
+    revokedBy: String
+    revokedAt: DateTime!
+    expiresAt: DateTime!
+}
+
+type RevocationRecordOffsetPage @tag(name: "admin") {
+    content: [RevocationRecord!]!
+    pageInfo: PageInfo!
+}
+
 enum GrowthBucket {
     DAY
     WEEK                            # weeks start on Monday
@@ -2462,6 +2500,9 @@ type Query {
     # ADMIN - Platform staff accounts (staff realm), filtered by name/email and role
     staffAccounts(search: String, role: UserType, pagination: OffsetPaginationInput): UserOffsetPage! @tag(name: "admin")
 
+    # ADMIN - Revocations still in force, newest first
+    activeRevocations(type: RevocationType, pagination: OffsetPaginationInput): RevocationRecordOffsetPage! @tag(name: "admin")
+
     # ADMIN - The audit trail: administrator actions and account lifecycle, with no personal data
     auditLogs(filter: AuditLogFilterInput, pagination: OffsetPaginationInput): AuditLogEntryOffsetPage! @tag(name: "admin")
 
@@ -2752,6 +2793,17 @@ type Mutation {
 
     # End one of the caller's own sessions
     revokeSession(sessionId: ID!): Boolean!
+
+    # Ends every session of the caller except the one making this request; returns how many ended
+    signOutEverywhere: Int!
+
+    # ADMIN - Cuts one access token at once; the reason is at least 20 characters
+    revokeToken(jti: String!, reason: String!): RevocationRecord! @tag(name: "admin")
+    # ADMIN - Cuts every token minted for one SSO session at once
+    revokeSessionAccess(sid: String!, reason: String!): RevocationRecord! @tag(name: "admin")
+    # ADMIN - Cuts every token an account holds, on every device
+    revokeUserAccess(userId: ID!, reason: String!): RevocationRecord! @tag(name: "admin")
+
     updateUser(id: ID!, input: UpdateUserInput!): User! @tag(name: "admin")
     suspendUser(id: ID!, reason: String!): User! @tag(name: "admin")
     unsuspendUser(id: ID!): User! @tag(name: "admin")

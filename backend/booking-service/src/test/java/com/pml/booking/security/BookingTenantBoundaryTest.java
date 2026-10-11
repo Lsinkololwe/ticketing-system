@@ -180,7 +180,9 @@ class BookingTenantBoundaryTest {
     @DisplayName("Finance staff are platform-wide in booking; an organizer is not")
     void financeIsPlatformWide() {
         TenantMemberships memberships = subject -> Mono.just(Set.of(OWNER_ORG));
-        var filter = new TenantScopeAutoConfiguration().tenantScopeWebFilter(memberships, bookingTenancy());
+        var filter = new TenantScopeAutoConfiguration().tenantScopeWebFilter(memberships, bookingTenancy(),
+                new com.pml.shared.security.tenancy.PlatformWideAccess("booking-service", record -> reactor.core.publisher.Mono.empty(),
+                        java.time.Clock.systemUTC(), Set.of("ROLE_ADMIN", "ROLE_SUPER_ADMIN")));
 
         assertThat(scopeInstalledFor(filter, "ROLE_FINANCE").platformAdmin()).isTrue();
         TenantScope organizer = scopeInstalledFor(filter, "ROLE_ORGANIZER");

@@ -140,6 +140,8 @@ public class AuditLog {
         ACCOUNT_DELETION_REQUESTED("account_deletion_requested"),
         ACCOUNT_DELETION_CANCELLED("account_deletion_cancelled"),
         SESSION_REVOKED("session_revoked"),
+        /** A token, session or every token of a user was revoked; the trigger is in the metadata. */
+        ACCESS_REVOKED("access_revoked"),
 
         // Platform operations
         SYSTEM_ALERT_ACKNOWLEDGED("system_alert_acknowledged"),

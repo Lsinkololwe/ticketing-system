@@ -53,6 +53,9 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
     /** Every timestamp comes from here, never from the wall clock. */
     private final java.time.Clock clock;
 
+    /** A removed member's live tokens are cut with the membership. */
+    private final com.pml.identity.security.revocation.AccessRevocationService accessRevocation;
+
     // ========================================================================
     // READ OPERATIONS
     // ========================================================================
@@ -288,6 +291,13 @@ public class OrganizationMemberServiceImpl implements OrganizationMemberService 
                 // Keycloak is not written here at all: the row carries the mirror marker, and the
                 // group-mirror workflow applies it, so a Keycloak outage cannot block a removal.
                 .flatMap(saved -> updateOrganizationMemberCount(saved.getOrganizationId())
+                        .thenReturn(saved))
+                // After the status is committed: a token must not be cut for a removal that did
+                // not happen. A failure here surfaces to the caller, who repeats the removal.
+                .flatMap(saved -> com.pml.shared.security.SecurityContextUtils.getCurrentUserId()
+                        .defaultIfEmpty("system")
+                        .flatMap(actor -> accessRevocation.cutAccount(saved.getUserId(),
+                                com.pml.identity.security.revocation.RevocationTrigger.MEMBER_REMOVED, actor))
                         .thenReturn(saved));
     }
 

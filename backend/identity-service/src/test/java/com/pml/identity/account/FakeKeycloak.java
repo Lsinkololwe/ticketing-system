@@ -28,6 +28,8 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
     public final Map<String, Stored> byUsername = new ConcurrentHashMap<>();
     public final Map<String, KeycloakUserView> staff = new ConcurrentHashMap<>();
     public final List<String> sessionsEnded = new CopyOnWriteArrayList<>();
+    /** Live sessions by Keycloak user id; {@code endSession} removes the session it names. */
+    public final Map<String, List<SessionView>> liveSessions = new ConcurrentHashMap<>();
     public final List<String> calls = new CopyOnWriteArrayList<>();
     public final List<String> realmsUsed = new CopyOnWriteArrayList<>();
     public final AtomicInteger creates = new AtomicInteger();
@@ -136,8 +138,24 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
     }
 
     @Override
+    public reactor.core.publisher.Flux<SessionView> sessions(String realm, String keycloakUserId) {
+        return reactor.core.publisher.Flux.fromIterable(
+                List.copyOf(liveSessions.getOrDefault(keycloakUserId, List.of())));
+    }
+
+    @Override
     public Mono<Void> endSession(String realm, String sessionId) {
-        return guard("endSession", () -> (Void) null);
+        return guard("endSession", () -> {
+            liveSessions.values().forEach(list -> list.removeIf(view -> view.id().equals(sessionId)));
+            return (Void) null;
+        });
+    }
+
+    /** Opens a live session for the user, as Keycloak would list it. */
+    public void openSession(String keycloakUserId, String sessionId) {
+        liveSessions.computeIfAbsent(keycloakUserId, id -> new CopyOnWriteArrayList<>())
+                .add(new SessionView(sessionId, "10.0.0.1", java.time.Instant.EPOCH, java.time.Instant.EPOCH,
+                        List.of("web")));
     }
 
     @Override

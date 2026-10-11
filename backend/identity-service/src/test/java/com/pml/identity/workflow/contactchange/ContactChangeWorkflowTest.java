@@ -97,6 +97,7 @@ class ContactChangeWorkflowTest {
 
     private TestWorkflowEnvironment env;
     private FakeKeycloak keycloak;
+    private final List<String> cuts = new java.util.concurrent.CopyOnWriteArrayList<>();
     private CapturedMessages captured;
     private FaultyActivities activities;
     private ContactChangeProcess process;
@@ -121,7 +122,11 @@ class ContactChangeWorkflowTest {
         properties.setQuarantine(Duration.ofDays(30));
         DeliveryOrchestrator delivery = new DeliveryOrchestrator(List.of(new CapturingProvider(captured, CLOCK)), new SimpleMeterRegistry());
         ContactChangeSteps steps = new ContactChangeSteps(db.template, db.transaction, db.outbox, db.proofs, keycloak, keycloak,
-                AccountFixtures.CRYPTO, delivery, properties, CLOCK);
+                AccountFixtures.CRYPTO, delivery, properties, CLOCK,
+                (accountId, trigger, actor) -> {
+                    cuts.add(accountId + ":" + trigger);
+                    return reactor.core.publisher.Mono.empty();
+                });
         activities = new FaultyActivities(new ContactChangeActivitiesImpl(steps));
         env = TemporalTestEnvironments.newInstance();
         Worker worker = env.newWorker(TaskQueues.ACCOUNT);
@@ -280,6 +285,8 @@ class ContactChangeWorkflowTest {
         assertThat(account.getPendingKind()).isNull();
         assertThat(keycloak.emails.get(account.getKeycloakUserId())).isEqualTo(NEW_EMAIL);
         assertThat(keycloak.sessionsEnded).contains(account.getKeycloakUserId());
+        assertThat(cuts).as("the tokens already issued are revoked, not only the sessions ended")
+                .contains(accountId + ":CONTACT_CHANGED");
         assertThat(captured.noticesTo(OLD_EMAIL)).extracting(CapturedMessages.Notice::notice).containsExactly(ContactNotice.CONTACT_CHANGED);
         assertThat(captured.noticesTo(NEW_EMAIL)).extracting(CapturedMessages.Notice::notice).containsExactly(ContactNotice.CONTACT_CHANGED);
         AccountEvent event = db.template.findAll(AccountEvent.class).collectList().block().stream()

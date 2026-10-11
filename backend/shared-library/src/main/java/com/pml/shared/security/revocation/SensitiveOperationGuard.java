@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
+import java.time.Clock;
+
 /**
  * Enforces a fail-closed revocation check before a sensitive operation runs.
  *
@@ -27,6 +29,7 @@ public class SensitiveOperationGuard {
     private final RevocationCheck revocationCheck;
     private final RevocationProperties properties;
     private final RevocationMetrics metrics;
+    private final Clock clock;
 
     /**
      * Completes normally when the caller's token is definitively active.
@@ -42,9 +45,18 @@ public class SensitiveOperationGuard {
         }
 
         return SecurityContextUtils.getJwt()
-                .flatMap(jwt -> revocationCheck
-                        .check(jwt.getId(), jwt.getClaimAsString("sid"), jwt.getSubject())
-                        .flatMap(decision -> apply(decision, operation, jwt.getSubject())))
+                .flatMap(jwt -> {
+                    // Lifetime first, so an expired token is refused without a store lookup.
+                    if (AccessTokenLifetime.isExpired(jwt, clock.instant(), AccessTokenLifetime.TOLERANCE)) {
+                        metrics.denied(operation, RevocationDecision.REVOKED);
+                        return Mono.<Void>error(new org.springframework.web.server.ResponseStatusException(
+                                org.springframework.http.HttpStatus.UNAUTHORIZED,
+                                "Your session has expired. Please sign in again."));
+                    }
+                    return revocationCheck
+                            .check(jwt.getId(), jwt.getClaimAsString("sid"), jwt.getSubject())
+                            .flatMap(decision -> apply(decision, operation, jwt.getSubject()));
+                })
                 // No JWT in context. Method security governs whether the operation may run
                 // anonymously; where it may, there is no token to resolve.
                 .then();

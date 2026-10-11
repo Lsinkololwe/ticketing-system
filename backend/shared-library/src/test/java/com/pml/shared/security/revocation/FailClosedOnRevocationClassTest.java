@@ -45,7 +45,7 @@ class FailClosedOnRevocationClassTest {
         RevocationCheck check = (jti, sid, sub) -> Mono.just(decision);
         AspectJProxyFactory factory = new AspectJProxyFactory(new PayoutResolver());
         factory.setProxyTargetClass(true);
-        factory.addAspect(new RevocationGuardAspect(new SensitiveOperationGuard(check, properties, metrics)));
+        factory.addAspect(new RevocationGuardAspect(new SensitiveOperationGuard(check, properties, metrics, Clock.systemUTC())));
         return factory.getProxy();
     }
 

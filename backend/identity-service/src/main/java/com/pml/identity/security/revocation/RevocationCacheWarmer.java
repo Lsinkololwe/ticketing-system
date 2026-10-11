@@ -4,8 +4,8 @@ import com.pml.shared.security.revocation.RevocationCacheTrust;
 import com.pml.shared.security.revocation.RevocationProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -39,7 +39,7 @@ import java.time.Instant;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class RevocationCacheWarmer {
+public class RevocationCacheWarmer implements ApplicationRunner {
 
     private static final String CACHE_MARKER = "revoked";
 
@@ -51,12 +51,30 @@ public class RevocationCacheWarmer {
 
     private volatile Disposable schedule;
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void startWarming() {
+    /**
+     * Runs before the application reports itself ready: the first load completes here, on the
+     * startup thread, so a service never accepts traffic against a cache that has not been
+     * rebuilt from MongoDB. A load that fails does not stop the service; the completeness
+     * marker stays absent and every miss is answered from MongoDB until a later reload succeeds.
+     */
+    @Override
+    public void run(ApplicationArguments args) {
+        try {
+            Long loaded = warm().block(properties.getDurableTimeout().multipliedBy(5));
+            log.info("[Revocation] Cache rebuilt from MongoDB before readiness: {} live revocation(s)",
+                    loaded);
+        } catch (RuntimeException error) {
+            log.warn("[Revocation] Startup cache rebuild failed ({}) — misses are resolved against "
+                    + "MongoDB until a reload succeeds", error.toString());
+        }
+        startWarming();
+    }
+
+    void startWarming() {
         // Periodic reloads refresh the sentinel and repair losses nobody reported; the trust
         // signal reloads immediately when a write is known to have missed the cache.
         schedule = Flux.merge(
-                        Flux.interval(Duration.ZERO, properties.getCacheWarmInterval()),
+                        Flux.interval(properties.getCacheWarmInterval(), properties.getCacheWarmInterval()),
                         cacheTrust.reloadRequests().onBackpressureLatest()
                                 .delayElements(Duration.ofMillis(200)))
                 .onBackpressureDrop()
