@@ -46,7 +46,8 @@ public class ContactChangeProcess {
                             WorkflowIds.contactChange(command.accountId()), TaskQueues.ACCOUNT,
                             WorkflowIdConflictPolicy.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
                             WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
-                            ProcessSearchAttributes.of("ContactChange", command.accountId()).build());
+                            ProcessSearchAttributes.of("ContactChange", command.accountId()).build(),
+                            ContactChangeRules.MAX_LIFETIME);
                     WorkflowClient.start(workflow::run, command);
                 })
                 .onErrorMap(WorkflowExecutionAlreadyStarted.class,
@@ -95,10 +96,27 @@ public class ContactChangeProcess {
                 .onErrorMap(error -> Refusals.fromTemporal(error, ErrorCode.CONTACT_UNKNOWN));
     }
 
-    /** The open change's state, empty when none is open (never started, or finished). */
+    /**
+     * Whether the change execution that owns an account's marker is still open, asked of the server.
+     *
+     * @param ownerRunId the run recorded on the marker; null for a marker older than owners, which asks about
+     *                   whichever run of the account's change id is latest
+     */
+    public Mono<Boolean> isOpen(String accountId, String ownerRunId) {
+        return temporal.call(() -> temporal.isOpen(WorkflowIds.contactChange(accountId), ownerRunId));
+    }
+
+    /**
+     * The open change's state, empty when none is open (never started, or finished). An execution the server
+     * has closed (terminated, timed out) is not open even though its last recorded phase says otherwise, so a
+     * change that died is reported as no change rather than as one waiting for codes for ever.
+     */
     public Mono<Optional<Status>> status(String accountId) {
         return temporal.call(() -> {
             try {
+                if (!temporal.isOpen(WorkflowIds.contactChange(accountId), null)) {
+                    return Optional.<Status>empty();
+                }
                 Status status = temporal.existingWorkflow(ContactChangeWorkflow.class, WorkflowIds.contactChange(accountId)).status();
                 return Optional.ofNullable(status).filter(s -> !"DONE".equals(s.phase()));
             } catch (WorkflowNotFoundException none) {

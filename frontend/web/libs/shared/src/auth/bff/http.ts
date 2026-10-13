@@ -13,7 +13,7 @@ export function reqCtx(req: Request, deps: BffDeps): ReqCtx {
   const h = req.headers.get('x-correlation-id');
   return {
     correlationId: h && /^[A-Za-z0-9-]{8,64}$/.test(h) ? h : randomUUID(),
-    ip: resolveClientIp(req.headers, deps.cfg.trustProxyHops),
+    ip: resolveClientIp(req.headers, deps.cfg.trustProxyHops, deps.cfg.logger),
     cookies: parseCookies(req.headers.get('cookie')),
   };
 }

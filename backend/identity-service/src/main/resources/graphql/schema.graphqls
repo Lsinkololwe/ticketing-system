@@ -165,12 +165,14 @@
 #
 #   2. System creates TeamInvitation with unique token
 #
-#   3. System sends invitation email/SMS with link:
+#   3. System sends the invitation by email or WhatsApp with a link:
 #      https://app.example.com/invitations/accept?token={token}
 #
-#   4. Invitee clicks link:
-#      a) If not registered → Sign up flow with invitation context
-#      b) If registered → Accept invitation directly
+#   4. Invitee opens the link. There is no separate sign-up: the person signs in with a one-time
+#      code sent to the email or WhatsApp number the invitation was sent to (an account is created
+#      for that contact on the first sign-in if there is none), then accepts.
+#      Accepting is allowed only to an account that holds that same contact as a VERIFIED contact;
+#      a name, email or number typed into a profile does not count, and anyone else is refused.
 #
 #   5. On acceptance:
 #      a) Create OrganizationMember with specified role
@@ -1541,6 +1543,10 @@ input AuditLogFilterInput {
     status: String
     # Also list account events (OTP locks, merges ...) that are not audit rows
     includeAccountEvents: Boolean
+    # Platform-wide reaches only (action TENANT_BOUNDARY_CROSSED): the service that reached,
+    # e.g. "booking-service", and the fixed reason it declared, e.g. "RESERVATION_SUPPORT_READ"
+    service: String
+    reason: String
 }
 
 type AuditLogEntry @tag(name: "admin") {
@@ -1552,7 +1558,11 @@ type AuditLogEntry @tag(name: "admin") {
     resourceType: String
     resourceId: ID
     status: String
+    # When the action happened. For a platform-wide reach delivered late by another service this is the
+    # original time, not the time of delivery.
     at: DateTime
+    # When identity stored the row (platform-wide reaches only; null for account events)
+    receivedAt: DateTime
     metadata: JSON
 }
 
@@ -1969,16 +1979,35 @@ type NotificationEdge {
 # SECTION 15: INPUT TYPES - USER & PROFILE
 # ============================================================================
 
-# Creates a platform staff user. Buyers are never created this way.
+# Creates a platform staff user in the staff realm. Buyers and organizers are never created this way:
+# they come into being by proving an email or WhatsApp number, and an organizer is a buyer who applies.
+# Only a super administrator may call it. If the role cannot be granted nothing is left behind.
 input CreateUserInput {
     email: String!
     firstName: String!
     lastName: String!
-    password: String
     # Mobile number of the staff member (normalised; a number that does not parse refuses the call)
     phoneNumber: String
-    # Granted on top of the base CUSTOMER role; omit for a plain account
+    # The one staff role the person holds: ADMIN, SUPER_ADMIN, FINANCE or FINANCE_LEAD. Required.
+    # Any other value (CUSTOMER, ORGANIZER) is refused as COMMAND_NOT_WELL_FORMED; there is no plain account.
     role: UserType
+}
+
+# The answer to createUser. The person's first password is made by the system and set as a one-time
+# credential: Keycloak makes them replace it and set up a second factor at first sign-in.
+type CreateStaffUserResult {
+    user: User!
+    # The one-time password. Non-null ONLY on the call that created the account; shown once, never stored,
+    # never returned again. A repeat of a finished request returns the account with null: the super
+    # administrator who lost it issues a new one with resetStaffTemporaryPassword.
+    temporaryPassword: String
+}
+
+# The answer to resetStaffTemporaryPassword.
+type ResetStaffPasswordResult {
+    user: User!
+    # The new one-time password; present in this answer only.
+    temporaryPassword: String!
 }
 
 input UpdateUserInput {
@@ -2503,7 +2532,8 @@ type Query {
     # ADMIN - Revocations still in force, newest first
     activeRevocations(type: RevocationType, pagination: OffsetPaginationInput): RevocationRecordOffsetPage! @tag(name: "admin")
 
-    # ADMIN - The audit trail: administrator actions and account lifecycle, with no personal data
+    # ADMIN - The audit trail: administrator actions and account lifecycle, with no personal data.
+    # FINANCE - the same query returns only the money view: platform-wide reaches about money, by any actor.
     auditLogs(filter: AuditLogFilterInput, pagination: OffsetPaginationInput): AuditLogEntryOffsetPage! @tag(name: "admin")
 
     # ADMIN - New accounts per day/week/month across [from, to), with the running total
@@ -2774,8 +2804,13 @@ type Mutation {
     # MOBILE - Update my profile
     updateMyProfile(input: UpdateUserInput!): User!
 
-    # ADMIN - User management
-    createUser(input: CreateUserInput!): User! @tag(name: "admin")
+    # SUPER_ADMIN - Create a platform staff user with one staff role (see CreateUserInput); staff realm only
+    createUser(input: CreateUserInput!): CreateStaffUserResult! @tag(name: "admin")
+
+    # SUPER_ADMIN - Issue a staff member a new one-time password (staff accounts only). Ends their sessions
+    # and revokes their tokens; at next sign-in Keycloak makes them choose their own password and, if no
+    # second factor is enrolled, set one up. The password is returned in this answer only.
+    resetStaffTemporaryPassword(userId: ID!): ResetStaffPasswordResult! @tag(name: "admin")
 
     # ADMIN - Soft-delete an account (status DELETED, Keycloak disabled, sessions ended); never a hard delete
     deleteUser(id: ID!): User! @tag(name: "admin")
@@ -2818,18 +2853,22 @@ type Mutation {
     Add a role to a user.
     A user can have multiple roles (e.g., CUSTOMER + ORGANIZER).
     The CUSTOMER role is the base role that all users have.
+    Adding a staff role (ADMIN, SUPER_ADMIN, FINANCE, FINANCE_LEAD) needs a SUPER_ADMIN caller;
+    an ADMIN is refused with ACTOR_NOT_PERMITTED.
     """
     addUserRole(userId: ID!, role: UserType!): User! @tag(name: "admin")
 
     """
     Remove a role from a user.
     Note: The CUSTOMER role cannot be removed as it is the base role.
+    Removing a staff role needs a SUPER_ADMIN caller.
     """
     removeUserRole(userId: ID!, role: UserType!): User! @tag(name: "admin")
 
     """
     Set all roles for a user (replaces existing roles).
     The roles set must include CUSTOMER.
+    A SUPER_ADMIN caller is needed whenever the old or the new set holds a staff role.
     """
     setUserRoles(userId: ID!, roles: [UserType!]!): User! @tag(name: "admin")
 

@@ -37,7 +37,7 @@ vi.mock('@pml.tickets/shared/api/admin/modules/identity-admin', async (orig) => 
 
 const deleteUser = vi.fn().mockResolvedValue({});
 vi.mock('@pml.tickets/shared/api/admin/modules/platform-ops', () => ({
-  useStaffActions: () => ({ deleteUser, createStaff: vi.fn(), busy: false }),
+  useStaffActions: () => ({ deleteUser, busy: false }),
   useAuditLogs: () => ({ entries: [{ id: 'l1', action: 'USER_SUSPENDED', at: '2026-10-01T08:00:00Z', actorId: 'root', status: 'SUCCESS' }], loading: false, error: undefined, refetch: vi.fn() }),
 }));
 
@@ -107,13 +107,27 @@ describe('Users table', () => {
     await waitFor(() => expect(usersCall).toHaveBeenLastCalledWith(expect.objectContaining({ role: 'ORGANIZER', accountStatus: 'LOCKED', search: 'banda', page: 0 })));
   });
 
-  it('super admin sees Create admin; admin sees it disabled with the permission text', () => {
+  it('only a super admin is offered Create admin', () => {
     const { unmount } = renderConsole(<UsersPage tab="users" />, { roles: ['SUPER_ADMIN'] });
     expect(screen.getByRole('button', { name: 'Create admin' })).toBeEnabled();
     unmount();
     renderConsole(<UsersPage tab="users" />, { roles: ['ADMIN'] });
-    expect(screen.getByRole('button', { name: 'Create admin' })).toBeDisabled();
-    expect(screen.getByText(/Only super admins can create staff accounts/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create admin' })).not.toBeInTheDocument();
+  });
+
+  it('cannot create customer or organizer accounts; Create admin offers staff roles only', () => {
+    renderConsole(<UsersPage tab="users" />, { roles: ['SUPER_ADMIN'] });
+    expect(screen.queryByRole('button', { name: 'New user' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create admin' }));
+    const dlg = screen.getByRole('dialog');
+    expect(within(dlg).getAllByRole('option').map((o) => o.textContent)).toEqual(['Admin', 'Finance', 'Finance lead', 'Super admin']);
+    expect(within(dlg).queryByText(/phone verification/i)).not.toBeInTheDocument();
+  });
+
+  it('the role filter offers buyer roles only', () => {
+    renderConsole(<UsersPage tab="users" />);
+    const options = within(screen.getByLabelText('Role')).getAllByRole('option').map((o) => o.textContent);
+    expect(options.join(' ')).not.toMatch(/Admin|Finance/);
   });
 
   it('requires a reason before suspending, then calls suspendUser', async () => {
@@ -146,28 +160,8 @@ describe('Users table', () => {
     await waitFor(() => expect(deleteUser).toHaveBeenCalledTimes(1));
   });
 
-  it('validates the New user form then creates the account', async () => {
-    actions.createUser.mockResolvedValue({ id: 'new1' });
-    renderConsole(<UsersPage tab="users" />);
-    fireEvent.click(screen.getByRole('button', { name: 'New user' }));
-    const dlg = screen.getByRole('dialog');
-    fireEvent.click(within(dlg).getByRole('button', { name: 'Create user' }));
-    expect(await within(dlg).findByText('Enter an email address')).toBeInTheDocument();
-    fireEvent.change(within(dlg).getByLabelText('First name'), { target: { value: 'Ada' } });
-    fireEvent.change(within(dlg).getByLabelText('Last name'), { target: { value: 'Zulu' } });
-    fireEvent.change(within(dlg).getByLabelText('Email'), { target: { value: 'not-an-email' } });
-    fireEvent.change(within(dlg).getByLabelText('Email'), { target: { value: 'ada@example.test' } });
-    fireEvent.change(within(dlg).getByLabelText('Role'), { target: { value: 'ORGANIZER' } });
-    fireEvent.change(within(dlg).getByLabelText('Phone number'), { target: { value: '12345' } });
-    fireEvent.click(within(dlg).getByRole('button', { name: 'Create user' }));
-    expect(await within(dlg).findByText('Use the format +260971234567')).toBeInTheDocument();
-    fireEvent.change(within(dlg).getByLabelText('Phone number'), { target: { value: '+260971234567' } });
-    fireEvent.click(within(dlg).getByRole('button', { name: 'Create user' }));
-    await waitFor(() => expect(actions.createUser).toHaveBeenCalledWith({ email: 'ada@example.test', firstName: 'Ada', lastName: 'Zulu', phoneNumber: '+260971234567', role: 'ORGANIZER' }));
-  });
-
   it('staff accounts need a phone number and a role', async () => {
-    actions.createUser.mockResolvedValue({ id: 'new2' });
+    actions.createUser.mockResolvedValue({ user: { id: 'new2' }, temporaryPassword: 'fixture-pass-0001' });
     renderConsole(<UsersPage tab="users" />, { roles: ['SUPER_ADMIN'] });
     fireEvent.click(screen.getByRole('button', { name: 'Create admin' }));
     const dlg = screen.getByRole('dialog');
@@ -182,21 +176,22 @@ describe('Users table', () => {
     await waitFor(() => expect(actions.createUser).toHaveBeenCalledWith(expect.objectContaining({ role: 'FINANCE', phoneNumber: '+260971234568' })));
   });
 
-  it('only a super admin may edit staff roles', async () => {
+  it('a staff account is not offered the buyer role checklist', async () => {
     Object.assign(listState, { rows: [user({ id: 'u3', fullName: 'Staff Person', roles: ['CUSTOMER', 'ADMIN'] })], total: 1 });
-    renderConsole(<UsersPage tab="users" />, { roles: ['ADMIN'] });
+    renderConsole(<UsersPage tab="users" />, { roles: ['SUPER_ADMIN'] });
     fireEvent.click(screen.getByRole('button', { name: 'More actions for Staff Person' }));
     expect(screen.queryByRole('menuitem', { name: 'Change roles' })).not.toBeInTheDocument();
   });
 
-  it('saves roles keeping the base CUSTOMER role', async () => {
+  it('saves roles keeping the base CUSTOMER role and offers no staff roles', async () => {
     renderConsole(<UsersPage tab="users" />, { roles: ['SUPER_ADMIN'] });
     fireEvent.click(screen.getByRole('button', { name: 'More actions for Mwila Banda' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Change roles' }));
     const dlg = screen.getByRole('dialog');
-    fireEvent.click(within(dlg).getByLabelText('Finance'));
+    for (const r of ['Admin', 'Super admin', 'Finance', 'Finance lead']) expect(within(dlg).queryByLabelText(r)).not.toBeInTheDocument();
+    fireEvent.click(within(dlg).getByLabelText('Organizer'));
     fireEvent.click(within(dlg).getByRole('button', { name: 'Save roles' }));
-    await waitFor(() => expect(actions.setUserRoles).toHaveBeenCalledWith('u1', ['CUSTOMER', 'FINANCE']));
+    await waitFor(() => expect(actions.setUserRoles).toHaveBeenCalledWith('u1', ['CUSTOMER', 'ORGANIZER']));
   });
 
   it('uses m3 classes only (no inline px or hex)', () => {

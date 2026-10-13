@@ -66,10 +66,10 @@ test.describe('checkout', () => {
     await settle(page, upstream, log, { a11y: false });
   });
 
-  test('two rapid taps on Pay carry the same idempotency key (TS-6)', async ({ page, upstream, signInAs }, info) => {
+  test('two rapid taps on Pay carry the same idempotency key', async ({ page, upstream, signInAs }, info) => {
     const res = reservation();
     // A delayed response widens the window a true double-tap race falls into: exactly the
-    // mobile-money scenario R6 exists for — a buyer unsure whether their first tap registered,
+    // mobile-money scenario the idempotency key exists for: a buyer unsure whether their first tap registered,
     // tapping again before the screen has visibly changed.
     upstream.gql({
       ...signedInBase(),

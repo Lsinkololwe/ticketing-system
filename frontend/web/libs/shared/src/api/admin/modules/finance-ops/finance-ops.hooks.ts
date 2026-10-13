@@ -38,6 +38,8 @@ export interface PayoutOpsRow {
   organization: { id: string; name: string } | null;
   eventId: string | null;
   eventTitle: string | null;
+  /** The event as it is named now; `eventTitle` is the name the request was made under. */
+  event?: { id: string; title: string | null } | null;
   escrowAccountId: string;
   bankAccountId: string;
   requestedAmount: number | string;
@@ -106,6 +108,8 @@ export interface EscrowDetail {
   accountNumber: string;
   eventId: string;
   eventTitle: string | null;
+  /** The event as it is named now; `eventTitle` is the name the account was opened under. */
+  event?: { id: string; title: string | null } | null;
   organizerId: string;
   organization: { id: string; name: string } | null;
   currentBalance: number | string;
@@ -243,10 +247,11 @@ export function usePayoutOps() {
   // Keyed by payoutRequestId: a retry of the same stuck payout replays or cleanly re-runs; it
   // never needs a different key for the same id, since retrying is always the same request.
   const retryKeys = useRef(new Map<string, string>());
+  // A bulk key is composed from the sorted ids, so pressing the same selection again replays the first answer.
+  const bulkKeys = useRef(new Map<string, string>());
   const [process, s1] = useMutation(Q.PROCESS_PAYOUT_REQUEST);
   const [complete, s2] = useMutation(Q.COMPLETE_PAYOUT_REQUEST);
   const [retry, s3] = useMutation(Q.RETRY_PAYOUT_REQUEST);
-  const [resume, s4] = useMutation(Q.RESUME_PAYOUT_REQUEST);
   const [mark, s5] = useMutation(Q.MARK_PAYOUT_FOR_REVIEW);
   const [resolve, s6] = useMutation(Q.RESOLVE_PAYOUT_ISSUE);
   const [escalate, s7] = useMutation(Q.ESCALATE_PAYOUT_REQUEST);
@@ -258,12 +263,15 @@ export function usePayoutOps() {
       (payoutRequestId: string) => decide(() => retry({ variables: { payoutRequestId, idempotencyKey: stableActionKey(retryKeys.current, payoutRequestId) } })),
       [retry]
     ),
-    resumePayout: useCallback((payoutRequestId: string) => decide(() => resume({ variables: { payoutRequestId } })), [resume]),
     markForReview: useCallback((payoutRequestId: string, issueType: PayoutIssueType, notes?: string) => decide(() => mark({ variables: { payoutRequestId, issueType, notes: notes ?? null } })), [mark]),
     resolveIssue: useCallback((payoutRequestId: string, resolutionType: PayoutResolutionType, notes: string) => decide(() => resolve({ variables: { payoutRequestId, resolutionType, notes } })), [resolve]),
     escalatePayout: useCallback((payoutRequestId: string, reason: string) => decide(() => escalate({ variables: { payoutRequestId, reason } })), [escalate]),
-    bulkRetry: useCallback((payoutRequestIds: string[]) => decide(() => bulk({ variables: { payoutRequestIds } })), [bulk]),
-    submitting: [s1, s2, s3, s4, s5, s6, s7, s8].some((s) => s.loading),
+    bulkRetry: useCallback(
+      (payoutRequestIds: string[]) =>
+        decide(() => bulk({ variables: { payoutRequestIds, idempotencyKey: stableActionKey(bulkKeys.current, [...new Set(payoutRequestIds)].sort()) } })),
+      [bulk]
+    ),
+    submitting: [s1, s2, s3, s5, s6, s7, s8].some((s) => s.loading),
   };
 }
 

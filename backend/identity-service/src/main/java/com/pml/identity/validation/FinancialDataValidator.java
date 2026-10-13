@@ -3,6 +3,7 @@ package com.pml.identity.validation;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 
+import com.pml.shared.util.PhoneNumbers;
 import java.util.regex.Pattern;
 
 /**
@@ -98,53 +99,34 @@ public class FinancialDataValidator {
     }
 
     // ============================================================================
-    // MOBILE MONEY PHONE NUMBER VALIDATION (E.164)
+    // MOBILE MONEY PHONE NUMBER VALIDATION
     // ============================================================================
 
     /**
-     * E.164 phone number format for Zambia: +260XXXXXXXXX
-     * - Country code: +260 (Zambia)
-     * - National number: 9-10 digits
-     * - Mobile prefixes: 95, 96, 97, 76, 77
-     *
-     * Supported providers:
-     * - MTN: +26096XXXXXXX, +26076XXXXXXX
-     * - Airtel: +26097XXXXXXX, +26077XXXXXXX
-     * - Zamtel: +26095XXXXXXX
-     *
-     * SECURITY: Strict validation prevents phone number spoofing and injection
+     * The first two digits of a Zambian national mobile number that a payout can be sent to.
+     * - MTN: 96, 76
+     * - Airtel: 97, 77
+     * - Zamtel: 95
+     * This is the only rule that is specific to payouts; reading the number itself is the platform's
+     * one phone normaliser ({@link PhoneNumbers#parseMobile}), not code in this class.
      */
-    private static final Pattern E164_ZAMBIA_PATTERN = Pattern.compile("^\\+260(95|96|97|76|77)\\d{7}$");
+    private static final java.util.Set<String> MOBILE_MONEY_PREFIXES = java.util.Set.of("95", "96", "97", "76", "77");
 
     /**
-     * Validate E.164 phone number for Zambian mobile networks.
+     * Validate a Zambian mobile-money number. Any form the shared normaliser reads as a Zambian
+     * mobile number is accepted, then it must belong to a mobile-money network.
      *
      * @param phoneNumber the phone number to validate
      * @return true if valid
      */
     public static boolean isValidZambianMobileNumber(String phoneNumber) {
-        if (phoneNumber == null || phoneNumber.isBlank()) {
-            return false;
-        }
-
-        String sanitized = sanitizePhoneNumber(phoneNumber);
-        boolean valid = E164_ZAMBIA_PATTERN.matcher(sanitized).matches();
-
-        // Log WITHOUT exposing full number (GDPR/privacy)
-        log.debug("Phone validation: {} (prefix: {})",
-            valid ? "VALID" : "INVALID",
-            sanitized.length() > 4 ? sanitized.substring(0, 4) + "..." : "N/A");
-
-        return valid;
+        return normalizeToE164(phoneNumber) != null;
     }
 
     /**
-     * Normalize phone number to E.164 format.
-     *
-     * Examples:
-     * - 0971234567 -> +260971234567
-     * - 971234567 -> +260971234567
-     * - +260971234567 -> +260971234567
+     * Canonical E.164 form of a payout number, or null when it is not a Zambian mobile-money number.
+     * Parsing is delegated to {@link PhoneNumbers#parseMobile}; this method only adds the payout
+     * network check.
      *
      * @param phoneNumber the phone number to normalize
      * @return normalized phone number or null if invalid
@@ -153,24 +135,15 @@ public class FinancialDataValidator {
         if (phoneNumber == null || phoneNumber.isBlank()) {
             return null;
         }
-
-        String sanitized = sanitizePhoneNumber(phoneNumber);
-
-        // Already in E.164 format
-        if (sanitized.startsWith("+260")) {
-            return sanitized;
-        }
-
-        // Remove leading zero
-        if (sanitized.startsWith("0")) {
-            sanitized = sanitized.substring(1);
-        }
-
-        // Add country code
-        String normalized = "+260" + sanitized;
-
-        // Validate final format
-        return isValidZambianMobileNumber(normalized) ? normalized : null;
+        // Log WITHOUT exposing the number (privacy): only whether it was accepted.
+        String normalized = PhoneNumbers.parseMobile(phoneNumber, PhoneNumbers.DEFAULT_REGION)
+                .filter(parsed -> PhoneNumbers.DEFAULT_REGION.equals(parsed.region()))
+                .map(PhoneNumbers.Parsed::e164)
+                // a Zambian national mobile number is nine digits; its first two name the network
+                .filter(e164 -> e164.length() == 13 && MOBILE_MONEY_PREFIXES.contains(e164.substring(4, 6)))
+                .orElse(null);
+        log.debug("Phone validation: {}", normalized != null ? "VALID" : "INVALID");
+        return normalized;
     }
 
     // ============================================================================
@@ -241,27 +214,6 @@ public class FinancialDataValidator {
         return input.replaceAll("[^a-zA-Z0-9]", "");
     }
 
-    /**
-     * Sanitize phone number (digits and + only).
-     *
-     * @param input the input to sanitize
-     * @return sanitized phone number
-     */
-    public static String sanitizePhoneNumber(String input) {
-        if (input == null) {
-            return "";
-        }
-        // Allow only digits and leading +
-        String cleaned = input.replaceAll("[^0-9+]", "");
-        // Ensure only one + at the start
-        if (cleaned.startsWith("+")) {
-            cleaned = "+" + cleaned.substring(1).replace("+", "");
-        } else {
-            cleaned = cleaned.replace("+", "");
-        }
-        return cleaned;
-    }
-
     // ============================================================================
     // MASKING UTILITIES (PCI-DSS REQUIREMENT)
     // ============================================================================
@@ -284,18 +236,17 @@ public class FinancialDataValidator {
      * Mask phone number (show prefix and last 4 digits).
      *
      * @param phoneNumber the phone number to mask
-     * @return masked phone number (e.g., "+260****1234")
+     * @return masked phone number (e.g., "+260****1234" for a Zambian number)
      */
     public static String maskPhoneNumber(String phoneNumber) {
         if (phoneNumber == null || phoneNumber.length() < 8) {
-            return "+260****";
+            return "****";
         }
-
-        if (phoneNumber.startsWith("+260")) {
-            return "+260****" + phoneNumber.substring(phoneNumber.length() - 4);
-        }
-
-        return "****" + phoneNumber.substring(phoneNumber.length() - 4);
+        String last4 = phoneNumber.substring(phoneNumber.length() - 4);
+        // The country prefix comes from the platform's phone normaliser, not from a hand-written rule.
+        return PhoneNumbers.parseMobile(phoneNumber, PhoneNumbers.DEFAULT_REGION)
+                .map(parsed -> parsed.e164().substring(0, 4) + "****" + last4)
+                .orElse("****" + last4);
     }
 
     /**

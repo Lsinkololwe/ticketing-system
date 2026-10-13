@@ -35,7 +35,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * The MongoDB and Keycloak steps behind {@code AccountEnsureWorkflow} (CONTRACT 10).
+ * The MongoDB and Keycloak steps behind {@code AccountEnsureWorkflow}, the process that opens or finds a buyer's account after they proved a contact.
  *
  * <p>Each method is safe to run twice, because the activity that calls it will be retried:
  * a second claim finds the contact already owned, a second Keycloak create reads the user back by

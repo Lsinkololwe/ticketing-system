@@ -151,6 +151,8 @@ class ContactChangeEndToEndTest {
     @Autowired
     ContactChangeProcess process;
     @Autowired
+    com.pml.shared.infrastructure.temporal.TemporalGateway temporal;
+    @Autowired
     ContactHasher hasher;
     @Autowired
     com.pml.identity.config.IdentityContactProperties contactProperties;
@@ -845,6 +847,42 @@ class ContactChangeEndToEndTest {
         // a code already accepted cannot be sent again; an unknown change is unknown
         assertThat(errorCode(graphql(buyer, resendChange.formatted("NEW").replace(changeId, UUID.randomUUID().toString()))))
                 .isIn("CONTACT_UNKNOWN");
+    }
+
+    // ---------------------------------------------------------------------------------- a change that died
+
+    @Test
+    @Order(20)
+    @DisplayName("a change whose execution was terminated stops blocking the account: the next attempt clears the leftover and opens a new change")
+    void terminatedChangeNoLongerBlocks() {
+        Buyer buyer = signUp(uniqueEmail());
+        String contactId = contactIdOfType(buyer, "EMAIL");
+        String request = "mutation { requestContactChange(input: {contactId: \"" + contactId + "\", type: EMAIL, value: \"%s\"}) { changeId } }";
+        String first = data(graphql(buyer, request.formatted(uniqueEmail())), "requestContactChange").get("changeId").toString();
+        sleep(1_200);
+        assertThat(errorCode(graphql(buyer, request.formatted(uniqueEmail())))).as("a live change refuses a second").isEqualTo("CONTACT_CHANGE_IN_PROGRESS");
+        Document marked = mongo("identity_users", new Document("_id", buyer.accountId())).get(0);
+        assertThat(marked.getString("pendingKind")).isEqualTo("CHANGING");
+        assertThat(marked.getString("pendingOwnerRunId")).as("the marker names the run that owns it").isNotBlank();
+        assertThat(marked.get("pendingExpiresAt")).isNotNull();
+        io.temporal.client.WorkflowStub stub = temporal.client().newUntypedWorkflowStub(
+                com.pml.identity.infrastructure.temporal.WorkflowIds.contactChange(buyer.accountId()));
+        assertThat(stub.describe().getRawDescription().getExecutionConfig().getWorkflowExecutionTimeout().getSeconds())
+                .as("the execution is started with the ceiling the marker's expiry records")
+                .isEqualTo(com.pml.identity.workflow.contactchange.ContactChangeRules.MAX_LIFETIME.toSeconds());
+
+        stub.terminate("an operator stopped the change");
+        sleep(1_200);
+
+        assertThat(pendingChange(buyer)).as("a dead change is not shown as a pending one").isNull();
+        String second = data(graphql(buyer, request.formatted(uniqueEmail())), "requestContactChange").get("changeId").toString();
+        assertThat(second).isNotEqualTo(first);
+        Document reowned = mongo("identity_users", new Document("_id", buyer.accountId())).get(0);
+        assertThat(reowned.getString("pendingOwnerRunId")).isNotEqualTo(marked.getString("pendingOwnerRunId"));
+        assertThat(activeContacts(buyer)).as("nothing of the dead change is left on the account").hasSize(1);
+        assertThat(keycloakUser(buyer).getEmail()).isEqualTo(buyer.contact());
+        graphql(buyer, "mutation { cancelContactChange(changeId: \"" + second + "\") }");
+        await().atMost(Duration.ofSeconds(20)).until(() -> pendingChange(buyer) == null);
     }
 
     // ---------------------------------------------------------------------------------- nothing leaks

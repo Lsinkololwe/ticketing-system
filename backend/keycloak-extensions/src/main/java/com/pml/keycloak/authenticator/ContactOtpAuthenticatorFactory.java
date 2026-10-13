@@ -15,10 +15,24 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 
 /**
- * Provider id {@code contact-otp-authenticator}. Environment: IDENTITY_BASE_URL, IDENTITY_CLIENT_ID,
- * IDENTITY_CLIENT_SECRET, KEYCLOAK_TOKEN_URL (all required, no unauthenticated mode) and optional
- * CONTACT_OTP_REGION_HINT. A missing variable logs an ERROR naming the variable and every
- * authentication through this provider is refused.
+ * Registers the buyer sign-in step with Keycloak under the id {@code contact-otp-authenticator}
+ * and wires it to identity-service.
+ *
+ * <p>What a buyer experiences: the realm's browser flow reaches this step, and the buyer either
+ * types their phone number or e-mail and then the code they received, or (when the app already
+ * proved the contact) is signed in without seeing a page.</p>
+ *
+ * <p>What this factory promises: the step is only ever built with working credentials for
+ * identity-service. It reads four required variables, IDENTITY_BASE_URL, IDENTITY_CLIENT_ID,
+ * IDENTITY_CLIENT_SECRET and KEYCLOAK_TOKEN_URL, plus the optional CONTACT_OTP_REGION_HINT (for
+ * example ZM, used to read numbers typed without a country code). If any required variable is
+ * missing or blank, Keycloak refuses to start and the error names the variable, never its value.
+ * Failing at start-up is deliberate: a server that came up without them could only refuse every
+ * sign-in, and the operator would otherwise find out from failed buyer sign-ins instead of from
+ * the deployment itself.</p>
+ *
+ * <p>The authenticator it builds never creates users and never grants roles; see
+ * {@link ContactOtpAuthenticator} for what happens on each refusal.</p>
  */
 public class ContactOtpAuthenticatorFactory implements AuthenticatorFactory {
 
@@ -31,15 +45,21 @@ public class ContactOtpAuthenticatorFactory implements AuthenticatorFactory {
 
     @Override
     public void init(Config.Scope config) {
-        Map<String, String> env = System.getenv();
-        List<String> missing = IdentityHttp.missing(env);
-        IdentityHttp http = IdentityHttp.fromEnvironment(env, Clock.systemUTC());
-        if (http == null) {
-            LOG.errorf("contact-otp-authenticator DISABLED (fail closed): missing environment %s", missing);
-        }
+        start(System.getenv());
+    }
+
+    /**
+     * Builds the authenticator from the given environment (the process environment in production,
+     * a plain map in tests).
+     *
+     * @throws IllegalStateException naming the missing variables when a required one is blank
+     */
+    public void start(Map<String, String> env) {
+        IdentityHttp http = IdentityHttp.requireFromEnvironment(env, Clock.systemUTC());
         String region = env.get("CONTACT_OTP_REGION_HINT");
-        authenticator = new ContactOtpAuthenticator(http == null ? null : new ContactOtpClient(http),
+        authenticator = new ContactOtpAuthenticator(new ContactOtpClient(http),
                 Clock.systemUTC(), Sleeper.REAL, region == null || region.isBlank() ? null : region.trim());
+        LOG.info("contact-otp-authenticator ready");
     }
 
     /** For tests and embedding. */

@@ -28,9 +28,9 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Adding, changing and removing a contact, and moving the primary, for the signed-in buyer (ET-IDN-004 R3, R5).
+ * Adding, changing and removing a contact, and moving the primary, for the signed-in buyer.
  *
- * <p>Decided for implementation on 2026-10-04 (specs/FINDINGS.md F-044):</p>
+ * <p>What the buyer can rely on:</p>
  * <ul>
  *   <li>a change, a removal and a primary switch are authorised by a fresh code sent to the account's
  *       CURRENT primary contact; there is no support-recovery path, an account with no verified contact
@@ -80,13 +80,15 @@ public class ContactChangeService {
     private final IdentityLimitsProperties limits;
     private final IdentityContactProperties properties;
     private final ContactService contacts;
+    private final ContactChangeMarker marker;
     private final java.time.Clock clock;
 
     public ContactChangeService(org.springframework.data.mongodb.core.ReactiveMongoTemplate template,
                                 ChallengeService challenges, ProofService proofs, ContactChangeProcess process,
                                 ContactHasher hasher, ContactCrypto crypto, ReactiveStringRedisTemplate redis,
                                 IdentityChallengeProperties challengeProperties, IdentityLimitsProperties limits,
-                                IdentityContactProperties properties, ContactService contacts, java.time.Clock clock) {
+                                IdentityContactProperties properties, ContactService contacts,
+                                ContactChangeMarker marker, java.time.Clock clock) {
         this.template = template;
         this.challenges = challenges;
         this.proofs = proofs;
@@ -98,6 +100,7 @@ public class ContactChangeService {
         this.limits = limits;
         this.properties = properties;
         this.contacts = contacts;
+        this.marker = marker;
         this.clock = clock;
     }
 
@@ -406,7 +409,10 @@ public class ContactChangeService {
         return guard(accountId, false);
     }
 
-    /** The account must be an ACTIVE buyer account with no other change open (unless {@code allowOpen}). */
+    /**
+     * The account must be an ACTIVE buyer account with no other change open (unless {@code allowOpen}). A
+     * marker left by a change that is no longer running is cleared here, as the attempt arrives.
+     */
     private Mono<User> guard(String accountId, boolean allowOpen) {
         return template.findById(accountId, User.class)
                 .switchIfEmpty(Mono.error(() -> new TranslatedRefusal(ErrorCode.USER_UNKNOWN, "account")))
@@ -422,7 +428,8 @@ public class ContactChangeService {
                         return Mono.<User>error(new TranslatedRefusal(ErrorCode.ACCOUNT_MERGING, "account is changing"));
                     }
                     if (!allowOpen && account.getPendingKind() == PendingKind.CHANGING) {
-                        return Mono.<User>error(new TranslatedRefusal(ErrorCode.CONTACT_CHANGE_IN_PROGRESS, "a change is open"));
+                        // A marker is a live change or the leftover of one that died; only the first refuses.
+                        return marker.release(account);
                     }
                     return Mono.just(account);
                 });

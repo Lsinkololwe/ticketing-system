@@ -43,7 +43,7 @@ const ALLOWED_NAMED: Record<string, string> = {
   'apps/organization-admin/src/components/events-editor/model.ts#TAB_LABELS': 'UI-only: titles of the event editor tabs',
   'apps/organization-admin/src/components/onboarding/steps.tsx#WIZARD_LABELS': 'UI-only: step titles of the onboarding wizard',
   'apps/organization-admin/src/lib/api/media.ts#MEDIA_TYPES': 'Upload contract of the files service: image MIME types, checked before the upload starts',
-  'apps/organization-admin/src/lib/bff.config.ts#ORGANIZER_ROLES': 'Auth contract: Keycloak realm roles that may open the organizer app',
+  'apps/organization-admin/src/lib/organizerAccess.ts#ORGANIZER_ACCESS_ROLES': 'Auth contract: Keycloak realm roles that may open the organizer app',
   'apps/organization-admin/src/lib/bff.config.ts#CSP_OPTIONS': 'Security header directives, not a list a person chooses from',
   // org-admin A
   'apps/organization-admin/src/lib/onboarding/documents.ts#ACCEPTED_MIME_TYPES': 'Upload contract of the identity document endpoint: file types it accepts, checked before a 10 MB upload starts',
@@ -68,8 +68,8 @@ const ALLOWED_INLINE: Record<string, { count: number; why: string }> = {
 const ALLOWED_ZOD_ENUM: Record<string, { count: number; why: string }> = {
   // ticketing
   'apps/ticketing/src/components/home/filters.ts': { count: 2, why: 'UI-only: the form values of the date-window and sort controls (WHEN_OPTIONS, SORT_OPTIONS)' },
-  'apps/ticketing/src/components/contacts/contactForms.ts': { count: 1, why: 'Form mode toggle between the two contact kinds (EMAIL, WHATSAPP) of the add/change dialogs' },
   'apps/ticketing/src/components/identify/identifyForm.ts': { count: 1, why: 'Form mode toggle between the two contact kinds (WHATSAPP, EMAIL) of the sign-in form' },
+  'apps/ticketing/src/components/contacts/contactForms.ts': { count: 1, why: 'Form mode toggle between the two contact kinds (EMAIL, WHATSAPP) of the add/change dialogs' },
   'libs/shared/src/auth/bff/config.ts': { count: 1, why: 'Auth contract: which of the three apps a BFF instance serves' },
   // org-admin B
   'apps/organization-admin/src/components/team/schemas.ts': { count: 1, why: 'UI-only: unset, allow or deny toggle for a per-member permission override' },

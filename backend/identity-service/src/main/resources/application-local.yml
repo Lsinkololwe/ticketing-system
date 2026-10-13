@@ -72,7 +72,7 @@ spring:
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Buyer identity (ET-IDN-004) - DEVELOPMENT VALUES ONLY. Not secrets: they exist so the local
+# Buyer identity - DEVELOPMENT VALUES ONLY. Not secrets: they exist so the local
 # stack starts without environment variables. Every other profile must provide its own.
 # ---------------------------------------------------------------------------
 identity:
@@ -87,3 +87,16 @@ identity:
   delivery:
     capture:
       enabled: true
+
+# ---------------------------------------------------------------------------
+# Verbose logging, development only. application.yml keeps INFO and WARN, so no other profile
+# prints Spring Security traces or request details.
+# ---------------------------------------------------------------------------
+logging:
+  level:
+    com.pml.identity: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.security.web.server: DEBUG
+    org.springframework.security.oauth2: DEBUG
+    reactor.netty.http.server: DEBUG
+    com.pml.shared.security: DEBUG

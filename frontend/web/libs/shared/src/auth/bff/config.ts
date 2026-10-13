@@ -120,6 +120,11 @@ export function resolveConfig(config: BffConfig, createLog: (c: BffConfig) => Lo
   const production = config.production ?? process.env.NODE_ENV === 'production';
   const secure = u.protocol === 'https:';
   if (production && !secure) throw new Error('BFF: APP_URL must be https in production');
+  // Behind a proxy every client would otherwise share one 'unknown' rate-limit bucket, so production must say
+  // how many proxy hops to trust (0 is a valid, explicit answer for a directly exposed server).
+  if (production && config.trustProxyHops === undefined) {
+    throw new Error('BFF: TRUST_PROXY_HOPS must be set in production (the number of trusted proxy hops, 0 if none)');
+  }
   const idleSec = config.lifetimes?.idleSec ?? d.idle;
   const absoluteSec = config.lifetimes?.absoluteSec ?? d.abs;
   if (idleSec <= 0 || absoluteSec < idleSec) throw new Error('BFF: invalid session lifetimes');

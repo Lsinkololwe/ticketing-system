@@ -35,7 +35,7 @@ public class NotificationProcess {
     public Mono<Void> request(Request request) {
         return temporal.run(() -> startNow(request))
                 .onErrorResume(error -> {
-                    log.warn("Notification {} could not be requested: {}", request.deduplicationKey(), error.getMessage());
+                    log.warn("Notification {} could not be requested: {}", request.deduplicationKey(), error.getClass().getSimpleName());
                     return Mono.empty();
                 });
     }

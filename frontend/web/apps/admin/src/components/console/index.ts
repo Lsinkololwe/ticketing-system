@@ -6,3 +6,4 @@ export * from './ReasonDialog';
 export * from './RoleChip';
 export * from './Tiles';
 export * from './RowActions';
+export * from './TemporaryPasswordDialog';

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 
-/** Wire records of the internal REST contract (CONTRACT.md section 4). */
+/** The JSON bodies exchanged with identity-service's internal sign-in API. */
 public final class Dto {
 
     private Dto() {}
@@ -53,7 +53,7 @@ public final class Dto {
                           Boolean retryable, Integer retryAfterSeconds, Integer attemptsRemaining,
                           String lockedUntil) {}
 
-    /** Payload of POST /api/internal/keycloak/sync/event (CONTRACT section 4.6); {@code sid} only on LOGOUT and REFRESH_TOKEN_ERROR. */
+    /** Payload of POST /api/internal/keycloak/sync/event; {@code sid} is present only on session-ending and credential-change events. */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record SyncEvent(String eventId, String eventType, String userId, String username,
                             String realm, Boolean enabled, Boolean emailVerified, long timestamp,

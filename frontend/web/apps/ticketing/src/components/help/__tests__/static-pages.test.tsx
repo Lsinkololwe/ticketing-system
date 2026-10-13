@@ -25,6 +25,8 @@ import { LegalPage } from '@/components/LegalPage';
 import { QueueClient } from '@/components/checkout/QueueClient';
 import { QrCode } from '@pml.tickets/shared/components/m3';
 import { NotAvailable } from '@/components/NotAvailable';
+import TermsPage from '@/app/terms/page';
+import PrivacyPage from '@/app/privacy/page';
 
 describe('static and fallback pages', () => {
   it('help lists the booking topics and the four refund policies', () => {
@@ -42,6 +44,15 @@ describe('static and fallback pages', () => {
     expect(screen.getByTestId('legal-draft-banner')).toHaveTextContent('Draft for legal review.');
     expect(screen.getByRole('heading', { name: 'Your account' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Back to Showstop/ })).toHaveAttribute('href', '/');
+  });
+  it.each([
+    ['Terms of Use', TermsPage],
+    ['Privacy Policy', PrivacyPage],
+  ])('the real %s page shows the draft banner and a last-updated date', (title, Page) => {
+    render(<Page />);
+    expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
+    expect(screen.getByTestId('legal-draft-banner')).toHaveTextContent('Draft for legal review.');
+    expect(screen.getByText(/Draft last updated \w+ \d{4}/)).toBeInTheDocument();
   });
   it('the waiting room is honest that no queue exists yet', () => {
     render(<QueueClient eventId="e1" />);

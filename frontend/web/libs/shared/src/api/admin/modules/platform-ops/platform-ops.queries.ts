@@ -151,17 +151,6 @@ export const OPS_STAFF_ACCOUNTS = gql`
   }
 `;
 
-export const OPS_CREATE_STAFF = gql`
-  mutation OpsCreateStaff($input: CreateUserInput!) {
-    createUser(input: $input) {
-      id
-      email
-      fullName
-      roles
-    }
-  }
-`;
-
 export const OPS_DELETE_USER = gql`
   mutation OpsDeleteUser($id: ID!) {
     deleteUser(id: $id) {

@@ -92,19 +92,18 @@ public class TeamInvitationQueryResolver {
     @DgsQuery
     @PreAuthorize("isAuthenticated()")
     public Flux<TeamInvitation> myPendingInvitations() {
-        // Invitations addressed to the caller by email (the token's address) and by any verified
-        // WhatsApp number the account holds. The numbers come from the account's own contacts,
-        // never from the request.
-        Flux<TeamInvitation> byEmail = SecurityContextUtils.getCurrentUserEmail()
-                .filter(email -> !email.isBlank())
-                .flatMapMany(invitationService::findPendingByEmail);
-        Flux<TeamInvitation> byPhone = SecurityContextUtils.requireCurrentUserId()
+        // Invitations addressed to a contact the caller has VERIFIED: every verified email and every
+        // verified WhatsApp number the account holds. They come from the account's own contacts,
+        // never from the request and never from the token's email claim, which says only what the
+        // identity provider was told and is not proof that the person holds the address.
+        Flux<TeamInvitation> addressedToMe = SecurityContextUtils.requireCurrentUserId()
                 .flatMapMany(userId -> contactService.contactsOf(userId)
-                        .filter(contact -> contact.getType() == com.pml.identity.domain.enums.ContactType.WHATSAPP
-                                && contact.getVerifiedAt() != null)
-                        .concatMap(contact -> contactCrypto.decrypt(contact.getValueEncrypted()))
-                        .concatMap(invitationService::findPendingByPhone));
-        return byEmail.concatWith(byPhone).distinct(TeamInvitation::getId);
+                        .filter(contact -> contact.getVerifiedAt() != null)
+                        .concatMap(contact -> contactCrypto.decrypt(contact.getValueEncrypted())
+                                .flatMapMany(value -> contact.getType() == com.pml.identity.domain.enums.ContactType.EMAIL
+                                        ? invitationService.findPendingByEmail(value)
+                                        : invitationService.findPendingByPhone(value))));
+        return addressedToMe.distinct(TeamInvitation::getId);
     }
 
     // ========================================================================

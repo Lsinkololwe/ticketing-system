@@ -8,11 +8,16 @@ import { Button, Checkbox, Dialog, FormGrid, FormCell, Select, TextField } from 
 import { ADMIN_STAFF_ROLES, ADMIN_USER_ROLES, type AdminUserRecord, type AdminUserRole } from '@pml.tickets/shared/api/admin/modules/identity-admin';
 import { humanize } from '@/lib/format';
 
-export type UserFormMode = 'create' | 'admin' | 'edit';
+/**
+ * Two forms only. `admin` creates a platform staff account (offered to a super admin, the only role allowed
+ * to grant staff roles). `edit` changes the name of an existing account. Customer and organizer accounts are
+ * never created here: those people create their own account by signing in with a code.
+ */
+export type UserFormMode = 'admin' | 'edit';
 
 const nameField = (msg: string) => z.string().trim().min(1, msg);
 const PHONE = /^\+\d{9,15}$/;
-const createSchema = z.object({
+const staffSchema = z.object({
   firstName: nameField('Enter a first name'),
   lastName: nameField('Enter a last name'),
   email: email(),
@@ -20,7 +25,7 @@ const createSchema = z.object({
   role: z.string(),
   displayName: z.string(),
 });
-const adminSchema = createSchema.extend({ phone: z.string().trim().regex(PHONE, 'Staff need a phone number such as +260971234567') });
+const adminSchema = staffSchema.extend({ phone: z.string().trim().regex(PHONE, 'Staff need a phone number such as +260971234567') });
 const editSchema = z.object({
   firstName: nameField('Enter a first name'),
   lastName: nameField('Enter a last name'),
@@ -29,7 +34,7 @@ const editSchema = z.object({
   role: z.string(),
   displayName: z.string().trim(),
 });
-export type UserFormValues = z.output<typeof createSchema>;
+export type UserFormValues = z.output<typeof staffSchema>;
 
 export interface UserFormDialogProps {
   open: boolean;
@@ -41,19 +46,14 @@ export interface UserFormDialogProps {
 }
 
 const COPY: Record<UserFormMode, { title: string; body: string; label: string }> = {
-  create: {
-    title: 'New user',
-    body: 'Creates a customer or organizer account. The person completes their phone verification at first sign-in.',
-    label: 'Create user',
-  },
-  admin: { title: 'Create admin', body: 'Staff accounts must enrol an authenticator app at first sign-in.', label: 'Create admin' },
+  admin: { title: 'Create admin', body: 'A one-time password is generated and shown once after the account is created. Staff must enrol an authenticator app at first sign-in.', label: 'Create admin' },
   edit: { title: 'Edit user', body: 'Email, phone and verification state are managed in Keycloak and cannot be edited here.', label: 'Save changes' },
 };
 
-/** New user / Create admin / Edit: one react-hook-form + zod form, three modes. */
+/** Create admin / Edit: one react-hook-form + zod form, two modes. */
 export function UserFormDialog({ open, mode, user, loading, onClose, onSubmit }: UserFormDialogProps) {
-  const form = useZodForm(mode === 'edit' ? editSchema : mode === 'admin' ? adminSchema : createSchema, {
-    defaultValues: { firstName: '', lastName: '', email: '', phone: '', role: mode === 'admin' ? 'ADMIN' : 'CUSTOMER', displayName: '' },
+  const form = useZodForm(mode === 'edit' ? editSchema : adminSchema, {
+    defaultValues: { firstName: '', lastName: '', email: '', phone: '', role: 'ADMIN', displayName: '' },
   });
   const { register, handleSubmit, reset, formState } = form;
   const { errors } = formState;
@@ -64,7 +64,7 @@ export function UserFormDialog({ open, mode, user, loading, onClose, onSubmit }:
       lastName: user?.lastName ?? '',
       email: user?.email ?? '',
       phone: '',
-      role: mode === 'admin' ? 'ADMIN' : 'CUSTOMER',
+      role: 'ADMIN',
       displayName: '',
     });
   }, [open, mode, user, reset]);
@@ -107,20 +107,13 @@ export function UserFormDialog({ open, mode, user, loading, onClose, onSubmit }:
               <TextField label="Phone number" type="tel" inputMode="tel" placeholder="+260971234567" errorText={errors.phone?.message} {...register('phone')} />
             </FormCell>
             <FormCell span={12}>
-              {mode === 'admin' ? (
-                <Select label="Staff role" {...register('role')}>
-                  {(['ADMIN', 'FINANCE', 'FINANCE_LEAD', 'SUPER_ADMIN'] as const).map((r) => (
-                    <option key={r} value={r}>
-                      {humanize(r)}
-                    </option>
-                  ))}
-                </Select>
-              ) : (
-                <Select label="Role" {...register('role')}>
-                  <option value="CUSTOMER">Customer</option>
-                  <option value="ORGANIZER">Organizer</option>
-                </Select>
-              )}
+              <Select label="Staff role" {...register('role')}>
+                {(['ADMIN', 'FINANCE', 'FINANCE_LEAD', 'SUPER_ADMIN'] as const).map((r) => (
+                  <option key={r} value={r}>
+                    {humanize(r)}
+                  </option>
+                ))}
+              </Select>
             </FormCell>
           </>
         )}
@@ -132,8 +125,6 @@ export function UserFormDialog({ open, mode, user, loading, onClose, onSubmit }:
 export interface RolesDialogProps {
   open: boolean;
   user: AdminUserRecord | null;
-  /** SUPER_ADMIN only: may grant or remove staff roles. */
-  canEditStaffRoles: boolean;
   loading?: boolean;
   onClose: () => void;
   onSubmit: (roles: AdminUserRole[]) => void;
@@ -141,12 +132,15 @@ export interface RolesDialogProps {
 
 const rolesSchema = z.object({ roles: z.array(z.string()).min(1, 'Choose at least one role') });
 
+/** Staff roles live in the staff realm; a customer or organizer account cannot hold them, so they are not offered. */
+const BUYER_ROLES: readonly AdminUserRole[] = ADMIN_USER_ROLES.filter((r) => !ADMIN_STAFF_ROLES.includes(r));
+
 /** Role checklist. CUSTOMER is the base role the backend requires on every account. */
-export function RolesDialog({ open, user, canEditStaffRoles, loading, onClose, onSubmit }: RolesDialogProps) {
+export function RolesDialog({ open, user, loading, onClose, onSubmit }: RolesDialogProps) {
   const form = useZodForm(rolesSchema, { defaultValues: { roles: ['CUSTOMER'] } });
   const { register, handleSubmit, reset, formState } = form;
   useEffect(() => {
-    if (open && user) reset({ roles: Array.from(new Set(['CUSTOMER', ...user.roles])) });
+    if (open && user) reset({ roles: Array.from(new Set(['CUSTOMER', ...user.roles.filter((r) => BUYER_ROLES.includes(r))])) });
   }, [open, user, reset]);
   if (!user) return null;
   return (
@@ -164,14 +158,8 @@ export function RolesDialog({ open, user, canEditStaffRoles, loading, onClose, o
             loading={loading}
             onClick={handleSubmit((v) => {
               const chosen = ([] as string[]).concat(v.roles ?? []);
-              // Disabled controls drop out of the form value, so locked staff roles are carried over from the account.
-              onSubmit(
-                ADMIN_USER_ROLES.filter((r) => {
-                  if (r === 'CUSTOMER') return true;
-                  if (ADMIN_STAFF_ROLES.includes(r) && !canEditStaffRoles) return user.roles.includes(r);
-                  return chosen.includes(r);
-                })
-              );
+              // The base role is a disabled control, so it drops out of the form value and is always added back.
+              onSubmit(BUYER_ROLES.filter((r) => r === 'CUSTOMER' || chosen.includes(r)));
             })}
           >
             Save roles
@@ -179,15 +167,15 @@ export function RolesDialog({ open, user, canEditStaffRoles, loading, onClose, o
         </>
       }
     >
-      <p className="m3-muted">{canEditStaffRoles ? 'Select every role this person holds.' : 'Only a super admin can grant or remove staff roles.'}</p>
+      <p className="m3-muted">Select every role this person holds.</p>
       <div className="m3-stack">
-        {ADMIN_USER_ROLES.map((r) => (
+        {BUYER_ROLES.map((r) => (
           <Checkbox
             key={r}
             label={humanize(r)}
             hint={r === 'CUSTOMER' ? 'Base role every account keeps' : undefined}
             value={r}
-            disabled={r === 'CUSTOMER' || (ADMIN_STAFF_ROLES.includes(r) && !canEditStaffRoles)}
+            disabled={r === 'CUSTOMER'}
             {...register('roles')}
           />
         ))}

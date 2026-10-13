@@ -28,7 +28,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -225,77 +224,71 @@ class EventEditingTest {
         assertThat(stored.getLocationName()).isEqualTo("Nkana Stadium");
     }
 
-    @Nested
-    @DisplayName("an approved event")
-    class Approved {
+    // ── an approved event ─────────────────────────────────────────────────────────────────────────
 
-        static Stream<Map<String, Object>> materialEdits() {
-            return Stream.of(
-                    payload("eventDateTime", STARTS.plusSeconds(3600)),
-                    payload("endDateTime", ENDS.plusSeconds(3600)),
-                    payload("totalCapacity", 200),
-                    payload("location", payload("name", "Nkana Stadium", "address", "Freedom Ave",
-                            "city", "Kitwe", "country", "Zambia")));
-        }
-
-        @ParameterizedTest(name = "{0}")
-        @MethodSource("materialEdits")
-        @DisplayName("each material change sends it back to draft and clears the approval")
-        void materialChangeReturnsToDraft(Map<String, Object> change) {
-            seed(EventStatus.APPROVED);
-
-            edit(change);
-
-            Event stored = events.findById(EVENT).block();
-            assertThat(stored.getStatus()).isEqualTo(EventStatus.DRAFT);
-            assertThat(stored.getApprovedAt()).isNull();
-            assertThat(stored.getApprovedBy()).isNull();
-        }
-
-        @Test
-        @DisplayName("a non-material change leaves it approved")
-        void nonMaterialKeepsApproval() {
-            seed(EventStatus.APPROVED);
-
-            edit(payload("description", "Now with a guest trumpeter", "bannerImageUrl", "https://cdn.example.com/new.jpg"));
-
-            Event stored = events.findById(EVENT).block();
-            assertThat(stored.getStatus()).isEqualTo(EventStatus.APPROVED);
-            assertThat(stored.getApprovedBy()).isEqualTo("reviewer-1");
-        }
+    static Stream<Map<String, Object>> materialEdits() {
+        return Stream.of(
+                payload("eventDateTime", STARTS.plusSeconds(3600)),
+                payload("endDateTime", ENDS.plusSeconds(3600)),
+                payload("totalCapacity", 200),
+                payload("location", payload("name", "Nkana Stadium", "address", "Freedom Ave",
+                        "city", "Kitwe", "country", "Zambia")));
     }
 
-    @Nested
-    @DisplayName("a published event")
-    class Published {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("materialEdits")
+    @DisplayName("an approved event · each material change sends it back to draft and clears the approval")
+    void approved_materialChangeReturnsToDraft(Map<String, Object> change) {
+        seed(EventStatus.APPROVED);
 
-        @Test
-        @DisplayName("a material change is refused with its status, and nothing changes")
-        void materialChangeRefused() {
-            seed(EventStatus.PUBLISHED);
+        edit(change);
 
-            DomainRefusal refused = null;
-            try {
-                edit(payload("eventDateTime", STARTS.plusSeconds(3600)));
-            } catch (DomainRefusal e) {
-                refused = e;
-            }
+        Event stored = events.findById(EVENT).block();
+        assertThat(stored.getStatus()).isEqualTo(EventStatus.DRAFT);
+        assertThat(stored.getApprovedAt()).isNull();
+        assertThat(stored.getApprovedBy()).isNull();
+    }
 
-            assertThat(refused).isNotNull();
-            assertThat(refused.errorCode()).isEqualTo(ErrorCode.EVENT_STATE_INVALID);
-            assertThat(refused.details()).containsEntry("currentStatus", "PUBLISHED");
-            assertThat(events.findById(EVENT).block().getEventDateTime()).isEqualTo(STARTS);
+    @Test
+    @DisplayName("an approved event · a non-material change leaves it approved")
+    void approved_nonMaterialKeepsApproval() {
+        seed(EventStatus.APPROVED);
+
+        edit(payload("description", "Now with a guest trumpeter", "bannerImageUrl", "https://cdn.example.com/new.jpg"));
+
+        Event stored = events.findById(EVENT).block();
+        assertThat(stored.getStatus()).isEqualTo(EventStatus.APPROVED);
+        assertThat(stored.getApprovedBy()).isEqualTo("reviewer-1");
+    }
+
+    // ── a published event ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("a published event · a material change is refused with its status, and nothing changes")
+    void published_materialChangeRefused() {
+        seed(EventStatus.PUBLISHED);
+
+        DomainRefusal refused = null;
+        try {
+            edit(payload("eventDateTime", STARTS.plusSeconds(3600)));
+        } catch (DomainRefusal e) {
+            refused = e;
         }
 
-        @Test
-        @DisplayName("a non-material change is accepted")
-        void nonMaterialAccepted() {
-            seed(EventStatus.PUBLISHED);
+        assertThat(refused).isNotNull();
+        assertThat(refused.errorCode()).isEqualTo(ErrorCode.EVENT_STATE_INVALID);
+        assertThat(refused.details()).containsEntry("currentStatus", "PUBLISHED");
+        assertThat(events.findById(EVENT).block().getEventDateTime()).isEqualTo(STARTS);
+    }
 
-            edit(payload("termsAndConditions", "Bring ID."));
+    @Test
+    @DisplayName("a published event · a non-material change is accepted")
+    void published_nonMaterialAccepted() {
+        seed(EventStatus.PUBLISHED);
 
-            assertThat(events.findById(EVENT).block().getTermsAndConditions()).isEqualTo("Bring ID.");
-        }
+        edit(payload("termsAndConditions", "Bring ID."));
+
+        assertThat(events.findById(EVENT).block().getTermsAndConditions()).isEqualTo("Bring ID.");
     }
 
     @Test
@@ -325,53 +318,50 @@ class EventEditingTest {
         assertThat(refusal(() -> edit(payload("title", "Rewritten history")))).isEqualTo(ErrorCode.EVENT_STATE_INVALID);
     }
 
-    @Nested
-    @DisplayName("authorization")
-    class Authorization {
+    // ── authorization ─────────────────────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("an organizer cannot make their own event featured")
-        void organizerCannotFeature() {
-            seed(EventStatus.DRAFT);
+    @Test
+    @DisplayName("authorization · an organizer cannot make their own event featured")
+    void authorization_organizerCannotFeature() {
+        seed(EventStatus.DRAFT);
 
-            assertThat(refusal(() -> edit(payload("featured", true)))).isEqualTo(ErrorCode.ACTOR_NOT_PERMITTED);
-            assertThat(events.findById(EVENT).block().isFeatured()).isFalse();
-        }
+        assertThat(refusal(() -> edit(payload("featured", true)))).isEqualTo(ErrorCode.ACTOR_NOT_PERMITTED);
+        assertThat(events.findById(EVENT).block().isFeatured()).isFalse();
+    }
 
-        @Test
-        @DisplayName("a platform administrator can")
-        void adminCanFeature() {
-            seed(EventStatus.DRAFT);
+    @Test
+    @DisplayName("authorization · a platform administrator can")
+    void authorization_adminCanFeature() {
+        seed(EventStatus.DRAFT);
 
-            edit(payload("featured", true), "ROLE_ADMIN");
+        edit(payload("featured", true), "ROLE_ADMIN");
 
-            assertThat(events.findById(EVENT).block().isFeatured()).isTrue();
-        }
+        assertThat(events.findById(EVENT).block().isFeatured()).isTrue();
+    }
 
-        @Test
-        @DisplayName("another organization's event looks like no event at all")
-        void otherTenant() {
-            seed(EventStatus.DRAFT);
-            UpdateEventInput input = new DefaultInputObjectMapper().mapToJavaObject(payload("title", "Hijacked"), UpdateEventInput.class);
+    @Test
+    @DisplayName("authorization · another organization's event looks like no event at all")
+    void authorization_otherTenant() {
+        seed(EventStatus.DRAFT);
+        UpdateEventInput input = new DefaultInputObjectMapper().mapToJavaObject(payload("title", "Hijacked"), UpdateEventInput.class);
 
-            assertThatThrownBy(() -> resolver.updateEvent(EVENT, input)
-                    .contextWrite(EventAuthoringTest.signedIn("user-intruder"))
-                    .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.of("user-intruder", Set.of("org-rival")))))
-                    .block())
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode()).isEqualTo(ErrorCode.EVENT_UNKNOWN));
-            assertThat(events.findById(EVENT).block().getTitle()).isEqualTo("Lusaka Jazz Night");
-        }
+        assertThatThrownBy(() -> resolver.updateEvent(EVENT, input)
+                .contextWrite(EventAuthoringTest.signedIn("user-intruder"))
+                .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.of("user-intruder", Set.of("org-rival")))))
+                .block())
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode()).isEqualTo(ErrorCode.EVENT_UNKNOWN));
+        assertThat(events.findById(EVENT).block().getTitle()).isEqualTo("Lusaka Jazz Night");
+    }
 
-        @Test
-        @DisplayName("a member without event:edit is refused")
-        void withoutPermission() {
-            seed(EventStatus.DRAFT);
-            identity.authorized = false;
+    @Test
+    @DisplayName("authorization · a member without event:edit is refused")
+    void authorization_withoutPermission() {
+        seed(EventStatus.DRAFT);
+        identity.authorized = false;
 
-            assertThatThrownBy(() -> edit(payload("title", "Nope")))
-                    .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
-        }
+        assertThatThrownBy(() -> edit(payload("title", "Nope")))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
     @Test
@@ -403,245 +393,236 @@ class EventEditingTest {
                 .block();
     }
 
-    @Nested
-    @DisplayName("the event page content")
-    class PageContent {
+    // ── the event page content ────────────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("every content field the editor sends is stored, and editing it leaves an approved event approved")
-        void storedWithoutReview() {
-            seed(EventStatus.APPROVED);
+    @Test
+    @DisplayName("the event page content · every content field the editor sends is stored, and editing it leaves an approved event approved")
+    void pageContent_storedWithoutReview() {
+        seed(EventStatus.APPROVED);
 
-            edit(payload(
-                    "tagline", "Smooth and loud",
-                    "ageRestriction", "16+",
-                    "doorsOpenAt", STARTS.minusSeconds(1800),
-                    "faqs", List.of(payload("question", "Can I bring a child?", "answer", "From 16.")),
-                    "runningOrder", List.of(payload("time", "16:30", "title", "Doors")),
-                    "gettingThere", "Minibus from Town",
-                    "parkingInfo", "Free",
-                    "bagPolicy", "No bottles",
-                    "checkoutSettings", payload("maxTicketsPerOrder", 5, "collectHolderNames", false, "extraQuestion", "Allergies?"),
-                    "bannerAltText", "Band on stage"));
+        edit(payload(
+                "tagline", "Smooth and loud",
+                "ageRestriction", "16+",
+                "doorsOpenAt", STARTS.minusSeconds(1800),
+                "faqs", List.of(payload("question", "Can I bring a child?", "answer", "From 16.")),
+                "runningOrder", List.of(payload("time", "16:30", "title", "Doors")),
+                "gettingThere", "Minibus from Town",
+                "parkingInfo", "Free",
+                "bagPolicy", "No bottles",
+                "checkoutSettings", payload("maxTicketsPerOrder", 5, "collectHolderNames", false, "extraQuestion", "Allergies?"),
+                "bannerAltText", "Band on stage"));
 
-            Event stored = events.findById(EVENT).block();
-            assertThat(stored.getStatus()).as("content is not a material change").isEqualTo(EventStatus.APPROVED);
-            assertThat(stored.getTagline()).isEqualTo("Smooth and loud");
-            assertThat(stored.getAgeRestriction()).isEqualTo("16+");
-            assertThat(stored.getDoorsOpenAt()).isEqualTo(STARTS.minusSeconds(1800));
-            assertThat(stored.getFaqs()).hasSize(1);
-            assertThat(stored.getRunningOrder()).hasSize(1);
-            assertThat(stored.getGettingThere()).isEqualTo("Minibus from Town");
-            assertThat(stored.getParkingInfo()).isEqualTo("Free");
-            assertThat(stored.getBagPolicy()).isEqualTo("No bottles");
-            assertThat(stored.getCheckoutSettings().maxTicketsPerOrder()).isEqualTo(5);
-            assertThat(stored.getBannerAltText()).isEqualTo("Band on stage");
-        }
+        Event stored = events.findById(EVENT).block();
+        assertThat(stored.getStatus()).as("content is not a material change").isEqualTo(EventStatus.APPROVED);
+        assertThat(stored.getTagline()).isEqualTo("Smooth and loud");
+        assertThat(stored.getAgeRestriction()).isEqualTo("16+");
+        assertThat(stored.getDoorsOpenAt()).isEqualTo(STARTS.minusSeconds(1800));
+        assertThat(stored.getFaqs()).hasSize(1);
+        assertThat(stored.getRunningOrder()).hasSize(1);
+        assertThat(stored.getGettingThere()).isEqualTo("Minibus from Town");
+        assertThat(stored.getParkingInfo()).isEqualTo("Free");
+        assertThat(stored.getBagPolicy()).isEqualTo("No bottles");
+        assertThat(stored.getCheckoutSettings().maxTicketsPerOrder()).isEqualTo(5);
+        assertThat(stored.getBannerAltText()).isEqualTo("Band on stage");
+    }
 
-        @Test
-        @DisplayName("a field not sent is not touched; an empty list clears")
-        void partialUpdate() {
-            seed(EventStatus.DRAFT);
-            edit(payload("tagline", "First", "faqs", List.of(payload("question", "Q?", "answer", "A."))));
+    @Test
+    @DisplayName("the event page content · a field not sent is not touched; an empty list clears")
+    void pageContent_partialUpdate() {
+        seed(EventStatus.DRAFT);
+        edit(payload("tagline", "First", "faqs", List.of(payload("question", "Q?", "answer", "A."))));
 
-            edit(payload("parkingInfo", "Free"));
-            assertThat(events.findById(EVENT).block().getTagline()).isEqualTo("First");
-            assertThat(events.findById(EVENT).block().getFaqs()).hasSize(1);
+        edit(payload("parkingInfo", "Free"));
+        assertThat(events.findById(EVENT).block().getTagline()).isEqualTo("First");
+        assertThat(events.findById(EVENT).block().getFaqs()).hasSize(1);
 
-            edit(payload("faqs", List.of()));
-            assertThat(events.findById(EVENT).block().getFaqs()).isEmpty();
-        }
+        edit(payload("faqs", List.of()));
+        assertThat(events.findById(EVENT).block().getFaqs()).isEmpty();
+    }
 
-        @Test
-        @DisplayName("a go-live time that has passed is refused when set, and doors after the start are refused")
-        void refusals() {
-            seed(EventStatus.DRAFT);
+    @Test
+    @DisplayName("the event page content · a go-live time that has passed is refused when set, and doors after the start are refused")
+    void pageContent_refusals() {
+        seed(EventStatus.DRAFT);
 
-            try {
-                edit(payload("publishAt", NOW.minusSeconds(60), "doorsOpenAt", STARTS.plusSeconds(60)));
-                throw new AssertionError("expected a refusal");
-            } catch (ValidationRefusal refused) {
-                assertThat(refused.violations()).extracting(FieldViolation::path)
-                        .containsExactlyInAnyOrder("publishAt", "doorsOpenAt");
-            }
+        try {
+            edit(payload("publishAt", NOW.minusSeconds(60), "doorsOpenAt", STARTS.plusSeconds(60)));
+            throw new AssertionError("expected a refusal");
+        } catch (ValidationRefusal refused) {
+            assertThat(refused.violations()).extracting(FieldViolation::path)
+                    .containsExactlyInAnyOrder("publishAt", "doorsOpenAt");
         }
     }
 
-    @Nested
-    @DisplayName("scheduled publication")
-    class Scheduling {
+    // ── scheduled publication ─────────────────────────────────────────────────────────────────────
 
-        private Event publish(String... roles) {
-            return as(ORGANIZER, TenantScope.of(ORGANIZER, Set.of(ORGANIZATION)), roles, () -> resolver.publishEvent(EVENT));
-        }
-
-        private void seedApproved(Instant publishAt) {
-            seed(EventStatus.APPROVED);
-            events.findById(EVENT).block();
-            Event event = events.findById(EVENT).block();
-            event.setPublishAt(publishAt);
-            events.save(event).block();
-        }
-
-        @Test
-        @DisplayName("publishing an approved event with a go-live time ahead schedules it and publishes nothing")
-        void schedules() {
-            Instant at = NOW.plusSeconds(3 * 86_400);
-            seedApproved(at);
-
-            Event result = publish();
-
-            assertThat(result.getStatus()).isEqualTo(EventStatus.APPROVED);
-            assertThat(result.isPublishScheduled()).isTrue();
-            Event stored = events.findById(EVENT).block();
-            assertThat(stored.isPublishScheduled()).isTrue();
-            assertThat(stored.isPublished()).isFalse();
-            Mockito.verify(schedules).schedule(EVENT, at);
-            Mockito.verifyNoInteractions(lifecycle);
-        }
-
-        @Test
-        @DisplayName("with no go-live time, or one already past, publishing publishes now")
-        void publishesNow() {
-            Mockito.when(lifecycle.publish(Mockito.eq(EVENT), Mockito.anyString())).thenReturn(Mono.just(Event.builder().id(EVENT).build()));
-            seedApproved(null);
-
-            publish();
-            Mockito.verify(lifecycle).publish(EVENT, ORGANIZER);
-            Mockito.verifyNoInteractions(schedules);
-
-            seedApproved(NOW.minusSeconds(60));
-            publish();
-            Mockito.verify(lifecycle, Mockito.times(2)).publish(EVENT, ORGANIZER);
-            Mockito.verify(schedules, Mockito.never()).schedule(Mockito.anyString(), Mockito.any());
-        }
-
-        @Test
-        @DisplayName("an event that is not approved is not scheduled, whatever its go-live time")
-        void onlyApproved() {
-            Mockito.when(lifecycle.publish(Mockito.eq(EVENT), Mockito.anyString())).thenReturn(Mono.just(Event.builder().id(EVENT).build()));
-            seed(EventStatus.DRAFT);
-            Event event = events.findById(EVENT).block();
-            event.setPublishAt(NOW.plusSeconds(86_400));
-            events.save(event).block();
-
-            publish();
-
-            Mockito.verify(lifecycle).publish(EVENT, ORGANIZER);
-            assertThat(events.findById(EVENT).block().isPublishScheduled()).isFalse();
-        }
-
-        @Test
-        @DisplayName("scheduling twice is the same schedule")
-        void idempotent() {
-            seedApproved(NOW.plusSeconds(86_400));
-
-            publish();
-            publish();
-
-            assertThat(events.findById(EVENT).block().isPublishScheduled()).isTrue();
-        }
-
-        @Test
-        @DisplayName("moving the go-live time of a scheduled event moves the wait")
-        void editMovesTheWait() {
-            seedApproved(NOW.plusSeconds(86_400));
-            publish();
-            Instant later = NOW.plusSeconds(5 * 86_400);
-
-            edit(payload("publishAt", later));
-
-            assertThat(events.findById(EVENT).block().getPublishAt()).isEqualTo(later);
-            Mockito.verify(schedules).move(EVENT, later);
-        }
-
-        @Test
-        @DisplayName("an edit that sends the event back for review ends the schedule")
-        void materialEditEndsIt() {
-            seedApproved(NOW.plusSeconds(86_400));
-            publish();
-
-            edit(payload("totalCapacity", 200));
-
-            Event stored = events.findById(EVENT).block();
-            assertThat(stored.getStatus()).isEqualTo(EventStatus.DRAFT);
-            assertThat(stored.isPublishScheduled()).isFalse();
-            Mockito.verify(schedules).cancel(EVENT);
-        }
-
-        @Test
-        @DisplayName("cancelScheduledPublish clears the time and stops the wait; an unscheduled event is returned unchanged")
-        void cancelSchedule() {
-            seedApproved(NOW.plusSeconds(86_400));
-            publish();
-
-            Event cleared = as(ORGANIZER, TenantScope.of(ORGANIZER, Set.of(ORGANIZATION)), new String[0],
-                    () -> resolver.cancelScheduledPublish(EVENT));
-
-            assertThat(cleared.isPublishScheduled()).isFalse();
-            assertThat(cleared.getPublishAt()).isNull();
-            assertThat(events.findById(EVENT).block().getPublishAt()).isNull();
-            Mockito.verify(schedules).cancel(EVENT);
-            assertThat(as(ORGANIZER, TenantScope.of(ORGANIZER, Set.of(ORGANIZATION)), new String[0],
-                    () -> resolver.cancelScheduledPublish(EVENT)).getStatus()).isEqualTo(EventStatus.APPROVED);
-        }
-
-        @Test
-        @DisplayName("another organization cannot schedule or unschedule it")
-        void tenantScoped() {
-            seedApproved(NOW.plusSeconds(86_400));
-            TenantScope rival = TenantScope.of("intruder", Set.of("org-rival"));
-
-            assertThat(refusal(() -> as("intruder", rival, new String[0], () -> resolver.publishEvent(EVENT))))
-                    .isEqualTo(ErrorCode.EVENT_UNKNOWN);
-            assertThat(refusal(() -> as("intruder", rival, new String[0], () -> resolver.cancelScheduledPublish(EVENT))))
-                    .isEqualTo(ErrorCode.EVENT_UNKNOWN);
-            assertThat(events.findById(EVENT).block().isPublishScheduled()).isFalse();
-            Mockito.verifyNoInteractions(schedules);
-        }
+    private Event publish(String... roles) {
+        return as(ORGANIZER, TenantScope.of(ORGANIZER, Set.of(ORGANIZATION)), roles, () -> resolver.publishEvent(EVENT));
     }
 
-    @Nested
-    @DisplayName("a platform administrator cancelling an event")
-    class AdminCancel {
+    private void seedApproved(Instant publishAt) {
+        seed(EventStatus.APPROVED);
+        events.findById(EVENT).block();
+        Event event = events.findById(EVENT).block();
+        event.setPublishAt(publishAt);
+        events.save(event).block();
+    }
 
-        private EventCancellationInputDtoHolder input() {
-            return new EventCancellationInputDtoHolder();
-        }
+    @Test
+    @DisplayName("scheduled publication · publishing an approved event with a go-live time ahead schedules it and publishes nothing")
+    void scheduling_schedules() {
+        Instant at = NOW.plusSeconds(3 * 86_400);
+        seedApproved(at);
 
-        /** The mutation's input as DGS binds it. */
-        final class EventCancellationInputDtoHolder {
-            final com.pml.catalog.web.graphql.dto.EventCancellationInputDto dto =
-                    new DefaultInputObjectMapper().mapToJavaObject(payload("reason", "Venue lost its licence"),
-                            com.pml.catalog.web.graphql.dto.EventCancellationInputDto.class);
-        }
+        Event result = publish();
 
-        @Test
-        @DisplayName("cancels another organization's event, as the organizer could, with the administrator as the actor")
-        void adminCancels() {
-            seed(EventStatus.PUBLISHED);
-            Mockito.when(lifecycle.cancel(Mockito.eq(EVENT), Mockito.anyString(), Mockito.anyString()))
-                    .thenReturn(Mono.just(Event.builder().id(EVENT).status(EventStatus.CANCELLED).soldTickets(7).build()));
+        assertThat(result.getStatus()).isEqualTo(EventStatus.APPROVED);
+        assertThat(result.isPublishScheduled()).isTrue();
+        Event stored = events.findById(EVENT).block();
+        assertThat(stored.isPublishScheduled()).isTrue();
+        assertThat(stored.isPublished()).isFalse();
+        Mockito.verify(schedules).schedule(EVENT, at);
+        Mockito.verifyNoInteractions(lifecycle);
+    }
 
-            var response = resolver.cancelEvent(EVENT, input().dto)
-                    .contextWrite(EventAuthoringTest.signedIn("admin-1", "ROLE_ADMIN"))
-                    .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.platformAdministrator("admin-1", Set.of()))))
-                    .block();
+    @Test
+    @DisplayName("scheduled publication · with no go-live time, or one already past, publishing publishes now")
+    void scheduling_publishesNow() {
+        Mockito.when(lifecycle.publish(Mockito.eq(EVENT), Mockito.anyString())).thenReturn(Mono.just(Event.builder().id(EVENT).build()));
+        seedApproved(null);
 
-            assertThat(response.getTicketsAffected()).isEqualTo(7);
-            Mockito.verify(lifecycle).cancel(EVENT, "admin-1", "Venue lost its licence");
-        }
+        publish();
+        Mockito.verify(lifecycle).publish(EVENT, ORGANIZER);
+        Mockito.verifyNoInteractions(schedules);
 
-        @Test
-        @DisplayName("an organizer of another organization still cannot")
-        void strangerCannot() {
-            seed(EventStatus.PUBLISHED);
+        seedApproved(NOW.minusSeconds(60));
+        publish();
+        Mockito.verify(lifecycle, Mockito.times(2)).publish(EVENT, ORGANIZER);
+        Mockito.verify(schedules, Mockito.never()).schedule(Mockito.anyString(), Mockito.any());
+    }
 
-            assertThat(refusal(() -> resolver.cancelEvent(EVENT, input().dto)
-                    .contextWrite(EventAuthoringTest.signedIn("intruder", "ROLE_ORGANIZER"))
-                    .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.of("intruder", Set.of("org-rival")))))
-                    .block())).isEqualTo(ErrorCode.EVENT_UNKNOWN);
-            Mockito.verifyNoInteractions(lifecycle);
-        }
+    @Test
+    @DisplayName("scheduled publication · an event that is not approved is not scheduled, whatever its go-live time")
+    void scheduling_onlyApproved() {
+        Mockito.when(lifecycle.publish(Mockito.eq(EVENT), Mockito.anyString())).thenReturn(Mono.just(Event.builder().id(EVENT).build()));
+        seed(EventStatus.DRAFT);
+        Event event = events.findById(EVENT).block();
+        event.setPublishAt(NOW.plusSeconds(86_400));
+        events.save(event).block();
+
+        publish();
+
+        Mockito.verify(lifecycle).publish(EVENT, ORGANIZER);
+        assertThat(events.findById(EVENT).block().isPublishScheduled()).isFalse();
+    }
+
+    @Test
+    @DisplayName("scheduled publication · scheduling twice is the same schedule")
+    void scheduling_idempotent() {
+        seedApproved(NOW.plusSeconds(86_400));
+
+        publish();
+        publish();
+
+        assertThat(events.findById(EVENT).block().isPublishScheduled()).isTrue();
+    }
+
+    @Test
+    @DisplayName("scheduled publication · moving the go-live time of a scheduled event moves the wait")
+    void scheduling_editMovesTheWait() {
+        seedApproved(NOW.plusSeconds(86_400));
+        publish();
+        Instant later = NOW.plusSeconds(5 * 86_400);
+
+        edit(payload("publishAt", later));
+
+        assertThat(events.findById(EVENT).block().getPublishAt()).isEqualTo(later);
+        Mockito.verify(schedules).move(EVENT, later);
+    }
+
+    @Test
+    @DisplayName("scheduled publication · an edit that sends the event back for review ends the schedule")
+    void scheduling_materialEditEndsIt() {
+        seedApproved(NOW.plusSeconds(86_400));
+        publish();
+
+        edit(payload("totalCapacity", 200));
+
+        Event stored = events.findById(EVENT).block();
+        assertThat(stored.getStatus()).isEqualTo(EventStatus.DRAFT);
+        assertThat(stored.isPublishScheduled()).isFalse();
+        Mockito.verify(schedules).cancel(EVENT);
+    }
+
+    @Test
+    @DisplayName("scheduled publication · cancelScheduledPublish clears the time and stops the wait; an unscheduled event is returned unchanged")
+    void scheduling_cancelSchedule() {
+        seedApproved(NOW.plusSeconds(86_400));
+        publish();
+
+        Event cleared = as(ORGANIZER, TenantScope.of(ORGANIZER, Set.of(ORGANIZATION)), new String[0],
+                () -> resolver.cancelScheduledPublish(EVENT));
+
+        assertThat(cleared.isPublishScheduled()).isFalse();
+        assertThat(cleared.getPublishAt()).isNull();
+        assertThat(events.findById(EVENT).block().getPublishAt()).isNull();
+        Mockito.verify(schedules).cancel(EVENT);
+        assertThat(as(ORGANIZER, TenantScope.of(ORGANIZER, Set.of(ORGANIZATION)), new String[0],
+                () -> resolver.cancelScheduledPublish(EVENT)).getStatus()).isEqualTo(EventStatus.APPROVED);
+    }
+
+    @Test
+    @DisplayName("scheduled publication · another organization cannot schedule or unschedule it")
+    void scheduling_tenantScoped() {
+        seedApproved(NOW.plusSeconds(86_400));
+        TenantScope rival = TenantScope.of("intruder", Set.of("org-rival"));
+
+        assertThat(refusal(() -> as("intruder", rival, new String[0], () -> resolver.publishEvent(EVENT))))
+                .isEqualTo(ErrorCode.EVENT_UNKNOWN);
+        assertThat(refusal(() -> as("intruder", rival, new String[0], () -> resolver.cancelScheduledPublish(EVENT))))
+                .isEqualTo(ErrorCode.EVENT_UNKNOWN);
+        assertThat(events.findById(EVENT).block().isPublishScheduled()).isFalse();
+        Mockito.verifyNoInteractions(schedules);
+    }
+
+    // ── a platform administrator cancelling an event ──────────────────────────────────────────────
+
+    private EventCancellationInputDtoHolder input() {
+        return new EventCancellationInputDtoHolder();
+    }
+
+    /** The mutation's input as DGS binds it. */
+    final class EventCancellationInputDtoHolder {
+        final com.pml.catalog.web.graphql.dto.EventCancellationInputDto dto =
+                new DefaultInputObjectMapper().mapToJavaObject(payload("reason", "Venue lost its licence"),
+                        com.pml.catalog.web.graphql.dto.EventCancellationInputDto.class);
+    }
+
+    @Test
+    @DisplayName("a platform administrator cancelling an event · cancels another organization's event, as the organizer could, with the administrator as the actor")
+    void adminCancel_adminCancels() {
+        seed(EventStatus.PUBLISHED);
+        Mockito.when(lifecycle.cancel(Mockito.eq(EVENT), Mockito.anyString(), Mockito.anyString()))
+                .thenReturn(Mono.just(Event.builder().id(EVENT).status(EventStatus.CANCELLED).soldTickets(7).build()));
+
+        var response = resolver.cancelEvent(EVENT, input().dto)
+                .contextWrite(EventAuthoringTest.signedIn("admin-1", "ROLE_ADMIN"))
+                .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.platformAdministrator("admin-1", Set.of()))))
+                .block();
+
+        assertThat(response.getTicketsAffected()).isEqualTo(7);
+        Mockito.verify(lifecycle).cancel(EVENT, "admin-1", "Venue lost its licence");
+    }
+
+    @Test
+    @DisplayName("a platform administrator cancelling an event · an organizer of another organization still cannot")
+    void adminCancel_strangerCannot() {
+        seed(EventStatus.PUBLISHED);
+
+        assertThat(refusal(() -> resolver.cancelEvent(EVENT, input().dto)
+                .contextWrite(EventAuthoringTest.signedIn("intruder", "ROLE_ORGANIZER"))
+                .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.of("intruder", Set.of("org-rival")))))
+                .block())).isEqualTo(ErrorCode.EVENT_UNKNOWN);
+        Mockito.verifyNoInteractions(lifecycle);
     }
 }

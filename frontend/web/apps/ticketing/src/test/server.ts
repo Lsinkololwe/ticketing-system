@@ -109,7 +109,7 @@ export function req(
   return new Request(`${APP}${path}`, {
     method,
     headers: {
-      ...(method === "GET" ? {} : { origin: APP, "x-pml-csrf": "1" }),
+      ...(method === "GET" ? {} : { origin: APP, "x-requested-with": "pml-web" }),
       "content-type": "application/json",
       "x-forwarded-for": freshIp(),
       ...(cookie ? { cookie } : {}),

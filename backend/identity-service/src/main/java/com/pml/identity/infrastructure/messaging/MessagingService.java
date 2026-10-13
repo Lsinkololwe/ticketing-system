@@ -55,12 +55,15 @@ public class MessagingService {
         if ("email".equalsIgnoreCase(channel)) {
             return sendEmail(destination, message);
         }
-        String normalizedPhone = normalizePhoneNumber(destination);
-
         if ("whatsapp".equalsIgnoreCase(channel)) {
+            String normalizedPhone = normalizePhoneNumber(destination);
+            if (normalizedPhone == null) {
+                // Not a number the platform's phone normaliser accepts: nothing is sent to a guess.
+                return Mono.just(false);
+            }
             return sendWhatsAppText(normalizedPhone, message);
         }
-        // SMS is not a channel (D-39); other channels have no destination and never get here.
+        // SMS is not a channel; other channels have no destination and never get here.
         return Mono.just(false);
     }
 
@@ -115,19 +118,14 @@ public class MessagingService {
                 .bodyToMono(Map.class)
                 .map(response -> true)
                 .onErrorResume(e -> {
-                    log.error("Failed to send WhatsApp message: {}", e.getMessage());
+                    log.error("Failed to send WhatsApp message: {}", e.getClass().getSimpleName());
                     return Mono.just(false);
                 });
     }
 
-    /**
-     * Normalize phone number to E.164 format.
-     */
+    /** The canonical number from the platform's one phone normaliser, or null when it refuses the value. */
     private String normalizePhoneNumber(String phoneNumber) {
-        // Canonical E.164 normalization (Google libphonenumber) so OTP/notification
-        // delivery always targets a real MSISDN. Falls back to a digits-only form if
-        // the number cannot be validated.
-        String e164 = PhoneNumbers.toE164(phoneNumber);
-        return e164 != null ? e164 : phoneNumber.replaceAll("[^0-9+]", "");
+        return PhoneNumbers.parseMobile(phoneNumber, PhoneNumbers.DEFAULT_REGION)
+                .map(PhoneNumbers.Parsed::e164).orElse(null);
     }
 }

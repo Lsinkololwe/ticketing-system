@@ -26,7 +26,7 @@ import org.springframework.test.util.ReflectionTestUtils;
  */
 @Tag("L1")
 @Tag("ET-PLT-001")
-@DisplayName("ET-PLT-001-R7 · identity-service validates JWTs itself")
+@DisplayName("identity-service validates JWTs itself")
 class JwtValidationContractTest {
 
     private static final String AUDIENCE = "myticketzm-identity-service";

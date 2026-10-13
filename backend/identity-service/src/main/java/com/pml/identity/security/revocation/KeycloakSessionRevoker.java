@@ -11,7 +11,7 @@ import java.util.Set;
 
 /**
  * Turns a Keycloak session-ending event into a {@link RevocationType#SESSION} revocation: the
- * primary owner of "Keycloak logout revokes that {@code sid}" (ET-IDN-003 R7).
+ * primary owner of "Keycloak logout revokes that {@code sid}".
  *
  * <p>The event comes from the {@code user-sync} listener, so it covers every way a session ends in
  * Keycloak (the app's RP-initiated logout, the console, an admin, another client, the mobile app)

@@ -22,11 +22,12 @@ import type { CspOptions } from './csp';
 import { MemoryStore } from './store/memory';
 
 export type { BffConfig, PostLoginContext, PostLoginResult, GuardedPrefix } from './config';
+export { parseTrustProxyHops } from './trust-proxy';
 export type { PublicSession, SessionRecord } from './session';
 export { BffAuthError } from './require';
 export { safeReturnTo } from './guards';
 export { buildCsp, newNonce, securityHeaders } from './csp';
-export { CSRF_HEADER, assertSameOrigin } from './csrf';
+export { CSRF_HEADER, CSRF_VALUE, assertSameOrigin } from './csrf';
 export { createLogger, redact } from './logger';
 export { defaultPolicies } from './ratelimit';
 export type { RateRule, PolicyName } from './ratelimit';
@@ -122,7 +123,7 @@ export function createBff(config: BffConfig, opts: { csp?: CspOptions } = {}) {
     /** For app routes that need the shared limiter (identify routes): `await bff.rateLimit('challenge', { ip, contact, device })`. */
     rateLimit: async (policy: string, subjects: Subjects) => (await getDeps()).limiter.consume(policy, subjects),
     /** Trusted-proxy client IP for the current request. */
-    clientIp: (req: Request) => resolveClientIp(req.headers, cfg.trustProxyHops),
+    clientIp: (req: Request) => resolveClientIp(req.headers, cfg.trustProxyHops, cfg.logger),
     /** Escape hatch for tests and advanced callers. */
     internals: getDeps,
   };

@@ -19,8 +19,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Volume limits on code requests (ET-IDN-001-R3): codes per contact per day, per IP per hour,
- * distinct contacts per device per day, codes per country per day.
+ * Keeps one person, one network or one country from asking for sign-in codes in bulk: codes per
+ * contact per day, per IP per hour, distinct contacts per device per day, codes per country per day.
+ * A buyer who reaches a limit is told how many seconds to wait; nothing is sent.
  *
  * <p>All four counters are checked, and only if every one has room are all of them advanced, in
  * one atomic script: a refused request consumes nothing, so nothing is sent past a cap and a
@@ -50,13 +51,17 @@ public class LimitService {
      * Counts one code request.
      *
      * @param contactKey the contact key (never the raw contact)
-     * @param clientIp   the caller's IP as vouched for by the trusted proxy chain; blank counts as one shared "unknown" bucket
+     * @param clientIp   the caller's IP as vouched for by the trusted proxy chain; required, because a blank value
+     *                   would put every such caller in one shared bucket
      * @param deviceId   optional device identifier
      * @param country    ISO country of a phone contact, null for email
      * @return completes when allowed; fails with OTP_RATE_LIMITED carrying {@code retryAfterSeconds}
      */
     public Mono<Void> consume(String contactKey, String clientIp, String deviceId, String country) {
-        String ip = clientIp == null || clientIp.isBlank() ? "unknown" : clientIp.trim();
+        if (clientIp == null || clientIp.isBlank()) {
+            return Mono.error(new TranslatedRefusal(ErrorCode.COMMAND_NOT_WELL_FORMED, "clientIp is required"));
+        }
+        String ip = clientIp.trim();
         boolean hasDevice = deviceId != null && !deviceId.isBlank();
         boolean hasCountry = country != null && !country.isBlank();
         String countryCode = hasCountry ? country.toUpperCase(java.util.Locale.ROOT) : "";

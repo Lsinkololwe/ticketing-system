@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button, Card, CardHeader, DataTable, Dialog, EmptyState, ErrorState, KeyValue, StatusPill, TextField, useSnackbar, type DataColumn } from '@pml.tickets/shared/components/m3';
 import { useAuditLogs, type AuditLogRow } from '@pml.tickets/shared/api/admin/modules/platform-ops';
 import { csvText, formatDateTime, humanize } from '@/lib/format';
+import { useStaff } from '@/components/console/StaffContext';
 
 const COLUMNS: Array<DataColumn<AuditLogRow>> = [
   { id: 'at', header: 'When', cell: (e) => formatDateTime(e.at) },
@@ -21,6 +22,10 @@ export function AuditTab() {
   const [resourceId, setResourceId] = useState('');
   const [page, setPage] = useState(0);
   const snackbar = useSnackbar();
+  const staff = useStaff();
+  // The server decides what is returned; this only says so. Administrators read the whole trail,
+  // finance reads the money view of it.
+  const wholeTrail = staff.roles.some((r) => r === 'ADMIN' || r === 'SUPER_ADMIN');
   const [detail, setDetail] = useState<AuditLogRow | null>(null);
   const { entries, pageInfo, loading, error, refetch } = useAuditLogs({ action, resourceType, resourceId, page, size: 20 });
 
@@ -38,7 +43,7 @@ export function AuditTab() {
     <Card>
       <CardHeader
         title="Audit log"
-        subtitle="Read only and immutable. Entries are kept for 7 years."
+        subtitle={wholeTrail ? 'Read only and immutable. Entries are kept for 7 years.' : 'Money related actions across the platform, by anyone. Read only and immutable.'}
         actions={<Button variant="tonal" size="sm" icon="copy" disabled={entries.length === 0} onClick={() => void copy()}>Copy CSV</Button>}
       />
       <div className="m3-toolbar adm-filterbar" role="search" aria-label="Audit log filters">

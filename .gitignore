@@ -17,6 +17,8 @@
 # Build outputs - JavaScript/TypeScript
 **/dist/
 **/build/
+# A Java package named "build" holds source, not build output (shared-library's build-topology tests).
+!backend/**/src/**/build/
 **/.next/
 **/.next-harness-*/
 **/.turbo/

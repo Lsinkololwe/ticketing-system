@@ -33,6 +33,10 @@ export const PAYOUT_OPS_FIELDS = gql`
     }
     eventId
     eventTitle
+    event {
+      id
+      title
+    }
     escrowAccountId
     bankAccountId
     requestedAmount
@@ -122,15 +126,6 @@ export const RETRY_PAYOUT_REQUEST = gql`
   }
 `;
 
-export const RESUME_PAYOUT_REQUEST = gql`
-  ${PAYOUT_OPS_FIELDS}
-  mutation ResumePayoutRequest($payoutRequestId: ID!) {
-    resumePayoutRequest(payoutRequestId: $payoutRequestId) {
-      ...PayoutOpsFields
-    }
-  }
-`;
-
 export const MARK_PAYOUT_FOR_REVIEW = gql`
   ${PAYOUT_OPS_FIELDS}
   mutation MarkPayoutForReview($payoutRequestId: ID!, $issueType: PayoutIssueType!, $notes: String) {
@@ -159,8 +154,8 @@ export const ESCALATE_PAYOUT_REQUEST = gql`
 `;
 
 export const BULK_RETRY_FAILED_PAYOUTS = gql`
-  mutation BulkRetryFailedPayouts($payoutRequestIds: [ID!]!) {
-    bulkRetryFailedPayouts(payoutRequestIds: $payoutRequestIds) {
+  mutation BulkRetryFailedPayouts($payoutRequestIds: [ID!]!, $idempotencyKey: String!) {
+    bulkRetryFailedPayouts(payoutRequestIds: $payoutRequestIds, idempotencyKey: $idempotencyKey) {
       processedCount
       failedCount
       failedPayoutIds
@@ -263,6 +258,10 @@ export const ESCROW_OPS_DETAIL = gql`
       accountNumber
       eventId
       eventTitle
+      event {
+        id
+        title
+      }
       organizerId
       organization {
         id

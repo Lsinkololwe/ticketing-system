@@ -1,24 +1,22 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
-import com.pml.shared.security.Permission;
-import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.PayoutRequest;
-import com.pml.booking.infrastructure.client.IdentityServiceClient;
 import com.pml.booking.service.PayoutRecoveryService;
 import com.pml.booking.service.PayoutRequestService;
 import com.pml.booking.web.graphql.dto.BulkPayoutOperationResponse;
 import com.pml.booking.web.graphql.dto.CreatePayoutRequestInput;
 import com.pml.booking.workflow.payout.PayoutProcess;
 import com.pml.shared.constants.PayoutRequestStatus;
-import com.pml.shared.dto.authorization.AuthorizationRequest;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TenantBoundary;
 import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.error.FieldViolation;
+import com.pml.shared.error.ValidationRefusal;
 import com.pml.shared.idempotency.Fingerprint;
 import com.pml.shared.idempotency.IdempotencyGuard;
 import com.pml.shared.security.SecurityContextUtils;
@@ -59,12 +57,14 @@ public class PayoutRequestMutationResolver {
     private final PayoutRequestService payoutRequestService;
     private final TenantReads tenantReads;
     private final PayoutRecoveryService payoutRecoveryService;
-    private final IdentityServiceClient identityServiceClient;
     private final com.pml.booking.service.EscrowService escrowService;
     private final com.pml.booking.security.PayoutAccess payoutAccess;
     private final PayoutProcess payoutProcess;
     private final IdempotencyGuard idempotencyGuard;
     private final ObjectMapper mapper;
+
+    /** The most payouts one bulk retry may name. */
+    public static final int MAX_BULK_PAYOUTS = 50;
 
     /** Create a payout request (organizer). */
     @DgsMutation
@@ -72,26 +72,27 @@ public class PayoutRequestMutationResolver {
     public Mono<PayoutRequest> createPayoutRequest(@Valid @InputArgument CreatePayoutRequestInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(userId -> log.info("Creating payout request for escrow account: {} by: {}", input.escrowAccountId(), userId))
-                .zipWith(isPlatformStaff())
-                .flatMap(callerAndStaff -> authorize(input, callerAndStaff.getT1(), callerAndStaff.getT2())
-                        .flatMap(organizationId -> replayOrRequest(input, callerAndStaff.getT1(), organizationId)));
+                .flatMap(userId -> authorize(input, userId)
+                        .flatMap(organizationId -> replayOrRequest(input, userId, organizationId)));
     }
 
     /**
      * The organization whose money is being withdrawn, once the caller is allowed to withdraw it.
      *
      * <p>The money belongs to the organization, and which organization is read from the escrow account
-     * and never from the input. A member needs {@code payout:request} there (an administrator holds it
-     * only when the owner has switched it on, and an event grant decides alone when there is one), and
-     * the organization's status must permit payouts. Platform staff acting on an organizer's behalf are
-     * held to that organizer's own authority, and the organization they resolve to must be the one the
-     * escrow account belongs to.
+     * and never from the input. Only a member of that organization may ask for it: they need
+     * {@code payout:request} there (an administrator holds it only when the owner has switched it on,
+     * and an event grant decides alone when there is one), and the organization's status must permit
+     * payouts. Platform staff, administrators and finance officers included, cannot request a payout
+     * for an organizer: a person who is not a member is answered like any other outsider, and nothing
+     * is recorded for the refusal. Staff keep deciding on requests that organizers have made
+     * (approve, reject, hold, retry, cancel); they never originate one.
      *
      * <p>Someone outside the organization, and an escrow account that does not exist, read the same:
      * an unknown account, so an id is never confirmed. A member who lacks the permission is told so,
      * because they already know the organization and its events.
      */
-    private Mono<String> authorize(CreatePayoutRequestInput input, String userId, boolean platformStaff) {
+    private Mono<String> authorize(CreatePayoutRequestInput input, String userId) {
         if (input.escrowAccountId() == null || input.escrowAccountId().isBlank()) {
             return Mono.error(new IllegalArgumentException("A payout request names its escrow account"));
         }
@@ -102,25 +103,17 @@ public class PayoutRequestMutationResolver {
                     if (organizationId == null || organizationId.isBlank()) {
                         return Mono.<String>error(unknownAccount(input.escrowAccountId()));
                     }
-                    if (!platformStaff) {
-                        return CurrentTenantScope.get().flatMap(scope -> {
-                            if (!scope.permits(organizationId)) {
-                                return Mono.<String>error(unknownAccount(input.escrowAccountId()));
-                            }
-                            return payoutAccess.mayRequest(userId, organizationId, escrow.getEventId())
-                                    .flatMap(allowed -> allowed
-                                            ? Mono.just(organizationId)
-                                            : Mono.<String>error(notPermitted()));
-                        });
-                    }
-                    return identityServiceClient.checkAuthorization(AuthorizationRequest.builder()
-                                    .userId(input.organizerId())
-                                    .organizationOwnerId(input.organizerId())
-                                    .requiredPermission(Permission.PAYOUT_REQUEST.code())
-                                    .build())
-                            .flatMap(authz -> authz.isAuthorized() && organizationId.equals(authz.getOrganizationId())
-                                    ? Mono.just(organizationId)
-                                    : Mono.<String>error(notPermitted()));
+                    return CurrentTenantScope.get().flatMap(scope -> {
+                        // Membership, not scope.permits: a tenant-wide scope (administrator, finance)
+                        // permits every organization for reads, and must not for requesting money.
+                        if (!scope.organizationIds().contains(organizationId)) {
+                            return Mono.<String>error(unknownAccount(input.escrowAccountId()));
+                        }
+                        return payoutAccess.mayRequest(userId, organizationId, escrow.getEventId())
+                                .flatMap(allowed -> allowed
+                                        ? Mono.just(organizationId)
+                                        : Mono.<String>error(notPermitted()));
+                    });
                 });
     }
 
@@ -131,15 +124,6 @@ public class PayoutRequestMutationResolver {
     private static RuntimeException notPermitted() {
         return new TranslatedRefusal(ErrorCode.ACTOR_NOT_PERMITTED,
                 "you are not permitted to request payouts for this organization");
-    }
-
-    /** Whether the caller holds a platform role that acts on organizers' behalf. */
-    private static Mono<Boolean> isPlatformStaff() {
-        return ReactiveSecurityContextHolder.getContext()
-                .map(context -> context.getAuthentication() != null && context.getAuthentication().getAuthorities().stream()
-                        .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority())
-                                || "ROLE_FINANCE".equals(authority.getAuthority())))
-                .defaultIfEmpty(false);
     }
 
     /**
@@ -229,14 +213,6 @@ public class PayoutRequestMutationResolver {
     // PAYOUT RECOVERY MUTATIONS (Admin Dashboard)
     // ========================================================================
 
-    /** A stuck or failed payout is re-driven through its workflow's retry, never by setting a status. */
-    @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<PayoutRequest> resumePayoutRequest(@InputArgument String payoutRequestId) {
-        return SecurityContextUtils.requireCurrentUserId()
-                .flatMap(actorId -> payoutProcess.retry(payoutRequestId, actorId));
-    }
-
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
     public Mono<PayoutRequest> markPayoutForReview(@InputArgument String payoutRequestId,
@@ -256,18 +232,32 @@ public class PayoutRequestMutationResolver {
                 .flatMap(resolvedBy -> payoutRecoveryService.resolveIssue(payoutRequestId, resolutionType, resolvedBy, notes));
     }
 
+    /**
+     * Retries a batch of failed payouts as one decision. The batch is read as a set: the same payouts in
+     * another order, or with a payout named twice, are the same batch, so a double press (or a refresh that
+     * re-sends the list) cannot send the money a second time. A payout that is not retryable is skipped and
+     * reported as failed, as before; an empty or oversized list is refused outright, never trimmed.
+     */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
-    public Mono<BulkPayoutOperationResponse> bulkRetryFailedPayouts(@InputArgument List<String> payoutRequestIds) {
+    public Mono<BulkPayoutOperationResponse> bulkRetryFailedPayouts(@InputArgument List<String> payoutRequestIds,
+                                                                    @InputArgument String idempotencyKey) {
+        if (payoutRequestIds == null || payoutRequestIds.isEmpty() || payoutRequestIds.size() > MAX_BULK_PAYOUTS) {
+            return Mono.error(new ValidationRefusal(List.of(new FieldViolation("payoutRequestIds",
+                    "name between 1 and " + MAX_BULK_PAYOUTS + " payouts"))));
+        }
+        List<String> batch = payoutRequestIds.stream().distinct().sorted().toList();
+        String fingerprint = Fingerprint.of(mapper, Map.of("payoutRequestIds", batch), Fingerprint.CLIENT_VARYING);
         return SecurityContextUtils.requireCurrentUserId()
-                .flatMap(actorId -> Flux.fromIterable(payoutRequestIds)
-                        .concatMap(id -> payoutProcess.retry(id, actorId)
-                                .onErrorResume(refused -> {
-                                    log.info("Payout {} not retried: {}", id, refused.getMessage());
-                                    return Mono.empty();
-                                }))
-                        .collectList())
-                .map(processed -> bulkResponse(payoutRequestIds, processed));
+                .flatMap(actorId -> idempotencyGuard.execute("booking:bulkRetryPayouts", idempotencyKey, fingerprint,
+                        BulkPayoutOperationResponse.class, () -> Flux.fromIterable(batch)
+                                .concatMap(id -> payoutProcess.retry(id, actorId)
+                                        .onErrorResume(refused -> {
+                                            log.info("Payout {} not retried: {}", id, refused.getMessage());
+                                            return Mono.empty();
+                                        }))
+                                .collectList()
+                                .map(processed -> bulkResponse(batch, processed))));
     }
 
     @DgsMutation
@@ -288,7 +278,13 @@ public class PayoutRequestMutationResolver {
         return payoutRecoveryService.escalatePayoutRequest(payoutRequestId, reason);
     }
 
-    /** Retry a failed payout request: at most three attempts in all. */
+    /**
+     * Retry a failed payout request. A payout is re-driven at most three times in all, and every re-drive
+     * sends the money again, so a second press of the same button must never count as a second attempt.
+     * The caller's key says "this is one decision": a repeat of it returns the first result without
+     * touching the workflow, and the same key for another payout is refused rather than answered with
+     * the wrong payout.
+     */
     @DgsMutation
     @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
     public Mono<PayoutRequest> retryPayoutRequest(@InputArgument String payoutRequestId, @InputArgument String idempotencyKey) {

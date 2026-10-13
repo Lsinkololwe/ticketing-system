@@ -5,7 +5,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/** Email normalisation for contact identity (CONTRACT 3): trim, NFC, lower-case, simple RFC 5322 form, max 254. */
+/** Email normalisation for contact identity: trim, NFC, lower-case, simple RFC 5322 form, max 254. */
 public final class Emails {
 
     public static final int MAX_LENGTH = 254;

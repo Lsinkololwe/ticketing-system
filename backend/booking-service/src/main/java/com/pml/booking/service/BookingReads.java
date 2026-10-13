@@ -13,6 +13,7 @@ import com.pml.shared.error.TenantBoundary;
 import com.pml.shared.error.ValidationRefusal;
 import com.pml.shared.security.Permission;
 import com.pml.shared.security.SecurityContextUtils;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Service;
@@ -75,7 +76,8 @@ public class BookingReads {
         return SecurityContextUtils.getCurrentUserId()
                 .map(caller -> caller.equals(booking.getBuyerId()))
                 .defaultIfEmpty(false)
-                .flatMap(owner -> owner ? Mono.just(true) : OrganizerAccess.isPlatformStaff());
+                .flatMap(owner -> owner ? Mono.just(true)
+                        : OrganizerAccess.isPlatformStaff(PlatformWideAccess.Reason.BOOKING_CONTACT_READ));
     }
 
     // ---- lists ---------------------------------------------------------------------------------
@@ -98,7 +100,7 @@ public class BookingReads {
     public Mono<Pages.Slice<Booking>> byBuyer(String buyerId, BookingFilterInput filter, OffsetPaginationInput pagination) {
         return SecurityContextUtils.requireCurrentUserId().flatMap(caller -> caller.equals(buyerId)
                         ? Mono.just(true)
-                        : OrganizerAccess.isPlatformStaff())
+                        : OrganizerAccess.isPlatformStaff(PlatformWideAccess.Reason.BUYER_BOOKINGS_READ))
                 .flatMap(allowed -> allowed
                         ? page(Criteria.where("buyerId").is(buyerId), filter, pagination)
                         : Mono.error(TenantBoundary.refuse(ErrorCode.BOOKING_UNKNOWN, "bookings of " + buyerId)));

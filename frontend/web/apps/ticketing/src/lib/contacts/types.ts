@@ -1,6 +1,6 @@
 /**
- * Shapes of identity-service's contact GraphQL operations (CONTRACT.md section 14,
- * ET-IDN-004 R3/R5), as the browser sees them after the BFF whitelists them.
+ * Shapes of identity-service's contact GraphQL operations (list, add, change, remove, make primary),
+ * as the browser sees them after the BFF whitelists them.
  */
 export type ContactKind = "WHATSAPP" | "EMAIL";
 export type ChangeKind = "ADD" | "CHANGE" | "REMOVE" | "PRIMARY";

@@ -9,7 +9,12 @@ public enum ContactNotice {
     CONTACT_REMOVED("A contact was removed from your MyTicketZM account.",
             "A contact was removed from your MyTicketZM account."),
     PRIMARY_CHANGED("The main contact of your MyTicketZM account changed.",
-            "The main contact of your MyTicketZM account changed.");
+            "The main contact of your MyTicketZM account changed."),
+    STAFF_ACCOUNT_CREATED("A MyTicketZM staff account was opened for you.",
+            "A MyTicketZM staff account was opened for this address. The super administrator who opened it will "
+                    + "give you a temporary password in person or by another secure channel; this message does not "
+                    + "contain it. At your first sign-in you will be asked to choose your own password and to set up "
+                    + "a second factor.");
 
     private final String subject;
     private final String text;

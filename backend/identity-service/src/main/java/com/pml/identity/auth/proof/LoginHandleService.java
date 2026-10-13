@@ -12,7 +12,10 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 
 /**
- * The single-use login handle that lets the Keycloak plugin sign an ACTIVE account in (CONTRACT 6).
+ * The last hand-over of a sign-in: a single-use login handle that lets the Keycloak sign-in step
+ * sign an ACTIVE account in. A buyer never sees it; it exists so the sign-in step can trust that the
+ * account was just proved by code. Whatever goes wrong (unknown, expired, used, other client) the answer is
+ * the same refusal and the buyer is asked to start again.
  * {@code handle:{id}} is bound to the account and the client, lives 60 s and is read-and-deleted
  * atomically (GETDEL), so a replay or a race finds nothing.
  */

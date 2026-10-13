@@ -30,7 +30,11 @@ public final class LogWatch implements AutoCloseable {
             // Netty and Lettuce dump the raw wire at TRACE (every Redis command and every byte of
             // every HTTP body). That is a logger an operator never enables in production, and
             // what the application itself logs is what this test is about.
-            if (event.getLoggerName().startsWith("io.netty") || event.getLoggerName().startsWith("io.lettuce")) {
+            // The Mongo template and driver print every query with its values at DEBUG; production
+            // runs them at INFO (IdentityLoggingConfigurationTest), so they are a wire dump too.
+            if (event.getLoggerName().startsWith("io.netty") || event.getLoggerName().startsWith("io.lettuce")
+                    || event.getLoggerName().startsWith("org.springframework.data.mongodb")
+                    || event.getLoggerName().startsWith("org.mongodb")) {
                 continue;
             }
             StringBuilder line = new StringBuilder(event.getFormattedMessage());

@@ -1,4 +1,5 @@
 import type { BffConfig } from '@pml.tickets/shared/auth/bff';
+import { parseTrustProxyHops } from '@pml.tickets/shared/auth/bff/trust-proxy';
 
 type Env = Record<string, string | undefined>;
 
@@ -15,8 +16,7 @@ export const CSP_OPTIONS = {
 export function organizerBffConfig(env: Env): BffConfig {
   const issuer = env.KEYCLOAK_ISSUER ?? '';
   // The platform account id travels in the `accountId` claim (the organizer client maps it, exactly like the buyer
-  // client). ACCOUNT_CLAIM='' selects the legacy behaviour where the Keycloak subject stands in for it.
-  const accountClaim = env.ACCOUNT_CLAIM === undefined ? 'accountId' : env.ACCOUNT_CLAIM;
+  // client), with `preferred_username` as the fallback. The Keycloak subject is never the account id.
   return {
     app: 'organizer',
     appUrl: env.APP_URL ?? 'http://localhost:3003',
@@ -27,7 +27,7 @@ export function organizerBffConfig(env: Env): BffConfig {
       clientSecret: env.KEYCLOAK_CLIENT_SECRET ?? '',
     },
     // Any signed-in account may enter: applicants have no organizer role until their application is approved.
-    access: { audience: env.API_AUDIENCE || undefined, ...(accountClaim ? { accountClaim } : {}) },
+    access: { audience: env.API_AUDIENCE || undefined, accountClaim: 'accountId' },
     guarded: [
       // The console is for the members of an organization, not for holders of a realm role: the platform
       // grants ORGANIZER to the owner when the application is approved, while an invited administrator,
@@ -46,11 +46,8 @@ export function organizerBffConfig(env: Env): BffConfig {
     publicPaths: ['/login', '/unauthorized', '/logout', '/features'],
     redis: { url: env.REDIS_URL },
     encKeys: env.BFF_ENC_KEYS ?? '',
-    trustProxyHops: Number(env.TRUST_PROXY_HOPS ?? 0),
+    trustProxyHops: parseTrustProxyHops(env.TRUST_PROXY_HOPS),
     upstream: { graphql: env.GRAPHQL_URL, rest: env.API_BASE_URL },
-    // Without an account claim the Keycloak subject is the organizer id. With one (the default) the claim wins:
-    // the subject is NOT the platform account id, and finance, team and step-up all key on the account id.
-    ...(accountClaim ? {} : { postLogin: async (ctx: { sub: string }) => ({ ok: true as const, accountId: ctx.sub }) }),
     identity: env.IDENTITY_BASE_URL && issuer
       ? {
           baseUrl: env.IDENTITY_BASE_URL,

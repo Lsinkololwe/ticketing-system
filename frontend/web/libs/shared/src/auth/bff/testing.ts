@@ -16,6 +16,7 @@ export class FakeClock {
 export interface FakeUser {
   sub: string;
   accountId?: string;
+  preferredUsername?: string;
   roles?: string[];
   name?: string;
 }
@@ -69,6 +70,7 @@ export async function createFakeKeycloak(opts: FakeKeycloakOptions) {
       jti: randomUUID(), iat, exp: iat + accessTtl,
       realm_access: { roles: user.roles ?? [] },
       ...(user.accountId ? { accountId: user.accountId } : {}),
+      ...(user.preferredUsername ? { preferred_username: user.preferredUsername } : {}),
       ...extra,
     });
   }
@@ -78,6 +80,7 @@ export async function createFakeKeycloak(opts: FakeKeycloakOptions) {
       iss: opts.issuer, sub: user.sub, aud: opts.clientId, azp: opts.clientId, sid, iat, exp: iat + accessTtl, auth_time: authTime,
       ...(nonce ? { nonce } : {}), name: user.name ?? 'Test User',
       ...(user.accountId ? { accountId: user.accountId } : {}),
+      ...(user.preferredUsername ? { preferred_username: user.preferredUsername } : {}),
       ...extra,
     });
   }

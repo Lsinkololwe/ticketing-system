@@ -40,7 +40,7 @@ silently.
 
 ### BE-3 · The per-subject hash chain and its verification
 - **Spec** R3 · **§5** T3 · **depends** BE-2 · **parallel-safe** no
-- **Acceptance** **a directly modified row is detected**; **chains write in parallel**.
+- **Acceptance** **a directly modified row is detected**; **chains write in parallel**. *Deferred past launch by the owner on 2026-10-13 (see the gate and the note at the end); not to be built before launch.*
 - Per subject, not global — a single global chain serialises every audit write in the platform,
   which at on-sale is a bottleneck on the hottest path. Per-subject chains write concurrently and
   still detect tampering within a subject.
@@ -65,7 +65,7 @@ silently.
 
 ### BE-6 · Class-based retention, the purge and the checkpoint
 - **Spec** R6 · **§5** T6 · **depends** BE-3 · **parallel-safe** yes
-- **Acceptance** **the chain verifies from a checkpoint after a purge.**
+- **Acceptance** **the chain verifies from a checkpoint after a purge.** *Superseded 2026-10-13: the owner decided audit rows are kept indefinitely, so there is no purge and no checkpoint; the hash chain it served is deferred (BE-3).*
 - Purging the head of a chain would break verification for everything after it; the checkpoint is
   what lets old rows go while the remaining chain stays provable.
 
@@ -100,7 +100,7 @@ silently.
 - Wide table scrolls in its own container.
 - **testids** `audit-table`, `audit-row`, `audit-actor`, `audit-action`, `audit-subject`, `audit-outcome`, `audit-filter-actor`
 
-### FE-2 · Chain verification
+### FE-2 · Chain verification *(deferred with BE-3, 2026-10-13)*
 - **depends** BE-3 · **parallel-safe** yes
 - Verify a subject's chain and show the result. A **failed verification is an alarm state naming
   the row**, not a red badge — it means someone edited the database directly.
@@ -131,7 +131,7 @@ to a registry action** — this test reads the specs.
 
 ### TS-2 · Completeness *(L3)* — every registry action yields a complete five-component row.
 
-### TS-3 · Chain *(L3)*
+### TS-3 · Chain *(L3; deferred with BE-3, 2026-10-13)*
 A row edited **directly in MongoDB** is detected. Chains for different subjects write in parallel
 without contention.
 
@@ -141,7 +141,7 @@ ET-PLT-008 inventory, not a local list.
 
 ### TS-5 · Read auditing *(L3)* — one read, one row; an actor cannot filter out their own actions.
 
-### TS-6 · Retention *(L3, frozen clock)* — purge by class; the chain verifies from the checkpoint after.
+### TS-6 · Retention *(superseded 2026-10-13)* — audit rows are kept indefinitely: the test is that the collection has no expiry index (`IdentityIndexRegistryTest.auditRowsNeverExpire`), not a purge by class.
 
 ### TS-7 · Isolation *(L3 — the judgement call, tested)*
 Force an audit-write failure during a payout approval: **the payout completes**, a gap marker is
@@ -159,12 +159,42 @@ populated.
 - [ ] R0 enumerated every "writes an audit row" promise across the corpus
 - [ ] Registry equals annotations; **every corpus promise resolves to a registry action**
 - [ ] Every action produces a complete five-component row, timed from the injected `Clock`
-- [ ] A directly-modified row is detected; per-subject chains write in parallel
+- [ ] A directly-modified row is detected; per-subject chains write in parallel — *deferred past launch by the owner on 2026-10-13; the application offers no way to alter or delete a row; database-level tampering is out of scope for launch*
 - [ ] Redaction driven by the ET-PLT-008 inventory; amounts and statuses recorded in full
 - [ ] One read yields one row; an actor cannot filter out their own actions
-- [ ] Chain verifies from a checkpoint after a purge
+- [ ] Chain verifies from a checkpoint after a purge — *superseded 2026-10-13: audit rows are kept indefinitely (no purge, no checkpoint); the chain itself is deferred past launch by the owner*
 - [ ] **An audit-write failure does not fail the business operation**, and leaves a visible gap plus an alert
 - [ ] Plain `ADMIN` sees no financial action; users see their own trail
-- [ ] No edit or delete affordance in the UI; gaps shown in the timeline; redaction reads as redaction
+- [ ] No edit or delete affordance in the UI; gaps shown in the timeline; redaction reads as redaction — *chain verification (FE-2) deferred with the hash chain, 2026-10-13*
 - [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-PLT-009 -DfailIfNoTests=false` green
 - [ ] Spec `status:` → `implemented`
+
+## Progress note, 2026-10-13 · platform-wide reaches (F-063)
+
+Built ahead of the rest of this task, because compliance and finance audit need it before launch:
+the `TENANT_BOUNDARY_CROSSED` row for every platform-wide reach (administrator, super administrator
+and finance), the delivery from booking and catalog to identity, `auditLogs` filtered by `service` and
+`reason`, and an audited read of the trail itself. **Not built, and the boxes above stay open:** the
+`@Audited` registry and cross-reference test, the per-subject hash chain, retention by class, the
+redaction inventory, `myAuditTrail`, and the filter being named on the read row. See spec
+ET-PLT-009-R10 for the boxes this slice ticks.
+
+Added 2026-10-13 (F-065): finance reads a money-only view of the same `auditLogs` (reasons fixed server side, any
+actor, its own read recorded as `FINANCE_AUDIT_VIEW_READ`); an administrator keeps the whole trail. That settles the
+role split for platform-wide reach rows only; "Plain `ADMIN` sees no financial action" above still describes the
+unbuilt `@Audited` financial rows and stays open.
+
+## Progress note, 2026-10-13 (later) · delivery that cannot lose a reach, retention, tamper evidence
+
+Three owner decisions, recorded in FINDINGS F-068 and in the spec (R3, R6, R10, R11):
+
+- **Local-first delivery (built).** Booking and catalog keep each platform-wide reach in their own
+  outbox collection first and carry it to identity with `PlatformWideAuditDeliveryWorkflow` until
+  identity confirms; identity is idempotent on the row's `recordId`, bounds the time the sender claims
+  and always stores its own receipt time. See R11 for the boxes and their tests.
+- **Retention (built, as a decision).** Audit rows are kept indefinitely. The inert expiry index is
+  removed and a test pins that none exists. BE-6 and TS-6 are superseded; the gate box about a purge
+  stays unticked and says why.
+- **Tamper evidence (deferred).** *Deferred past launch by the owner on 2026-10-13; the application
+  offers no way to alter or delete a row; database-level tampering is out of scope for launch.* BE-3,
+  FE-2, TS-3 and the gate boxes about the chain stay unticked, annotated.

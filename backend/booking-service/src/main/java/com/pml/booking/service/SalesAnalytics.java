@@ -11,6 +11,7 @@ import com.pml.shared.error.FieldViolation;
 import com.pml.shared.error.TranslatedRefusal;
 import com.pml.shared.error.ValidationRefusal;
 import com.pml.shared.security.Permission;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import org.bson.Document;
 import org.bson.types.Decimal128;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -143,7 +144,7 @@ public class SalesAnalytics {
             scope = access.requireOrganizations(organizationId, Permission.ANALYTICS_VIEW)
                     .map(organizations -> Criteria.where("organizationId").in(organizations));
         } else {
-            scope = OrganizerAccess.isPlatformStaff().flatMap(staff -> staff
+            scope = OrganizerAccess.isPlatformStaff(PlatformWideAccess.Reason.PLATFORM_SALES_ANALYTICS_READ).flatMap(staff -> staff
                     ? Mono.just(new Criteria())
                     : Mono.error(new TranslatedRefusal(ErrorCode.ACTOR_NOT_PERMITTED,
                             "name an event or an organization; the whole platform is for platform staff")));

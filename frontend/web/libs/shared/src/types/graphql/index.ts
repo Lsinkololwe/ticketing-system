@@ -326,6 +326,7 @@ export type AuditLogEntry = {
   at: Maybe<Scalars['DateTime']['output']>;
   id: Scalars['ID']['output'];
   metadata: Maybe<Scalars['JSON']['output']>;
+  receivedAt: Maybe<Scalars['DateTime']['output']>;
   resourceId: Maybe<Scalars['ID']['output']>;
   resourceType: Maybe<Scalars['String']['output']>;
   source: Scalars['String']['output'];
@@ -344,8 +345,10 @@ export type AuditLogFilterInput = {
   actorId?: InputMaybe<Scalars['ID']['input']>;
   from?: InputMaybe<Scalars['DateTime']['input']>;
   includeAccountEvents?: InputMaybe<Scalars['Boolean']['input']>;
+  reason?: InputMaybe<Scalars['String']['input']>;
   resourceId?: InputMaybe<Scalars['ID']['input']>;
   resourceType?: InputMaybe<Scalars['String']['input']>;
+  service?: InputMaybe<Scalars['String']['input']>;
   status?: InputMaybe<Scalars['String']['input']>;
   to?: InputMaybe<Scalars['DateTime']['input']>;
 };
@@ -1062,6 +1065,12 @@ export type CreateRefundRequestInput = {
   ticketId: Scalars['String']['input'];
 };
 
+export type CreateStaffUserResult = {
+  __typename: 'CreateStaffUserResult';
+  temporaryPassword: Maybe<Scalars['String']['output']>;
+  user: User;
+};
+
 export type CreateTicketTierInput = {
   accessCode?: InputMaybe<Scalars['String']['input']>;
   benefits?: InputMaybe<Array<Scalars['String']['input']>>;
@@ -1086,7 +1095,6 @@ export type CreateUserInput = {
   email: Scalars['String']['input'];
   firstName: Scalars['String']['input'];
   lastName: Scalars['String']['input'];
-  password?: InputMaybe<Scalars['String']['input']>;
   phoneNumber?: InputMaybe<Scalars['String']['input']>;
   role?: InputMaybe<UserType>;
 };
@@ -2088,6 +2096,8 @@ export type Mutation = {
    * Add a role to a user.
    * A user can have multiple roles (e.g., CUSTOMER + ORGANIZER).
    * The CUSTOMER role is the base role that all users have.
+   * Adding a staff role (ADMIN, SUPER_ADMIN, FINANCE, FINANCE_LEAD) needs a SUPER_ADMIN caller;
+   * an ADMIN is refused with ACTOR_NOT_PERMITTED.
    */
   addUserRole: User;
   adminUpdateTicket: Ticket;
@@ -2150,7 +2160,7 @@ export type Mutation = {
   createProvince: Province;
   createReferenceData: ReferenceData;
   createTicketTier: TicketTier;
-  createUser: User;
+  createUser: CreateStaffUserResult;
   createUserRefundRequest: RefundRequest;
   deactivateChartOfAccountsEntry: ChartOfAccountsEntry;
   deactivateEventCategory: EventCategory;
@@ -2245,6 +2255,7 @@ export type Mutation = {
   /**
    * Remove a role from a user.
    * Note: The CUSTOMER role cannot be removed as it is the base role.
+   * Removing a staff role needs a SUPER_ADMIN caller.
    */
   removeUserRole: User;
   reorderTicketTiers: Array<TicketTier>;
@@ -2268,12 +2279,12 @@ export type Mutation = {
   resendInvitation: Maybe<TeamInvitation>;
   resendTicket: ResendTicketResult;
   reserveTickets: TicketReservation;
+  resetStaffTemporaryPassword: ResetStaffPasswordResult;
   resolveEscalation: ApprovalEscalation;
   resolvePayoutIssue: PayoutRequest;
   resolveReconciliationItem: ReconciliationRun;
   restoreMedia: MediaAsset;
   resumePaymentAttempt: PaymentAttempt;
-  resumePayoutRequest: PayoutRequest;
   retryPaymentAttempts: Array<PaymentRecoveryOutcome>;
   retryPayoutRequest: PayoutRequest;
   reverseJournalEntry: JournalEntry;
@@ -2318,6 +2329,7 @@ export type Mutation = {
   /**
    * Set all roles for a user (replaces existing roles).
    * The roles set must include CUSTOMER.
+   * A SUPER_ADMIN caller is needed whenever the old or the new set holds a staff role.
    */
   setUserRoles: User;
   signOutEverywhere: Scalars['Int']['output'];
@@ -2560,6 +2572,7 @@ export type MutationBulkMarkPayoutsForReviewArgs = {
 
 
 export type MutationBulkRetryFailedPayoutsArgs = {
+  idempotencyKey: Scalars['String']['input'];
   payoutRequestIds: Array<Scalars['ID']['input']>;
 };
 
@@ -3217,6 +3230,11 @@ export type MutationReserveTicketsArgs = {
 };
 
 
+export type MutationResetStaffTemporaryPasswordArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+
 export type MutationResolveEscalationArgs = {
   input: ResolveEscalationInput;
 };
@@ -3242,11 +3260,6 @@ export type MutationRestoreMediaArgs = {
 
 export type MutationResumePaymentAttemptArgs = {
   depositId: Scalars['String']['input'];
-};
-
-
-export type MutationResumePayoutRequestArgs = {
-  payoutRequestId: Scalars['ID']['input'];
 };
 
 
@@ -6932,6 +6945,12 @@ export type ReserveTicketsInput = {
   selections: Array<TicketSelectionInput>;
 };
 
+export type ResetStaffPasswordResult = {
+  __typename: 'ResetStaffPasswordResult';
+  temporaryPassword: Scalars['String']['output'];
+  user: User;
+};
+
 export type ResolveEscalationInput = {
   action: ApprovalAction;
   escalationId: Scalars['ID']['input'];
@@ -9213,7 +9232,7 @@ export type RequestEventChangesMutation = { __typename: 'Mutation', requestEvent
 
 export type FinanceOpsPageFragment = { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null };
 
-export type PayoutOpsFieldsFragment = { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null };
+export type PayoutOpsFieldsFragment = { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null };
 
 export type PayoutOpsListQueryVariables = Exact<{
   filter: PayoutRequestFilterInput;
@@ -9221,21 +9240,21 @@ export type PayoutOpsListQueryVariables = Exact<{
 }>;
 
 
-export type PayoutOpsListQuery = { __typename: 'Query', payoutRequests: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
+export type PayoutOpsListQuery = { __typename: 'Query', payoutRequests: { __typename: 'PayoutRequestOffsetPage', data: Array<{ __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null }>, pagination: { __typename: 'PaginationInfo', totalCount: number | null, pageSize: number, currentPage: number | null, totalPages: number, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
 
 export type PayoutOpsDetailQueryVariables = Exact<{
   id: Scalars['ID']['input'];
 }>;
 
 
-export type PayoutOpsDetailQuery = { __typename: 'Query', payoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } | null };
+export type PayoutOpsDetailQuery = { __typename: 'Query', payoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } | null };
 
 export type ProcessPayoutRequestMutationVariables = Exact<{
   payoutRequestId: Scalars['ID']['input'];
 }>;
 
 
-export type ProcessPayoutRequestMutation = { __typename: 'Mutation', processPayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+export type ProcessPayoutRequestMutation = { __typename: 'Mutation', processPayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
 
 export type CompletePayoutRequestMutationVariables = Exact<{
   payoutRequestId: Scalars['ID']['input'];
@@ -9243,7 +9262,7 @@ export type CompletePayoutRequestMutationVariables = Exact<{
 }>;
 
 
-export type CompletePayoutRequestMutation = { __typename: 'Mutation', completePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+export type CompletePayoutRequestMutation = { __typename: 'Mutation', completePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
 
 export type RetryPayoutRequestMutationVariables = Exact<{
   payoutRequestId: Scalars['ID']['input'];
@@ -9251,14 +9270,7 @@ export type RetryPayoutRequestMutationVariables = Exact<{
 }>;
 
 
-export type RetryPayoutRequestMutation = { __typename: 'Mutation', retryPayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
-
-export type ResumePayoutRequestMutationVariables = Exact<{
-  payoutRequestId: Scalars['ID']['input'];
-}>;
-
-
-export type ResumePayoutRequestMutation = { __typename: 'Mutation', resumePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+export type RetryPayoutRequestMutation = { __typename: 'Mutation', retryPayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
 
 export type MarkPayoutForReviewMutationVariables = Exact<{
   payoutRequestId: Scalars['ID']['input'];
@@ -9267,7 +9279,7 @@ export type MarkPayoutForReviewMutationVariables = Exact<{
 }>;
 
 
-export type MarkPayoutForReviewMutation = { __typename: 'Mutation', markPayoutForReview: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+export type MarkPayoutForReviewMutation = { __typename: 'Mutation', markPayoutForReview: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
 
 export type ResolvePayoutIssueMutationVariables = Exact<{
   payoutRequestId: Scalars['ID']['input'];
@@ -9276,7 +9288,7 @@ export type ResolvePayoutIssueMutationVariables = Exact<{
 }>;
 
 
-export type ResolvePayoutIssueMutation = { __typename: 'Mutation', resolvePayoutIssue: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+export type ResolvePayoutIssueMutation = { __typename: 'Mutation', resolvePayoutIssue: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
 
 export type EscalatePayoutRequestMutationVariables = Exact<{
   payoutRequestId: Scalars['ID']['input'];
@@ -9284,10 +9296,11 @@ export type EscalatePayoutRequestMutationVariables = Exact<{
 }>;
 
 
-export type EscalatePayoutRequestMutation = { __typename: 'Mutation', escalatePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
+export type EscalatePayoutRequestMutation = { __typename: 'Mutation', escalatePayoutRequest: { __typename: 'PayoutRequest', id: string, requestId: string, organizerId: string, eventId: string | null, eventTitle: string | null, escrowAccountId: string, bankAccountId: string, requestedAmount: string, taxAmount: string | null, settledAmount: string, currency: string, status: PayoutRequestStatus, payoutMethod: PayoutMethod | null, requestedAt: string, requestedById: string, approvedAt: string | null, approvedBy: string | null, rejectedAt: string | null, rejectionReason: string | null, processedAt: string | null, expectedPayoutDate: string | null, paymentReference: string | null, externalTransactionId: string | null, bankName: string | null, accountNumber: string | null, retryCount: number | null, lastError: string | null, notes: string | null, issueType: PayoutIssueType | null, reviewStatus: PayoutReviewStatus | null, isStuck: boolean | null, stuckReason: string | null, reviewNotes: string | null, resolutionNotes: string | null, organization: { __typename: 'Organization', id: string, name: string } | null, event: { __typename: 'Event', id: string, title: string } | null, bankAccount: { __typename: 'BankAccount', id: string, isVerified: boolean, status: string, accountHolderName: string } | null } };
 
 export type BulkRetryFailedPayoutsMutationVariables = Exact<{
   payoutRequestIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+  idempotencyKey: Scalars['String']['input'];
 }>;
 
 
@@ -9339,7 +9352,7 @@ export type EscrowOpsDetailQueryVariables = Exact<{
 }>;
 
 
-export type EscrowOpsDetailQuery = { __typename: 'Query', escrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, organization: { __typename: 'Organization', id: string, name: string } | null } | null };
+export type EscrowOpsDetailQuery = { __typename: 'Query', escrowAccount: { __typename: 'EventEscrowAccount', id: string, accountNumber: string, eventId: string, eventTitle: string | null, organizerId: string | null, currentBalance: string, totalDeposits: string, totalWithdrawals: string, totalRefunds: string, totalCommissions: string, pendingWithdrawals: string | null, currency: string, status: EscrowAccountStatus, lockUntil: string | null, payoutEligibleAt: string | null, closedAt: string | null, createdAt: string | null, event: { __typename: 'Event', id: string, title: string } | null, organization: { __typename: 'Organization', id: string, name: string } | null } | null };
 
 export type EscrowOpsTransactionsQueryVariables = Exact<{
   escrowAccountId: Scalars['String']['input'];
@@ -9574,7 +9587,14 @@ export type IdentityAdminCreateUserMutationVariables = Exact<{
 }>;
 
 
-export type IdentityAdminCreateUserMutation = { __typename: 'Mutation', createUser: { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null } };
+export type IdentityAdminCreateUserMutation = { __typename: 'Mutation', createUser: { __typename: 'CreateStaffUserResult', temporaryPassword: string | null, user: { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null } } };
+
+export type IdentityAdminResetStaffPasswordMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+
+export type IdentityAdminResetStaffPasswordMutation = { __typename: 'Mutation', resetStaffTemporaryPassword: { __typename: 'ResetStaffPasswordResult', temporaryPassword: string, user: { __typename: 'User', id: string, username: string | null, email: string | null, firstName: string | null, lastName: string | null, fullName: string, phoneNumber: string | null, gender: string | null, roles: Array<UserType>, accountStatus: AccountStatus, emailVerified: boolean, phoneVerified: boolean, active: boolean, locked: boolean, lockReason: string | null, suspendReason: string | null, twoFactorEnabled: boolean, memberSince: string | null, lastLoginAt: string | null, lastActiveAt: string | null, createdAt: string, updatedAt: string | null } } };
 
 export type IdentityAdminUpdateUserMutationVariables = Exact<{
   id: Scalars['ID']['input'];
@@ -10228,13 +10248,6 @@ export type OpsStaffAccountsQueryVariables = Exact<{
 
 
 export type OpsStaffAccountsQuery = { __typename: 'Query', staffAccounts: { __typename: 'UserOffsetPage', content: Array<{ __typename: 'User', id: string, email: string | null, fullName: string, phoneNumber: string | null, roles: Array<UserType>, accountStatus: AccountStatus, locked: boolean, twoFactorEnabled: boolean, lastLoginAt: string | null, createdAt: string }>, pageInfo: { __typename: 'PageInfo', totalCount: number | null, pageSize: number | null, currentPage: number | null, totalPages: number | null, hasNextPage: boolean | null, hasPreviousPage: boolean | null } } };
-
-export type OpsCreateStaffMutationVariables = Exact<{
-  input: CreateUserInput;
-}>;
-
-
-export type OpsCreateStaffMutation = { __typename: 'Mutation', createUser: { __typename: 'User', id: string, email: string | null, fullName: string, roles: Array<UserType> } };
 
 export type OpsDeleteUserMutationVariables = Exact<{
   id: Scalars['ID']['input'];

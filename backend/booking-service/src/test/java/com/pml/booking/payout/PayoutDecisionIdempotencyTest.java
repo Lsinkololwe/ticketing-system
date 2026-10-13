@@ -17,8 +17,12 @@ import com.pml.booking.security.TenantReads;
 import com.pml.booking.service.PayoutRecoveryService;
 import com.pml.booking.service.PayoutRequestService;
 import com.pml.booking.web.graphql.mutation.PayoutRequestMutationResolver;
+import com.pml.booking.web.graphql.dto.BulkPayoutOperationResponse;
 import com.pml.booking.workflow.payout.PayoutProcess;
 import com.pml.shared.constants.PayoutRequestStatus;
+import com.pml.shared.error.ErrorCode;
+import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.error.ValidationRefusal;
 import com.pml.shared.idempotency.IdempotencyGuard;
 import com.pml.shared.idempotency.IdempotencyKeyReusedRefusal;
 import com.pml.shared.idempotency.MongoIdempotencyLedger;
@@ -27,6 +31,11 @@ import com.pml.shared.testing.RedisNode;
 import com.pml.shared.testing.TestClock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -40,13 +49,15 @@ import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import reactor.core.publisher.Mono;
 
 /**
- * ET-PLT-007-R6 · {@code approvePayoutRequest} and {@code retryPayoutRequest} against the real
- * {@link IdempotencyGuard}: a retry with the same key must not decide or re-drive the workflow a
- * second time, and a reused key with a different body must be refused.
+ * ET-PLT-007-R6 · {@code approvePayoutRequest}, {@code retryPayoutRequest} and
+ * {@code bulkRetryFailedPayouts} against the real {@link IdempotencyGuard}: a retry with the same key must
+ * not decide or re-drive the workflow a second time, and a reused key with a different body must be refused.
+ * The workflow is replaced by a stand-in that, like the real one, refuses a retry once the payout has left
+ * the failed state.
  */
 @Tag("L2")
 @Tag("ET-PLT-007")
-@DisplayName("approvePayout and retryPayout replay an identical retry and refuse a reused key with a different body")
+@DisplayName("approvePayout, retryPayout and bulkRetryPayouts replay an identical retry and refuse a reused key with a different body")
 class PayoutDecisionIdempotencyTest {
 
     private static MongoClient client;
@@ -91,7 +102,7 @@ class PayoutDecisionIdempotencyTest {
             return Mono.just(payoutRequest("retried-" + n));
         });
         return new PayoutRequestMutationResolver(mock(PayoutRequestService.class), mock(TenantReads.class),
-                mock(PayoutRecoveryService.class), mock(IdentityServiceClient.class),
+                mock(PayoutRecoveryService.class),
                 mock(com.pml.booking.service.EscrowService.class), mock(com.pml.booking.security.PayoutAccess.class), process,
                 guard, new ObjectMapper().findAndRegisterModules());
     }
@@ -158,5 +169,120 @@ class PayoutDecisionIdempotencyTest {
                 .block())
                 .isInstanceOf(IdempotencyKeyReusedRefusal.class);
         assertThat(commands.get()).isEqualTo(1);
+    }
+
+    /**
+     * A stand-in for the payout workflow: a payout in {@code retryable} is failed and takes one retry,
+     * after which it is processing and every further retry is refused by state, exactly as the workflow's
+     * update validator does. {@code executed} records each retry that actually went through.
+     */
+    private PayoutRequestMutationResolver resolverWithFailedPayouts(Set<String> retryable, List<String> executed) {
+        Set<String> failed = Collections.synchronizedSet(new HashSet<>(retryable));
+        PayoutProcess process = mock(PayoutProcess.class);
+        when(process.retry(anyString(), anyString())).thenAnswer(call -> {
+            String id = call.getArgument(0);
+            if (!failed.remove(id)) {
+                return Mono.error(new TranslatedRefusal(ErrorCode.PAYOUT_STATE_INVALID, "payout " + id + " is not failed"));
+            }
+            executed.add(id);
+            return Mono.just(payoutRequest(id));
+        });
+        return new PayoutRequestMutationResolver(mock(PayoutRequestService.class), mock(TenantReads.class),
+                mock(PayoutRecoveryService.class),
+                mock(com.pml.booking.service.EscrowService.class), mock(com.pml.booking.security.PayoutAccess.class), process,
+                guard, new ObjectMapper().findAndRegisterModules());
+    }
+
+    @Test
+    @DisplayName("retryPayoutRequest: a second press with a different key is refused by state and uses no second attempt")
+    void retryWithADifferentKeyIsRefusedByState() {
+        List<String> executed = new ArrayList<>();
+        PayoutRequestMutationResolver resolver = resolverWithFailedPayouts(Set.of("payout-1"), executed);
+
+        BookingFixture.asAdmin("admin-1", resolver.retryPayoutRequest("payout-1", "payout-retry-a-" + System.nanoTime()), "ROLE_ADMIN").block();
+
+        assertThatThrownBy(() -> BookingFixture.asAdmin("admin-1",
+                        resolver.retryPayoutRequest("payout-1", "payout-retry-b-" + System.nanoTime()), "ROLE_ADMIN").block())
+                .isInstanceOf(TranslatedRefusal.class);
+        assertThat(executed).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("bulkRetryFailedPayouts: the same key and the same ids in another order is one execution and the same answer")
+    void bulkReplayInAnotherOrderRunsOnce() {
+        String key = "payout-bulk-replay-" + System.nanoTime();
+        List<String> executed = new ArrayList<>();
+        PayoutRequestMutationResolver resolver = resolverWithFailedPayouts(Set.of("payout-1", "payout-2", "payout-3"), executed);
+
+        BulkPayoutOperationResponse first = BookingFixture.asAdmin("admin-1",
+                resolver.bulkRetryFailedPayouts(List.of("payout-1", "payout-2", "payout-3"), key), "ROLE_ADMIN").block();
+        BulkPayoutOperationResponse second = BookingFixture.asAdmin("admin-1",
+                resolver.bulkRetryFailedPayouts(List.of("payout-3", "payout-1", "payout-2", "payout-1"), key), "ROLE_ADMIN").block();
+
+        assertThat(executed).as("each payout is re-driven once").containsExactlyInAnyOrder("payout-1", "payout-2", "payout-3");
+        assertThat(first.getProcessedCount()).isEqualTo(3);
+        assertThat(second.getProcessedCount()).isEqualTo(3);
+        assertThat(second.getFailedPayoutIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("bulkRetryFailedPayouts: the same key for a different set of payouts is refused as key reuse")
+    void bulkReusedKeyForADifferentSetIsRefused() {
+        String key = "payout-bulk-mismatch-" + System.nanoTime();
+        List<String> executed = new ArrayList<>();
+        PayoutRequestMutationResolver resolver = resolverWithFailedPayouts(Set.of("payout-1", "payout-2"), executed);
+
+        BookingFixture.asAdmin("admin-1", resolver.bulkRetryFailedPayouts(List.of("payout-1"), key), "ROLE_ADMIN").block();
+
+        assertThatThrownBy(() -> BookingFixture.asAdmin("admin-1",
+                        resolver.bulkRetryFailedPayouts(List.of("payout-1", "payout-2"), key), "ROLE_ADMIN").block())
+                .isInstanceOf(IdempotencyKeyReusedRefusal.class);
+        assertThat(executed).containsExactly("payout-1");
+    }
+
+    @Test
+    @DisplayName("bulkRetryFailedPayouts: a payout that cannot be retried is skipped and reported, the others still go")
+    void bulkSkipsAnUnretryablePayout() {
+        List<String> executed = new ArrayList<>();
+        PayoutRequestMutationResolver resolver = resolverWithFailedPayouts(Set.of("payout-1", "payout-3"), executed);
+
+        BulkPayoutOperationResponse response = BookingFixture.asAdmin("admin-1",
+                resolver.bulkRetryFailedPayouts(List.of("payout-1", "payout-2", "payout-3"), "payout-bulk-skip-" + System.nanoTime()),
+                "ROLE_ADMIN").block();
+
+        assertThat(executed).containsExactly("payout-1", "payout-3");
+        assertThat(response.getProcessedCount()).isEqualTo(2);
+        assertThat(response.getFailedCount()).isEqualTo(1);
+        assertThat(response.getFailedPayoutIds()).containsExactly("payout-2");
+    }
+
+    @Test
+    @DisplayName("bulkRetryFailedPayouts: an empty list is refused and nothing is executed")
+    void bulkEmptyListIsRefused() {
+        List<String> executed = new ArrayList<>();
+        PayoutRequestMutationResolver resolver = resolverWithFailedPayouts(Set.of("payout-1"), executed);
+
+        assertThatThrownBy(() -> BookingFixture.asAdmin("admin-1",
+                        resolver.bulkRetryFailedPayouts(List.of(), "payout-bulk-empty-" + System.nanoTime()), "ROLE_ADMIN").block())
+                .isInstanceOf(ValidationRefusal.class);
+        assertThat(executed).isEmpty();
+    }
+
+    @Test
+    @DisplayName("bulkRetryFailedPayouts: an oversized list is refused, never trimmed, and nothing is executed")
+    void bulkOversizedListIsRefused() {
+        List<String> executed = new ArrayList<>();
+        Set<String> all = new HashSet<>();
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i <= PayoutRequestMutationResolver.MAX_BULK_PAYOUTS; i++) {
+            ids.add("payout-" + i);
+            all.add("payout-" + i);
+        }
+        PayoutRequestMutationResolver resolver = resolverWithFailedPayouts(all, executed);
+
+        assertThatThrownBy(() -> BookingFixture.asAdmin("admin-1",
+                        resolver.bulkRetryFailedPayouts(ids, "payout-bulk-large-" + System.nanoTime()), "ROLE_ADMIN").block())
+                .isInstanceOf(ValidationRefusal.class);
+        assertThat(executed).isEmpty();
     }
 }

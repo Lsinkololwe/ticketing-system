@@ -34,7 +34,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * How {@code /accounts/ensure} reaches the account process (CONTRACT 4.3, 10).
+ * What happens after a buyer has typed a correct code: their account is found, or opened, so they can
+ * be signed in. The buyer promises nothing more than the contact they proved.
+ *
+ * <p>A returning buyer is recognised at once and signed in. A first-time buyer gets an account made for
+ * the contact they proved, which can take a few seconds (their sign-in identity is created in Keycloak);
+ * if it is not ready in time they are told to ask again shortly and the work carries on. A suspended
+ * account, an account being merged and a proof that is unknown or used up are each refused with their
+ * own reason. How {@code /accounts/ensure} reaches the account process:
  *
  * <ol>
  *   <li><b>Known contact, ACTIVE account:</b> answered from the database. No workflow starts, so a

@@ -19,14 +19,30 @@ import java.util.Map;
 import org.jboss.logging.Logger;
 
 /**
- * Authenticated JSON client for the identity-service internal API.
+ * How Keycloak talks to identity-service, the system that owns buyer accounts and sends the
+ * one-time codes.
  *
+ * <p>What a buyer experiences: nothing directly. When they ask for a code, enter it, or arrive
+ * with a login handle from the app, the sign-in plugin makes a call through this class and the
+ * buyer only sees the page that results.</p>
+ *
+ * <p>What this class does and promises:</p>
  * <ul>
- *   <li>Client-credentials token, cached until shortly before expiry, refreshed once on a 401.</li>
- *   <li>Fail closed: with any credential missing {@link #fromEnvironment} returns {@code null} and
- *       callers must refuse to authenticate; there is no unauthenticated mode.</li>
- *   <li>Short timeouts, no response bodies and no request payloads in logs.</li>
+ *   <li>It signs in to Keycloak's own token endpoint as the plugin's service client
+ *       (client-credentials), keeps that token until shortly before it expires, and asks for a
+ *       new one once if identity-service answers 401.</li>
+ *   <li>Every call carries that token. There is no unauthenticated mode: when the four
+ *       environment variables are not all set, {@link #requireFromEnvironment} stops Keycloak from
+ *       starting, so a half-configured server can never accept sign-ins that cannot be verified.</li>
+ *   <li>Timeouts are short (3 s to connect, 5 s per request) so a slow identity-service shows the
+ *       buyer an "unavailable, try again" message instead of a hanging page.</li>
+ *   <li>Response bodies, contacts, codes and handles are never put in an exception message or a
+ *       log line, so a log reader cannot learn who tried to sign in.</li>
  * </ul>
+ *
+ * <p>On refusal: a non-2xx answer becomes an {@link IdentityApiException} carrying only the status
+ * and the problem code; an unreachable or slow service becomes an
+ * {@link IdentityUnavailableException}. The authenticator turns both into a page message.</p>
  */
 public class IdentityHttp {
 
@@ -78,7 +94,12 @@ public class IdentityHttp {
         return missing;
     }
 
-    /** @return a client, or {@code null} (fail closed) when any variable is missing. */
+    /**
+     * Builds the client from the four environment variables.
+     *
+     * @return a client, or {@code null} when any variable is missing or blank; the caller must
+     *         then refuse to authenticate
+     */
     public static IdentityHttp fromEnvironment(Map<String, String> env, Clock clock) {
         if (!missing(env).isEmpty()) {
             return null;
@@ -89,6 +110,19 @@ public class IdentityHttp {
         }
         return new IdentityHttp(new Settings(base, env.get("KEYCLOAK_TOKEN_URL").trim(),
                 env.get("IDENTITY_CLIENT_ID").trim(), env.get("IDENTITY_CLIENT_SECRET")), clock);
+    }
+
+    /**
+     * Like {@link #fromEnvironment} but stops the server instead of returning {@code null}: the
+     * message names the missing variables, never their values.
+     */
+    public static IdentityHttp requireFromEnvironment(Map<String, String> env, Clock clock) {
+        List<String> missing = missing(env);
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException("Keycloak contact sign-in plugin cannot start: environment variable(s) "
+                    + String.join(", ", missing) + " missing or blank. Set them on the Keycloak container.");
+        }
+        return fromEnvironment(env, clock);
     }
 
     public <T> Reply<T> post(String path, Object body, Class<T> type, Map<String, String> headers) {

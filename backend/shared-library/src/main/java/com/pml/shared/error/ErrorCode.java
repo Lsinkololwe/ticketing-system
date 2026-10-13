@@ -94,6 +94,10 @@ public enum ErrorCode {
     CONTACT_UNKNOWN(ErrorClassification.NOT_FOUND, false),
     /** — · ContactChangeInProgress */
     CONTACT_CHANGE_IN_PROGRESS(ErrorClassification.FAILED_PRECONDITION, false),
+    /** — · StaffCreationInProgress: the staff account is still being created; ask again and the same account is returned */
+    STAFF_CREATION_IN_PROGRESS(ErrorClassification.UNAVAILABLE, true),
+    /** — · NotAStaffAccount: a staff-only operation was asked for a buyer or organizer account */
+    NOT_A_STAFF_ACCOUNT(ErrorClassification.FAILED_PRECONDITION, false),
     /** — · LastVerifiedContact */
     LAST_VERIFIED_CONTACT(ErrorClassification.FAILED_PRECONDITION, false),
     /** — · NoVerifiedContact */

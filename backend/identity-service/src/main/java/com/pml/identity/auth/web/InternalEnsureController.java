@@ -1,6 +1,7 @@
 package com.pml.identity.auth.web;
 
 import com.pml.identity.account.AccountEnsurer;
+import com.pml.identity.account.AccountGuard;
 import com.pml.identity.account.ConsentGrant;
 import com.pml.identity.account.EnsureCommand;
 import com.pml.identity.account.EnsureResult;
@@ -22,10 +23,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * {@code POST /api/internal/auth/accounts/ensure} (CONTRACT 4.3, 13): consume the proof, find or
- * create the account, and - only for an ACTIVE account and {@code issueHandle=true} - issue the
- * login handle. Repeating the call with the same proof is idempotent (the workflow id decides) and
- * may issue a fresh handle.
+ * The step after a buyer proved control of a contact: turn the proof into an account that can sign
+ * in.
+ *
+ * <p>The proof is consumed, the account that owns the contact is found or created, and only for an
+ * ACTIVE account, when the caller asked for it, a single-use login handle is issued. A buyer whose
+ * account is still being set up gets 202 and is told when to ask again with the same proof;
+ * repeating the call with the same proof is safe and never creates a second account (the workflow id
+ * decides), and may issue a fresh handle. A suspended account, an account being merged and an
+ * account that is no longer active are refused, each with its own code. Which code a state gets is
+ * decided in one place, the account guard; this controller only asks it.</p>
  */
 @RestController
 @RequestMapping("/api/internal/auth/accounts")
@@ -84,10 +91,17 @@ public class InternalEnsureController {
             case PROVISIONING -> Mono.just(ResponseEntity.<Object>status(HttpStatus.ACCEPTED)
                     .body(new AuthDtos.EnsureProvisioningResponse(result.accountId(), AccountState.PROVISIONING.name(),
                             result.retryAfterSeconds() != null ? result.retryAfterSeconds() : DEFAULT_RETRY_AFTER_SECONDS)));
-            case SUSPENDED -> Mono.error(new TranslatedRefusal(ErrorCode.ACCOUNT_SUSPENDED, "account suspended"));
-            case MERGED -> Mono.error(new TranslatedRefusal(ErrorCode.ACCOUNT_MERGING, "account merged"));
-            case DELETED -> Mono.error(new TranslatedRefusal(ErrorCode.ACCOUNT_NOT_ACTIVE, "account deleted",
-                    Map.of("currentStatus", AccountState.DELETED.name())));
+            case SUSPENDED, MERGED, DELETED -> Mono.error(refusalFor(status));
         };
+    }
+
+    /** The refusal the account guard assigns to this state; the guard is the only place that decides. */
+    private static TranslatedRefusal refusalFor(AccountState state) {
+        ErrorCode code = AccountGuard.refusal(state, null)
+                .orElseThrow(() -> new IllegalStateException("no refusal for state " + state));
+        if (code == ErrorCode.ACCOUNT_NOT_ACTIVE) {
+            return new TranslatedRefusal(code, "account is not active", Map.of("currentStatus", state.name()));
+        }
+        return new TranslatedRefusal(code, "account refused: " + state);
     }
 }

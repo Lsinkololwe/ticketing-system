@@ -2,7 +2,10 @@ package com.pml.identity.ownership;
 
 import com.pml.identity.domain.enums.ContactType;
 import com.pml.identity.domain.enums.TransferStatus;
+import com.pml.identity.account.AccountFixtures;
+import com.pml.identity.domain.model.Contact;
 import com.pml.identity.domain.model.OwnershipTransferRequest;
+import com.pml.identity.repository.ContactRepository;
 import com.pml.identity.domain.model.User;
 import com.pml.identity.auth.delivery.DeliveryChannel;
 import com.pml.identity.auth.delivery.DeliveryOrchestrator;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
@@ -56,6 +60,7 @@ class OwnershipConfirmationCodesTest {
     private static ReactiveStringRedisTemplate redis;
 
     private final UserRepository users = mock(UserRepository.class);
+    private final ContactRepository contacts = mock(ContactRepository.class);
     private final DeliveryOrchestrator delivery = mock(DeliveryOrchestrator.class);
     private OwnershipConfirmationCodes codes;
     private OwnershipTransferRequest transfer;
@@ -74,7 +79,7 @@ class OwnershipConfirmationCodesTest {
 
     @BeforeEach
     void pendingTransfer() {
-        codes = new OwnershipConfirmationCodes(redis, users, delivery, new ContactHasher("ownership-test-hash-key"),
+        codes = new OwnershipConfirmationCodes(redis, users, contacts, AccountFixtures.CRYPTO, delivery,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         transfer = OwnershipTransferRequest.builder()
                 .id("transfer-" + UUID.randomUUID())
@@ -82,9 +87,14 @@ class OwnershipConfirmationCodesTest {
                 .status(TransferStatus.PENDING)
                 .expiresAt(NOW.plus(Duration.ofDays(3)))
                 .build();
-        when(users.findById(NOMINEE)).thenReturn(Mono.just(User.builder()
-                .id(NOMINEE).phoneNumber(PHONE).phoneVerified(true).build()));
+        when(users.findById(NOMINEE)).thenReturn(Mono.just(User.builder().id(NOMINEE).build()));
+        when(contacts.findByAccountIdAndReleasedAtIsNull(NOMINEE)).thenReturn(Flux.just(whatsapp(NOW)));
         when(delivery.deliver(any(), anyString(), anyString(), any())).thenReturn(Mono.just(DeliveryChannel.WHATSAPP));
+    }
+
+    private static Contact whatsapp(Instant verifiedAt) {
+        return Contact.builder().id("c-1").accountId(NOMINEE).type(ContactType.WHATSAPP)
+                .valueEncrypted(AccountFixtures.CRYPTO.encrypt(PHONE).block()).verifiedAt(verifiedAt).primary(true).build();
     }
 
     private String issuedCode() {
@@ -169,8 +179,7 @@ class OwnershipConfirmationCodesTest {
     @Test
     @DisplayName("a nominee without a verified phone gets no code")
     void unverifiedPhone() {
-        when(users.findById(NOMINEE)).thenReturn(Mono.just(User.builder()
-                .id(NOMINEE).phoneNumber(PHONE).phoneVerified(false).build()));
+        when(contacts.findByAccountIdAndReleasedAtIsNull(NOMINEE)).thenReturn(Flux.just(whatsapp(null)));
 
         assertThat(refusal(() -> codes.issue(transfer, NOMINEE).block())).isEqualTo(ErrorCode.PHONE_NUMBER_INVALID);
         verify(delivery, never()).deliver(any(), anyString(), anyString(), any());

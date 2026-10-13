@@ -63,12 +63,19 @@ public final class AuthEngine {
     }
 
     public AuthEngine(List<CodeDeliveryProvider> deliveryProviders, LockMirror lockMirror) {
+        this(deliveryProviders, lockMirror, null);
+    }
+
+    /** As above, with the end-to-end delivery budget set (null keeps the default of five seconds). */
+    public AuthEngine(List<CodeDeliveryProvider> deliveryProviders, LockMirror lockMirror,
+                      java.time.Duration deliveryBudget) {
         this.redis = redis();
         challengeProperties.setHmacPepper("test-challenge-pepper-not-a-secret");
         List<CodeDeliveryProvider> providerList = deliveryProviders != null ? deliveryProviders
                 : List.of(new CapturingProvider(captured, clock));
         this.limits = new LimitService(redis, limitProperties, meters);
-        this.delivery = new DeliveryOrchestrator(providerList, meters);
+        this.delivery = deliveryBudget == null ? new DeliveryOrchestrator(providerList, meters)
+                : new DeliveryOrchestrator(providerList, meters, deliveryBudget);
         this.proofs = new ProofService(redis, proofProperties);
         this.handles = new LoginHandleService(redis, handleProperties, json);
         ContactCrypto crypto = new ContactCrypto(new FieldEncryptionService(AES_KEY));
@@ -117,19 +124,38 @@ public final class AuthEngine {
         return redis.keys("*").collectList().block();
     }
 
-    /** In-memory {@link LockMirror}. */
+    /** In-memory {@link LockMirror}; a write can be made to fail. */
     public static final class RecordingMirror implements LockMirror {
         public final List<String> contactKeys = new CopyOnWriteArrayList<>();
+        private final List<Object[]> locks = new CopyOnWriteArrayList<>();
+        public volatile boolean failWrites;
 
         @Override
-        public Mono<Void> record(String contactKey, Instant lockedUntil, Instant at) {
+        public Mono<Void> record(String contactKey, String challengeId, Instant lockedUntil, Instant at) {
+            if (failWrites) {
+                return Mono.error(new IllegalStateException("mirror down"));
+            }
             contactKeys.add(contactKey);
+            locks.add(new Object[]{contactKey, challengeId, lockedUntil});
             return Mono.empty();
         }
 
         @Override
         public Flux<ActiveLock> active(Instant now) {
-            return Flux.empty();
+            return Flux.fromIterable(locks).map(l -> new ActiveLock((String) l[0], (Instant) l[2]))
+                    .filter(l -> l.lockedUntil().isAfter(now));
+        }
+
+        @Override
+        public Mono<ActiveLock> activeForContact(String contactKey, Instant now) {
+            return active(now).filter(l -> l.contactKey().equals(contactKey)).next();
+        }
+
+        @Override
+        public Mono<ActiveLock> activeForChallenge(String challengeId, Instant now) {
+            return Flux.fromIterable(locks).filter(l -> challengeId.equals(l[1]))
+                    .map(l -> new ActiveLock((String) l[0], (Instant) l[2]))
+                    .filter(l -> l.lockedUntil().isAfter(now)).next();
         }
     }
 

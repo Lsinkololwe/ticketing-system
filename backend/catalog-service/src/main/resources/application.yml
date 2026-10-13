@@ -24,6 +24,9 @@ spring:
       - task-queue: catalog-lifecycle
         capacity:
           max-concurrent-activity-executors: ${TEMPORAL_ACTIVITY_EXECUTORS:50}
+      - task-queue: catalog-audit
+        capacity:
+          max-concurrent-activity-executors: 4
 
   cloud:
     azure:

@@ -23,10 +23,10 @@ import java.util.function.IntSupplier;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** The WhatsApp Cloud API call, against a stub HTTP server (ET-IDN-001-R2, R4). */
+/** The WhatsApp Cloud API call, against a stub HTTP server. */
 @Tag("L1")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001-R2/R4 · the WhatsApp provider sends a template with the code, retries 5xx only, times out, and logs nothing sensitive")
+@DisplayName("the WhatsApp provider sends a template with the code, retries 5xx only, times out, and logs nothing sensitive")
 class WhatsAppTemplateProviderTest {
 
     private static final String NUMBER = "+260971234567";
@@ -145,6 +145,46 @@ class WhatsAppTemplateProviderTest {
         assertThatThrownBy(() -> provider(Duration.ofMillis(300)).send(DeliveryChannel.WHATSAPP, NUMBER, "111111").block())
                 .isInstanceOf(DeliveryFailedException.class);
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(2));
+    }
+
+    @Test
+    @DisplayName("a timed-out call is not retried: one request is made and the buyer is not kept past the budget")
+    void timeoutIsNotRetried() {
+        delayMillis = 3_000;
+        long started = System.nanoTime();
+        assertThatThrownBy(() -> provider(Duration.ofMillis(400)).send(DeliveryChannel.WHATSAPP, NUMBER, "111111").block())
+                .isInstanceOf(DeliveryFailedException.class);
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
+
+        assertThat(elapsed).isLessThan(Duration.ofMillis(1_200));
+        assertThat(calls.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the budget covers the retry too: a 5xx followed by a slow answer ends within one budget, not two")
+    void budgetIncludesTheRetry() {
+        AtomicInteger n = new AtomicInteger();
+        statusFor = () -> 503;
+        delayMillis = 0;
+        server.removeContext("/");
+        server.createContext("/", exchange -> {
+            calls.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            if (n.incrementAndGet() > 1) {
+                try {
+                    Thread.sleep(3_000);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            exchange.sendResponseHeaders(503, -1);
+            exchange.close();
+        });
+        long started = System.nanoTime();
+        assertThatThrownBy(() -> provider(Duration.ofMillis(800)).send(DeliveryChannel.WHATSAPP, NUMBER, "111111").block())
+                .isInstanceOf(DeliveryFailedException.class);
+
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofMillis(1_500));
     }
 
     @Test

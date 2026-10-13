@@ -145,29 +145,6 @@ public class TeamInvitation {
     }
 
     /**
-     * Whether {@code candidate} is the person this invitation was addressed to.
-     *
-     * <p>An invitation names an email, a phone number, or both, and the token travels to that
-     * address. The token alone cannot answer who is accepting: it is forwarded, screenshotted and
-     * pasted into group chats, so the holder and the addressee are routinely different people.
-     *
-     * <p>Either identifier matching is enough — a Zambian invitee may hold the phone number the
-     * invitation was sent to and an email the inviter guessed, or the reverse. Requiring both
-     * would refuse the ordinary case; requiring neither is what let a forwarded link join an
-     * organization.
-     *
-     * <p>Comparison is case-insensitive on email and exact on phone, which is E.164 and has one
-     * spelling.
-     */
-    public boolean addressedTo(String candidateEmail, String candidatePhone) {
-        boolean emailMatches = email != null && !email.isBlank()
-                && candidateEmail != null && email.equalsIgnoreCase(candidateEmail);
-        boolean phoneMatches = phoneNumber != null && !phoneNumber.isBlank()
-                && candidatePhone != null && phoneNumber.equals(candidatePhone);
-        return emailMatches || phoneMatches;
-    }
-
-    /**
      * Embedded class for event access grants in invitations
      */
     @Data

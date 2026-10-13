@@ -307,11 +307,11 @@ checkout page        buyer app (server)        identity-service              Key
 ### Keycloak flow
 
 ```
-contact-browser                           [buyer realm browser flow]
+contact-otp-browser                       [buyer realm browser flow]
 ├── Cookie                                ALTERNATIVE
 └── Contact OTP Authenticator             ALTERNATIVE   (modes HANDOFF, SCREEN)
 
-staff-browser                             [realm myticketzm-admin]
+staff-password-browser                    [realm myticketzm-admin]
 ├── Username Password Form                REQUIRED
 └── OTP Form (second factor)              REQUIRED
 ```
@@ -336,7 +336,7 @@ enabled in both realms.
 
 How `apps/ticketing` holds identity, recorded as built (D-45):
 
-- **Session.** A custom opaque session, not Better Auth: Better Auth's generic OAuth callback cannot gate session creation on the identity-service account status or carry `login_hint`, and it persists a legacy `users` row that new accounts (optional email and username) do not have. The browser holds only an opaque HttpOnly cookie (`__Host-pml_buyer` in production); the server record in Redis (`REDIS_URL`; in-process map for local and tests) holds the tokens, with a one-hour TTL and refresh when the access token is within 30 s of expiry. A pre-session `flow` cookie and record hold the `proof`, the login handle (60 s) and the PKCE state; none of them is returned to the browser.
+- **Session.** A custom opaque session, not Better Auth: Better Auth's generic OAuth callback cannot gate session creation on the identity-service account status or carry `login_hint`, and it persists a legacy `users` row that new accounts (optional email and username) do not have. The browser holds only an opaque HttpOnly cookie (`__Host-pml_buyer` in production); the server record in Redis (`REDIS_URL`; in-process map for local and tests) holds the tokens, with a 30-minute idle timeout, an 8-hour absolute lifetime and a refresh when the access token is within 60 s of expiry. A pre-session `flow` cookie and record hold the `proof`, the login handle (60 s) and the PKCE state; none of them is returned to the browser.
 - **Account id.** The callback takes the account id from the `accountId` claim, then `preferred_username`, never `sub`, and calls `GET /api/internal/auth/accounts/{accountId}/status`; it sets the cookie only for `ACTIVE`.
 - **CSRF.** Every browser mutation route (`/api/identity/*`, `/api/checkout/intent`, `/api/profile/contacts/*`, `/api/graphql`) requires `Origin == APP_URL`, `Sec-Fetch-Site: same-origin` and `X-Requested-With: pml-web`, and is rate limited per client IP (trusted-proxy chain only).
 - **GraphQL.** `/api/graphql` and the profile routes attach the session's bearer token on the server; anonymous discovery calls go without one.

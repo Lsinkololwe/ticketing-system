@@ -14,7 +14,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -113,90 +112,84 @@ class OwnershipTransferTest {
         template.save(member).block();
     }
 
-    @Nested
-    @DisplayName("R7 · who may receive ownership")
-    class Eligibility {
+    // ── R7 · who may receive ownership ────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("ET-ORG-002-R7 · an active ADMIN is eligible")
-        void activeAdminIsEligible() {
-            assertThat(eligible(OrganizationRole.ADMIN, MemberStatus.ACTIVE)).isTrue();
-        }
+    @Test
+    @DisplayName("R7 · who may receive ownership · ET-ORG-002-R7 · an active ADMIN is eligible")
+    void eligibility_activeAdminIsEligible() {
+        assertThat(eligible(OrganizationRole.ADMIN, MemberStatus.ACTIVE)).isTrue();
+    }
 
-        @Test
-        @DisplayName("ET-ORG-002-R7 · a SUSPENDED admin is not — this is the half that was missing")
-        void suspendedAdminIsNot() {
-            assertThat(eligible(OrganizationRole.ADMIN, MemberStatus.SUSPENDED))
-                    .as("""
-                        Somebody the organization has deliberately shut out, mid-dispute, being \
-                        handed the business. The role check alone admits them.""")
+    @Test
+    @DisplayName("R7 · who may receive ownership · ET-ORG-002-R7 · a SUSPENDED admin is not — this is the half that was missing")
+    void eligibility_suspendedAdminIsNot() {
+        assertThat(eligible(OrganizationRole.ADMIN, MemberStatus.SUSPENDED))
+                .as("""
+                    Somebody the organization has deliberately shut out, mid-dispute, being \
+                    handed the business. The role check alone admits them.""")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("R7 · who may receive ownership · ET-ORG-002-R7 · a REMOVED admin is not, and their document still says ADMIN")
+    void eligibility_removedAdminIsNot() {
+        // Removal retains the record by design, so a removed member's row survives reading
+        // `role = ADMIN` indefinitely. A role-only check treats it as live.
+        assertThat(eligible(OrganizationRole.ADMIN, MemberStatus.REMOVED)).isFalse();
+    }
+
+    @Test
+    @DisplayName("R7 · who may receive ownership · ET-ORG-002-R7 · no other role is eligible however active")
+    void eligibility_lesserRolesAreNot() {
+        for (OrganizationRole role : List.of(OrganizationRole.MANAGER,
+                OrganizationRole.MARKETER, OrganizationRole.CONTRIBUTOR)) {
+            assertThat(eligible(role, MemberStatus.ACTIVE))
+                    .as("%s receiving ownership", role)
                     .isFalse();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R7 · a REMOVED admin is not, and their document still says ADMIN")
-        void removedAdminIsNot() {
-            // Removal retains the record by design, so a removed member's row survives reading
-            // `role = ADMIN` indefinitely. A role-only check treats it as live.
-            assertThat(eligible(OrganizationRole.ADMIN, MemberStatus.REMOVED)).isFalse();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R7 · no other role is eligible however active")
-        void lesserRolesAreNot() {
-            for (OrganizationRole role : List.of(OrganizationRole.MANAGER,
-                    OrganizationRole.MARKETER, OrganizationRole.CONTRIBUTOR)) {
-                assertThat(eligible(role, MemberStatus.ACTIVE))
-                        .as("%s receiving ownership", role)
-                        .isFalse();
-            }
-        }
-
-        /** The condition exactly as {@code initiate} applies it. */
-        private boolean eligible(OrganizationRole role, MemberStatus status) {
-            return role == OrganizationRole.ADMIN && status == MemberStatus.ACTIVE;
         }
     }
 
-    @Nested
-    @DisplayName("R7 · one confirmation wins")
-    class Confirmation {
+    /** The condition exactly as {@code initiate} applies it. */
+    private boolean eligible(OrganizationRole role, MemberStatus status) {
+        return role == OrganizationRole.ADMIN && status == MemberStatus.ACTIVE;
+    }
 
-        @RepeatedTest(3)
-        @DisplayName("ET-ORG-002-R7 · exactly one of twenty-four parallel confirmations claims it")
-        void exactlyOneConfirmationWins() {
-            Concurrency.Outcome<Boolean> outcome =
-                    Concurrency.inParallel(CALLERS, caller -> claim());
+    // ── R7 · one confirmation wins ────────────────────────────────────────────────────────────────
 
-            assertThat(outcome.successes().stream().filter(Boolean::booleanValue).count())
-                    .as("""
-                        Two confirmations racing is the ordinary case — a nominee tapping twice, \
-                        or a retry after a timeout. Both proceeding runs the handover twice: the \
-                        second demotes the new owner it has just promoted.""")
-                    .isEqualTo(1);
-            assertThat(outcome.failures()).isEmpty();
-        }
+    @RepeatedTest(3)
+    @DisplayName("R7 · one confirmation wins · ET-ORG-002-R7 · exactly one of twenty-four parallel confirmations claims it")
+    void confirmation_exactlyOneConfirmationWins() {
+        Concurrency.Outcome<Boolean> outcome =
+                Concurrency.inParallel(CALLERS, caller -> claim());
 
-        @Test
-        @DisplayName("ET-ORG-002-R7 · a second confirmation after the first claims nothing")
-        void theTransferIsSpent() {
-            assertThat(claim()).isTrue();
-            assertThat(claim()).isFalse();
-        }
+        assertThat(outcome.successes().stream().filter(Boolean::booleanValue).count())
+                .as("""
+                    Two confirmations racing is the ordinary case — a nominee tapping twice, \
+                    or a retry after a timeout. Both proceeding runs the handover twice: the \
+                    second demotes the new owner it has just promoted.""")
+                .isEqualTo(1);
+        assertThat(outcome.failures()).isEmpty();
+    }
 
-        @Test
-        @DisplayName("ET-ORG-002-R7 · a cancelled transfer cannot be confirmed")
-        void cancelledTransfersCannotBeClaimed() {
-            template.updateFirst(
-                            Query.query(Criteria.where("_id").is(TRANSFER)),
-                            Update.update("status", TransferStatus.CANCELLED),
-                            OwnershipTransferRequest.class)
-                    .block();
+    @Test
+    @DisplayName("R7 · one confirmation wins · ET-ORG-002-R7 · a second confirmation after the first claims nothing")
+    void confirmation_theTransferIsSpent() {
+        assertThat(claim()).isTrue();
+        assertThat(claim()).isFalse();
+    }
 
-            assertThat(claim())
-                    .as("cancellation must survive the nominee already holding the link")
-                    .isFalse();
-        }
+    @Test
+    @DisplayName("R7 · one confirmation wins · ET-ORG-002-R7 · a cancelled transfer cannot be confirmed")
+    void confirmation_cancelledTransfersCannotBeClaimed() {
+        template.updateFirst(
+                        Query.query(Criteria.where("_id").is(TRANSFER)),
+                        Update.update("status", TransferStatus.CANCELLED),
+                        OwnershipTransferRequest.class)
+                .block();
+
+        assertThat(claim())
+                .as("cancellation must survive the nominee already holding the link")
+                .isFalse();
     }
 
     @Test

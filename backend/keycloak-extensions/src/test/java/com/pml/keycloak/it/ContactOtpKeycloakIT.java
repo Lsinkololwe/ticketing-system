@@ -30,8 +30,12 @@ import org.testcontainers.utility.MountableFile;
 
 /**
  * Real Keycloak 26.5.2 with the built plugin JAR and the imported docker-resources/keycloak realms, a stub
- * identity-service, and a cookie-keeping HTTP browser. Findings (KC-01, KC-02) are written to
- * target/poc-findings.txt so docker-resources/keycloak/POC-FINDINGS.md can quote observed behaviour.
+ * identity-service, and a cookie-keeping HTTP browser. Observed behaviour worth recording (hand-off with an
+ * existing session, what the Admin API accepts) is written to target/poc-findings.txt so
+ * docker-resources/keycloak/POC-FINDINGS.md can quote it.
+ *
+ * <p>The container receives all four identity variables the plugin requires (base URL, client id, client
+ * secret, token URL); without them Keycloak would not start.</p>
  */
 @Tag("ET-IDN-001")
 @Tag("layer-5-integration")
@@ -49,6 +53,10 @@ class ContactOtpKeycloakIT {
     static final String BUYER_APP = "http://localhost:3000";
     static final String ORGANIZER_APP = "http://localhost:3010";
     static final String ADMIN_APP = "http://localhost:3030";
+    /** The apps as the Keycloak container reaches them for back-channel logout; never localhost. */
+    static final String BUYER_BACKCHANNEL = "http://host.docker.internal:3000";
+    static final String ORGANIZER_BACKCHANNEL = "http://host.docker.internal:3010";
+    static final String ADMIN_BACKCHANNEL = "http://host.docker.internal:3030";
 
     static GenericContainer<?> keycloak;
     static StubIdentityService stub;
@@ -92,6 +100,9 @@ class ContactOtpKeycloakIT {
                 .withEnv("TICKETING_BUYER_APP_URL", BUYER_APP)
                 .withEnv("TICKETING_ORGANIZER_APP_URL", ORGANIZER_APP)
                 .withEnv("TICKETING_ADMIN_APP_URL", ADMIN_APP)
+                .withEnv("TICKETING_BUYER_BACKCHANNEL_ORIGIN", BUYER_BACKCHANNEL)
+                .withEnv("TICKETING_ORGANIZER_BACKCHANNEL_ORIGIN", ORGANIZER_BACKCHANNEL)
+                .withEnv("TICKETING_ADMIN_BACKCHANNEL_ORIGIN", ADMIN_BACKCHANNEL)
                 .withEnv("ADMIN_WEB_CLIENT_SECRET", ADMIN_CLIENT_SECRET)
                 .withEnv("TICKETING_MOBILE_CLIENT_ID", "myticketzm-mobile")
                 .withEnv("TICKETING_CATALOG_SERVICE_CLIENT_ID", "catalog-service")
@@ -144,6 +155,46 @@ class ContactOtpKeycloakIT {
 
     record Resp(int status, String body, String location) {}
 
+    /** Password given to the staff users these tests create; the realm export seeds no staff login of its own. */
+    static final String STAFF_TEST_PASSWORD = "Initial-Passphrase-1x";
+
+    /**
+     * Creates a staff member in the admin realm with the given realm roles and returns the username.
+     * They have a password and no authenticator yet, exactly like a person an administrator just
+     * added, so their first sign-in goes through enrolment.
+     */
+    static String createStaffWithRoles(String... roles) throws Exception {
+        String username = "staff-" + UUID.randomUUID().toString().substring(0, 8);
+        Resp created = admin("POST", "/myticketzm-admin/users",
+                "{\"username\":\"" + username + "\",\"email\":\"" + username + "@example.test\",\"firstName\":\"Test\","
+                        + "\"lastName\":\"Staff\",\"emailVerified\":true,\"enabled\":true,\"credentials\":["
+                        + "{\"type\":\"password\",\"value\":\"" + STAFF_TEST_PASSWORD + "\",\"temporary\":false}]}");
+        assertThat(created.status()).as(created.body()).isEqualTo(201);
+        String id = created.location().substring(created.location().lastIndexOf('/') + 1);
+        ArrayNode mappings = Browser.JSON.createArrayNode();
+        for (String role : roles) {
+            JsonNode representation = Browser.JSON.readTree(admin("GET", "/myticketzm-admin/roles/" + role, null).body());
+            mappings.add(representation);
+        }
+        Resp mapped = admin("POST", "/myticketzm-admin/users/" + id + "/role-mappings/realm", mappings.toString());
+        assertThat(mapped.status()).as(mapped.body()).isEqualTo(204);
+        return username;
+    }
+
+    private static String sharedStaff;
+
+    /**
+     * The one super admin the sign-in and logout tests share, created the first time it is needed.
+     * Several tests sign the same person in again and again to check that ending one session leaves
+     * another alone, so they must all be the same user, as the seeded login used to be.
+     */
+    static synchronized String staffUser() throws Exception {
+        if (sharedStaff == null) {
+            sharedStaff = createStaffWithRoles("SUPER_ADMIN");
+        }
+        return sharedStaff;
+    }
+
     static Resp admin(String method, String path, String json) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(base + "/admin/realms" + path))
                 .header("Authorization", "Bearer " + adminToken()).header("Content-Type", "application/json");
@@ -185,7 +236,7 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(1)
-    @DisplayName("ET-IDN-001-R14 · (a) SCREEN: provider-jar templates are served, wrong code, resend, change, then a PKCE login")
+    @DisplayName("SCREEN: provider-jar templates are served, wrong code, resend, change, then a PKCE login")
     void screenModeFullLogin() throws Exception {
         String account = UUID.randomUUID().toString();
         createBuyer(account);
@@ -233,20 +284,29 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(2)
-    @DisplayName("ET-IDN-001-R4 · ACTIVE account without a Keycloak user: generic error, user NOT created")
+    @DisplayName("an ACTIVE account without a Keycloak user gets the generic error and no user is created")
     void missingUserIsNeverCreated() throws Exception {
-        Browser.Step result = signInByCode(new Browser(base), "ghost@example.com");
+        // identity-service answers with an account id that has no user in the realm
+        String ghostAccount = "ghost-" + UUID.randomUUID();
+        String ghostContact = "ghost-" + UUID.randomUUID().toString().substring(0, 8) + "@example.com";
+        stub.accounts.put(ghostContact, ghostAccount);
+        int before = Integer.parseInt(admin("GET", "/myticketzm/users/count", null).body().trim());
+
+        Browser.Step result = signInByCode(new Browser(base), ghostContact);
         assertThat(result.hasCode()).isFalse();
         assertThat(result.html()).contains("could not sign you in");
-        Resp users = admin("GET", "/myticketzm/users?search=" + stub.accounts.getOrDefault("ghost@example.com", ""), null);
-        Resp all = admin("GET", "/myticketzm/users?max=50", null);
-        assertThat(all.body()).doesNotContain("ghost");
-        assertThat(users.status()).isEqualTo(200);
+
+        assertThat(admin("GET", "/myticketzm/users?username=" + ghostAccount + "&exact=true", null).body().trim())
+                .as("no user with the account id as username").isEqualTo("[]");
+        assertThat(admin("GET", "/myticketzm/users?email=" + ghostContact + "&exact=true", null).body().trim())
+                .as("no user with the contact as e-mail").isEqualTo("[]");
+        int after = Integer.parseInt(admin("GET", "/myticketzm/users/count", null).body().trim());
+        assertThat(after).as("the number of users in the realm is unchanged").isEqualTo(before);
     }
 
     @Test
     @Order(3)
-    @DisplayName("ET-IDN-001-R7 · (b) KC-01 HANDOFF: login_hint=<handle> completes with NO form and returns a code; replay falls back to SCREEN")
+    @DisplayName("HANDOFF: login_hint=<handle> completes with NO form and returns a code; replay falls back to SCREEN")
     void handoffCompletesWithoutForm() throws Exception {
         String account = UUID.randomUUID().toString();
         createBuyer(account);
@@ -259,7 +319,7 @@ class ContactOtpKeycloakIT {
         JsonNode handoffClaims = Browser.claims(tokens.get("access_token").asText());
         assertThat(handoffClaims.path("preferred_username").asText()).isEqualTo(account);
         assertThat(handoffClaims.path("accountId").asText()).isEqualTo(account);
-        note("KC-01 handoff: GET /auth?login_hint=<handle> -> 302 to redirect_uri?code=... with no HTML page; token preferred_username == accountId.");
+        note("handoff: GET /auth?login_hint=<handle> -> 302 to redirect_uri?code=... with no HTML page; token preferred_username == accountId.");
 
         stub.handles.put("handle-replay", account);
         Browser first = new Browser(base);
@@ -270,12 +330,12 @@ class ContactOtpKeycloakIT {
         assertThat(replay.html()).contains("kc-contact-form");
         Browser.Step junk = new Browser(base).authorize("myticketzm", WEB, Browser.REDIRECT, "login_hint=not-a-handle");
         assertThat(junk.html()).contains("kc-contact-form");
-        note("KC-01 invalid or replayed handle: falls back to the SCREEN contact page (HTTP 200), no error shown.");
+        note("invalid or replayed handle: falls back to the SCREEN contact page (HTTP 200), no error shown.");
     }
 
     @Test
     @Order(4)
-    @DisplayName("ET-IDN-001-R7 · KC-01 prompt=login and an existing SSO cookie of ANOTHER user: behaviour recorded")
+    @DisplayName("prompt=login and an existing SSO cookie of ANOTHER user: behaviour recorded")
     void handoffWithExistingSession() throws Exception {
         String a = UUID.randomUUID().toString();
         String b = UUID.randomUUID().toString();
@@ -294,7 +354,7 @@ class ContactOtpKeycloakIT {
                 ? Browser.claims(browser.exchange("myticketzm", WEB, WEB_SECRET, Browser.REDIRECT, noPrompt.code()).get("access_token").asText()).path("preferred_username").asText()
                 : "(page " + noPrompt.status() + ")";
         boolean handleStillUnspent = stub.handles.containsKey("hB");
-        note("KC-01 existing SSO cookie of user A + login_hint=<handle of B>, no prompt: signed in as "
+        note("existing SSO cookie of user A + login_hint=<handle of B>, no prompt: signed in as "
                 + (noPromptUser.equals(a) ? "A (cookie wins, handle ignored)" : noPromptUser.equals(b) ? "B" : noPromptUser)
                 + "; handle of B " + (handleStillUnspent ? "NOT consumed" : "consumed") + ".");
 
@@ -304,7 +364,7 @@ class ContactOtpKeycloakIT {
         String promptUser = prompt.hasCode()
                 ? Browser.claims(browser.exchange("myticketzm", WEB, WEB_SECRET, Browser.REDIRECT, prompt.code()).get("access_token").asText()).path("preferred_username").asText()
                 : "(page " + prompt.status() + ")";
-        note("KC-01 existing SSO cookie of A + prompt=login&login_hint=<handle of B>: "
+        note("existing SSO cookie of A + prompt=login&login_hint=<handle of B>: "
                 + (prompt.hasCode() ? "code returned for " + (promptUser.equals(b) ? "B (re-authentication honoured, no form)" : promptUser)
                         : "a page was rendered: status " + prompt.status() + ", " + pageId(prompt.html()))
                 + "; handle of B " + (stub.handles.containsKey("hB2") ? "NOT consumed" : "consumed") + ".");
@@ -313,7 +373,7 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(5)
-    @DisplayName("ET-IDN-001-R6 · staff (ADMIN role) are refused by the authenticator even with a valid handle")
+    @DisplayName("a staff account (ADMIN role) is refused with a valid handle and after a correct code, with the generic page")
     void staffRefused() throws Exception {
         String staff = UUID.randomUUID().toString();
         String id = createBuyer(staff);
@@ -325,6 +385,11 @@ class ContactOtpKeycloakIT {
             Browser.Step step = new Browser(base).authorize("myticketzm", WEB, Browser.REDIRECT, "login_hint=hStaff");
             assertThat(step.hasCode()).isFalse();
             assertThat(step.html()).contains("could not sign you in");
+
+            stub.accounts.put("staff-member@example.com", staff);
+            Browser.Step byCode = signInByCode(new Browser(base), "staff-member@example.com");
+            assertThat(byCode.hasCode()).isFalse();
+            assertThat(byCode.html()).contains("could not sign you in");
         } finally {
             // The buyers realm declares no ADMIN role; this case added one only to model a staff account,
             // and the server is shared with the realm-conformance cases that assert the exact role set.
@@ -334,7 +399,7 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(6)
-    @DisplayName("ET-IDN-001-R15 · (c) KC-02 Admin API: username=accountId with NO email/names; supplying id=accountId recorded")
+    @DisplayName("Admin API: username=accountId with NO email/names; supplying id=accountId recorded")
     void adminApiCreatesUserWithoutProfile() throws Exception {
         String account = UUID.randomUUID().toString();
         Resp created = admin("POST", "/myticketzm/users", "{\"username\":\"" + account + "\",\"enabled\":true,"
@@ -348,21 +413,21 @@ class ContactOtpKeycloakIT {
         assertThat(user.path("attributes").path("accountId").get(0).asText()).isEqualTo(account);
         JsonNode roles = Browser.JSON.readTree(admin("GET", "/myticketzm/users/" + kcId + "/role-mappings/realm/composite", null).body());
         assertThat(roles.toString()).contains("CUSTOMER");
-        note("KC-02 create user with only username(+accountId attribute), enabled: HTTP 201; GET shows no email/firstName/lastName; "
+        note("Admin API create user with only username(+accountId attribute), enabled: HTTP 201; GET shows no email/firstName/lastName; "
                 + "composite roles via defaultRole include CUSTOMER automatically. Kept 'accountId' as an unmanaged attribute (policy ADMIN_EDIT): stored.");
 
         // a full-representation update (what identity-service must send) keeps the user valid
         ObjectNode full = (ObjectNode) user;
         full.put("emailVerified", true);
         Resp put = admin("PUT", "/myticketzm/users/" + kcId, full.toString());
-        note("KC-02 PUT full representation of the profile-less user: HTTP " + put.status());
+        note("Admin API PUT full representation of the profile-less user: HTTP " + put.status());
         assertThat(put.status()).isEqualTo(204);
 
         // id = accountId
         String wanted = UUID.randomUUID().toString();
         Resp withId = admin("POST", "/myticketzm/users", "{\"id\":\"" + wanted + "\",\"username\":\"" + wanted + "\",\"enabled\":true}");
         String got = withId.location() == null ? "(none)" : withId.location().substring(withId.location().lastIndexOf('/') + 1);
-        note("KC-02 POST users with \"id\":accountId: HTTP " + withId.status() + ", Keycloak user id "
+        note("Admin API POST users with \"id\":accountId: HTTP " + withId.status() + ", Keycloak user id "
                 + (wanted.equals(got) ? "EQUALS the supplied id (usable: sub == accountId)" : "is " + got + " (supplied id IGNORED; use username=accountId)")
                 + (withId.status() >= 400 ? " body=" + withId.body() : ""));
         // Admin-API user creation does not run the buyer browser flow, so a realm default-role grant is the only role
@@ -371,7 +436,7 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(7)
-    @DisplayName("ET-IDN-001-R16 · hardening: no direct grant, no registration, sslRequired external, listener in both realms")
+    @DisplayName("hardening: no direct grant, no registration, sslRequired external, listener in both realms")
     void realmHardening() throws Exception {
         Browser b = new Browser(base);
         Map<String, String> pw = new LinkedHashMap<>();
@@ -420,13 +485,14 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(8)
-    @DisplayName("ET-IDN-001-R17 · (d) staff in the admin realm still sign in with a password; LOGIN is synced with the slim payload")
+    @DisplayName("staff in the admin realm still sign in with a password; LOGIN is synced with the slim payload")
     void staffPasswordLogin() throws Exception {
         Browser browser = new Browser(base);
         Browser.Step page = browser.authorize("myticketzm-admin", ADMIN_CLIENT, ADMIN_APP + "/api/auth/callback", "");
         assertThat(page.isPage()).isTrue();
         assertThat(page.html()).contains("name=\"username\"").contains("name=\"password\"").doesNotContain("kc-contact-form");
-        Browser.Step done = StaffAuth.completePasswordLogin(browser, page, "admin", "admin_password");
+        String staff = staffUser();
+        Browser.Step done = StaffAuth.completePasswordLogin(browser, page, staff, STAFF_TEST_PASSWORD);
         assertThat(done.location()).as("status %s", done.status()).startsWith(ADMIN_APP + "/api/auth/callback?").contains("code=");
         String code = done.location().replaceAll(".*[?&]code=([^&]+).*", "$1");
         JsonNode tokens = browser.exchange("myticketzm-admin", ADMIN_CLIENT, ADMIN_CLIENT_SECRET,
@@ -449,11 +515,11 @@ class ContactOtpKeycloakIT {
         adminLogin.fieldNames().forEachRemaining(names::add);
         assertThat(names).containsExactlyInAnyOrder("eventId", "eventType", "userId", "username", "realm", "enabled",
                 "emailVerified", "timestamp");
-        assertThat(adminLogin.path("username").asText()).isEqualTo("admin");
+        assertThat(adminLogin.path("username").asText()).isEqualTo(staff);
         assertThat(stub.unauthenticated).isEmpty();
     }
 
-    // ---- realm as code: BFF clients, logout, audience, sid (ET-IDN-003 R7, R9) ------------------
+    // ---- realm as code: BFF clients, logout, audience, sid --------------------------------------
 
     static JsonNode client(String realm, String clientId) throws Exception {
         JsonNode list = Browser.JSON.readTree(admin("GET", "/" + realm + "/clients?clientId=" + clientId, null).body());
@@ -461,7 +527,7 @@ class ContactOtpKeycloakIT {
         return list.get(0);
     }
 
-    static void assertBffClient(JsonNode c, String app, java.util.List<String> postLogout) {
+    static void assertBffClient(JsonNode c, String app, String backchannelOrigin, java.util.List<String> postLogout) {
         assertThat(c.path("publicClient").asBoolean()).isFalse();
         assertThat(c.path("standardFlowEnabled").asBoolean()).isTrue();
         assertThat(c.path("implicitFlowEnabled").asBoolean()).isFalse();
@@ -473,7 +539,9 @@ class ContactOtpKeycloakIT {
         assertThat(Browser.JSON.convertValue(c.path("webOrigins"), java.util.List.class)).containsExactly(app);
         JsonNode a = c.path("attributes");
         assertThat(a.path("pkce.code.challenge.method").asText()).isEqualTo("S256");
-        assertThat(a.path("backchannel.logout.url").asText()).isEqualTo(app + "/api/auth/backchannel-logout");
+        assertThat(a.path("backchannel.logout.url").asText())
+                .as("Keycloak calls the app from its own container, so this is the app as that container reaches it")
+                .isEqualTo(backchannelOrigin + "/api/auth/backchannel-logout");
         assertThat(a.path("backchannel.logout.session.required").asText()).isEqualTo("true");
         assertThat(a.path("backchannel.logout.revoke.offline.tokens").asText()).isEqualTo("true");
         assertThat(java.util.Arrays.asList(a.path("post.logout.redirect.uris").asText().split("##")))
@@ -482,13 +550,13 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(9)
-    @DisplayName("ET-IDN-003-R9 · realm as code: the three BFF clients, token lifetimes, session limits, refresh reuse")
+    @DisplayName("realm as code: the three BFF clients, token lifetimes, session limits, refresh reuse")
     void bffClientsAsCode() throws Exception {
-        assertBffClient(client("myticketzm", WEB), BUYER_APP,
+        assertBffClient(client("myticketzm", WEB), BUYER_APP, BUYER_BACKCHANNEL,
                 java.util.List.of(BUYER_APP + "/*", BUYER_APP + "/api/auth/start?resume=1"));
-        assertBffClient(client("myticketzm", ORGANIZER), ORGANIZER_APP,
+        assertBffClient(client("myticketzm", ORGANIZER), ORGANIZER_APP, ORGANIZER_BACKCHANNEL,
                 java.util.List.of(ORGANIZER_APP + "/*"));
-        assertBffClient(client("myticketzm-admin", ADMIN_CLIENT), ADMIN_APP,
+        assertBffClient(client("myticketzm-admin", ADMIN_CLIENT), ADMIN_APP, ADMIN_BACKCHANNEL,
                 java.util.List.of(ADMIN_APP + "/*"));
 
         for (String clientId : java.util.List.of(WEB, ORGANIZER)) {
@@ -514,10 +582,10 @@ class ContactOtpKeycloakIT {
         assertThat(staff.path("browserFlow").asText()).isEqualTo("staff-password-browser");
     }
 
-    /** Signs in as the seeded staff user on a fresh browser and returns the token response. */
+    /** Signs a staff member in on a fresh browser and returns the token response. */
     JsonNode staffLogin(Browser browser) throws Exception {
         Browser.Step page = browser.authorize("myticketzm-admin", ADMIN_CLIENT, ADMIN_APP + "/api/auth/callback", "");
-        Browser.Step done = StaffAuth.completePasswordLogin(browser, page, "admin", "admin_password");
+        Browser.Step done = StaffAuth.completePasswordLogin(browser, page, staffUser(), STAFF_TEST_PASSWORD);
         assertThat(done.location()).as("status %s", done.status()).startsWith(ADMIN_APP + "/api/auth/callback?");
         String code = done.location().replaceAll(".*[?&]code=([^&]+).*", "$1");
         JsonNode tokens = browser.exchange("myticketzm-admin", ADMIN_CLIENT, ADMIN_CLIENT_SECRET, ADMIN_APP + "/api/auth/callback", code);
@@ -540,7 +608,7 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(10)
-    @DisplayName("ET-IDN-003-R7 · staff realm: audience and sid in tokens; RP logout with id_token_hint redirects with no page; LOGOUT reaches identity with that sid only")
+    @DisplayName("staff realm: audience and sid in tokens; RP logout with id_token_hint redirects with no page; LOGOUT reaches identity with that sid only")
     void staffLogoutReachesIdentityWithSid() throws Exception {
         Browser one = new Browser(base);
         Browser two = new Browser(base);
@@ -597,7 +665,7 @@ class ContactOtpKeycloakIT {
 
     @Test
     @Order(11)
-    @DisplayName("ET-IDN-003-R9 · buyer and organizer clients: audience and sid, logout to the /api/auth/start?resume=1 hop with no page")
+    @DisplayName("buyer and organizer clients: audience and sid, logout to the /api/auth/start?resume=1 hop with no page")
     void buyerAndOrganizerLogout() throws Exception {
         String account = UUID.randomUUID().toString();
         createBuyer(account);
@@ -642,5 +710,96 @@ class ContactOtpKeycloakIT {
         assertThat(orgOut.status()).isIn(302, 303);
         assertThat(orgOut.location()).startsWith(ORGANIZER_APP + "/logged-out");
         assertThat(awaitEvent("LOGOUT", orgClaims.path("sid").asText())).isNotNull();
+    }
+
+    @Test
+    @Order(12)
+    @DisplayName("a disabled buyer gets the same generic page as a missing buyer and no sign-in event reaches identity-service")
+    void disabledUserGetsGenericErrorAndLeaksNothing() throws Exception {
+        String account = UUID.randomUUID().toString();
+        String kcId = createBuyer(account);
+        JsonNode user = Browser.JSON.readTree(admin("GET", "/myticketzm/users/" + kcId, null).body());
+        ((ObjectNode) user).put("enabled", false);
+        assertThat(admin("PUT", "/myticketzm/users/" + kcId, user.toString()).status()).isEqualTo(204);
+
+        stub.handles.put("hDisabled", account);
+        Browser.Step byHandle = new Browser(base).authorize("myticketzm", WEB, Browser.REDIRECT, "login_hint=hDisabled");
+        assertThat(byHandle.hasCode()).isFalse();
+        assertThat(byHandle.html()).contains("could not sign you in");
+
+        stub.accounts.put("disabled-buyer@example.com", account);
+        Browser.Step byCode = signInByCode(new Browser(base), "disabled-buyer@example.com");
+        assertThat(byCode.hasCode()).isFalse();
+        assertThat(byCode.html()).contains("could not sign you in");
+
+        stub.accounts.put("no-such-user@example.com", "ghost-" + UUID.randomUUID());
+        Browser.Step missing = signInByCode(new Browser(base), "no-such-user@example.com");
+        assertThat(missing.html()).contains("could not sign you in");
+        assertThat(missing.status()).as("same HTTP status as the disabled case").isEqualTo(byCode.status());
+        assertThat(byHandle.status()).isEqualTo(missing.status());
+
+        for (Browser.Step page : java.util.List.of(byHandle, byCode, missing)) {
+            assertThat(StaffAuth.excerpt(page.html()).toLowerCase()).as("page text must not name the reason")
+                    .doesNotContain("disabled").doesNotContain("suspended").doesNotContain("locked");
+        }
+
+        // give the asynchronous listener time to deliver anything it was going to send
+        Thread.sleep(2000);
+        for (JsonNode event : stub.syncEvents) {
+            assertThat(event.toString().toLowerCase()).as("no event carries the refusal reason").doesNotContain("user_disabled");
+            if (account.equals(event.path("username").asText())) {
+                assertThat(event.path("eventType").asText())
+                        .as("the only events for the disabled user are the administrator's own changes, never a sign-in")
+                        .startsWith("ADMIN_");
+            }
+        }
+    }
+
+    @Test
+    @Order(13)
+    @DisplayName("an expired login handle shows the contact page and creates no session")
+    void expiredHandleShowsContactPage() throws Exception {
+        String account = UUID.randomUUID().toString();
+        createBuyer(account);
+        stub.handles.put("hExpired", account);
+        stub.expiredHandles.add("hExpired");
+
+        Browser browser = new Browser(base);
+        Browser.Step step = browser.authorize("myticketzm", WEB, Browser.REDIRECT, "login_hint=hExpired");
+        assertThat(step.hasCode()).isFalse();
+        assertThat(step.isPage()).isTrue();
+        assertThat(step.html()).contains("kc-contact-form");
+        assertThat(stub.redeemAttempts).contains("hExpired");
+        assertThat(browser.cookies).as("no SSO session was created").doesNotContainKey("KEYCLOAK_IDENTITY");
+
+        Browser.Step again = browser.authorize("myticketzm", WEB, Browser.REDIRECT, "");
+        assertThat(again.hasCode()).isFalse();
+        assertThat(again.html()).contains("kc-contact-form");
+    }
+
+    @Test
+    @Order(14)
+    @DisplayName("a channel field posted with the contact is ignored and never reaches identity-service")
+    void postedChannelFieldIsNeverForwarded() throws Exception {
+        String account = UUID.randomUUID().toString();
+        createBuyer(account);
+        stub.accounts.put("channel-test@example.com", account);
+
+        Browser browser = new Browser(base);
+        Browser.Step page = browser.authorize("myticketzm", WEB, Browser.REDIRECT, "");
+        assertThat(page.isPage()).isTrue();
+        Map<String, String> hostile = new LinkedHashMap<>();
+        hostile.put("contact", "channel-test@example.com");
+        hostile.put("channel", "SMS");
+        hostile.put("preferredChannel", "SMS");
+        Browser.Step code = browser.submit(page, hostile);
+        assertThat(code.html()).contains("kc-contact-code-form");
+
+        JsonNode request = stub.challengeRequests.stream()
+                .filter(r -> "channel-test@example.com".equals(r.path("contact").path("value").asText()))
+                .reduce((first, second) -> second).orElseThrow();
+        assertThat(request.hasNonNull("preferredChannel")).as(request.toString()).isFalse();
+        assertThat(request.has("channel")).isFalse();
+        assertThat(request.toString()).doesNotContain("SMS");
     }
 }

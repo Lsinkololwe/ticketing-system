@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("L1")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001 · Redis key names of the challenge match CONTRACT 6 and carry only the contact key")
+@DisplayName("Redis key names of the challenge are the agreed names and carry only the contact key")
 class ChallengeKeysTest {
 
     private static final String KEY = "ab12cd34";

@@ -4,6 +4,7 @@ import com.pml.identity.account.AccountService;
 import com.pml.identity.domain.model.AccountEvent;
 import com.pml.identity.domain.model.AuditLog;
 import com.pml.identity.domain.model.User;
+import com.pml.identity.platform.FinanceAuditView;
 import com.pml.identity.web.graphql.dto.pagination.OffsetPaginationInput;
 import com.pml.identity.web.graphql.dto.pagination.PageInfo;
 import com.pml.identity.web.graphql.dto.platform.AuditLogEntry;
@@ -53,14 +54,8 @@ public class AdminReadService {
     public Mono<AuditLogEntryOffsetPage> auditLogs(AuditLogFilterInput filter, OffsetPaginationInput pagination) {
         OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
         AuditLogFilterInput f = filter != null ? filter
-                : new AuditLogFilterInput(null, null, null, null, null, null, null, null);
-        Mono<Long> total = template.count(new Query(auditCriteria(f)), AuditLog.class);
-        Flux<AuditLogEntry> rows = template.find(
-                        new Query(auditCriteria(f)).with(Sort.by(Sort.Direction.DESC, "timestamp"))
-                                .skip(p.getOffset()).limit(p.getLimit()),
-                        AuditLog.class)
-                .map(AdminReadService::entry);
-        Mono<AuditLogEntryOffsetPage> audits = Mono.zip(rows.collectList(), total).map(t -> page(t.getT1(), t.getT2(), p));
+                : new AuditLogFilterInput(null, null, null, null, null, null, null, null, null, null);
+        Mono<AuditLogEntryOffsetPage> audits = auditPage(auditCriteria(f), p);
         if (!Boolean.TRUE.equals(f.includeAccountEvents())) {
             return audits;
         }
@@ -76,6 +71,35 @@ public class AdminReadService {
                 });
     }
 
+    /**
+     * The finance officer's view: only platform-wide reach rows whose reason is in
+     * {@link FinanceAuditView#MONEY_REASONS}, by any actor.
+     *
+     * <p>The restriction is added here, to whatever the caller filtered by, so a filter can only
+     * narrow it further: asking for a reason, action, actor or service outside the set matches
+     * nothing and the page is empty, exactly as if no such rows existed. Account events are never
+     * merged in, whatever {@code includeAccountEvents} says.
+     */
+    public Mono<AuditLogEntryOffsetPage> financeAuditLogs(AuditLogFilterInput filter, OffsetPaginationInput pagination) {
+        OffsetPaginationInput p = pagination != null ? pagination : OffsetPaginationInput.defaults();
+        AuditLogFilterInput f = filter != null ? filter
+                : new AuditLogFilterInput(null, null, null, null, null, null, null, null, null, null);
+        Criteria money = new Criteria().andOperator(
+                Criteria.where("action").is(AuditLog.AuditAction.TENANT_BOUNDARY_CROSSED),
+                Criteria.where("reason").in(FinanceAuditView.MONEY_REASON_NAMES));
+        return auditPage(new Criteria().andOperator(money, auditCriteria(f)), p);
+    }
+
+    private Mono<AuditLogEntryOffsetPage> auditPage(Criteria criteria, OffsetPaginationInput p) {
+        Mono<Long> total = template.count(new Query(criteria), AuditLog.class);
+        Flux<AuditLogEntry> rows = template.find(
+                        new Query(criteria).with(Sort.by(Sort.Direction.DESC, "timestamp"))
+                                .skip(p.getOffset()).limit(p.getLimit()),
+                        AuditLog.class)
+                .map(AdminReadService::entry);
+        return Mono.zip(rows.collectList(), total).map(t -> page(t.getT1(), t.getT2(), p));
+    }
+
     private Flux<AuditLogEntry> accountEvents(AuditLogFilterInput f, int limit) {
         List<Criteria> all = new ArrayList<>();
         all.add(Criteria.where("kind").nin(AUDITED_KINDS));
@@ -87,7 +111,7 @@ public class AdminReadService {
                         .with(Sort.by(Sort.Direction.DESC, "at")).limit(limit), AccountEvent.class)
                 .map(event -> new AuditLogEntry(event.getId(), "ACCOUNT_EVENT", event.getKind(),
                         event.getData() == null ? null : (String) event.getData().get("by"),
-                        event.getAccountId(), "User", event.getAccountId(), "SUCCESS", event.getAt(),
+                        event.getAccountId(), "User", event.getAccountId(), "SUCCESS", event.getAt(), null,
                         safe(event.getData())));
     }
 
@@ -100,14 +124,26 @@ public class AdminReadService {
         if (f.resourceType() != null) all.add(Criteria.where("resourceType").is(f.resourceType()));
         if (f.resourceId() != null) all.add(Criteria.where("resourceId").is(f.resourceId()));
         if (f.status() != null) all.add(Criteria.where("status").is(f.status()));
+        if (f.service() != null) all.add(Criteria.where("service").is(f.service()));
+        if (f.reason() != null) all.add(Criteria.where("reason").is(f.reason()));
         return all.isEmpty() ? new Criteria() : new Criteria().andOperator(all.toArray(new Criteria[0]));
     }
 
     private static AuditLogEntry entry(AuditLog row) {
         return new AuditLogEntry(row.getId(), "AUDIT", row.getAction() == null ? null : row.getAction().name(),
                 row.getPerformedBy(), row.getUserId(), row.getResourceType(), row.getResourceId(),
-                row.getStatus() == null ? null : row.getStatus().name(), row.getTimestamp(),
-                row.getMetadata() == null ? Map.of() : new LinkedHashMap<String, Object>(row.getMetadata()));
+                row.getStatus() == null ? null : row.getStatus().name(), row.getTimestamp(), row.getReceivedAt(),
+                metadata(row));
+    }
+
+    /** The row's own metadata, plus the facts of a platform-wide reach so the audit page shows them without a new column. */
+    private static Map<String, Object> metadata(AuditLog row) {
+        Map<String, Object> out = row.getMetadata() == null ? new LinkedHashMap<>() : new LinkedHashMap<String, Object>(row.getMetadata());
+        if (row.getActorRole() != null) out.put("actorRole", row.getActorRole());
+        if (row.getService() != null) out.put("service", row.getService());
+        if (row.getReason() != null) out.put("reason", row.getReason());
+        if (row.getOperation() != null) out.put("operation", row.getOperation());
+        return out;
     }
 
     /** Account-event data minus anything that is not a plain scalar. */

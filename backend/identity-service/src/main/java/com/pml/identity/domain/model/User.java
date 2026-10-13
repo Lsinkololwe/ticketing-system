@@ -130,7 +130,6 @@ public class User {
      * Example combinations:
      * - [CUSTOMER] - Regular user (default)
      * - [CUSTOMER, ORGANIZER] - Event organizer
-     * - [CUSTOMER, ORGANIZER, SCANNER] - Organizer who also scans tickets
      * - [CUSTOMER, ADMIN] - Platform administrator
      * - [CUSTOMER, FINANCE] - Finance team member
      */
@@ -174,6 +173,40 @@ public class User {
     private PendingKind pendingKind;
 
     private Instant pendingSince;
+
+    /**
+     * The run of the contact-change workflow that set {@link #pendingKind} to CHANGING. A later attempt asks
+     * Temporal whether that run is still open before deciding whether the marker is a live change or a
+     * leftover. Null on a marker written before owners were recorded.
+     */
+    private String pendingOwnerRunId;
+
+    /** The latest moment the owning run could still be open; past it the marker is a leftover whatever else is true. */
+    private Instant pendingExpiresAt;
+
+    /**
+     * The contact the open change claimed but has not yet committed. Present only between the claim and the
+     * commit, so a marker found with it set tells the cleanup there is a half-made claim to remove.
+     */
+    private String pendingContactId;
+
+    /** Set only on a staff account that is still being created; removed when the account becomes ACTIVE. */
+    private StaffCreation staffCreation;
+
+    /**
+     * What the staff-creation process remembers about an account it has not finished: the role the person is
+     * to receive, and whether this process made their Keycloak user (and so may remove it again) or adopted one
+     * that was already there (which it must never remove).
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class StaffCreation {
+        private UserType role;
+        /** The create call has been made at least once, so a Keycloak user of this username is ours. */
+        private boolean keycloakStarted;
+        private boolean keycloakCreatedHere;
+    }
 
     /** How the account came to exist (e.g. OTP, KEYCLOAK_SYNC, MIGRATION). */
     private String createdVia;

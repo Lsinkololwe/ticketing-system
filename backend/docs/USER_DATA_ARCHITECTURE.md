@@ -184,7 +184,6 @@ public enum UserType {
     ORGANIZER("ORGANIZER", "Organizer", "Event organizer"),
     ADMIN("ADMIN", "Administrator", "Platform administrator"),
     SUPER_ADMIN("SUPER_ADMIN", "Super Administrator", "Highest privileges"),
-    SCANNER("SCANNER", "Scanner", "Ticket scanner at events"),
     FINANCE("FINANCE", "Finance", "Financial operations");
 }
 ```
@@ -205,7 +204,6 @@ private Set<UserType> roles = EnumSet.of(UserType.CUSTOMER);
 |-----------|-------|
 | Regular Customer | `[CUSTOMER]` |
 | Event Organizer | `[CUSTOMER, ORGANIZER]` |
-| Organizer + Scanner | `[CUSTOMER, ORGANIZER, SCANNER]` |
 | Platform Admin | `[CUSTOMER, ADMIN]` |
 | Finance Team | `[CUSTOMER, FINANCE]` |
 | Super Admin | `[CUSTOMER, SUPER_ADMIN]` |
@@ -419,7 +417,7 @@ database: keycloakMongoAdapter(mongoDb, {
 3. **Keycloak is source of truth** for authentication and roles
 4. **MongoDB caches profile data** for GraphQL performance
 5. **Better Auth reads from shared collection** - no separate user storage
-6. **All user types supported** - CUSTOMER, ORGANIZER, ADMIN, SUPER_ADMIN, SCANNER, FINANCE
+6. **All user types supported** - CUSTOMER, ORGANIZER, ADMIN, SUPER_ADMIN, FINANCE, FINANCE_LEAD (ticket validators are event-scoped access grants, not a role)
 7. **Multi-role support** - Users can have multiple roles simultaneously
 8. **GraphQL Federation** - User type owned by Identity Service, extended by others
 

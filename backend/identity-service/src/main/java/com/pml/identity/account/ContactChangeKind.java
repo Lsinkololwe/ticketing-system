@@ -1,6 +1,6 @@
 package com.pml.identity.account;
 
-/** What a contact change does (ET-IDN-004 R3, R5). */
+/** What a contact change does: add, change, remove or move the primary. */
 public enum ContactChangeKind {
     /** A new verified contact joins the account. */
     ADD,

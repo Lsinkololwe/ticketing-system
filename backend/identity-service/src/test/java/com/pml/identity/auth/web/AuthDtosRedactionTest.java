@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("L1")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001 · request and proof types never print a contact, code, proof or handle")
+@DisplayName("request and proof types never print a contact, code, proof or handle")
 class AuthDtosRedactionTest {
 
     @Test

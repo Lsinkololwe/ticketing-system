@@ -38,8 +38,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * resolver's {@code reads.grantForCaller(accessId)} already proves ownership before either is
  * called, so this is defense in depth: a future caller that skips that read is refused here too.
  *
- * <p>Flat {@code @Test} methods, not {@code @Nested} groups: see F-055 — this project's Surefire
- * setup never executes a {@code @Test} inside a {@code @Nested} class.
+ * <p>Flat {@code @Test} methods rather than nested groups: the backend's test convention, so every
+ * case appears under this one class in the report.
  */
 @Tag("L2")
 @Tag("ET-PLT-007")

@@ -85,3 +85,76 @@ test.describe('detail pages render', () => {
     });
   }
 });
+
+test.describe('staff accounts: one-time temporary password', () => {
+  // Obvious fixture strings: no real credential appears in a spec.
+  const CREATED_PASSWORD = 'fixture-created-0001';
+  const RESET_PASSWORD = 'fixture-reset-0002';
+  const STAFF = { 'User.fullName': 'Staff Person', 'User.roles': ['CUSTOMER', 'ADMIN'], 'User.accountStatus': 'ACTIVE' };
+  const userRow = { id: 'new-staff-1', fullName: 'Ben Phiri', roles: ['ADMIN'], accountStatus: 'ACTIVE' };
+
+  async function createAdmin(page: import('@playwright/test').Page) {
+    await page.goto('/users/users');
+    await page.getByRole('button', { name: 'Create admin' }).click();
+    const dlg = page.getByRole('dialog').last();
+    await dlg.getByLabel('First name').fill('Ben');
+    await dlg.getByLabel('Last name').fill('Phiri');
+    await dlg.getByLabel('Email').fill('ben@example.test');
+    await dlg.getByLabel('Phone number').fill('+260971234568');
+    await dlg.getByRole('button', { name: 'Create admin' }).click();
+  }
+
+  test('creating a staff account shows the generated password once and clears it on Done', async ({ page, upstream, signInAs }) => {
+    mockAll(upstream, { fields: STAFF });
+    upstream.gql({ IdentityAdminCreateUser: () => ({ createUser: { __typename: 'CreateStaffUserResult', user: userRow, temporaryPassword: CREATED_PASSWORD } }) });
+    await signInAs({ roles: ['SUPER_ADMIN'], accountId: 'staff-1' });
+    await createAdmin(page);
+
+    const panel = page.getByTestId('temporary-password-panel');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByTestId('temporary-password-value')).toHaveValue(CREATED_PASSWORD);
+    await expect(panel.getByText(/shown once/i)).toBeVisible();
+    expect(upstream.calls('IdentityAdminCreateUser')[0]).not.toHaveProperty('variables.input.password');
+
+    await page.getByTestId('temporary-password-done').click();
+    await expect(panel).toHaveCount(0);
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }))).not.toContain(CREATED_PASSWORD);
+    expect(await page.content()).not.toContain(CREATED_PASSWORD);
+    expect(page.url()).not.toContain(CREATED_PASSWORD);
+  });
+
+  test('a repeat of a finished create says the account exists and shows no password', async ({ page, upstream, signInAs }) => {
+    mockAll(upstream, { fields: STAFF });
+    upstream.gql({ IdentityAdminCreateUser: () => ({ createUser: { __typename: 'CreateStaffUserResult', user: userRow, temporaryPassword: null } }) });
+    await signInAs({ roles: ['SUPER_ADMIN'], accountId: 'staff-1' });
+    await createAdmin(page);
+    await expect(page.getByText(/already has an account/i)).toBeVisible();
+    await expect(page.getByTestId('temporary-password-panel')).toHaveCount(0);
+  });
+
+  test('a super admin resets a staff password after confirming, and sees the new one once', async ({ page, upstream, signInAs }) => {
+    mockAll(upstream, { fields: STAFF });
+    upstream.gql({ IdentityAdminResetStaffPassword: () => ({ resetStaffTemporaryPassword: { __typename: 'ResetStaffPasswordResult', user: userRow, temporaryPassword: RESET_PASSWORD } }) });
+    await signInAs({ roles: ['SUPER_ADMIN'], accountId: 'staff-1' });
+    await page.goto('/users/users');
+    await page.getByRole('button', { name: 'More actions for Staff Person' }).first().click();
+    await page.getByRole('menuitem', { name: 'Reset password…' }).click();
+    expect(upstream.calls('IdentityAdminResetStaffPassword')).toHaveLength(0);
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Reset password' }).click();
+
+    await expect(page.getByTestId('temporary-password-value')).toHaveValue(RESET_PASSWORD);
+    expect(upstream.calls('IdentityAdminResetStaffPassword')).toHaveLength(1);
+    await page.getByTestId('temporary-password-done').click();
+    await expect(page.getByTestId('temporary-password-panel')).toHaveCount(0);
+    expect(await page.content()).not.toContain(RESET_PASSWORD);
+  });
+
+  test('an admin is not offered Reset password or Create admin', async ({ page, upstream, signInAs }) => {
+    mockAll(upstream, { fields: STAFF });
+    await signInAs({ roles: ['ADMIN'], accountId: 'staff-1' });
+    await page.goto('/users/users');
+    await expect(page.getByRole('button', { name: 'Create admin' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'More actions for Staff Person' }).first().click();
+    await expect(page.getByRole('menuitem', { name: 'Reset password…' })).toHaveCount(0);
+  });
+});

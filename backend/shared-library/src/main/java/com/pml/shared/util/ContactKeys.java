@@ -8,7 +8,7 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * {@code contactKey = HMAC-SHA256(hashKey, TYPE + ":" + normalized)} as lower-case hex (CONTRACT 3).
+ * {@code contactKey = HMAC-SHA256(hashKey, TYPE + ":" + normalized)} as lower-case hex.
  * Used for uniqueness, Redis keys and workflow ids. The raw value never appears in the key.
  */
 public final class ContactKeys {

@@ -203,12 +203,9 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
                     org.setRejectionReason(null); // Clear any previous rejection reason
                     org.setUpdatedAt(clock.instant());
 
-                    // NOTE: the ORGANIZER realm role is NOT granted here. It is assigned by Keycloak
-                    // at registration via the AccountTypeRoleMapper SPI (keycloak-extensions) based on
-                    // the user-selected account type, and mirrored to MongoDB by UserSyncEventListener.
-                    // Granting it again from the app would duplicate that flow. What actually gates a
-                    // pending organizer's privileged actions is organization STATUS, enforced in
-                    // AuthorizationServiceImpl — not the role.
+                    // Submitting for review grants no role. The ORGANIZER role is granted only when the
+                    // application is approved; until then what gates a pending organizer's privileged
+                    // actions is the organization's STATUS, enforced in AuthorizationServiceImpl.
                     return organizationRepository.save(org);
                 })
                 .doOnSuccess(org -> log.info("Organization {} submitted for review", org.getId()));
@@ -259,7 +256,7 @@ public class OrganizationOnboardingServiceImpl implements OrganizationOnboarding
 
     @Override
     public Mono<Organization> createOrganization(User user) {
-        log.info("Creating organization for user: {} ({})", user.getId(), user.getEmail());
+        log.info("Creating organization for user: {}", user.getId());
 
         String organizationName = generateOrganizationName(user);
         String baseSlug = toSlug(organizationName);

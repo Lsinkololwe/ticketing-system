@@ -140,9 +140,18 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
             return Mono.error(new IllegalArgumentException("Cannot invite someone as OWNER"));
         }
 
-        // An invitation goes to an email, a WhatsApp number, or both. A number is stored in its
-        // normalised E.164 form, so the same person typed two ways is one invitee.
-        String normalisedEmail = email == null || email.isBlank() ? null : email.toLowerCase().trim();
+        // An invitation goes to an email, a WhatsApp number, or both. Both are stored in the form
+        // the platform's one contact normaliser gives, so the same person typed two ways is one
+        // invitee and the invitation can be matched to a verified contact by its key.
+        String normalisedEmail = null;
+        if (email != null && !email.isBlank()) {
+            normalisedEmail = contactHasher.normalize(email, com.pml.identity.domain.enums.ContactType.EMAIL, null, null)
+                    .map(com.pml.identity.security.ContactHasher.Normalized::value)
+                    .orElse(null);
+            if (normalisedEmail == null) {
+                return Mono.error(new TranslatedRefusal(ErrorCode.CONTACT_INVALID, "the invitee's email is not valid"));
+            }
+        }
         String normalisedPhone = null;
         if (phoneNumber != null && !phoneNumber.isBlank()) {
             normalisedPhone = contactHasher.normalize(phoneNumber, com.pml.identity.domain.enums.ContactType.WHATSAPP, null, null)
@@ -238,8 +247,8 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
                         request.eventAccessGrants(),
                         invitedById)
                         .onErrorResume(e -> {
-                            log.warn("Failed to create invitation for {}: {}",
-                                    request.email(), e.getMessage());
+                            log.warn("Failed to create one invitation of a bulk invite to organization {}: {}",
+                                    organizationId, e.getClass().getSimpleName());
                             return Mono.empty();
                         }));
     }
@@ -396,8 +405,10 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
      * this check, whoever held the link would join the organization in the proposed role, which for
      * an `ADMIN` invitation is the team, the events and the organization's settings.
      *
-     * <p>The accepting user's own email and phone are read from their account, never from the
-     * request: an identity the caller supplies is not an identity.
+     * <p>The person accepts by being signed in to an account that holds, as a verified contact, the
+     * email or WhatsApp number the invitation was sent to. An email or a number typed into a profile
+     * (by the person or by an administrator) is not proof of anything and is never compared; neither
+     * is anything the caller sends in the request.
      */
     private Mono<OrganizationMember> acceptAsAddressee(
             TeamInvitation invitation, String userId, Instant now) {
@@ -405,8 +416,7 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
         return userService.findById(userId)
                 .switchIfEmpty(Mono.error(new TranslatedRefusal(
                         ErrorCode.USER_UNKNOWN, "no account for the authenticated caller")))
-                .flatMap(user -> (invitation.addressedTo(user.getEmail(), user.getPhoneNumber())
-                        ? Mono.just(true) : addressedToContact(invitation, user)).flatMap(addressed -> {
+                .flatMap(user -> addressedToContact(invitation, user).flatMap(addressed -> {
                     if (!addressed) {
                         // Deliberately not naming the addressee. Telling the holder of a forwarded
                         // link which address it was meant for hands them the invitee's contact
@@ -422,8 +432,9 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
     }
 
     /**
-     * Whether the account owns the verified contact the invitation was sent to. A buyer-style account has no email or phone on
-     * the document; its numbers are verified contacts, and those are what is compared.
+     * Whether the account owns, as a verified and unreleased contact, the WhatsApp number or the
+     * email the invitation was sent to. The invitation's address and the account's contacts are both
+     * reduced to the same contact key, and the key's verified owner is compared with the account.
      */
     private Mono<Boolean> addressedToContact(TeamInvitation invitation,
                                              com.pml.identity.domain.model.User user) {

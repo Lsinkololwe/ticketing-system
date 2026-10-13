@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @Tag("L1")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001 · /api/internal/auth/** scope rules")
+@DisplayName("/api/internal/auth/** scope rules")
 class InternalAuthScopeRulesTest {
 
     private static final String AUDIENCE = "myticketzm-identity-service";

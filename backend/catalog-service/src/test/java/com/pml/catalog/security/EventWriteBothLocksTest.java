@@ -19,7 +19,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -114,77 +113,71 @@ class EventWriteBothLocksTest {
         template.save(event).block();
     }
 
-    @Nested
-    @DisplayName("with the permission check answering yes to everything")
-    class OnlyTheFilterIsLoadBearing {
+    // ── with the permission check answering yes to everything ─────────────────────────────────────
 
-        @Test
-        @DisplayName("ET-PLT-007 · another organization is refused, and the filter is what refused")
-        void theFilterRefusesAlone() {
-            assertThat(events.findById(THE_EVENT).block())
-                    .as("the event must exist, or this passes against an empty collection")
-                    .isNotNull();
+    @Test
+    @DisplayName("with the permission check answering yes to everything · ET-PLT-007 · another organization is refused, and the filter is what refused")
+    void onlyTheFilterIsLoadBearing_theFilterRefusesAlone() {
+        assertThat(events.findById(THE_EVENT).block())
+                .as("the event must exist, or this passes against an empty collection")
+                .isNotNull();
 
-            assertThatThrownBy(() -> write(OTHER_ORG, alwaysAuthorised(), Permission.EVENT_EDIT))
-                    .as("""
-                        identity-service said yes. If this write succeeds, the repository filter \
-                        is gone and every organizer can edit every event on the platform.""")
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode())
-                            .isEqualTo(ErrorCode.EVENT_UNKNOWN));
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · the refusal is indistinguishable from an id that was never issued")
-        void crossTenantLooksLikeNotFound() {
-            DomainRefusal onTheirs = refusalFor(OTHER_ORG, THE_EVENT);
-            DomainRefusal onNothing = refusalFor(OTHER_ORG, NEVER_ISSUED);
-
-            assertThat(onTheirs.errorCode()).isEqualTo(onNothing.errorCode());
-            assertThat(onTheirs.details()).isEqualTo(onNothing.details()).isEmpty();
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · the owning organization still gets through")
-        void theOwnerIsNotBlocked() {
-            // Closing a boundary that also closes the front door is not a fix.
-            assertThat(write(OWNER_ORG, alwaysAuthorised(), Permission.EVENT_EDIT).getId())
-                    .isEqualTo(THE_EVENT);
-        }
+        assertThatThrownBy(() -> write(OTHER_ORG, alwaysAuthorised(), Permission.EVENT_EDIT))
+                .as("""
+                    identity-service said yes. If this write succeeds, the repository filter \
+                    is gone and every organizer can edit every event on the platform.""")
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode())
+                        .isEqualTo(ErrorCode.EVENT_UNKNOWN));
     }
 
-    @Nested
-    @DisplayName("with the caller genuinely inside the owning organization")
-    class OnlyTheCheckIsLoadBearing {
+    @Test
+    @DisplayName("with the permission check answering yes to everything · ET-PLT-007 · the refusal is indistinguishable from an id that was never issued")
+    void onlyTheFilterIsLoadBearing_crossTenantLooksLikeNotFound() {
+        DomainRefusal onTheirs = refusalFor(OTHER_ORG, THE_EVENT);
+        DomainRefusal onNothing = refusalFor(OTHER_ORG, NEVER_ISSUED);
 
-        @Test
-        @DisplayName("ET-PLT-007 · a member without the permission is refused, and the check is what refused")
-        void theCheckRefusesAlone() {
-            // The MARKETER case, which is the whole business argument for two locks: they belong
-            // to the organization, so the filter returns the row and has no further opinion. Only
-            // the permission check knows that marketing may run promotions and may not edit events.
-            assertThatThrownBy(() ->
-                    write(OWNER_ORG, alwaysRefused("MARKETER may not edit events"), Permission.EVENT_EDIT))
-                    .as("""
-                        the filter passed — this caller really is in the owning organization. If \
-                        this write succeeds, the permission check is gone and every member of an \
-                        organization has owner-level power over all of its events.""")
-                    .isInstanceOf(AccessDeniedException.class)
-                    .hasMessageContaining("MARKETER may not edit events");
-        }
+        assertThat(onTheirs.errorCode()).isEqualTo(onNothing.errorCode());
+        assertThat(onTheirs.details()).isEqualTo(onNothing.details()).isEmpty();
+    }
 
-        @Test
-        @DisplayName("ET-PLT-007 · a permission refusal may say why, unlike a cross-tenant one")
-        void thePermissionRefusalIsAllowedToBeSpecific() {
-            // Deliberately not disguised. By this point the caller has proved membership of the
-            // owning organization, so the event's existence is not news and TenantBoundary has
-            // nothing left to conceal. Telling them which permission they lack is what lets them
-            // ask the right colleague rather than file a bug about a vanished event.
-            assertThatThrownBy(() ->
-                    write(OWNER_ORG, alwaysRefused("requires event:publish"), Permission.EVENT_PUBLISH))
-                    .isInstanceOf(AccessDeniedException.class)
-                    .hasMessageContaining("event:publish");
-        }
+    @Test
+    @DisplayName("with the permission check answering yes to everything · ET-PLT-007 · the owning organization still gets through")
+    void onlyTheFilterIsLoadBearing_theOwnerIsNotBlocked() {
+        // Closing a boundary that also closes the front door is not a fix.
+        assertThat(write(OWNER_ORG, alwaysAuthorised(), Permission.EVENT_EDIT).getId())
+                .isEqualTo(THE_EVENT);
+    }
+
+    // ── with the caller genuinely inside the owning organization ──────────────────────────────────
+
+    @Test
+    @DisplayName("with the caller genuinely inside the owning organization · ET-PLT-007 · a member without the permission is refused, and the check is what refused")
+    void onlyTheCheckIsLoadBearing_theCheckRefusesAlone() {
+        // The MARKETER case, which is the whole business argument for two locks: they belong
+        // to the organization, so the filter returns the row and has no further opinion. Only
+        // the permission check knows that marketing may run promotions and may not edit events.
+        assertThatThrownBy(() ->
+                write(OWNER_ORG, alwaysRefused("MARKETER may not edit events"), Permission.EVENT_EDIT))
+                .as("""
+                    the filter passed — this caller really is in the owning organization. If \
+                    this write succeeds, the permission check is gone and every member of an \
+                    organization has owner-level power over all of its events.""")
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("MARKETER may not edit events");
+    }
+
+    @Test
+    @DisplayName("with the caller genuinely inside the owning organization · ET-PLT-007 · a permission refusal may say why, unlike a cross-tenant one")
+    void onlyTheCheckIsLoadBearing_thePermissionRefusalIsAllowedToBeSpecific() {
+        // Deliberately not disguised. By this point the caller has proved membership of the
+        // owning organization, so the event's existence is not news and TenantBoundary has
+        // nothing left to conceal. Telling them which permission they lack is what lets them
+        // ask the right colleague rather than file a bug about a vanished event.
+        assertThatThrownBy(() ->
+                write(OWNER_ORG, alwaysRefused("requires event:publish"), Permission.EVENT_PUBLISH))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("event:publish");
     }
 
     @Test

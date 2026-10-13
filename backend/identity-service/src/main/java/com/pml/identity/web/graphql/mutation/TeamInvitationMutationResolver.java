@@ -47,7 +47,7 @@ public class TeamInvitationMutationResolver {
             @InputArgument String organizationId,
             @Valid @InputArgument InviteMemberInput input) {
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(inviterId -> log.info("User {} inviting {} to organization {}", inviterId, input.email(), organizationId))
+                .doOnNext(inviterId -> log.info("User {} inviting a team member to organization {}", inviterId, organizationId))
                 .flatMap(inviterId -> memberService.requirePermission(inviterId, organizationId, Permission.TEAM_INVITE)
                         .then(Mono.defer(() -> {
                             List<TeamInvitation.EventAccessInput> eventGrants = null;

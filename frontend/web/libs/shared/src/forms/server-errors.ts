@@ -123,6 +123,8 @@ export const CODE_COPY: Readonly<Record<string, string>> = {
   IDEMPOTENCY_KEY_REUSED: 'That request was already sent. Reload to see its result.',
   COMMAND_NOT_WELL_FORMED: 'Some details are not valid. Check the highlighted fields.',
   RATE_LIMIT_EXCEEDED: 'Too many requests. Please wait a moment before trying again.',
+  NOT_A_STAFF_ACCOUNT: 'Only staff accounts have a temporary password. This account is not a staff account.',
+  STAFF_CREATION_IN_PROGRESS: 'The account is still being set up. Try again in a moment.',
 };
 
 type Rec = Record<string, unknown>;

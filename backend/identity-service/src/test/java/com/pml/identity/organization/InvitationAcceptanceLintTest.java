@@ -56,7 +56,7 @@ class InvitationAcceptanceLintTest {
                     The token says which invitation, never who is accepting. Without this, any \
                     signed-in holder of a forwarded link joins in the proposed role — ADMIN for \
                     an admin invitation, which is the team, the events and the settings.""")
-                .contains("addressedTo");
+                .contains("addressedToContact");
 
         Matcher check = Pattern.compile(
                         "acceptAsAddressee\\([^)]*\\)\\s*\\{(.*?)\\n    \\}", Pattern.DOTALL)
@@ -64,11 +64,13 @@ class InvitationAcceptanceLintTest {
         assertThat(check.find()).as("acceptAsAddressee has moved — re-point this lint").isTrue();
         assertThat(check.group(1))
                 .as("""
-                    The comparison must be against the account, not the request. An email or phone \
-                    taken from the caller's own input is an identity the caller chose.""")
+                    The comparison must be against the account's verified contacts, not the request \
+                    and not an email or phone typed on the profile: those are identities somebody \
+                    chose, not contacts that were proved.""")
                 .contains("userService.findById")
-                .contains("user.getEmail()")
-                .contains("user.getPhoneNumber()");
+                .contains("addressedToContact(invitation, user)")
+                .doesNotContain("user.getEmail()")
+                .doesNotContain("user.getPhoneNumber()");
     }
 
     @Test

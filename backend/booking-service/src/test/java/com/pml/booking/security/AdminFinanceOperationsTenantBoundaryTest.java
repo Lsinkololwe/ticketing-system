@@ -50,7 +50,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@code tenantReads.*ForCaller} already proved ownership. This proves the service's own defense
  * in depth: a future caller that skips that upstream read is refused here too.
  *
- * <p>Flat {@code @Test} methods, not {@code @Nested} groups: see F-055.
+ * <p>Flat {@code @Test} methods rather than nested groups: the backend's test convention, so every
+ * case appears under this one class in the report.
  */
 @Tag("L2")
 @Tag("ET-PLT-007")

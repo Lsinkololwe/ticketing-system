@@ -14,7 +14,6 @@ import com.pml.shared.testing.MongoReplicaSet;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -107,81 +106,69 @@ class VerificationDocumentScopeTest {
                 .block();
     }
 
-    @Nested
-    @DisplayName("the organization that owns the document")
-    class Owner {
+    // ── the organization that owns the document ───────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("reads it, which is the point of the query")
-        void theOwnerReadsIt() {
-            // Asserted first and deliberately: without it, every refusal below would also pass
-            // against a fixture that never wrote the row, or a misspelled id.
-            assertThat(documents.findById(THE_DOCUMENT).block())
-                    .as("the document must exist, or this class proves nothing")
-                    .isNotNull();
+    @Test
+    @DisplayName("the organization that owns the document · reads it, which is the point of the query")
+    void owner_theOwnerReadsIt() {
+        // Asserted first and deliberately: without it, every refusal below would also pass
+        // against a fixture that never wrote the row, or a misspelled id.
+        assertThat(documents.findById(THE_DOCUMENT).block())
+                .as("the document must exist, or this class proves nothing")
+                .isNotNull();
 
-            assertThat(visibleTo(member(OWNING_ORG), THE_DOCUMENT))
-                    .isNotNull()
-                    .satisfies(d -> assertThat(d.getDocumentUrl()).isNotBlank());
-        }
+        assertThat(visibleTo(member(OWNING_ORG), THE_DOCUMENT))
+                .isNotNull()
+                .satisfies(d -> assertThat(d.getDocumentUrl()).isNotBlank());
     }
 
-    @Nested
-    @DisplayName("a member of a different organization")
-    class Outsider {
+    // ── a member of a different organization ──────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("cannot read the document")
-        void cannotRead() {
-            assertThatThrownBy(() -> visibleTo(member(OTHER_ORG), THE_DOCUMENT))
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(refusal -> assertThat(((DomainRefusal) refusal).errorCode())
-                            .isEqualTo(ErrorCode.DOCUMENT_UNKNOWN));
-        }
-
-        @Test
-        @DisplayName("cannot tell it apart from an id that was never issued")
-        void theRefusalIsIndistinguishable() {
-            // The requirement that makes this more than a lock. If the two answers differ in
-            // anything the caller can observe, the error is an oracle and anyone holding a list of
-            // candidate ids learns which are real without any access at all.
-            DomainRefusal onSomeoneElses = refusalFrom(member(OTHER_ORG), THE_DOCUMENT);
-            DomainRefusal onNeverIssued = refusalFrom(member(OTHER_ORG), NEVER_ISSUED);
-
-            assertThat(onSomeoneElses.errorCode()).isEqualTo(onNeverIssued.errorCode());
-            assertThat(GraphQlErrors.refusalMessage(onSomeoneElses.errorCode()))
-                    .isEqualTo(GraphQlErrors.refusalMessage(onNeverIssued.errorCode()));
-            assertThat(onSomeoneElses.details()).isEqualTo(onNeverIssued.details()).isEmpty();
-        }
+    @Test
+    @DisplayName("a member of a different organization · cannot read the document")
+    void outsider_cannotRead() {
+        assertThatThrownBy(() -> visibleTo(member(OTHER_ORG), THE_DOCUMENT))
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(refusal -> assertThat(((DomainRefusal) refusal).errorCode())
+                        .isEqualTo(ErrorCode.DOCUMENT_UNKNOWN));
     }
 
-    @Nested
-    @DisplayName("an account with no organizations")
-    class Unaffiliated {
+    @Test
+    @DisplayName("a member of a different organization · cannot tell it apart from an id that was never issued")
+    void outsider_theRefusalIsIndistinguishable() {
+        // The requirement that makes this more than a lock. If the two answers differ in
+        // anything the caller can observe, the error is an oracle and anyone holding a list of
+        // candidate ids learns which are real without any access at all.
+        DomainRefusal onSomeoneElses = refusalFrom(member(OTHER_ORG), THE_DOCUMENT);
+        DomainRefusal onNeverIssued = refusalFrom(member(OTHER_ORG), NEVER_ISSUED);
 
-        @Test
-        @DisplayName("reads nothing — this is the account the defect was reachable from")
-        void readsNothing() {
-            // The defect's actual audience: a customer, signed in with a phone number, holding no
-            // membership anywhere. Before the fix this account read every organizer's KYC.
-            assertThatThrownBy(() -> visibleTo(new TenantScope("customer-1", Set.of(), false),
-                    THE_DOCUMENT))
-                    .isInstanceOf(DomainRefusal.class);
-        }
+        assertThat(onSomeoneElses.errorCode()).isEqualTo(onNeverIssued.errorCode());
+        assertThat(GraphQlErrors.refusalMessage(onSomeoneElses.errorCode()))
+                .isEqualTo(GraphQlErrors.refusalMessage(onNeverIssued.errorCode()));
+        assertThat(onSomeoneElses.details()).isEqualTo(onNeverIssued.details()).isEmpty();
     }
 
-    @Nested
-    @DisplayName("a platform administrator")
-    class Administrator {
+    // ── an account with no organizations ──────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("still reads across organizations, because review requires it")
-        void adminReadsAcross() {
-            // The other bound. A fix that refused everybody would pass every test above and break
-            // the approvals workbench, where an admin reviews documents for organizations they are
-            // deliberately not a member of.
-            assertThat(visibleTo(platformAdmin(), THE_DOCUMENT)).isNotNull();
-        }
+    @Test
+    @DisplayName("an account with no organizations · reads nothing — this is the account the defect was reachable from")
+    void unaffiliated_readsNothing() {
+        // The defect's actual audience: a customer, signed in with a phone number, holding no
+        // membership anywhere. Before the fix this account read every organizer's KYC.
+        assertThatThrownBy(() -> visibleTo(new TenantScope("customer-1", Set.of(), false),
+                THE_DOCUMENT))
+                .isInstanceOf(DomainRefusal.class);
+    }
+
+    // ── a platform administrator ──────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("a platform administrator · still reads across organizations, because review requires it")
+    void administrator_adminReadsAcross() {
+        // The other bound. A fix that refused everybody would pass every test above and break
+        // the approvals workbench, where an admin reviews documents for organizations they are
+        // deliberately not a member of.
+        assertThat(visibleTo(platformAdmin(), THE_DOCUMENT)).isNotNull();
     }
 
     private static DomainRefusal refusalFrom(TenantScope scope, String id) {

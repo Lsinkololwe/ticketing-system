@@ -48,6 +48,43 @@ class GatewayRestRoutesTest {
         assertThat(all).contains("/api/v1/organizations/**", "/api/v1/documents/**", "/api/v1/media/**");
     }
 
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> routes() throws Exception {
+        try (InputStream in = GatewayRestRoutesTest.class.getResourceAsStream("/application.yml")) {
+            Map<String, Object> root = new Yaml().load(in);
+            Map<String, Object> spring = (Map<String, Object>) root.get("spring");
+            Map<String, Object> cloud = (Map<String, Object>) spring.get("cloud");
+            Map<String, Object> gateway = (Map<String, Object>) cloud.get("gateway");
+            Map<String, Object> server = (Map<String, Object>) gateway.getOrDefault("server", Map.of());
+            Map<String, Object> webflux = (Map<String, Object>) server.getOrDefault("webflux", gateway);
+            return (List<Map<String, Object>>) webflux.get("routes");
+        }
+    }
+
+    @Test
+    @DisplayName("Keycloak's account console and account API are answered with 404 before the realm route can forward them")
+    @SuppressWarnings("unchecked")
+    void accountConsoleIsBlocked() throws Exception {
+        List<Map<String, Object>> routes = routes();
+        int blocked = -1;
+        int realm = -1;
+        for (int i = 0; i < routes.size(); i++) {
+            String id = String.valueOf(routes.get(i).get("id"));
+            if (id.equals("keycloak-account-blocked")) {
+                blocked = i;
+            }
+            if (id.equals("keycloak-realm")) {
+                realm = i;
+            }
+        }
+        assertThat(blocked).as("account block route exists").isGreaterThanOrEqualTo(0);
+        assertThat(blocked).as("it is evaluated before the route that forwards the realm").isLessThan(realm);
+        Map<String, Object> route = routes.get(blocked);
+        assertThat(String.valueOf(route.get("uri"))).as("nothing is forwarded").startsWith("no://");
+        assertThat(String.join(" ", (List<String>) route.get("predicates"))).contains("/realms/*/account/**");
+        assertThat((List<String>) route.get("filters")).containsExactly("SetStatus=404");
+    }
+
     @Test
     @DisplayName("duplicate-key detection does not need the MongoDB driver")
     void duplicateKeysWithoutDriver() {

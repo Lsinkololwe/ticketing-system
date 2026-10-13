@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertSameOrigin } from "@pml.tickets/shared/auth/bff";
-import { bff } from "@/lib/bff";
-import { problem } from "@/lib/server/http";
+import { guardMutation, problem } from "@/lib/server/http";
 import { parseCart, saveCart } from "@/lib/server/cart";
 
 export const dynamic = "force-dynamic";
@@ -9,10 +7,14 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/checkout/intent — park the selected tickets server-side so they survive the
  * sign-in redirect. Before sign-in they live in the flow record, afterwards in the session.
+ *
+ * Same guard as every browser mutation: Origin equals the app origin, Sec-Fetch-Site is same-origin,
+ * X-Requested-With is present, and the caller's IP (resolved through the trusted proxy chain only) is
+ * counted against the `checkout_intent` limiter.
  */
 export async function POST(req: Request) {
-  if (assertSameOrigin(req, bff.config.appOrigin))
-    return problem(403, "ORIGIN_REJECTED");
+  const ctx = await guardMutation(req, "checkout_intent");
+  if (ctx instanceof NextResponse) return ctx;
   let body: unknown;
   try {
     body = await req.json();

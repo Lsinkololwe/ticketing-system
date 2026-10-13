@@ -87,6 +87,46 @@ public class TemporalGateway {
         return attributes == null ? options : options.setTypedSearchAttributes(attributes.toSearchAttributes());
     }
 
+    /**
+     * As the reuse-policy start with search attributes, and a ceiling on how long the whole execution
+     * may live: the server closes it as timed out when the ceiling passes, whatever it is doing, which is
+     * what lets a caller that records "this execution owns X until T" know the execution is gone at T.
+     */
+    public <W> W newWorkflow(Class<W> type, String workflowId, String taskQueue,
+                             WorkflowIdConflictPolicy conflictPolicy, WorkflowIdReusePolicy reusePolicy,
+                             ProcessSearchAttributes attributes, java.time.Duration executionTimeout) {
+        return client.newWorkflowStub(type, withAttributes(WorkflowOptions.newBuilder()
+                .setWorkflowId(workflowId)
+                .setTaskQueue(taskQueue)
+                .setWorkflowIdConflictPolicy(conflictPolicy)
+                .setWorkflowIdReusePolicy(reusePolicy)
+                .setWorkflowExecutionTimeout(executionTimeout), attributes).build());
+    }
+
+    /**
+     * Whether an execution is still open, asked of the server and not remembered.
+     *
+     * @param runId the run to ask about; null or blank asks about the latest run of {@code workflowId}
+     * @return false when the run is closed in any way (completed, failed, cancelled, terminated, timed
+     *         out) and when the server has no such execution
+     */
+    public boolean isOpen(String workflowId, String runId) {
+        io.temporal.client.WorkflowStub stub = runId == null || runId.isBlank()
+                ? client.newUntypedWorkflowStub(workflowId)
+                : client.newUntypedWorkflowStub(workflowId, java.util.Optional.of(runId), java.util.Optional.empty());
+        try {
+            return stub.describe().getStatus()
+                    == io.temporal.api.enums.v1.WorkflowExecutionStatus.WORKFLOW_EXECUTION_STATUS_RUNNING;
+        } catch (io.temporal.client.WorkflowNotFoundException none) {
+            return false;
+        } catch (io.grpc.StatusRuntimeException failure) {
+            if (failure.getStatus().getCode() == io.grpc.Status.Code.NOT_FOUND) {
+                return false;
+            }
+            throw failure;
+        }
+    }
+
     /** A stub for signal-with-start, which reaches a running execution or starts one. */
     public <W> W signalWithStartWorkflow(Class<W> type, String workflowId, String taskQueue) {
         return client.newWorkflowStub(type, WorkflowOptions.newBuilder()

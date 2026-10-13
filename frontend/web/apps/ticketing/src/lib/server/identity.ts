@@ -1,7 +1,25 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { getServerEnv } from "./env";
+
+/**
+ * The address the identity service counts a code request against.
+ *
+ * The identity service limits how many codes one address may ask for per hour, so it only
+ * accepts a real IPv4 or IPv6 literal. When this app has no trusted proxy to read the visitor's
+ * address from (the proxy hop count is 0, or the forwarding header is missing or malformed) the
+ * resolver answers "unknown". That is not an address, and sending it would make every sign-in
+ * fail. Instead the unspecified address is sent: the request is still accepted, but every visitor
+ * whose address could not be determined shares one allowance. A deployment behind a proxy sets the
+ * hop count so each visitor is counted on their own.
+ */
+export const UNRESOLVED_CLIENT_ADDRESS = "0.0.0.0";
+
+export function addressForIdentity(resolved: string | undefined): string {
+  return resolved && isIP(resolved) !== 0 ? resolved : UNRESOLVED_CLIENT_ADDRESS;
+}
 
 /**
  * identity-service client (service-to-service). The service token is a
@@ -93,7 +111,9 @@ export async function callIdentity<T>(
         authorization: `Bearer ${token}`,
         accept: "application/json, application/problem+json",
         "x-correlation-id": opts.correlationId,
-        ...(opts.clientIp ? { "x-forwarded-for": opts.clientIp } : {}),
+        ...(opts.clientIp
+          ? { "x-forwarded-for": addressForIdentity(opts.clientIp) }
+          : {}),
         ...(opts.body !== undefined
           ? { "content-type": "application/json" }
           : {}),

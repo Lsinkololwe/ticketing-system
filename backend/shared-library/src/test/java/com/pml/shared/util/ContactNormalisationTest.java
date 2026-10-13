@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** Strict contact parsing, hashing and masking (CONTRACT 3). Pure functions: L1. */
 @Tag("L1")
 @Tag("ET-IDN-004")
+@Tag("ET-IDN-001")
 @DisplayName("ET-IDN-004 · contact normalisation, keys and masks")
 class ContactNormalisationTest {
 

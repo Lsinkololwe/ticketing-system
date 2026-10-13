@@ -27,7 +27,16 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * One-time code challenges (ET-IDN-001 R1-R4).
+ * One-time sign-in codes: what a buyer asking for a code and typing it back goes through.
+ *
+ * <p>The buyer gives a phone number or an email in checkout and asks for a code. The system
+ * promises: one live code per contact; a new code is not sent again within a minute; the code
+ * lives five minutes; five wrong guesses lock that contact for fifteen minutes, and the lock
+ * holds even if Redis is wiped; and the answer never reveals whether the contact already has an
+ * account. When a refusal happens the buyer gets one clear reason: contact not acceptable,
+ * channel unavailable, wait before asking again, too many requests, locked until a given time,
+ * wrong code with attempts left, or code expired. If the message cannot be delivered the buyer is
+ * told to try again and nothing stays behind that would block the retry.</p>
  *
  * <h2>Issue</h2>
  * normalise (CONTACT_INVALID) -> channel available -> lock/cooldown guard (one atomic script) ->
@@ -38,7 +47,9 @@ import java.util.UUID;
  *
  * <h2>Verify</h2>
  * One Lua script: lock check, atomic attempt decrement BEFORE the comparison, constant-time digest
- * comparison, delete on success, lock on exhaustion. A lock is mirrored to MongoDB.
+ * comparison, delete on success, lock on exhaustion. A lock is mirrored to MongoDB; when Redis has
+ * no lock for a contact (or for a challenge id) while the mirror holds one still running, the lock
+ * is put back and the caller is refused as locked.
  *
  * <p>The code and the contact are never logged and never put in an exception message.</p>
  */
@@ -101,6 +112,10 @@ public class ChallengeService {
 
     public Mono<Issued> issue(IssueCommand command) {
         return Mono.defer(() -> {
+            if (command.clientIp() == null || command.clientIp().isBlank()) {
+                // The per-IP limit has to count the real caller; without an address there is nothing to count.
+                return Mono.error(new TranslatedRefusal(ErrorCode.COMMAND_NOT_WELL_FORMED, "clientIp is required"));
+            }
             ContactHasher.Normalized contact = hasher.normalize(command.contact(), command.type(),
                             command.regionHint(), limitProperties.getAllowedCountries())
                     .orElseThrow(() -> new TranslatedRefusal(ErrorCode.CONTACT_INVALID, "contact not acceptable"));
@@ -111,10 +126,13 @@ public class ChallengeService {
             long ttlMs = properties.getTtl().toMillis();
             long cooldownMs = properties.getCooldown().toMillis();
 
-            return redis.execute(ChallengeScripts.GUARD,
-                            List.of(ChallengeKeys.lock(key), ChallengeKeys.cooldown(key)),
-                            List.of(String.valueOf(now), String.valueOf(cooldownMs)))
-                    .next()
+            // A lock the mirror still holds is put back first, so the one atomic guard script below
+            // refuses a locked contact even when Redis lost its lock key while running.
+            return reseedLockFromMirror(key)
+                    .then(Mono.defer(() -> redis.execute(ChallengeScripts.GUARD,
+                                    List.of(ChallengeKeys.lock(key), ChallengeKeys.cooldown(key)),
+                                    List.of(String.valueOf(now), String.valueOf(cooldownMs)))
+                            .next()))
                     .flatMap(guard -> afterGuard(guard, contact, command, now, ttlMs));
         });
     }
@@ -185,8 +203,9 @@ public class ChallengeService {
                 return Mono.error(expired());
             }
             return redis.opsForValue().get(ChallengeKeys.challengeId(challengeId))
-                    .switchIfEmpty(Mono.error(ChallengeService::expired))
-                    .flatMap(contactKey -> verifyAtomically(contactKey, challengeId, code));
+                    .switchIfEmpty(Mono.defer(() -> refuseFromMirror(challengeId)))
+                    .flatMap(contactKey -> reseedLockFromMirror(contactKey)
+                            .then(Mono.defer(() -> verifyAtomically(contactKey, challengeId, code))));
         });
     }
 
@@ -215,8 +234,11 @@ public class ChallengeService {
             if (result.startsWith("EXHAUSTED:")) {
                 long until = Long.parseLong(result.substring(10));
                 meters.counter("identity.otp.verify", "outcome", "exhausted").increment();
-                return mirror.record(contactKey, Instant.ofEpochMilli(until), clock.instant())
+                // The lock in Redis applies whether or not the durable copy could be written; a
+                // failed write is counted and logged by class name only.
+                return mirror.record(contactKey, challengeId, Instant.ofEpochMilli(until), clock.instant())
                         .onErrorResume(error -> {
+                            meters.counter("identity.otp.lock.mirror", "outcome", "write_failed").increment();
                             log.warn("Could not mirror a contact lock: {}", error.getClass().getSimpleName());
                             return Mono.empty();
                         })
@@ -227,6 +249,55 @@ public class ChallengeService {
             return Mono.error(new TranslatedRefusal(ErrorCode.OTP_INVALID, "wrong code",
                     Map.of("attemptsRemaining", left)));
         });
+    }
+
+    /**
+     * The challenge id has no live code in Redis. When Redis lost its keys while running, the
+     * mirror may still hold the lock that this challenge's wrong guesses caused: the lock is put
+     * back and the caller is refused as locked until it ends. With no such lock the code simply
+     * has expired.
+     */
+    private Mono<String> refuseFromMirror(String challengeId) {
+        return mirror.activeForChallenge(challengeId, clock.instant())
+                .onErrorResume(error -> mirrorReadFailed(error).then(Mono.empty()))
+                .flatMap(lock -> putBack(lock)
+                        .then(Mono.<String>error(locked(lock.lockedUntil().toEpochMilli()))))
+                .switchIfEmpty(Mono.error(ChallengeService::expired));
+    }
+
+    /**
+     * If Redis holds no lock key for this contact but the mirror holds one still running, writes it
+     * back. The write is the same script startup uses: it never shortens a lock that is there, so
+     * two requests doing this at once cannot undo each other.
+     */
+    private Mono<Void> reseedLockFromMirror(String contactKey) {
+        return redis.hasKey(ChallengeKeys.lock(contactKey)).flatMap(present -> {
+            if (present) {
+                return Mono.<Void>empty();
+            }
+            return mirror.activeForContact(contactKey, clock.instant())
+                    .onErrorResume(error -> mirrorReadFailed(error).then(Mono.empty()))
+                    .flatMap(this::putBack);
+        });
+    }
+
+    private Mono<Void> putBack(LockMirror.ActiveLock lock) {
+        return redis.execute(ChallengeScripts.RESTORE_LOCK, List.of(ChallengeKeys.lock(lock.contactKey())),
+                        List.of(String.valueOf(lock.lockedUntil().toEpochMilli()), String.valueOf(clock.millis())))
+                .next()
+                .doOnNext(result -> {
+                    if ("RESTORED".equals(result)) {
+                        meters.counter("identity.otp.lock.mirror", "outcome", "reseeded").increment();
+                    }
+                })
+                .then();
+    }
+
+    /** The durable copy could not be read: Redis stays the authority, the miss is counted and logged. */
+    private Mono<Void> mirrorReadFailed(Throwable error) {
+        meters.counter("identity.otp.lock.mirror", "outcome", "read_failed").increment();
+        log.warn("Could not read the contact lock mirror: {}", error.getClass().getSimpleName());
+        return Mono.empty();
     }
 
     /** Puts back locks Redis lost; returns how many were restored. */

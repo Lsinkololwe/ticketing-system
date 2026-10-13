@@ -3798,6 +3798,9 @@ upstream issue). `TicketTierTenantBoundaryTest` and `EventVisibilityTest` are th
 affected files in catalog-service alone; the other ~18 files across the backend using `@Nested`
 were not individually re-verified.
 
+**Superseded 2026-10-13 by [F-066](#f-066): the conversion was done, and the premise did not reproduce in the
+current build (the grouped cases ran as separate suites).**
+
 ## F-056 · 2026-10-10 · ET-PLT-007 Phase 6: all 91 unscoped lookups individually resolved
 
 Converting a genuinely-unscoped `repo.findById(id)` to `TenantGuard.locate(scope, repo.findById(id),
@@ -4103,7 +4106,8 @@ that goes through the real validator is the missing layer.
    holding the permission may request regardless of who created the event; event grants still decide alone
    where present; the organization's status still gates. An escrow account of another organization, an
    unknown one, and a denied caller all read the same. Platform staff keep acting under the organizer's own
-   authority, and the organization they resolve to must be the escrow's. The settlement service matches the
+   authority, and the organization they resolve to must be the escrow's. **Superseded by
+   [F-065](#f-065): no platform staff role requests a payout; only a member of the organization does.** The settlement service matches the
    escrow and the bank account on `organizationId`, `Submit` carries it, and the payout records who asked.
    `payoutEligibility` and the escrow/event read checks (`EventSecurityService`) use the same decision and
    the caller's tenant scope. New: `PayoutAccess`, `PayoutAccessTest`, `EventSecurityServiceTest`; changed:
@@ -4217,8 +4221,11 @@ endpoints booking had been calling for a long time without them existing: `POST 
 - Five lines of platform-staff checks remain in booking (`isPlatformStaff` x2, `SUPPORT_AUTHORITIES`, `DualControlRules`
   x2). All include `FINANCE`, which is not a tenant-wide authority, so routing them through `PlatformWideAccess` would
   have narrowed finance's access. `PlatformWideBypassLintTest` budgets them at 5.
+  **Superseded by [F-063](#f-063): all five now go through `PlatformWideAccess.isPlatformStaff` / `StaffRole`; the
+  budget is 0 in every service.**
 - The platform-wide record is a structured `audit.platform-wide` log line. A queryable row needs a new
   `AuditAction` value and a validator change in identity (`audit-logs-schema.json`); that belongs with ET-PLT-009.
+  **Superseded by [F-063](#f-063): `TENANT_BOUNDARY_CROSSED` is a searchable row, delivered from booking and catalog.**
 - `processRefundRequest` / `rejectRefundRequest` take no key: both are state transitions that refuse or return the
   stored request on a repeat, so no money moves twice.
 
@@ -4244,8 +4251,11 @@ endpoints booking had been calling for a long time without them existing: `POST 
      role groups before joining the new one.
    - The contact-change marker cleanup is retried until it lands (it was capped at six tries and then left to the repair
      pass). A workflow terminated mid-cleanup leaves the marker; that is the one stuck state with no automatic clearing.
+     **Superseded by [F-064](#f-064): the marker names its owner and an expiry, and a leftover is released at the next
+     attempt on that account; nothing is cleared by hand.**
    - Not changed: `UserServiceImpl` creates a staff user in Keycloak inline in the admin `createUser` mutation (idempotent,
      a 409 reads the user back); moving it into a workflow changes that mutation's contract.
+     **Superseded by [F-064](#f-064): creating a staff user is `StaffAccountWorkflow`; the inline path is deleted.**
    - Correction to an earlier statement: the "lazy repair on the person's next authenticated request" the spec describes
      is not implemented as a separate pass; what exists is the per-login `AccountEnsureWorkflow`, which applies roles and
      attributes when the person signs in with their contact.
@@ -4266,3 +4276,582 @@ endpoints booking had been calling for a long time without them existing: `POST 
    in the specs themselves were fixed: the buyer fixture lacked the mobile-money operator list the pay step now needs
    (so Pay stayed disabled), and the specs read the key from the wrong level (`input.idempotencyKey`). The specs also
    assumed the page lets two requests through; it holds the second, which is the stronger result.
+
+## F-062 · 2026-10-13 · Two payout re-drive mutations had no idempotency key: `resumePayoutRequest` and `bulkRetryFailedPayouts`
+
+**Found.** `retryPayoutRequest` went through `IdempotencyGuard`, but `resumePayoutRequest` and `bulkRetryFailedPayouts`
+called `PayoutProcess.retry` directly. `retry` has no deduplication of its own: it reaches the payout workflow's
+`retry` update, whose validator refuses unless the payout is `FAILED`, not on hold and under three attempts. A second
+call is refused by state only once the first has moved the payout out of `FAILED`; two presses that land before the
+workflow has moved on can both be accepted, and each accepted retry is one of the three attempts and one more
+transfer. Nothing keyed the second press to the first, so a finance double click was safe only by timing.
+`resumePayoutRequest` does exactly what `retryPayoutRequest` does (the same `retry` call) and the admin console does
+call it (`PayoutSheet` offers "Resume"; `usePayoutActions` runs it), so it was kept and protected rather than removed.
+`bulkRetryFailedPayouts` is called by the Payouts tab's bulk retry.
+
+**Done.** Both mutations take a required `idempotencyKey: String!` and run under the guard with their own operation
+names (`booking:resumePayout`, `booking:bulkRetryPayouts`). The fingerprint is the payout id; for the bulk it is the
+sorted, de-duplicated id list, so the same selection in another order is one decision. The bulk still skips a payout
+that cannot be retried and reports it as failed; an empty list or more than 50 payouts is refused (a validation
+refusal, not trimmed). The admin hooks mint the key with `stableActionKey` (per payout id; per sorted selection for the
+bulk) and the generated GraphQL types and contract table were updated.
+
+**Proof.** `PayoutDecisionIdempotencyTest`: `resumeReplayDoesNotRedriveTwice`, `resumeReusedKeyForADifferentPayoutIsRefused`,
+`resumeWithADifferentKeyIsRefusedByState`, `retryWithADifferentKeyIsRefusedByState`, `bulkReplayInAnotherOrderRunsOnce`,
+`bulkReusedKeyForADifferentSetIsRefused`, `bulkSkipsAnUnretryablePayout`, `bulkEmptyListIsRefused`,
+`bulkOversizedListIsRefused`. The guard, ledger and Redis are real (Testcontainers); the workflow is a stand-in that
+refuses a retry once the payout has left `FAILED`, so the state-refusal tests prove the resolver and guard, not
+Temporal itself.
+
+**Open.** The console offers "Resume" on a payout in `PROCESSING` with a last error, but the workflow's retry only
+accepts a `FAILED` payout, so that action is refused by state today. It is protected now; whether it should exist is a
+product question.
+   **Closed by [F-067](#f-067): the owner decided it should not; `resumePayoutRequest` is removed and Retry stays.**
+
+## F-063 · 2026-10-13 · Every platform-wide reach is a searchable audit row, finance sits inside the audited path, and the booking bypass budget is 0
+
+**Asked.** Compliance and finance audit need, before launch, a searchable record of every platform-wide action: who
+(actor, role), which service, why, which operation, when. Finance must be inside the same audited path, without anyone's
+access being narrowed. Staff with the right role must be able to search the record, and reading it must leave a record.
+
+**Verified before building.** `audit_logs` is written only by `AdminAuditService` (`template.insert`), and the platform
+default sink was a log line. Booking's `AdminAudit` is a log line too; neither booking nor catalog delivered any audit
+row to identity. The established way a non-identity service reaches identity is an internal REST endpoint through
+`InternalServiceWebClients` (memberships, revocations), so that is the delivery path; no parallel pipeline was invented.
+One premise of F-061 was not true as written: booking lists `ROLE_FINANCE` in `platform.tenancy.platform-wide-authorities`,
+so finance *is* tenant-wide in booking (identity and catalog do not list it). The five lines still could not use
+`isPlatformWide`, but for a different reason: the staff question must not depend on a per-service list, and the payout
+site has only ever admitted admin and finance, never super admin.
+
+**Done.**
+- `PlatformWideAccess.isPlatformStaff(Reason[, Set<StaffRole>])` and `recordStaffAct(Reason, operation)`, over a fixed
+  `StaffRole` set (admin, super admin, finance). They answer a boolean, hand out no `TenantScope`, and record exactly as
+  an administrator's reach is recorded. A site that never admitted super admin names `{ADMIN, FINANCE}` and is unchanged.
+- The rank rule of `DualControlRules.holdsRole` moved, unchanged, to `StaffRole.covers`. It is asked of every queue
+  row and every `canConfirm` field, so recording each comparison would write hundreds of rows per page view; what is
+  recorded is the act: `RECOVERY_ACTION_PROPOSE` when a proposal is stored and `RECOVERY_ACTION_CONFIRM` once the
+  confirmer has won the race out of `PENDING` (a lost race leaves no row).
+- Rows: `AuditAction.TENANT_BOUNDARY_CROSSED` (the registry's own name in ET-PLT-009 section 4) with `actorRole`,
+  `service`, `reason`, `operation` as validated fields in `audit-logs-schema.json`. Identity writes them locally
+  (`PlatformWideAuditTrail`); booking and catalog post them to `POST /api/internal/audit/platform-wide`
+  (`RemotePlatformWideAuditSink`, selected by `platform.tenancy.identity-url`). Identity stamps the time itself and
+  refuses any body outside the closed shapes; the reason must be a declared non-system `Reason`. The sending service
+  also writes its own log line first, so a reach exists somewhere searchable even when identity is unreachable.
+- One request is one row per distinct actor, role, reason and operation (a staff member's list of fifty bookings asks
+  the contact question fifty times, and is one reach).
+- A sink that fails, refuses or hangs (3 s bound) never blocks the reach; it is logged at ERROR with the same facts and
+  counted on `platform.wide.audit.failures{service,reason}`.
+- Read side: `auditLogs` gained `service` and `reason` filters (same query, same page, ADMIN and SUPER_ADMIN only; finance
+  is refused because the trail records finance's own reaches). Each read is a strict `platformWide(AUDIT_TRAIL_READ)`
+  reach and leaves one row. The existing console audit page already lists these rows (free-text action filter, details
+  dialog shows the metadata); no frontend page was built. The generated `AuditLogFilterInput` type gained the two fields.
+- `PlatformWideBypassLintTest` counts a bare `"ROLE_FINANCE"` literal and every budget is 0; a second test pins that
+  `DualControlRules` delegates to `StaffRole` and contains no role literal.
+- `ReservationScopeLintTest.supportIsAClosedSet` now asserts the staff set from `StaffRole` and the recorded call.
+
+**Defect found on the way, fixed.** `PageSize.PageSizeExceeded` was a bare `RuntimeException`, so through GraphQL an
+oversized page answered `INTERNAL_ERROR`, `retryable: true`, not the registry's `PAGE_SIZE_EXCEEDED`; every one of the
+81 paged fields did this. It is now a `DomainRefusal` carrying the registry code, not retryable, with `requested` and
+`ceiling` as details.
+
+**Proof.** shared-library: `PlatformStaffAccessTest` (13), `StaffRoleTest` (3), `RemotePlatformWideAuditSinkTest` (3),
+`PlatformWideBypassLintTest` (3, booking at 0). identity: `PlatformWideAuditTrailTest` (9, MongoDB replica set with the
+production validators), `PlatformWideAuditEndToEndTest` (9, full context through the security chain, including booking's
+real sink and access class posting into identity's running controller). booking: `PlatformStaffAuditedPathTest` (8).
+
+**Open.**
+1. **Not built (ET-PLT-009 R3, R5, R6):** hash chaining, the filter named on the read row, retention by class. The
+   collection's TTL index is on `createdAt`, which `AuditLog` never sets, so audit rows are not purged at all today.
+   **Decided by [F-068](#f-068): retention is "kept indefinitely" and the inert TTL index is removed; hash chaining is
+   deferred past launch by the owner. The filter named on the read row stays unbuilt.**
+2. `OrganizerAccess.platformGrants` (admin, finance and super admin holding a `Permission` through their platform role,
+   used by `requireEvent`, `requireOrganizations` and booking reads by id) is still an unrecorded staff reach; it carries
+   no role literal so no lint sees it. It is the next site to move onto `isPlatformStaff`.
+   **Closed by [F-065](#f-065): it is recorded (`STAFF_PERMISSION_GRANT_READ`) and a lint pins it to one place.**
+3. System reaches (`PlatformWideAccess.system`, Temporal activities) remain log-only by design.
+4. A staff reach is delivered synchronously with a 3 s bound and no retry: if identity is down for that request the row
+   is missing from the trail and exists only in the calling service's log and on the failure counter. An outbox-backed
+   delivery would close that and is a larger change.
+   **Closed by [F-068](#f-068): each reach is kept in the service's own outbox first and delivered by a workflow until
+   identity confirms it.**
+5. REST: a bean-validation failure and an unsupported HTTP method on a REST controller answer 500 (the problem advice
+   catches every `Throwable`), platform-wide and not specific to this endpoint.
+
+## F-064 · 2026-10-13 · Creating a staff user is a workflow, and a contact-change marker whose change died clears itself
+
+**Asked.** Two owner decisions. (A) `createUser` made the staff person in Keycloak inline and saved our record
+afterwards, so a service that died between the two left a person in the login system the platform had no record of.
+(B) `ContactChangeWorkflowImpl` documented that a change terminated mid-cleanup leaves its marker "until the account's
+change is cleared by hand"; "by hand" is rejected, and no sweep may be added.
+
+**Verified before building.**
+- A terminated or timed-out execution runs no code at all, so the stuck marker was not only a cleanup race: any change
+  killed from outside, at any step after `begin`, kept the marker, and `ContactChangeService.guard` then refused every
+  add, change, removal and primary request for that account with `CONTACT_CHANGE_IN_PROGRESS`, for ever.
+- The same kill could leave more than a marker: `claimContact` writes the new contact under the unique index and
+  `syncKeycloak` writes Keycloak's email, both before `commit`. Nothing took them back (a refusal after the claim had the
+  same defect). Clearing only the flag would have left a contact nobody confirmed on the account and Keycloak holding it.
+- A stuck marker cannot block sign-in: `AccountGuard` refuses only `MERGING`. So the sign-in path was left alone
+  (`ContactChangeMarkerTest.aStuckMarkerDoesNotBlockSignIn` pins that).
+- The admin console sends no password in `createUser` (email, names, phone, role), and the staff realm has no password
+  reset. A person created that way has no credential until someone sets one in Keycloak. Not changed; see Open 1.
+
+**Done (A).** `StaffAccountWorkflow`, id `staff-create/{staffKey}` (the keyed hash of the address: the natural key is the
+sign-in address, because it is the Keycloak username and the platform's unique index, so two requests for one person meet
+one execution; a hash because an address must never be a workflow id), queue `identity-onboarding`, `USE_EXISTING`,
+`ALLOW_DUPLICATE`. `StaffAccountProcess` refuses before any execution exists (not a super administrator, not a staff
+role, an address or number that does not parse, an address another account holds), seals the request, starts, and waits
+`identity.staff.create-wait` (PT20S); past it the caller gets `STAFF_CREATION_IN_PROGRESS` (new code, retryable) and the
+work carries on. Steps: `claim` (record in `PROVISIONING`, role recorded on it) -> `createInKeycloak` (staff realm,
+**enabled=false**, UPDATE_PASSWORD and CONFIGURE_TOTP; a 409 reads back; a user that was already there is adopted and is
+never removed) -> `link` (the record takes the Keycloak id in one transaction, so a staff account's id is its Keycloak id
+as before) -> `grantRole` -> `activate` (enable, then `ACTIVE`) -> `notifyCreated` (best effort, fixed words). Six
+attempts per step, then the undo: the Keycloak user this process made, then the record (retried until it lands; an
+`ACTIVE` account is never touched). The input and history hold the request AES-GCM sealed: no address, name, number or
+password. Same administrator, same address, same role repeated returns the same account (before or after it finished);
+any other duplicate is `RESOURCE_CONFLICT`; a repeat for another role discards the unfinished record first. The inline
+path (`finishStaffUser`, `undoStaffUser`) is deleted from `UserServiceImpl`.
+Compensation chosen: delete, not disable. A disabled leftover would keep the address and number claimed and would still
+be a person in the login system; deleting returns the realm and the records to where they were, and the request can be
+made again. The audit trail keeps the `ROLE_GRANT` row of a grant that was later undone.
+
+**Done (B).** The marker records the owning run (`pendingOwnerRunId`, written by the `begin` activity from the engine's
+own context, so no workflow code reads a run id), the latest moment that run could be open (`pendingExpiresAt`) and the
+claimed contact (`pendingContactId`, written before the contact, unset in the commit transaction). The execution is
+started with a PT72H ceiling (`ContactChangeRules.MAX_LIFETIME` = the 48 h wait plus a day), so "expiry passed" and "the
+server closed it" are the same fact. `ContactChangeMarker.release`, called from `guard`: expired, or the server says the
+owning run is not open, means leftover; `ContactChangeSteps.reclaim` removes the never-committed claim, writes Keycloak's
+email from the account's real contacts, then clears the marker in one conditional write that matches the marker as read.
+Of attempts racing for one leftover exactly one gets `true`; the rest are refused `CONTACT_CHANGE_IN_PROGRESS`. A
+refusal after the claim now removes the claim too (`clearMarker`). `begin` of a new run over a leftover reclaims it first.
+A marker with no owner (written by older code): live while the server has a change of that account open, stale when
+nothing is open or when it is older than the ceiling from `pendingSince`; with neither, only the server's word releases it.
+`process.status` reports a closed execution as no change, so the pending-change view does not show a dead one.
+
+**Proof (fresh surefire/failsafe XML, 2026-10-13).**
+- `StaffAccountWorkflowTest` 21 (in-process engine, MongoDB with the real unique indexes): the happy path and the audit
+  row; no personal data in history; replay; failures after the Keycloak create retried to one person; Keycloak down for a
+  moment; a refused grant and a failed activation compensated (address reusable); duplicate number and address; a buyer's
+  address; administrator, anonymous, buyer roles and malformed input refused with no execution; duplicate request
+  joining a running one; a killed execution finished by the same request; another role replacing an unfinished record;
+  an adopted Keycloak user never removed; the in-progress answer.
+- `ContactChangeMarkerTest` 12: live change keeps its marker and owner; terminated change reclaimed with the account
+  byte-for-byte as before (contacts, user document, Keycloak email) after proving the claim and the Keycloak write
+  existed first; the account then changes again; expiry (and one millisecond before it); eight racing attempts, one
+  takes it; ownerless marker with and without a timestamp, running and not; takeover by a new run; a refused change
+  leaves nothing; a stuck marker does not block sign-in.
+- `StaffUserCreationTest` 8 (resolver, method security, real workflow), `ContactChangeWorkflowTest` 17,
+  `StaffAccountRulesTest` 4, `ContactChangeRulesTest` 6, `IdentityWorkflowRegistryTest` 4, `WorkflowIdentifierLintTest` 4,
+  `ContactNoticeTest` 1.
+- `StaffAccountCreationEndToEndTest` 6 and `ContactChangeEndToEndTest` 15 (one new: terminated execution, then the next
+  GraphQL attempt), against real Keycloak 26.5.2, a Temporal server and MongoDB. `KeycloakServiceContainerTest` 13 (one
+  new: created disabled, required actions kept when enabled).
+
+**Open.**
+1. `createUser` from the console carries no temporary password, and the staff realm has no password reset, so the new
+   person has no way to sign in until a password is set in Keycloak. The notice the workflow sends says "the temporary
+   password you were given". Either the console collects one, or Keycloak sends an execute-actions email; owner's
+   decision, not changed here.
+   **Closed by [F-067](#f-067): the system makes a one-time temporary password and the creating super administrator
+   sees it once; a lost one is replaced by a reset.**
+2. A Keycloak event for the new user (`UserSyncWorkflow`) saves the whole document it read; if it read the record just
+   before `activate` and saved just after, the status could be written back as `PROVISIONING`. The window is
+   milliseconds and the same shape as every other sync write; a repeated request completes it.
+3. An execution terminated between the commit and `endSessions` leaves a changed contact whose old sessions were not
+   ended; the marker is released at the next attempt but the sessions are not cut by it.
+4. The test staff realm file defines ADMIN, SUPER_ADMIN and FINANCE only; the production export has FINANCE_LEAD.
+   `StaffAccountCreationEndToEndTest` uses the gap deliberately for the compensation case.
+5. Frontend: `STAFF_CREATION_IN_PROGRESS` has no entry in `server-errors.ts`, so the console shows its generic message
+   for it; the contract of `createUser` is otherwise unchanged and no frontend file was touched.
+   **Closed by [F-065](#f-065): it has a plain-language retryable entry and a test.**
+
+## F-065 · 2026-10-13 · Staff no longer request payouts, finance has its own audit view, and the last unrecorded staff reach is recorded
+
+**Asked.** Three owner decisions and one gap: (1) only the organizer's own member requests the organizer's payout, no
+platform staff on behalf; (2) finance gets a finance-scoped audit view of every money-related platform-wide action by
+anyone; (3) close the one staff reach F-063 left unrecorded, `OrganizerAccess.platformGrants`; (4) give
+`STAFF_CREATION_IN_PROGRESS` a message in the console (F-064 Open 5).
+
+**Verified before building.**
+- The staff branch of `createPayoutRequest` was the only user of `Reason.PAYOUT_REQUEST_ON_BEHALF`. In booking the
+  tenant scope of an administrator or finance officer is tenant-wide, so `scope.permits(organizationId)` is true for them:
+  removing the branch alone would have let a non-member staff caller reach the identity check on the strength of
+  `permits`. Identity itself would still have refused (its authorization endpoint does not count platform roles), but the
+  resolver must not depend on that, so membership is now asked of the token's organization ids directly.
+- No console lets staff request a payout: `createPayoutRequest` is used only by the organizer console's finance hooks
+  (`libs/shared/src/api/organization-admin`); the admin console has no call to it, and the schema tags it `organizer`.
+- `finance`'s own audit page already existed for `FINANCE_LEAD` (navigation listed an `audit` tab) but the server refused
+  finance, so the tab could never have loaded for anyone holding only `FINANCE`. Console `FINANCE_LEAD` is held together
+  with `FINANCE` (the role matrix says it grants nothing), so the server gate is `ROLE_FINANCE`.
+- Besides `OrganizerAccess.platformGrants` there was a second private copy of the same decision,
+  `EventGateAccess.platformGrantsScan` (staff reading gate data through `ticket:scan`), equally unrecorded.
+
+**Done.**
+- Payout: the staff branch, its `authorize` parameter, `isPlatformStaff()` helper, the `IdentityServiceClient` field and
+  `Reason.PAYOUT_REQUEST_ON_BEHALF` are gone. A caller who is not a member of the escrow account's organization is
+  answered `ESCROW_ACCOUNT_UNKNOWN` like any outsider, identity is not asked, and no audit row is written. Approve,
+  reject, hold, release, retry, resume, cancel are unchanged.
+- Finance view: `auditLogs` is `ADMIN | SUPER_ADMIN | FINANCE`. A caller holding an administrator role gets the whole
+  trail exactly as before (`AUDIT_TRAIL_READ`). Anyone else must be `FINANCE` (new strict `PlatformWideAccess.requireStaff`,
+  refusing `ACTOR_NOT_PERMITTED` with no row) and gets `AdminReadService.financeAuditLogs`: the client's filter ANDed with
+  `action = TENANT_BOUNDARY_CROSSED and reason in MONEY_REASONS`, never account events. A filter outside the set therefore
+  answers an empty page, which is the platform's convention of reading as "does not exist" rather than confirming a
+  restricted row. The read is its own reason, `FINANCE_AUDIT_VIEW_READ` (distinct from `AUDIT_TRAIL_READ` so the trail
+  shows who read the whole record and who read the money view, and so the money set can exclude both).
+  The set (`FinanceAuditView`): `BANK_ACCOUNT_MANAGE`, `BANK_ACCOUNTS_READ`, `DEFAULT_BANK_ACCOUNT_READ`,
+  `REFUND_REQUEST_CANCEL`, `BUYER_BOOKINGS_READ`, `RESERVATION_SUPPORT_READ`, `PLATFORM_SALES_ANALYTICS_READ`,
+  `RECOVERY_ACTION_PROPOSE`, `RECOVERY_ACTION_CONFIRM`. Excluded and why is in the class comment; a test fails when a
+  new `Reason` is added without being classified one way or the other.
+- Staff grants: `OrganizerAccess.platformGrants(permission)` asks `isPlatformStaff(STAFF_PERMISSION_GRANT_READ,
+  permission.code(), roles)` over exactly the staff roles whose own grants contain that permission, so every role is
+  admitted where it was before and nowhere else. `EventGateAccess` now uses it instead of its copy. `PlatformWideBypassLintTest`
+  gained a test: booking reads `grantedByPlatformRoles(` in one file only, and that file asks through `isPlatformStaff`.
+- Frontend: the console's Transactions module is open to `FINANCE` with the audit tab only; the drawer link and the
+  `/transactions` index go to the first tab the role may open (they were hard-wired to payments); the stuck-transactions
+  badge is mounted only for a role that can open the recovery tab; the audit tab says what finance is looking at.
+  `STAFF_CREATION_IN_PROGRESS` has copy in `CODE_COPY`.
+
+**Proof (fresh surefire XML, 2026-10-13).** shared-library: `PlatformStaffAccessTest` 14 (one new: strict staff entry),
+`PlatformWideBypassLintTest` 4 (one new), `PlatformWideAccessTest` 12, `StaffRoleTest` 3, `TenantBoundaryLintTest` 2,
+`TestLayerLintTest` 3, `SpecStatusLintTest` 4, `TemporalRegistryLintTest` 5, `PageSizeTest` 5, `ErrorCodeRegistryTest` 3.
+booking: `PlatformStaffAuditedPathTest` 10 (payout rewritten; two new for staff grants), `TeamFinancialAccessTest` 7
+(staff refusal rewritten; one new for the event grant), `RequestPayoutIdempotencyTest` 2, `PayoutDecisionIdempotencyTest` 13,
+`ReservationScopeLintTest` 4, `BookingTenantBoundaryTest` 7, `GateScanAccessTest` 9, `EventGateDecisionTest` 4,
+`TicketTransferTest` 18, `ReadsScopingTest` 9, `TicketResendTest` 8, `OperationsReadRulesTest` 8, `PayoutAccessTest` 4.
+identity: `FinanceAuditViewTest` 7 (MongoDB with the production validators), `PlatformWideAuditTrailTest` 9,
+`PlatformWideAuditEndToEndTest` 12 (three new, through the real security chain), `AdminReadServiceTest` 5,
+`AccountSchemasTest` 12, `OrganizationReadScopeLintTest` 4. Frontend: admin vitest 39 files / 269 tests, `tsc --noEmit`
+clean, shared `forms` vitest 61 (one new).
+
+**Open.**
+1. Finance's money view is by reason, not by amount: `RESERVATION_SUPPORT_READ` and `BUYER_BOOKINGS_READ` are staff
+   reads that expose payment state, and are in the set; if the owner reads those as support rather than money they come
+   out of `FinanceAuditView.MONEY_REASONS`.
+2. Payout approvals and decisions are not audited rows (they were not before); the finance view therefore shows the
+   reaches around money, not the approvals themselves. That is the unbuilt `@Audited` registry of ET-PLT-009.
+3. Playwright (`gating.spec.ts`, `routes.ts`) was updated for the finance role but not run here.
+4. A holder of `FINANCE_LEAD` without `FINANCE` is refused the audit trail like everywhere else in booking and identity;
+   the role matrix says they are held together.
+5. The audit-trail spec's passage on financial actions ("a plain ADMIN sees no financial action") conflicts with the owner's decision that an
+   administrator keeps the whole trail; the decision is recorded beside it, the `@Audited` rows remain as designed.
+
+
+## F-066 · 2026-10-13 · Nested test groups flattened, a guard against their return, and F-055's premise does not reproduce
+
+**Asked.** Owner decision (option A on F-055): convert every `@Nested` test class to flat `@Test` methods, accept
+that they run for the first time, deal with what they reveal, and add a guard.
+
+**Done.** Twenty test classes were converted: each nested group's methods became methods of the top-level class,
+named `<group>_<behaviour>` with the group name as a display-name prefix; a group's own `@BeforeEach` became a
+private method called first by each of that group's tests, so a group's setup never leaks into another's; fields,
+helpers and records that two groups both declared were renamed with the group name; the two groups that carried
+their own `@BeforeAll` (`AnonymousDiscoveryTest` chain, `PaginationCollapseTest` paging) now share the class's, and
+the two in `ReferenceDataSeedMigrationTest` are called from its single `@BeforeAll`, because two `@BeforeAll`
+methods of one class have no defined order and both need the client. No assertion was changed, weakened or
+removed, no tag changed (no nested group carried its own), no class was split. Three more files only mentioned the
+annotation in a comment (`EventAdminOperationsTenantBoundaryTest`, `EventAccessServiceTenantBoundaryTest`,
+`AdminFinanceOperationsTenantBoundaryTest`): their comments were corrected, since they stated the F-055 premise.
+
+**What the conversion revealed: nothing, and that is the finding.** F-055's premise (nested methods never run) does
+not hold in the current build:
+- A full-module run (the end-of-turn `mvn verify`, 2026-10-13 10:51) wrote one surefire report per group
+  (`BuildTopologyTest$OneParent.xml`, `EventVisibilityTest$Customer.xml`, ...), every one passing, 257 grouped
+  methods across the 20 files, the same count as the methods now flattened.
+- A targeted run (`-Dtest=<Outer>`) of a throw-away probe (one top-level `@Test`, one `@Nested` with one `@Test`) in
+  `shared-library` reported both suites, `tests=1` each; the probe was removed.
+- Every module's `pom.xml` declares `junit-platform-launcher`, and its comment calls that declaration the fix. F-055
+  recorded that declaring it "did not fix this"; the observation is contradicted by the present build. What is
+  recorded here is what was measured today, not why 2026-10-10 differed.
+So the grouped cases (the outsider and unaffiliated attack scenarios included) had been executing, as separate
+`Outer$Group` suites, and the class-level report showed only the ungrouped methods, which is what read as
+"Tests run: 2". The conversion is behaviour-neutral and its value is that the class report now carries the whole
+class; the guard below is the convention plus the launcher pin, not a defence against a live Surefire defect.
+
+**Counts (fresh surefire XML, 2026-10-13, `tests=` attribute; parameterised methods count per invocation).**
+"Outer before" is what the top-level class's own report showed: after-count minus the grouped suites measured in the
+full run. InvitationAcceptanceTest's group suite report was partly stale, so its split is by method count (4 grouped).
+
+| Module | Class | Outer before | Grouped (ran as separate suites) | Now, one class | Failures |
+|---|---|---|---|---|---|
+| shared-library | PlatformAutoConfigurationsTest | 0 | 23 | 23 | 0 |
+| shared-library | AssertionsProveThemselvesTest | 1 | 12 | 13 | 0 |
+| shared-library | BuildTopologyTest | 0 | 14 | 14 | 0 |
+| identity | OrganizationReadScopeTest | 0 | 9 | 9 | 0 |
+| identity | OwnershipTransferTest | 2 | 9 | 11 | 0 |
+| identity | InvitationAcceptanceTest | 5 | 4 | 9 | 0 |
+| identity | VerificationDocumentScopeTest | 0 | 5 | 5 | 0 |
+| identity | NotificationPreferencesTest | 1 | 18 | 19 | 0 |
+| catalog | AnonymousDiscoveryTest | 0 | 10 | 10 | 0 |
+| catalog | EventVisibilityTest | 1 | 10 | 11 | 0 |
+| catalog | EventWriteBothLocksTest | 1 | 5 | 6 | 0 |
+| catalog | TicketTierTenantBoundaryTest | 2 | 6 | 8 | 0 |
+| catalog | EventEditingTest | 7 | 24 | 31 | 0 |
+| catalog | EventAuthoringTest | 5 | 28 | 33 | 0 |
+| catalog | EventDiscoveryTest | 35 | 19 | 54 | 0 |
+| catalog | MediaServiceTest | 1 | 34 | 35 | 0 |
+| catalog | ReferenceDataSeedMigrationTest | 1 | 7 | 8 | 0 |
+| booking | CallerScopedReadTest | 2 | 8 | 10 | 0 |
+| booking | ListFiltersTest | 2 | 5 | 7 | 0 |
+| booking | PaginationCollapseTest | 0 | 7 | 7 | 0 |
+| | **Total** | **66** | **257** | **323** | **0** |
+
+**Guard.** `NoNestedTestClassLintTest` (shared-library, `L1`, `ET-PLT-006`, beside `TestLayerLintTest`) fails the build
+naming the file when any backend test source contains the nested-group annotation or its import as code, comments
+excluded; a second test fails when any module's `pom.xml` stops declaring `junit-platform-launcher` itself. A third
+proves the comment stripping. Run with `TestLayerLintTest` (3), `PlatformWideBypassLintTest` (4),
+`TenantBoundaryLintTest` (2), `PageSizeTest` (5), `SpecStatusLintTest` (4): all pass.
+
+**Open.**
+1. The owner's decision rested on F-055's premise. The conversion stands as harmless and the guard as a convention;
+   if the owner would rather allow grouped classes again, delete the first guard test and keep the launcher pin.
+2. `backend/**/build/` is in `.gitignore`, so `shared-library/src/test/java/com/pml/shared/build/` (including
+   `BuildTopologyTest`) is invisible to git status; the file is converted on disk but git will not show it modified.
+3. Some display names of existing tests still carry spec ids; untouched here.
+
+## F-067 · 2026-10-13 · "Resume" on payouts is removed, and a new staff member gets a one-time temporary password
+
+**Asked.** Two owner decisions. (A) The console offered Resume for a payout that is still processing with an error,
+but `resumePayoutRequest` only re-drove a `FAILED` payout, so it was refused by state and its dialog text ("continues
+without creating a new transfer") was untrue: remove it, keep Retry and bulk retry. (B) A staff user created from the
+console had no credential and the staff realm has no self-service reset, so the new person could never sign in (F-064
+Open 1): the system generates a one-time temporary password, the creating super administrator sees it once, and
+Keycloak forces a password change and a second-factor enrolment at first sign-in.
+
+**Done (A).** `resumePayoutRequest` is gone from booking's schema, `PayoutRequestMutationResolver` and
+`PayoutDecisionIdempotencyTest` (its three tests; the retry and bulk-retry tests are untouched, 10 remain). Nothing
+else used it (the resolver called the same `payoutProcess.retry` as `retryPayoutRequest`). The idempotency
+operation name `booking:resumePayout` no longer exists. Frontend: the Resume document, hook, action, dialog and
+footer button and both generated type copies lose it (the Transactions Recovery tab's `resumePaymentAttempt` is a
+different operation and stays). `docs/FRONTEND_GRAPHQL_CONTRACT.md` is regenerated; `specs/admin/003-transaction-recovery`
+and ET-PLT-007 carry a note. F-062's record is left as written and closed by a pointer.
+
+**Done (B), the credential.**
+- `TemporaryPasswordGenerator` (identity, `SecureRandom`): 20 characters, at least 3 capitals, 3 lower-case letters,
+  3 digits and 2 symbols from `!#$%*+-=?@`, no `0 O o 1 l I`, shuffled so a class has no fixed position. The staff
+  realm's policy is `length(12) and notUsername and notEmail and passwordHistory(3)`; a random value of this shape
+  meets all four.
+- `createUser` no longer takes `password` (the field is removed from `CreateUserInput`). `StaffAccountProcess`
+  generates the password before anything starts and seals it in the request with the rest; the workflow input holds
+  only ciphertext and a random, non-secret `attemptId` of the call.
+- `StaffAccountSteps.createInKeycloak` creates the user with no credential, then applies the password through the new
+  `KeycloakUserAdminPort.issueTemporaryPassword` for a user this process made: the existing password credential is
+  removed first (so the realm's history rule never compares the new value with it and a retried step with the same value
+  succeeds), the new one is set `temporary=true`, and the required actions are `UPDATE_PASSWORD` plus `CONFIGURE_TOTP`
+  while no second factor is enrolled. A Keycloak user that was already there is adopted exactly as before and its own
+  credential is never touched.
+- Results carry no password: the activities return ids, the workflow's `Created(accountId, attemptId)` holds the
+  attempt id, `StaffAccountPassword.toString()` and `Details.toString()` print none, the `IllegalStateException` for an
+  unreadable sealed request no longer chains the parser's exception (its message can quote the document).
+- Returned to the caller only on the call whose own execution applied it: `Created.attemptId` equals the call's
+  `attemptId`. A repeat of a finished request returns the account with `temporaryPassword: null` and changes nothing; a
+  repeat of an unfinished one (record `PROVISIONING`, no running execution) runs a new execution with a fresh password
+  and replaces the first, which stops working; a call that meets another call's running execution has none to show.
+- `createUser` returns `CreateStaffUserResult { user: User!, temporaryPassword: String }`.
+
+**Done (B), reset.** `resetStaffTemporaryPassword(userId: ID!): ResetStaffPasswordResult!` (`SUPER_ADMIN` only, method
+security plus the service-side check). `StaffPasswordReset`: refuses an account that is not platform staff
+(`NOT_A_STAFF_ACCOUNT`, new code, `FAILED_PRECONDITION`) or is not `ACTIVE`/`SUSPENDED` with a sign-in
+(`ACCOUNT_NOT_ACTIVE`); revokes and ends the account's sessions as they exist now (`AccessCutter.cutSessions`, trigger
+`CREDENTIAL_CHANGE`, the mechanism contact change uses: revoking the subject would refuse the person's next sign-in),
+sets the new temporary credential, ends the Keycloak sessions again for one opened in between, and writes an
+`STAFF_PASSWORD_RESET` audit row (who reset whom, no password; a row that cannot be written is logged and never undoes
+the reset, as for manual revocations). The audit-log collection validator lists the new action.
+
+**Done (B), notice and console.** The staff welcome notice now says the super administrator who opened the account will
+give a temporary password by a secure channel, that the message does not contain it, and that the person chooses their
+own at first sign-in. The console shows the password in a one-time dialog (masked, reveal toggle, copy, plain warning,
+cleared on Done or Escape, scrim inert, `autoComplete="off"`, mutations on `fetchPolicy: 'no-cache'`), shows a notice
+instead when a create was a repeat, and offers "Reset password" (SUPER_ADMIN only, staff rows only, never the caller's
+own row, with a confirm step).
+
+**Proof (fresh surefire XML, 2026-10-13).**
+- `TemporaryPasswordGeneratorTest` 6 (length, alphabet, no look-alikes, class counts, realm policy, 5 000 distinct,
+  no fixed positions, draws from the injected source, source lint: `SecureRandom` only) and
+  `TemporaryPasswordSecrecySourceTest` 3 (no log statement on the creation/reset path names a password; the answer,
+  request and sealed details print none; no workflow/activity shape has a password component).
+- `StaffAccountWorkflowTest` 24 (3 new: every creation gets its own password and Keycloak holds it; retried steps keep
+  the one password; an adopted user keeps its credential; plus the changed repeat, join and killed-then-repeated tests
+  asserting no password on the repeat, none for the joiner, a fresh one that replaces the first), `StaffUserCreationTest`
+  13 (5 new: reset issues a new value, cuts the sessions naming the administrator, writes the row without the value;
+  two resets differ; an administrator or customer is refused; a buyer account is refused `NOT_A_STAFF_ACCOUNT`;
+  unknown account), `StaffAccountRulesTest` 4, `ContactNoticeTest` 2.
+- `StaffAccountCreationEndToEndTest` 10 against real Keycloak 26.5.2, Temporal and MongoDB, with the production password
+  policy applied to the test realm and a direct-grant client: the right temporary password answers "Account is not fully
+  set up" and a wrong one "Invalid user credentials"; the required actions read back; the password appears in no log
+  line (DEBUG for `com.pml`, error paths included), no collection of the database, no Temporal history, no audit row;
+  a repeat returns none and leaves the credential valid; four creations give four values; an unfinished record plus a
+  disabled Keycloak user is finished with a fresh password and the first stops working; a reset ends the real Keycloak
+  session, the signed-in token is refused `TOKEN_REVOKED`, the new value is the temporary credential, the old one is
+  not, two resets differ, the row names the administrator; an administrator and a buyer account are refused.
+- `PayoutDecisionIdempotencyTest` 10, `RequestPayoutIdempotencyTest` 2. Lints green: `PlatformWideBypassLintTest` 4,
+  `TenantBoundaryLintTest` 2, `PageSizeTest` 5, `TestLayerLintTest` 3, `SpecStatusLintTest` 4,
+  `TemporalRegistryLintTest` 5, `WorkflowDeterminismLintTest` 4, `WorkflowIdentifierLintTest` 4,
+  `ErrorCodeRegistryTest` 3, `FrontendContractLintTest` 4 (regenerated, then run without the write flag),
+  `NoNestedTestClassLintTest` 3, the identity and booking internal-surface, operation-gate, fail-closed and
+  sensitive-mutation tests.
+- Frontend: `tsc --noEmit` clean for libs/shared and apps/admin; vitest apps/admin 279 pass (9 new in
+  `StaffPassword.test.tsx`), libs/shared 575 pass.
+
+**Open.**
+1. A creation that takes longer than `identity.staff.create-wait` answers `STAFF_CREATION_IN_PROGRESS` and the
+   password of that call is never shown; asking again returns the account without one (it joins the run or finds it
+   finished), and the super administrator issues one with the reset. Making the repeat re-issue a password for a
+   still-running execution would need a signal into the workflow; not built.
+2. Two calls for the same new person that both succeed (a double click): only the one that started the execution
+   carries a password. The console disables the button while a call is pending.
+3. The reset is not offered for the caller's own row in the console (the API allows it and cuts the caller's own
+   sessions). Owner may want the API to refuse it too.
+4. `docs/API_DESIGN_SPECIFICATION.md` still shows an early `createUser(input): CreateUserResponse` design with a
+   `password` input; it describes no running code and was left as written.
+5. The frontend operations were written by hand against the SDL above; codegen needs the composed supergraph. The
+   shared `documentValidity` test fails on a supergraph composed before `bulkRetryFailedPayouts` took its key; it
+   needs `pnpm codegen:local` after the backend schemas land.
+
+
+## F-068 · 2026-10-13 · A platform-wide reach is never lost because identity is down, audit rows are kept for ever, tamper evidence is deferred, and ET-PLT-007 is closed
+
+**Asked.** Four owner decisions on the F-063 audit trail, and the close of ET-PLT-007. (A) No platform-wide action may be
+missing from the searchable trail when identity is unavailable: keep the record locally first, forward it until identity
+confirms. (B) Audit rows are kept indefinitely; the expiry index that never did anything must go. (C) Tamper evidence (a
+hash chain) is not required before launch. (D) Regenerate the frontend's GraphQL types properly.
+
+**Verified before building.**
+- The delivery was synchronous with a 3 s bound and no retry (F-063 Open 4): identity down for a request left the row in the
+  calling service's log and on `platform.wide.audit.failures` only.
+- The expiry index on `identity_audit_logs` was `{createdAt: 1}`, and no code path ever set `createdAt` on an `AuditLog` (the
+  validator allowed the property, nothing wrote it). No retention property existed in `application.yml`; the only other
+  mention was the persistence registry row. It had never deleted anything, and the day any code set `createdAt` it would have
+  started deleting evidence.
+- Neither booking nor catalog has a Spring context test, so wiring is proved with `ApplicationContextRunner` in the shared
+  library and with each service's own bindings run against a real Temporal server.
+- `shared-library` already holds the other shared-collection pieces (`MongoIdempotencyLedger`: raw documents, index created by
+  the owner of the collection). The outbox follows it, with one addition: a validator.
+
+**Done (A) · the design as built.**
+- **Collection.** `booking_platform_wide_audit_outbox`, `catalog_platform_wide_audit_outbox`. A row is `_id` (a random UUID, the
+  permanent `recordId`), `actorSub`, `role`, `service`, `reason`, `operation`, `occurredAt`, `state` (`PENDING`, `DELIVERED`,
+  `REFUSED`), `attempts`, `createdAt`, and the times of the last attempt and of settlement. Nothing else: the validator
+  (`platform-wide-audit-outbox-schema.json`, in the shared library, applied at start-up by the same runner the services use
+  for their own collections) has `additionalProperties: false`, so no request body, filter, token or free text can be stored.
+  Index `{state, occurredAt}` is in each service's registry (`BookingIndexInitializer`, `CatalogIndexInitializer`) and in the
+  persistence spec's §4 (two collection rows, two index rows; 78 collections became 80).
+- **Order.** `PlatformWideAccess` calls the sink as before (3 s bound, never blocks the reach). The sink,
+  `OutboxPlatformWideAuditSink`, writes the log line, inserts the row (one local insert: that is all the administrator's
+  request waits for), and starts the delivery on `boundedElastic` without awaiting it.
+- **Delivery.** `PlatformWideAuditDeliveryWorkflow`, id `audit-delivery/{recordId}` (a UUID; `PlatformWideAuditDeliveryRules.workflowId`
+  refuses anything else, so no actor or reason can enter an id), `USE_EXISTING` on a running id, `ALLOW_DUPLICATE` reuse. Input
+  is the record id only. One activity, `forward`, retried without an attempt limit, 5 s initial interval, doubling, 15 min
+  ceiling, 30 s per attempt; the workflow body is one call plus a `Workflow.getVersion` marker, so its history stays small
+  however long identity is away. It is implemented once in the shared library; booking and catalog register it on their own new
+  queues `booking-audit` and `catalog-audit` (`BookingAuditDeliveryWorkflowImpl` and `...ActivitiesImpl`, three lines each), so
+  an identity outage never queues ahead of checkout, finance or lifecycle work. The registry rows (two queues, two workflow
+  rows) are in ET-PLT-015 §4; `TemporalRegistryLintTest` gained a test that a shared workflow is a row for every queue that
+  runs it, and `WorkflowDeterminismLintTest` now also reads the shared library's workflow code.
+- **What identity's answer does.** `2xx` (including a repeat) settles the row `DELIVERED`. `400` or `422` settles it `REFUSED`:
+  kept, logged at ERROR with the facts, counted on `platform.wide.audit.delivery.failed`, never retried (asking again cannot change
+  the answer). Anything else, including `401`, `403` and `5xx`, a timeout or a connection error, leaves the row `PENDING`, notes
+  the attempt and is retried, so a misconfigured token is fixed by configuration and the backlog then drains.
+- **Start-up re-drive.** `PlatformWideAuditDrain` runs once, on `ApplicationReadyEvent`: reads at most 1,000 `PENDING` rows,
+  oldest first, and starts a delivery for each (a start that meets a running delivery joins it). It ends at the first failed
+  start. *Against the no-sweeps rule:* it has no timer, no schedule and no loop; it runs once per process start; it reads a bounded
+  set; and it does what a boot runner does elsewhere in this platform (adoption of what a previous process left). It exists
+  because the alternative to it is a row that can only be recovered by a person. If the owner reads it as a sweep it is one class
+  and one listener to delete, and the cost is the residual window below.
+- **The residual window, stated honestly.** (1) A reach whose local write succeeds and whose delivery start then fails, in a
+  service that then does not restart, stays `PENDING` until it next starts. It is not lost, it is visible on
+  `platform.wide.audit.outbox.pending` and `...oldest.age.seconds`, and nothing re-drives it before then. (2) A service that is
+  lost together with its database before delivery loses the row. (3) A row identity refuses for good (malformed, or older than
+  thirty days: an identity outage longer than that) stays `REFUSED` in the outbox and nothing re-sends it. (4) If the local
+  insert itself fails, the reach still proceeds, an ERROR line carries the facts and `platform.wide.audit.failures` counts it,
+  exactly as before; that reach is only in the log.
+- **Metrics** (`PlatformWideAuditMetrics`, tagged by service): gauges `platform.wide.audit.outbox.pending` and
+  `platform.wide.audit.outbox.oldest.age.seconds` (read on the scrape thread, so they return the last answer and refresh from
+  the database in the background at most every five seconds: no timer), counters `platform.wide.audit.delivered`,
+  `platform.wide.audit.delivery.failed` and `platform.wide.audit.delivery.start.failures`. These are the first gauges in the
+  codebase; there was no earlier gauge convention, so they follow the counters' dotted names and `service` tag.
+- **Identity.** The endpoint's body gained `recordId` (lower-case UUID) and `occurredAt` (an ISO instant), both required, closed
+  shapes unchanged, `internal-write` unchanged, still `POST /api/internal/audit/platform-wide` (the internal-surface table's
+  row text changed, its method and path did not). `PlatformWideAuditTrail.receive` is idempotent on `recordId`: a unique
+  partial index `uniq_recordId` (partial on string, so every other audit row is outside it) and a duplicate-key answer that is
+  still a success. `occurredAt` is accepted from thirty days before receipt (`MAX_AGE`) to two minutes after (`CLOCK_SKEW`);
+  outside it the delivery is a `400` and stores nothing. Identity always stores `receivedAt` from its own clock beside the
+  sender's time; `AuditLog` has both (`timestamp` is when it happened, `receivedAt` when identity stored it), and `auditLogs`
+  returns both (`at`, and the new nullable `receivedAt`). Identity's own reaches get a `recordId` and `receivedAt` too and
+  are still written locally with no hop; if that write fails the reach proceeds with an ERROR line and the same counter.
+- **Removed, not duplicated.** `RemotePlatformWideAuditSink` and its auto-configuration are gone; there is one delivery path.
+
+**Done (B).** The index `idx_createdAt_ttl` is out of the registry, with a comment saying audit rows are kept by decision;
+`createdAt` is out of the validator's property list; start-up drops that index where an earlier version created it (absence is
+fine). `IdentityIndexRegistryTest.auditRowsNeverExpire` asserts that no declared and no live index on the collection has an
+expiry, and `legacyAuditExpiryIsDropped` creates the old index and shows it is removed. The persistence registry row is
+replaced. ET-PLT-009 R6 is rewritten as "kept indefinitely" (the seven-year and two-year classes, the purge, its Schedule and
+its two configuration properties are marked superseded); the identity census file never listed the index, so it is unchanged.
+
+**Done (C).** Recorded, not built. ET-PLT-009 R3 and R10 and the task's BE-3, FE-2, TS-3 and gate boxes stay unticked and
+carry: *deferred past launch by the owner on 2026-10-13; the application offers no way to alter or delete a row; database-level
+tampering is out of scope for launch*. What does hold is proved (`PlatformWideAuditTrailTest`: no code path updates or removes a
+row, no repository exists, no mutation names the trail).
+
+**Done (D).** `pnpm codegen:local` runs offline and deterministically here: rover 1.0.0 with the already installed
+`supergraph` 2.15.2 plugin composes the three on-disk SDLs, `graphql-codegen` writes `libs/shared/src/types/graphql/index.ts`.
+The diff against the hand-edited file is ordering and doc comments plus the `receivedAt` field; against HEAD it is exactly the
+schema changes (idempotency keys, `auditLogs` `service`/`reason`, `CreateStaffUserResult`, `resetStaffTemporaryPassword`,
+`resumePayoutRequest` and `CreateUserInput.password` gone, `AuditLogEntry.receivedAt`) and the documents the working tree
+already carried (payout fragments select `event { id title }`, `OpsCreateStaff` removed). The hand edit had been *missing* the
+`event` selections, so it was worse than a regeneration. `documentValidity` passes (the generated supergraph is left at
+`node_modules/.cache/pml-supergraph.graphql`, which the test prefers). **Left alone, and flagged:**
+`apps/admin/libs/shared/src/types/graphql/index.ts` is a tracked, stale 8.5k-line copy that no tsconfig path, vitest alias or
+import resolves to; earlier agents hand-edited it too. It is neither generated nor read. **Removed 2026-10-13 on the
+owner's instruction** after confirming codegen writes only `libs/shared/src/types/graphql/index.ts` (`codegen.ts`) and
+`tsc --noEmit` in `apps/admin` stays clean.
+
+**Proof (fresh surefire XML, 2026-10-13).** shared-library: `PlatformWideAuditOutboxTest` 9, `PlatformWideAuditForwarderTest` 7,
+`OutboxPlatformWideAuditSinkTest` 5, `PlatformWideAuditDrainTest` 3, `PlatformWideAuditMetricsTest` 1,
+`PlatformWideAuditDeliveryRulesTest` 2, `PlatformWideAuditDeliveryTest` 4 (real Temporal server, MongoDB, stand-in identity),
+`PlatformWideAuditDeliveryAutoConfigurationTest` 4, `TemporalRegistryLintTest` 6, `WorkflowDeterminismLintTest` 4. identity:
+`PlatformWideAuditEndToEndTest` 18 (nine new: duplicate, window, record id, extra fields, identity down then back, repeat after
+storage, Temporal down at the start; the old `bookingsRealSinkReachesIdentity` is replaced by the first of those),
+`PlatformWideAuditTrailTest` 15, `IdentityIndexRegistryTest` 16, `FinanceAuditViewTest` 7, `AccountSchemasTest` 12,
+`InternalSurfaceTableTest` 1. booking and catalog: `BookingAuditDeliveryTest` 2, `CatalogAuditDeliveryTest` 2, the index
+registry, census, validator-parity and round-trip classes. **Mutation-verified:** a random record id instead of the delivered
+one fails exactly `duplicateDeliveryIsOneRow` and `racingDuplicatesLeaveOneRow`; starting the delivery inside the reach's chain
+fails `slowStartDoesNotDelay` (and the start-failure test); treating every 4xx or 5xx as final fails
+`identityDownKeepsTheRow` and `authFailuresAreRetried`; removing the window check fails `occurredAtIsBounded`. Frontend:
+`documentValidity` and `codegenAuthority` pass, `tsc --noEmit` clean for `libs/shared` and `apps/admin`, vitest `libs/shared`
+576 passed (1 skipped), `apps/admin` 279 passed.
+
+**Since F-061, in one place.**
+- F-062 re-drive mutations got idempotency keys; F-067 then removed `resumePayoutRequest` (the owner decided it should not
+  exist) and kept Retry and bulk Retry.
+- F-063 every platform-wide reach is a searchable row, finance sits inside the audited path, booking's bypass budget is 0.
+- F-064 creating a staff user is a workflow; a contact-change marker whose change died clears itself.
+- F-065 no staff role requests a payout; finance has its own money-only audit view; the last unrecorded staff reach is recorded.
+- F-066 nested tests flattened and a guard against their return.
+- F-067 a new staff member gets a one-time temporary password; a super administrator can issue another.
+- F-068 (this): delivery that cannot lose a reach, retention, tamper-evidence decision, regenerated types, ET-PLT-007 closed.
+- **Owner decisions in force:** delivery is local-first; audit rows are kept for ever; tamper evidence is deferred past
+  launch; no platform staff requests a payout for an organizer; Resume is removed; a new staff member receives a system-made
+  one-time temporary password shown once to the creating super administrator.
+
+**ET-PLT-007 is closed.** Gate boxes added with test names for the re-drive idempotency, the audit delivery, retention and the
+generated types; every gate box is ticked, the spec's per-requirement boxes already matched their evidence (R4 and the
+internal-surface table gained the new delivery wording, the idempotent-operation registry gained `bulkRetryFailedPayouts` and
+says ten), `status: implemented` stands and `SpecStatusLintTest` passes. What is not claimed is listed under "Open after
+closure" at the end of the task file. ET-IDN-001 stays `approved`: the live browser sign-in and SSO walk and its Playwright
+specs have not been done.
+
+**Open.**
+1. Playwright was not run for the finance role gating, the staff password dialog or the reset action.
+2. No real two-process run of the delivery: every test runs the services' classes with identity's real controller in one JVM,
+   or a stand-in identity over HTTP. An identity restart or a Temporal restart in the middle of a backlog was not driven.
+3. The 72 hour execution ceiling of a contact change (F-064) has not fired on a real server; the marker release is proved by
+   terminating executions and by expiry arithmetic.
+4. Staff creation and reset caveats are as in F-067 Open (a slow creation never shows its password, a double click shows it
+   once, the API lets a super administrator reset their own account).
+5. Payout approvals and decisions are still not audit rows: the `@Audited` registry under ET-PLT-009 is unbuilt, so the finance
+   view lists the reaches around money and not the approvals.
+6. The console's audit tab does not show `receivedAt`; the field is in the API and the generated types.
+7. A `REFUSED` outbox row has no re-send path and no alert beyond the counter; an operator alerts on
+   `platform.wide.audit.delivery.failed` and on the age gauge.
+8. The identity retention decision leaves `payout_config_audit_logs` and the other audit-like collections as they were; none
+   carries an expiry index.

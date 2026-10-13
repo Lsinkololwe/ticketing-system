@@ -16,7 +16,15 @@ public final class TemporalTestEnvironments {
     }
 
     public static TestWorkflowEnvironment newInstance() {
-        TestEnvironmentOptions.Builder options = TestEnvironmentOptions.newBuilder();
+        return newInstance(true);
+    }
+
+    /**
+     * @param timeSkipping false runs on the wall clock: a test that holds an activity open from its own
+     *                     thread needs it, because skipped time would time that activity out
+     */
+    public static TestWorkflowEnvironment newInstance(boolean timeSkipping) {
+        TestEnvironmentOptions.Builder options = TestEnvironmentOptions.newBuilder().setUseTimeskipping(timeSkipping);
         for (String name : new String[]{ProcessSearchAttributes.BUSINESS_ID_NAME, ProcessSearchAttributes.TENANT_ID_NAME,
                 ProcessSearchAttributes.ORGANIZATION_ID_NAME, ProcessSearchAttributes.EVENT_ID_NAME,
                 ProcessSearchAttributes.BUSINESS_STATUS_NAME, ProcessSearchAttributes.PROCESS_KIND_NAME}) {

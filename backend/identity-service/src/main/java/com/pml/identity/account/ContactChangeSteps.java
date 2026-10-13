@@ -11,6 +11,7 @@ import com.pml.identity.domain.model.Contact;
 import com.pml.identity.domain.model.User;
 import com.pml.identity.security.revocation.AccessCutter;
 import com.pml.identity.security.revocation.RevocationTrigger;
+import com.pml.identity.workflow.contactchange.ContactChangeRules;
 import com.pml.identity.security.ContactCrypto;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
@@ -37,7 +38,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The MongoDB and Keycloak steps behind {@code ContactChangeWorkflow} (ET-IDN-004 R3, R5).
+ * The MongoDB and Keycloak steps behind {@code ContactChangeWorkflow}, the process that adds, changes or removes a buyer's contact.
  *
  * <p>Every method may run twice, because the activity that calls it is retried: a second claim finds the
  * contact already this account's, a second commit finds its account event, a second Keycloak write
@@ -90,8 +91,16 @@ public class ContactChangeSteps {
 
     // ---- 1 · the marker -------------------------------------------------------------------------------
 
-    /** Sets {@code pendingKind=CHANGING}; refuses an account that is not ACTIVE or is being merged or deleted. */
-    public Mono<Void> begin(String accountId) {
+    /**
+     * Sets {@code pendingKind=CHANGING} for the run that owns this change, recording the run and the latest
+     * moment it could still be open; refuses an account that is not ACTIVE or is being merged or deleted.
+     *
+     * <p>A marker found here that another run set (or one older than owners, which names none) cannot be
+     * live: the change's id is the account's, so two runs are never open together, and this run only exists
+     * because the earlier one is closed. Such a marker is reclaimed, with whatever its change left half done,
+     * before this run takes the account. A retry by the same run finds its own marker and goes on.</p>
+     */
+    public Mono<Void> begin(String accountId, String ownerRunId) {
         return template.findById(accountId, User.class)
                 .switchIfEmpty(Mono.error(() -> new TranslatedRefusal(ErrorCode.USER_UNKNOWN, "account " + accountId)))
                 .flatMap(account -> {
@@ -106,23 +115,73 @@ public class ContactChangeSteps {
                         return Mono.<Void>error(new TranslatedRefusal(ErrorCode.ACCOUNT_NOT_ACTIVE, "account " + accountId));
                     }
                     if (account.getPendingKind() == PendingKind.CHANGING) {
-                        return Mono.<Void>empty();
+                        if (ownerRunId != null && ownerRunId.equals(account.getPendingOwnerRunId())) {
+                            return Mono.<Void>empty();
+                        }
+                        return reclaim(account, true).then(Mono.defer(() -> mark(accountId, ownerRunId)));
                     }
-                    Instant now = clock.instant();
-                    return template.updateFirst(Query.query(Criteria.where("_id").is(accountId)
-                                            .and("status").is(AccountState.ACTIVE).and("pendingKind").is(null)),
-                                    new Update().set("pendingKind", PendingKind.CHANGING).set("pendingSince", now)
-                                            .set("updatedAt", now), User.class)
-                            .flatMap(result -> result.getModifiedCount() == 1 ? Mono.<Void>empty()
-                                    : Mono.<Void>error(new TranslatedRefusal(ErrorCode.CONTACT_CHANGE_IN_PROGRESS,
-                                    "account " + accountId)));
+                    return mark(accountId, ownerRunId);
                 });
     }
 
-    /** Clears the marker; nothing else about the account changes. Safe to repeat. */
+    private Mono<Void> mark(String accountId, String ownerRunId) {
+        Instant now = clock.instant();
+        return template.updateFirst(Query.query(Criteria.where("_id").is(accountId)
+                                .and("status").is(AccountState.ACTIVE).and("pendingKind").is(null)),
+                        new Update().set("pendingKind", PendingKind.CHANGING).set("pendingSince", now)
+                                .set("pendingOwnerRunId", ownerRunId)
+                                .set("pendingExpiresAt", now.plus(ContactChangeRules.MAX_LIFETIME))
+                                .set("updatedAt", now), User.class)
+                .flatMap(result -> result.getModifiedCount() == 1 ? Mono.<Void>empty()
+                        : Mono.<Void>error(new TranslatedRefusal(ErrorCode.CONTACT_CHANGE_IN_PROGRESS,
+                        "account " + accountId)));
+    }
+
+    /**
+     * Clears the marker, and with it a claim the change made but never committed, so a change that ends
+     * early (a refusal, a cancel, a lost claim) leaves the account as it found it. Safe to repeat.
+     */
     public Mono<Void> clearMarker(String accountId) {
-        return template.updateFirst(Query.query(Criteria.where("_id").is(accountId).and("pendingKind").is(PendingKind.CHANGING)),
-                new Update().unset("pendingKind").unset("pendingSince").set("updatedAt", clock.instant()), User.class).then();
+        return template.findById(accountId, User.class)
+                .filter(account -> account.getPendingKind() == PendingKind.CHANGING)
+                .flatMap(account -> reclaim(account, false).then())
+                .then();
+    }
+
+    /**
+     * Takes a marker away from the change that set it, putting the account back as it was before that
+     * change began, and reports whether this call was the one that took it.
+     *
+     * <p>What an abandoned change can have left: a contact it claimed under the unique index but never
+     * committed (removed here, so the number or address is free again and the account does not list a
+     * contact nobody confirmed), and Keycloak's email written ahead of the commit (written again from the
+     * account's real contacts). The marker is released last, in one conditional write that matches only the
+     * marker as it was read, so of two callers racing for the same leftover exactly one gets {@code true}
+     * and the other is told the account is being taken.</p>
+     *
+     * @param resyncAlways write Keycloak's email even when no half-made contact was found; a leftover found
+     *                     later may have changed Keycloak without claiming anything (a removal)
+     */
+    public Mono<Boolean> reclaim(User account, boolean resyncAlways) {
+        String accountId = account.getId();
+        String claimed = account.getPendingContactId();
+        Mono<Boolean> removedClaim = claimed == null ? Mono.just(false)
+                : template.remove(Query.query(Criteria.where("_id").is(claimed).and("accountId").is(accountId)
+                                .and("source").is(SOURCE).and("releasedAt").is(null).and("primary").is(false)), Contact.class)
+                .map(result -> result.getDeletedCount() > 0);
+        return removedClaim
+                .flatMap(removed -> removed || resyncAlways ? syncKeycloak(accountId, null) : Mono.<Void>empty())
+                .then(Mono.defer(() -> {
+                    Criteria owner = account.getPendingOwnerRunId() == null
+                            ? Criteria.where("pendingOwnerRunId").is(null)
+                            : Criteria.where("pendingOwnerRunId").is(account.getPendingOwnerRunId());
+                    return template.updateFirst(Query.query(Criteria.where("_id").is(accountId)
+                                            .and("pendingKind").is(PendingKind.CHANGING).andOperator(owner)),
+                                    new Update().unset("pendingKind").unset("pendingSince").unset("pendingOwnerRunId")
+                                            .unset("pendingExpiresAt").unset("pendingContactId")
+                                            .set("updatedAt", clock.instant()), User.class)
+                            .map(result -> result.getModifiedCount() == 1);
+                }));
     }
 
     // ---- 2 · claim -----------------------------------------------------------------------------------
@@ -135,6 +194,14 @@ public class ContactChangeSteps {
      */
     public Mono<Claimed> claim(String accountId, String changeId, String proofId, String contactKey, ContactType type) {
         String contactId = contactId(accountId, changeId, contactKey);
+        // The intent is written before the contact, so a change that dies between the two leaves a marker that
+        // names the contact to look for, never a contact the marker does not know about.
+        return template.updateFirst(Query.query(Criteria.where("_id").is(accountId).and("pendingKind").is(PendingKind.CHANGING)),
+                        new Update().set("pendingContactId", contactId), User.class)
+                .then(Mono.defer(() -> claimUnderIndex(accountId, contactId, proofId, contactKey, type)));
+    }
+
+    private Mono<Claimed> claimUnderIndex(String accountId, String contactId, String proofId, String contactKey, ContactType type) {
         return owner(type, contactKey).map(java.util.Optional::of).defaultIfEmpty(java.util.Optional.empty()).flatMap(found -> {
             if (found.isPresent()) {
                 return found.get().getAccountId().equals(accountId)
@@ -317,7 +384,8 @@ public class ContactChangeSteps {
             boolean email = ContactRules.hasType(after, ContactType.EMAIL);
             boolean phone = ContactRules.hasType(after, ContactType.WHATSAPP);
             return template.updateFirst(Query.query(Criteria.where("_id").is(accountId)),
-                    new Update().set("emailVerified", email).set("phoneVerified", phone).set("updatedAt", now), User.class).then();
+                    new Update().set("emailVerified", email).set("phoneVerified", phone).set("updatedAt", now)
+                            .unset("pendingContactId"), User.class).then();
         });
         Mono<Void> staged = outboxType == null ? Mono.empty()
                 : outbox.stage(new EventEnvelope(eventId, outboxType, 1, now, accountId, null, "identity",

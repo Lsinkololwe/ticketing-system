@@ -71,7 +71,7 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R11 · payload is exactly the slim contract: no roles, attributes, names or phone")
+    @DisplayName("payload is exactly the slim contract: no roles, attributes, names or phone")
     void slimPayload() throws Exception {
         listener(direct).onEvent(login());
         ArgumentCaptor<Dto.SyncEvent> cap = ArgumentCaptor.forClass(Dto.SyncEvent.class);
@@ -89,7 +89,7 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-003-R7 · LOGOUT is forwarded with the sid and user id, and nothing else is added")
+    @DisplayName("LOGOUT is forwarded with the sid and user id, and nothing else is added")
     void logoutCarriesSid() throws Exception {
         Event e = login();
         e.setType(EventType.LOGOUT);
@@ -107,7 +107,7 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-003-R7 · REFRESH_TOKEN_ERROR is forwarded with its sid; a session event without a sid or user is dropped")
+    @DisplayName("REFRESH_TOKEN_ERROR is forwarded with its sid; a session event without a sid or user is dropped")
     void refreshErrorAndMissingSid() {
         UserSyncEventListener l = listener(direct);
         Event e = login();
@@ -130,7 +130,7 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R11 · REGISTER and other non-sync events produce no call")
+    @DisplayName("REGISTER and other non-sync events produce no call")
     void registerIgnored() {
         Event e = login();
         e.setType(EventType.REGISTER);
@@ -139,7 +139,7 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R11 · the event id is stable across retries and across identical events")
+    @DisplayName("the event id is stable across retries and across identical events")
     void retriesWithSameIdempotencyKey() {
         doThrow(new IdentityUnavailableException("down")).doThrow(new IdentityApiException(503, null))
                 .doNothing().when(client).syncEvent(any());
@@ -152,7 +152,7 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R11 · retries are bounded and a 4xx is not retried")
+    @DisplayName("retries are bounded and a 4xx is not retried")
     void boundedAndNoRetryOn4xx() {
         doThrow(new IdentityUnavailableException("down")).when(client).syncEvent(any());
         listener(direct).onEvent(login());
@@ -165,7 +165,7 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R12 · failures never reach the login: full queue, client crash, lookup crash")
+    @DisplayName("failures never reach the login: full queue, client crash, lookup crash")
     void failureIsolation() {
         listener(r -> { throw new RejectedExecutionException("full"); }).onEvent(login());
 
@@ -179,7 +179,7 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R11 · admin user events map to ADMIN_<operation> with the user id from the path")
+    @DisplayName("admin user events map to ADMIN_<operation> with the user id from the path")
     void adminEvent() {
         UserSyncEventListener l = listener(direct);
         AdminEvent a = new AdminEvent();
@@ -200,11 +200,11 @@ class UserSyncEventListenerTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R10 · the factory is fail closed without credentials: a no-op provider and no executor")
-    void factoryFailClosed() {
+    @DisplayName("a factory that was never started hands out a provider that ignores every event")
+    void unstartedFactoryIsInert() {
         UserSyncEventListenerFactory factory = new UserSyncEventListenerFactory();
-        factory.init(null);                  // the test JVM has no IDENTITY_* variables
         assertThat(factory.create(session)).isNotInstanceOf(UserSyncEventListener.class);
         factory.create(session).onEvent(login());
+        verify(client, times(0)).syncEvent(any());
     }
 }

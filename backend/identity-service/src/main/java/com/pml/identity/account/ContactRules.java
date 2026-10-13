@@ -11,8 +11,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The decisions of contact management that need neither a database nor a server (ET-IDN-004 R3, R5).
- * Decided for implementation on 2026-10-04, see specs/FINDINGS.md F-044.
+ * The decisions of contact management that need neither a database nor a server: how long a
+ * released contact stays unclaimable and how long a person waits before asking for a code again.
  */
 public final class ContactRules {
 

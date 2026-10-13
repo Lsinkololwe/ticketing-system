@@ -2915,7 +2915,6 @@ scalar JSON
 enum UserType {
     CUSTOMER              # Regular ticket buyer
     ORGANIZER             # Event organizer
-    SCANNER               # Ticket validator
     ADMIN                 # Platform admin
     SUPER_ADMIN           # Full access
     FINANCE               # Financial operations
@@ -4328,7 +4327,6 @@ Authorization: Bearer <access_token>
 |------|--------------|
 | `CUSTOMER` | Browse events, purchase tickets, request refunds |
 | `ORGANIZER` | All customer + create/manage events, view sales |
-| `SCANNER` | Validate tickets at events |
 | `ADMIN` | Approve events/organizers, manage platform |
 | `FINANCE` | Process payouts, view financial reports |
 | `SUPER_ADMIN` | Full system access |

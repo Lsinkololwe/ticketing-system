@@ -127,7 +127,7 @@ public class KeycloakSyncController {
                 .thenReturn(ResponseEntity.status(HttpStatus.ACCEPTED)
                         .body(SyncResponse.success(userId, "ACCEPTED", "Change recorded; the sync runs in the user's workflow")))
                 .onErrorResume(e -> {
-                    log.error("Keycloak change for user {} could not be recorded: {}", userId, e.getMessage());
+                    log.error("Keycloak change for user {} could not be recorded: {}", userId, e.getClass().getSimpleName());
                     return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                             .body(SyncResponse.error(userId, "Change could not be recorded")));
                 });

@@ -34,7 +34,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       console="Platform admin"
       title="MyTicketZM platform admin"
       description="You will be taken to the single sign-on page to enter your username, password and MFA code."
-      footer="Staff only. Customers and organizers sign in with a phone code in their own apps."
+      footer="Staff only. Customers and organizers sign in with a code sent to WhatsApp or email in their own apps."
     >
       {message ? (
         <Banner tone="error" title="Sign-in failed" urgent>

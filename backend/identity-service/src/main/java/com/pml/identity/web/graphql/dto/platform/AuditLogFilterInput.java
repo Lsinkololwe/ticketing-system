@@ -12,5 +12,7 @@ public record AuditLogFilterInput(
         @Size(max = 100) String resourceType,
         @Size(max = 100) String resourceId,
         @Size(max = 50) String status,
-        Boolean includeAccountEvents
+        Boolean includeAccountEvents,
+        @Size(max = 80) String service,
+        @Size(max = 100) String reason
 ) {}

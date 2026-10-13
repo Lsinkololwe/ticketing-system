@@ -87,6 +87,9 @@ class RealmConformanceIT {
         }
         assertThat(json("/" + BUYERS).path("resetPasswordAllowed").asBoolean())
                 .as("buyers have no password to reset").isFalse();
+        assertThat(json("/" + STAFF).path("resetPasswordAllowed").asBoolean())
+                .as("a staff password is reset by a super admin, never by an e-mail link that could sign "
+                        + "someone in without their authenticator code").isFalse();
     }
 
     @Test
@@ -146,6 +149,75 @@ class RealmConformanceIT {
         assertThat(resetPassword(id, "Second-Passphrase-2y")).isEqualTo(204);
         assertThat(resetPassword(id, "Initial-Passphrase-1x")).as("recently used").isEqualTo(400);
         assertThat(resetPassword(id, "Third-Passphrase-3z")).isEqualTo(204);
+    }
+
+    @Test
+    @DisplayName("a buyer cannot edit their own e-mail, phone number or username in the account console; only an administrator can")
+    void contactsAreNotEditableByTheBuyer() throws Exception {
+        JsonNode profile = json("/" + BUYERS + "/users/profile");
+        List<String> checked = new ArrayList<>();
+        for (JsonNode attribute : profile.path("attributes")) {
+            String name = attribute.path("name").asText();
+            if (!List.of("email", "phoneNumber", "username").contains(name)) {
+                continue;
+            }
+            checked.add(name);
+            List<String> editors = new ArrayList<>();
+            attribute.path("permissions").path("edit").forEach(role -> editors.add(role.asText()));
+            assertThat(editors).as(name + " may be edited by").containsExactly("admin");
+        }
+        assertThat(checked).as("attributes found in the buyer profile").containsExactlyInAnyOrder("email", "phoneNumber", "username");
+        assertThat(profile.path("unmanagedAttributePolicy").asText())
+                .as("attributes outside the profile (such as accountId) are admin-only").isEqualTo("ADMIN_EDIT");
+    }
+
+    @Test
+    @DisplayName("every newly created staff user is made to enrol an authenticator, and Keycloak's other standard required actions still exist")
+    void newStaffMustEnrolAnAuthenticator() throws Exception {
+        JsonNode totp = null;
+        List<String> aliases = new ArrayList<>();
+        for (JsonNode action : json("/" + STAFF + "/authentication/required-actions")) {
+            aliases.add(action.path("alias").asText());
+            if ("CONFIGURE_TOTP".equals(action.path("alias").asText())) {
+                totp = action;
+            }
+        }
+        assertThat(totp).as("CONFIGURE_TOTP is registered in the staff realm").isNotNull();
+        assertThat(totp.path("enabled").asBoolean()).isTrue();
+        assertThat(totp.path("defaultAction").asBoolean()).as("it is a default action for new users").isTrue();
+        assertThat(aliases).as("the import must not drop Keycloak's own actions").contains("UPDATE_PASSWORD", "VERIFY_EMAIL");
+
+        String username = "newstaff-" + UUID.randomUUID().toString().substring(0, 8);
+        String id = createStaff(username, "Initial-Passphrase-1x");
+        List<String> pending = new ArrayList<>();
+        json("/" + STAFF + "/users/" + id).path("requiredActions").forEach(a -> pending.add(a.asText()));
+        assertThat(pending).as("a user created through the Admin API starts with the enrolment action").contains("CONFIGURE_TOTP");
+    }
+
+    @Test
+    @DisplayName("every web client's back-channel logout URL is reachable from the Keycloak container, not a localhost address")
+    void backChannelLogoutIsNotALocalhostAddress() throws Exception {
+        // Keycloak makes this call itself, from inside its own container. There "localhost" is the
+        // container, where nothing listens on the apps' ports, so a localhost URL means an SSO sign-out
+        // never reaches the app and the person's session there stays alive.
+        int checked = 0;
+        for (String realm : List.of(BUYERS, STAFF)) {
+            for (JsonNode client : json("/" + realm + "/clients?max=200")) {
+                String url = client.path("attributes").path("backchannel.logout.url").asText("");
+                if (url.isEmpty()) {
+                    continue;
+                }
+                checked++;
+                java.net.URI uri = java.net.URI.create(url);
+                assertThat(uri.getPath()).as("%s / %s", realm, client.path("clientId").asText())
+                        .isEqualTo("/api/auth/backchannel-logout");
+                assertThat(uri.getHost()).as("%s / %s back-channel host", realm, client.path("clientId").asText())
+                        .isNotIn("localhost", "127.0.0.1", "::1", "[::1]");
+                assertThat(client.path("attributes").path("backchannel.logout.session.required").asText())
+                        .as("the logout token must carry the session id").isEqualTo("true");
+            }
+        }
+        assertThat(checked).as("the buyer, organizer and admin web clients each declare one").isEqualTo(3);
     }
 
     // ---- clients ------------------------------------------------------------------------------
@@ -350,19 +422,30 @@ class RealmConformanceIT {
         String secret = "AbCdEfGhIjKlMnOpQrSt";
         ContactOtpKeycloakIT.Resp created = ContactOtpKeycloakIT.admin("POST", "/" + STAFF + "/users",
                 "{\"username\":\"" + username + "\",\"email\":\"" + username + "@example.test\",\"firstName\":\"Seeded\","
-                        + "\"lastName\":\"Staff\",\"emailVerified\":true,\"enabled\":true,\"credentials\":["
+                        + "\"lastName\":\"Staff\",\"emailVerified\":true,\"enabled\":true,\"requiredActions\":[],\"credentials\":["
                         + "{\"type\":\"password\",\"value\":\"Initial-Passphrase-1x\",\"temporary\":false},"
                         + "{\"type\":\"otp\",\"secretData\":\"{\\\"value\\\":\\\"" + secret + "\\\"}\","
                         + "\"credentialData\":\"{\\\"subType\\\":\\\"totp\\\",\\\"digits\\\":6,\\\"period\\\":30,"
                         + "\\\"algorithm\\\":\\\"HmacSHA1\\\",\\\"counter\\\":0}\"}]}");
         assertThat(created.status()).as(created.body()).isEqualTo(201);
+        // A user created through the Admin API always starts with the realm's default required
+        // actions, whatever the request says. An imported (seeded) user does not, so clear it to
+        // model an account that already has its authenticator and nothing left to do.
+        String id = created.location().substring(created.location().lastIndexOf('/') + 1);
+        ContactOtpKeycloakIT.Resp cleared = ContactOtpKeycloakIT.admin("PUT", "/" + STAFF + "/users/" + id,
+                "{\"requiredActions\":[]}");
+        assertThat(cleared.status()).as(cleared.body()).isEqualTo(204);
         StaffAuth.register(username, secret);
 
         Browser browser = new Browser(ContactOtpKeycloakIT.base);
         Browser.Step prompt = StaffAuth.passwordOnly(browser, browser.authorize(STAFF, ADMIN_CLIENT, CALLBACK, ""),
                 username, "Initial-Passphrase-1x");
         assertThat(prompt.html()).as("asks for the code, does not offer enrolment").contains("name=\"otp\"").doesNotContain("totpSecret");
-        assertThat(reachedApp(browser.submit(prompt, Map.of("otp", StaffAuth.nextCode(username))))).isTrue();
+        Browser.Step afterCode = browser.submit(prompt, Map.of("otp", StaffAuth.nextCode(username)));
+        assertThat(reachedApp(afterCode))
+                .as("a seeded authenticator's correct code signs the person in; Keycloak answered: %s %s",
+                        afterCode.location(), afterCode.isPage() ? StaffAuth.excerpt(afterCode.html()) : "")
+                .isTrue();
     }
 
     // ---- tokens -------------------------------------------------------------------------------

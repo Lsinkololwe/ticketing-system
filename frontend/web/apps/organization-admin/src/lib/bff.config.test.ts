@@ -22,9 +22,9 @@ describe('organizerBffConfig account id', () => {
     expect(cfg.postLogin).toBeUndefined();
   });
 
-  it('falls back to the subject only when the claim is switched off', async () => {
+  it('has no switch that lets the subject stand in for the account id', () => {
     const cfg = organizerBffConfig({ ...env, ACCOUNT_CLAIM: '' });
-    expect(cfg.access?.accountClaim).toBeUndefined();
-    await expect(cfg.postLogin!({ sub: 'kc-sub' } as never)).resolves.toMatchObject({ ok: true, accountId: 'kc-sub' });
+    expect(cfg.access?.accountClaim).toBe('accountId');
+    expect(cfg.postLogin).toBeUndefined();
   });
 });

@@ -19,7 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The single-use proof of contact control returned after a correct code (CONTRACT 6).
+ * The single-use proof of contact control a buyer receives after typing a correct code.
+ * It is what lets the next step open or find their account without asking for the code again.
  *
  * <p>{@code proof:{id}} holds the contact key, type, encrypted value and mask. The id is 256
  * random bits, so the key neither contains nor can be guessed from a contact. A NEW proof lives

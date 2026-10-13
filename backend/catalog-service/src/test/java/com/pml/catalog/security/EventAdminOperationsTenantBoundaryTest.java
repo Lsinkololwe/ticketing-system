@@ -41,10 +41,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * the caller's real {@link CurrentTenantScope} rather than skip the check outright, so a future
  * caller that is not admin-gated is refused here too, instead of silently reaching across tenants.
  *
- * <p>Flat {@code @Test} methods rather than {@code @Nested} groups: see F-055. This project's
- * Surefire setup never executes a single {@code @Nested} test method — confirmed with a minimal,
- * dependency-free probe class independent of anything in this file — so grouping these into
- * Outsider/Administrator nested classes would silently never run them.
+ * <p>Flat {@code @Test} methods rather than nested groups: the backend's test convention, so every
+ * case appears under this one class in the report and a class-name selection runs all of it.
  */
 @Tag("L2")
 @Tag("ET-PLT-007")

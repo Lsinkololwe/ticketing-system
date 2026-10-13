@@ -2,6 +2,7 @@ package com.pml.catalog.config;
 
 import com.pml.shared.persistence.IndexEnsurer;
 import com.pml.shared.persistence.IndexSpec;
+import com.pml.shared.security.tenancy.PlatformWideAuditOutbox;
 import com.pml.catalog.persistence.CatalogCollections;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +41,7 @@ public class CatalogIndexInitializer {
 
     /** Every index catalog-service's collections carry. */
     public static List<IndexSpec> specifications() {
-        return List.of(
+        List<IndexSpec> all = new java.util.ArrayList<>(List.of(
                 // **hot** — public discovery. Every discovery filter combination starts with the
                 // status and sorts by the start time, so each one is served by one of these four.
                 IndexSpec.on(CatalogCollections.EVENTS, "idx_status_eventDateTime")
@@ -208,7 +209,11 @@ public class CatalogIndexInitializer {
                 IndexSpec.on(CatalogCollections.TICKET_TIERS, "event_code_idx").asc("eventId").asc("code").unique().build(),
                 IndexSpec.on(CatalogCollections.TICKET_TIERS, "event_active_sort_idx").asc("eventId").asc("isActive").asc("sortOrder").build(),
                 IndexSpec.on(CatalogCollections.TICKET_TIERS, "eventId").asc("eventId").build(),
-                IndexSpec.on(CatalogCollections.TICKET_TIERS, "organizationId").asc("organizationId").build());
+                IndexSpec.on(CatalogCollections.TICKET_TIERS, "organizationId").asc("organizationId").build()));
+
+        // the platform-wide reaches kept locally until identity confirms them
+        all.addAll(PlatformWideAuditOutbox.indexes(CatalogCollections.PLATFORM_WIDE_AUDIT_OUTBOX));
+        return List.copyOf(all);
     }
 
     @EventListener(ApplicationReadyEvent.class)

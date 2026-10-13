@@ -157,6 +157,10 @@ class OrganizerApplicationWritePathEndToEndTest {
     @Autowired
     TeamInvitationService invitations;
     @Autowired
+    com.pml.identity.security.ContactHasher contactHasher;
+    @Autowired
+    com.pml.identity.security.ContactCrypto contactCrypto;
+    @Autowired
     OwnershipTransferService transfers;
 
     private static String organizationId;
@@ -198,6 +202,14 @@ class OrganizerApplicationWritePathEndToEndTest {
         saveUser(OWNER, "owner@example.com", "Olive");
         saveUser(ADMIN, "admin@example.com", "Ada");
         saveUser(INVITEE, "invitee@example.com", "Ian");
+        // An invitation is accepted by the account that holds the invited email as a VERIFIED contact.
+        var invited = contactHasher.normalize("invitee@example.com", com.pml.identity.domain.enums.ContactType.EMAIL, null, null)
+                .orElseThrow();
+        template.save(com.pml.identity.domain.model.Contact.builder().id("contact-" + INVITEE).accountId(INVITEE)
+                .type(com.pml.identity.domain.enums.ContactType.EMAIL).valueHash(invited.key())
+                .valueEncrypted(contactCrypto.encrypt(invited.value()).block()).valueMasked(invited.masked())
+                .verifiedAt(java.time.Instant.now()).primary(true).source("OTP").createdAt(java.time.Instant.now())
+                .build()).block();
 
         Map<String, Object> created = data(graphql(OWNER, "CUSTOMER", """
                 mutation { applyToBeOrganizer(input: {name: "Copperbelt Live", type: BUSINESS,

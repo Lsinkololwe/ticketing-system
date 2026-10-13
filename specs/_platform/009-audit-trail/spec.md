@@ -27,9 +27,10 @@ registry in §4 is the complete list, and it is chosen by one test: *would someb
 investigating a problem need to know this happened?*
 
 **The trail is append-only, and that is enforced rather than asserted.** No update, no
-delete, no mutation path. A hash chain links each row to the previous one for its subject,
-so tampering by direct database access is detectable — which matters precisely because the
-people who could tamper are the people the trail is about.
+delete, no mutation path. A hash chain linking each row to the previous one for its subject
+would make tampering by direct database access detectable — which matters because the people who
+could tamper are the people the trail is about. *The chain is deferred past launch by the owner
+(2026-10-13); see R3.*
 
 **Every row records five things: who, what, when, to what, and why.** The actor, the action,
 the timestamp from the `Clock`, the subject, and — where the action required one — the
@@ -45,10 +46,9 @@ the inventory declares.
 with `ADMIN` is a trail that tells an investigator nothing about who was looking. Reads are
 recorded, and the read-of-a-read is not — the recursion stops at one level, deliberately.
 
-**Retention is seven years for financial and security actions, two for the rest.** The long
-window matches [ET-PLT-008](../008-data-protection/)'s financial retention because the two
-answer the same questions. The short window keeps operational noise from dominating a
-search.
+**Audit rows are kept indefinitely.** *(Decided 2026-10-13, replacing the original seven-year and
+two-year classes.)* The trail is evidence; nothing purges, expires or archives a row, and the
+collection carries no expiry index so that a later change cannot start deleting it by accident.
 
 **Audit writing never fails the action it records.** An audit write that fails must not roll
 back a payout. It is written in the same transaction where one exists and asynchronously
@@ -102,13 +102,19 @@ THE SYSTEM SHALL record the five mandatory components on every audit row.
 THE SYSTEM SHALL permit only inserts, and SHALL make undetected modification infeasible.
 
 **Acceptance**
-- [ ] No service, repository or mutation updates or deletes an `identity_audit_logs` document
-- [ ] Each row carries `previousHash` and `rowHash`, chaining per `{subjectType, subjectId}`
-- [ ] `rowHash = SHA-256(previousHash ‖ canonical row content)`
-- [ ] `verifyAuditChain(subjectType, subjectId)` recomputes the chain and reports the first broken link
-- [ ] A scheduled verification checks a sample and alerts on a break
-- [ ] A test modifies a row directly in the database and asserts verification detects it
-- [ ] The chain survives the retention purge — purging a prefix records a checkpoint hash rather than orphaning the chain
+- [x] No service, repository or mutation updates or deletes an `identity_audit_logs` document — `PlatformWideAuditTrailTest` (`noCodeChangesOrRemovesARow`, `noRepositoryForTheTrail`, `noMutationTouchesTheTrail`)
+- [ ] Each row carries `previousHash` and `rowHash`, chaining per `{subjectType, subjectId}` — *deferred past launch by the owner on 2026-10-13; see the decision under R3*
+- [ ] `rowHash = SHA-256(previousHash ‖ canonical row content)` — *deferred past launch by the owner on 2026-10-13; see the decision under R3*
+- [ ] `verifyAuditChain(subjectType, subjectId)` recomputes the chain and reports the first broken link — *deferred past launch by the owner on 2026-10-13; see the decision under R3*
+- [ ] A scheduled verification checks a sample and alerts on a break — *deferred past launch by the owner on 2026-10-13; see the decision under R3*
+- [ ] A test modifies a row directly in the database and asserts verification detects it — *deferred past launch by the owner on 2026-10-13; see the decision under R3*
+- [ ] The chain survives the retention purge — purging a prefix records a checkpoint hash rather than orphaning the chain — *deferred past launch by the owner on 2026-10-13; see the decision under R3*
+
+> **Decided 2026-10-13 (owner): tamper evidence is not required before launch.** The hash chain, its
+> verification and the scheduled check are *deferred past launch*; the boxes above stay open. What
+> holds today is that the application offers no way to alter or delete a row (the box above, proved by
+> `PlatformWideAuditTrailTest`); tampering at the database level is out of scope for launch. Nothing
+> in the collection or the row shape prevents adding the chain later.
 
 ### ET-PLT-009-R4 · State changes record before and after, redacted
 
@@ -136,18 +142,23 @@ recording.
 - [ ] Export of the trail requires `SUPER_ADMIN` and is audited
 - [ ] A test reads the trail and asserts exactly one read row results
 
-### ET-PLT-009-R6 · Retention differs by class and the purge is safe
+### ET-PLT-009-R6 · Audit rows are kept indefinitely
 
-THE SYSTEM SHALL retain financial and security actions for seven years and others for two,
-and the purge SHALL preserve the chain.
+> **Decided 2026-10-13 (owner): audit rows never expire.** This replaces the class-based retention
+> this requirement first described (seven years for financial and security actions, two for the
+> rest, enforced by a purge job). The expiry index the collection carried was attached to a field no
+> audit row ever set, so it never removed anything; it is gone, and so are the retention properties
+> and the purge Schedule, so that nothing can start deleting evidence by accident.
+
+THE SYSTEM SHALL keep every audit row for as long as the platform runs and SHALL NOT purge, expire or
+archive one.
 
 **Acceptance**
-- [ ] Registry rows classed `FINANCIAL` or `SECURITY` retain for `audit.retention.long` (P7Y)
-- [ ] All others retain for `audit.retention.short` (P2Y)
-- [ ] Retention is enforced by a purge job, not a blanket TTL index — the class determines the window
-- [ ] A purge writes a checkpoint row carrying the hash of the last purged row, so the chain remains verifiable
-- [ ] The purge is bounded per run and reports what it removed
-- [ ] A test purges a prefix and asserts the chain still verifies from the checkpoint
+- [x] The audit collection has no expiry index, declared or live: no index of `identity_audit_logs` carries `expireAfterSeconds` — `IdentityIndexRegistryTest.auditRowsNeverExpire`
+- [x] An expiry index an earlier version left on the collection is dropped at start-up, and its absence is not an error — `IdentityIndexRegistryTest.legacyAuditExpiryIsDropped`
+- [x] The persistence registry declares no TTL on the collection and says so — `IdentityIndexRegistryTest.declarationsMatchTheSpecification`
+- [ ] ~~Registry rows classed `FINANCIAL` or `SECURITY` retain for `audit.retention.long`~~ — superseded by the decision above
+- [ ] ~~All others retain for `audit.retention.short`; a purge job with a checkpoint row~~ — superseded by the decision above
 
 ### ET-PLT-009-R7 · Audit failure never fails the action
 
@@ -296,6 +307,11 @@ Financial actions are visible only to `FINANCE` and above; the filter silently e
 for a plain `ADMIN` rather than refusing, so an ordinary admin sees a complete operational
 trail without knowing what they cannot see.
 
+> **Decided 2026-10-13 (owner), for platform-wide reaches.** An administrator keeps the whole
+> trail, money reaches included, and finance gets its own narrower money view (R10). The
+> exclusion above is therefore not applied to `TENANT_BOUNDARY_CROSSED` rows; it remains the
+> design for the financial-action rows of the `@Audited` registry, which are not built.
+
 ### Schedules
 
 Recurring audit work is a Temporal Schedule starting `AuditMaintenanceWorkflow` on
@@ -304,17 +320,15 @@ mutex; no Redis lock exists.
 
 | Schedule | Runs | Cadence (UTC) | Overlap | Purpose |
 |---|---|---|---|---|
-| `audit-verify` | `AuditMaintenanceWorkflow(VERIFY)` | daily 03:00 | `SKIP` | sample and verify |
-| `audit-purge` | `AuditMaintenanceWorkflow(PURGE)` | weekly, Sunday 04:00 | `SKIP` | R6, one batch per activity, continued as new from the last checkpoint |
+| `audit-verify` | `AuditMaintenanceWorkflow(VERIFY)` | daily 03:00 | `SKIP` | sample and verify — *deferred with the hash chain (R3)* |
+| `audit-purge` | — | — | — | **not to be built**: audit rows are kept indefinitely (R6, decided 2026-10-13) |
 
 ### Configuration
 
 | Property | Value |
 |---|---|
-| `audit.retention.long` | `P7Y` — `SECURITY`, `FINANCIAL` |
-| `audit.retention.short` | `P2Y` — `OPERATIONAL` |
+| `audit.retention.long`, `audit.retention.short`, `audit.purge.batch-size` | **removed**: audit rows are kept indefinitely (R6, decided 2026-10-13) |
 | `audit.verification.sample-size` | 1,000 subjects per run |
-| `audit.purge.batch-size` | 10,000 |
 | `audit.write.max-retries` | 3 |
 
 ### Error codes
@@ -404,3 +418,48 @@ payout to protect a log entry).
 **Acceptance**
 - [ ] `auditLogs(filter, pagination)` is ADMIN or SUPER_ADMIN and filters by time range, action, actor, resource and status; rows carry ids and non-personal metadata only
 - [ ] Administrator actions added by the 2026-10-04 amendments (commission, payout-account review, suspension, deletion requests, session revocation, alert acknowledgement, announcements) each write an audit row with the actor
+
+---
+
+## Amendment, 2026-10-13 — platform-wide reaches
+
+Platform staff acting across organizers or buyers are recorded as searchable audit rows, not
+only as a log line. The registry value is the §4 `TENANT_BOUNDARY_CROSSED`; the row carries the
+actor, the role they acted under, the service, the fixed reason, the operation and the time, and
+never a request, a filter value, a token or a contact detail.
+
+### ET-PLT-009-R10 · A platform-wide reach is a searchable row
+
+**Acceptance**
+- [x] Every use of the platform-wide path — administrator, super administrator and finance alike — writes one `TENANT_BOUNDARY_CROSSED` row with `performedBy`, `actorRole`, `service`, `reason`, `operation` and `timestamp`; one request is one row per distinct reason and operation — `PlatformWideAuditTrailTest`, `PlatformStaffAccessTest`
+- [x] Booking and catalog deliver the row to identity over `POST /api/internal/audit/platform-wide`; identity stores its own receipt time beside the time the sender says it happened and refuses any body outside the closed shapes — `PlatformWideAuditEndToEndTest`, `PlatformWideAuditForwarderTest`
+- [x] A refusal leaves no row; an audit store that is down, slow or refusing does not block the staff member, is logged as an error carrying the same facts, and is counted on `platform.wide.audit.failures` — `PlatformStaffAccessTest`, `PlatformWideAuditTrailTest`
+- [x] `auditLogs` filters by `service` and `reason` as well as time range and actor, gives ADMIN and SUPER_ADMIN the whole trail, refuses an oversized page with `PAGE_SIZE_EXCEEDED`, and each such read leaves one `TENANT_BOUNDARY_CROSSED` row with reason `AUDIT_TRAIL_READ` — `PlatformWideAuditEndToEndTest`
+- [x] Finance reads the money view of the same query: rows whose reason is in the fixed money set (bank accounts, refund-request cancellation, buyer bookings and reservation support reads, platform sales analytics, recovery propose and confirm), by any actor, and no other row. The restriction is applied by the server from the caller's role to whatever filter is sent, so a filter can only narrow it; a reason, actor, service or action outside the set answers an empty page. Account events are never merged into it. Finance's own read leaves one row with reason `FINANCE_AUDIT_VIEW_READ`, which finance cannot see. Organizers, customers and scanners are refused with no row — `FinanceAuditViewTest`, `PlatformWideAuditEndToEndTest`
+- [x] No code path updates or removes an audit row, no repository exists for the collection and no mutation names it — `PlatformWideAuditTrailTest`
+- [ ] The row records the filter used on an `AUDIT_TRAIL_READ` (R5): the reason is a fixed value and no request data is carried, so a read is recorded as a read, not as which filter it used
+- [ ] The row is hash-chained (R3): deferred past launch by the owner on 2026-10-13; the application offers no way to alter or delete a row, and database-level tampering is out of scope for launch
+- [x] The row is kept indefinitely (R6, decided 2026-10-13): the inert expiry index is removed and a test pins that the collection has none — `IdentityIndexRegistryTest.auditRowsNeverExpire`
+
+### ET-PLT-009-R11 · A reach is never lost because identity is unavailable
+
+> **Decided 2026-10-13 (owner).** Booking and catalog keep each reach locally first and forward it
+> until identity confirms, so no platform-wide action is missing from the searchable trail. The
+> administrator is never blocked or slowed by the audit store: the local write is one insert into the
+> service's own database, and if even that fails the reach still goes through (an error line carrying
+> the facts, and a count on `platform.wide.audit.failures`).
+
+THE SYSTEM SHALL write every platform-wide reach of booking and catalog to the service's own outbox
+before anything leaves the service, and SHALL deliver it to identity until identity confirms.
+
+**Acceptance**
+- [x] The reach is a row of `booking_platform_wide_audit_outbox` / `catalog_platform_wide_audit_outbox` holding the facts of `PlatformWideAuditRecord`, a permanent `recordId` (the `_id`, a UUID), the time it happened and a delivery state `PENDING`, `DELIVERED` or `REFUSED`; the collection's validator refuses any other property, so no request body, token or free text can be stored — `PlatformWideAuditOutboxTest`, `OutboxPlatformWideAuditSinkTest`
+- [x] Delivery is `PlatformWideAuditDeliveryWorkflow`, id `audit-delivery/{recordId}`, started right after the local write on the service's own audit queue; one activity retried without an attempt limit from 5 s doubling to a 15 min ceiling; no `@Scheduled`, no Schedule, no poller — `PlatformWideAuditDeliveryRulesTest`, `PlatformWideAuditDeliveryTest`, `BookingAuditDeliveryTest`, `CatalogAuditDeliveryTest`, `TemporalRegistryLintTest`, `WorkflowDeterminismLintTest`
+- [x] Identity down at the moment of the reach: the row is stored locally `PENDING`, the reach is not held up, and when identity returns the row is delivered exactly once and appears in `auditLogs` with the original time — `PlatformWideAuditEndToEndTest.reachSurvivesAnIdentityOutage`, `PlatformWideAuditDeliveryTest.deliveredOnceAfterTheOutage`
+- [x] A duplicate delivery is a no-op that is still answered as accepted: identity holds one row per `recordId` — `PlatformWideAuditTrailTest`, `PlatformWideAuditEndToEndTest` (`duplicateDeliveryIsOneRow`, `repeatedDeliveryAfterStorageIsOneRow`), `IdentityIndexRegistryTest.oneRowPerRecordId`
+- [x] Identity accepts `occurredAt` only from thirty days before receipt to two minutes after it, and always stores its own `receivedAt` beside it; both are in the row and in `auditLogs` (`at`, `receivedAt`); a body outside the closed shape or the window is refused and stores nothing — `PlatformWideAuditEndToEndTest` (`occurredAtIsBounded`, `recordIdIsRequired`, `extraFieldsAreNeverStored`, `internalWriteIsClosed`)
+- [x] A start that fails (Temporal unreachable) leaves the row `PENDING`; it is started again once, when the service next starts, by a bounded pass that is not a sweep — `PlatformWideAuditDrainTest`, `PlatformWideAuditDeliveryTest.temporalDownAtStartIsRedrivenAtNextStart`, `PlatformWideAuditEndToEndTest.temporalDownAtTheStart`
+- [x] An outbox write that fails does not block the administrator, and is logged as an error and counted — `OutboxPlatformWideAuditSinkTest.outboxWriteFailureDoesNotBlock`; identity's own reaches follow the same rule — `PlatformWideAuditTrailTest.storeRefusalIsCounted`
+- [x] A delivery identity refuses for good (400 or 422) settles the row `REFUSED`, keeps it, logs an error and counts it; any other failure is retried — `PlatformWideAuditForwarderTest`
+- [x] Operators can watch the backlog: `platform.wide.audit.outbox.pending`, `platform.wide.audit.outbox.oldest.age.seconds`, `platform.wide.audit.delivered`, `platform.wide.audit.delivery.failed` and `platform.wide.audit.delivery.start.failures`, each tagged by service — `PlatformWideAuditMetricsTest`, `PlatformWideAuditForwarderTest`, `PlatformWideAuditDrainTest`
+- [ ] The residual window: a reach whose workflow start failed and whose service then never restarts stays `PENDING` until the next start (visible on the age gauge); a service that is lost together with its database before delivery loses the row. Both are accepted limits, not closed ones

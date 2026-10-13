@@ -111,6 +111,66 @@ class TemporalRegistryLintTest {
     }
 
     @Test
+    @DisplayName("§4 · a workflow implemented once in the shared library is a registry row for every queue that runs it")
+    void sharedWorkflowsAreRegisteredPerQueue() throws IOException {
+        String spec = Files.readString(SPEC);
+        Set<String> rows = new TreeSet<>();
+        Matcher row = WORKFLOW_ROW.matcher(section(spec, "### Workflow registry"));
+        while (row.find()) {
+            rows.add(row.group(1) + " on " + row.group(2));
+        }
+
+        Set<String> shared = new TreeSet<>();
+        try (Stream<Path> walk = Files.walk(BACKEND.resolve("shared-library/src/main/java"))) {
+            for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
+                Matcher declared = WORKFLOW_INTERFACE.matcher(Files.readString(file));
+                while (declared.find()) {
+                    shared.add(declared.group(1));
+                }
+            }
+        }
+        assertThat(shared).as("the shared library declares its workflow interfaces").isNotEmpty();
+
+        Pattern implementation = Pattern.compile(
+                "(?s)@WorkflowImpl\\(taskQueues\\s*=\\s*TaskQueues\\.(\\w+)\\)\\s*public class \\w+ extends \\w+\\s+implements (\\w+)");
+        Set<String> runOn = new TreeSet<>();
+        List<String> problems = new ArrayList<>();
+        for (String service : SERVICES) {
+            Set<String> queues = new TreeSet<>();
+            Map<String, String> constants = new TreeMap<>();
+            Matcher constant = Pattern.compile("public static final String (\\w+) = \"([a-z-]+)\";").matcher(Files.readString(
+                    BACKEND.resolve(service + "-service/src/main/java/com/pml/" + service + "/infrastructure/temporal/TaskQueues.java")));
+            while (constant.find()) {
+                constants.put(constant.group(1), constant.group(2));
+            }
+            try (Stream<Path> walk = Files.walk(BACKEND.resolve(service + "-service/src/main/java"))) {
+                for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
+                    Matcher impl = implementation.matcher(withoutComments(Files.readString(file)));
+                    while (impl.find()) {
+                        if (!shared.contains(impl.group(2))) {
+                            continue;
+                        }
+                        String queue = constants.get(impl.group(1));
+                        queues.add(queue);
+                        runOn.add(impl.group(2) + " on " + queue);
+                        if (queue == null || !queue.startsWith(service + "-")) {
+                            problems.add("%s runs %s on %s, which %s does not own".formatted(file.getFileName(),
+                                    impl.group(2), queue, service));
+                        }
+                    }
+                }
+            }
+        }
+        for (String used : runOn) {
+            if (!rows.contains(used)) {
+                problems.add(used + " has no §4 workflow registry row");
+            }
+        }
+        assertThat(runOn).as("each service that uses a shared workflow registers it on its own queue").isNotEmpty();
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
     @DisplayName("R5 · only infrastructure/temporal adapters and workflow packages touch WorkflowClient")
     void clientIsConfined() throws IOException {
         List<String> offenders = new ArrayList<>();

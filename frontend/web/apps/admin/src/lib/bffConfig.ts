@@ -1,4 +1,5 @@
 import type { BffConfig, createBff } from '@pml.tickets/shared/auth/bff';
+import { parseTrustProxyHops } from '@pml.tickets/shared/auth/bff/trust-proxy';
 import { STAFF_ROLES } from '@/config/navigation';
 
 /** Roles that may enter the console at all; per-module gating lives in config/navigation. */
@@ -31,12 +32,17 @@ export function adminBffConfig(env: Env, required: (name: string) => string, ove
     publicPaths: ['/login', '/unauthorized'],
     redis: { url: env.REDIS_URL },
     encKeys: required('BFF_ENC_KEYS'),
-    trustProxyHops: Number(env.TRUST_PROXY_HOPS ?? 0),
+    trustProxyHops: parseTrustProxyHops(env.TRUST_PROXY_HOPS),
     upstream: { graphql: env.GRAPHQL_URL, rest: env.API_BASE_URL },
     identity: env.IDENTITY_BASE_URL
       ? {
           baseUrl: env.IDENTITY_BASE_URL,
-          tokenUrl: `${env.KEYCLOAK_ISSUER}/protocol/openid-connect/token`,
+          // The identity service-account client lives in the buyer realm, not the staff realm this
+          // console signs into, so its token endpoint is configured separately; the issuer-derived
+          // address is only a fallback for a setup where both clients share a realm.
+          tokenUrl:
+            env.IDENTITY_TOKEN_URL?.trim() ||
+            `${env.KEYCLOAK_ISSUER}/protocol/openid-connect/token`,
           clientId: required('IDENTITY_CLIENT_ID'),
           clientSecret: required('IDENTITY_CLIENT_SECRET'),
         }

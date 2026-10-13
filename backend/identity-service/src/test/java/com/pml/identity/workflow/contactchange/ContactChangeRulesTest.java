@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,5 +38,34 @@ class ContactChangeRulesTest {
     @DisplayName("the step sequence is versioned from the first release")
     void versioned() {
         assertThat(ContactChangeRules.STEPS).isEqualTo("contact-change-steps");
+    }
+
+    private static final Instant NOW = Instant.parse("2026-10-13T08:00:00Z");
+
+    @Test
+    @DisplayName("a change may live its 48-hour wait plus a day to finish applying, and no longer")
+    void maximumLifetime() {
+        assertThat(ContactChangeRules.MAX_LIFETIME).isEqualTo(Duration.ofHours(72));
+    }
+
+    @Test
+    @DisplayName("a marker with an expiry is expired from that instant, not before")
+    void expiryBoundary() {
+        Instant expiresAt = NOW.plus(ContactChangeRules.MAX_LIFETIME);
+
+        assertThat(ContactChangeRules.expired(expiresAt, NOW, expiresAt.minusMillis(1))).isFalse();
+        assertThat(ContactChangeRules.expired(expiresAt, NOW, expiresAt)).isTrue();
+        assertThat(ContactChangeRules.expired(expiresAt, NOW, expiresAt.plusSeconds(1))).isTrue();
+    }
+
+    @Test
+    @DisplayName("a marker older than owners is aged from its own timestamp, and one with neither is never expired by the clock")
+    void legacyMarkerExpiry() {
+        Instant since = NOW.minus(Duration.ofDays(10));
+
+        assertThat(ContactChangeRules.expired(null, since, NOW)).isTrue();
+        assertThat(ContactChangeRules.expired(null, NOW.minus(ContactChangeRules.MAX_LIFETIME).plusSeconds(1), NOW)).isFalse();
+        assertThat(ContactChangeRules.expired(null, NOW.minus(ContactChangeRules.MAX_LIFETIME), NOW)).isTrue();
+        assertThat(ContactChangeRules.expired(null, null, NOW)).isFalse();
     }
 }

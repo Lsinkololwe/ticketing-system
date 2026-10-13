@@ -33,10 +33,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Channel choice, email content, capture and the no-log rule (ET-IDN-001-R2, R4). */
+/** Channel choice, email content, capture and the no-log rule. */
 @Tag("L1")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001-R2/R4 · codes go out on the contact's own channel, never silently elsewhere, and are never logged")
+@DisplayName("codes go out on the contact's own channel, never silently elsewhere, and are never logged")
 class DeliveryOrchestratorTest {
 
     /** Records what it was asked to send and optionally fails. */

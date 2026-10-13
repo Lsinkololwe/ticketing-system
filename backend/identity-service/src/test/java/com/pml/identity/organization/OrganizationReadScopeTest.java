@@ -16,7 +16,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -117,95 +116,89 @@ class OrganizationReadScopeTest {
         template.save(transfer).block();
     }
 
-    @Nested
-    @DisplayName("organizationMember, scoped by tenancy")
-    class Membership {
+    // ── organizationMember, scoped by tenancy ─────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("ET-ORG-002 · a member of the organization reads a colleague's row")
-        void colleaguesAreVisible() {
-            assertThat(memberVisibleTo(TenantScope.of("u", Set.of(ORG)))).isNotNull();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002 · someone outside the organization is refused")
-        void outsidersAreRefused() {
-            assertThat(members.findByUserIdAndOrganizationId(COLLEAGUE, ORG).block())
-                    .as("the row must exist unscoped, or this passes against an empty collection")
-                    .isNotNull();
-
-            assertThatThrownBy(() -> memberVisibleTo(TenantScope.of(OUTSIDER, Set.of(OTHER_ORG))))
-                    .as("""
-                        unscoped this returned any user's role in any organization to any signed-in \
-                        caller, and by enumeration the whole team roster""")
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode())
-                            .isEqualTo(ErrorCode.ORGANIZATION_UNKNOWN));
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002 · the selector narrows and never grants")
-        void theSelectorCannotWiden() {
-            // organizationId arrives from the client. It selects among memberships the token
-            // established; it cannot introduce one.
-            assertThatThrownBy(() -> memberVisibleToId(
-                    TenantScope.of(OUTSIDER, Set.of(OTHER_ORG)), ORG))
-                    .isInstanceOf(DomainRefusal.class);
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002 · a platform administrator reads across organizations")
-        void administratorsAreUnscoped() {
-            assertThat(memberVisibleTo(TenantScope.platformAdministrator("ops", Set.of())))
-                    .isNotNull();
-        }
+    @Test
+    @DisplayName("organizationMember, scoped by tenancy · ET-ORG-002 · a member of the organization reads a colleague's row")
+    void membership_colleaguesAreVisible() {
+        assertThat(memberVisibleTo(TenantScope.of("u", Set.of(ORG)))).isNotNull();
     }
 
-    @Nested
-    @DisplayName("ownershipTransfer, scoped to the two named parties")
-    class Transfer {
+    @Test
+    @DisplayName("organizationMember, scoped by tenancy · ET-ORG-002 · someone outside the organization is refused")
+    void membership_outsidersAreRefused() {
+        assertThat(members.findByUserIdAndOrganizationId(COLLEAGUE, ORG).block())
+                .as("the row must exist unscoped, or this passes against an empty collection")
+                .isNotNull();
 
-        @Test
-        @DisplayName("ET-ORG-002 · both parties to the handshake read it")
-        void bothPartiesRead() {
-            assertThat(transferVisibleTo(party(OWNER))).isNotNull();
-            assertThat(transferVisibleTo(party(RECIPIENT))).isNotNull();
-        }
+        assertThatThrownBy(() -> memberVisibleTo(TenantScope.of(OUTSIDER, Set.of(OTHER_ORG))))
+                .as("""
+                    unscoped this returned any user's role in any organization to any signed-in \
+                    caller, and by enumeration the whole team roster""")
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode())
+                        .isEqualTo(ErrorCode.ORGANIZATION_UNKNOWN));
+    }
 
-        @Test
-        @DisplayName("ET-ORG-002 · a third party cannot, even inside the same organization")
-        void thirdPartiesCannot() {
-            assertThat(transfers.findById(THE_TRANSFER).block())
-                    .as("the transfer must exist unscoped")
-                    .isNotNull();
+    @Test
+    @DisplayName("organizationMember, scoped by tenancy · ET-ORG-002 · the selector narrows and never grants")
+    void membership_theSelectorCannotWiden() {
+        // organizationId arrives from the client. It selects among memberships the token
+        // established; it cannot introduce one.
+        assertThatThrownBy(() -> memberVisibleToId(
+                TenantScope.of(OUTSIDER, Set.of(OTHER_ORG)), ORG))
+                .isInstanceOf(DomainRefusal.class);
+    }
 
-            assertThat(transferVisibleTo(party(COLLEAGUE)))
-                    .as("""
-                        membership of the organization is not membership of the handshake — a \
-                        transfer names who is handing control to whom, and only those two need it""")
-                    .isNull();
-        }
+    @Test
+    @DisplayName("organizationMember, scoped by tenancy · ET-ORG-002 · a platform administrator reads across organizations")
+    void membership_administratorsAreUnscoped() {
+        assertThat(memberVisibleTo(TenantScope.platformAdministrator("ops", Set.of())))
+                .isNotNull();
+    }
 
-        @Test
-        @DisplayName("ET-ORG-002 · holding ROLE_ORGANIZER is not being a party")
-        void organizerRoleIsNotAParty() {
-            // Every organizer holds this role, and holding it says nothing about this transfer.
-            assertThat(transferVisibleTo(withRoles(OUTSIDER, "ROLE_ORGANIZER"))).isNull();
-        }
+    // ── ownershipTransfer, scoped to the two named parties ────────────────────────────────────────
 
-        @Test
-        @DisplayName("ET-ORG-002 · a platform administrator reads it, because a stalled transfer is a support case")
-        void administratorsRead() {
-            assertThat(transferVisibleTo(withRoles("ops", "ROLE_ADMIN"))).isNotNull();
-        }
+    @Test
+    @DisplayName("ownershipTransfer, scoped to the two named parties · ET-ORG-002 · both parties to the handshake read it")
+    void transfer_bothPartiesRead() {
+        assertThat(transferVisibleTo(party(OWNER))).isNotNull();
+        assertThat(transferVisibleTo(party(RECIPIENT))).isNotNull();
+    }
 
-        @Test
-        @DisplayName("ET-ORG-002 · a transfer that is not yours reads like one that does not exist")
-        void foreignAndUnknownReadAlike() {
-            assertThat(transferVisibleTo(party(COLLEAGUE)))
-                    .isEqualTo(transferVisibleToId(party(COLLEAGUE), "transfer-never-issued"))
-                    .isNull();
-        }
+    @Test
+    @DisplayName("ownershipTransfer, scoped to the two named parties · ET-ORG-002 · a third party cannot, even inside the same organization")
+    void transfer_thirdPartiesCannot() {
+        assertThat(transfers.findById(THE_TRANSFER).block())
+                .as("the transfer must exist unscoped")
+                .isNotNull();
+
+        assertThat(transferVisibleTo(party(COLLEAGUE)))
+                .as("""
+                    membership of the organization is not membership of the handshake — a \
+                    transfer names who is handing control to whom, and only those two need it""")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("ownershipTransfer, scoped to the two named parties · ET-ORG-002 · holding ROLE_ORGANIZER is not being a party")
+    void transfer_organizerRoleIsNotAParty() {
+        // Every organizer holds this role, and holding it says nothing about this transfer.
+        assertThat(transferVisibleTo(withRoles(OUTSIDER, "ROLE_ORGANIZER"))).isNull();
+    }
+
+    @Test
+    @DisplayName("ownershipTransfer, scoped to the two named parties · ET-ORG-002 · a platform administrator reads it, because a stalled transfer is a support case")
+    void transfer_administratorsRead() {
+        assertThat(transferVisibleTo(withRoles("ops", "ROLE_ADMIN"))).isNotNull();
+    }
+
+    @Test
+    @DisplayName("ownershipTransfer, scoped to the two named parties · ET-ORG-002 · a transfer that is not yours reads like one that does not exist")
+    void transfer_foreignAndUnknownReadAlike() {
+        assertThat(transferVisibleTo(party(COLLEAGUE)))
+                .isEqualTo(transferVisibleToId(party(COLLEAGUE), "transfer-never-issued"))
+                .isNull();
     }
 
     // ── the rules under test, exactly as the resolvers apply them ────────────

@@ -85,7 +85,7 @@ const IDENTITY_SERVICE_URL = '/api/rest/api/v1';
 
 /** Constant header the BFF requires on unsafe methods (same-origin only). */
 function bffHeaders(): HeadersInit {
-  return { 'Content-Type': 'application/json', 'x-pml-csrf': '1' };
+  return { 'Content-Type': 'application/json', 'x-requested-with': 'pml-web' };
 }
 
 // ==================== API Functions ====================

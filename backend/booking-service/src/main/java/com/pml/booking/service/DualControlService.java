@@ -11,6 +11,7 @@ import com.pml.shared.error.DomainRefusal;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
 import com.pml.shared.security.SecurityContextUtils;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -79,7 +80,8 @@ public class DualControlService {
                 return Mono.<RecoveryProposal>error(new TranslatedRefusal(ErrorCode.ACTOR_NOT_PERMITTED,
                         "proposing " + action + " needs the " + action.requiredRole() + " role"));
             }
-            return store(action, subjectIds, amount, parameters, reason, proposer);
+            return PlatformWideAccess.recordStaffAct(PlatformWideAccess.Reason.RECOVERY_ACTION_PROPOSE, action.name())
+                    .then(Mono.defer(() -> store(action, subjectIds, amount, parameters, reason, proposer)));
         }));
     }
 
@@ -98,7 +100,10 @@ public class DualControlService {
             if (unreasoned != null) {
                 return Mono.<RecoveryProposal>error(unreasoned);
             }
-            return store(RecoveryAction.TRANSFER_PLATFORM_FUNDS, List.of(from.name(), to.name()), amount, Map.of(), reason, proposer);
+            return PlatformWideAccess.recordStaffAct(PlatformWideAccess.Reason.RECOVERY_ACTION_PROPOSE,
+                            RecoveryAction.TRANSFER_PLATFORM_FUNDS.name())
+                    .then(Mono.defer(() -> store(RecoveryAction.TRANSFER_PLATFORM_FUNDS, List.of(from.name(), to.name()),
+                            amount, Map.of(), reason, proposer)));
         }));
     }
 
@@ -143,7 +148,10 @@ public class DualControlService {
                                     FindAndModifyOptions.options().returnNew(true), RecoveryProposal.class)
                             .switchIfEmpty(Mono.error(() -> new TranslatedRefusal(ErrorCode.TRANSACTION_NOT_RECOVERABLE,
                                     "the proposal was decided while you were confirming it", Map.of("currentStatus", "DECIDED"))))
-                            .flatMap(confirmed -> run(confirmed, confirmer)
+                            // Recorded once this confirmer has won, so a lost race leaves no row for an act that did not happen.
+                            .flatMap(confirmed -> PlatformWideAccess.recordStaffAct(
+                                            PlatformWideAccess.Reason.RECOVERY_ACTION_CONFIRM, confirmed.getAction().name())
+                                    .then(Mono.defer(() -> run(confirmed, confirmer)))
                                     .flatMap(outcome -> template.findAndModify(
                                             Query.query(Criteria.where("_id").is(proposalId)),
                                             new Update().set("outcome", outcome).inc("version", 1),

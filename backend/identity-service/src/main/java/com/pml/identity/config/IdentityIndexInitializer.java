@@ -317,10 +317,20 @@ public class IdentityIndexInitializer {
                         .unique()
                         .build(),
 
-                // bounded growth
-                IndexSpec.on(IdentityCollections.AUDIT_LOGS, "idx_createdAt_ttl")
-                        .asc("createdAt")
-                        .expireAfter(Duration.ofDays(365))
+                // Audit rows are kept indefinitely, by decision: they are evidence, and the application
+                // offers no way to remove one. There is deliberately NO expiry index on this collection.
+                // The one that used to be here was attached to a field no audit row ever carried, so it
+                // never removed anything, and it was dropped so that nobody later writes that field and
+                // starts deleting evidence. IdentityIndexRegistryTest pins that none exists.
+                //
+                // One row per platform-wide reach: a delivery repeated by the sending service (its retry
+                // after a slow answer, or a re-drive after a restart) carries the same recordId and
+                // collides here instead of becoming a second row. Partial on string so every other audit
+                // row, which has no recordId, is left out of the constraint.
+                IndexSpec.on(IdentityCollections.AUDIT_LOGS, "uniq_recordId")
+                        .asc("recordId")
+                        .unique()
+                        .partialWhereTypeIs("recordId", "string")
                         .build(),
 
                 // **hot** — the drain's claim, every poll
@@ -398,8 +408,12 @@ public class IdentityIndexInitializer {
                 IndexSpec.on(IdentityCollections.VERIFICATION_DOCUMENTS, "organizationId").asc("organizationId").build());
     }
 
+    /** The expiry index earlier versions created on the audit collection; removed at start-up where it still exists. */
+    static final String LEGACY_AUDIT_EXPIRY_INDEX = "idx_createdAt_ttl";
+
     @EventListener(ApplicationReadyEvent.class)
     public void ensureIndexes() {
+        dropLegacyAuditExpiry();
         IndexEnsurer.Report report = new IndexEnsurer(mongoTemplate)
                 .ensure(startupSpecifications())
                 // Boot-time work, so blocking on the main thread is allowed here: nothing
@@ -409,5 +423,19 @@ public class IdentityIndexInitializer {
         if (report != null && !report.isClean()) {
             log.error("identity-service index registry is not satisfied: {}", report);
         }
+    }
+
+    /**
+     * Audit rows are never to expire, so an expiry index left on the collection by an earlier version is
+     * removed. It matched nothing while no row carried its field, but it would start deleting evidence the
+     * day one did. A database that never had it answers "index not found", which is the wanted state.
+     */
+    void dropLegacyAuditExpiry() {
+        mongoTemplate.indexOps(IdentityCollections.AUDIT_LOGS).dropIndex(LEGACY_AUDIT_EXPIRY_INDEX)
+                .onErrorResume(absent -> {
+                    log.debug("No legacy audit expiry index to drop: {}", absent.getMessage());
+                    return reactor.core.publisher.Mono.empty();
+                })
+                .block();
     }
 }

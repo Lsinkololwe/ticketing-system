@@ -51,7 +51,7 @@ import static org.mockito.Mockito.when;
 @Tag("L2")
 @Tag("ET-IDN-004")
 @Tag("ET-IDN-002")
-@DisplayName("ET-IDN-004 · suspend, unsuspend, delete and roles keep Mongo, Keycloak and the revocation in step")
+@DisplayName("suspend, unsuspend, delete and roles keep Mongo, Keycloak and the revocation in step")
 class AccountServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-10-04T10:00:00Z");

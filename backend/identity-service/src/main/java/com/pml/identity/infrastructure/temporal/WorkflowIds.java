@@ -55,6 +55,16 @@ public final class WorkflowIds {
         return "contact-change/" + require(accountId);
     }
 
+    /**
+     * The one creation of a staff account for a sign-in address: {@code staff-create/{staffKey}}.
+     *
+     * <p>The key is the keyed hash of the staff member's address, so two requests for the same person
+     * meet one execution, and the address itself never reaches Temporal's ids or visibility store.
+     */
+    public static String staffAccountCreate(String staffKey) {
+        return "staff-create/" + requireContactKey(staffKey);
+    }
+
     private static final java.util.regex.Pattern CONTACT_KEY = java.util.regex.Pattern.compile("[0-9a-f]{64}");
 
     private static String requireContactKey(String contactKey) {

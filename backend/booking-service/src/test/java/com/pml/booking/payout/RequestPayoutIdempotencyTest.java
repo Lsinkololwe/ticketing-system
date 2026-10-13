@@ -97,7 +97,7 @@ class RequestPayoutIdempotencyTest {
         when(escrows.findById("escrow-1")).thenReturn(Mono.just(escrow));
 
         return new PayoutRequestMutationResolver(mock(PayoutRequestService.class), mock(TenantReads.class),
-                mock(PayoutRecoveryService.class), identity, escrows, new com.pml.booking.security.PayoutAccess(identity), process, guard, new ObjectMapper().findAndRegisterModules());
+                mock(PayoutRecoveryService.class), escrows, new com.pml.booking.security.PayoutAccess(identity), process, guard, new ObjectMapper().findAndRegisterModules());
     }
 
     private CreatePayoutRequestInput input(String key) {

@@ -393,7 +393,7 @@ describe.skipIf(!enabled)(
             method: "POST",
             headers: {
               origin: APP,
-              "x-pml-csrf": "1",
+              "x-requested-with": "pml-web",
               "content-type": "application/json",
               "x-forwarded-for": "198.51.100.1",
             },
@@ -454,8 +454,8 @@ describe.skipIf(!enabled)(
       expect(out.status).toBe(303);
       expect(await currentSession()).toBeNull();
       expect(revocations.length).toBeGreaterThan(before);
-      const end = await browser.go(out.headers.get("location") as string, APP);
-      expect(end.location).toMatch(/^http:\/\/localhost:3000\/?/);
+      // Keycloak was told to end the session from the server, so the browser is sent straight back to the app.
+      expect(out.headers.get("location")).toBe(`${APP}/`);
       // the Keycloak SSO cookie is gone: authorize without a handle shows a page (the contact screen)
       const probe = await browser.go(
         `${base}/realms/myticketzm/protocol/openid-connect/auth?client_id=myticketzm-web&response_type=code&scope=openid&redirect_uri=${encodeURIComponent(APP + "/api/auth/callback")}&state=x&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256`,

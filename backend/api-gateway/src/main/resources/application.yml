@@ -78,6 +78,17 @@ spring:
                     redis-rate-limiter.replenishRate: 100
                     redis-rate-limiter.burstCapacity: 200
                     key-resolver: "#{@ipKeyResolver}"
+            # Keycloak's account console and account REST API let a signed-in buyer edit their own
+            # profile, including e-mail and phone number, without the verification the platform
+            # requires. Contacts change only through the verified contact-change flow, so these
+            # paths are answered with 404 here and never forwarded. This route must stay above
+            # keycloak-realm, which would otherwise forward them.
+            - id: keycloak-account-blocked
+              uri: no://op
+              predicates:
+                - Path=/realms/*/account,/realms/*/account/**,/realms/*/account*
+              filters:
+                - SetStatus=404
             - id: keycloak-realm
               uri: ${KEYCLOAK_URL:http://localhost:8084}
               predicates:
@@ -114,9 +125,6 @@ spring:
                 - name: CircuitBreaker
                   args:
                     name: keycloakCircuitBreaker
-          # NOTE: RequestRateLimiter removed from default-filters because it causes
-          # UnsupportedOperationException when adding headers to already-committed
-          # streaming responses (like GraphQL). Apply rate limiting per-route instead.
           default-filters: []
 
   data:

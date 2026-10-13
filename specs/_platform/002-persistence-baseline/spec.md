@@ -287,6 +287,7 @@ discriminator, and no persisted document SHALL contain a fully-qualified Java cl
 | `catalog_migration_runs` | no | this service's document-version backfills | ET-PLT-010 |
 | `catalog_outbox` | no | staged cross-service events, written in the business transaction | ET-PLT-003 |
 | `catalog_media` | **yes** | uploaded images: organizations' own and the platform's stock | ET-CAT-004 |
+| `catalog_platform_wide_audit_outbox` | no | platform-wide reaches kept locally until identity confirms them: the facts of the reach and its delivery state, nothing else | ET-PLT-009 |
 
 **booking-service**
 
@@ -324,6 +325,7 @@ discriminator, and no persisted document SHALL contain a fully-qualified Java cl
 | `booking_statistics_rollups` | no | precomputed finance and sales statistics | ET-ADM-004 |
 | `booking_migration_runs` | no | this service's document-version backfills | ET-PLT-010 |
 | `booking_outbox` | no | staged cross-service events, written in the business transaction | ET-PLT-003 |
+| `booking_platform_wide_audit_outbox` | no | platform-wide reaches kept locally until identity confirms them: the facts of the reach and its delivery state, nothing else | ET-PLT-009 |
 
 **identity-service**
 
@@ -362,7 +364,7 @@ discriminator, and no persisted document SHALL contain a fully-qualified Java cl
 | `identity_system_alerts` | no | operational alerts raised by services and the health probe, with their acknowledgement | ET-ADM-005 |
 | `identity_announcements` | no | administrator announcements shown to a segment in a time window | ET-ADM-005 |
 
-**78 collections** — catalog 14, booking 32, identity 32. No other collection exists.
+**80 collections** — catalog 15, booking 33, identity 32. No other collection exists.
 
 **Ten rows marked versioned to match the code, 2026-09-19.** `booking_tickets`,
 `booking_journal_entries`, `booking_payment_attempts`, `booking_chargebacks`,
@@ -456,7 +458,9 @@ cannot win by checking first.
 | `identity_verification_documents` | `{ organizationId: 1, documentType: 1 }` | compound | the review panel |
 | `identity_notifications` | `{ userId: 1, status: 1, createdAt: -1 }` | compound | the notification feed |
 | `identity_user_devices` | `{ deviceToken: 1 }` | unique | one registration per device |
-| `identity_audit_logs` | `{ createdAt: 1 }` | TTL, retention per ET-PLT-009 | bounded growth |
+| `identity_audit_logs` | `{ recordId: 1 }` | **partial unique** where `recordId` is a string | one row per platform-wide reach: a delivery repeated by the sending service meets this index instead of becoming a second row. There is deliberately no TTL index on this collection: audit rows are kept indefinitely |
+| `booking_platform_wide_audit_outbox` | `{ state: 1, occurredAt: 1 }` | compound | the backlog (what still waits for identity, oldest first) read by the start-up re-drive and the backlog gauges |
+| `catalog_platform_wide_audit_outbox` | `{ state: 1, occurredAt: 1 }` | compound | the same, for catalog's reaches |
 | `catalog_events` | `{ status: 1, eventDateTime: 1 }` | compound | **hot** — public discovery |
 | `catalog_events` | `{ organizationId: 1, status: 1 }` | compound | the organizer dashboard |
 | `catalog_events` | `{ status: 1, categoryId: 1, eventDateTime: 1 }` | compound | discovery by category |

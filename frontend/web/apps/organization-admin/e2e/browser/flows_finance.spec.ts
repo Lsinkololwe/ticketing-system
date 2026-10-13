@@ -44,7 +44,7 @@ test('payout request: dialog, eligibility, submit; failure keeps dialog', async 
   expect(upstream.calls('CreatePayoutRequest')[0].variables).toMatchObject({ input: { escrowAccountId: 'esc-2' } });
 });
 
-test('payout request: two rapid submissions carry the same idempotency key (TS-6)', async ({ page, upstream, signInAs }, info) => {
+test('payout request: two rapid submissions carry the same idempotency key', async ({ page, upstream, signInAs }, info) => {
   // A delayed response widens the window a true double-tap race falls into: the mutation is
   // still in flight when the second click lands — before React has re-rendered the button into
   // its disabled/loading state, which is the one thing standing between a double-tap and two

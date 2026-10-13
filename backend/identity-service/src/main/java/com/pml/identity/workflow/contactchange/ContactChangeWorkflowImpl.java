@@ -112,7 +112,8 @@ public class ContactChangeWorkflowImpl implements ContactChangeWorkflow {
                 cleanup.clearMarker(command.accountId());
             } catch (ActivityFailure cancelled) {
                 // The cleanup retries until it lands, so reaching here means the workflow itself was
-                // terminated mid-cleanup; the marker stays until the account's change is cleared by hand.
+                // terminated mid-cleanup. The marker stays, naming this run, and the next attempt on the
+                // account finds the run closed and releases it (with any claim this change left behind).
             }
         }).run();
     }

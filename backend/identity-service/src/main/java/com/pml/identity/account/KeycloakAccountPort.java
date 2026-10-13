@@ -6,7 +6,7 @@ import reactor.core.publisher.Mono;
 import java.util.Set;
 
 /**
- * The id-keyed Keycloak admin operations the account workflow activities use (CONTRACT 12).
+ * The id-keyed Keycloak admin operations the account workflow activities use.
  * Nothing else writes Keycloak users. Implementations send a FULL user representation on every
  * update and treat a 409 on create as "read it back by username".
  */

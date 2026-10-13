@@ -145,17 +145,34 @@ class TeamFinancialAccessTest {
     }
 
     @Test
-    @DisplayName("Platform finance staff acting for an organizer are held to the organizer's own authority")
-    void staffAreCheckedAsTheOrganizer() {
+    @DisplayName("Platform staff who are not members cannot request a payout for an organizer, and identity is never asked")
+    void staffWhoAreNotMembersAreRefused() {
+        PayoutProcess process = mock(PayoutProcess.class);
+        when(identity.checkAuthorization(any())).thenReturn(Mono.just(AuthorizationResult.authorizedAsOwner(ORG)));
+
+        for (String role : List.of("ROLE_FINANCE", "ROLE_ADMIN", "ROLE_SUPER_ADMIN")) {
+            assertThatThrownBy(() -> asStaff("user-staff", role, resolver(process).createPayoutRequest(input())).block())
+                    .as(role)
+                    .isInstanceOfSatisfying(DomainRefusal.class,
+                            refusal -> assertThat(refusal.errorCode()).isEqualTo(ErrorCode.ESCROW_ACCOUNT_UNKNOWN));
+        }
+        verify(identity, never()).checkAuthorization(any());
+        verify(process, never()).request(any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("A holder of an event grant is asked about the event, and identity's answer decides alone")
+    void eventGrantDecidesAlone() {
         PayoutProcess process = mock(PayoutProcess.class);
         ArgumentCaptor<AuthorizationRequest> asked = ArgumentCaptor.forClass(AuthorizationRequest.class);
-        when(identity.checkAuthorization(asked.capture())).thenReturn(Mono.just(AuthorizationResult.denied("organization pending review")));
+        when(identity.checkAuthorization(asked.capture())).thenReturn(Mono.just(AuthorizationResult.authorizedAsMember(ORG, "ADMIN")));
+        when(process.request(any(), anyString(), anyString())).thenReturn(Mono.just(new PayoutRequest()));
 
-        assertThatThrownBy(() -> as("user-finance", List.of(new SimpleGrantedAuthority("ROLE_FINANCE")),
-                resolver(process).createPayoutRequest(input())).block())
-                .isInstanceOfSatisfying(DomainRefusal.class,
-                        refusal -> assertThat(refusal.errorCode()).isEqualTo(ErrorCode.ACTOR_NOT_PERMITTED));
-        assertThat(asked.getValue().getUserId()).isEqualTo(ORGANIZER);
+        as("grant-holder", List.of(), resolver(process).createPayoutRequest(input())).block();
+
+        assertThat(asked.getValue().getEventId()).isEqualTo("event-1");
+        assertThat(asked.getValue().getUserId()).isEqualTo("grant-holder");
+        verify(process).request(any(), org.mockito.ArgumentMatchers.eq("grant-holder"), org.mockito.ArgumentMatchers.eq(ORG));
     }
 
     private static com.pml.booking.domain.model.EventEscrowAccount escrow(String organizationId) {
@@ -168,7 +185,7 @@ class TeamFinancialAccessTest {
 
     private PayoutRequestMutationResolver resolver(PayoutProcess process) {
         return new PayoutRequestMutationResolver(mock(PayoutRequestService.class), mock(TenantReads.class),
-                mock(PayoutRecoveryService.class), identity, escrows, new com.pml.booking.security.PayoutAccess(identity), process,
+                mock(PayoutRecoveryService.class), escrows, new com.pml.booking.security.PayoutAccess(identity), process,
                 com.pml.shared.testing.IdempotencyPassthrough.guard(),
                 new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
     }
@@ -191,5 +208,14 @@ class TeamFinancialAccessTest {
         // The caller is a member of the organization, whatever platform role they carry.
         return call.contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(TenantScope.of(userId, java.util.Set.of(ORG)))))
                 .contextWrite(ReactiveSecurityContextHolder.withAuthentication(new JwtAuthenticationToken(jwt, authorities)));
+    }
+
+    /** A staff member whose tenant-wide scope names no membership of the organization. */
+    private static <T> Mono<T> asStaff(String userId, String role, Mono<T> call) {
+        Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject(userId).build();
+        return call.contextWrite(ctx -> CurrentTenantScope.seed(ctx,
+                        Mono.just(TenantScope.platformAdministrator(userId, java.util.Set.of()))))
+                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(
+                        new JwtAuthenticationToken(jwt, List.of(new SimpleGrantedAuthority(role)))));
     }
 }

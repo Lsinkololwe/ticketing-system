@@ -11,7 +11,7 @@ import { humanize, money } from '@/lib/format';
 import { asNumber, FormDialog, useOpRunner } from './shared';
 import { PAYOUT_ISSUE_TYPE_LABELS, PAYOUT_RESOLUTION_TYPE_LABELS, enumValues } from '@/lib/enumLabels';
 
-export type PayoutAction = 'approve' | 'reject' | 'process' | 'complete' | 'retry' | 'resume' | 'escalate' | 'mark' | 'resolve' | 'hold' | 'release';
+export type PayoutAction = 'approve' | 'reject' | 'process' | 'complete' | 'retry' | 'escalate' | 'mark' | 'resolve' | 'hold' | 'release';
 
 export const ISSUE_TYPES: PayoutIssueType[] = enumValues(PAYOUT_ISSUE_TYPE_LABELS);
 export const RESOLUTIONS: PayoutResolutionType[] = enumValues(PAYOUT_RESOLUTION_TYPE_LABELS);
@@ -131,19 +131,6 @@ export function usePayoutActions(onDone: () => void): { start: (action: PayoutAc
         onConfirm={() => {
           if (!p) return;
           void run(ops.retryPayout(p.id), `Payout ${p.requestId} retried`, done).then(close);
-        }}
-      />
-
-      <ConfirmDialog
-        open={a === 'resume'}
-        onClose={close}
-        title={p ? `Resume payout ${p.requestId}?` : ''}
-        description="Continues from the last successful step without creating a new transfer."
-        confirmLabel="Resume"
-        loading={ops.submitting}
-        onConfirm={() => {
-          if (!p) return;
-          void run(ops.resumePayout(p.id), `Payout ${p.requestId} resumed`, done).then(close);
         }}
       />
 

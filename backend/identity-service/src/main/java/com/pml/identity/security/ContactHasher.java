@@ -14,7 +14,7 @@ import java.util.Optional;
 
 /**
  * Turns what a person typed into a contact identity: the normalised value, its contact key and
- * its display mask (CONTRACT 3). The normalised value must not be logged or stored outside
+ * its display mask. The normalised value must not be logged or stored outside
  * {@code valueEncrypted}; callers keep {@link Normalized#value()} only as long as they need it.
  */
 @Component

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { bff } from "@/lib/bff";
-import { callIdentity } from "@/lib/server/identity";
+import { addressForIdentity, callIdentity } from "@/lib/server/identity";
 import { guardMutation, problem } from "@/lib/server/http";
 import { cookieValue } from "@/lib/server/cookies";
 
@@ -65,7 +65,8 @@ export async function POST(req: Request) {
         ...(type === "WHATSAPP" || type === "EMAIL" ? { type } : {}),
       },
       ...(regionHint ? { regionHint } : {}),
-      clientIp: ctx.clientIp,
+      // Always a real address literal: the identity service refuses anything else.
+      clientIp: addressForIdentity(ctx.clientIp),
       deviceId,
       ...(channel === "WHATSAPP" || channel === "EMAIL"
         ? { preferredChannel: channel }

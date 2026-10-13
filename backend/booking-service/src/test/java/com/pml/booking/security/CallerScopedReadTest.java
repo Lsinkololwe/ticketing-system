@@ -13,7 +13,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -96,69 +95,63 @@ class CallerScopedReadTest {
         template.save(r).block();
     }
 
-    @Nested
-    @DisplayName("with no selector")
-    class NoSelector {
+    // ── with no selector ──────────────────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("ET-PLT-007 · a member of two organizations sees both, and only those")
-        void seesEveryOrganizationOfTheirOwn() {
-            // The multi-organization case ActorOrganizationResolver gets wrong by returning
-            // organizations.get(0): one of these two would silently vanish.
-            List<String> seen = idsFor(TenantScope.of("u", Set.of(MINE, ALSO_MINE)), null);
+    @Test
+    @DisplayName("with no selector · ET-PLT-007 · a member of two organizations sees both, and only those")
+    void noSelector_seesEveryOrganizationOfTheirOwn() {
+        // The multi-organization case ActorOrganizationResolver gets wrong by returning
+        // organizations.get(0): one of these two would silently vanish.
+        List<String> seen = idsFor(TenantScope.of("u", Set.of(MINE, ALSO_MINE)), null);
 
-            assertThat(seen).containsExactlyInAnyOrder("payout-mine-1", "payout-mine-2", "payout-also-mine");
-            assertThat(seen).doesNotContain("payout-theirs-1", "payout-theirs-2");
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · a caller with no memberships is refused, not shown an empty page")
-        void noMembershipsIsRefused() {
-            // An empty page would say "you have no payouts". A refusal says nothing at all,
-            // which is the only honest answer to a caller who cannot see the resource.
-            assertThatThrownBy(() -> idsFor(TenantScope.of("u", Set.of()), null))
-                    .isInstanceOf(DomainRefusal.class);
-        }
+        assertThat(seen).containsExactlyInAnyOrder("payout-mine-1", "payout-mine-2", "payout-also-mine");
+        assertThat(seen).doesNotContain("payout-theirs-1", "payout-theirs-2");
     }
 
-    @Nested
-    @DisplayName("with a selector")
-    class WithSelector {
+    @Test
+    @DisplayName("with no selector · ET-PLT-007 · a caller with no memberships is refused, not shown an empty page")
+    void noSelector_noMembershipsIsRefused() {
+        // An empty page would say "you have no payouts". A refusal says nothing at all,
+        // which is the only honest answer to a caller who cannot see the resource.
+        assertThatThrownBy(() -> idsFor(TenantScope.of("u", Set.of()), null))
+                .isInstanceOf(DomainRefusal.class);
+    }
 
-        @Test
-        @DisplayName("ET-PLT-007 · selecting one of my organizations narrows to it")
-        void narrowsToTheSelectedOrganization() {
-            List<String> seen = idsFor(TenantScope.of("u", Set.of(MINE, ALSO_MINE)), MINE);
+    // ── with a selector ───────────────────────────────────────────────────────────────────────────
 
-            assertThat(seen).containsExactlyInAnyOrder("payout-mine-1", "payout-mine-2");
-            assertThat(seen).doesNotContain("payout-also-mine");
-        }
+    @Test
+    @DisplayName("with a selector · ET-PLT-007 · selecting one of my organizations narrows to it")
+    void withSelector_narrowsToTheSelectedOrganization() {
+        List<String> seen = idsFor(TenantScope.of("u", Set.of(MINE, ALSO_MINE)), MINE);
 
-        @Test
-        @DisplayName("ET-PLT-007 · selecting somebody else's organization refuses, and reveals nothing")
-        void cannotSelectAnotherTenant() {
-            // The row is present and reachable unscoped. Without this the refusal below would
-            // pass just as happily against an empty collection.
-            assertThat(payouts.findById("payout-theirs-1").block()).isNotNull();
+        assertThat(seen).containsExactlyInAnyOrder("payout-mine-1", "payout-mine-2");
+        assertThat(seen).doesNotContain("payout-also-mine");
+    }
 
-            DomainRefusal onTheirs = refusal(TenantScope.of("u", Set.of(MINE)), THEIRS);
-            DomainRefusal onNothing = refusal(TenantScope.of("u", Set.of(MINE)), "org-never-issued");
+    @Test
+    @DisplayName("with a selector · ET-PLT-007 · selecting somebody else's organization refuses, and reveals nothing")
+    void withSelector_cannotSelectAnotherTenant() {
+        // The row is present and reachable unscoped. Without this the refusal below would
+        // pass just as happily against an empty collection.
+        assertThat(payouts.findById("payout-theirs-1").block()).isNotNull();
 
-            assertThat(onTheirs.errorCode()).isEqualTo(onNothing.errorCode());
-            assertThat(onTheirs.details()).isEqualTo(onNothing.details()).isEmpty();
-        }
+        DomainRefusal onTheirs = refusal(TenantScope.of("u", Set.of(MINE)), THEIRS);
+        DomainRefusal onNothing = refusal(TenantScope.of("u", Set.of(MINE)), "org-never-issued");
 
-        @Test
-        @DisplayName("ET-PLT-007 · the selector cannot widen beyond the caller's memberships")
-        void selectorNeverGrants() {
-            // The distinction from payoutRequestsByOrganizer(organizerId), which answers for
-            // whatever id arrives. Here the argument may only ever narrow a set the token fixed.
-            assertThatThrownBy(() -> idsFor(TenantScope.of("u", Set.of(MINE)), THEIRS))
-                    .isInstanceOf(DomainRefusal.class);
-            assertThat(idsFor(TenantScope.of("u", Set.of(MINE)), null))
-                    .as("without a selector the caller still sees only their own")
-                    .containsExactlyInAnyOrder("payout-mine-1", "payout-mine-2");
-        }
+        assertThat(onTheirs.errorCode()).isEqualTo(onNothing.errorCode());
+        assertThat(onTheirs.details()).isEqualTo(onNothing.details()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("with a selector · ET-PLT-007 · the selector cannot widen beyond the caller's memberships")
+    void withSelector_selectorNeverGrants() {
+        // The distinction from payoutRequestsByOrganizer(organizerId), which answers for
+        // whatever id arrives. Here the argument may only ever narrow a set the token fixed.
+        assertThatThrownBy(() -> idsFor(TenantScope.of("u", Set.of(MINE)), THEIRS))
+                .isInstanceOf(DomainRefusal.class);
+        assertThat(idsFor(TenantScope.of("u", Set.of(MINE)), null))
+                .as("without a selector the caller still sees only their own")
+                .containsExactlyInAnyOrder("payout-mine-1", "payout-mine-2");
     }
 
     @Test
@@ -181,48 +174,45 @@ class CallerScopedReadTest {
     }
 
 
-    @Nested
-    @DisplayName("subject-scoped reads")
-    class SubjectScoped {
+    // ── subject-scoped reads ──────────────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("ET-PLT-007 · the subject comes from the token, and there is no argument to override it")
-        void subjectIsTheToken() {
-            String subject = CallerScope.subject()
-                    .contextWrite(ctx -> CurrentTenantScope.seed(ctx,
-                            Mono.just(TenantScope.of("user-buyer-7", Set.of()))))
-                    .block();
+    @Test
+    @DisplayName("subject-scoped reads · ET-PLT-007 · the subject comes from the token, and there is no argument to override it")
+    void subjectScoped_subjectIsTheToken() {
+        String subject = CallerScope.subject()
+                .contextWrite(ctx -> CurrentTenantScope.seed(ctx,
+                        Mono.just(TenantScope.of("user-buyer-7", Set.of()))))
+                .block();
 
-            assertThat(subject)
-                    .as("""
-                        ET-FIN-004 declares myRefundRequests AUTHENTICATED with no id argument. \
-                        A buyer is not a tenant, so this deliberately ignores memberships — the \
-                        caller above has none and is still answered.""")
-                    .isEqualTo("user-buyer-7");
-        }
+        assertThat(subject)
+                .as("""
+                    ET-FIN-004 declares myRefundRequests AUTHENTICATED with no id argument. \
+                    A buyer is not a tenant, so this deliberately ignores memberships — the \
+                    caller above has none and is still answered.""")
+                .isEqualTo("user-buyer-7");
+    }
 
-        @Test
-        @DisplayName("ET-PLT-007 · an unauthenticated caller is told so, not told their refunds do not exist")
-        void unauthenticatedSaysSo() {
-            // TenantBoundary's disguise is for cross-tenant reaches, where a supplied id would
-            // otherwise be confirmed. Nothing is supplied here, so there is no oracle to close —
-            // and answering *_UNKNOWN would tell a signed-out user their own refunds are gone.
-            assertThatThrownBy(() -> CallerScope.subject()
-                    .contextWrite(ctx -> CurrentTenantScope.seed(ctx,
-                            Mono.just(TenantScope.denyAll(null))))
-                    .block())
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(t -> assertThat(((DomainRefusal) t).errorCode())
-                            .isEqualTo(ErrorCode.ACTOR_NOT_AUTHENTICATED));
-        }
+    @Test
+    @DisplayName("subject-scoped reads · ET-PLT-007 · an unauthenticated caller is told so, not told their refunds do not exist")
+    void subjectScoped_unauthenticatedSaysSo() {
+        // TenantBoundary's disguise is for cross-tenant reaches, where a supplied id would
+        // otherwise be confirmed. Nothing is supplied here, so there is no oracle to close —
+        // and answering *_UNKNOWN would tell a signed-out user their own refunds are gone.
+        assertThatThrownBy(() -> CallerScope.subject()
+                .contextWrite(ctx -> CurrentTenantScope.seed(ctx,
+                        Mono.just(TenantScope.denyAll(null))))
+                .block())
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(t -> assertThat(((DomainRefusal) t).errorCode())
+                        .isEqualTo(ErrorCode.ACTOR_NOT_AUTHENTICATED));
+    }
 
-        @Test
-        @DisplayName("ET-PLT-007 · without a scope in the context the read fails rather than proceeding")
-        void missingScopeFailsClosedForSubject() {
-            assertThatThrownBy(() -> CallerScope.subject().block())
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("TenantScopeWebFilter");
-        }
+    @Test
+    @DisplayName("subject-scoped reads · ET-PLT-007 · without a scope in the context the read fails rather than proceeding")
+    void subjectScoped_missingScopeFailsClosedForSubject() {
+        assertThatThrownBy(() -> CallerScope.subject().block())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("TenantScopeWebFilter");
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────

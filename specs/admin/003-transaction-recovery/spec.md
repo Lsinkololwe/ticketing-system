@@ -291,6 +291,12 @@ Subgraph `booking`. Every field `FINANCE` or higher, every field `@tag(name: "ad
 [ET-FIN-004](../../finance/004-refunds-and-chargebacks/) declare — listed here because this
 is where an operator reaches them, not because this spec redeclares them.
 
+There is no "resume" action for a payout that is still processing with an error. An earlier build
+offered one (`resumePayoutRequest`), but it only ever re-drove a payout in the failed state, so
+it was refused for the case it was shown for and its dialog described something that did not
+happen. It was removed on 2026-10-13: a payout that is still processing is waited on or looked
+up with `requeryProvider`, and only a failed payout is retried.
+
 ### Ordering
 
 ```

@@ -15,10 +15,10 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Wire names, key names and what the value objects print (CONTRACT 4 and 6). Pure: L1. */
+/** Wire names, key names and what the value objects print. Pure: L1. */
 @Tag("L1")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001 · wire shapes follow the contract and value objects never print a contact or a code")
+@DisplayName("wire shapes follow the contract and value objects never print a contact or a code")
 class AuthWireShapesTest {
 
     private final ObjectMapper json = new ObjectMapper();

@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @Tag("L2")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004 · account provisioning steps are repeatable and keep one account per contact")
+@DisplayName("account provisioning steps are repeatable and keep one account per contact")
 class AccountProvisioningTest {
 
     private static final Instant NOW = Instant.parse("2026-10-04T10:00:00Z");

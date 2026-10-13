@@ -36,7 +36,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * The state changes of an account: suspension, deletion and roles (CONTRACT 2, 9).
+ * The state changes of an account: suspension, deletion and roles.
  *
  * <h2>Order of writes</h2>
  * <ul>

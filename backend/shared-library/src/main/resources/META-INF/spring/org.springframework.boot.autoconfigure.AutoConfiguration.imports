@@ -14,5 +14,6 @@ com.pml.shared.security.tenancy.TenantScopeAutoConfiguration
 com.pml.shared.event.ConsumerRetryAutoConfiguration
 com.pml.shared.security.InternalServiceClientAutoConfiguration
 com.pml.shared.security.tenancy.RemoteTenantMembershipsAutoConfiguration
+com.pml.shared.security.tenancy.PlatformWideAuditDeliveryAutoConfiguration
 com.pml.shared.security.ServiceSecurityAutoConfiguration
 com.pml.shared.security.revocation.RemoteRevocationStoreAutoConfiguration

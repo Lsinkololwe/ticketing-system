@@ -24,7 +24,10 @@ public class ContactChangeActivitiesImpl implements ContactChangeActivities {
 
     @Override
     public void begin(String accountId) {
-        await(steps.begin(accountId).thenReturn(Boolean.TRUE));
+        // The run id is the engine's own: it names this execution for the marker, so a later attempt can ask the
+        // server whether the execution that set the marker is still open.
+        String runId = io.temporal.activity.Activity.getExecutionContext().getInfo().getRunId();
+        await(steps.begin(accountId, runId).thenReturn(Boolean.TRUE));
     }
 
     @Override

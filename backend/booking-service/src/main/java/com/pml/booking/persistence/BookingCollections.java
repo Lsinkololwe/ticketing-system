@@ -118,4 +118,7 @@ public final class BookingCollections {
     /** The durable half of IdempotencyGuard: one row per {scope, key}, authoritative over Redis */
     public static final String IDEMPOTENCY_LEDGER = "booking_idempotency_ledger";
 
+    /** Platform-wide reaches kept here until identity confirms them; created and validated by the shared library */
+    public static final String PLATFORM_WIDE_AUDIT_OUTBOX = "booking_platform_wide_audit_outbox";
+
 }

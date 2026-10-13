@@ -1,5 +1,6 @@
 package com.pml.shared.security.tenancy;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -25,7 +26,11 @@ import java.time.Clock;
 @EnableConfigurationProperties(TenancyProperties.class)
 public class TenantScopeAutoConfiguration {
 
-    /** Log-only by default; a service that wants a queryable row defines its own sink. */
+    /**
+     * Log-only by default. A service that names identity and keeps an outbox gets the
+     * local-first delivering sink instead ({@link PlatformWideAuditDeliveryAutoConfiguration});
+     * identity defines its own that writes the row locally.
+     */
     @Bean
     @ConditionalOnMissingBean(PlatformWideAuditSink.class)
     public PlatformWideAuditSink platformWideAuditSink() {
@@ -35,9 +40,11 @@ public class TenantScopeAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public PlatformWideAccess platformWideAccess(PlatformWideAuditSink sink, ObjectProvider<Clock> clock,
-                                                 TenancyProperties properties, Environment environment) {
+                                                 TenancyProperties properties, Environment environment,
+                                                 ObjectProvider<MeterRegistry> meters) {
         return new PlatformWideAccess(environment.getProperty("spring.application.name"), sink,
-                clock.getIfAvailable(Clock::systemUTC), properties.platformWideAuthorities());
+                clock.getIfAvailable(Clock::systemUTC), properties.platformWideAuthorities(),
+                meters.getIfAvailable());
     }
 
     @Bean

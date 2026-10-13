@@ -13,19 +13,24 @@
     <description>Keycloak extensions: contact-otp-authenticator (SCREEN and HANDOFF modes) and the slim user-sync event listener</description>
 
     <!--
-        ET-PLT-012 R3 · this module deliberately declares no <parent>. A Keycloak SPI runs inside
-        Keycloak's own classloader, and inheriting spring-boot-starter-parent would put Spring's
-        dependency management on a JAR that must contain no Spring at all.
+        This module deliberately declares no <parent>. A Keycloak SPI runs inside Keycloak's own
+        classloader, and inheriting spring-boot-starter-parent would put Spring's dependency
+        management on a JAR that must contain no Spring at all.
 
-        R5 and R6 still apply, and that is the difficulty: with nothing to inherit, every value
-        below is a copy of the parent's, and copies drift. `BuildTopologyTest` compares them,
-        because the module the topology exempts from inheritance is the one nothing else checks.
+        The cost is that every version below is a copy of the backend parent's value, and copies
+        drift. A build-topology test in the backend compares them, because the one module that
+        does not inherit is the one nothing else would check.
+
+        There is no shading (fat JAR) on purpose. Everything the plugin uses except its own classes
+        (Keycloak SPI, JBoss Logging, Jackson, the JDK HTTP client) is provided by Keycloak at
+        runtime, so the JAR holds only the plugin's classes and resources. Bundling a second copy
+        of Jackson would only risk a class-loading clash with the one Keycloak ships.
     -->
     <properties>
-        <!-- ET-PLT-012 R5 · Java 21, like every other module. `release` rather than
-             source/target: source/target compiles 21 syntax against the running JDK's class
-             library, so an API added after 21 links happily here and fails at runtime on the
-             JDK Keycloak actually ships. -->
+        <!-- Java 21, like every other module. `release` rather than source/target:
+             source/target compiles 21 syntax against the running JDK's class library, so an API
+             added after 21 links happily here and fails at runtime on the JDK Keycloak actually
+             ships. -->
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
@@ -34,19 +39,18 @@
              method that moved between patch releases. -->
         <keycloak.version>26.5.2</keycloak.version>
 
-        <!-- Must equal the parent's. R6: one plugin version in one place, and two builds of one
-             commit resolving different compiler versions is exactly what that forbids. -->
+        <!-- Must equal the parent's: one plugin version in one place, so two builds of one commit
+             never resolve different compiler versions. -->
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
         <maven-jar-plugin.version>3.3.0</maven-jar-plugin.version>
         <maven-failsafe-plugin.version>3.5.3</maven-failsafe-plugin.version>
         <testcontainers.version>1.21.4</testcontainers.version>
         <docker.api.version>1.44</docker.api.version>
 
-        <!-- Pinned even though this module has no tests yet. Without a <parent> nothing manages
-             surefire here, so it resolved to Maven's built-in default — 3.2.5, against the 3.5.3
-             every other module inherits from Boot. A default is deterministic for one Maven
-             version and drifts across them, which is precisely the "two machines, one commit,
-             different plugin" R6 forbids. -->
+        <!-- Pinned explicitly. Without a <parent> nothing manages surefire here, so it would
+             resolve to Maven's built-in default (3.2.5), against the 3.5.3 every other module
+             inherits from Spring Boot. A default is stable for one Maven version and drifts across
+             them, which is how two machines building one commit end up with different plugins. -->
         <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
     </properties>
 
@@ -74,7 +78,7 @@
         </dependency>
 
         <!-- Jackson is provided by Keycloak (transitive of keycloak-core, provided scope); nothing
-             is shaded into the JAR any more. -->
+             is shaded into the JAR, see the note at the top of this file. -->
 
         <dependency>
             <groupId>org.jboss.logging</groupId>
@@ -139,7 +143,8 @@
                 <version>${maven-surefire-plugin.version}</version>
                 <configuration>
                     <!-- Unit tests only; the container tests are *IT and run in failsafe after the
-                         JAR exists. Layer tags (ET-IDN-001 + layer) select by -Dgroups. -->
+                         JAR exists. Tests carry a feature tag and a layer tag, so a subset can be
+                         selected with -Dgroups. -->
                     <excludes>
                         <exclude>**/*IT.java</exclude>
                     </excludes>

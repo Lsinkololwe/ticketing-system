@@ -13,10 +13,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Volume limits per contact, IP, device and country (ET-IDN-001-R3), against a real Redis. */
+/** Volume limits per contact, IP, device and country, against a real Redis. */
 @Tag("L2")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001-R3 · code requests are limited per contact, IP, device and country, and nothing is sent past a cap")
+@DisplayName("code requests are limited per contact, IP, device and country, and nothing is sent past a cap")
 class LimitServiceTest {
 
     /** The tests run against a real Redis, from the shared test fixtures. */

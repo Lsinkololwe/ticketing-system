@@ -276,6 +276,8 @@ DGS's `com.netflix.graphql.types.errors.ErrorType`. These eight and no others.
 | `PROOF_INVALID` | `ProofInvalid` | `BAD_REQUEST` | no | — |
 | `CONTACT_UNKNOWN` | `ContactUnknown` | `NOT_FOUND` | no | — |
 | `CONTACT_CHANGE_IN_PROGRESS` | `ContactChangeInProgress` | `FAILED_PRECONDITION` | no | — |
+| `STAFF_CREATION_IN_PROGRESS` | `StaffCreationInProgress` | `UNAVAILABLE` | **yes** | — |
+| `NOT_A_STAFF_ACCOUNT` | `NotAStaffAccount` | `FAILED_PRECONDITION` | no | — |
 | `LAST_VERIFIED_CONTACT` | `LastVerifiedContact` | `FAILED_PRECONDITION` | no | — |
 | `NO_VERIFIED_CONTACT` | `NoVerifiedContact` | `FAILED_PRECONDITION` | no | — |
 

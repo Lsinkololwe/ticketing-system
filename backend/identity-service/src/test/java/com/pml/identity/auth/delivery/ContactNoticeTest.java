@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("L1")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004-R5 · contact notices are fixed words with no personal data, one per kind")
+@DisplayName("contact notices are fixed words with no personal data, one per kind")
 class ContactNoticeTest {
 
     @Test
@@ -20,6 +20,16 @@ class ContactNoticeTest {
                     .contains("If this was not you");
         }
         assertThat(ContactNotice.values()).extracting(Enum::name)
-                .containsExactly("CONTACT_ADDED", "CONTACT_CHANGED", "CONTACT_REMOVED", "PRIMARY_CHANGED");
+                .containsExactly("CONTACT_ADDED", "CONTACT_CHANGED", "CONTACT_REMOVED", "PRIMARY_CHANGED", "STAFF_ACCOUNT_CREATED");
+    }
+
+    @Test
+    @DisplayName("the staff notice says a temporary password comes from the super administrator, never carries one, and implies no delivery of it")
+    void staffNoticeNeverCarriesAPassword() {
+        String text = ContactNotice.STAFF_ACCOUNT_CREATED.text();
+
+        assertThat(text).contains("super administrator").contains("temporary password")
+                .contains("this message does not contain it").contains("choose your own password")
+                .doesNotContain("you were given").doesNotContain("is below").doesNotContain("attached");
     }
 }

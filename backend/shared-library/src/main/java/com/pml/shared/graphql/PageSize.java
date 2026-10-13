@@ -1,5 +1,10 @@
 package com.pml.shared.graphql;
 
+import com.pml.shared.error.DomainRefusal;
+import com.pml.shared.error.ErrorCode;
+
+import java.util.Map;
+
 /**
  * The one place a requested page size is checked.
  *
@@ -76,7 +81,7 @@ public final class PageSize {
      * <p>The message carries both numbers because the client has to change its request, and
      * "too large" without the ceiling means guessing.</p>
      */
-    public static class PageSizeExceeded extends RuntimeException {
+    public static class PageSizeExceeded extends DomainRefusal {
 
         /** The registry code this refusal carries; named here so callers can match on it. */
         public static final String CODE = "PAGE_SIZE_EXCEEDED";
@@ -89,7 +94,11 @@ public final class PageSize {
         }
 
         public PageSizeExceeded(int requested, int ceiling) {
-            super("requested page size %d exceeds the maximum of %d".formatted(requested, ceiling));
+            // A refusal rather than a bare exception, so the GraphQL and REST exits report it as
+            // PAGE_SIZE_EXCEEDED, not retryable, instead of as an internal error a client would retry.
+            super(ErrorCode.PAGE_SIZE_EXCEEDED,
+                    "requested page size %d exceeds the maximum of %d".formatted(requested, ceiling),
+                    Map.of("requested", requested, "ceiling", ceiling));
             this.requested = requested;
             this.ceiling = ceiling;
         }

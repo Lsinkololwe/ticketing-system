@@ -138,7 +138,7 @@ public class NotificationServiceImpl implements NotificationService {
                     .flatMap(notificationRepository::save);
             })
             .onErrorResume(error -> {
-                log.error("Error sending notification {}: {}", notification.getId(), error.getMessage());
+                log.error("Error sending notification {}: {}", notification.getId(), error.getClass().getSimpleName());
                 notification.setStatus(NotificationStatus.FAILED);
                 return notificationRepository.save(notification);
             });
@@ -191,8 +191,8 @@ public class NotificationServiceImpl implements NotificationService {
         return deviceRepository.findByUserIdAndIsActive(notification.getUserId(), true)
             .flatMap(device -> {
                 // TODO: Integrate with FCM (Android/Web) or APNS (iOS)
-                log.info("Would send push to device {} ({}): {}",
-                    device.getDeviceToken(), device.getPlatform(), notification.getTitle());
+                log.info("Would send push notification {} to a {} device of user {}",
+                    notification.getId(), device.getPlatform(), notification.getUserId());
                 return Mono.empty();
             })
             .then();
@@ -209,7 +209,7 @@ public class NotificationServiceImpl implements NotificationService {
         log.debug("Sending SMS notification {} to user {}", notification.getId(), notification.getUserId());
 
         // TODO: Integrate with SMS provider (Africa's Talking, Twilio, etc.)
-        log.info("Would send SMS to user {}: {}", notification.getUserId(), notification.getBody());
+        log.info("Would send SMS notification {} to user {}", notification.getId(), notification.getUserId());
         return Mono.empty();
     }
 
@@ -224,7 +224,7 @@ public class NotificationServiceImpl implements NotificationService {
         log.debug("Sending WhatsApp notification {} to user {}", notification.getId(), notification.getUserId());
 
         // TODO: Integrate with WhatsApp Business API
-        log.info("Would send WhatsApp to user {}: {}", notification.getUserId(), notification.getBody());
+        log.info("Would send WhatsApp notification {} to user {}", notification.getId(), notification.getUserId());
         return Mono.empty();
     }
 
@@ -239,8 +239,7 @@ public class NotificationServiceImpl implements NotificationService {
         log.debug("Sending email notification {} to user {}", notification.getId(), notification.getUserId());
 
         // TODO: Integrate with email provider (SendGrid, AWS SES, etc.)
-        log.info("Would send email to user {}: Subject={}, Body={}",
-            notification.getUserId(), notification.getTitle(), notification.getBody());
+        log.info("Would send email notification {} to user {}", notification.getId(), notification.getUserId());
         return Mono.empty();
     }
 }

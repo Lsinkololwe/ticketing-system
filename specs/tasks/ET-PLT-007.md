@@ -78,6 +78,10 @@ what those changed before assuming anything is absent.
   the client never saw a response.
 - **Acceptance** replay returns the original; a changed body refuses; two parallel submissions
   apply exactly once.
+- Payout operations that re-drive a payout are all behind the guard, each under its own operation
+  name: `booking:retryPayout`, `booking:bulkRetryPayouts` (the bulk key is
+  read over the sorted, de-duplicated ids; `booking:resumePayout` existed until 2026-10-13, when the
+  mutation was removed), alongside `booking:requestPayout` and `booking:approvePayout`.
 
 ### BE-7 · Backchannel logout; the removed-member latency test — **done, 2026-10-10**
 - **Spec** R7 · **§5** T7 · **depends** BE-1, BE-4 · **parallel-safe** yes
@@ -189,7 +193,7 @@ Forged / wrong-issuer / wrong-audience / expired — each rejected at **each** s
 - Redis `FLUSHALL` between attempts → the unique index still refuses the duplicate. This is the
   test that proves the guard is not really Redis-only.
 
-### TS-6 · Frontend *(L5, Playwright)* — **specs written 2026-10-10, not yet run against a browser (F-058)**
+### TS-6 · Frontend *(L5, Playwright)* — **specs written 2026-10-10; the two double-submit specs were run in real Chrome, desktop and phone, on 2026-10-11 (F-061 Open 5); the finance-role gating and route specs updated on 2026-10-13 (F-065) have not been run**
 - Double-submit produces one charge; key survives reload.
 - A `CUSTOMER` session sees no ADMIN navigation; a direct route hit is refused server-side too —
   already covered, pre-existing: `apps/admin/e2e/browser/gating.spec.ts` ("signed out and
@@ -200,11 +204,11 @@ Forged / wrong-issuer / wrong-audience / expired — each rejected at **each** s
   synchronous DOM clicks (bypassing Playwright's own actionability wait) on the submit button and
   assert every call that reaches the mocked upstream carries one identical idempotency key —
   neither app's reload-survival is exercised by these cases (that part of FE-2 is covered at the
-  unit level by `useIdempotencyKey`'s sessionStorage persistence, not by an e2e reload). **Could
-  not execute either against a real browser in this session** — a pre-existing harness/Next.js
-  16.2.11 incompatibility (F-058) made every `harnessTest`-based ticketing browser spec fail for
-  reasons unrelated to these two cases' own content. Reviewed for correctness against the harness's
-  established patterns; not browser-verified.
+  unit level by `useIdempotencyKey`'s sessionStorage persistence, not by an e2e reload). **Not executed
+  on 2026-10-10** — a harness/Next.js 16.2.11 incompatibility (F-058) made every `harnessTest`-based
+  ticketing browser spec fail for reasons unrelated to these two cases. **Executed and passing on
+  2026-10-11** once the harness ran with its own `distDir` (F-061 Open 5): each rapid pair sends one
+  request carrying a real key, and the page holds the second tap, which is the stronger result.
 
 ## E · Gate
 
@@ -217,7 +221,7 @@ Forged / wrong-issuer / wrong-audience / expired — each rejected at **each** s
       values fails 7 of 8. The older copies under `docker-resources/keycloak` are not covered (F-047 Open).
 - [x] Token-rejection cases pass at each service directly and at the gateway — **Phase 9, 2026-10-10.** `JwtValidationContractTest` (catalog, booking, identity, api-gateway): forged key, rogue realm, claimed issuer, expired, not-yet-valid, no token; `JwksRotationTest` for the bounded key cache; `KeycloakGrantedAuthoritiesConverterTest` for the authorities.
 - [x] No field without a gate decision composes; denied fields perform no repository call — **Phase 9, 2026-10-10.** `OperationGateLintTest` (per service), `ComposedSchemaGateTest` (the union), `OperationGateRegistryTest` (every requirement is a §4 row), `AuthDirectiveOutcomesTest` (`ACTOR_NOT_AUTHENTICATED` / `ACTOR_NOT_PERMITTED` / `INTERNAL`), `AuthDirectiveRepositoryGuardTest` (no repository call). The spec's wording is now `@auth` or the equivalent `@PreAuthorize` (R3 amended).
-- [x] Tenant filter in the repository; cross-tenant iteration returns nothing — **Phase 6 and 9, 2026-10-10.** Every unscoped lookup is resolved individually (F-056); the per-collection `*TenantBoundaryTest` classes prove the second organization sees nothing; the platform-wide bypass is one named, audited path (`PlatformWideAccess`, `PlatformWideBypassLintTest`).
+- [x] Tenant filter in the repository; cross-tenant iteration returns nothing — **Phase 6 and 9, 2026-10-10.** Every unscoped lookup is resolved individually (F-056); the per-collection `*TenantBoundaryTest` classes prove the second organization sees nothing; the platform-wide bypass is one named, audited path (`PlatformWideAccess`, `PlatformWideBypassLintTest`). **2026-10-13 (F-063):** the record is now a searchable audit row, finance sits inside the same path through `isPlatformStaff`, and every service's bypass budget is 0. **2026-10-13 (F-065):** the last unrecorded staff reach (`OrganizerAccess.platformGrants`, and the gate's copy of it) is recorded and pinned by a lint; no platform staff role may request a payout, only a member of the organization.
 - [x] Event writes apply the tenant filter **and** the permission check — **D-20, 2026-09-01.**
       All seven catalog event mutations now go through `EventWriteGuard.forWrite(id, permission)`:
       `findByIdAndOrganizationIdIn` so another organization's event never comes back from the
@@ -272,4 +276,33 @@ Forged / wrong-issuer / wrong-audience / expired — each rejected at **each** s
 - [x] `idempotencyKey` client-supplied, stable across retries, survives reload — **F-057, 2026-10-10.** `useIdempotencyKey` (sessionStorage, keyed by the user's intent); `idempotency.test.ts` covers mint, persist, reload and regenerate.
 - [x] `User.keycloakUserId` is the sole linkage field and is read by no authorization decision (the spec's "no `keycloakUserId`" wording was contradicted by ET-IDN-004 and amended in R4).
 - [x] Full `mvn -f backend verify` green — **2026-10-10**: shared-library, catalog, booking, identity and api-gateway pass with 0 failures (2,810 unit and integration tests), and keycloak-extensions passes `RealmConformanceIT` (16) and `ContactOtpKeycloakIT` (11) against a real Keycloak 26.5.2.
+- [x] The payout re-drive mutations are behind the guard under their own operation names, a repeat is the original answer, and a different key is refused by state — **F-062 and F-067, 2026-10-13.** `PayoutDecisionIdempotencyTest` (10: retry replay, reuse for another payout, refused by state; bulk replay in another order runs once, reuse for another set, an unretryable payout skipped, empty and oversized lists refused), `RequestPayoutIdempotencyTest` (2). `resumePayoutRequest` no longer exists.
+- [x] A platform-wide reach is never missing from the searchable trail because identity was unavailable, and never delays the administrator — **F-068, 2026-10-13.** Booking and catalog keep each reach in their own outbox first and deliver it with a workflow until identity confirms; identity is idempotent on the record id, bounds the time the sender claims and stores its own receipt time. `PlatformWideAuditEndToEndTest.reachSurvivesAnIdentityOutage` (real controller and security chain, real Temporal server, outage switched on and off), `PlatformWideAuditDeliveryTest` (real Temporal, MongoDB; identity down, start twice, Temporal down at the start then re-driven, a final refusal), `BookingAuditDeliveryTest`, `CatalogAuditDeliveryTest` (each service's own bindings), `OutboxPlatformWideAuditSinkTest.outboxWriteFailureDoesNotBlock` (the local write itself fails: the reach goes through, ERROR line and counter), `PlatformWideAuditTrailTest.storeRefusalIsCounted` (identity's own reaches), `PlatformWideAuditEndToEndTest` (`duplicateDeliveryIsOneRow`, `occurredAtIsBounded`, `recordIdIsRequired`, `extraFieldsAreNeverStored`, `internalWriteIsClosed`), `PlatformWideAuditOutboxTest` (the stored shape and the validator), `PlatformWideAuditDrainTest`, `PlatformWideAuditMetricsTest`, `TemporalRegistryLintTest`, `WorkflowDeterminismLintTest`.
+- [x] Audit rows are kept indefinitely and nothing can start deleting them by accident — **F-068, owner decision 2026-10-13.** `IdentityIndexRegistryTest.auditRowsNeverExpire` and `legacyAuditExpiryIsDropped`. Hash chaining is deferred past launch by the owner (ET-PLT-009 R3) and is not part of this gate.
+- [x] The generated GraphQL types match the composed schema and every document validates against it — **F-068, 2026-10-13.** Regenerated with `pnpm codegen:local` from the three on-disk SDLs (rover 1.0.0, federation 2.15.2, no network); `documentValidity.test.ts` and `codegenAuthority.test.ts` pass, `tsc --noEmit` is clean for `libs/shared` and `apps/admin`, vitest `libs/shared` 576 passed (1 skipped) and `apps/admin` 279 passed.
 - [x] Spec `status:` → `implemented` — set 2026-10-10. Open follow-ups (not spec boxes) are recorded in F-061: the `sync/all` endpoint decision, notification params in workflow history, and the new template copy.
+
+## Open after closure (not gate boxes)
+
+These are things this task does not claim. Each is stated plainly so the next reader does not have to
+discover it.
+
+- [ ] **Playwright is not run for the finance role.** `apps/admin/e2e/browser/gating.spec.ts` and `routes.ts`
+      were updated for `FINANCE` (F-065) and the staff-password dialog and reset action were added (F-067);
+      none of it was executed in a browser. Only the Vitest suites ran.
+- [ ] **No real two-process run of the audit delivery.** Every delivery test runs booking's or catalog's
+      classes with identity's real controller *in one JVM* (or a stand-in identity over HTTP), against a real
+      Temporal server and MongoDB. Two separately started services with a real network between them, an
+      identity restart in the middle, and a Temporal restart in the middle have not been driven.
+- [ ] **The 72-hour execution ceiling of a contact change has not fired on a real server.** The marker
+      release is proved by closing executions from outside (terminated) and by expiry arithmetic
+      (`ContactChangeMarkerTest`); the server's own timeout of `PT72H` closing a run was not waited for.
+- [ ] **Staff password reset and creation caveats stay as recorded in F-067 Open**: a creation slower than
+      `identity.staff.create-wait` never shows its password (the reset issues one), a double click shows it
+      only on the call that started the execution, and the API allows a super administrator to reset their
+      own account while the console does not offer it.
+- [ ] **Payout approvals and decisions are not audit rows.** The `@Audited` registry of ET-PLT-009 is not
+      built; finance's money view lists the reaches around money, not the approvals themselves.
+- [ ] **A reach whose delivery could not be started waits for the next start of its service** (see F-068 for the
+      window), and a `REFUSED` row (identity refused it as malformed or older than thirty days) stays in the
+      service's outbox and on `platform.wide.audit.delivery.failed`; nothing re-sends it.

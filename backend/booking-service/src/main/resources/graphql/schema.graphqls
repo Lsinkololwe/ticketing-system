@@ -3370,10 +3370,9 @@ type Mutation {
     retryPayoutRequest(payoutRequestId: ID!, idempotencyKey: String!): PayoutRequest! @tag(name: "admin")
 
     # ADMIN - Payout Recovery Operations
-    resumePayoutRequest(payoutRequestId: ID!): PayoutRequest! @tag(name: "admin")
     markPayoutForReview(payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String): PayoutRequest! @tag(name: "admin")
     resolvePayoutIssue(payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!): PayoutRequest! @tag(name: "admin")
-    bulkRetryFailedPayouts(payoutRequestIds: [ID!]!): BulkPayoutOperationResponse! @tag(name: "admin")
+    bulkRetryFailedPayouts(payoutRequestIds: [ID!]!, idempotencyKey: String!): BulkPayoutOperationResponse! @tag(name: "admin")
     bulkMarkPayoutsForReview(payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String): BulkPayoutOperationResponse! @tag(name: "admin")
     escalatePayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @tag(name: "admin")
     holdPayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @auth(requires: FINANCE) @tag(name: "admin")

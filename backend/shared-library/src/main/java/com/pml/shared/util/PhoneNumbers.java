@@ -12,21 +12,16 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
- * Canonical phone-number handling for the platform.
+ * The one place that decides what a phone number is. A buyer can type their number as
+ * {@code 0977 123 456}, {@code +260 977 123 456}, {@code 260977123456} or {@code 00260977123456}; all
+ * of them become the same canonical <a href="https://en.wikipedia.org/wiki/E.164">E.164</a> string
+ * ({@code +260977123456}), so one person is never two contacts and two accounts.
  *
- * <p>This is the single source of truth for turning any user-supplied phone
- * number into a valid <a href="https://en.wikipedia.org/wiki/E.164">E.164</a>
- * string (e.g. {@code +260971234567}). It delegates to Google's libphonenumber,
- * which validates per-country length/prefix rules and correctly handles the
- * national trunk prefix (so {@code "0969944454"} in Zambia becomes
- * {@code "+260969944454"}, dropping the leading {@code 0} — a bug the previous
- * hand-rolled normalizers got wrong by keeping it).</p>
- *
- * <p>All backend write paths into {@code users.phoneNumber} (Better Auth aside,
- * which normalizes on the frontend with libphonenumber-js) MUST funnel through
- * here so the value always satisfies the strict {@code users} {@code $jsonSchema}
- * validator (<code>^\+[1-9]\d{1,14}$</code>) and OTP/mobile-money delivery
- * targets a real MSISDN.</p>
+ * <p>Parsing is delegated to Google's libphonenumber, which applies each country's length and prefix
+ * rules and the national trunk prefix (so {@code 0969944454} in Zambia becomes
+ * {@code +260969944454}, dropping the leading 0). Anything that is a contact (a sign-in number, an
+ * invitation address, an account's WhatsApp number, a payout number) must go through
+ * {@link #parseMobile}; there is deliberately no second, looser entry point.</p>
  */
 public final class PhoneNumbers {
 
@@ -46,7 +41,7 @@ public final class PhoneNumbers {
     private static final Pattern LOCAL_ZM = Pattern.compile("^0\\d{9}$");
 
     /**
-     * Strict contact parser (CONTRACT 3). The input must carry a country code ({@code +} or
+     * Strict contact parser. The input must carry a country code ({@code +} or
      * {@code 00} prefix) or the caller supplies {@code regionHint}. With neither, only a Zambian
      * local number ({@code 0} plus 9 digits, 10 in all) or {@code 260} plus 9 digits is accepted.
      * The result must be a valid MOBILE (or FIXED_LINE_OR_MOBILE) number. Applying the country
@@ -118,78 +113,5 @@ public final class PhoneNumbers {
             return allowedCountries.stream().anyMatch(c -> c != null
                     && (c.equalsIgnoreCase(p.region()) || c.equalsIgnoreCase(main)));
         });
-    }
-
-    /**
-     * Normalize to E.164 using the default region ({@value #DEFAULT_REGION}).
-     *
-     * @return canonical E.164 string, or {@code null} if blank/unparseable/invalid.
-     */
-    public static String toE164(String raw) {
-        return toE164(raw, DEFAULT_REGION);
-    }
-
-    /**
-     * Normalize to E.164.
-     *
-     * @param raw           any user-supplied form (local, international, with separators)
-     * @param defaultRegion ISO-3166 alpha-2 used only when {@code raw} has no '+' country code
-     * @return canonical E.164 string, or {@code null} if blank/unparseable/invalid.
-     */
-    public static String toE164(String raw, String defaultRegion) {
-        Phonenumber.PhoneNumber parsed = parse(raw, defaultRegion);
-        if (parsed == null || !UTIL.isValidNumber(parsed)) {
-            return null;
-        }
-        return UTIL.format(parsed, PhoneNumberFormat.E164);
-    }
-
-    /**
-     * @return {@code true} if {@code raw} is a valid number for some region.
-     */
-    public static boolean isValid(String raw, String defaultRegion) {
-        Phonenumber.PhoneNumber parsed = parse(raw, defaultRegion);
-        return parsed != null && UTIL.isValidNumber(parsed);
-    }
-
-    public static boolean isValid(String raw) {
-        return isValid(raw, DEFAULT_REGION);
-    }
-
-    /**
-     * Resolve the ISO-3166 alpha-2 country for a number (e.g. {@code "ZM"}).
-     *
-     * @return region code, or {@code null} if it cannot be determined.
-     */
-    public static String regionFor(String raw, String defaultRegion) {
-        Phonenumber.PhoneNumber parsed = parse(raw, defaultRegion);
-        if (parsed == null) {
-            return null;
-        }
-        String region = UTIL.getRegionCodeForNumber(parsed);
-        return (region == null || "ZZ".equals(region)) ? null : region;
-    }
-
-    public static String regionFor(String raw) {
-        return regionFor(raw, DEFAULT_REGION);
-    }
-
-    private static Phonenumber.PhoneNumber parse(String raw, String defaultRegion) {
-        if (raw == null) {
-            return null;
-        }
-        String trimmed = raw.trim();
-        if (trimmed.isEmpty()) {
-            return null;
-        }
-        String region = (defaultRegion == null || defaultRegion.isBlank())
-                ? DEFAULT_REGION
-                : defaultRegion.trim().toUpperCase();
-        try {
-            // When `trimmed` begins with '+', libphonenumber ignores the region hint.
-            return UTIL.parse(trimmed, region);
-        } catch (NumberParseException e) {
-            return null;
-        }
     }
 }

@@ -5,11 +5,11 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { ConfirmDialog, useSnackbar, type MenuEntry } from '@pml.tickets/shared/components/m3';
 import { useUserAdminActions, type AdminUserRecord } from '@pml.tickets/shared/api/admin/modules/identity-admin';
 import { useStaffActions } from '@pml.tickets/shared/api/admin/modules/platform-ops';
-import { ReasonDialog, useStaff } from '@/components/console';
-import { errorMessage } from './common';
+import { ReasonDialog, useStaff, useTemporaryPassword } from '@/components/console';
+import { errorMessage, staffErrorMessage } from './common';
 import { RolesDialog, UserFormDialog } from './UserDialogs';
 
-export type UserActionId = 'edit' | 'roles' | 'deactivate' | 'lock' | 'suspend' | 'activate' | 'unlock' | 'unsuspend' | 'delete';
+export type UserActionId = 'edit' | 'roles' | 'deactivate' | 'lock' | 'suspend' | 'activate' | 'unlock' | 'unsuspend' | 'delete' | 'resetPassword';
 
 export interface UserActionDef {
   id: UserActionId;
@@ -20,18 +20,21 @@ export interface UserActionDef {
 }
 
 /** Which row actions the signed-in staff member is offered for a user (prototype userActs). */
-export function userActionList(u: AdminUserRecord, staff: { id: string; can: (k: 'staffRoles' | 'deleteUser') => boolean }): UserActionDef[] {
+export function userActionList(u: AdminUserRecord, staff: { id: string; can: (k: 'staffRoles' | 'deleteUser' | 'resetStaffPassword') => boolean }): UserActionDef[] {
   const isStaffUser = u.roles.some((r) => ['ADMIN', 'SUPER_ADMIN', 'FINANCE', 'FINANCE_LEAD'].includes(r));
   const manage = u.id !== staff.id && !(u.roles.includes('SUPER_ADMIN') && !staff.can('staffRoles'));
   const s = u.accountStatus;
   const a: UserActionDef[] = [{ id: 'edit', label: 'Edit' }];
-  if (staff.can('staffRoles') || !isStaffUser) a.push({ id: 'roles', label: 'Change roles' });
+  // A staff account's roles are not edited through the buyer role checklist.
+  if (!isStaffUser) a.push({ id: 'roles', label: 'Change roles' });
   if (manage) {
     if (s === 'ACTIVE') a.push({ id: 'deactivate', label: 'Deactivate' }, { id: 'lock', label: 'Lock account' }, { id: 'suspend', label: 'Suspend…', danger: true });
     if (['INACTIVE', 'PENDING_VERIFICATION', 'PENDING_DELETION'].includes(s)) a.push({ id: 'activate', label: 'Activate' });
     if (s === 'LOCKED') a.push({ id: 'unlock', label: 'Unlock account' });
     if (s === 'SUSPENDED') a.push({ id: 'unsuspend', label: 'Unsuspend' });
   }
+  // Only a super admin may issue a new temporary password, and only for a staff account other than their own.
+  if (isStaffUser && u.id !== staff.id && staff.can('resetStaffPassword')) a.push({ id: 'resetPassword', label: 'Reset password…' });
   if (staff.can('deleteUser') && manage) {
     a.push({ id: 'delete', label: 'Delete user', danger: true });
   }
@@ -59,6 +62,7 @@ export function useUserActionController(): {
   const { guard } = useStepUp();
   const [pending, setPending] = useState<{ id: UserActionId; user: AdminUserRecord } | null>(null);
   const [busy, setBusy] = useState(false);
+  const issued = useTemporaryPassword();
   const close = () => setPending(null);
 
   const attempt = useCallback(
@@ -108,9 +112,36 @@ export function useUserActionController(): {
     [api, attempt, staff]
   );
 
+  const resetPassword = useCallback(
+    async (target: AdminUserRecord) => {
+      setBusy(true);
+      try {
+        const result = await guard(() => api.resetStaffPassword(target.id));
+        setPending(null);
+        if (result?.temporaryPassword) issued.show({ password: result.temporaryPassword, accountName: target.fullName, kind: 'reset' });
+      } catch (e) {
+        snack.show({ message: staffErrorMessage(e), tone: 'error' });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [api, guard, issued, snack]
+  );
+
   const u = pending?.user ?? null;
   const dialogs = (
     <>
+      {issued.panel}
+      <ConfirmDialog
+        open={pending?.id === 'resetPassword'}
+        onClose={close}
+        title={`Reset password for ${u?.fullName ?? ''}?`}
+        description="Their current password stops working and a new one-time password is shown to you once. Give it to them securely."
+        confirmLabel="Reset password"
+        danger
+        loading={busy}
+        onConfirm={() => u && void resetPassword(u)}
+      />
       <UserFormDialog
         open={pending?.id === 'edit'}
         mode="edit"
@@ -125,7 +156,6 @@ export function useUserActionController(): {
       <RolesDialog
         open={pending?.id === 'roles'}
         user={u}
-        canEditStaffRoles={staff.can('staffRoles')}
         loading={busy}
         onClose={close}
         onSubmit={(roles) => u && attempt(() => guard(() => api.setUserRoles(u.id, roles)), `Roles updated for ${u.fullName}`)}

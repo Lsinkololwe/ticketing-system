@@ -94,7 +94,7 @@ The services run the `prod` profile (`application-prod.yml`):
 
 - [ ] All three services start; each log shows its workers polling their task queues.
 - [ ] `temporal task-queue describe` shows pollers on `booking-checkout`, `booking-provider`,
-      `booking-finance`, `booking-recon`, `catalog-lifecycle`, `identity-onboarding`, `identity-notify`.
+      `booking-finance`, `booking-recon`, `booking-audit`, `catalog-lifecycle`, `catalog-audit`, `identity-onboarding`, `identity-notify`.
 - [ ] Schedules exist with the code's timing: `booking-recon-escrow`, `booking-recon-escrow-journal`,
       `booking-recon-alerts`, `booking-recon-weekly-summary`, `identity-group-mirror-repair`.
 

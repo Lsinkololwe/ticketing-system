@@ -85,7 +85,7 @@ public class AccountPreflightReportMigrationService {
                 if (PLACEHOLDER_EMAIL.matcher(email).matches()) {
                     placeholders++;
                 } else {
-                    emailGroups.merge(email.toLowerCase(Locale.ROOT), 1, Integer::sum);
+                    emailGroups.merge(com.pml.shared.util.Emails.normalize(email).orElse(email), 1, Integer::sum);
                 }
             }
             if (user.get("phoneNumber") instanceof String phone && !phone.isBlank()) {

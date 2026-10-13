@@ -16,7 +16,16 @@ import reactor.core.publisher.Mono;
 
 import java.util.Map;
 
-/** Handle redemption (CONTRACT 4.4) and account status (CONTRACT 4.5). */
+/**
+ * The last step of a contact sign-in and the status check around it.
+ *
+ * <p>Redeeming: the sign-in plugin hands over the single-use login handle it got from the ensure
+ * step; the handle works once, for the client it was issued to, and only while the account is still
+ * ACTIVE. A handle that is unknown, expired, already used or presented by another client is refused
+ * as invalid; an account that stopped being active in the meantime is refused as not active, with
+ * its current state. Status: tells a caller the lifecycle state of an account by id, or that there
+ * is no such account.</p>
+ */
 @RestController
 @RequestMapping("/api/internal/auth")
 public class InternalHandleController {

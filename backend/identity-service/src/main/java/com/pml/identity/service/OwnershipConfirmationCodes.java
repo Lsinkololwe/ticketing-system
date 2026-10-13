@@ -1,11 +1,12 @@
 package com.pml.identity.service;
 
+import com.pml.identity.domain.model.Contact;
 import com.pml.identity.domain.model.OwnershipTransferRequest;
-import com.pml.identity.domain.model.User;
 import com.pml.identity.auth.delivery.DeliveryOrchestrator;
 import com.pml.identity.domain.enums.ContactType;
-import com.pml.identity.security.ContactHasher;
+import com.pml.identity.repository.ContactRepository;
 import com.pml.identity.repository.UserRepository;
+import com.pml.identity.security.ContactCrypto;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
 import lombok.extern.slf4j.Slf4j;
@@ -19,14 +20,21 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.List;
 
 /**
- * The second factor on an ownership transfer: a one-time code sent to the nominee's verified phone (WhatsApp, through the login orchestrator).
+ * The second factor on an ownership transfer: a one-time code sent to a contact the nominee has
+ * verified, through the same delivery orchestrator the sign-in codes use.
  *
- * <p>Holding the transfer link and a session is not enough to take over an organization — a
- * session can be stolen and a link forwarded. The nominee also has to show they hold the phone the
- * account verified, which is the factor the platform's own login rests on.
+ * <p>Holding the transfer link and a session is not enough to take over an organization: a session
+ * can be stolen and a link forwarded. The nominee also has to show they hold the WhatsApp number or
+ * the email the account verified, which is the factor the platform's own sign-in rests on. The
+ * contact is read from the account's verified contacts (the same store sign-in writes), so an
+ * account that was opened with a code and never had a number typed into a profile works. WhatsApp
+ * is preferred; the primary contact breaks a tie, and an email is used when there is no WhatsApp
+ * number. A nominee with no verified contact is told so and nothing is sent.
  *
  * <h2>How a code behaves</h2>
  * <ul>
@@ -49,40 +57,50 @@ public class OwnershipConfirmationCodes {
     private static final String ATTEMPTS_KEY = "otp:ownership:attempts:";
     private static final String COOLDOWN_KEY = "otp:ownership:cooldown:";
 
+    /** Where a code goes: the contact's type and its normalised value (never logged). */
+    private record Target(ContactType type, String value) {
+        @Override
+        public String toString() {
+            return "Target[" + type + "]";
+        }
+    }
+
     private final ReactiveRedisTemplate<String, String> redis;
     private final UserRepository users;
+    private final ContactRepository contacts;
+    private final ContactCrypto crypto;
     private final DeliveryOrchestrator delivery;
-    private final ContactHasher hasher;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
 
     public OwnershipConfirmationCodes(ReactiveRedisTemplate<String, String> redis, UserRepository users,
-                                      DeliveryOrchestrator delivery, ContactHasher hasher, Clock clock) {
+                                      ContactRepository contacts, ContactCrypto crypto,
+                                      DeliveryOrchestrator delivery, Clock clock) {
         this.redis = redis;
         this.users = users;
+        this.contacts = contacts;
+        this.crypto = crypto;
         this.delivery = delivery;
-        this.hasher = hasher;
         this.clock = clock;
     }
 
-    /** Sends a fresh code to the nominee's verified phone. Only the nominee of a pending transfer may ask. */
+    /** Sends a fresh code to the nominee's verified contact. Only the nominee of a pending transfer may ask. */
     public Mono<Void> issue(OwnershipTransferRequest transfer, String callerId) {
         return Mono.defer(() -> {
             refuseUnlessNomineeOfPending(transfer, callerId);
             String scope = scope(transfer, callerId);
             return redis.opsForValue().setIfAbsent(COOLDOWN_KEY + scope, "1", COOLDOWN)
                     .flatMap(first -> first
-                            ? users.findById(callerId)
+                            ? deliverableContact(callerId)
                             : Mono.error(new TranslatedRefusal(ErrorCode.OTP_COOLDOWN_ACTIVE,
                                     "a code was sent less than a minute ago")))
-                    .filter(nominee -> nominee.isPhoneVerified() && nominee.getPhoneNumber() != null)
                     .switchIfEmpty(Mono.error(() -> new TranslatedRefusal(ErrorCode.PHONE_NUMBER_INVALID,
-                            "the nominee has no verified phone number to send a code to")))
-                    .flatMap(nominee -> {
+                            "the nominee has no verified contact to send a code to")))
+                    .flatMap(target -> {
                         String code = "%06d".formatted(random.nextInt(1_000_000));
                         return redis.opsForValue().set(CODE_KEY + scope, digest(scope, code), LIFETIME)
                                 .then(redis.delete(ATTEMPTS_KEY + scope))
-                                .then(send(nominee, code));
+                                .then(delivery.deliver(target.type(), target.value(), code, null).thenReturn(true));
                     })
                     .doOnSuccess(sent -> log.info("Ownership confirmation code sent for transfer {}", transfer.getId()))
                     .then();
@@ -131,16 +149,26 @@ public class OwnershipConfirmationCodes {
     }
 
     /**
-     * Sends through the same orchestrator as login codes (WhatsApp for a phone). The number is
-     * normalised first; it is never put in a Redis key, a log line or an exception message.
+     * The nominee's verified, unreleased contact to send the code to: WhatsApp before email, the
+     * primary one first. The nominee id may be the account id or the Keycloak user id, as a token's
+     * subject can be either. Empty when the account holds no verified contact.
      */
-    private Mono<Boolean> send(User nominee, String code) {
-        return Mono.defer(() -> {
-            ContactHasher.Normalized phone = hasher.normalize(nominee.getPhoneNumber(), ContactType.WHATSAPP, null, null)
-                    .orElseThrow(() -> new TranslatedRefusal(ErrorCode.PHONE_NUMBER_INVALID,
-                            "the nominee's phone number is not a valid mobile number"));
-            return delivery.deliver(ContactType.WHATSAPP, phone.value(), code, null).thenReturn(true);
-        });
+    private Mono<Target> deliverableContact(String nomineeId) {
+        return users.findById(nomineeId)
+                .switchIfEmpty(Mono.defer(() -> users.findByKeycloakUserId(nomineeId)))
+                .flatMapMany(account -> contacts.findByAccountIdAndReleasedAtIsNull(account.getId()))
+                .filter(contact -> contact.getVerifiedAt() != null && contact.getType() != null)
+                .collectList()
+                .flatMap(held -> {
+                    List<Contact> ordered = held.stream()
+                            .sorted(Comparator
+                                    .comparing((Contact c) -> c.getType() == ContactType.WHATSAPP ? 0 : 1)
+                                    .thenComparing(c -> c.isPrimary() ? 0 : 1))
+                            .toList();
+                    return ordered.isEmpty() ? Mono.<Target>empty()
+                            : crypto.decrypt(ordered.get(0).getValueEncrypted())
+                            .map(value -> new Target(ordered.get(0).getType(), value));
+                });
     }
 
     private static String scope(OwnershipTransferRequest transfer, String nomineeId) {

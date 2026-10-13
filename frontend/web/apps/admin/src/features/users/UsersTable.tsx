@@ -3,13 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, CardHeader, DataTable, EmptyState, ErrorState, StatusPill, useSnackbar } from '@pml.tickets/shared/components/m3';
-import { useIdentityUsers, useUserAdminActions, ADMIN_ACCOUNT_STATUSES, ADMIN_USER_ROLES, type AdminAccountStatus, type AdminUserRecord, type AdminUserRole } from '@pml.tickets/shared/api/admin/modules/identity-admin';
+import { useIdentityUsers, useUserAdminActions, ADMIN_ACCOUNT_STATUSES, ADMIN_STAFF_ROLES, ADMIN_USER_ROLES, type AdminAccountStatus, type AdminUserRecord, type AdminUserRole } from '@pml.tickets/shared/api/admin/modules/identity-admin';
 import { RowActions } from '@/components/console/RowActions';
-import { FilterBar, useStaff } from '@/components/console';
+import { FilterBar, useStaff, useTemporaryPassword } from '@/components/console';
 import { ago, csvText, humanize, maskEmail, maskPhone } from '@/lib/format';
-import { needText } from '@/lib/permissions';
 import { BuyerLookupDialog } from './BuyerLookupDialog';
-import { PersonCell, RolePills, copyText, errorMessage, optionsOf, useDebounced } from './common';
+import { PersonCell, RolePills, copyText, optionsOf, staffErrorMessage, useDebounced } from './common';
 import { useStepUp } from '@/lib/useStepUp';
 import { UserFormDialog, type UserFormValues } from './UserDialogs';
 import { UserQuickView } from './UserQuickView';
@@ -29,9 +28,10 @@ export function UsersTable() {
   const [status, setStatus] = useState('all');
   const [page, setPage] = useState(1);
   const [quick, setQuick] = useState<AdminUserRecord | null>(null);
-  const [form, setForm] = useState<'create' | 'admin' | null>(null);
+  const [form, setForm] = useState<'admin' | null>(null);
   const [busy, setBusy] = useState(false);
   const [lookup, setLookup] = useState(false);
+  const issued = useTemporaryPassword();
   const search = useDebounced(query);
 
   const list = useIdentityUsers({
@@ -46,12 +46,18 @@ export function UsersTable() {
     setBusy(true);
     try {
       const created = await guard(() => api.createUser({ email: v.email, firstName: v.firstName, lastName: v.lastName, phoneNumber: v.phone || undefined, role: v.role as AdminUserRole }));
-      if (created && v.role === 'FINANCE_LEAD') await guard(() => api.setUserRoles(created.id, ['CUSTOMER', 'FINANCE', 'FINANCE_LEAD']));
+      if (created && v.role === 'FINANCE_LEAD') await guard(() => api.setUserRoles(created.user.id, ['CUSTOMER', 'FINANCE', 'FINANCE_LEAD']));
       setForm(null);
       setPage(1);
-      snack.show(form === 'admin' ? `Admin ${v.firstName} ${v.lastName} created` : `${v.firstName} ${v.lastName} created`);
+      const name = `${v.firstName} ${v.lastName}`;
+      if (created?.temporaryPassword) {
+        issued.show({ password: created.temporaryPassword, accountName: name, kind: 'created' });
+      } else {
+        // A repeat of a request that already finished: the account exists and its password was shown once, when it was created.
+        snack.show(`${name} already has an account. Their password was shown when it was created. Use Reset password if they need a new one.`);
+      }
     } catch (e) {
-      snack.show({ message: errorMessage(e), tone: 'error' });
+      snack.show({ message: staffErrorMessage(e), tone: 'error' });
     } finally {
       setBusy(false);
     }
@@ -73,7 +79,7 @@ export function UsersTable() {
             setPage(1);
           }}
           filters={[
-            { id: 'role', label: 'Role', options: optionsOf(ADMIN_USER_ROLES) },
+            { id: 'role', label: 'Role', options: optionsOf(ADMIN_USER_ROLES.filter((r) => !ADMIN_STAFF_ROLES.includes(r))) },
             { id: 'st', label: 'Status', options: optionsOf(ADMIN_ACCOUNT_STATUSES) },
           ]}
           values={{ role, st: status }}
@@ -113,18 +119,10 @@ export function UsersTable() {
                 <Button variant="tonal" size="sm" onClick={() => setForm('admin')}>
                   Create admin
                 </Button>
-              ) : (
-                <Button variant="tonal" size="sm" disabled title={needText('createAdmin')}>
-                  Create admin
-                </Button>
-              )}
-              <Button variant="filled" size="sm" icon="add" disabled={!canManage} onClick={() => setForm('create')}>
-                New user
-              </Button>
+              ) : null}
             </>
           }
         />
-        {!canCreateAdmin ? <p className="m3-muted">{needText('createAdmin')}</p> : null}
         <DataTable<AdminUserRecord>
           caption="Users"
           loading={list.loading && list.rows.length === 0}
@@ -157,7 +155,8 @@ export function UsersTable() {
         />
       </Card>
 
-      <UserFormDialog open={form !== null} mode={form ?? 'create'} loading={busy} onClose={() => setForm(null)} onSubmit={submitForm} />
+      <UserFormDialog open={form !== null} mode="admin" loading={busy} onClose={() => setForm(null)} onSubmit={submitForm} />
+      {issued.panel}
       <BuyerLookupDialog open={lookup} onClose={() => setLookup(false)} />
       <UserQuickView
         user={quick}

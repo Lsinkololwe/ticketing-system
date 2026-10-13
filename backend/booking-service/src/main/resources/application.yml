@@ -42,6 +42,9 @@ spring:
       - task-queue: booking-recon
         capacity:
           max-concurrent-activity-executors: 2
+      - task-queue: booking-audit
+        capacity:
+          max-concurrent-activity-executors: 4
 
   cloud:
     azure:

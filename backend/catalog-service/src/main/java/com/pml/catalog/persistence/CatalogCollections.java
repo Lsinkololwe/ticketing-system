@@ -67,4 +67,7 @@ public final class CatalogCollections {
     /** Staged cross-service events, written in the business transaction */
     public static final String OUTBOX = "catalog_outbox";
 
+    /** Platform-wide reaches kept here until identity confirms them; created and validated by the shared library */
+    public static final String PLATFORM_WIDE_AUDIT_OUTBOX = "catalog_platform_wide_audit_outbox";
+
 }

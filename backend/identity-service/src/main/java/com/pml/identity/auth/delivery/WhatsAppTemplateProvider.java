@@ -20,12 +20,16 @@ import reactor.util.retry.Retry;
 import java.time.Duration;
 
 /**
- * WhatsApp Cloud API (v21+) template message carrying the code as the template body parameter.
+ * Sends the sign-in code to a buyer's WhatsApp as a template message carrying the code as the
+ * template body parameter.
  *
  * <p>The request body is built with Jackson (the code and number are JSON-encoded, never
- * concatenated). One call is bounded by {@code identity.delivery.whatsapp.timeout}; a 5xx or a
- * connection error is retried once, a 4xx never is. Nothing sensitive is logged: not the number,
- * not the code, not the response body - only the HTTP status.</p>
+ * concatenated). The whole send, retries included, must finish within
+ * {@code identity.delivery.whatsapp.timeout} (5 seconds by default): the buyer is waiting on the
+ * screen, so a slow provider is a failed delivery, not a long wait. A 5xx or a connection error is
+ * retried once while budget is left; a 4xx and any kind of timeout are never retried. Nothing
+ * sensitive is logged: not the number, not the code, not the response body - only the HTTP
+ * status.</p>
  */
 @Component
 public class WhatsAppTemplateProvider implements CodeDeliveryProvider {
@@ -101,7 +105,9 @@ public class WhatsAppTemplateProvider implements CodeDeliveryProvider {
                     .retryWhen(Retry.fixedDelay(RETRIES, Duration.ofMillis(200))
                             .filter(WhatsAppTemplateProvider::retryable)
                             .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
-                    .timeout(config.getTimeout().plus(Duration.ofMillis(500)))
+                    // One budget for the first call, the pause and the retry together; leaving it
+                    // cancels whatever request is still in flight.
+                    .timeout(config.getTimeout())
                     .then();
         }).onErrorMap(error -> {
             log.warn("WhatsApp delivery failed: {}", describe(error));
@@ -128,9 +134,20 @@ public class WhatsAppTemplateProvider implements CodeDeliveryProvider {
         if (error instanceof ProviderStatus status) {
             return status.status >= 500;
         }
-        // Connection-level failure; a timeout is NOT retried (the budget is already spent).
-        return !(error instanceof java.util.concurrent.TimeoutException)
-                && !(error instanceof io.netty.handler.timeout.ReadTimeoutException);
+        // A connection-level failure is worth one more try; a timeout is not (the budget is
+        // already spent). The client wraps the netty timeouts, so look through the causes.
+        return !isTimeout(error);
+    }
+
+    private static boolean isTimeout(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            if (cause instanceof java.util.concurrent.TimeoutException
+                    || cause instanceof io.netty.handler.timeout.TimeoutException
+                    || cause instanceof io.netty.channel.ConnectTimeoutException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String describe(Throwable error) {

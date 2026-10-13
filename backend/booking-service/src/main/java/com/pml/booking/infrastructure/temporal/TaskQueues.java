@@ -22,6 +22,9 @@ public final class TaskQueues {
     /** Reconciliation; few slots, so it never contends with the write path. */
     public static final String RECON = "booking-recon";
 
+    /** Delivery of platform-wide audit rows to identity; retries for as long as identity is away, so it shares nothing. */
+    public static final String AUDIT = "booking-audit";
+
     private TaskQueues() {
     }
 }

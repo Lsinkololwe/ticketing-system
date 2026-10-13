@@ -9,7 +9,7 @@ import io.temporal.workflow.WorkflowInterface;
 import io.temporal.workflow.WorkflowMethod;
 
 /**
- * Finds or creates the account that owns a verified contact, and finishes it (CONTRACT 10).
+ * Finds or creates the account that owns a verified contact, and finishes it so the buyer can sign in.
  *
  * <p>Addressed as {@code account-ensure/{contactKey}} - the keyed hash, never the contact - and
  * reached by Update-with-Start with conflict policy {@code USE_EXISTING}, so two simultaneous

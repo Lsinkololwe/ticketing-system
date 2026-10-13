@@ -22,6 +22,7 @@ export type PolicyName =
   | 'challenge'
   | 'verify'
   | 'ensure'
+  | 'checkout_intent'
   | 'contacts'
   | 'contacts_challenge'
   | 'logout'
@@ -75,6 +76,8 @@ export function defaultPolicies(app: string): Record<PolicyName, Policy> {
       ],
       failMode: 'closed',
     },
+    // Parking the selected tickets before sign-in: one per click of "continue", so a generous per-IP ceiling.
+    checkout_intent: { rules: [{ subject: 'ip', limit: 30, windowSec: 60 }], failMode: 'closed' },
     contacts: {
       rules: [
         { subject: 'account', limit: 10, windowSec: 60 },
@@ -113,8 +116,42 @@ export interface RateDecision {
   rule?: string;
 }
 
-/** Trusted-proxy client IP: the XFF entry `hops` from the RIGHT. 0 hops: XFF is not trusted. */
-export function resolveClientIp(headers: Headers, hops: number): string {
+// Shared on globalThis so the several bundles a framework may load this module into still warn once per process.
+const WARNED = Symbol.for('pml.bff.clientIpUnresolvedWarned');
+
+/** Forgets that the unresolved-address warning was already given; for tests only. */
+export function resetUnresolvedAddressWarning(): void {
+  delete (globalThis as Record<symbol, unknown>)[WARNED];
+}
+
+/**
+ * An address that cannot be told is rate limited as one shared visitor, which is invisible until a real crowd
+ * arrives. In production that is almost always a missing or wrong proxy hop count, so say so once, plainly.
+ */
+function warnUnresolvedOnce(logger: Logger | undefined, hops: number): void {
+  if (!logger || process.env.NODE_ENV !== 'production') return;
+  const g = globalThis as Record<symbol, unknown>;
+  if (g[WARNED]) return;
+  g[WARNED] = true;
+  logger.warn('auth.client_ip_unresolved', {
+    message:
+      'The visitor address could not be determined, so every such visitor shares one rate-limit allowance. ' +
+      'Set the proxy hop count (TRUST_PROXY_HOPS) to the number of trusted proxies in front of the app.',
+    trustProxyHops: hops,
+  });
+}
+
+/**
+ * Trusted-proxy client IP: the XFF entry `hops` from the RIGHT. 0 hops: XFF is not trusted.
+ * Returns 'unknown' when no address can be resolved; pass the logger to get the one-time production warning.
+ */
+export function resolveClientIp(headers: Headers, hops: number, logger?: Logger): string {
+  const ip = pickClientIp(headers, hops);
+  if (ip === 'unknown') warnUnresolvedOnce(logger, hops);
+  return ip;
+}
+
+function pickClientIp(headers: Headers, hops: number): string {
   if (hops <= 0) return 'unknown';
   const xff = headers.get('x-forwarded-for');
   if (!xff) return 'unknown';

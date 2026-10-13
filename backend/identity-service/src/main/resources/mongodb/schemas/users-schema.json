@@ -69,7 +69,7 @@
         "bsonType": "array",
         "description": "OWASP A01/A04 - User roles array. Users can have multiple roles. CUSTOMER is the base role that cannot be removed.",
         "minItems": 1,
-        "maxItems": 7,
+        "maxItems": 6,
         "uniqueItems": true,
         "items": {
           "bsonType": "string",
@@ -78,7 +78,6 @@
             "ORGANIZER",
             "ADMIN",
             "SUPER_ADMIN",
-            "SCANNER",
             "FINANCE",
             "FINANCE_LEAD"
           ]

@@ -37,6 +37,19 @@ describe('normaliseServerError: GraphQL', () => {
     expect(n.message).toMatch(/Try again in 30 seconds\.$/);
     expect(n.retryable).toBe(true);
   });
+  it('a staff account still being set up is a retryable toast in plain words', () => {
+    const n = normaliseServerError(gql({ errorCode: 'STAFF_CREATION_IN_PROGRESS', classification: 'UNAVAILABLE', retryable: true }, 'SECRET INTERNAL TEXT'));
+    expect(n.presentation).toBe('toast');
+    expect(n.retryable).toBe(true);
+    expect(n.message).toBe('The account is still being set up. Try again in a moment.');
+    expect(JSON.stringify(n)).not.toContain('SECRET');
+  });
+  it('a password reset on a customer or organizer account is refused in plain words', () => {
+    const n = normaliseServerError(gql({ errorCode: 'NOT_A_STAFF_ACCOUNT', classification: 'FAILED_PRECONDITION' }, 'SECRET INTERNAL TEXT'));
+    expect(n.message).toBe('Only staff accounts have a temporary password. This account is not a staff account.');
+    expect(n.retryable).toBe(false);
+    expect(JSON.stringify(n)).not.toContain('SECRET');
+  });
   it('flags a revoked session', () => {
     expect(normaliseServerError(gql({ errorCode: 'TOKEN_REVOKED', classification: 'UNAUTHENTICATED' })).endsSession).toBe(true);
     expect(normaliseServerError(gql({ errorCode: 'TIER_SOLD_OUT', classification: 'FAILED_PRECONDITION' })).endsSession).toBe(false);

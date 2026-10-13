@@ -18,7 +18,6 @@ import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.DefaultResourceLoader;
@@ -54,6 +53,10 @@ class ReferenceDataSeedMigrationTest {
     @BeforeAll
     static void connect() {
         client = MongoClients.create(MongoReplicaSet.connectionString());
+        // prepared here, in order, rather than in separate @BeforeAll methods whose relative order
+        // is not defined and which both need the client above
+        validatedPrepare();
+        publicListsPrepare();
     }
 
     @AfterAll
@@ -85,77 +88,73 @@ class ReferenceDataSeedMigrationTest {
                 .append("createdAt", java.util.Date.from(NOW)).append("updatedAt", java.util.Date.from(NOW)), CatalogCollections.REFERENCE_DATA).block();
     }
 
-    @Nested
-    @DisplayName("against a database with the validators applied")
-    class Validated {
+    // ── against a database with the validators applied ────────────────────────────────────────────
 
-        private static ReactiveMongoTemplate template;
+    private static ReactiveMongoTemplate validatedTemplate;
 
-        @BeforeAll
-        static void prepare() {
-            template = CatalogWiring.platformTemplate(client, "catalog_reference_release");
-            template.getMongoDatabase().flatMap(db -> Mono.from(db.drop())).block();
-            new com.pml.catalog.config.MongoSchemaValidationConfig(template, new DefaultResourceLoader(),
-                    new MongoSchemaValidationProperties()).applySchemaValidation();
-            // what the database held before this release: the old document codes, and Airtel's and MTN's prefixes swapped
-            legacyRow(template, "KYB_DOCUMENT_TYPE", "NRC", Map.of("appliesTo", "INDIVIDUAL"), true);
-            legacyRow(template, "KYB_DOCUMENT_TYPE", "PACRA_CERT", Map.of("appliesTo", "BUSINESS"), true);
-            legacyRow(template, "KYB_DOCUMENT_TYPE", "AN_ADMIN_ADDED_ONE", Map.of("appliesTo", "BOTH"), false);
-            legacyRow(template, "MOBILE_MONEY_OPERATOR", "MTN",
-                    Map.of("providerCode", "MTN_MOMO_ZMB", "msisdnPrefixes", List.of("26097", "26096")), true);
-        }
+    private static void validatedPrepare() {
+        validatedTemplate = CatalogWiring.platformTemplate(client, "catalog_reference_release");
+        validatedTemplate.getMongoDatabase().flatMap(db -> Mono.from(db.drop())).block();
+        new com.pml.catalog.config.MongoSchemaValidationConfig(validatedTemplate, new DefaultResourceLoader(),
+                new MongoSchemaValidationProperties()).applySchemaValidation();
+        // what the database held before this release: the old document codes, and Airtel's and MTN's prefixes swapped
+        legacyRow(validatedTemplate, "KYB_DOCUMENT_TYPE", "NRC", Map.of("appliesTo", "INDIVIDUAL"), true);
+        legacyRow(validatedTemplate, "KYB_DOCUMENT_TYPE", "PACRA_CERT", Map.of("appliesTo", "BUSINESS"), true);
+        legacyRow(validatedTemplate, "KYB_DOCUMENT_TYPE", "AN_ADMIN_ADDED_ONE", Map.of("appliesTo", "BOTH"), false);
+        legacyRow(validatedTemplate, "MOBILE_MONEY_OPERATOR", "MTN",
+                Map.of("providerCode", "MTN_MOMO_ZMB", "msisdnPrefixes", List.of("26097", "26096")), true);
+    }
 
-        @Test
-        @DisplayName("the whole release is accepted by the validator, and a second application changes nothing")
-        void idempotent() {
-            String first = service(template).applyV2().block();
-            long rows = template.count(new Query(), CatalogCollections.REFERENCE_DATA).block();
-            String second = service(template).applyV2().block();
+    @Test
+    @DisplayName("against a database with the validators applied · the whole release is accepted by the validator, and a second application changes nothing")
+    void validated_idempotent() {
+        String first = service(validatedTemplate).applyV2().block();
+        long rows = validatedTemplate.count(new Query(), CatalogCollections.REFERENCE_DATA).block();
+        String second = service(validatedTemplate).applyV2().block();
 
-            assertThat(first).startsWith("version 2:");
-            assertThat(template.count(new Query(), CatalogCollections.REFERENCE_DATA).block()).isEqualTo(rows);
-            assertThat(second.replaceAll("\\d+ retired", "")).isEqualTo(first.replaceAll("\\d+ retired", ""));
-            assertThat(count(template, ReferenceType.COUNTRY)).isGreaterThan(230);
-            // the boot-time seed owns the 21 towns with coordinates; the release adds the other 95 districts
-            assertThat(count(template, ReferenceType.CITY)).isEqualTo(95);
-            assertThat(count(template, ReferenceType.BUSINESS_TYPE)).isEqualTo(6);
-            assertThat(count(template, ReferenceType.ORGANIZER_TYPE)).isEqualTo(7);
-        }
+        assertThat(first).startsWith("version 2:");
+        assertThat(validatedTemplate.count(new Query(), CatalogCollections.REFERENCE_DATA).block()).isEqualTo(rows);
+        assertThat(second.replaceAll("\\d+ retired", "")).isEqualTo(first.replaceAll("\\d+ retired", ""));
+        assertThat(count(validatedTemplate, ReferenceType.COUNTRY)).isGreaterThan(230);
+        // the boot-time seed owns the 21 towns with coordinates; the release adds the other 95 districts
+        assertThat(count(validatedTemplate, ReferenceType.CITY)).isEqualTo(95);
+        assertThat(count(validatedTemplate, ReferenceType.BUSINESS_TYPE)).isEqualTo(6);
+        assertThat(count(validatedTemplate, ReferenceType.ORGANIZER_TYPE)).isEqualTo(7);
+    }
 
-        @Test
-        @DisplayName("Zambia is a country with +260, the legal types carry their documents, MTN carries its real prefixes")
-        void values() {
-            service(template).applyV2().block();
-            ReferenceData zambia = template.findOne(Query.query(Criteria.where("type").is("COUNTRY").and("code").is("ZM")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
-            assertThat(zambia.getMetadata()).containsEntry("dialCode", "+260").containsEntry("iso3", "ZMB");
-            ReferenceData limited = template.findOne(Query.query(Criteria.where("type").is("BUSINESS_TYPE").and("code").is("LIMITED_COMPANY")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
-            assertThat(limited.getMetadata().get("requiredDocuments"))
-                    .isEqualTo(List.of("NATIONAL_ID", "TAX_CERTIFICATE", "CERTIFICATE_OF_INCORPORATION"));
-            ReferenceData mtn = template.findOne(Query.query(Criteria.where("type").is("MOBILE_MONEY_OPERATOR").and("code").is("MTN")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
-            assertThat(mtn.getMetadata().get("msisdnPrefixes")).isEqualTo(List.of("26096", "26076"));
-        }
+    @Test
+    @DisplayName("against a database with the validators applied · Zambia is a country with +260, the legal types carry their documents, MTN carries its real prefixes")
+    void validated_values() {
+        service(validatedTemplate).applyV2().block();
+        ReferenceData zambia = validatedTemplate.findOne(Query.query(Criteria.where("type").is("COUNTRY").and("code").is("ZM")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
+        assertThat(zambia.getMetadata()).containsEntry("dialCode", "+260").containsEntry("iso3", "ZMB");
+        ReferenceData limited = validatedTemplate.findOne(Query.query(Criteria.where("type").is("BUSINESS_TYPE").and("code").is("LIMITED_COMPANY")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
+        assertThat(limited.getMetadata().get("requiredDocuments"))
+                .isEqualTo(List.of("NATIONAL_ID", "TAX_CERTIFICATE", "CERTIFICATE_OF_INCORPORATION"));
+        ReferenceData mtn = validatedTemplate.findOne(Query.query(Criteria.where("type").is("MOBILE_MONEY_OPERATOR").and("code").is("MTN")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
+        assertThat(mtn.getMetadata().get("msisdnPrefixes")).isEqualTo(List.of("26096", "26076"));
+    }
 
-        @Test
-        @DisplayName("retired document codes are deactivated, never deleted, and an administrator's own row is untouched")
-        void retiringDeactivates() {
-            service(template).applyV2().block();
-            ReferenceData nrc = template.findOne(Query.query(Criteria.where("type").is("KYB_DOCUMENT_TYPE").and("code").is("NRC")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
-            ReferenceData own = template.findOne(Query.query(Criteria.where("type").is("KYB_DOCUMENT_TYPE").and("code").is("AN_ADMIN_ADDED_ONE")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
-            assertThat(nrc).as("kept for the records that reference it").isNotNull();
-            assertThat(nrc.isActive()).isFalse();
-            assertThat(own.isActive()).isTrue();
-        }
+    @Test
+    @DisplayName("against a database with the validators applied · retired document codes are deactivated, never deleted, and an administrator's own row is untouched")
+    void validated_retiringDeactivates() {
+        service(validatedTemplate).applyV2().block();
+        ReferenceData nrc = validatedTemplate.findOne(Query.query(Criteria.where("type").is("KYB_DOCUMENT_TYPE").and("code").is("NRC")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
+        ReferenceData own = validatedTemplate.findOne(Query.query(Criteria.where("type").is("KYB_DOCUMENT_TYPE").and("code").is("AN_ADMIN_ADDED_ONE")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
+        assertThat(nrc).as("kept for the records that reference it").isNotNull();
+        assertThat(nrc.isActive()).isFalse();
+        assertThat(own.isActive()).isTrue();
+    }
 
-        @Test
-        @DisplayName("an administrator's deactivation survives a later application of the release")
-        void adminChoicesSurvive() {
-            service(template).applyV2().block();
-            template.updateFirst(Query.query(Criteria.where("type").is("NOTIFICATION_CHANNEL").and("code").is("SMS")),
-                    new Update().set("isActive", false).set("name", "Texts"), CatalogCollections.REFERENCE_DATA).block();
-            service(template).applyV2().block();
-            ReferenceData sms = template.findOne(Query.query(Criteria.where("type").is("NOTIFICATION_CHANNEL").and("code").is("SMS")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
-            assertThat(sms.isActive()).as("isActive is written on insert only").isFalse();
-        }
+    @Test
+    @DisplayName("against a database with the validators applied · an administrator's deactivation survives a later application of the release")
+    void validated_adminChoicesSurvive() {
+        service(validatedTemplate).applyV2().block();
+        validatedTemplate.updateFirst(Query.query(Criteria.where("type").is("NOTIFICATION_CHANNEL").and("code").is("SMS")),
+                new Update().set("isActive", false).set("name", "Texts"), CatalogCollections.REFERENCE_DATA).block();
+        service(validatedTemplate).applyV2().block();
+        ReferenceData sms = validatedTemplate.findOne(Query.query(Criteria.where("type").is("NOTIFICATION_CHANNEL").and("code").is("SMS")), ReferenceData.class, CatalogCollections.REFERENCE_DATA).block();
+        assertThat(sms.isActive()).as("isActive is written on insert only").isFalse();
     }
 
     @Test
@@ -173,65 +172,61 @@ class ReferenceDataSeedMigrationTest {
         assertThat(count(stale, ReferenceType.ORGANIZER_TYPE)).isEqualTo(7);
     }
 
-    @Nested
-    @DisplayName("the public lists are the reference rows")
-    class PublicLists {
+    // ── the public lists are the reference rows ───────────────────────────────────────────────────
 
-        private static ReactiveMongoTemplate template;
-        private static ReferenceGeography geography;
+    private static ReactiveMongoTemplate publicListsTemplate;
+    private static ReferenceGeography geography;
 
-        @BeforeAll
-        static void prepare() {
-            template = CatalogWiring.platformTemplate(client, "catalog_reference_geography");
-            template.getMongoDatabase().flatMap(db -> Mono.from(db.drop())).block();
-            ReferenceDataRepository repository = new ReactiveMongoRepositoryFactory(template).getRepository(ReferenceDataRepository.class);
-            geography = new ReferenceGeography(repository, template);
-            // a fresh database: the boot-time seed's rows, then the release
-            template.insert(new Document("type", "EVENT_CATEGORY").append("code", "MUSIC").append("name", "Music").append("isActive", true)
-                    .append("isSystem", true).append("displayOrder", 0), CatalogCollections.REFERENCE_DATA).block();
-            template.insert(new Document("type", "PROVINCE").append("code", "LUS").append("name", "Lusaka").append("parentType", "COUNTRY")
-                    .append("parentCode", "ZM").append("isActive", true).append("isSystem", true).append("displayOrder", 0), CatalogCollections.REFERENCE_DATA).block();
-            template.insert(new Document("type", "CITY").append("code", "LUSAKA").append("name", "Lusaka").append("parentType", "PROVINCE")
-                    .append("parentCode", "LUS").append("isActive", true).append("isSystem", true).append("displayOrder", 0), CatalogCollections.REFERENCE_DATA).block();
-            template.insert(new Document("type", "CITY").append("code", "KITWE").append("name", "Kitwe").append("parentType", "PROVINCE")
-                    .append("parentCode", "CB").append("isActive", true).append("isSystem", true).append("displayOrder", 1), CatalogCollections.REFERENCE_DATA).block();
-            unvalidatedService(template).applyV2().block();
-            template.insert(new Document("title", "Show").append("status", "PUBLISHED").append("published", true).append("isActive", true)
-                    .append("isDeleted", false).append("cityId", "LUSAKA"), CatalogCollections.EVENTS).block();
-            template.insert(new Document("title", "Draft").append("status", "DRAFT").append("published", false).append("isActive", true)
-                    .append("isDeleted", false).append("cityId", "KITWE"), CatalogCollections.EVENTS).block();
-        }
+    private static void publicListsPrepare() {
+        publicListsTemplate = CatalogWiring.platformTemplate(client, "catalog_reference_geography");
+        publicListsTemplate.getMongoDatabase().flatMap(db -> Mono.from(db.drop())).block();
+        ReferenceDataRepository repository = new ReactiveMongoRepositoryFactory(publicListsTemplate).getRepository(ReferenceDataRepository.class);
+        geography = new ReferenceGeography(repository, publicListsTemplate);
+        // a fresh database: the boot-time seed's rows, then the release
+        publicListsTemplate.insert(new Document("type", "EVENT_CATEGORY").append("code", "MUSIC").append("name", "Music").append("isActive", true)
+                .append("isSystem", true).append("displayOrder", 0), CatalogCollections.REFERENCE_DATA).block();
+        publicListsTemplate.insert(new Document("type", "PROVINCE").append("code", "LUS").append("name", "Lusaka").append("parentType", "COUNTRY")
+                .append("parentCode", "ZM").append("isActive", true).append("isSystem", true).append("displayOrder", 0), CatalogCollections.REFERENCE_DATA).block();
+        publicListsTemplate.insert(new Document("type", "CITY").append("code", "LUSAKA").append("name", "Lusaka").append("parentType", "PROVINCE")
+                .append("parentCode", "LUS").append("isActive", true).append("isSystem", true).append("displayOrder", 0), CatalogCollections.REFERENCE_DATA).block();
+        publicListsTemplate.insert(new Document("type", "CITY").append("code", "KITWE").append("name", "Kitwe").append("parentType", "PROVINCE")
+                .append("parentCode", "CB").append("isActive", true).append("isSystem", true).append("displayOrder", 1), CatalogCollections.REFERENCE_DATA).block();
+        unvalidatedService(publicListsTemplate).applyV2().block();
+        publicListsTemplate.insert(new Document("title", "Show").append("status", "PUBLISHED").append("published", true).append("isActive", true)
+                .append("isDeleted", false).append("cityId", "LUSAKA"), CatalogCollections.EVENTS).block();
+        publicListsTemplate.insert(new Document("title", "Draft").append("status", "DRAFT").append("published", false).append("isActive", true)
+                .append("isDeleted", false).append("cityId", "KITWE"), CatalogCollections.EVENTS).block();
+    }
 
-        @Test
-        @DisplayName("categories, provinces and cities answer from the reference rows, with the code as the id")
-        void lists() {
-            List<EventCategory> categories = geography.categories().collectList().block();
-            assertThat(categories).extracting(EventCategory::getId).containsExactly("MUSIC");
-            List<Province> provinces = geography.provinces().collectList().block();
-            assertThat(provinces).extracting(Province::getId).containsExactly("LUS");
-            assertThat(provinces.get(0).getCountry()).isEqualTo("Zambia");
-            List<City> inLusaka = geography.cities("LUS").collectList().block();
-            assertThat(inLusaka).extracting(City::getId).contains("LUSAKA", "CHILANGA", "CHIRUNDU");
-            assertThat(inLusaka).allMatch(c -> "LUS".equals(c.getProvinceId()) && "Lusaka".equals(c.getProvinceName()));
-            assertThat(geography.cities(null).collectList().block().size()).isGreaterThan(90);
-        }
+    @Test
+    @DisplayName("the public lists are the reference rows · categories, provinces and cities answer from the reference rows, with the code as the id")
+    void publicLists_lists() {
+        List<EventCategory> categories = geography.categories().collectList().block();
+        assertThat(categories).extracting(EventCategory::getId).containsExactly("MUSIC");
+        List<Province> provinces = geography.provinces().collectList().block();
+        assertThat(provinces).extracting(Province::getId).containsExactly("LUS");
+        assertThat(provinces.get(0).getCountry()).isEqualTo("Zambia");
+        List<City> inLusaka = geography.cities("LUS").collectList().block();
+        assertThat(inLusaka).extracting(City::getId).contains("LUSAKA", "CHILANGA", "CHIRUNDU");
+        assertThat(inLusaka).allMatch(c -> "LUS".equals(c.getProvinceId()) && "Lusaka".equals(c.getProvinceName()));
+        assertThat(geography.cities(null).collectList().block().size()).isGreaterThan(90);
+    }
 
-        @Test
-        @DisplayName("citiesWithEvents lists the cities with a published event, counted, and not the one with only a draft")
-        void withEvents() {
-            List<City> cities = geography.citiesWithEvents().collectList().block();
-            assertThat(cities).extracting(City::getId).containsExactly("LUSAKA");
-            assertThat(cities.get(0).getEventCount()).isEqualTo(1);
-        }
+    @Test
+    @DisplayName("the public lists are the reference rows · citiesWithEvents lists the cities with a published event, counted, and not the one with only a draft")
+    void publicLists_withEvents() {
+        List<City> cities = geography.citiesWithEvents().collectList().block();
+        assertThat(cities).extracting(City::getId).containsExactly("LUSAKA");
+        assertThat(cities.get(0).getEventCount()).isEqualTo(1);
+    }
 
-        @Test
-        @DisplayName("a deactivated row leaves the public list")
-        void deactivated() {
-            template.updateFirst(Query.query(Criteria.where("type").is("EVENT_CATEGORY").and("code").is("MUSIC")),
-                    new Update().set("isActive", false), CatalogCollections.REFERENCE_DATA).block();
-            assertThat(geography.categories().collectList().block()).isEmpty();
-            template.updateFirst(Query.query(Criteria.where("type").is("EVENT_CATEGORY").and("code").is("MUSIC")),
-                    new Update().set("isActive", true), CatalogCollections.REFERENCE_DATA).block();
-        }
+    @Test
+    @DisplayName("the public lists are the reference rows · a deactivated row leaves the public list")
+    void publicLists_deactivated() {
+        publicListsTemplate.updateFirst(Query.query(Criteria.where("type").is("EVENT_CATEGORY").and("code").is("MUSIC")),
+                new Update().set("isActive", false), CatalogCollections.REFERENCE_DATA).block();
+        assertThat(geography.categories().collectList().block()).isEmpty();
+        publicListsTemplate.updateFirst(Query.query(Criteria.where("type").is("EVENT_CATEGORY").and("code").is("MUSIC")),
+                new Update().set("isActive", true), CatalogCollections.REFERENCE_DATA).block();
     }
 }

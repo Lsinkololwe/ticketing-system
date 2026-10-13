@@ -1,9 +1,11 @@
 /**
  * CSRF for the BFF: SameSite cookie plus, for every unsafe method, `Origin` equal to the app
  * origin, `Sec-Fetch-Site: same-origin` when the browser sends it, and the custom header
- * `x-pml-csrf: 1` (cannot be added cross-origin without a CORS preflight we never grant).
+ * `X-Requested-With: pml-web` (a custom header cannot be added cross-origin without a CORS preflight
+ * we never grant). This is the single convention every browser caller of the BFF follows.
  */
-export const CSRF_HEADER = 'x-pml-csrf';
+export const CSRF_HEADER = 'x-requested-with';
+export const CSRF_VALUE = 'pml-web';
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export type CsrfFailure = 'METHOD_UNSAFE_ORIGIN_MISSING' | 'ORIGIN_MISMATCH' | 'FETCH_SITE' | 'CSRF_HEADER';
@@ -25,7 +27,7 @@ export function assertSameOrigin(req: Request, appOrigin: string, opts: CsrfOpti
   if (origin !== appOrigin) return 'ORIGIN_MISMATCH';
   const site = req.headers.get('sec-fetch-site');
   if (site && site !== 'same-origin') return 'FETCH_SITE';
-  if ((opts.requireHeader ?? true) && req.headers.get(CSRF_HEADER) !== '1') return 'CSRF_HEADER';
+  if ((opts.requireHeader ?? true) && req.headers.get(CSRF_HEADER) !== CSRF_VALUE) return 'CSRF_HEADER';
   return null;
 }
 

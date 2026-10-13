@@ -81,27 +81,25 @@ class ReservationScopeLintTest {
     }
 
     @Test
-    @DisplayName("ET-TKT-001 · support is an explicit set of roles, not any elevated role")
+    @DisplayName("ET-TKT-001 · support is the closed staff set, asked through the recorded path, not any elevated role")
     void supportIsAClosedSet() {
-        Matcher declaration = Pattern.compile(
-                        "SUPPORT_AUTHORITIES\\s*=\\s*Set\\.of\\(([^)]*)\\)", Pattern.DOTALL)
-                .matcher(queries);
-        assertThat(declaration.find())
-                .as("SUPPORT_AUTHORITIES has moved or changed shape — re-point this lint")
-                .isTrue();
-
-        // Scoped to the declaration, not the file: ROLE_ORGANIZER appears legitimately on
-        // reservationsByEvent, which checks the event before answering.
-        assertThat(declaration.group(1))
+        assertThat(queries)
                 .as("""
-                    An organizer reads the reservations for their own event through \
-                    reservationsByEvent, which checks the event. This path knows nothing about \
-                    events, so admitting the role here would open every buyer's reservation to \
-                    every organizer on the platform.""")
-                .contains("ROLE_ADMIN")
-                .contains("ROLE_FINANCE")
-                .doesNotContain("ROLE_ORGANIZER")
-                .doesNotContain("ROLE_CUSTOMER");
+                    The by-id read asks whether the caller is platform staff through the shared, \
+                    recorded path. A private role set here is how an organizer or customer role ends \
+                    up reading every buyer's reservation.""")
+                .contains("PlatformWideAccess.isPlatformStaff(PlatformWideAccess.Reason.RESERVATION_SUPPORT_READ")
+                .doesNotContain("SUPPORT_AUTHORITIES")
+                .doesNotContain("ROLE_ORGANIZER\", \"")
+                .doesNotContain("\"ROLE_CUSTOMER\"");
+
+        // The set itself: administrator, super administrator and finance, and no one else.
+        assertThat(com.pml.shared.security.tenancy.StaffRole.all())
+                .as("An organizer reads reservations for their own event through reservationsByEvent, which "
+                        + "checks the event; admitting any further role here opens every buyer's reservation to it.")
+                .containsExactlyInAnyOrder(com.pml.shared.security.tenancy.StaffRole.ADMIN,
+                        com.pml.shared.security.tenancy.StaffRole.SUPER_ADMIN,
+                        com.pml.shared.security.tenancy.StaffRole.FINANCE);
     }
 
     @Test

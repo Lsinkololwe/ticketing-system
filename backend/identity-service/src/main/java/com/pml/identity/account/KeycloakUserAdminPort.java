@@ -56,13 +56,32 @@ public interface KeycloakUserAdminPort {
     Mono<Optional<String>> readAttribute(String realm, String keycloakUserId, String name);
 
     /**
-     * Creates a platform staff user in the staff realm: enabled, with UPDATE_PASSWORD and
-     * CONFIGURE_TOTP required at first sign-in. A 409 reads the user back by username.
+     * Creates a platform staff user in the staff realm with UPDATE_PASSWORD and CONFIGURE_TOTP
+     * required at first sign-in. A 409 reads the user back by username.
      *
+     * @param enabled false creates the user unable to sign in, for a creation that is not finished yet;
+     *                {@link #setEnabled(String, String, boolean)} opens it
      * @return the Keycloak user id
      */
     Mono<String> createStaffUser(String username, String email, String firstName, String lastName,
-                                 String temporaryPassword);
+                                 String temporaryPassword, boolean enabled);
+
+    /**
+     * Gives a staff-realm user a new one-time password, replacing the one they have. The credential is
+     * marked temporary, so Keycloak makes the person choose their own at the next sign-in
+     * (UPDATE_PASSWORD), and CONFIGURE_TOTP stays or is added while no second factor is enrolled.
+     * Repeating the call with the same value is safe. The value is never logged or put in an error.
+     */
+    Mono<Void> issueTemporaryPassword(String keycloakUserId, String temporaryPassword);
+
+    /** The Keycloak id of the staff-realm user with this username; empty when the staff realm holds none. */
+    Mono<String> findStaffUserId(String username);
+
+    /**
+     * Removes a staff-realm user, used to undo a creation that did not finish so the staff realm is
+     * left as it was. A user Keycloak no longer holds is already removed.
+     */
+    Mono<Void> deleteStaffUser(String keycloakUserId);
 
     default Mono<Void> endSessions(String keycloakUserId) {
         return endSessions(null, keycloakUserId);

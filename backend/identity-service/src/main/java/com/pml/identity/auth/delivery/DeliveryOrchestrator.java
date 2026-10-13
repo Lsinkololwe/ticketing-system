@@ -1,17 +1,25 @@
 package com.pml.identity.auth.delivery;
 
+import com.pml.identity.config.IdentityDeliveryProperties;
 import com.pml.identity.domain.enums.ContactType;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Chooses the channel for a code and sends it.
+ * Gets a sign-in code to the buyer: picks the channel and sends it.
+ *
+ * <p>The buyer is waiting on the screen, so the whole delivery (every channel tried, retries
+ * included) has one time budget. When it runs out, or no channel can deliver, the buyer is told
+ * the code could not be sent and may try again; the caller removes the half-made challenge so the
+ * retry is not blocked.</p>
  *
  * <p>A WhatsApp contact is reached on WhatsApp, an email contact by email. The 'other' channel is
  * tried after a failure only when the caller named it as {@code preferredChannel} AND the contact
@@ -23,12 +31,30 @@ import java.util.List;
 @Service
 public class DeliveryOrchestrator {
 
+    private static final Duration DEFAULT_BUDGET = Duration.ofSeconds(5);
+
     private final List<CodeDeliveryProvider> providers;
     private final MeterRegistry meters;
+    private final Duration budget;
+
+    @Autowired
+    public DeliveryOrchestrator(List<CodeDeliveryProvider> providers, MeterRegistry meters,
+                                IdentityDeliveryProperties properties) {
+        this(providers, meters, longest(properties.getWhatsapp().getTimeout(), properties.getEmail().getTimeout()));
+    }
 
     public DeliveryOrchestrator(List<CodeDeliveryProvider> providers, MeterRegistry meters) {
+        this(providers, meters, DEFAULT_BUDGET);
+    }
+
+    public DeliveryOrchestrator(List<CodeDeliveryProvider> providers, MeterRegistry meters, Duration budget) {
         this.providers = List.copyOf(providers);
         this.meters = meters;
+        this.budget = budget;
+    }
+
+    private static Duration longest(Duration a, Duration b) {
+        return a.compareTo(b) >= 0 ? a : b;
     }
 
     /** Fails with NOTIFICATION_CHANNEL_UNAVAILABLE when no enabled provider can reach this contact type. */
@@ -45,7 +71,12 @@ public class DeliveryOrchestrator {
      */
     public Mono<DeliveryChannel> deliver(ContactType type, String recipient, String code, DeliveryChannel preferred) {
         List<DeliveryChannel> order = channelOrder(type, preferred);
-        return attempt(order, 0, recipient, code);
+        return attempt(order, 0, recipient, code)
+                .timeout(budget)
+                .onErrorMap(java.util.concurrent.TimeoutException.class, timeout -> {
+                    meters.counter("identity.otp.delivery", "channel", order.get(0).name(), "outcome", "timeout").increment();
+                    return new TranslatedRefusal(ErrorCode.OTP_DELIVERY_FAILED, "the code could not be delivered in time");
+                });
     }
 
     private Mono<DeliveryChannel> attempt(List<DeliveryChannel> order, int index, String recipient, String code) {

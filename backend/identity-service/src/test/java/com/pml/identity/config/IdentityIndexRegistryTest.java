@@ -142,6 +142,51 @@ class IdentityIndexRegistryTest {
     }
 
     @Test
+    @DisplayName("audit rows are kept indefinitely: no index on the audit collection expires anything, declared or live")
+    void auditRowsNeverExpire() {
+        assertThat(IdentityIndexInitializer.specifications())
+                .filteredOn(spec -> spec.collection().equals(IdentityCollections.AUDIT_LOGS))
+                .as("the audit collection is evidence; a TTL index would delete it")
+                .isNotEmpty().allSatisfy(spec -> assertThat(spec.expireAfter()).as(spec.name()).isNull());
+
+        assertThat(template.indexOps(IdentityCollections.AUDIT_LOGS).getIndexInfo().collectList().block())
+                .isNotEmpty().allSatisfy(info -> assertThat(info.getExpireAfter())
+                        .as("live index %s", info.getName()).isEmpty());
+    }
+
+    @Test
+    @DisplayName("an expiry index an earlier version left on the audit collection is removed at start-up, and its absence is fine")
+    void legacyAuditExpiryIsDropped() {
+        template.indexOps(IdentityCollections.AUDIT_LOGS).ensureIndex(new org.springframework.data.mongodb.core.index.Index()
+                .on("createdAt", org.springframework.data.domain.Sort.Direction.ASC)
+                .expire(java.time.Duration.ofDays(365)).named(IdentityIndexInitializer.LEGACY_AUDIT_EXPIRY_INDEX)).block();
+        assertThat(template.indexOps(IdentityCollections.AUDIT_LOGS).getIndexInfo().map(info -> info.getName()).collectList().block())
+                .contains(IdentityIndexInitializer.LEGACY_AUDIT_EXPIRY_INDEX);
+        IdentityIndexInitializer initializer = new IdentityIndexInitializer(template);
+
+        initializer.dropLegacyAuditExpiry();
+        initializer.dropLegacyAuditExpiry();
+
+        assertThat(template.indexOps(IdentityCollections.AUDIT_LOGS).getIndexInfo().map(info -> info.getName()).collectList().block())
+                .doesNotContain(IdentityIndexInitializer.LEGACY_AUDIT_EXPIRY_INDEX);
+    }
+
+    @Test
+    @DisplayName("one audit row per record id, while rows without one coexist")
+    void oneRowPerRecordId() {
+        String id = java.util.UUID.randomUUID().toString();
+        template.insert(new Document("action", "TENANT_BOUNDARY_CROSSED").append("recordId", id), IdentityCollections.AUDIT_LOGS).block();
+        template.insert(new Document("action", "USER_LOGIN"), IdentityCollections.AUDIT_LOGS).block();
+        template.insert(new Document("action", "USER_LOGIN"), IdentityCollections.AUDIT_LOGS).block();
+
+        Throwable failure = template
+                .insert(new Document("action", "TENANT_BOUNDARY_CROSSED").append("recordId", id), IdentityCollections.AUDIT_LOGS)
+                .then(Mono.<Throwable>empty()).onErrorResume(Mono::just).block();
+
+        assertThat(failure).as("a second row for the same reach").isNotNull();
+    }
+
+    @Test
     @DisplayName("no index exists that §4 does not declare")
     void noUndeclaredIndexes() {
         assertThat(indexes.undeclared(IdentityIndexInitializer.specifications()))

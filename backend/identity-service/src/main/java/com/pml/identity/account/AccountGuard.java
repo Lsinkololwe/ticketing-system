@@ -7,7 +7,7 @@ import com.pml.shared.error.ErrorCode;
 
 import java.util.Optional;
 
-/** What stops a known account from being ensured: the refusal codes of CONTRACT 4.3. */
+/** What stops a known account from being ensured: the refusal codes a buyer gets when asking to sign in: suspended, being merged, or no longer active. */
 public final class AccountGuard {
 
     private AccountGuard() {

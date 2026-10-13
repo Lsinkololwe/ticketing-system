@@ -29,7 +29,7 @@ const accessSchema = z.object({ code: z.string().trim().min(1, 'Enter your acces
 
 function Related({ eventId, categoryId, category, city }: { eventId: string; categoryId: string | null; category: string | null; city: string | null }) {
   const { events } = useDiscoverEvents({ categoryId: categoryId ?? undefined }, 8, !categoryId);
-  // No `hasAvailableTickets` filter exists (ET-CAT-003 R4): drop sold-out events here instead.
+  // The feed has no `hasAvailableTickets` filter: drop sold-out events here instead.
   const list = events.filter((e) => e.id !== eventId && !e.soldOut).slice(0, 4);
   if (!list.length) return null;
   return (

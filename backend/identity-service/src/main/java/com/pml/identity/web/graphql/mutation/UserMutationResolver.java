@@ -4,6 +4,8 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.account.AccountService;
+import com.pml.identity.account.StaffAccountPassword;
+import com.pml.identity.account.StaffRolePolicy;
 import com.pml.identity.domain.model.User;
 import com.pml.identity.exception.UserNotFoundException;
 import com.pml.identity.service.UserService;
@@ -130,23 +132,54 @@ public class UserMutationResolver {
     }
 
     /**
-     * Create a platform staff user (admin only). The user is created in the staff realm and must
-     * set a password and a second factor at first sign-in; buyers are never created this way - they
-     * come into being by proving a contact.
+     * Create a platform staff user: {@code createUser(input) SUPER_ADMIN CreateStaffUserResult!}.
+     *
+     * <p>This opens a staff account only. The person is created in the staff realm, holds exactly one
+     * staff role (ADMIN, SUPER_ADMIN, FINANCE or FINANCE_LEAD) and must replace a one-time password and
+     * set up a second factor at first sign-in. The system makes that password and the answer of the call
+     * that created the account carries it, once ({@code temporaryPassword}); a repeat of a finished
+     * request returns the account with none, and a lost one is replaced with
+     * {@link #resetStaffTemporaryPassword}. Buyers and organizers are never created this way: they come into being
+     * by proving a contact, and an organizer is a buyer who applies to run events. A role that is not
+     * a staff role is refused as not well formed.
+     *
+     * <p>Handing out a staff role is for a super administrator only, whatever the role; an
+     * administrator who asks is refused. The person is created by a durable process that finishes the
+     * job or takes everything back: if the role cannot be granted nothing is left behind, no Keycloak
+     * user and no stored account. The call waits for the finished account; if it is not ready in time
+     * it is refused as {@code STAFF_CREATION_IN_PROGRESS} and asking again returns the same account.
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.createUser")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public Mono<User> createUser(@InputArgument Map<String, Object> input) {
-        Object role = input.get("role");
-        return actor().flatMap(admin -> userService.createStaffUser(
-                (String) input.get("email"),
-                (String) input.get("firstName"),
-                (String) input.get("lastName"),
-                (String) input.get("password"),
-                (String) input.get("phoneNumber"),
-                role == null ? null : UserType.valueOf(role.toString()),
-                admin));
+    public Mono<StaffAccountPassword> createUser(@InputArgument Map<String, Object> input) {
+        UserType role = staffRole(input.get("role"));
+        return StaffRolePolicy.requireSuperAdminToTouch(List.of(role))
+                .then(actor())
+                .flatMap(admin -> userService.createStaffUser(
+                        (String) input.get("email"),
+                        (String) input.get("firstName"),
+                        (String) input.get("lastName"),
+                        (String) input.get("phoneNumber"),
+                        role,
+                        admin));
+    }
+
+    /**
+     * Issue a staff member a new one-time password: {@code resetStaffTemporaryPassword(userId) SUPER_ADMIN
+     * ResetStaffPasswordResult!}.
+     *
+     * <p>The staff realm has no self-service reset, so this is how a lost or never-received first password
+     * is replaced. The person's current sessions end, their old tokens stop working, and at the next
+     * sign-in Keycloak makes them choose their own password (and enrol a second factor if none is
+     * enrolled). The new password is in this answer only. Refused for an account that is not platform
+     * staff.
+     */
+    @DgsMutation
+    @FailClosedOnRevocation("admin.resetStaffTemporaryPassword")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public Mono<StaffAccountPassword> resetStaffTemporaryPassword(@InputArgument String userId) {
+        return actor().flatMap(admin -> userService.resetStaffTemporaryPassword(userId, admin));
     }
 
     /**
@@ -177,7 +210,9 @@ public class UserMutationResolver {
     /**
      * Add a role to a user. Keycloak is written first, then the stored copy.
      *
-     * <p>OWASP: A01 admin-only; A04 role combinations validated; A09 the actor is recorded.
+     * <p>Adding a staff role (ADMIN, SUPER_ADMIN, FINANCE, FINANCE_LEAD) is for a super administrator
+     * only; an administrator may add roles that are not staff roles. Role combinations are validated
+     * and the actor is recorded.
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.addUserRole")
@@ -192,7 +227,9 @@ public class UserMutationResolver {
         if (role == UserType.CUSTOMER) {
             return userService.findById(userId).switchIfEmpty(Mono.error(new UserNotFoundException(userId)));
         }
-        return actor().flatMap(admin -> userService.addRole(userId, role, admin));
+        return StaffRolePolicy.requireSuperAdminToTouch(List.of(role))
+                .then(actor())
+                .flatMap(admin -> userService.addRole(userId, role, admin));
     }
 
     @DgsMutation
@@ -208,7 +245,9 @@ public class UserMutationResolver {
         if (role == UserType.CUSTOMER) {
             return Mono.error(new IllegalArgumentException("CUSTOMER role cannot be removed - it is the base role for all users"));
         }
-        return actor().flatMap(admin -> userService.removeRole(userId, role, admin));
+        return StaffRolePolicy.requireSuperAdminToTouch(List.of(role))
+                .then(actor())
+                .flatMap(admin -> userService.removeRole(userId, role, admin));
     }
 
     @DgsMutation
@@ -228,7 +267,33 @@ public class UserMutationResolver {
         if (!UserType.isValidRoleCombination(roleSet)) {
             return Mono.error(new IllegalArgumentException("Invalid role combination"));
         }
-        return actor().flatMap(admin -> userService.setRoles(userId, roleSet, admin));
+        // Replacing roles can add a staff role or take one away, so the person's current roles count too.
+        Mono<Void> allowed = userService.getRoles(userId)
+                .defaultIfEmpty(Set.of())
+                .flatMap(current -> {
+                    Set<UserType> touched = EnumSet.noneOf(UserType.class);
+                    touched.addAll(roleSet);
+                    touched.addAll(current);
+                    return StaffRolePolicy.requireSuperAdminToTouch(touched);
+                });
+        return allowed.then(actor()).flatMap(admin -> userService.setRoles(userId, roleSet, admin));
+    }
+
+    /** The requested role as a staff role, or a refusal: createUser opens staff accounts only. */
+    private static UserType staffRole(Object requested) {
+        UserType role = null;
+        if (requested != null) {
+            try {
+                role = UserType.valueOf(requested.toString());
+            } catch (IllegalArgumentException unknown) {
+                role = null;
+            }
+        }
+        if (role == null || !role.isStaffRole()) {
+            throw new TranslatedRefusal(ErrorCode.COMMAND_NOT_WELL_FORMED,
+                    "a user created here holds one staff role: ADMIN, SUPER_ADMIN, FINANCE or FINANCE_LEAD");
+        }
+        return role;
     }
 
     private static Mono<String> actor() {

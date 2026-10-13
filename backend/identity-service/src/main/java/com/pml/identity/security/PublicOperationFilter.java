@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 import java.util.Set;
 
 /**
- * Identity's use of the platform's public-operation filter (ET-ADM-002-R10): a signed-out caller reaches exactly
+ * Identity's use of the platform's public-operation filter: a signed-out caller reaches exactly
  * {@link #PUBLIC_FIELDS} and the organization badge the router resolves for the buyer's event page, and nothing else. The rules, the limits and the rate limiter are
  * {@link PublicGraphQlFilter}'s; only the allowlist is identity's. Adding a field is a spec change.
  */

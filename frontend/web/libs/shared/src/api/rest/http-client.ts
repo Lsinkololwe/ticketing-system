@@ -35,14 +35,14 @@ export interface ApiError {
 /**
  * Axios client for the same-origin BFF (`/api/rest/*`). No token getters: the BFF attaches the
  * bearer server-side. Cookies travel same-origin only and every request carries the constant
- * `x-pml-csrf` header the BFF requires on unsafe methods. A 401 sends the user to `/login`.
+ * `X-Requested-With: pml-web` header the BFF requires on unsafe methods. A 401 sends the user to `/login`.
  */
 export const createBffApiClient = (baseURL = '/api/rest'): AxiosInstance => {
   const client = axios.create({
     baseURL,
     timeout: 30000,
     withCredentials: false, // same-origin requests send cookies regardless; never cross-origin
-    headers: { 'Content-Type': 'application/json', 'x-pml-csrf': '1' },
+    headers: { 'Content-Type': 'application/json', 'x-requested-with': 'pml-web' },
   });
   client.interceptors.response.use(
     (response: AxiosResponse) => response,

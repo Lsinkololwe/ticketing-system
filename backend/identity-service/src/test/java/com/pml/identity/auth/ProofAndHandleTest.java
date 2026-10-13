@@ -17,10 +17,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The proof and the login handle are short, bound and single-use (ET-IDN-001 R6, CONTRACT 6). */
+/** The proof and the login handle are short, bound and single-use. */
 @Tag("L2")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001-R6 · a proof authorises one ensure; a login handle authorises one sign-in")
+@DisplayName("a proof authorises one ensure; a login handle authorises one sign-in")
 class ProofAndHandleTest {
 
     /** The tests run against a real Redis, from the shared test fixtures. */

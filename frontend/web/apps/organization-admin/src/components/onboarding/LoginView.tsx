@@ -3,7 +3,7 @@
 import { Banner, Button } from '@pml.tickets/shared/components/m3';
 import { AuthLayout } from '@pml.tickets/shared/layouts';
 
-export type LoginMode = 'checking' | 'redirecting' | 'error' | 'registered' | 'prompt';
+export type LoginMode = 'checking' | 'redirecting' | 'error' | 'prompt';
 
 export interface LoginViewProps {
   mode: LoginMode;
@@ -13,8 +13,6 @@ export interface LoginViewProps {
 }
 
 const ERROR_COPY: Record<string, string> = {
-  OAuthAccountNotLinked: 'That email is already linked to another account. Sign in with the original method.',
-  AccessDenied: 'Access was denied. Contact support if this keeps happening.',
   FORBIDDEN: 'This account is not an organizer account. Apply to become an organizer or use another account.',
   SIGN_IN_FAILED: 'Sign-in did not complete. Try again.',
   LOGIN_FAILED: 'Sign-in did not complete. Try again.',
@@ -34,13 +32,6 @@ export function LoginView({ mode, authError, onSignIn, onRegister }: LoginViewPr
         <p role="status" data-testid="login-loading">
           {mode === 'checking' ? 'Checking your session…' : 'Taking you to sign in…'}
         </p>
-      </AuthLayout>
-    );
-  }
-  if (mode === 'registered') {
-    return (
-      <AuthLayout product="MyTicketZM" console="Organizer" title="Account created" footer={footer}>
-        <Banner tone="success">Your account was created. Redirecting you to sign in…</Banner>
       </AuthLayout>
     );
   }

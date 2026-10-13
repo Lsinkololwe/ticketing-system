@@ -1,5 +1,6 @@
 package com.pml.booking.infrastructure.client;
 
+import com.pml.booking.infrastructure.gateway.model.Msisdn;
 import com.pml.booking.config.PawaPayProperties;
 import com.pml.booking.infrastructure.logging.PciDssLogger;
 import com.pml.booking.infrastructure.metrics.PaymentMetrics;
@@ -432,14 +433,9 @@ public class PawaPayClient {
         return UUID.randomUUID().toString();
     }
 
+    /** The number in the digits-only form the provider takes; see {@link Msisdn}. */
     private static String normalizePhoneNumber(String phoneNumber) {
-        String digits = phoneNumber.replaceAll("[^0-9]", "");
-        if (digits.startsWith("0") && digits.length() == 10) {
-            return "26" + digits;
-        } else if (digits.length() == 9) {
-            return "260" + digits;
-        }
-        return digits;
+        return Msisdn.of(phoneNumber);
     }
 
     private static String truncateMessage(String message) {

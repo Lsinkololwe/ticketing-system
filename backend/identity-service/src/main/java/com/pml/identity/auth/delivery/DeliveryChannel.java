@@ -2,7 +2,7 @@ package com.pml.identity.auth.delivery;
 
 import com.pml.identity.domain.enums.ContactType;
 
-/** How a code reaches a person. SMS is not a channel (D-39). */
+/** How a code reaches a person: WhatsApp or email. SMS is not a channel. */
 public enum DeliveryChannel {
     WHATSAPP,
     EMAIL;

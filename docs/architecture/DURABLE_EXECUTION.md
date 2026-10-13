@@ -62,6 +62,7 @@ Per-flow reference (current code; ids are the ET-PLT-015 §4 registry):
 | identity | `OrganizerOnboardingWorkflow` | `identity-onboarding` | `org-onboarding/{organizationId}` | approval to Keycloak roles |
 | identity | `OwnershipTransferWorkflow` | `identity-onboarding` | `ownership/{transferId}` | multi-step handover |
 | identity | `UserSyncWorkflow` | `identity-onboarding` | `user-sync/{keycloakUserId}` | long-lived, continues as new |
+| identity | `StaffAccountWorkflow` | `identity-onboarding` | `staff-create/{staffKey}` (keyed hash of the address) | record, Keycloak user, role, sign-in: whole or taken back |
 | identity | `GroupMirrorRepair` (dynamic type) | `identity-onboarding` | Schedule `identity-group-mirror-repair`, every 60 s | repair |
 | identity | `NotificationWorkflow` | `identity-notify` | `notify/{deduplicationKey}` | send with retries |
 | identity | `ReminderWorkflow` | `identity-notify` | `reminder/{reminderId}` | timer |
@@ -112,8 +113,10 @@ so any pod can carry any execution and a crashed pod's work goes to the next pol
 | booking | `booking-provider` | PawaPay activities for payouts, refunds, micro-deposits | — |
 | booking | `booking-finance` | `PayoutWorkflow`, `BankVerificationWorkflow`, `EventFinanceWorkflow`, `CancellationRefundsWorkflow`, `RefundWorkflow`, `ChargebackWorkflow` | — |
 | booking | `booking-recon` | `ReconciliationWorkflow` | escrow, escrow-journal and alerts hourly; a weekly summary (D-24) |
+| booking | `booking-audit` | `PlatformWideAuditDeliveryWorkflow` | one per platform-wide reach, started right after the local write; retried until identity confirms |
 | catalog | `catalog-lifecycle` | `EventLifecycleWorkflow`, `EventApprovalWorkflow` | — |
-| identity | `identity-onboarding` | `OrganizerOnboardingWorkflow`, `OwnershipTransferWorkflow`, `UserSyncWorkflow`, `GroupMirrorRepair` (dynamic) | `identity-group-mirror-repair` (every 60 s), `identity-user-reconciliation` (03:30 UTC) |
+| catalog | `catalog-audit` | `PlatformWideAuditDeliveryWorkflow` | as for booking |
+| identity | `identity-onboarding` | `OrganizerOnboardingWorkflow`, `OwnershipTransferWorkflow`, `UserSyncWorkflow`, `StaffAccountWorkflow`, `GroupMirrorRepair` (dynamic) | `identity-group-mirror-repair` (every 60 s), `identity-user-reconciliation` (03:30 UTC) |
 | identity | `identity-notify` | `ReminderWorkflow`, `NotificationWorkflow` | — |
 
 Workflow ids are business ids: `purchase/{reservationId}`, `late-refund/{reservationId}`, `payout/{escrowAccountId}`,
@@ -229,3 +232,6 @@ Operators find executions by business key through six Keyword search attributes,
 | The self-hosted Temporal service is set up and trialled in staging before production | `docs/operations/TEMPORAL_SELF_HOSTED.md` | D-33 |
 | Every Schedule takes its cadence from code at boot and keeps an operator's pause | the three Schedule runners | D-34 |
 | Every active `ADMIN` hears of a submitted event; the organizer hears the decision; a failed message never blocks the review | `EventApprovalWorkflow`, `ApprovalAnnouncer`, identity `ApprovalNotifier` | D-36 |
+| A staff account is opened whole or not at all: the record first, the Keycloak user unable to sign in, the role, then sign-in; a step that cannot finish takes back what this process made | `StaffAccountWorkflow`, `StaffAccountSteps` | F-064 |
+| The first password of a staff account is made by the system, sealed inside the request, applied as a temporary credential and shown once to the caller whose execution applied it; no result, history, row, log or notice carries it, and a lost one is replaced by a reset that cuts the person's sessions | `StaffAccountProcess`, `StaffAccountSteps.createInKeycloak`, `StaffPasswordReset` | F-067 |
+| A contact-change marker names its run and an expiry; one left by a change that died is released at the next attempt on that account, with the dead change's claim removed and Keycloak's email written again | `ContactChangeMarker`, `ContactChangeSteps.reclaim` | F-064 |

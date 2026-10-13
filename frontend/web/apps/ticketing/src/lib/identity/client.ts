@@ -22,7 +22,7 @@ export async function post<T>(
     res = await fetch(path, {
       method: "POST",
       credentials: "same-origin",
-      headers: { "content-type": "application/json", "x-pml-csrf": "1" },
+      headers: { "content-type": "application/json", "x-requested-with": "pml-web" },
       body: JSON.stringify(body),
     });
   } catch {

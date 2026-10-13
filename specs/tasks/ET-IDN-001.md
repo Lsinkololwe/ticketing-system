@@ -73,12 +73,12 @@ register, refreshToken, validateToken` (deleted, no shim).
 
 ### BE-8 · `ContactOtpAuthenticator`, factory, `IdentityClient`, templates
 - **Spec** R5, R6 · **§5** T8 · **depends** BE-1, BE-5 · **parallel-safe** no
-- Fat JAR shading Gson, Spring-free ([`ET-PLT-012`](ET-PLT-012.md) BE-4). Modes HANDOFF and SCREEN.
+- Spring-free plugin JAR ([`ET-PLT-012`](ET-PLT-012.md) BE-4). Nothing is shaded: everything except the plugin's own classes (Jackson, the SPI) is provided by Keycloak at runtime, and the JAR loads in a real Keycloak container. Modes HANDOFF and SCREEN.
 - **Acceptance** the JAR loads and the authenticator appears in the flow editor; startup fails when `IDENTITY_*` or `KEYCLOAK_TOKEN_URL` is blank; a missing or disabled user fails with a generic error and **no user is created**; the channel is never read from the form.
 
 ### BE-9 · Realm as code — two realms, flows, listener in both, staff excluded
 - **Spec** R5, R7 · **§5** T9 · **depends** BE-8 · **parallel-safe** no *(shared realm export with [`ET-PLT-007`](ET-PLT-007.md) BE-1; the file lives in the sibling `docker-resources` repository)*
-- **Acceptance** `myticketzm` binds `contact-browser`, `myticketzm-admin` binds password plus second factor; `user-sync` is enabled in both; the user profile makes `email`, `firstName`, `lastName` optional; no registration page lets a user pick an account type (`AccountTypeRoleMapper` removed); an `ADMIN` cannot complete the contact flow.
+- **Acceptance** `myticketzm` binds `contact-otp-browser`, `myticketzm-admin` binds `staff-password-browser` (password plus a required second factor); every new staff user is forced to enrol an authenticator (`CONFIGURE_TOTP` default action); the buyer's `email`, `phoneNumber` and `username` are admin-edit only, so contacts change only through the verified contact-change flow; the Keycloak account console is not routed through the gateway; `user-sync` is enabled in both; the user profile makes `email`, `firstName`, `lastName` optional; no registration page lets a user pick an account type (`AccountTypeRoleMapper` removed); an `ADMIN` cannot complete the contact flow.
 
 ## B · Contract
 
@@ -92,13 +92,13 @@ if an implementation must deviate.
 
 ### FE-1 · Contact entry
 - **depends** BE-5, F0 · **parallel-safe** no
-- One field accepting a phone number or an email; the channel is shown, never chosen by a hidden field; country picker or `+` prefix; `type` follows the value.
+- **As designed:** a WhatsApp | Email toggle, then the number field with its `+260` prefix and country picker (or the email field); the channel the server used is read back after the code is sent, and there is no hidden channel field. The design supersedes the single auto-detecting field first written here. Test ids `contact-input`, `request-code-submit`.
 - Touch targets >= 44px; label bound with `for`; `Input` props are a closed set.
 - **testids** `contact-input`, `request-code-submit`
 
 ### FE-2 · Code entry inside checkout
 - **depends** FE-1 · **parallel-safe** no
-- Six digits, numeric keyboard, auto-submit on the sixth, countdown derived from the server's `expiresInSeconds`, resend enabled at `resendAfterSeconds`, a visible "use email instead" when WhatsApp delivery fails.
+- Six digits, numeric keyboard, auto-submit on the sixth and an explicit "Verify and sign in" button, a countdown derived from the server's `expiresInSeconds`, attempts left, resend enabled at `resendAfterSeconds`, and a persistent "Send by email instead" / "Send by WhatsApp instead" link that returns to the entry step with the other channel selected and never sends silently to a different contact. A lock or rate limit shows when it lifts, in the same alert line the incorrect-code message uses.
 - Server routes only (`/api/identity/challenge|verify|ensure`); the browser never holds a token.
 - **testids** `otp-input`, `otp-countdown`, `otp-resend`, `otp-submit`
 
@@ -148,18 +148,18 @@ if an implementation must deviate.
 
 ## E · Gate
 
-- [ ] R0 recorded; every requirement classified against the code review facts, none claimed `already-satisfied` without an executing test
-- [ ] Phone (five forms) and email normalise to one `contactKey`; allowlist and mobile-type enforced
-- [ ] Both sides of all three frozen-clock boundaries asserted
-- [ ] Code HMAC'd at rest, verified by one Lua script in constant time, absent from logs at every level
-- [ ] 50 concurrent guesses consume exactly 5 attempts; the lock survives a Redis flush
-- [ ] Limits per contact, IP, device and country refuse with `OTP_RATE_LIMITED`; IP from the trusted chain only
-- [ ] WhatsApp and email delivery proven; failure and timeout refuse with `OTP_DELIVERY_FAILED` and leave no live code; no SMS code path remains
-- [ ] Registered and unregistered contacts indistinguishable
-- [ ] The authenticator never creates a user; a replayed handle fails; the plugin refuses to start without credentials
-- [ ] No service-account token is returned as a buyer token; the old `/api/internal/otp/*` and GraphQL authentication operations are gone
-- [ ] `ADMIN` cannot complete the contact flow, from UI or URL; `user-sync` listener enabled in both realms
+- [x] R0 recorded; every requirement classified against the code review facts, none claimed `already-satisfied` without an executing test
+- [x] Phone (five forms) and email normalise to one `contactKey`; allowlist and mobile-type enforced
+- [x] Both sides of all three frozen-clock boundaries asserted
+- [x] Code HMAC'd at rest, verified by one Lua script in constant time, absent from logs at every level
+- [x] 50 concurrent guesses consume exactly 5 attempts; the lock survives a Redis flush
+- [x] Limits per contact, IP, device and country refuse with `OTP_RATE_LIMITED`; IP from the trusted chain only
+- [x] WhatsApp and email delivery proven; failure and timeout refuse with `OTP_DELIVERY_FAILED` and leave no live code; no SMS code path remains
+- [x] Registered and unregistered contacts indistinguishable
+- [x] The authenticator never creates a user; a replayed handle fails; the plugin refuses to start without credentials
+- [x] No service-account token is returned as a buyer token; the old `/api/internal/otp/*` and GraphQL authentication operations are gone
+- [x] `ADMIN` cannot complete the contact flow, from UI or URL; `user-sync` listener enabled in both realms
 - [ ] Profile "Sign-in contacts" (R8) and the draft legal pages (R9) pass their Vitest suites and work against the live GraphQL operations of ET-IDN-004 (currently schema-aligned only, not run against the backend)
 - [ ] Playwright covers loading/empty/error/populated by `data-testid`; compliance suite green on all three apps
-- [ ] `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=false` green
+- [x] `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=false` green *(run as `mvn -f backend -pl identity-service -am verify -Dgroups=ET-IDN-001`, which also builds the shared test-jar; exit 0)*
 - [ ] Spec `status:` -> `implemented`

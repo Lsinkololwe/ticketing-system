@@ -27,11 +27,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The internal auth REST surface end to end over a real Redis, with a fake account side
- * (ET-IDN-001 R2, R3, R6): challenge, verify, ensure (200, 202, repeat, suspended, merging), redeem, status.
+ *: challenge, verify, ensure (200, 202, repeat, suspended, merging), redeem, status.
  */
 @Tag("L2")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001-R6 · challenge, verify, ensure, redeem and status behave as the contract says")
+@DisplayName("challenge, verify, ensure, redeem and status behave as the contract says")
 class InternalAuthEndpointsTest {
 
     /** The tests run against a real Redis, from the shared test fixtures. */
@@ -154,22 +154,22 @@ class InternalAuthEndpointsTest {
     @DisplayName("invalid contacts are 400 CONTACT_INVALID, a missing contact is 400 COMMAND_NOT_WELL_FORMED, and an immediate resend is 429 with Retry-After")
     void challengeErrors() {
         client.post().uri("/api/internal/auth/challenges").contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("contact", Map.of("value", "+81312345678"))).exchange()
+                .bodyValue(Map.of("contact", Map.of("value", "+81312345678"), "clientIp", AuthEngine.randomIp())).exchange()
                 .expectStatus().isBadRequest()
                 .expectBody().jsonPath("$.errorCode").isEqualTo("CONTACT_INVALID");
         client.post().uri("/api/internal/auth/challenges").contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("regionHint", "ZM")).exchange()
+                .bodyValue(Map.of("regionHint", "ZM", "clientIp", AuthEngine.randomIp())).exchange()
                 .expectStatus().isBadRequest()
                 .expectBody().jsonPath("$.errorCode").isEqualTo("COMMAND_NOT_WELL_FORMED");
         client.post().uri("/api/internal/auth/challenges").contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("contact", Map.of("value", "a@b.co", "type", "SMS"))).exchange()
+                .bodyValue(Map.of("contact", Map.of("value", "a@b.co", "type", "SMS"), "clientIp", AuthEngine.randomIp())).exchange()
                 .expectStatus().isBadRequest()
                 .expectBody().jsonPath("$.errorCode").isEqualTo("COMMAND_NOT_WELL_FORMED");
 
         String phone = AuthEngine.randomPhone();
         challenge(phone);
         client.post().uri("/api/internal/auth/challenges").contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("contact", Map.of("value", phone))).exchange()
+                .bodyValue(Map.of("contact", Map.of("value", phone), "clientIp", AuthEngine.randomIp())).exchange()
                 .expectStatus().isEqualTo(429)
                 .expectHeader().exists("Retry-After")
                 .expectBody().jsonPath("$.errorCode").isEqualTo("OTP_COOLDOWN_ACTIVE").jsonPath("$.retryAfterSeconds").isNumber();
@@ -260,7 +260,7 @@ class InternalAuthEndpointsTest {
     }
 
     @Test
-    @DisplayName("a SUSPENDED account is 403 ACCOUNT_SUSPENDED and gets no handle; a merged or merging one is 409 ACCOUNT_MERGING")
+    @DisplayName("a SUSPENDED account is 403 ACCOUNT_SUSPENDED and gets no handle; a merged one is 409 ACCOUNT_NOT_ACTIVE; one being merged is 409 ACCOUNT_MERGING")
     void ensureRefusals() {
         accounts.behaviour = command -> Mono.just(new EnsureResult("acc-s", AccountState.SUSPENDED, false, null, null));
         ensure(Map.of("proof", proofFor(AuthEngine.randomPhone()), "clientId", "c", "issueHandle", true))
@@ -269,7 +269,8 @@ class InternalAuthEndpointsTest {
 
         accounts.behaviour = command -> Mono.just(new EnsureResult("acc-m", AccountState.MERGED, false, null, null));
         ensure(Map.of("proof", proofFor(AuthEngine.randomPhone()), "clientId", "c"))
-                .expectStatus().isEqualTo(409).expectBody().jsonPath("$.errorCode").isEqualTo("ACCOUNT_MERGING");
+                .expectStatus().isEqualTo(409).expectBody()
+                .jsonPath("$.errorCode").isEqualTo("ACCOUNT_NOT_ACTIVE").jsonPath("$.currentStatus").isEqualTo("MERGED");
 
         accounts.behaviour = command -> Mono.error(new TranslatedRefusal(ErrorCode.ACCOUNT_MERGING, "merge running"));
         ensure(Map.of("proof", proofFor(AuthEngine.randomPhone()), "clientId", "c"))
@@ -279,6 +280,55 @@ class InternalAuthEndpointsTest {
         accounts.behaviour = command -> Mono.error(new TranslatedRefusal(ErrorCode.CONTACT_ALREADY_CLAIMED, "race lost"));
         ensure(Map.of("proof", proofFor(AuthEngine.randomPhone()), "clientId", "c"))
                 .expectStatus().isEqualTo(409).expectBody().jsonPath("$.errorCode").isEqualTo("CONTACT_ALREADY_CLAIMED");
+    }
+
+    @Test
+    @DisplayName("every refused state gets exactly the code the account guard gives it, and an account being merged is ACCOUNT_MERGING")
+    void ensureAgreesWithTheRealGuard() {
+        for (AccountState state : List.of(AccountState.SUSPENDED, AccountState.MERGED, AccountState.DELETED)) {
+            accounts.behaviour = command -> Mono.just(new EnsureResult("acc-g", state, false, null, null));
+            ErrorCode expected = com.pml.identity.account.AccountGuard.refusal(state, null).orElseThrow();
+            ensure(Map.of("proof", proofFor(AuthEngine.randomPhone()), "clientId", "c"))
+                    .expectBody().jsonPath("$.errorCode").isEqualTo(expected.name());
+        }
+        // The same guard, given a real stored account that is mid-merge, says ACCOUNT_MERGING.
+        com.pml.identity.domain.model.User merging = com.pml.identity.domain.model.User.builder().id("acc-m")
+                .pendingKind(com.pml.identity.domain.enums.PendingKind.MERGING).build();
+        assertThat(com.pml.identity.account.AccountGuard.refusal(merging)).contains(ErrorCode.ACCOUNT_MERGING);
+        assertThat(com.pml.identity.account.AccountGuard.refusal(AccountState.MERGED, null)).contains(ErrorCode.ACCOUNT_NOT_ACTIVE);
+    }
+
+    @Test
+    @DisplayName("a challenge request without a usable clientIp is refused as not well formed, whatever the contact")
+    void clientIpIsRequired() {
+        String phone = AuthEngine.randomPhone();
+        java.util.List<Map<String, Object>> bodies = List.of(
+                Map.of("contact", Map.of("value", phone)),
+                Map.of("contact", Map.of("value", phone), "clientIp", ""),
+                Map.of("contact", Map.of("value", phone), "clientIp", "   "),
+                Map.of("contact", Map.of("value", phone), "clientIp", "unknown"),
+                Map.of("contact", Map.of("value", phone), "clientIp", "999.1.1.1"),
+                Map.of("contact", Map.of("value", phone), "clientIp", "1.2.3"),
+                Map.of("contact", Map.of("value", phone), "clientIp", "evil.example.com"),
+                Map.of("contact", Map.of("value", phone), "clientIp", "10.0.0.1, 10.0.0.2"),
+                Map.of("contact", Map.of("value", phone), "clientIp", "::1:::2"));
+        for (Map<String, Object> body : bodies) {
+            client.post().uri("/api/internal/auth/challenges").contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(body).exchange()
+                    .expectStatus().isBadRequest()
+                    .expectBody().jsonPath("$.errorCode").isEqualTo("COMMAND_NOT_WELL_FORMED");
+        }
+        assertThat(engine.captured.countTo(phone)).as("nothing was sent").isZero();
+    }
+
+    @Test
+    @DisplayName("IPv4 and IPv6 literals are accepted as the caller's address")
+    void ipLiteralsAreAccepted() {
+        for (String ip : List.of("203.0.113.7", "2001:db8::1")) {
+            client.post().uri("/api/internal/auth/challenges").contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(Map.of("contact", Map.of("value", AuthEngine.randomPhone()), "clientIp", ip)).exchange()
+                    .expectStatus().isAccepted();
+        }
     }
 
     @Test

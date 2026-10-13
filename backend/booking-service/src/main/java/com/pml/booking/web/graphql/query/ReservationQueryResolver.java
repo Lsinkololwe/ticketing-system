@@ -5,6 +5,8 @@ import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.TicketReservation;
 import com.pml.booking.service.ReservationService;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
+import com.pml.shared.security.tenancy.StaffRole;
 import com.pml.booking.web.graphql.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +14,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.GrantedAuthority;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -20,7 +21,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * GraphQL Query Resolver for Ticket Reservations.
@@ -74,21 +74,21 @@ public class ReservationQueryResolver {
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .flatMap(authentication -> reservationService.findById(id)
-                        .filter(reservation -> visibleTo(authentication, reservation)));
+                        .filterWhen(reservation -> visibleTo(authentication, reservation)));
     }
 
-    /** The buyer themselves, or support and finance acting on their behalf. */
-    private static boolean visibleTo(Authentication authentication, TicketReservation reservation) {
-        boolean support = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(SUPPORT_AUTHORITIES::contains);
-        return support || (reservation.getUserId() != null
-                && reservation.getUserId().equals(authentication.getName()));
+    /**
+     * The buyer themselves, or support and finance acting on their behalf. Staff reading a buyer's
+     * reservation is a reach across buyers and is recorded; the buyer reading their own is not.
+     * Refunds, disputes and reconciliation all need the staff side.
+     */
+    private static Mono<Boolean> visibleTo(Authentication authentication, TicketReservation reservation) {
+        if (reservation.getUserId() != null && reservation.getUserId().equals(authentication.getName())) {
+            return Mono.just(true);
+        }
+        return PlatformWideAccess.isPlatformStaff(PlatformWideAccess.Reason.RESERVATION_SUPPORT_READ, "reservation",
+                StaffRole.all());
     }
-
-    /** Roles that read across buyers: refunds, disputes and reconciliation all need it. */
-    private static final Set<String> SUPPORT_AUTHORITIES =
-            Set.of("ROLE_ADMIN", "ROLE_FINANCE", "ROLE_SUPER_ADMIN");
 
     /**
      * Get active reservations for a user.

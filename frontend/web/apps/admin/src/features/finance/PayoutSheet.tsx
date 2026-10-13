@@ -49,7 +49,6 @@ export function PayoutSheet({ payout: seed, onClose, onAction }: PayoutSheetProp
       {st === 'APPROVED' ? act('process', 'Process payout', 'filled') : null}
       {st === 'PROCESSING' ? act('complete', 'Complete…', 'filled') : null}
       {st === 'FAILED' ? act('retry', 'Retry', 'filled') : null}
-      {st === 'PROCESSING' && p.lastError ? act('resume', 'Resume', 'tonal') : null}
       {['PENDING', 'APPROVED', 'PROCESSING'].includes(st) ? (
         act('hold', 'Hold…', 'tonal')
       ) : null}

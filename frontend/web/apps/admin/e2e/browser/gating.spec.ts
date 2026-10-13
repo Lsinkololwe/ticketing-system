@@ -6,7 +6,7 @@ import { ROUTES } from './routes';
 const NAV: Record<string, string[]> = {
   SUPER_ADMIN: ['Dashboard', 'Approvals', 'Events', 'Users & orgs', 'Finance', 'Ledger', 'Transactions', 'Analytics', 'Health', 'Settings'],
   ADMIN: ['Dashboard', 'Approvals', 'Events', 'Users & orgs', 'Finance', 'Ledger', 'Transactions', 'Analytics', 'Health', 'Settings'],
-  FINANCE: ['Dashboard', 'Finance', 'Ledger', 'Analytics'],
+  FINANCE: ['Dashboard', 'Finance', 'Ledger', 'Transactions', 'Analytics'],
   FINANCE_LEAD: ['Dashboard', 'Finance', 'Ledger', 'Transactions', 'Analytics', 'Health'],
 };
 
@@ -36,6 +36,16 @@ test.describe('role gating', () => {
     const tabs = await page.getByRole('tab').allInnerTexts();
     expect(tabs.map((t) => t.replace(/\d+$/, '').trim())).toEqual(['Payments', 'Reservations', 'Transaction recovery', 'Audit log']);
     await page.goto('/transactions/announce');
+    await expect(page.getByRole('heading', { level: 1, name: 'No access' })).toBeVisible();
+  });
+
+  test('FINANCE sees only the audit log tab in transactions', async ({ page, upstream, signInAs }) => {
+    mockAll(upstream);
+    await signInAs({ roles: ['FINANCE'], accountId: 'staff-1' });
+    await page.goto('/transactions/audit');
+    const tabs = await page.getByRole('tab').allInnerTexts();
+    expect(tabs.map((t) => t.replace(/\d+$/, '').trim())).toEqual(['Audit log']);
+    await page.goto('/transactions/payments');
     await expect(page.getByRole('heading', { level: 1, name: 'No access' })).toBeVisible();
   });
 

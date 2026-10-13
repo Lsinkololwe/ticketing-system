@@ -4,7 +4,22 @@ import { ADMIN_USER_ROW_FIELDS, ADMIN_ORG_ROW_FIELDS } from './identity-admin.qu
 
 export const CREATE_USER = gql`
   ${ADMIN_USER_ROW_FIELDS}
-  mutation IdentityAdminCreateUser($input: CreateUserInput!) { createUser(input: $input) { ...AdminUserRowFields } }
+  mutation IdentityAdminCreateUser($input: CreateUserInput!) {
+    createUser(input: $input) {
+      user { ...AdminUserRowFields }
+      temporaryPassword
+    }
+  }
+`;
+/** Issues a new one-time password for a staff account. The password comes back once and is never stored by the client. */
+export const RESET_STAFF_PASSWORD = gql`
+  ${ADMIN_USER_ROW_FIELDS}
+  mutation IdentityAdminResetStaffPassword($userId: ID!) {
+    resetStaffTemporaryPassword(userId: $userId) {
+      user { ...AdminUserRowFields }
+      temporaryPassword
+    }
+  }
 `;
 export const UPDATE_USER = gql`
   ${ADMIN_USER_ROW_FIELDS}

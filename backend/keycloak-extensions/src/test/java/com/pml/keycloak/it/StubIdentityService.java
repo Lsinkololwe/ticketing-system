@@ -11,11 +11,12 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** HTTP stub of the identity-service internal API (CONTRACT section 4). Test double, not a mock. */
+/** HTTP stub of the identity-service internal sign-in API. A test double with real HTTP, not a mock. */
 final class StubIdentityService implements AutoCloseable {
 
     static final String GOOD_CODE = "123456";
@@ -27,6 +28,12 @@ final class StubIdentityService implements AutoCloseable {
     final Map<String, String> accounts = new ConcurrentHashMap<>();
     /** handle -> accountId (single use). */
     final Map<String, String> handles = new ConcurrentHashMap<>();
+    /** handle values that identity-service would refuse as expired (answered like an unknown handle, with detail "expired"). */
+    final Set<String> expiredHandles = ConcurrentHashMap.newKeySet();
+    /** Every handle value presented for redemption, in order. */
+    final List<String> redeemAttempts = new CopyOnWriteArrayList<>();
+    /** Every body sent to the challenge endpoint, in order. */
+    final List<JsonNode> challengeRequests = new CopyOnWriteArrayList<>();
     final Map<String, String> challenges = new ConcurrentHashMap<>();
     final Map<String, String> proofs = new ConcurrentHashMap<>();
     final List<JsonNode> syncEvents = new CopyOnWriteArrayList<>();
@@ -100,6 +107,7 @@ final class StubIdentityService implements AutoCloseable {
     }
 
     private Reply challenge(JsonNode b) {
+        challengeRequests.add(b);
         String contact = b.path("contact").path("value").asText();
         if (contact.startsWith("locked")) {
             return new Reply(423, "{\"errorCode\":\"OTP_LOCKED\",\"lockedUntil\":\"2030-01-01T10:30:00Z\"}");
@@ -137,7 +145,13 @@ final class StubIdentityService implements AutoCloseable {
     }
 
     private Reply redeem(JsonNode b) {
-        String account = handles.remove(b.path("handle").asText());
+        String handle = b.path("handle").asText();
+        redeemAttempts.add(handle);
+        if (expiredHandles.contains(handle)) {
+            handles.remove(handle);
+            return new Reply(400, "{\"errorCode\":\"LOGIN_HANDLE_INVALID\",\"detail\":\"expired\"}");
+        }
+        String account = handles.remove(handle);
         if (account == null) {
             return new Reply(400, "{\"errorCode\":\"LOGIN_HANDLE_INVALID\"}");
         }

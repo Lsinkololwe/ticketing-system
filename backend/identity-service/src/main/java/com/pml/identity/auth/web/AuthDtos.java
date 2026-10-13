@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
-/** Wire shapes of the internal auth API (CONTRACT 4). Contacts travel in bodies, never in URLs. */
+/** Wire shapes of the internal sign-in API. Contacts travel in bodies, never in URLs. */
 public final class AuthDtos {
 
     private AuthDtos() {

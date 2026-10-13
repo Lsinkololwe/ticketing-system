@@ -19,13 +19,27 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.UserModel;
 
 /**
- * Tells identity-service that a Keycloak user changed (CONTRACT section 4.6). The payload is
- * deliberately thin: ids, flags and a timestamp. No names, roles, attributes, e-mail or phone.
- * LOGOUT and REFRESH_TOKEN_ERROR also carry the session id ({@code sid}), which identity-service
- * turns into a session revocation: Keycloak logout is an input of the platform's own revocation list.
+ * Tells identity-service when something happens to a Keycloak user, so the platform's own records
+ * and token revocation list follow Keycloak.
  *
- * <p>Delivery is asynchronous and bounded, with the event id as idempotency key, and can never
- * block or fail a login: every error is caught and logged without payload content.</p>
+ * <p>What the person experiences: nothing. They sign in, sign out, change a password or
+ * authenticator, and the page they see is never delayed or changed by this listener.</p>
+ *
+ * <p>What it does and promises: for the events listed in {@code SYNC_EVENTS} it sends a thin
+ * message with the event id, type, user id, username, realm name, enabled and e-mail-verified
+ * flags and a timestamp. It never sends names, roles, attributes, e-mail addresses or phone
+ * numbers, so identity-service learns who did what and nothing else about them. Sign-outs and
+ * refresh failures also carry the session id ({@code sid}); identity-service turns that into a
+ * session revocation, so ending a Keycloak session ends the platform's tokens for it. Credential
+ * changes carry the session id of the session that made the change so every other session of that
+ * person can be cut while the current one is kept.</p>
+ *
+ * <p>Delivery is asynchronous and bounded: a small queue, a few retries with growing pauses, and
+ * the event id as idempotency key so a retry is never counted twice. A client error (4xx, other
+ * than 408 and 429) is not retried.
+ * On refusal or failure (queue full, identity-service down, unexpected error) the event is
+ * dropped with a log line that names the event type only, never contents, and the login or
+ * logout that caused it carries on untouched.</p>
  */
 public class UserSyncEventListener implements EventListenerProvider {
 
@@ -38,8 +52,8 @@ public class UserSyncEventListener implements EventListenerProvider {
 
     /**
      * Events that end an SSO session. They are forwarded with the session id ({@code sid}) so
-     * identity-service can revoke every token minted for that session (ET-IDN-003 R7). Without a
-     * session id they carry nothing to revoke and are dropped.
+     * identity-service can revoke every token minted for that session. Without a session id
+     * they carry nothing to revoke and are dropped.
      */
     static final Set<EventType> SESSION_ENDING = Set.of(EventType.LOGOUT, EventType.REFRESH_TOKEN_ERROR);
 

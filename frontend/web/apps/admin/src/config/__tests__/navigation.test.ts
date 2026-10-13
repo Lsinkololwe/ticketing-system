@@ -7,8 +7,9 @@ describe('navigation roles', () => {
     expect(MODULES).toHaveLength(10);
     expect(new Set(MODULES.map((m) => m.group)).size).toBe(6);
   });
-  it('gives finance only dashboard, finance, ledger and analytics', () => {
-    expect(modulesFor(['FINANCE']).map((m) => m.id)).toEqual(['dashboard', 'finance', 'ledger', 'analytics']);
+  it('gives finance dashboard, finance, ledger, analytics and the audit log under transactions', () => {
+    expect(modulesFor(['FINANCE']).map((m) => m.id)).toEqual(['dashboard', 'finance', 'ledger', 'transactions', 'analytics']);
+    expect(tabsFor(['FINANCE'], 'transactions').map((t) => t.id)).toEqual(['audit']);
   });
   it('limits finance lead transaction tabs', () => {
     expect(tabsFor(['FINANCE_LEAD'], 'transactions').map((t) => t.id)).toEqual(['payments', 'reservations', 'recovery', 'audit']);

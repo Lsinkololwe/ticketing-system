@@ -9,13 +9,9 @@ import com.pml.shared.error.TenantBoundary;
 import com.pml.shared.error.TranslatedRefusal;
 import com.pml.shared.security.Permission;
 import com.pml.shared.security.SecurityContextUtils;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
-
-import java.util.List;
 
 /**
  * Decides who may work an event's gate: scan its tickets, read its admissions and review its
@@ -47,7 +43,7 @@ public class EventGateAccess {
         return catalog.getEventById(eventId)
                 .onErrorResume(WebClientResponseException.NotFound.class, missing -> Mono.empty())
                 .switchIfEmpty(Mono.error(() -> TenantBoundary.refuse(ErrorCode.EVENT_UNKNOWN, "event " + eventId)))
-                .flatMap(event -> platformGrantsScan().flatMap(platform -> platform
+                .flatMap(event -> OrganizerAccess.platformGrants(Permission.TICKET_SCAN).flatMap(platform -> platform
                         ? Mono.just(event)
                         : SecurityContextUtils.requireCurrentUserId().flatMap(userId -> identity.checkAuthorization(
                                         AuthorizationRequest.builder()
@@ -67,14 +63,5 @@ public class EventGateAccess {
                                                     "requires " + Permission.TICKET_SCAN.code() + " on this event")
                                             : TenantBoundary.refuse(ErrorCode.EVENT_UNKNOWN, "event " + eventId));
                                 }))));
-    }
-
-    /** Whether the caller's platform roles alone carry {@code ticket:scan}. */
-    private static Mono<Boolean> platformGrantsScan() {
-        return ReactiveSecurityContextHolder.getContext()
-                .map(context -> context.getAuthentication() == null ? List.<String>of()
-                        : context.getAuthentication().getAuthorities().stream().map(GrantedAuthority::getAuthority).toList())
-                .map(authorities -> Permission.grantedByPlatformRoles(authorities).contains(Permission.TICKET_SCAN))
-                .defaultIfEmpty(false);
     }
 }

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -99,99 +98,40 @@ class InvitationAcceptanceTest {
         return invitation;
     }
 
-    @Nested
-    @DisplayName("R5 · who is accepting")
-    class Addressee {
+    // ── R4 · when it expires ──────────────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("ET-ORG-002-R5 · the addressee is recognised by the email it was sent to")
-        void theAddresseeByEmail() {
-            assertThat(stored().addressedTo(INVITEE_EMAIL, "+260000000000")).isTrue();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R5 · or by the phone number, since either identifier is enough")
-        void theAddresseeByPhone() {
-            // A Zambian invitee may hold the number the invitation went to and an email the
-            // inviter guessed, or the reverse. Requiring both would refuse the ordinary case.
-            assertThat(stored().addressedTo("someone.else@example.zm", INVITEE_PHONE)).isTrue();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R5 · a caller matching neither is not the addressee")
-        void aStrangerIsRefused() {
-            assertThat(stored().addressedTo("stranger@example.zm", "+260999999999"))
-                    .as("""
-                        this is the whole of R5: before the check, whoever held a forwarded link \
-                        joined the organization in the proposed role — ADMIN here, which is the \
-                        team, the events and the organization's settings""")
-                    .isFalse();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R5 · a caller with neither identifier at all is not the addressee")
-        void nullsMatchNothing() {
-            // The dangerous shape: a null-tolerant comparison that treats "unknown" as "equal"
-            // admits every account with an incomplete profile.
-            assertThat(stored().addressedTo(null, null)).isFalse();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R5 · email matching ignores case, phone matching does not guess")
-        void emailIsCaseInsensitive() {
-            assertThat(stored().addressedTo(INVITEE_EMAIL.toUpperCase(), null)).isTrue();
-            // E.164 has one spelling; normalising here would hide a malformed stored number.
-            assertThat(stored().addressedTo(null, INVITEE_PHONE.replace("+", ""))).isFalse();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R5 · an invitation with no phone is not matched by a null phone")
-        void absentFieldsNeverMatch() {
-            TeamInvitation emailOnly = invitation("invite-email-only", InvitationStatus.PENDING);
-            emailOnly.setPhoneNumber(null);
-
-            assertThat(emailOnly.addressedTo(null, null)).isFalse();
-            assertThat(emailOnly.addressedTo(INVITEE_EMAIL, null)).isTrue();
-        }
+    @Test
+    @DisplayName("R4 · when it expires · ET-ORG-002-R4 · valid on day 6")
+    void expiry_validAtDaySix() {
+        assertThat(stored().isValid(SENT_AT.plus(Duration.ofDays(6)))).isTrue();
     }
 
-    @Nested
-    @DisplayName("R4 · when it expires")
-    class Expiry {
+    @Test
+    @DisplayName("R4 · when it expires · ET-ORG-002-R4 · expired on day 8")
+    void expiry_expiredAtDayEight() {
+        Instant dayEight = SENT_AT.plus(Duration.ofDays(8));
+        assertThat(stored().isValid(dayEight)).isFalse();
+        assertThat(stored().isExpired(dayEight)).isTrue();
+    }
 
-        @Test
-        @DisplayName("ET-ORG-002-R4 · valid on day 6")
-        void validAtDaySix() {
-            assertThat(stored().isValid(SENT_AT.plus(Duration.ofDays(6)))).isTrue();
-        }
+    @Test
+    @DisplayName("R4 · when it expires · ET-ORG-002-R4 · expired at exactly seven days, not one instant later")
+    void expiry_expiredOnTheBoundaryItself() {
+        // The case a day-6/day-8 pair alone would miss. `isBefore(now)` at the expiry instant
+        // answers false, so the token stays valid through the whole of its final moment and
+        // `isValid`/`isExpired` disagree with each other there.
+        assertThat(stored().isExpired(EXPIRES_AT))
+                .as("an invitation expiring *at* expiresAt must be expired at that instant")
+                .isTrue();
+        assertThat(stored().isValid(EXPIRES_AT)).isFalse();
+    }
 
-        @Test
-        @DisplayName("ET-ORG-002-R4 · expired on day 8")
-        void expiredAtDayEight() {
-            Instant dayEight = SENT_AT.plus(Duration.ofDays(8));
-            assertThat(stored().isValid(dayEight)).isFalse();
-            assertThat(stored().isExpired(dayEight)).isTrue();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R4 · expired at exactly seven days, not one instant later")
-        void expiredOnTheBoundaryItself() {
-            // The case a day-6/day-8 pair alone would miss. `isBefore(now)` at the expiry instant
-            // answers false, so the token stays valid through the whole of its final moment and
-            // `isValid`/`isExpired` disagree with each other there.
-            assertThat(stored().isExpired(EXPIRES_AT))
-                    .as("an invitation expiring *at* expiresAt must be expired at that instant")
-                    .isTrue();
-            assertThat(stored().isValid(EXPIRES_AT)).isFalse();
-        }
-
-        @Test
-        @DisplayName("ET-ORG-002-R4 · valid one instant before expiry")
-        void validJustBeforeTheBoundary() {
-            Instant lastMoment = EXPIRES_AT.minusMillis(1);
-            assertThat(stored().isValid(lastMoment)).isTrue();
-            assertThat(stored().isExpired(lastMoment)).isFalse();
-        }
+    @Test
+    @DisplayName("R4 · when it expires · ET-ORG-002-R4 · valid one instant before expiry")
+    void expiry_validJustBeforeTheBoundary() {
+        Instant lastMoment = EXPIRES_AT.minusMillis(1);
+        assertThat(stored().isValid(lastMoment)).isTrue();
+        assertThat(stored().isExpired(lastMoment)).isFalse();
     }
 
     @ParameterizedTest

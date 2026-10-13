@@ -6,7 +6,7 @@ import com.pml.identity.domain.model.User;
 
 /**
  * The one place the new lifecycle {@link AccountState} and the legacy {@link AccountStatus} plus
- * {@code active} flag are kept in step (CONTRACT 2).
+ * {@code active} flag are kept in step.
  *
  * <p>Three fields describe one fact, and different parts of the platform read different ones. A
  * transition that sets one and not the others yields an account that is suspended on its profile

@@ -28,6 +28,20 @@ function clearSessionCookie(deps: BffDeps): string {
 function ssoCookie(deps: BffDeps): string {
   return serializeCookie(deps.names.sso, '1', { maxAge: HINT_TTL_SEC, sameSite: 'lax', secure: deps.cfg.secure });
 }
+/**
+ * Account id lookup order: the configured claim (id token, then access token), then `preferred_username`.
+ * `sub` is deliberately not in the list; a token without either value is refused by the caller.
+ */
+function resolveAccountId(claim: string, idClaims: JWTPayload, accessClaims: JWTPayload): string | null {
+  for (const name of [claim, 'preferred_username']) {
+    for (const source of [idClaims, accessClaims]) {
+      const value = source[name];
+      if (typeof value === 'string' && value) return value;
+    }
+  }
+  return null;
+}
+
 function loginError(deps: BffDeps, code: string, cookies: string[] = []): Response {
   return see(deps, `${deps.cfg.loginPath}?error=${encodeURIComponent(code)}`, cookies);
 }
@@ -83,7 +97,7 @@ export function startHandler(deps: BffDeps): RouteHandler {
       const handle = rec.handle;
       if (!handle || handle.expiresAt < deps.cfg.clock()) return loginError(deps, 'LOGIN_HANDLE_INVALID');
 
-      // A previous Keycloak SSO session would swallow the handle (POC KC-01): end it first.
+      // A previous Keycloak SSO session would swallow the handle : end it first so the handle is honoured.
       const marker = ctx.cookies.has(deps.names.sso);
       if (!resume && !rec.hopped && (marker || current)) {
         const device = ctx.cookies.get(deps.names.device);
@@ -214,9 +228,10 @@ export function callbackHandler(deps: BffDeps): RouteHandler {
     const needed = deps.cfg.access?.roles;
     if (needed?.length && !needed.some((r) => roles.includes(r))) return rejectAndEndSso('role', 'FORBIDDEN');
 
+    // The platform account id comes from the configured claim, then from `preferred_username`. The Keycloak
+    // subject is a different identifier and is never accepted as the account id.
     const claim = deps.cfg.access?.accountClaim;
-    const rawAccount = claim ? (idClaims[claim] ?? accessClaims[claim]) : null;
-    const accountId = typeof rawAccount === 'string' && rawAccount ? rawAccount : null;
+    const accountId = claim ? resolveAccountId(claim, idClaims, accessClaims) : null;
     if (claim && !accountId) return rejectAndEndSso('account_claim_missing', 'SIGN_IN_FAILED');
 
     const authTime = typeof idClaims.auth_time === 'number' ? idClaims.auth_time : null;

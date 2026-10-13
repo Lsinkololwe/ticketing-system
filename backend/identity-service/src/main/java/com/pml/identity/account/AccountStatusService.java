@@ -5,7 +5,7 @@ import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-/** Answers {@code GET /accounts/{id}/status} from MongoDB (CONTRACT 4.5). */
+/** Answers {@code GET /accounts/{id}/status} from MongoDB. */
 @Service
 public class AccountStatusService implements AccountStatusLookup {
 

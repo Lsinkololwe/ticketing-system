@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("L1")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004-R3 · the contact rules: quarantine, last verified contact, one primary")
+@DisplayName("the contact rules: quarantine, last verified contact, one primary")
 class ContactRulesTest {
 
     private static final Instant NOW = Instant.parse("2026-10-04T10:00:00Z");

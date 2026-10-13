@@ -42,7 +42,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -200,303 +199,291 @@ class EventAuthoringTest {
         throw new AssertionError("expected the input to be refused");
     }
 
-    @Nested
-    @DisplayName("the organizer app's payload")
-    class ThePayload {
+    // ── the organizer app's payload ───────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("stores every field the page sends: venue, tiers, banner, format")
-        void storesEverything() {
-            Event created = create(newEventPayload());
+    @Test
+    @DisplayName("the organizer app's payload · stores every field the page sends: venue, tiers, banner, format")
+    void thePayload_storesEverything() {
+        Event created = create(newEventPayload());
 
-            Event stored = events.findById(created.getId()).block();
-            assertThat(stored.getStatus().name()).isEqualTo("DRAFT");
-            assertThat(stored.getOrganizationId()).isEqualTo(ORGANIZATION);
-            assertThat(stored.getOrganizerId()).isEqualTo(ORGANIZER);
-            assertThat(stored.getOrganizerName()).as("denormalized from identity at creation").isEqualTo("Test Organization");
-            assertThat(stored.getBannerImageUrl()).isEqualTo("https://cdn.example.com/jazz.jpg");
-            assertThat(stored.isVirtual()).isFalse();
-            assertThat(stored.getLocationName()).isEqualTo("Mulungushi Conference Centre");
-            assertThat(stored.getLocationAddress()).isEqualTo("Great East Road");
-            assertThat(stored.getCityId()).isEqualTo("LUSAKA");
-            assertThat(stored.getCityName()).as("the reference data's spelling, not the typed one").isEqualTo("Lusaka");
-            assertThat(stored.getTotalCapacity()).as("the sum of the tiers").isEqualTo(150);
-            assertThat(stored.getLowestTicketPrice()).isEqualByComparingTo("150.00");
+        Event stored = events.findById(created.getId()).block();
+        assertThat(stored.getStatus().name()).isEqualTo("DRAFT");
+        assertThat(stored.getOrganizationId()).isEqualTo(ORGANIZATION);
+        assertThat(stored.getOrganizerId()).isEqualTo(ORGANIZER);
+        assertThat(stored.getOrganizerName()).as("denormalized from identity at creation").isEqualTo("Test Organization");
+        assertThat(stored.getBannerImageUrl()).isEqualTo("https://cdn.example.com/jazz.jpg");
+        assertThat(stored.isVirtual()).isFalse();
+        assertThat(stored.getLocationName()).isEqualTo("Mulungushi Conference Centre");
+        assertThat(stored.getLocationAddress()).isEqualTo("Great East Road");
+        assertThat(stored.getCityId()).isEqualTo("LUSAKA");
+        assertThat(stored.getCityName()).as("the reference data's spelling, not the typed one").isEqualTo("Lusaka");
+        assertThat(stored.getTotalCapacity()).as("the sum of the tiers").isEqualTo(150);
+        assertThat(stored.getLowestTicketPrice()).isEqualByComparingTo("150.00");
 
-            List<TicketTier> tiers = template.find(Query.query(Criteria.where("eventId").is(created.getId())),
-                    TicketTier.class).collectList().block();
-            assertThat(tiers).extracting(TicketTier::getCode).containsExactlyInAnyOrder("GENERAL", "VIP");
-            assertThat(tiers).allSatisfy(tier -> {
-                assertThat(tier.getOrganizationId()).isEqualTo(ORGANIZATION);
-                assertThat(tier.getCurrency()).isEqualTo("ZMW");
-                assertThat(tier.getSalesEndAt()).as("sales close when the event starts").isEqualTo(STARTS);
-                assertThat(tier.getMaxPerOrder()).as("the platform default").isEqualTo(10);
-            });
-            assertThat(stored.getTicketCategories()).extracting(Event.EventTicketCategory::getTierId)
-                    .containsExactlyInAnyOrderElementsOf(tiers.stream().map(TicketTier::getId).toList());
-        }
-
-        @Test
-        @DisplayName("records the venue once, under the reference data's city, attributed to the organization")
-        void recordsTheVenue() {
-            Event created = create(newEventPayload());
-
-            Location venue = template.findById(created.getLocationId(), Location.class).block();
-            assertThat(venue.getCityId()).isEqualTo("LUSAKA");
-            assertThat(venue.getProvinceName()).isEqualTo("Lusaka");
-            assertThat(venue.getCountry()).isEqualTo("Zambia");
-            assertThat(venue.getOrganizationId()).isEqualTo(ORGANIZATION);
-            assertThat(venue.getCreatedById()).isEqualTo(ORGANIZER);
-            assertThat(venue.getLatitude()).as("the city's coordinates when none were given").isEqualTo(-15.3875);
-        }
-
-        @Test
-        @DisplayName("a second event at the same venue, typed in another case, reuses it")
-        void reusesAVenue() {
-            Event first = create(newEventPayload());
-            Map<String, Object> again = newEventPayload();
-            ((Map<String, Object>) again.get("location")).put("name", "MULUNGUSHI conference centre");
-
-            Event second = create(again);
-
-            assertThat(second.getLocationId()).isEqualTo(first.getLocationId());
-            Persistence.assertExactly(template, CatalogCollections.LOCATIONS, 1);
-        }
-
-        @Test
-        @DisplayName("booking can price a ticket for the new event by the tier id the buyer selects")
-        void bookingCanPriceIt() {
-            Event created = create(newEventPayload());
-            TicketTier vip = template.findOne(Query.query(Criteria.where("eventId").is(created.getId())
-                    .and("code").is("VIP")), TicketTier.class).block();
-
-            EventSummaryDto summary = new InternalEventController(service).getEventById(created.getId()).block().getBody();
-
-            assertThat(summary.getTicketCategories())
-                    .filteredOn(tier -> vip.getId().equals(tier.getId()))
-                    .singleElement()
-                    .satisfies(tier -> assertThat(tier.getPrice()).isEqualByComparingTo("500.00"));
-        }
+        List<TicketTier> tiers = template.find(Query.query(Criteria.where("eventId").is(created.getId())),
+                TicketTier.class).collectList().block();
+        assertThat(tiers).extracting(TicketTier::getCode).containsExactlyInAnyOrder("GENERAL", "VIP");
+        assertThat(tiers).allSatisfy(tier -> {
+            assertThat(tier.getOrganizationId()).isEqualTo(ORGANIZATION);
+            assertThat(tier.getCurrency()).isEqualTo("ZMW");
+            assertThat(tier.getSalesEndAt()).as("sales close when the event starts").isEqualTo(STARTS);
+            assertThat(tier.getMaxPerOrder()).as("the platform default").isEqualTo(10);
+        });
+        assertThat(stored.getTicketCategories()).extracting(Event.EventTicketCategory::getTierId)
+                .containsExactlyInAnyOrderElementsOf(tiers.stream().map(TicketTier::getId).toList());
     }
 
-    @Nested
-    @DisplayName("the venue's city")
-    class TheCity {
+    @Test
+    @DisplayName("the organizer app's payload · records the venue once, under the reference data's city, attributed to the organization")
+    void thePayload_recordsTheVenue() {
+        Event created = create(newEventPayload());
 
-        @Test
-        @DisplayName("a city that is not in the reference data is refused, and nothing is written")
-        void unknownCity() {
-            Map<String, Object> payload = newEventPayload();
-            ((Map<String, Object>) payload.get("location")).put("city", "Atlantis");
-
-            assertThatThrownBy(() -> create(payload))
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode()).isEqualTo(ErrorCode.LOCATION_UNKNOWN));
-            nothingWritten();
-        }
-
-        @Test
-        @DisplayName("a city an administrator deactivated is refused")
-        void deactivatedCity() {
-            Map<String, Object> payload = newEventPayload();
-            ((Map<String, Object>) payload.get("location")).put("city", "Old Town");
-
-            assertThatThrownBy(() -> create(payload))
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode()).isEqualTo(ErrorCode.LOCATION_UNKNOWN));
-        }
-
-        @Test
-        @DisplayName("a real city in the wrong country is refused")
-        void wrongCountry() {
-            Map<String, Object> payload = newEventPayload();
-            ((Map<String, Object>) payload.get("location")).put("country", "Malawi");
-
-            assertThatThrownBy(() -> create(payload))
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode()).isEqualTo(ErrorCode.LOCATION_UNKNOWN));
-        }
-
-        @Test
-        @DisplayName("a venue name that looks like a pattern is matched as text, not as a regular expression")
-        void venueNameIsNotAPattern() {
-            create(newEventPayload());
-            Map<String, Object> payload = newEventPayload();
-            ((Map<String, Object>) payload.get("location")).put("name", ".*");
-
-            Event second = create(payload);
-
-            assertThat(second.getLocationName()).isEqualTo(".*");
-            Persistence.assertExactly(template, CatalogCollections.LOCATIONS, 2);
-        }
+        Location venue = template.findById(created.getLocationId(), Location.class).block();
+        assertThat(venue.getCityId()).isEqualTo("LUSAKA");
+        assertThat(venue.getProvinceName()).isEqualTo("Lusaka");
+        assertThat(venue.getCountry()).isEqualTo("Zambia");
+        assertThat(venue.getOrganizationId()).isEqualTo(ORGANIZATION);
+        assertThat(venue.getCreatedById()).isEqualTo(ORGANIZER);
+        assertThat(venue.getLatitude()).as("the city's coordinates when none were given").isEqualTo(-15.3875);
     }
 
-    @Nested
-    @DisplayName("an inconsistent event is refused before anything is written")
-    class Consistency {
+    @Test
+    @DisplayName("the organizer app's payload · a second event at the same venue, typed in another case, reuses it")
+    void thePayload_reusesAVenue() {
+        Event first = create(newEventPayload());
+        Map<String, Object> again = newEventPayload();
+        ((Map<String, Object>) again.get("location")).put("name", "MULUNGUSHI conference centre");
 
-        @Test
-        @DisplayName("a banner link that is not http(s) is refused, so no client renders a script link")
-        void scriptLinkRefused() {
-            Map<String, Object> payload = newEventPayload();
-            payload.put("bannerImageUrl", "javascript:alert(document.cookie)");
+        Event second = create(again);
 
-            assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("bannerImageUrl");
-            nothingWritten();
-        }
-
-        @Test
-        @DisplayName("a link carrying credentials is refused")
-        void credentialsInLinkRefused() {
-            Map<String, Object> payload = newEventPayload();
-            payload.put("bannerImageUrl", "https://admin:secret@cdn.example.com/jazz.jpg");
-
-            assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("bannerImageUrl");
-        }
-
-        @Test
-        @DisplayName("a virtual event needs its link, an in-person one its venue")
-        void formatNeedsItsPlace() {
-            Map<String, Object> virtual = newEventPayload();
-            virtual.put("isVirtual", true);
-            virtual.put("location", null);
-            Map<String, Object> inPerson = newEventPayload();
-            inPerson.put("location", null);
-
-            assertThat(violationsOf(virtual)).extracting(FieldViolation::path).contains("virtualEventUrl");
-            assertThat(violationsOf(inPerson)).extracting(FieldViolation::path).contains("location");
-        }
-
-        @Test
-        @DisplayName("an event cannot end before it starts, or start in the past")
-        void datesMakeSense() {
-            Map<String, Object> backwards = newEventPayload();
-            backwards.put("endDateTime", STARTS.minusSeconds(60));
-            Map<String, Object> past = newEventPayload();
-            past.put("eventDateTime", NOW.minusSeconds(3600));
-            past.put("endDateTime", NOW.plusSeconds(3600));
-
-            assertThat(violationsOf(backwards)).extracting(FieldViolation::path).contains("endDateTime");
-            assertThat(violationsOf(past)).extracting(FieldViolation::path).contains("eventDateTime");
-        }
-
-        @Test
-        @DisplayName("the capacity is the sum of the tiers; a different figure is refused")
-        void capacityIsTheTierSum() {
-            Map<String, Object> payload = newEventPayload();
-            payload.put("totalCapacity", 999);
-
-            assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("totalCapacity");
-        }
-
-        @Test
-        @DisplayName("two tiers of one event cannot share a code")
-        void tierCodesAreUnique() {
-            Map<String, Object> payload = newEventPayload();
-            payload.put("ticketTiers", List.of(tier("GENERAL", "A", "10.00", 5, 0), tier("general", "B", "20.00", 5, 1)));
-
-            assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("ticketTiers[1].code");
-        }
-
-        @Test
-        @DisplayName("a tier priced in another currency is refused")
-        void tierCurrency() {
-            Map<String, Object> payload = newEventPayload();
-            Map<String, Object> dollars = tier("USD", "Dollars", "10.00", 5, 0);
-            dollars.put("currency", "USD");
-            payload.put("ticketTiers", List.of(dollars));
-            payload.put("totalCapacity", 5);
-
-            assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("ticketTiers[0].currency");
-        }
-
-        @Test
-        @DisplayName("a free event cannot carry a paid tier")
-        void freeMeansFree() {
-            Map<String, Object> payload = newEventPayload();
-            payload.put("isFreeEvent", true);
-
-            assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("isFreeEvent");
-        }
-
-        @Test
-        @DisplayName("a category that is not an active reference-data category is refused")
-        void categoryComesFromReferenceData() {
-            Map<String, Object> unknown = newEventPayload();
-            unknown.put("categoryId", "CONCERT");
-            Map<String, Object> retired = newEventPayload();
-            retired.put("categoryId", "RETIRED");
-
-            assertThat(violationsOf(unknown)).extracting(FieldViolation::path).contains("categoryId");
-            assertThat(violationsOf(retired)).extracting(FieldViolation::path).contains("categoryId");
-        }
-
-        @Test
-        @DisplayName("a refund policy outside the stored list is refused rather than failing the database write")
-        void refundPolicyIsAKnownValue() {
-            Map<String, Object> payload = newEventPayload();
-            payload.put("refundPolicy", "whatever the organizer feels like");
-
-            assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("refundPolicy");
-        }
-
-        @Test
-        @DisplayName("every platform refund policy code (FLEXIBLE, MODERATE, STRICT, NO_REFUNDS) is accepted")
-        void platformRefundPolicyCodesAreAccepted() {
-            assertThat(com.pml.catalog.service.EventDetails.REFUND_POLICIES)
-                    .contains("FLEXIBLE", "MODERATE", "STRICT", "NO_REFUNDS");
-        }
-
-        @Test
-        @DisplayName("input validation bounds sizes and refuses negative prices")
-        void inputValidation() {
-            Map<String, Object> payload = newEventPayload();
-            payload.put("title", "x".repeat(201));
-            Map<String, Object> negative = tier("NEG", "Negative", "-5.00", 5, 0);
-            payload.put("ticketTiers", List.of(negative));
-
-            List<String> paths = VALIDATOR.validate(bind(payload)).stream()
-                    .map(violation -> violation.getPropertyPath().toString()).toList();
-
-            assertThat(paths).contains("title", "ticketTiers[0].price");
-        }
+        assertThat(second.getLocationId()).isEqualTo(first.getLocationId());
+        Persistence.assertExactly(template, CatalogCollections.LOCATIONS, 1);
     }
 
-    @Nested
-    @DisplayName("who may create")
-    class WhoMayCreate {
+    @Test
+    @DisplayName("the organizer app's payload · booking can price a ticket for the new event by the tier id the buyer selects")
+    void thePayload_bookingCanPriceIt() {
+        Event created = create(newEventPayload());
+        TicketTier vip = template.findOne(Query.query(Criteria.where("eventId").is(created.getId())
+                .and("code").is("VIP")), TicketTier.class).block();
 
-        @Test
-        @DisplayName("a caller without event:create is refused, and nothing is written")
-        void withoutPermission() {
-            identity.authorized = false;
+        EventSummaryDto summary = new InternalEventController(service).getEventById(created.getId()).block().getBody();
 
-            assertThatThrownBy(() -> create(newEventPayload())).isInstanceOf(AccessDeniedException.class);
-            nothingWritten();
-        }
+        assertThat(summary.getTicketCategories())
+                .filteredOn(tier -> vip.getId().equals(tier.getId()))
+                .singleElement()
+                .satisfies(tier -> assertThat(tier.getPrice()).isEqualByComparingTo("500.00"));
+    }
 
-        @Test
-        @DisplayName("a caller with no identity is refused")
-        void anonymous() {
-            assertThatThrownBy(() -> resolver.createEvent(bind(newEventPayload())).block())
-                    .as("the client receives what the platform translator makes of it")
-                    .satisfies(refused -> assertThat(new PlatformRefusalTranslator().translate(refused))
-                            .hasValueSatisfying(translated ->
-                                    assertThat(translated.errorCode()).isEqualTo(ErrorCode.ACTOR_NOT_AUTHENTICATED)));
-            nothingWritten();
-        }
+    // ── the venue's city ──────────────────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("the event belongs to the organization identity-service names, whatever the payload says")
-        void organizationComesFromIdentity() {
-            Map<String, Object> payload = newEventPayload();
-            payload.put("additionalInfo", Map.of("organizationId", "org-someone-else"));
+    @Test
+    @DisplayName("the venue's city · a city that is not in the reference data is refused, and nothing is written")
+    void theCity_unknownCity() {
+        Map<String, Object> payload = newEventPayload();
+        ((Map<String, Object>) payload.get("location")).put("city", "Atlantis");
 
-            Event created = create(payload);
+        assertThatThrownBy(() -> create(payload))
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode()).isEqualTo(ErrorCode.LOCATION_UNKNOWN));
+        nothingWritten();
+    }
 
-            assertThat(created.getOrganizationId()).isEqualTo(ORGANIZATION);
-            assertThat(identity.lastRequest.getUserId()).isEqualTo(ORGANIZER);
-        }
+    @Test
+    @DisplayName("the venue's city · a city an administrator deactivated is refused")
+    void theCity_deactivatedCity() {
+        Map<String, Object> payload = newEventPayload();
+        ((Map<String, Object>) payload.get("location")).put("city", "Old Town");
+
+        assertThatThrownBy(() -> create(payload))
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode()).isEqualTo(ErrorCode.LOCATION_UNKNOWN));
+    }
+
+    @Test
+    @DisplayName("the venue's city · a real city in the wrong country is refused")
+    void theCity_wrongCountry() {
+        Map<String, Object> payload = newEventPayload();
+        ((Map<String, Object>) payload.get("location")).put("country", "Malawi");
+
+        assertThatThrownBy(() -> create(payload))
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(refused -> assertThat(((DomainRefusal) refused).errorCode()).isEqualTo(ErrorCode.LOCATION_UNKNOWN));
+    }
+
+    @Test
+    @DisplayName("the venue's city · a venue name that looks like a pattern is matched as text, not as a regular expression")
+    void theCity_venueNameIsNotAPattern() {
+        create(newEventPayload());
+        Map<String, Object> payload = newEventPayload();
+        ((Map<String, Object>) payload.get("location")).put("name", ".*");
+
+        Event second = create(payload);
+
+        assertThat(second.getLocationName()).isEqualTo(".*");
+        Persistence.assertExactly(template, CatalogCollections.LOCATIONS, 2);
+    }
+
+    // ── an inconsistent event is refused before anything is written ───────────────────────────────
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · a banner link that is not http(s) is refused, so no client renders a script link")
+    void consistency_scriptLinkRefused() {
+        Map<String, Object> payload = newEventPayload();
+        payload.put("bannerImageUrl", "javascript:alert(document.cookie)");
+
+        assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("bannerImageUrl");
+        nothingWritten();
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · a link carrying credentials is refused")
+    void consistency_credentialsInLinkRefused() {
+        Map<String, Object> payload = newEventPayload();
+        payload.put("bannerImageUrl", "https://admin:secret@cdn.example.com/jazz.jpg");
+
+        assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("bannerImageUrl");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · a virtual event needs its link, an in-person one its venue")
+    void consistency_formatNeedsItsPlace() {
+        Map<String, Object> virtual = newEventPayload();
+        virtual.put("isVirtual", true);
+        virtual.put("location", null);
+        Map<String, Object> inPerson = newEventPayload();
+        inPerson.put("location", null);
+
+        assertThat(violationsOf(virtual)).extracting(FieldViolation::path).contains("virtualEventUrl");
+        assertThat(violationsOf(inPerson)).extracting(FieldViolation::path).contains("location");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · an event cannot end before it starts, or start in the past")
+    void consistency_datesMakeSense() {
+        Map<String, Object> backwards = newEventPayload();
+        backwards.put("endDateTime", STARTS.minusSeconds(60));
+        Map<String, Object> past = newEventPayload();
+        past.put("eventDateTime", NOW.minusSeconds(3600));
+        past.put("endDateTime", NOW.plusSeconds(3600));
+
+        assertThat(violationsOf(backwards)).extracting(FieldViolation::path).contains("endDateTime");
+        assertThat(violationsOf(past)).extracting(FieldViolation::path).contains("eventDateTime");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · the capacity is the sum of the tiers; a different figure is refused")
+    void consistency_capacityIsTheTierSum() {
+        Map<String, Object> payload = newEventPayload();
+        payload.put("totalCapacity", 999);
+
+        assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("totalCapacity");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · two tiers of one event cannot share a code")
+    void consistency_tierCodesAreUnique() {
+        Map<String, Object> payload = newEventPayload();
+        payload.put("ticketTiers", List.of(tier("GENERAL", "A", "10.00", 5, 0), tier("general", "B", "20.00", 5, 1)));
+
+        assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("ticketTiers[1].code");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · a tier priced in another currency is refused")
+    void consistency_tierCurrency() {
+        Map<String, Object> payload = newEventPayload();
+        Map<String, Object> dollars = tier("USD", "Dollars", "10.00", 5, 0);
+        dollars.put("currency", "USD");
+        payload.put("ticketTiers", List.of(dollars));
+        payload.put("totalCapacity", 5);
+
+        assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("ticketTiers[0].currency");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · a free event cannot carry a paid tier")
+    void consistency_freeMeansFree() {
+        Map<String, Object> payload = newEventPayload();
+        payload.put("isFreeEvent", true);
+
+        assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("isFreeEvent");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · a category that is not an active reference-data category is refused")
+    void consistency_categoryComesFromReferenceData() {
+        Map<String, Object> unknown = newEventPayload();
+        unknown.put("categoryId", "CONCERT");
+        Map<String, Object> retired = newEventPayload();
+        retired.put("categoryId", "RETIRED");
+
+        assertThat(violationsOf(unknown)).extracting(FieldViolation::path).contains("categoryId");
+        assertThat(violationsOf(retired)).extracting(FieldViolation::path).contains("categoryId");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · a refund policy outside the stored list is refused rather than failing the database write")
+    void consistency_refundPolicyIsAKnownValue() {
+        Map<String, Object> payload = newEventPayload();
+        payload.put("refundPolicy", "whatever the organizer feels like");
+
+        assertThat(violationsOf(payload)).extracting(FieldViolation::path).contains("refundPolicy");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · every platform refund policy code (FLEXIBLE, MODERATE, STRICT, NO_REFUNDS) is accepted")
+    void consistency_platformRefundPolicyCodesAreAccepted() {
+        assertThat(com.pml.catalog.service.EventDetails.REFUND_POLICIES)
+                .contains("FLEXIBLE", "MODERATE", "STRICT", "NO_REFUNDS");
+    }
+
+    @Test
+    @DisplayName("an inconsistent event is refused before anything is written · input validation bounds sizes and refuses negative prices")
+    void consistency_inputValidation() {
+        Map<String, Object> payload = newEventPayload();
+        payload.put("title", "x".repeat(201));
+        Map<String, Object> negative = tier("NEG", "Negative", "-5.00", 5, 0);
+        payload.put("ticketTiers", List.of(negative));
+
+        List<String> paths = VALIDATOR.validate(bind(payload)).stream()
+                .map(violation -> violation.getPropertyPath().toString()).toList();
+
+        assertThat(paths).contains("title", "ticketTiers[0].price");
+    }
+
+    // ── who may create ────────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("who may create · a caller without event:create is refused, and nothing is written")
+    void whoMayCreate_withoutPermission() {
+        identity.authorized = false;
+
+        assertThatThrownBy(() -> create(newEventPayload())).isInstanceOf(AccessDeniedException.class);
+        nothingWritten();
+    }
+
+    @Test
+    @DisplayName("who may create · a caller with no identity is refused")
+    void whoMayCreate_anonymous() {
+        assertThatThrownBy(() -> resolver.createEvent(bind(newEventPayload())).block())
+                .as("the client receives what the platform translator makes of it")
+                .satisfies(refused -> assertThat(new PlatformRefusalTranslator().translate(refused))
+                        .hasValueSatisfying(translated ->
+                                assertThat(translated.errorCode()).isEqualTo(ErrorCode.ACTOR_NOT_AUTHENTICATED)));
+        nothingWritten();
+    }
+
+    @Test
+    @DisplayName("who may create · the event belongs to the organization identity-service names, whatever the payload says")
+    void whoMayCreate_organizationComesFromIdentity() {
+        Map<String, Object> payload = newEventPayload();
+        payload.put("additionalInfo", Map.of("organizationId", "org-someone-else"));
+
+        Event created = create(payload);
+
+        assertThat(created.getOrganizationId()).isEqualTo(ORGANIZATION);
+        assertThat(identity.lastRequest.getUserId()).isEqualTo(ORGANIZER);
     }
 
     @Test
@@ -572,119 +559,116 @@ class EventAuthoringTest {
         nothingWritten();
     }
 
-    @Nested
-    @DisplayName("what the organizer says about the event (ET-CAT-004)")
-    class PageContent {
+    // ── what the organizer says about the event (ET-CAT-004) ──────────────────────────────────────
 
-        private Map<String, Object> withContent() {
-            Map<String, Object> input = newEventPayload();
-            input.put("tagline", "  One night, two floors  ");
-            input.put("ageRestriction", "18+");
-            input.put("doorsOpenAt", STARTS.minusSeconds(3600));
-            input.put("publishAt", NOW.plusSeconds(86_400));
-            input.put("faqs", List.of(Map.of("question", "Is there parking?", "answer", "Yes, behind the hall.")));
-            input.put("runningOrder", List.of(Map.of("time", "17:00", "title", "Doors"), Map.of("time", "18:30", "title", "Headliner")));
-            input.put("gettingThere", "Bus 12 from Kamwala");
-            input.put("parkingInfo", "K20 a car");
-            input.put("bagPolicy", "Small bags only");
-            input.put("checkoutSettings", Map.of("maxTicketsPerOrder", 4, "collectHolderNames", true, "extraQuestion", "Dietary needs?"));
-            input.put("bannerAltText", "A saxophonist on stage");
-            input.put("galleryImages", List.of("https://cdn.example.com/1.jpg"));
-            return input;
-        }
+    private Map<String, Object> withContent() {
+        Map<String, Object> input = newEventPayload();
+        input.put("tagline", "  One night, two floors  ");
+        input.put("ageRestriction", "18+");
+        input.put("doorsOpenAt", STARTS.minusSeconds(3600));
+        input.put("publishAt", NOW.plusSeconds(86_400));
+        input.put("faqs", List.of(Map.of("question", "Is there parking?", "answer", "Yes, behind the hall.")));
+        input.put("runningOrder", List.of(Map.of("time", "17:00", "title", "Doors"), Map.of("time", "18:30", "title", "Headliner")));
+        input.put("gettingThere", "Bus 12 from Kamwala");
+        input.put("parkingInfo", "K20 a car");
+        input.put("bagPolicy", "Small bags only");
+        input.put("checkoutSettings", Map.of("maxTicketsPerOrder", 4, "collectHolderNames", true, "extraQuestion", "Dietary needs?"));
+        input.put("bannerAltText", "A saxophonist on stage");
+        input.put("galleryImages", List.of("https://cdn.example.com/1.jpg"));
+        return input;
+    }
 
-        @Test
-        @DisplayName("is stored whole, trimmed, under validators that accept it")
-        void stored() {
-            Event created = create(withContent());
+    @Test
+    @DisplayName("what the organizer says about the event (ET-CAT-004) · is stored whole, trimmed, under validators that accept it")
+    void pageContent_stored() {
+        Event created = create(withContent());
 
-            Event stored = events.findById(created.getId()).block();
-            assertThat(stored.getTagline()).isEqualTo("One night, two floors");
-            assertThat(stored.getAgeRestriction()).isEqualTo("18+");
-            assertThat(stored.getDoorsOpenAt()).isEqualTo(STARTS.minusSeconds(3600));
-            assertThat(stored.getPublishAt()).isEqualTo(NOW.plusSeconds(86_400));
-            assertThat(stored.isPublishScheduled()).as("a draft is not scheduled; publishing it is").isFalse();
-            assertThat(stored.getFaqs()).singleElement().satisfies(faq -> {
-                assertThat(faq.question()).isEqualTo("Is there parking?");
-                assertThat(faq.answer()).isEqualTo("Yes, behind the hall.");
-            });
-            assertThat(stored.getRunningOrder()).extracting(item -> item.time() + " " + item.title())
-                    .containsExactly("17:00 Doors", "18:30 Headliner");
-            assertThat(stored.getGettingThere()).isEqualTo("Bus 12 from Kamwala");
-            assertThat(stored.getParkingInfo()).isEqualTo("K20 a car");
-            assertThat(stored.getBagPolicy()).isEqualTo("Small bags only");
-            assertThat(stored.getCheckoutSettings().maxTicketsPerOrder()).isEqualTo(4);
-            assertThat(stored.getCheckoutSettings().collectHolderNames()).isTrue();
-            assertThat(stored.getCheckoutSettings().extraQuestion()).isEqualTo("Dietary needs?");
-            assertThat(stored.getBannerAltText()).isEqualTo("A saxophonist on stage");
-            assertThat(stored.getGalleryImages()).containsExactly("https://cdn.example.com/1.jpg");
-            assertThat(stored.getGrossSales()).isEqualByComparingTo("0");
-            assertThat(stored.getCommissionAmount()).isEqualByComparingTo("0");
-        }
+        Event stored = events.findById(created.getId()).block();
+        assertThat(stored.getTagline()).isEqualTo("One night, two floors");
+        assertThat(stored.getAgeRestriction()).isEqualTo("18+");
+        assertThat(stored.getDoorsOpenAt()).isEqualTo(STARTS.minusSeconds(3600));
+        assertThat(stored.getPublishAt()).isEqualTo(NOW.plusSeconds(86_400));
+        assertThat(stored.isPublishScheduled()).as("a draft is not scheduled; publishing it is").isFalse();
+        assertThat(stored.getFaqs()).singleElement().satisfies(faq -> {
+            assertThat(faq.question()).isEqualTo("Is there parking?");
+            assertThat(faq.answer()).isEqualTo("Yes, behind the hall.");
+        });
+        assertThat(stored.getRunningOrder()).extracting(item -> item.time() + " " + item.title())
+                .containsExactly("17:00 Doors", "18:30 Headliner");
+        assertThat(stored.getGettingThere()).isEqualTo("Bus 12 from Kamwala");
+        assertThat(stored.getParkingInfo()).isEqualTo("K20 a car");
+        assertThat(stored.getBagPolicy()).isEqualTo("Small bags only");
+        assertThat(stored.getCheckoutSettings().maxTicketsPerOrder()).isEqualTo(4);
+        assertThat(stored.getCheckoutSettings().collectHolderNames()).isTrue();
+        assertThat(stored.getCheckoutSettings().extraQuestion()).isEqualTo("Dietary needs?");
+        assertThat(stored.getBannerAltText()).isEqualTo("A saxophonist on stage");
+        assertThat(stored.getGalleryImages()).containsExactly("https://cdn.example.com/1.jpg");
+        assertThat(stored.getGrossSales()).isEqualByComparingTo("0");
+        assertThat(stored.getCommissionAmount()).isEqualByComparingTo("0");
+    }
 
-        @Test
-        @DisplayName("an event with none of it is unchanged: every field reads empty")
-        void absent() {
-            Event stored = events.findById(create(newEventPayload()).getId()).block();
+    @Test
+    @DisplayName("what the organizer says about the event (ET-CAT-004) · an event with none of it is unchanged: every field reads empty")
+    void pageContent_absent() {
+        Event stored = events.findById(create(newEventPayload()).getId()).block();
 
-            assertThat(stored.getTagline()).isNull();
-            assertThat(stored.getFaqs()).isNull();
-            assertThat(stored.getCheckoutSettings()).isNull();
-        }
+        assertThat(stored.getTagline()).isNull();
+        assertThat(stored.getFaqs()).isNull();
+        assertThat(stored.getCheckoutSettings()).isNull();
+    }
 
-        @Test
-        @DisplayName("refuses an age restriction outside the five, doors after the start, and a go-live time that is past or after the start")
-        void refusals() {
-            Map<String, Object> bad = withContent();
-            bad.put("ageRestriction", "adults only");
-            bad.put("doorsOpenAt", STARTS.plusSeconds(60));
-            bad.put("publishAt", NOW.minusSeconds(60));
+    @Test
+    @DisplayName("what the organizer says about the event (ET-CAT-004) · refuses an age restriction outside the five, doors after the start, and a go-live time that is past or after the start")
+    void pageContent_refusals() {
+        Map<String, Object> bad = withContent();
+        bad.put("ageRestriction", "adults only");
+        bad.put("doorsOpenAt", STARTS.plusSeconds(60));
+        bad.put("publishAt", NOW.minusSeconds(60));
 
-            assertThat(violationsOf(bad)).extracting(FieldViolation::path)
-                    .containsExactlyInAnyOrder("ageRestriction", "doorsOpenAt", "publishAt");
+        assertThat(violationsOf(bad)).extracting(FieldViolation::path)
+                .containsExactlyInAnyOrder("ageRestriction", "doorsOpenAt", "publishAt");
 
-            Map<String, Object> late = withContent();
-            late.put("publishAt", STARTS);
-            assertThat(violationsOf(late)).extracting(FieldViolation::path).containsExactly("publishAt");
-        }
+        Map<String, Object> late = withContent();
+        late.put("publishAt", STARTS);
+        assertThat(violationsOf(late)).extracting(FieldViolation::path).containsExactly("publishAt");
+    }
 
-        @Test
-        @DisplayName("refuses a running-order time that is not HH:mm and a FAQ with no answer, at the input path")
-        void refusesMalformedLists() {
-            Map<String, Object> bad = withContent();
-            bad.put("runningOrder", List.of(Map.of("time", "7pm", "title", "Doors")));
-            bad.put("faqs", List.of(Map.of("question", "Q?", "answer", " ")));
+    @Test
+    @DisplayName("what the organizer says about the event (ET-CAT-004) · refuses a running-order time that is not HH:mm and a FAQ with no answer, at the input path")
+    void pageContent_refusesMalformedLists() {
+        Map<String, Object> bad = withContent();
+        bad.put("runningOrder", List.of(Map.of("time", "7pm", "title", "Doors")));
+        bad.put("faqs", List.of(Map.of("question", "Q?", "answer", " ")));
 
-            assertThat(violationOf(bad)).isNotEmpty();
-        }
+        assertThat(violationOf(bad)).isNotEmpty();
+    }
 
-        private List<jakarta.validation.ConstraintViolation<CreateEventInput>> violationOf(Map<String, Object> payload) {
-            return List.copyOf(VALIDATOR.validate(bind(payload)));
-        }
+    private List<jakarta.validation.ConstraintViolation<CreateEventInput>> violationOf(Map<String, Object> payload) {
+        return List.copyOf(VALIDATOR.validate(bind(payload)));
+    }
 
-        @Test
-        @DisplayName("a duplicate starts with no schedule, no cancellation and zero totals, but keeps the content")
-        void duplicateResets() {
-            Event original = create(withContent());
-            original = events.findById(original.getId()).block();
-            original.setPublishScheduled(true);
-            original.setCancellationReason("rain");
-            original.setGrossSales(new BigDecimal("900.00"));
-            original.setCommissionAmount(new BigDecimal("45.00"));
-            events.save(original).block();
-            Event source = events.findById(original.getId()).block();
+    @Test
+    @DisplayName("what the organizer says about the event (ET-CAT-004) · a duplicate starts with no schedule, no cancellation and zero totals, but keeps the content")
+    void pageContent_duplicateResets() {
+        Event original = create(withContent());
+        original = events.findById(original.getId()).block();
+        original.setPublishScheduled(true);
+        original.setCancellationReason("rain");
+        original.setGrossSales(new BigDecimal("900.00"));
+        original.setCommissionAmount(new BigDecimal("45.00"));
+        events.save(original).block();
+        Event source = events.findById(original.getId()).block();
 
-            Event copy = service.duplicateEvent(source, "Jazz Night 2", ORGANIZER, ORGANIZATION).block();
+        Event copy = service.duplicateEvent(source, "Jazz Night 2", ORGANIZER, ORGANIZATION).block();
 
-            Event stored = events.findById(copy.getId()).block();
-            assertThat(stored.getTagline()).isEqualTo("One night, two floors");
-            assertThat(stored.getFaqs()).hasSize(1);
-            assertThat(stored.getPublishAt()).isNull();
-            assertThat(stored.isPublishScheduled()).isFalse();
-            assertThat(stored.getCancellationReason()).isNull();
-            assertThat(stored.getGrossSales()).isEqualByComparingTo("0");
-            assertThat(stored.getCommissionAmount()).isEqualByComparingTo("0");
-        }
+        Event stored = events.findById(copy.getId()).block();
+        assertThat(stored.getTagline()).isEqualTo("One night, two floors");
+        assertThat(stored.getFaqs()).hasSize(1);
+        assertThat(stored.getPublishAt()).isNull();
+        assertThat(stored.isPublishScheduled()).isFalse();
+        assertThat(stored.getCancellationReason()).isNull();
+        assertThat(stored.getGrossSales()).isEqualByComparingTo("0");
+        assertThat(stored.getCommissionAmount()).isEqualByComparingTo("0");
     }
 
     // ── harness ─────────────────────────────────────────────────────────────────────────────────

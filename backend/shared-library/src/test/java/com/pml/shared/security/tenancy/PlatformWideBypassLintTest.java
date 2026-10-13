@@ -29,21 +29,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  * organization is decided without a record; {@code PlatformWideAccess} is the one place that
  * decides and records it.
  *
+ * <h2>Finance is counted too</h2>
+ * A finance officer is platform staff, but whether a service treats finance as tenant-wide is that
+ * service's configuration (booking does, identity and catalog do not). A service that wrote its own
+ * {@code "ROLE_FINANCE"} check decided the reach privately and left no record.
+ * {@link StaffRole} and {@code PlatformWideAccess.isPlatformStaff} are the one place the staff
+ * question is answered and recorded, so the literal is counted exactly as the administrator roles are.
+ *
  * <h2>The remaining budget</h2>
- * Five lines, none of them a tenant-filter bypass, and each is unavoidable without changing who is
- * allowed rather than how it is recorded:
- * <ul>
- *   <li>{@code OrganizerAccess.isPlatformStaff} — admin, finance or super admin gating a
- *       permission lookup; finance is not a platform-wide authority.</li>
- *   <li>{@code PayoutRequestMutationResolver.isPlatformStaff} — admin or finance acting for an
- *       organizer on a payout; same set, same reason.</li>
- *   <li>{@code ReservationQueryResolver.SUPPORT_AUTHORITIES} — admin, finance or super admin
- *       reading a buyer's reservation; finance is deliberately in the set.</li>
- *   <li>{@code DualControlRules} (two lines) — the role rank that decides who may approve a
- *       finance operation, which is separation of duties and not tenancy.</li>
- * </ul>
- * Routing any of these through {@code PlatformWideAccess.isPlatformWide} would drop finance from
- * the set and narrow who can do their job, so they stay and are counted instead.
+ * None. The staff checks booking once kept for finance now go through
+ * {@code PlatformWideAccess.isPlatformStaff} (a payout is no longer one of them: only a member of
+ * the organization requests its payout, so that check was removed, not moved), and the approval
+ * rank rule that was inline in {@code DualControlRules} is {@code StaffRole.covers}. Every budget
+ * is zero, and the third test pins that the rank rule is still reached through the shared class
+ * rather than rewritten.
+ *
+ * <h2>Staff reading an organizer's permission grants</h2>
+ * A staff role that carries a permission through the platform role reads an organizer's data
+ * without belonging to the organization. That check names no role literal, so the patterns above
+ * cannot see it; the last test instead pins that booking reads the platform roles' grants in one
+ * place only, and that this place asks through {@code isPlatformStaff} so each use is recorded.
  */
 @Tag("L1")
 @Tag("ET-PLT-007")
@@ -66,7 +71,7 @@ class PlatformWideBypassLintTest {
     private static final Map<String, Integer> BUDGET = new LinkedHashMap<>(Map.of(
             "catalog-service", 0,
             "identity-service", 0,
-            "booking-service", 5));
+            "booking-service", 0));
 
     /** Comments only. String literals are kept because the role names are the thing being counted. */
     private static final Pattern COMMENTS = Pattern.compile("/\\*.*?\\*/|//[^\\n]*", Pattern.DOTALL);
@@ -75,7 +80,8 @@ class PlatformWideBypassLintTest {
             "\\.platformAdmin\\(\\)"
                     + "|TenantScope\\.platformAdministrator\\("
                     + "|\"ROLE_ADMIN\""
-                    + "|\"ROLE_SUPER_ADMIN\"");
+                    + "|\"ROLE_SUPER_ADMIN\""
+                    + "|\"ROLE_FINANCE\"");
 
     private static final Pattern ANNOTATION = Pattern.compile("@(?:Pre|Post)Authorize\\(");
 
@@ -121,6 +127,44 @@ class PlatformWideBypassLintTest {
         }
 
         assertThat(problems).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ET-PLT-007 · the approval rank rule is the shared one, not a copy with role names in it")
+    void rankRuleIsShared() throws IOException {
+        Assumptions.assumeTrue(Files.isDirectory(BACKEND.resolve("booking-service")), "backend sources not present");
+
+        Path rules = BACKEND.resolve("booking-service/src/main/java/com/pml/booking/domain/DualControlRules.java");
+        String code = COMMENTS.matcher(Files.readString(rules)).replaceAll("");
+
+        assertThat(code)
+                .as("DualControlRules must delegate the rank comparison to StaffRole so finance's place in it is decided once")
+                .contains("StaffRole.covers(")
+                .doesNotContain("ROLE_");
+    }
+
+    @Test
+    @DisplayName("ET-PLT-007 · booking reads staff permission grants in one place, and that place records each use")
+    void staffGrantsAreReadOnlyThroughTheAuditedHelper() throws IOException {
+        Assumptions.assumeTrue(Files.isDirectory(BACKEND.resolve("booking-service")), "backend sources not present");
+
+        Pattern grantsByRole = Pattern.compile("grantedByPlatformRoles\\(");
+        List<String> readers = new ArrayList<>();
+        String helper = null;
+        for (Path file : mainSources("booking-service")) {
+            String code = COMMENTS.matcher(Files.readString(file)).replaceAll("");
+            if (grantsByRole.matcher(code).find()) {
+                readers.add(file.getFileName().toString());
+                helper = code;
+            }
+        }
+
+        assertThat(readers)
+                .as("a second reader of the platform roles' grants decides a staff reach with no record")
+                .containsExactly("OrganizerAccess.java");
+        assertThat(helper)
+                .as("OrganizerAccess must ask through isPlatformStaff so the use is recorded")
+                .contains("PlatformWideAccess.isPlatformStaff(");
     }
 
     private static List<String> bypassLines(String service) throws IOException {

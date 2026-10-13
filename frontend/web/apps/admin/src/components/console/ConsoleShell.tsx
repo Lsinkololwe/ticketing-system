@@ -15,13 +15,13 @@ import { AppShell } from '@pml.tickets/shared/layouts';
 import { usePendingCounts } from '@pml.tickets/shared';
 import { useStuckTransactions } from '@pml.tickets/shared/api/admin/modules/payments-ops';
 import { useSystemAlerts } from '@pml.tickets/shared/api/admin/modules/platform-ops';
-import { MODULES, RAIL_LABELS, canOpenModule, ROLE_LABELS, modulesFor, moduleOfPath, type ModuleId } from '@/config/navigation';
+import { MODULES, RAIL_LABELS, canOpenModule, ROLE_LABELS, modulesFor, moduleOfPath, tabsFor, type ModuleId } from '@/config/navigation';
 import { hrefOf, pendingFor, primaryRole } from '@/lib/pending';
 import { CommandPalette } from './CommandPalette';
 import { ConsoleUiProvider } from './ConsoleUi';
 import { useStaff } from './StaffContext';
 
-const BUYER_URL = process.env.NEXT_PUBLIC_BUYER_APP_URL ?? 'http://localhost:3000';
+const BUYER_URL = process.env.NEXT_PUBLIC_BUYER_APP_URL ?? 'http://localhost:3001';
 const ORGANIZER_URL = process.env.NEXT_PUBLIC_ORGANIZER_APP_URL ?? 'http://localhost:3003';
 
 export function buildSections(
@@ -32,7 +32,9 @@ export function buildSections(
   const groups = new Map<string, NavItem[]>();
   for (const m of modulesFor(roles)) {
     const list = groups.get(m.group) ?? [];
-    const first = m.tabs ? `${m.path}/${m.tabs[0].id}` : m.path;
+    // The first tab this role may open, not the module's first tab: finance has only the audit log here.
+    const firstTab = tabsFor(roles, m.id)[0];
+    const first = firstTab ? `${m.path}/${firstTab.id}` : m.path;
     list.push({ id: m.id, label: m.label, icon: m.icon, href: first, current: m.id === current, badge: badges[m.id] });
     groups.set(m.group, list);
   }
@@ -163,7 +165,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
         }}
       >
         {children}
-        {canOpenModule(staff.roles, 'transactions') ? <StuckProbe onCount={setStuck} /> : null}
+        {tabsFor(staff.roles, 'transactions').some((t) => t.id === 'recovery') ? <StuckProbe onCount={setStuck} /> : null}
         {canOpenModule(staff.roles, 'health') ? <AlertProbe onCount={setOpenAlerts} /> : null}
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} roles={staff.roles} />
       </AppShell>

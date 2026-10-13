@@ -32,8 +32,7 @@ public class UserDeviceServiceImpl implements UserDeviceService {
 
     @Override
     public Mono<UserDevice> registerDevice(String userId, RegisterDeviceInput input) {
-        log.debug("Registering device for user {}: token={}, platform={}",
-            userId, input.deviceToken(), input.platform());
+        log.debug("Registering device for user {}: platform={}", userId, input.platform());
 
         // Check if device already exists
         return deviceRepository.findByUserIdAndDeviceToken(userId, input.deviceToken())

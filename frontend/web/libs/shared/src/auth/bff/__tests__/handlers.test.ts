@@ -152,6 +152,22 @@ describe('callback', () => {
     const { jar: j2 } = await login(h2, staffUser);
     expect(j2['__Host-pml_org']).toBeUndefined();
   });
+  it('falls back to preferred_username when the account claim is absent', async () => {
+    const h = await makeHarness({ access: { roles: ['ORGANIZER'], accountClaim: 'accountId' } });
+    const { jar } = await login(h, { ...staffUser, preferredUsername: 'acc-from-username' });
+    expect((await (await h.deps()).sessions.load(jar['__Host-pml_org']))!.record.accountId).toBe('acc-from-username');
+  });
+  it('the account claim wins over preferred_username', async () => {
+    const h = await makeHarness({ access: { roles: ['ORGANIZER'], accountClaim: 'accountId' } });
+    const { jar } = await login(h, { ...staffUser, accountId: 'acc-claim', preferredUsername: 'someone' });
+    expect((await (await h.deps()).sessions.load(jar['__Host-pml_org']))!.record.accountId).toBe('acc-claim');
+  });
+  it('a token carrying only sub is refused: the subject is never the account id', async () => {
+    const h = await makeHarness({ access: { roles: ['ORGANIZER'], accountClaim: 'accountId' } });
+    const { jar, cb } = await login(h, { sub: 'kc-only-sub', roles: ['ORGANIZER'], name: 'No Account' });
+    expect(jar['__Host-pml_org']).toBeUndefined();
+    expect(loc(cb).searchParams.get('post_logout_redirect_uri')).toContain('error=SIGN_IN_FAILED');
+  });
   it('postLogin can veto (and end SSO) before any cookie is issued', async () => {
     const h = await makeHarness({ postLogin: async () => ({ ok: false, error: 'ACCOUNT_SUSPENDED', endSso: true }) });
     const { cb, jar } = await login(h);

@@ -85,8 +85,8 @@ class IdentityHttpTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R10 · FAIL CLOSED: any missing variable yields no client and names only the variable")
-    void failClosed() {
+    @DisplayName("a missing or blank variable yields no client, and the start-up error names only the variable")
+    void missingVariableIsRefused() {
         assertThat(IdentityHttp.fromEnvironment(Map.of(), clock)).isNull();
         Map<String, String> partial = Map.of("IDENTITY_BASE_URL", "http://x", "IDENTITY_CLIENT_ID", "id",
                 "KEYCLOAK_TOKEN_URL", "http://t");
@@ -98,10 +98,15 @@ class IdentityHttpTest {
         Map<String, String> full = Map.of("IDENTITY_BASE_URL", "http://x/", "IDENTITY_CLIENT_ID", "id",
                 "KEYCLOAK_TOKEN_URL", "http://t", "IDENTITY_CLIENT_SECRET", "s");
         assertThat(IdentityHttp.fromEnvironment(full, clock)).isNotNull();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> IdentityHttp.requireFromEnvironment(blank, clock))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("IDENTITY_CLIENT_SECRET")
+                .hasMessageNotContaining("http://x");
+        assertThat(IdentityHttp.requireFromEnvironment(full, clock)).isNotNull();
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R10 · the client-credentials token is cached until shortly before expiry")
+    @DisplayName("the client-credentials token is cached until shortly before expiry")
     void tokenIsCached() {
         IdentityHttp http = http(Duration.ofSeconds(2));
         for (int i = 0; i < 3; i++) {
@@ -116,7 +121,7 @@ class IdentityHttpTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R10 · a 401 drops the token, fetches a new one and retries exactly once")
+    @DisplayName("a 401 drops the token, fetches a new one and retries exactly once")
     void refreshOn401() {
         firstApiStatus = 401;
         IdentityHttp http = http(Duration.ofSeconds(2));
@@ -127,7 +132,7 @@ class IdentityHttpTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R10 · problem documents are parsed; the message never carries body content")
+    @DisplayName("problem documents are parsed; the message never carries body content")
     void problemParsedWithoutBodyInMessage() {
         firstApiStatus = 400;
         IdentityHttp http = http(Duration.ofSeconds(2));
@@ -141,7 +146,7 @@ class IdentityHttpTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R10 · a slow API call times out as unavailable")
+    @DisplayName("a slow API call times out as unavailable")
     void requestTimeout() {
         apiDelayMillis = 1500;
         IdentityHttp http = http(Duration.ofMillis(300));
@@ -150,7 +155,7 @@ class IdentityHttpTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R10 · a failing token endpoint fails closed and sends nothing to the API")
+    @DisplayName("a failing token endpoint fails closed and sends nothing to the API")
     void tokenFailureFailsClosed() {
         tokenStatus = 401;
         IdentityHttp http = http(Duration.ofSeconds(2));
@@ -160,7 +165,7 @@ class IdentityHttpTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R10 · an unreachable service is unavailable, not an uncaught IOException")
+    @DisplayName("an unreachable service is unavailable, not an uncaught IOException")
     void unreachable() {
         IdentityHttp dead = new IdentityHttp(new IdentityHttp.Settings("http://127.0.0.1:1", "http://127.0.0.1:1/token",
                 "c", "s", Duration.ofMillis(300), Duration.ofMillis(300)), clock);

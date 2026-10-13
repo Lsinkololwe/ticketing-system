@@ -26,7 +26,6 @@ import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -149,55 +148,52 @@ class EventDiscoveryTest {
                 "Lusaka Jazz Night", "Kitwe Rock Festival", "Lusaka Marathon", "Ndola Tech Summit");
     }
 
-    @Nested
-    @DisplayName("each filter narrows the feed")
-    class Filters {
+    // ── each filter narrows the feed ──────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("by category")
-        void category() {
-            assertThat(titles(filter("categoryId", "MUSIC"))).containsExactly("Lusaka Jazz Night", "Kitwe Rock Festival");
-        }
+    @Test
+    @DisplayName("each filter narrows the feed · by category")
+    void filters_category() {
+        assertThat(titles(filter("categoryId", "MUSIC"))).containsExactly("Lusaka Jazz Night", "Kitwe Rock Festival");
+    }
 
-        @Test
-        @DisplayName("by city, from the reference data's code")
-        void city() {
-            assertThat(titles(filter("cityId", "LUSAKA"))).containsExactly("Lusaka Jazz Night", "Lusaka Marathon");
-        }
+    @Test
+    @DisplayName("each filter narrows the feed · by city, from the reference data's code")
+    void filters_city() {
+        assertThat(titles(filter("cityId", "LUSAKA"))).containsExactly("Lusaka Jazz Night", "Lusaka Marathon");
+    }
 
-        @Test
-        @DisplayName("by start-date range")
-        void dates() {
-            assertThat(titles(filter("startDate", days(15), "endDate", days(35))))
-                    .containsExactly("Kitwe Rock Festival", "Lusaka Marathon");
-        }
+    @Test
+    @DisplayName("each filter narrows the feed · by start-date range")
+    void filters_dates() {
+        assertThat(titles(filter("startDate", days(15), "endDate", days(35))))
+                .containsExactly("Kitwe Rock Festival", "Lusaka Marathon");
+    }
 
-        @Test
-        @DisplayName("by price, compared as money and not as text: 50 is below 150")
-        void price() {
-            assertThat(titles(filter("minPrice", new BigDecimal("40"), "maxPrice", new BigDecimal("160"))))
-                    .containsExactly("Lusaka Jazz Night", "Kitwe Rock Festival");
-            assertThat(titles(filter("maxPrice", BigDecimal.ZERO))).containsExactly("Lusaka Marathon");
-        }
+    @Test
+    @DisplayName("each filter narrows the feed · by price, compared as money and not as text: 50 is below 150")
+    void filters_price() {
+        assertThat(titles(filter("minPrice", new BigDecimal("40"), "maxPrice", new BigDecimal("160"))))
+                .containsExactly("Lusaka Jazz Night", "Kitwe Rock Festival");
+        assertThat(titles(filter("maxPrice", BigDecimal.ZERO))).containsExactly("Lusaka Marathon");
+    }
 
-        @Test
-        @DisplayName("by free text over title and description")
-        void text() {
-            assertThat(titles(filter("searchQuery", "jazz"))).containsExactlyInAnyOrder("Lusaka Jazz Night", "Kitwe Rock Festival");
-        }
+    @Test
+    @DisplayName("each filter narrows the feed · by free text over title and description")
+    void filters_text() {
+        assertThat(titles(filter("searchQuery", "jazz"))).containsExactlyInAnyOrder("Lusaka Jazz Night", "Kitwe Rock Festival");
+    }
 
-        @Test
-        @DisplayName("in combination")
-        void combined() {
-            assertThat(titles(filter("categoryId", "MUSIC", "cityId", "KITWE", "maxPrice", new BigDecimal("100"))))
-                    .containsExactly("Kitwe Rock Festival");
-        }
+    @Test
+    @DisplayName("each filter narrows the feed · in combination")
+    void filters_combined() {
+        assertThat(titles(filter("categoryId", "MUSIC", "cityId", "KITWE", "maxPrice", new BigDecimal("100"))))
+                .containsExactly("Kitwe Rock Festival");
+    }
 
-        @Test
-        @DisplayName("a search term that looks like an operator is only a word")
-        void noOperators() {
-            assertThat(titles(filter("searchQuery", "-jazz"))).contains("Lusaka Jazz Night");
-        }
+    @Test
+    @DisplayName("each filter narrows the feed · a search term that looks like an operator is only a word")
+    void filters_noOperators() {
+        assertThat(titles(filter("searchQuery", "-jazz"))).contains("Lusaka Jazz Night");
     }
 
     static Stream<EventDiscoveryFilterInput> everyCombination() {
@@ -228,44 +224,41 @@ class EventDiscoveryTest {
         assertThat(plan).containsAnyOf("IXSCAN", "TEXT_MATCH").doesNotContain("COLLSCAN");
     }
 
-    @Nested
-    @DisplayName("what discovery refuses")
-    class Refusals {
+    // ── what discovery refuses ────────────────────────────────────────────────────────────────────
 
-        @ParameterizedTest
-        @ValueSource(strings = {"cityName", "country", "provinceId", "organizerId"})
-        @DisplayName("a filter outside the five, rather than run it unindexed")
-        void unsupportedText(String field) {
-            assertThat(refused(filter(field, "x"), null)).containsExactly("filter." + field);
-        }
+    @ParameterizedTest
+    @ValueSource(strings = {"cityName", "country", "provinceId", "organizerId"})
+    @DisplayName("what discovery refuses · a filter outside the five, rather than run it unindexed")
+    void refusals_unsupportedText(String field) {
+        assertThat(refused(filter(field, "x"), null)).containsExactly("filter." + field);
+    }
 
-        @ParameterizedTest
-        @ValueSource(strings = {"isFreeEvent", "hasAvailableTickets", "isAccessible", "isVirtual", "isFeatured"})
-        @DisplayName("a flag outside the five")
-        void unsupportedFlag(String field) {
-            assertThat(refused(filter(field, true), null)).containsExactly("filter." + field);
-        }
+    @ParameterizedTest
+    @ValueSource(strings = {"isFreeEvent", "hasAvailableTickets", "isAccessible", "isVirtual", "isFeatured"})
+    @DisplayName("what discovery refuses · a flag outside the five")
+    void refusals_unsupportedFlag(String field) {
+        assertThat(refused(filter(field, true), null)).containsExactly("filter." + field);
+    }
 
-        @Test
-        @DisplayName("a search shorter than three characters")
-        void shortSearch() {
-            assertThat(refused(filter("searchQuery", "ja"), null)).containsExactly("filter.searchQuery");
-        }
+    @Test
+    @DisplayName("what discovery refuses · a search shorter than three characters")
+    void refusals_shortSearch() {
+        assertThat(refused(filter("searchQuery", "ja"), null)).containsExactly("filter.searchQuery");
+    }
 
-        @Test
-        @DisplayName("a page larger than 100, refused rather than quietly shortened")
-        void pageSize() {
-            assertThatThrownBy(() -> resolver.discoverEvents(filter(), new CursorPaginationInput(101, null, null, null), null).block())
-                    .isInstanceOf(PageSize.PageSizeExceeded.class);
-        }
+    @Test
+    @DisplayName("what discovery refuses · a page larger than 100, refused rather than quietly shortened")
+    void refusals_pageSize() {
+        assertThatThrownBy(() -> resolver.discoverEvents(filter(), new CursorPaginationInput(101, null, null, null), null).block())
+                .isInstanceOf(PageSize.PageSizeExceeded.class);
+    }
 
-        @Test
-        @DisplayName("a cursor the feed never issued")
-        void foreignCursor() {
-            String forged = java.util.Base64.getUrlEncoder().encodeToString("someone-else:5".getBytes());
+    @Test
+    @DisplayName("what discovery refuses · a cursor the feed never issued")
+    void refusals_foreignCursor() {
+        String forged = java.util.Base64.getUrlEncoder().encodeToString("someone-else:5".getBytes());
 
-            assertThat(refused(filter(), new CursorPaginationInput(10, forged, null, null))).containsExactly("pagination.after");
-        }
+        assertThat(refused(filter(), new CursorPaginationInput(10, forged, null, null))).containsExactly("pagination.after");
     }
 
     @Test

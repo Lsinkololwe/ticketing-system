@@ -24,7 +24,6 @@ function AuthMessageContent() {
 
   const next = safeNext(params.get('next'));
   const authError = params.get('error');
-  const justRegistered = params.get('registered') === 'true';
 
   const go = useCallback(() => {
     setRedirecting(true);
@@ -37,16 +36,10 @@ function AuthMessageContent() {
   }, [session, router]);
 
   useEffect(() => {
-    if (isPending || session?.user || authError || justRegistered || redirecting || auto.current) return;
+    if (isPending || session?.user || authError || redirecting || auto.current) return;
     auto.current = true;
     go();
-  }, [isPending, session, authError, justRegistered, redirecting, go]);
-
-  useEffect(() => {
-    if (!justRegistered || authError || isPending || session?.user) return undefined;
-    const t = setTimeout(go, 2000);
-    return () => clearTimeout(t);
-  }, [justRegistered, authError, isPending, session, go]);
+  }, [isPending, session, authError, redirecting, go]);
 
   const mode: LoginMode = isPending
     ? 'checking'
@@ -54,9 +47,7 @@ function AuthMessageContent() {
       ? 'redirecting'
       : authError
         ? 'error'
-        : justRegistered
-          ? 'registered'
-          : 'prompt';
+        : 'prompt';
 
   // Account creation is offered on the Keycloak sign-in page; both buttons start the same flow.
   return <LoginView mode={mode} authError={authError} onSignIn={go} onRegister={go} />;

@@ -126,7 +126,7 @@ describe("POST /api/profile/contacts/*", () => {
         await call(
           "primary-request",
           { contactId: "contact-1234" },
-          { "x-pml-csrf": "" },
+          { "x-requested-with": "" },
         )
       ).status,
     ).toBe(403);

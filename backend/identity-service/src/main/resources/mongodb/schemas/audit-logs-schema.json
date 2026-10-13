@@ -48,8 +48,10 @@
           "ACCOUNT_DELETION_CANCELLED",
           "SESSION_REVOKED",
           "ACCESS_REVOKED",
+          "STAFF_PASSWORD_RESET",
           "SYSTEM_ALERT_ACKNOWLEDGED",
           "ANNOUNCEMENT_PUBLISHED",
+          "TENANT_BOUNDARY_CROSSED",
           "KEYCLOAK_SYNC_SUCCESS",
           "KEYCLOAK_SYNC_FAILURE"
         ]
@@ -102,17 +104,52 @@
       "timestamp": {
         "bsonType": "date"
       },
-      "createdAt": {
+      "receivedAt": {
         "bsonType": [
           "date",
           "null"
         ]
+      },
+      "recordId": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
       },
       "metadata": {
         "bsonType": [
           "object",
           "null"
         ]
+      },
+      "actorRole": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 80
+      },
+      "service": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 80
+      },
+      "reason": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
+      },
+      "operation": {
+        "bsonType": [
+          "string",
+          "null"
+        ],
+        "maxLength": 100
       },
       "errorMessage": {
         "bsonType": [

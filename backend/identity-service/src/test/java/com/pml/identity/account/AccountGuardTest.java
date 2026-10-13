@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("L1")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004 · which account states may be ensured, and with which refusal code (CONTRACT 4.3)")
+@DisplayName("which account states may be ensured, and with which refusal code")
 class AccountGuardTest {
 
     @Test

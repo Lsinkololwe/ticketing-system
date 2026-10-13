@@ -11,10 +11,10 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Contact hashing, masking and encryption (CONTRACT 3). Pure functions: L1. */
+/** Contact hashing, masking and encryption. Pure functions: L1. */
 @Tag("L1")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004 · contacts are hashed, masked and encrypted, never stored plain")
+@DisplayName("contacts are hashed, masked and encrypted, never stored plain")
 class ContactIdentityTest {
 
     private static final String AES_KEY = FieldEncryptionService.generateKey();

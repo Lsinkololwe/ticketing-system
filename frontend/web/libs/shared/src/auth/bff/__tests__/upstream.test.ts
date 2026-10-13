@@ -20,7 +20,7 @@ async function withGateway(over: Parameters<typeof makeHarness>[0] = {}, respond
   return { h: h2, seen };
 }
 const post = (h: Harness, jar: Record<string, string>, body = '{"query":"{a}"}', headers: Record<string, string> = {}) =>
-  h.bff.upstream.graphql().POST(h.req('/api/graphql', { method: 'POST', body, cookies: jar, headers: { 'content-type': 'application/json', origin: APP, 'sec-fetch-site': 'same-origin', 'x-pml-csrf': '1', ...headers } }));
+  h.bff.upstream.graphql().POST(h.req('/api/graphql', { method: 'POST', body, cookies: jar, headers: { 'content-type': 'application/json', origin: APP, 'sec-fetch-site': 'same-origin', 'x-requested-with': 'pml-web', ...headers } }));
 
 describe('graphql upstream', () => {
   it('adds the bearer server-side, strips cookies both ways and never leaks the token to the browser', async () => {
@@ -38,7 +38,7 @@ describe('graphql upstream', () => {
     const { h, seen } = await withGateway();
     const { jar } = await login(h);
     expect((await post(h, jar, undefined, { origin: 'https://evil.example' })).status).toBe(403);
-    expect((await post(h, jar, undefined, { 'x-pml-csrf': '' })).status).toBe(403);
+    expect((await post(h, jar, undefined, { 'x-requested-with': '' })).status).toBe(403);
     expect((await post(h, jar, undefined, { 'sec-fetch-site': 'cross-site' })).status).toBe(403);
     expect(seen).toHaveLength(0);
   });

@@ -25,7 +25,7 @@ import static org.mockito.Mockito.when;
 
 @Tag("L1")
 @Tag("ET-ADM-002")
-@DisplayName("ET-ADM-002-R10 · a tokenless caller reaches only the allowlisted query, rate limited")
+@DisplayName("a tokenless caller reaches only the allowlisted query, rate limited")
 class PublicOperationFilterTest {
 
     private ReactiveStringRedisTemplate redis;

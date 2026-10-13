@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @Tag("L2")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004 · account, contact, consent, event, audit and revocation validators accept the models and refuse bad data")
+@DisplayName("account, contact, consent, event, audit and revocation validators accept the models and refuse bad data")
 class AccountSchemasTest {
 
     private static final Instant NOW = Instant.parse("2026-10-04T08:00:00Z");
@@ -186,11 +186,13 @@ class AccountSchemasTest {
         assertThat(rawInsertFailure(IdentityCollections.USERS, new Document(base).append("phoneNumber", "0977123456"))).isNotNull();
         assertThat(rawInsertFailure(IdentityCollections.USERS, new Document("createdAt", new java.util.Date()))).as("roles stay required").isNotNull();
         assertThat(rawInsertFailure(IdentityCollections.USERS, new Document(base).append("roles",
-                List.of("CUSTOMER", "ORGANIZER", "ADMIN", "SUPER_ADMIN", "SCANNER", "FINANCE", "FINANCE_LEAD", "CUSTOMER"))))
-                .as("eight roles, one repeated").isNotNull();
-        // all seven roles at once are within the new maximum
+                List.of("CUSTOMER", "ORGANIZER", "ADMIN", "SUPER_ADMIN", "FINANCE", "FINANCE_LEAD", "CUSTOMER"))))
+                .as("seven roles, one repeated").isNotNull();
         assertThat(rawInsertFailure(IdentityCollections.USERS, new Document(base).append("roles",
-                List.of("CUSTOMER", "ORGANIZER", "ADMIN", "SUPER_ADMIN", "SCANNER", "FINANCE", "FINANCE_LEAD")))).isNull();
+                List.of("CUSTOMER", "SCANNER")))).as("the retired scanner role is not a platform role").isNotNull();
+        // all six roles at once are within the maximum
+        assertThat(rawInsertFailure(IdentityCollections.USERS, new Document(base).append("roles",
+                List.of("CUSTOMER", "ORGANIZER", "ADMIN", "SUPER_ADMIN", "FINANCE", "FINANCE_LEAD")))).isNull();
     }
 
     // ------------------------------------------------------------------ contacts

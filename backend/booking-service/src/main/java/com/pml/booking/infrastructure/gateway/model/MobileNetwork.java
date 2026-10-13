@@ -37,8 +37,9 @@ public enum MobileNetwork {
             return null;
         }
 
-        // Normalize: remove + and spaces
-        String normalized = phoneNumber.replaceAll("[+\\s-]", "");
+        // One form for every way the number may have been typed, so the prefix test below sees
+        // the same digits whether the buyer wrote 097…, +26097… or 26097….
+        String normalized = Msisdn.of(phoneNumber);
 
         // Zambian prefixes (260 country code)
         if (normalized.startsWith("26097") || normalized.startsWith("26096")) {

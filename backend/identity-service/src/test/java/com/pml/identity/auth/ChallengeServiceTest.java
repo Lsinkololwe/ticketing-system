@@ -24,10 +24,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The challenge against a real Redis and a clock that only the test moves (ET-IDN-001 R2-R4). */
+/** The challenge against a real Redis and a clock that only the test moves. */
 @Tag("L2")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001-R2/R3/R4 · a code is delivered, expires, throttles, locks, and is checked atomically")
+@DisplayName("a code is delivered, expires, throttles, locks, and is checked atomically")
 class ChallengeServiceTest {
 
     /** The tests run against a real Redis, from the shared test fixtures. */
@@ -36,7 +36,7 @@ class ChallengeServiceTest {
     private final AuthEngine engine = new AuthEngine();
 
     @Test
-    @DisplayName("R2 · a code is issued, delivered on the contact's channel, and works exactly once")
+    @DisplayName("a code is issued, delivered on the contact's channel, and works exactly once")
     void issueDeliverVerifyOnce() {
         String phone = AuthEngine.randomPhone();
         var issued = engine.issue(phone);
@@ -58,7 +58,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R2 · an email contact is delivered by email")
+    @DisplayName("an email contact is delivered by email")
     void emailChannel() {
         String email = AuthEngine.randomEmail();
         var issued = engine.issue(email.toUpperCase());
@@ -68,7 +68,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R2 · Redis holds HMAC(code, pepper) with a 300 s TTL, never the code")
+    @DisplayName("Redis holds HMAC(code, pepper) with a 300 s TTL, never the code")
     void storedAsKeyedHash() {
         String phone = AuthEngine.randomPhone();
         var issued = engine.issue(phone);
@@ -88,7 +88,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R2 · a new request replaces the previous code: one live code per contact")
+    @DisplayName("a new request replaces the previous code: one live code per contact")
     void newCodeReplacesOld() {
         String phone = AuthEngine.randomPhone();
         var first = engine.issue(phone);
@@ -104,7 +104,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R2 · a frozen clock accepts the code at 4:59 and refuses it at 5:01")
+    @DisplayName("a frozen clock accepts the code at 4:59 and refuses it at 5:01")
     void expiry() {
         String early = AuthEngine.randomPhone();
         String late = AuthEngine.randomPhone();
@@ -119,7 +119,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R3 · a resend is refused at 59 s with retryAfterSeconds and sends nothing, and allowed at 61 s")
+    @DisplayName("a resend is refused at 59 s with retryAfterSeconds and sends nothing, and allowed at 61 s")
     void cooldown() {
         String phone = AuthEngine.randomPhone();
         engine.issue(phone);
@@ -136,7 +136,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R3 · wrong codes count down from five; the fifth deletes the code and locks the contact")
+    @DisplayName("wrong codes count down from five; the fifth deletes the code and locks the contact")
     void attemptsThenLock() {
         String phone = AuthEngine.randomPhone();
         var issued = engine.issue(phone);
@@ -160,7 +160,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R3 · the lock holds at 14:59 and is released at 15:01")
+    @DisplayName("the lock holds at 14:59 and is released at 15:01")
     void lockExpiry() {
         String phone = AuthEngine.randomPhone();
         var issued = engine.issue(phone);
@@ -175,7 +175,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R3 · 50 parallel wrong guesses consume exactly five attempts, then everything is OTP_LOCKED")
+    @DisplayName("50 parallel wrong guesses consume exactly five attempts, then everything is OTP_LOCKED")
     void parallelWrongGuesses() {
         for (int round = 0; round < 3; round++) {
             String phone = AuthEngine.randomPhone();
@@ -213,7 +213,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R3 · of 20 parallel correct submissions exactly one succeeds")
+    @DisplayName("of 20 parallel correct submissions exactly one succeeds")
     void correctCodeWorksOnce() {
         String phone = AuthEngine.randomPhone();
         var issued = engine.issue(phone);
@@ -236,7 +236,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R3 · success deletes the code, the attempts and the cooldown")
+    @DisplayName("success deletes the code, the attempts and the cooldown")
     void successClearsState() {
         String phone = AuthEngine.randomPhone();
         var issued = engine.issue(phone);
@@ -250,7 +250,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R2 · a provider failure deletes the challenge, releases the cooldown and is refused retryable")
+    @DisplayName("a provider failure deletes the challenge, releases the cooldown and is refused retryable")
     void deliveryFailure() {
         String phone = AuthEngine.randomPhone();
         var failing = new AuthEngine(List.of(AuthEngine.failingProvider()), null);
@@ -267,7 +267,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R1/R2 · invalid contacts are refused before any state is written or message sent")
+    @DisplayName("invalid contacts are refused before any state is written or message sent")
     void invalidContacts() {
         for (String bad : List.of("not a contact", "+260211123456", "+81312345678", "a@b", "12345", "")) {
             Refusals.of(ErrorCode.CONTACT_INVALID, engine.challenges.issue(engine.command(bad)));
@@ -276,7 +276,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R2 · with no channel enabled the request is refused NOTIFICATION_CHANNEL_UNAVAILABLE and nothing is stored")
+    @DisplayName("with no channel enabled the request is refused NOTIFICATION_CHANNEL_UNAVAILABLE and nothing is stored")
     void channelUnavailable() {
         var none = new AuthEngine(List.of(), null);
         String phone = AuthEngine.randomPhone();
@@ -286,7 +286,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R1 · no Redis key and no stored value contains a raw contact")
+    @DisplayName("no Redis key and no stored value contains a raw contact")
     void noRawContactInRedis() {
         String phone = AuthEngine.randomPhone();
         String email = AuthEngine.randomEmail();
@@ -315,7 +315,7 @@ class ChallengeServiceTest {
     }
 
     @Test
-    @DisplayName("R4 · no log line at any level contains the code, the number or the email across issue, wrong guess, verify, proof and handle")
+    @DisplayName("no log line at any level contains the code, the number or the email across issue, wrong guess, verify, proof and handle")
     void nothingSensitiveIsLogged() {
         String phone = AuthEngine.randomPhone();
         String email = AuthEngine.randomEmail();

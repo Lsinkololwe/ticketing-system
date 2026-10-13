@@ -3,7 +3,7 @@ package com.pml.identity.account;
 import com.pml.identity.domain.enums.ContactType;
 
 /**
- * A proof of contact control as stored in Redis ({@code proof:{id}}, CONTRACT 6). Holds the
+ * A proof of contact control as stored in Redis ({@code proof:{id}}). Holds the
  * encrypted contact so the account workflow can claim it without the raw value in its input.
  *
  * @param state     {@code NEW} or {@code CONSUMED}

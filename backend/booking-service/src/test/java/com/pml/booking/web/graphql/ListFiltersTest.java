@@ -34,7 +34,6 @@ import com.pml.shared.testing.MongoReplicaSet;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -160,59 +159,56 @@ class ListFiltersTest {
         return page.data().stream().map(Ticket::getTicketNumber).toList();
     }
 
-    @Nested
-    @DisplayName("tickets")
-    class Tickets {
+    // ── tickets ───────────────────────────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("an organizer's list holds only that organizer's tickets, whatever the filter names")
-        void organizerScope() {
-            TicketFilterInput otherOrganizer = bind(TicketFilterInput.class, "organizerId", ORGANIZER_B);
+    @Test
+    @DisplayName("tickets · an organizer's list holds only that organizer's tickets, whatever the filter names")
+    void tickets_organizerScope() {
+        TicketFilterInput otherOrganizer = bind(TicketFilterInput.class, "organizerId", ORGANIZER_B);
 
-            assertThat(numbers(tickets.ticketsByOrganizer(ORGANIZER_A, null, null).block()))
-                    .containsExactlyInAnyOrder("TKT-0001", "TKT-0002", "TKT-0003");
-            assertThat(numbers(tickets.ticketsByOrganizer(ORGANIZER_A, otherOrganizer, null).block())).isEmpty();
+        assertThat(numbers(tickets.ticketsByOrganizer(ORGANIZER_A, null, null).block()))
+                .containsExactlyInAnyOrder("TKT-0001", "TKT-0002", "TKT-0003");
+        assertThat(numbers(tickets.ticketsByOrganizer(ORGANIZER_A, otherOrganizer, null).block())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("tickets · statuses, organizer and search all narrow an administrator's search")
+    void tickets_searchFields() {
+        TicketFilterInput filter = bind(TicketFilterInput.class,
+                "statuses", List.of(TicketStatus.ISSUED, TicketStatus.VALIDATED), "searchQuery", "chanda@");
+
+        assertThat(numbers(tickets.searchTickets(filter, null).block())).containsExactlyInAnyOrder("TKT-0001", "TKT-0004");
+        assertThat(numbers(tickets.searchTickets(bind(TicketFilterInput.class, "organizerId", ORGANIZER_B), null).block()))
+                .containsExactlyInAnyOrder("TKT-0004", "TKT-.*05");
+    }
+
+    @Test
+    @DisplayName("tickets · the search text is matched literally, never as a pattern")
+    void tickets_searchIsLiteral() {
+        assertThat(numbers(tickets.searchTickets(bind(TicketFilterInput.class, "searchQuery", "TKT-.*"), null).block()))
+                .containsExactly("TKT-.*05");
+    }
+
+    @Test
+    @DisplayName("tickets · a search shorter than three characters is refused")
+    void tickets_shortSearch() {
+        try {
+            tickets.searchTickets(bind(TicketFilterInput.class, "searchQuery", "ch"), null).block();
+            throw new AssertionError("expected a refusal");
+        } catch (ValidationRefusal refused) {
+            assertThat(refused.violations()).extracting(FieldViolation::path).containsExactly("filter.searchQuery");
         }
+    }
 
-        @Test
-        @DisplayName("statuses, organizer and search all narrow an administrator's search")
-        void searchFields() {
-            TicketFilterInput filter = bind(TicketFilterInput.class,
-                    "statuses", List.of(TicketStatus.ISSUED, TicketStatus.VALIDATED), "searchQuery", "chanda@");
+    @Test
+    @DisplayName("tickets · the page is counted and cut by the database")
+    void tickets_paging() {
+        TicketOffsetPage page = tickets.searchTickets(bind(TicketFilterInput.class),
+                OffsetPaginationInput.of(1, 2)).block();
 
-            assertThat(numbers(tickets.searchTickets(filter, null).block())).containsExactlyInAnyOrder("TKT-0001", "TKT-0004");
-            assertThat(numbers(tickets.searchTickets(bind(TicketFilterInput.class, "organizerId", ORGANIZER_B), null).block()))
-                    .containsExactlyInAnyOrder("TKT-0004", "TKT-.*05");
-        }
-
-        @Test
-        @DisplayName("the search text is matched literally, never as a pattern")
-        void searchIsLiteral() {
-            assertThat(numbers(tickets.searchTickets(bind(TicketFilterInput.class, "searchQuery", "TKT-.*"), null).block()))
-                    .containsExactly("TKT-.*05");
-        }
-
-        @Test
-        @DisplayName("a search shorter than three characters is refused")
-        void shortSearch() {
-            try {
-                tickets.searchTickets(bind(TicketFilterInput.class, "searchQuery", "ch"), null).block();
-                throw new AssertionError("expected a refusal");
-            } catch (ValidationRefusal refused) {
-                assertThat(refused.violations()).extracting(FieldViolation::path).containsExactly("filter.searchQuery");
-            }
-        }
-
-        @Test
-        @DisplayName("the page is counted and cut by the database")
-        void paging() {
-            TicketOffsetPage page = tickets.searchTickets(bind(TicketFilterInput.class),
-                    OffsetPaginationInput.of(1, 2)).block();
-
-            assertThat(page.data()).hasSize(2);
-            assertThat(page.pagination().totalCount()).isEqualTo(5);
-            assertThat(page.pagination().hasNextPage()).isTrue();
-        }
+        assertThat(page.data()).hasSize(2);
+        assertThat(page.pagination().totalCount()).isEqualTo(5);
+        assertThat(page.pagination().hasNextPage()).isTrue();
     }
 
     @Test

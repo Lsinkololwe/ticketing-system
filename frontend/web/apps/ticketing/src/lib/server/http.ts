@@ -24,7 +24,7 @@ export interface RequestContext {
 type Subjects = Parameters<typeof bff.rateLimit>[1];
 
 /**
- * Browser-facing mutation guard from the shared module: Origin / Sec-Fetch-Site / x-pml-csrf, then
+ * Browser-facing mutation guard from the shared module: Origin / Sec-Fetch-Site / X-Requested-With, then
  * the named limiter policy. `subjects` may be a function so a body-derived contact can be keyed.
  * Returns a Response when refused, otherwise the request context.
  */

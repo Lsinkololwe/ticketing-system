@@ -15,8 +15,8 @@ describe('LoginView', () => {
   });
   it('error: maps known codes and offers retry', () => {
     const f = fns();
-    render(<LoginView mode="error" authError="AccessDenied" {...f} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Access was denied');
+    render(<LoginView mode="error" authError="FORBIDDEN" {...f} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('not an organizer account');
     fireEvent.click(screen.getByTestId('login-retry-button'));
     expect(f.onSignIn).toHaveBeenCalled();
     expect(screen.getByTestId('login-register-button')).toBeInTheDocument();
@@ -25,12 +25,10 @@ describe('LoginView', () => {
     render(<LoginView mode="error" authError="Weird" {...fns()} />);
     expect(screen.getByRole('alert')).toHaveTextContent('Sign-in did not complete');
   });
-  it('loading and registered states', () => {
+  it('loading states', () => {
     const { rerender } = render(<LoginView mode="checking" {...fns()} />);
     expect(screen.getByTestId('login-loading')).toHaveTextContent('Checking your session');
     rerender(<LoginView mode="redirecting" {...fns()} />);
     expect(screen.getByTestId('login-loading')).toHaveTextContent('Taking you to sign in');
-    rerender(<LoginView mode="registered" {...fns()} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Your account was created');
   });
 });

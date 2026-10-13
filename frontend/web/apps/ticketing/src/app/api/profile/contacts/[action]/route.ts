@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/profile/contacts/{action} — contact add / change / removal / primary.
  *
- * Origin + x-pml-csrf guard from the shared BFF, session required, shared limiter policies. Raw contact values
+ * Origin + X-Requested-With guard from the shared BFF, session required, shared limiter policies. Raw contact values
  * pass through in the request body only: they are never logged, stored, or put in a URL, and
  * responses carry masked values only.
  */

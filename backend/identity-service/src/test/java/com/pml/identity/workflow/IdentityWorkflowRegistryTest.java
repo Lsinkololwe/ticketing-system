@@ -10,6 +10,7 @@ import com.pml.identity.workflow.onboarding.OnboardingKeycloakActivities;
 import com.pml.identity.workflow.ownership.OwnershipMirrorActivities;
 import com.pml.identity.workflow.ownership.OwnershipTransferActivities;
 import com.pml.identity.workflow.reminder.ReminderActivities;
+import com.pml.identity.workflow.staff.StaffAccountActivities;
 import com.pml.identity.workflow.usersync.UserSyncActivities;
 import io.temporal.activity.ActivityInterface;
 import org.junit.jupiter.api.DisplayName;
@@ -33,7 +34,7 @@ class IdentityWorkflowRegistryTest {
             OwnershipTransferActivities.class, OwnershipMirrorActivities.class,
             UserSyncActivities.class, ReminderActivities.class,
             NotificationActivities.class, NotifyActivities.class,
-            GroupMirrorActivities.class, AccountEnsureActivities.class);
+            GroupMirrorActivities.class, AccountEnsureActivities.class, StaffAccountActivities.class);
 
     @Test
     @DisplayName("R2 · each workflow id is its §4 prefix and the business id, and a blank id is refused")
@@ -46,6 +47,15 @@ class IdentityWorkflowRegistryTest {
         assertThatThrownBy(() -> WorkflowIds.reminder(" ")).isInstanceOf(IllegalArgumentException.class);
         String contactKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         assertThat(WorkflowIds.accountEnsure(contactKey)).isEqualTo("account-ensure/" + contactKey);
+        assertThat(WorkflowIds.staffAccountCreate(contactKey)).isEqualTo("staff-create/" + contactKey);
+    }
+
+    @Test
+    @DisplayName("a staff-creation id is the keyed hash of the address and nothing a raw address could pass for")
+    void staffCreateIdIsAHash() {
+        assertThatThrownBy(() -> WorkflowIds.staffAccountCreate("ops@example.org")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> WorkflowIds.staffAccountCreate(null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> WorkflowIds.staffAccountCreate("")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

@@ -14,7 +14,7 @@ import static org.mockito.Mockito.when;
 /** An operator can lift a user-level revocation that would otherwise lock the person out until it expires. */
 @Tag("L1")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004 · a revocation can be lifted by type and value")
+@DisplayName("a revocation can be lifted by type and value")
 class InternalRevocationLiftTest {
 
     @Test

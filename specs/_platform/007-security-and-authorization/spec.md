@@ -180,7 +180,8 @@ the organizations that caller belongs to.
 - [x] Every repository method over a tenant-scoped collection takes the permitted organization ids and includes them in the Mongo filter, or is a recorded, individually justified exception — `TenantBoundaryLintTest` (every remaining unscoped lookup is named with its reason)
 - [x] No resolver or service compares an organization id after loading the document — `TenantBoundaryLintTest`; the converted paths go through `TenantGuard.locate`
 - [x] A caller requesting another organization's resource by a known-good id receives the `*_UNKNOWN` code for that type, indistinguishable from a non-existent id (ET-PLT-005 R6) — the per-collection `*TenantBoundaryTest` classes
-- [x] A `SUPER_ADMIN` or `ADMIN` bypasses the filter through one explicitly named code path (`PlatformWideAccess`), and every use is recorded — `PlatformWideAccessTest`; `PlatformWideBypassLintTest` fails the build on a new bypass outside it. The record is a structured `audit.platform-wide` log line today; the durable audit-trail row arrives with ET-PLT-009 (the sink is an interface)
+- [x] A `SUPER_ADMIN` or `ADMIN` bypasses the filter through one explicitly named code path (`PlatformWideAccess`), and every use is recorded — `PlatformWideAccessTest`; `PlatformWideBypassLintTest` fails the build on a new bypass outside it. Every use writes a searchable `TENANT_BOUNDARY_CROSSED` audit row in identity (ET-PLT-009-R10) and still a structured `audit.platform-wide` log line; booking and catalog keep the reach in their own outbox first and deliver it until identity confirms, so an identity outage delays the row and never loses it or holds the staff member up (ET-PLT-009-R11); platform staff including finance are answered by `PlatformWideAccess.isPlatformStaff`, and booking's budget of bare staff checks is 0; a staff role that carries a permission through the platform role reads an organizer's data through one helper that records each use (`OrganizerAccess.platformGrants`, pinned by `PlatformWideBypassLintTest.staffGrantsAreReadOnlyThroughTheAuditedHelper`)
+- [x] Only a member of the organization holding `payout:request` (or an event grant that decides alone) requests its payout; no platform staff role does, for an organizer or otherwise, and a staff caller who is not a member is refused like any outsider with no audit row. Staff keep approving, rejecting, holding, retrying and cancelling requests the organizers made — `TeamFinancialAccessTest`, `PlatformStaffAuditedPathTest`
 - [x] A test iterates every tenant-scoped query with a second organization's ids and asserts no data is returned — the per-collection `*TenantBoundaryTest` classes (one per converted collection shape)
 - [x] Permission resolution exists in exactly one implementation (`PermissionResolutionServiceImpl`; `AuthorizationServiceImpl` only maps its DTOs onto it) — `PermissionResolutionSingleImplementationTest`; `User.keycloakUserId` is the sole account-to-Keycloak linkage and is never an authorization input
 
@@ -355,13 +356,14 @@ The table is pinned by `InternalSurfaceTableTest` in each service, which fails w
 | `POST /api/internal/inventory/tiers/{tierId}/reserve` | catalog | `internal-write` | reserve inventory for a pending purchase |
 | `POST /api/internal/inventory/tiers/{tierId}/restore` | catalog | `internal-write` | return sold inventory to the available pool on a refund or chargeback |
 | `POST /api/internal/tiers/{tierId}/access-code/verify` | catalog | `internal-write` | whether the code a buyer holds opens a hidden tier |
+| `POST /api/internal/audit/platform-wide` | identity | `internal-write` | record one platform-wide reach (record id, when it happened, actor, role, service, reason, operation) as a searchable audit row, idempotent on the record id and stamped with identity's own receipt time; a body outside the closed shapes, or a time outside the thirty-day window, is refused |
 | `POST /api/internal/alerts` | identity | `internal-write` | raise an operator alert for a condition |
 | `POST /api/internal/alerts/resolve` | identity | `internal-write` | close an alert when its condition clears |
 | `POST /api/internal/auth/accounts/ensure` | identity | `internal-write` | consume a proof, find or create the account, and issue a login handle for an active one |
 | `GET /api/internal/auth/accounts/{accountId}/status` | identity | `internal-read` | the status of a buyer account |
 | `POST /api/internal/auth/challenges` | identity | `internal-write` | start a contact-verification challenge |
 | `POST /api/internal/auth/challenges/verify` | identity | `internal-write` | verify a challenge and obtain its proof |
-| `GET /api/internal/auth/dev/captured` | identity | `internal-read` | the codes the in-memory capture kept; exists only where `identity.delivery.capture.enabled=true` (local and test), loopback callers only |
+| `POST /api/internal/auth/dev/captured/search` | identity | `internal-write` | the codes the in-memory capture kept, for the recipient named in the JSON body (never in the URL); exists only where `identity.delivery.capture.enabled=true` (local and test), loopback callers only, and refused when `X-Forwarded-For`, `Forwarded` or `X-Real-IP` is present |
 | `POST /api/internal/auth/handles/redeem` | identity | `internal-write` | redeem a login handle |
 | `POST /api/internal/authorization/check` | identity | `internal-write` | decide whether a user may perform an action on a resource |
 | `GET /api/internal/authorization/check-same-organization` | identity | `internal-read` | whether two users share an organization |
@@ -417,9 +419,10 @@ The `isPlatformWide` branch is the **one** bypass, and taking it writes an audit
 | `requestPayout` | booking | ET-FIN-003 |
 | `approvePayout` | booking | ET-FIN-003 |
 | `retryPayout` | booking | ET-FIN-003 |
+| `bulkRetryFailedPayouts` | booking | ET-FIN-003 |
 | `transferTicket` | booking | ET-TKT-004 |
 
-Nine operations. A mutation that moves money and is not listed here is a defect.
+Ten operations (`resumePayoutRequest` was removed 2026-10-13). A mutation that moves money and is not listed here is a defect.
 
 The fingerprint is a SHA-256 over the canonicalised input with `idempotencyKey` removed
 and with fields the client may legitimately vary — `clientTimestamp`, `deviceId` — excluded

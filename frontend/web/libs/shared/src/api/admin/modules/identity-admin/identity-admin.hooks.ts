@@ -5,7 +5,7 @@
  * every staff action). Mutations return promises and refetch the active admin
  * queries so tables stay current.
  */
-import type { IdentityAdminCreateUserMutation, IdentityAdminCreateUserMutationVariables, IdentityAdminOrgDocumentsQuery, IdentityAdminOrgDocumentsQueryVariables, IdentityAdminOrgEventsQuery, IdentityAdminOrgEventsQueryVariables, IdentityAdminOrgMembersQuery, IdentityAdminOrgMembersQueryVariables, IdentityAdminOrganizationQuery, IdentityAdminOrganizationQueryVariables, IdentityAdminOrganizationsQuery, IdentityAdminOrganizationsQueryVariables, IdentityAdminUserQuery, IdentityAdminUserQueryVariables, IdentityAdminUserRefundsQuery, IdentityAdminUserRefundsQueryVariables, IdentityAdminUserTicketsQuery, IdentityAdminUserTicketsQueryVariables, IdentityAdminUsersQuery, IdentityAdminUsersQueryVariables } from '../../../../types/graphql';
+import type { IdentityAdminCreateUserMutation, IdentityAdminCreateUserMutationVariables, IdentityAdminResetStaffPasswordMutation, IdentityAdminResetStaffPasswordMutationVariables, IdentityAdminOrgDocumentsQuery, IdentityAdminOrgDocumentsQueryVariables, IdentityAdminOrgEventsQuery, IdentityAdminOrgEventsQueryVariables, IdentityAdminOrgMembersQuery, IdentityAdminOrgMembersQueryVariables, IdentityAdminOrganizationQuery, IdentityAdminOrganizationQueryVariables, IdentityAdminOrganizationsQuery, IdentityAdminOrganizationsQueryVariables, IdentityAdminUserQuery, IdentityAdminUserQueryVariables, IdentityAdminUserRefundsQuery, IdentityAdminUserRefundsQueryVariables, IdentityAdminUserTicketsQuery, IdentityAdminUserTicketsQueryVariables, IdentityAdminUsersQuery, IdentityAdminUsersQueryVariables } from '../../../../types/graphql';
 import { useCallback } from 'react';
 import { useLazyQuery, useMutation, useQuery } from '@apollo/client/react';
 import type {
@@ -17,7 +17,7 @@ import {
   IDENTITY_ORG_DOCUMENTS, IDENTITY_ORG_MEMBERS, IDENTITY_USER, IDENTITY_USERS, IDENTITY_USER_BY_EMAIL, IDENTITY_USER_BY_PHONE,
 } from './identity-admin.queries';
 import {
-  ACTIVATE_USER, CREATE_USER, DEACTIVATE_USER, LOCK_USER, SET_USER_ROLES, SUSPEND_ORG, SUSPEND_USER,
+  ACTIVATE_USER, CREATE_USER, DEACTIVATE_USER, LOCK_USER, RESET_STAFF_PASSWORD, SET_USER_ROLES, SUSPEND_ORG, SUSPEND_USER,
   UNLOCK_USER, UNSUSPEND_ORG, UNSUSPEND_USER, UPDATE_ORG_STATUS, UPDATE_USER, VERIFY_PAYOUT_ACCOUNT,
 } from './identity-admin.mutations';
 
@@ -115,7 +115,11 @@ export function useBuyerRefunds(buyerId: string | null) {
 /** Every user mutation, refetching the active user queries afterwards. */
 export function useUserAdminActions() {
   const opts = { errorPolicy: 'none' as const, refetchQueries: ['IdentityAdminUsers', 'IdentityAdminUser'], awaitRefetchQueries: false };
-  const [create] = useMutation<IdentityAdminCreateUserMutation, IdentityAdminCreateUserMutationVariables>(CREATE_USER, opts);
+  // The two calls that return a one-time password skip the cache entirely, so the password is never
+  // written to (or persisted from) the normalised store; it exists only in the awaited result.
+  const secretOpts = { ...opts, fetchPolicy: 'no-cache' as const };
+  const [create] = useMutation<IdentityAdminCreateUserMutation, IdentityAdminCreateUserMutationVariables>(CREATE_USER, secretOpts);
+  const [resetPassword] = useMutation<IdentityAdminResetStaffPasswordMutation, IdentityAdminResetStaffPasswordMutationVariables>(RESET_STAFF_PASSWORD, secretOpts);
   const [update] = useMutation(UPDATE_USER, opts);
   const [suspend] = useMutation(SUSPEND_USER, opts);
   const [unsuspend] = useMutation(UNSUSPEND_USER, opts);
@@ -125,8 +129,11 @@ export function useUserAdminActions() {
   const [deactivate] = useMutation(DEACTIVATE_USER, opts);
   const [setRoles] = useMutation(SET_USER_ROLES, opts);
   return {
-    createUser: async (input: { email: string; firstName: string; lastName: string; password?: string; phoneNumber?: string; role?: AdminUserRole }) =>
+    /** `temporaryPassword` is null when the account already existed: the password was shown when it was created. */
+    createUser: async (input: { email: string; firstName: string; lastName: string; phoneNumber?: string; role?: AdminUserRole }) =>
       (await create({ variables: { input } as IdentityAdminCreateUserMutationVariables })).data?.createUser ?? null,
+    /** Every call issues a new password, so no idempotency key is sent. */
+    resetStaffPassword: async (userId: string) => (await resetPassword({ variables: { userId } })).data?.resetStaffTemporaryPassword ?? null,
     updateUser: (id: string, input: { firstName?: string; lastName?: string; gender?: string }) =>
       update({ variables: { id, input } }),
     suspendUser: (id: string, reason: string) => suspend({ variables: { id, reason } }),

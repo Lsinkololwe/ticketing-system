@@ -4,12 +4,10 @@ import com.pml.keycloak.identity.ContactOtpClient;
 import com.pml.keycloak.identity.IdentityHttp;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.events.Event;
 import org.keycloak.events.EventListenerProvider;
@@ -19,12 +17,16 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 
 /**
- * Provider id {@code user-sync}. Fail closed: without IDENTITY_BASE_URL, IDENTITY_CLIENT_ID,
- * IDENTITY_CLIENT_SECRET and KEYCLOAK_TOKEN_URL the listener is a no-op and an ERROR is logged.
+ * Registers the {@code user-sync} event listener and gives it the identity-service client and a
+ * small background queue.
+ *
+ * <p>It needs the same four variables as the sign-in step (IDENTITY_BASE_URL, IDENTITY_CLIENT_ID,
+ * IDENTITY_CLIENT_SECRET, KEYCLOAK_TOKEN_URL). If any is missing or blank Keycloak refuses to
+ * start, naming the variable and never its value, because a listener that silently did nothing
+ * would let sign-outs and credential changes go unnoticed by the platform's revocation list.</p>
  */
 public class UserSyncEventListenerFactory implements EventListenerProviderFactory {
 
-    private static final Logger LOG = Logger.getLogger(UserSyncEventListenerFactory.class);
     public static final String PROVIDER_ID = "user-sync";
 
     private ContactOtpClient client;
@@ -41,13 +43,16 @@ public class UserSyncEventListenerFactory implements EventListenerProviderFactor
 
     @Override
     public void init(Config.Scope config) {
-        Map<String, String> env = System.getenv();
-        List<String> missing = IdentityHttp.missing(env);
-        IdentityHttp http = IdentityHttp.fromEnvironment(env, Clock.systemUTC());
-        if (http == null) {
-            LOG.errorf("user-sync DISABLED (fail closed): missing environment %s", missing);
-            return;
-        }
+        start(System.getenv());
+    }
+
+    /**
+     * Builds the client and queue from the given environment.
+     *
+     * @throws IllegalStateException naming the missing variables when a required one is blank
+     */
+    public void start(Map<String, String> env) {
+        IdentityHttp http = IdentityHttp.requireFromEnvironment(env, Clock.systemUTC());
         this.client = new ContactOtpClient(http);
         this.executor = new ThreadPoolExecutor(1, 2, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(500),
                 r -> {

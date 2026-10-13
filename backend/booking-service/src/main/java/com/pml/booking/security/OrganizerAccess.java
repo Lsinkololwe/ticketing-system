@@ -10,6 +10,8 @@ import com.pml.shared.error.TranslatedRefusal;
 import com.pml.shared.security.Permission;
 import com.pml.shared.security.SecurityContextUtils;
 import com.pml.shared.security.tenancy.CurrentTenantScope;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
+import com.pml.shared.security.tenancy.StaffRole;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -17,6 +19,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
@@ -49,15 +52,40 @@ public class OrganizerAccess {
                 .defaultIfEmpty(List.of());
     }
 
-    /** Whether the caller's platform roles alone carry {@code permission}. */
+    /**
+     * Whether the caller's platform role alone carries {@code permission}.
+     *
+     * <p>An administrator, a super administrator or a finance officer who holds a permission through
+     * the platform role reads that organizer's data without being a member of the organization.
+     * That is a reach across organizers like any other, so a {@code true} answer is recorded, with
+     * the permission asked about as the operation. Only the staff roles whose own grants include the
+     * permission are asked, so each role is admitted exactly where it always was, and a caller with
+     * no staff role (or a role that does not carry the permission) gets {@code false} and no row.
+     */
     public static Mono<Boolean> platformGrants(Permission permission) {
-        return authorities().map(roles -> Permission.grantedByPlatformRoles(roles).contains(permission));
+        Set<StaffRole> carrying = EnumSet.noneOf(StaffRole.class);
+        for (StaffRole role : StaffRole.values()) {
+            if (Permission.grantedByPlatformRoles(List.of(role.authority())).contains(permission)) {
+                carrying.add(role);
+            }
+        }
+        if (carrying.isEmpty()) {
+            return Mono.just(false);
+        }
+        return PlatformWideAccess.isPlatformStaff(PlatformWideAccess.Reason.STAFF_PERMISSION_GRANT_READ,
+                permission.code(), carrying);
     }
 
-    /** Whether the caller holds a platform staff role (admin, finance or super admin). */
-    public static Mono<Boolean> isPlatformStaff() {
-        return authorities().map(roles -> roles.stream().anyMatch(role ->
-                role.equals("ROLE_ADMIN") || role.equals("ROLE_FINANCE") || role.equals("ROLE_SUPER_ADMIN")));
+    /**
+     * Whether the caller is platform staff (administrator, finance or super administrator).
+     *
+     * <p>Staff reading or acting on someone else's records is a reach across organizers or buyers,
+     * so a {@code true} answer is recorded with the fixed {@code reason} the call site names; a
+     * finance officer's use is recorded exactly as an administrator's. The question grants no
+     * tenant scope, so finance still reads only what each call site separately lets it read.
+     */
+    public static Mono<Boolean> isPlatformStaff(PlatformWideAccess.Reason reason) {
+        return PlatformWideAccess.isPlatformStaff(reason);
     }
 
     /** The event, once the caller is shown to hold {@code permission} on it. */

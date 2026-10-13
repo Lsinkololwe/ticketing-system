@@ -77,9 +77,40 @@ public class AuditLog {
     private String userAgent;
 
     /**
-     * Timestamp when the action occurred
+     * Timestamp when the action occurred. For a platform-wide reach delivered by another service this
+     * is the time the reach happened there, which may be earlier than {@link #receivedAt} when
+     * delivery had to wait for identity.
      */
     private Instant timestamp;
+
+    /**
+     * When identity stored the row, from identity's own clock. Always set on a platform-wide reach, so
+     * that a late delivery is visible as the gap between this and {@link #timestamp}, and so that the
+     * time a sender claims is always read beside the time identity actually received it.
+     */
+    private Instant receivedAt;
+
+    /**
+     * The permanent identifier of a platform-wide reach, assigned where it happened. A second delivery
+     * of the same reach carries the same value and is recognised by it; the collection holds at most
+     * one row per value. Set only on a platform-wide reach.
+     */
+    private String recordId;
+
+    /**
+     * The platform-wide authority the actor held when they reached across organizers
+     * (for example {@code ROLE_FINANCE}); set only on a platform-wide reach.
+     */
+    private String actorRole;
+
+    /** The service that made the reach, for example {@code booking-service}; set only on a platform-wide reach. */
+    private String service;
+
+    /** The fixed reason the call site declared; never request data. Set only on a platform-wide reach. */
+    private String reason;
+
+    /** A fixed operation name where the call site has one. Set only on a platform-wide reach. */
+    private String operation;
 
     /**
      * Additional context/metadata about the action
@@ -115,6 +146,11 @@ public class AuditLog {
         ROLE_GRANT("authz_change:grant_role"),
         ROLE_REVOKE("authz_change:revoke_role"),
         PRIVILEGE_ESCALATION("authz_escalation"),
+        /**
+         * A super administrator issued a staff member a new one-time password: who, and for whom. The row
+         * never carries the password.
+         */
+        STAFF_PASSWORD_RESET("authn_password_reset_issued"),
         ACCESS_DENIED("authz_fail"),
 
         // User management events
@@ -146,6 +182,12 @@ public class AuditLog {
         // Platform operations
         SYSTEM_ALERT_ACKNOWLEDGED("system_alert_acknowledged"),
         ANNOUNCEMENT_PUBLISHED("announcement_published"),
+
+        /**
+         * A member of platform staff acted across organizers or buyers: who, in which role, in
+         * which service, why and doing what. Carries no request data and no personal data.
+         */
+        TENANT_BOUNDARY_CROSSED("authz_platform_wide"),
 
         // Sync events
         KEYCLOAK_SYNC_SUCCESS("keycloak_sync_success"),

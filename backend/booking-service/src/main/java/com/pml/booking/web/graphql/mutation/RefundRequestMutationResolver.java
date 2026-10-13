@@ -12,6 +12,7 @@ import com.pml.booking.workflow.refund.RefundProcess;
 import com.pml.shared.idempotency.Fingerprint;
 import com.pml.shared.idempotency.IdempotencyGuard;
 import com.pml.shared.security.SecurityContextUtils;
+import com.pml.shared.security.tenancy.PlatformWideAccess;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -113,7 +114,7 @@ public class RefundRequestMutationResolver {
     @PreAuthorize("isAuthenticated()")
     public Mono<RefundRequest> cancelRefundRequest(@InputArgument String refundRequestId, @InputArgument String reason) {
         return SecurityContextUtils.requireCurrentUserId()
-                .flatMap(cancelledBy -> OrganizerAccess.isPlatformStaff().flatMap(staff -> staff
+                .flatMap(cancelledBy -> OrganizerAccess.isPlatformStaff(PlatformWideAccess.Reason.REFUND_REQUEST_CANCEL).flatMap(staff -> staff
                         ? refundProcess.cancel(refundRequestId, cancelledBy, reason)
                         : refundProcess.cancelAsRequester(refundRequestId, cancelledBy, reason)));
     }

@@ -7,15 +7,15 @@ const O = 'https://app.example.com';
 const post = (h: Record<string, string>) => new Request(O + '/api/x', { method: 'POST', headers: h });
 
 describe('csrf', () => {
-  const ok = { origin: O, 'sec-fetch-site': 'same-origin', 'x-pml-csrf': '1' };
+  const ok = { origin: O, 'sec-fetch-site': 'same-origin', 'x-requested-with': 'pml-web' };
   it.each([
     ['all good', ok, null],
     ['missing origin', { ...ok, origin: '' }, 'METHOD_UNSAFE_ORIGIN_MISSING'],
     ['foreign origin', { ...ok, origin: 'https://evil.example' }, 'ORIGIN_MISMATCH'],
     ['same-site but not same-origin', { ...ok, 'sec-fetch-site': 'same-site' }, 'FETCH_SITE'],
     ['cross-site', { ...ok, 'sec-fetch-site': 'cross-site' }, 'FETCH_SITE'],
-    ['no csrf header', { origin: O, 'sec-fetch-site': 'same-origin' }, 'CSRF_HEADER'],
-    ['header not 1', { ...ok, 'x-pml-csrf': 'true' }, 'CSRF_HEADER'],
+    ['no requested-with header', { origin: O, 'sec-fetch-site': 'same-origin' }, 'CSRF_HEADER'],
+    ['wrong header value', { ...ok, 'x-requested-with': 'XMLHttpRequest' }, 'CSRF_HEADER'],
   ])('%s', (_n, h, expected) => {
     const headers = Object.fromEntries(Object.entries(h).filter(([, v]) => v !== ''));
     expect(assertSameOrigin(post(headers), O)).toBe(expected);

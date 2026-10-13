@@ -17,7 +17,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -129,116 +128,107 @@ class TicketTierTenantBoundaryTest {
 
     // ── the attack ──────────────────────────────────────────────────────────
 
-    @Nested
-    @DisplayName("a member of another organization")
-    class Outsider {
+    // ── a member of another organization ──────────────────────────────────────────────────────────
 
-        private final TenantScope outsider = TenantScope.of("user-outsider", Set.of(OTHER_ORG));
+    private final TenantScope outsider = TenantScope.of("user-outsider", Set.of(OTHER_ORG));
 
-        @Test
-        @DisplayName("cannot reprice the tier, and the tier is unchanged")
-        void cannotReprice() {
-            // The row is reachable by id. Without this the refusal below proves nothing.
-            assertThat(tiers.findById(OWNED_TIER).block()).isNotNull();
+    @Test
+    @DisplayName("a member of another organization · cannot reprice the tier, and the tier is unchanged")
+    void outsider_cannotReprice() {
+        // The row is reachable by id. Without this the refusal below proves nothing.
+        assertThat(tiers.findById(OWNED_TIER).block()).isNotNull();
 
-            UpdateTicketTierInput repriceToNothing = priceOf(new BigDecimal("1.00"));
+        UpdateTicketTierInput repriceToNothing = priceOf(new BigDecimal("1.00"));
 
-            assertThatThrownBy(() -> as(outsider, service.updateTier(OWNED_TIER, repriceToNothing)).block())
-                    .isInstanceOf(DomainRefusal.class)
-                    .satisfies(thrown ->
-                            assertThat(((DomainRefusal) thrown).errorCode()).isEqualTo(ErrorCode.TIER_UNKNOWN));
+        assertThatThrownBy(() -> as(outsider, service.updateTier(OWNED_TIER, repriceToNothing)).block())
+                .isInstanceOf(DomainRefusal.class)
+                .satisfies(thrown ->
+                        assertThat(((DomainRefusal) thrown).errorCode()).isEqualTo(ErrorCode.TIER_UNKNOWN));
 
-            // A refused operation persists nothing — the price the buyer sees is untouched.
-            assertThat(tiers.findById(OWNED_TIER).block().getPrice())
-                    .isEqualByComparingTo(new BigDecimal("150.00"));
-        }
-
-        @Test
-        @DisplayName("cannot delete the tier, and the tier survives")
-        void cannotDelete() {
-            assertThat(tiers.findById(OWNED_TIER).block()).isNotNull();
-
-            assertThatThrownBy(() -> as(outsider, service.deleteTier(OWNED_TIER)).block())
-                    .isInstanceOf(DomainRefusal.class);
-
-            assertThat(tiers.count().block()).isEqualTo(1L);
-        }
-
-        @Test
-        @DisplayName("cannot tell the tier apart from an id that was never issued")
-        void refusalIsIndistinguishable() {
-            // The requirement that makes the boundary more than a lock: if the two answers
-            // differ in any way the caller can observe, the error is an oracle and anyone
-            // holding a list of candidate ids learns which are real without any access.
-            DomainRefusal onSomeoneElses = refusalFrom(outsider, OWNED_TIER);
-            DomainRefusal onNeverIssued = refusalFrom(outsider, NEVER_ISSUED);
-
-            // Everything the client receives, and this is the whole of it: the handler
-            // renders the message from the code alone and never copies getMessage().
-            assertThat(onSomeoneElses.errorCode()).isEqualTo(ErrorCode.TIER_UNKNOWN);
-            assertThat(onNeverIssued.errorCode()).isEqualTo(ErrorCode.TIER_UNKNOWN);
-            assertThat(GraphQlErrors.refusalMessage(onSomeoneElses.errorCode()))
-                    .isEqualTo(GraphQlErrors.refusalMessage(onNeverIssued.errorCode()));
-            assertThat(onSomeoneElses.details()).isEqualTo(onNeverIssued.details()).isEmpty();
-
-            // The developer message differs — it names the id the caller asked for — and
-            // that is safe only because it is log-only. Pin it: the day a handler starts
-            // copying getMessage() onto the wire (CWE-209), this stops being safe and nothing
-            // else would say so.
-            assertThat(GraphQlErrors.refusalMessage(ErrorCode.TIER_UNKNOWN))
-                    .doesNotContain(OWNED_TIER, OWNER_ORG, NEVER_ISSUED);
-
-            // Neither refusal names the owner or hints that a permission was the problem,
-            // even in the log line.
-            assertThat(onSomeoneElses.getMessage())
-                    .doesNotContain(OWNER_ORG, "permission", "not permitted");
-        }
+        // A refused operation persists nothing — the price the buyer sees is untouched.
+        assertThat(tiers.findById(OWNED_TIER).block().getPrice())
+                .isEqualByComparingTo(new BigDecimal("150.00"));
     }
 
-    @Nested
-    @DisplayName("an account with no organizations")
-    class Unaffiliated {
+    @Test
+    @DisplayName("a member of another organization · cannot delete the tier, and the tier survives")
+    void outsider_cannotDelete() {
+        assertThat(tiers.findById(OWNED_TIER).block()).isNotNull();
 
-        @Test
-        @DisplayName("reaches nothing, even holding a valid tier id")
-        void reachesNothing() {
-            assertThat(tiers.findById(OWNED_TIER).block()).isNotNull();
+        assertThatThrownBy(() -> as(outsider, service.deleteTier(OWNED_TIER)).block())
+                .isInstanceOf(DomainRefusal.class);
 
-            TenantScope none = TenantScope.of("user-fresh-signup", Set.of());
+        assertThat(tiers.count().block()).isEqualTo(1L);
+    }
 
-            assertThatThrownBy(() -> as(none, service.updateTier(OWNED_TIER, priceOf(BigDecimal.ONE))).block())
-                    .isInstanceOf(DomainRefusal.class);
-        }
+    @Test
+    @DisplayName("a member of another organization · cannot tell the tier apart from an id that was never issued")
+    void outsider_refusalIsIndistinguishable() {
+        // The requirement that makes the boundary more than a lock: if the two answers
+        // differ in any way the caller can observe, the error is an oracle and anyone
+        // holding a list of candidate ids learns which are real without any access.
+        DomainRefusal onSomeoneElses = refusalFrom(outsider, OWNED_TIER);
+        DomainRefusal onNeverIssued = refusalFrom(outsider, NEVER_ISSUED);
+
+        // Everything the client receives, and this is the whole of it: the handler
+        // renders the message from the code alone and never copies getMessage().
+        assertThat(onSomeoneElses.errorCode()).isEqualTo(ErrorCode.TIER_UNKNOWN);
+        assertThat(onNeverIssued.errorCode()).isEqualTo(ErrorCode.TIER_UNKNOWN);
+        assertThat(GraphQlErrors.refusalMessage(onSomeoneElses.errorCode()))
+                .isEqualTo(GraphQlErrors.refusalMessage(onNeverIssued.errorCode()));
+        assertThat(onSomeoneElses.details()).isEqualTo(onNeverIssued.details()).isEmpty();
+
+        // The developer message differs — it names the id the caller asked for — and
+        // that is safe only because it is log-only. Pin it: the day a handler starts
+        // copying getMessage() onto the wire (CWE-209), this stops being safe and nothing
+        // else would say so.
+        assertThat(GraphQlErrors.refusalMessage(ErrorCode.TIER_UNKNOWN))
+                .doesNotContain(OWNED_TIER, OWNER_ORG, NEVER_ISSUED);
+
+        // Neither refusal names the owner or hints that a permission was the problem,
+        // even in the log line.
+        assertThat(onSomeoneElses.getMessage())
+                .doesNotContain(OWNER_ORG, "permission", "not permitted");
+    }
+
+    // ── an account with no organizations ──────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("an account with no organizations · reaches nothing, even holding a valid tier id")
+    void unaffiliated_reachesNothing() {
+        assertThat(tiers.findById(OWNED_TIER).block()).isNotNull();
+
+        TenantScope none = TenantScope.of("user-fresh-signup", Set.of());
+
+        assertThatThrownBy(() -> as(none, service.updateTier(OWNED_TIER, priceOf(BigDecimal.ONE))).block())
+                .isInstanceOf(DomainRefusal.class);
     }
 
     // ── the legitimate paths, which must keep working ───────────────────────
 
-    @Nested
-    @DisplayName("the organization that owns the tier")
-    class Owner {
+    // ── the organization that owns the tier ───────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("can still reprice it")
-        void canReprice() {
-            TenantScope owner = TenantScope.of("user-kabwe-manager", Set.of(OWNER_ORG));
+    @Test
+    @DisplayName("the organization that owns the tier · can still reprice it")
+    void owner_canReprice() {
+        TenantScope owner = TenantScope.of("user-kabwe-manager", Set.of(OWNER_ORG));
 
-            StepVerifier.create(as(owner, service.updateTier(OWNED_TIER, priceOf(new BigDecimal("175.00")))))
-                    .assertNext(tier -> assertThat(tier.getPrice()).isEqualByComparingTo("175.00"))
-                    .verifyComplete();
-        }
+        StepVerifier.create(as(owner, service.updateTier(OWNED_TIER, priceOf(new BigDecimal("175.00")))))
+                .assertNext(tier -> assertThat(tier.getPrice()).isEqualByComparingTo("175.00"))
+                .verifyComplete();
+    }
 
-        @Test
-        @DisplayName("is not blocked by also belonging to other organizations")
-        void multipleMembershipsStillReach() {
-            // ActorOrganizationResolver returns organizations.get(0) for a multi-org user,
-            // so whether this passes depends on iteration order there. Carrying the whole
-            // set is what makes it deterministic.
-            TenantScope both = TenantScope.of("user-consultant", Set.of(OTHER_ORG, OWNER_ORG));
+    @Test
+    @DisplayName("the organization that owns the tier · is not blocked by also belonging to other organizations")
+    void owner_multipleMembershipsStillReach() {
+        // ActorOrganizationResolver returns organizations.get(0) for a multi-org user,
+        // so whether this passes depends on iteration order there. Carrying the whole
+        // set is what makes it deterministic.
+        TenantScope both = TenantScope.of("user-consultant", Set.of(OTHER_ORG, OWNER_ORG));
 
-            StepVerifier.create(as(both, service.updateTier(OWNED_TIER, priceOf(new BigDecimal("180.00")))))
-                    .assertNext(tier -> assertThat(tier.getPrice()).isEqualByComparingTo("180.00"))
-                    .verifyComplete();
-        }
+        StepVerifier.create(as(both, service.updateTier(OWNED_TIER, priceOf(new BigDecimal("180.00")))))
+                .assertNext(tier -> assertThat(tier.getPrice()).isEqualByComparingTo("180.00"))
+                .verifyComplete();
     }
 
     @Test

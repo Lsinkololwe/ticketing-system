@@ -175,6 +175,54 @@ greps find them, and on 2026-09-13 they found eleven ([F-032](FINDINGS.md)):
 Then check the spec corpus for the same constructs — `sweep`, `lock:sweep:`, `| module |`, `saga` — so
 the next agent does not rebuild from a spec what the code has just retired.
 
+### 1.11 · A list "that adds one entry" may replace the defaults
+
+The staff realm export declared one required action (`CONFIGURE_TOTP` as a default). Keycloak's
+import treats the list as the *whole* set: `UPDATE_PASSWORD`, `VERIFY_EMAIL` and the rest were gone,
+and creating a staff user with a temporary password relies on the first. The author had asserted the
+opposite from "a live check"; only the realm conformance test running in a real Keycloak container
+showed it. **Check:** for any import or configuration block that takes a list, run it and read back
+the resulting set. A unit test or a reading of the file proves nothing about what the server kept.
+*Caught by:* `RealmConformanceIT.newStaffMustEnrolAnAuthenticator`, the first time it ran.
+
+### 1.12 · When a callee gets stricter, read every caller's actual value
+
+The identity service began refusing a challenge whose client address was not an IP literal. The
+Keycloak plugin sent the connection's address (fine). The buyer app sent `ctx.clientIp`, which is
+the string `unknown` whenever the proxy hop count is 0 — the value the repository's own local
+configuration uses — so every code request would have failed with a 400. **Check:** after tightening
+a contract, list the callers, then run each caller's *default and local* configuration through the
+new rule, not just the example in the task. *Caught by:* tracing the callers named in the hand-off
+report, then a regression test with a malformed forwarding header.
+
+### 1.13 · An address right for the browser is wrong from another process
+
+Keycloak was told to call each app's back-channel logout URL at `http://localhost:300x/...`. Keycloak
+makes that call from inside its own container, where `localhost` is the container: nothing listens
+there, so an SSO sign-out never reached an app and the person's session there stayed alive, with
+no error anywhere. **Check:** for every URL one process hands to another, state who dials it and from
+where, then dial it from there. From the container, a plain bash socket was enough: `localhost:3001`
+refused, `host.docker.internal:3001` answered 400 (an unsigned logout token, as designed). *Caught
+by:* that probe; now guarded by `RealmConformanceIT.backChannelLogoutIsNotALocalhostAddress`.
+
+### 1.14 · A fixture that says "seeded" must be made the way seeds are made
+
+A test created its "seeded, already enrolled" staff user through the Admin API. Keycloak always
+gives a user created that way the realm's default required actions, whatever the request carries,
+so the person was forced to enrol again — which looked like the code being refused. Imported users
+do not get the defaults. **Check:** when a fixture stands in for production data, create it by the
+production route, or clear exactly what the shortcut adds, and say so in the test. A failing
+assertion's own page text (`StaffAuth.excerpt`) found this in one run; a bare `isTrue()` hides it.
+
+### 1.15 · Overlapping builds are not a finding
+
+`NoClassDefFoundError` for a test helper that exists (`AuthEngine$RecordingMirror`, `FakeKeycloak`)
+means two builds were compiling the same `target/test-classes`, not that the code is wrong. The Stop
+gate starts a full verify at the end of every turn and its output is truncated, so during
+multi-agent work it fails with noise. **Check:** before reading a failure, `ps` for another build;
+judge a run only by its own surefire/failsafe XML (timestamps, `tests=` counts, first error line);
+re-run once with nothing else going. Never let a subagent stash, reset or check out in a shared tree.
+
 ## 2 · How to write the test so it is worth its green
 
 ### 2.1 · Prove the row exists before proving it is hidden

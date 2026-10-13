@@ -29,10 +29,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** A contact lock is mirrored to MongoDB (key only) and survives the loss of Redis (ET-IDN-001-R3). */
+/** A contact lock is mirrored to MongoDB (key only) and survives the loss of Redis. */
 @Tag("L2")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001-R3 · a lock is mirrored to identity_account_events and restored if Redis loses it")
+@DisplayName("a lock is mirrored to identity_account_events and restored if Redis loses it")
 class ChallengeLockMirrorTest {
 
     private static MongoClient client;
@@ -68,8 +68,10 @@ class ChallengeLockMirrorTest {
             Refusals.of(engine.challenges.verify(issued.challengeId(), "11111" + i));
         }
 
-        List<AccountEvent> written = events.findAll().collectList().block();
+        List<AccountEvent> written = events.findAll().filter(e -> "OTP_LOCK".equals(e.getKind())).collectList().block();
         assertThat(written).hasSize(1);
+        assertThat(events.findAll().filter(e -> "OTP_LOCK_CHALLENGE".equals(e.getKind())).count().block())
+                .as("one pointer from the challenge id to the lock").isEqualTo(1L);
         AccountEvent event = written.get(0);
         assertThat(event.getKind()).isEqualTo("OTP_LOCK");
         assertThat(event.getAccountId()).isNull();

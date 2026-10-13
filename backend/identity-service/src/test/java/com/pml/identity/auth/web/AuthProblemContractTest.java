@@ -18,10 +18,10 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Every error code of CONTRACT 4/5 renders as an RFC 9457 problem with the agreed status and extensions. */
+/** Every error code of the internal auth API renders as an RFC 9457 problem with the agreed status and extensions. */
 @Tag("L1")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001 · errors are RFC 9457 application/problem+json with errorCode, retryable and the code's extensions")
+@DisplayName("errors are RFC 9457 application/problem+json with errorCode, retryable and the code's extensions")
 class AuthProblemContractTest {
 
     /** What each code must carry: HTTP status and the extension keys of the contract. */

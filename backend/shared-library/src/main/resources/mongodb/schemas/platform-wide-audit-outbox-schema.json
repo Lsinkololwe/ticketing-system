@@ -1,0 +1,27 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "title": "Platform-wide audit outbox",
+    "description": "A platform-wide reach kept in the service that made it until identity has confirmed it. The facts of the reach and its delivery state, nothing else.",
+    "required": ["_id", "actorSub", "role", "service", "reason", "occurredAt", "state", "attempts", "createdAt"],
+    "properties": {
+      "_id": {
+        "bsonType": "string",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+      },
+      "actorSub": { "bsonType": "string", "maxLength": 100 },
+      "role": { "bsonType": "string", "maxLength": 80 },
+      "service": { "bsonType": "string", "maxLength": 80 },
+      "reason": { "bsonType": "string", "maxLength": 100 },
+      "operation": { "bsonType": ["string", "null"], "maxLength": 100 },
+      "occurredAt": { "bsonType": "date" },
+      "state": { "bsonType": "string", "enum": ["PENDING", "DELIVERED", "REFUSED"] },
+      "attempts": { "bsonType": ["int", "long"], "minimum": 0 },
+      "createdAt": { "bsonType": "date" },
+      "lastAttemptAt": { "bsonType": ["date", "null"] },
+      "deliveredAt": { "bsonType": ["date", "null"] },
+      "refusedAt": { "bsonType": ["date", "null"] }
+    },
+    "additionalProperties": false
+  }
+}

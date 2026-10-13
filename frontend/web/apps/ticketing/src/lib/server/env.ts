@@ -1,4 +1,5 @@
 import "server-only";
+import { parseTrustProxyHops } from "@pml.tickets/shared/auth/bff/trust-proxy";
 
 /**
  * Server-only configuration for the buyer app. Nothing here is prefixed NEXT_PUBLIC_, so none of
@@ -36,17 +37,17 @@ export function getServerEnv() {
       "BFF_ENC_KEYS",
       "dev:" + Buffer.alloc(32, 7).toString("base64"),
     ),
-    trustProxyHops: Number(process.env.TRUST_PROXY_HOPS ?? 0) || 0,
+    trustProxyHops: parseTrustProxyHops(process.env.TRUST_PROXY_HOPS),
     graphqlUrl: required("GRAPHQL_URL", "http://localhost:8080/graphql"),
     apiBaseUrl: process.env.API_BASE_URL?.trim() || undefined,
     identityBaseUrl: required(
       "IDENTITY_BASE_URL",
-      "http://localhost:8081",
+      "http://localhost:8083",
     ).replace(/\/$/, ""),
     identityTokenUrl:
       process.env.IDENTITY_TOKEN_URL?.trim() ||
       `${keycloakIssuer}/protocol/openid-connect/token`,
-    identityClientId: required("IDENTITY_CLIENT_ID", "buyer-web-service"),
+    identityClientId: required("IDENTITY_CLIENT_ID", "myticketzm-identity-service"),
     identityClientSecret: required("IDENTITY_CLIENT_SECRET", "dev-secret"),
     termsVersion: process.env.TERMS_VERSION?.trim() || "2026-10",
   };

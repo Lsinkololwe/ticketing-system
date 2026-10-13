@@ -287,18 +287,22 @@ export function ContactFlowDialog({ kind, contact, addType, lastVerified, onClos
         body: (
           <Form form={codesForm} guardLeave={false} onSubmit={() => confirm()}>
             <div className="m3-stack" data-testid="contact-flow-code-step">
-              <OtpRHF
-                name="code"
-                label={
-                  kind === 'remove' || kind === 'primary'
-                    ? `6 digit code sent to your primary contact ${state.challenge.maskedContact}`
-                    : `6 digit code sent to ${state.challenge.maskedContact}`
-                }
-                disabled={busy || locked}
-                autoFocus
-              />
+              <div data-testid="contact-flow-code">
+                <OtpRHF
+                  name="code"
+                  label={
+                    kind === 'remove' || kind === 'primary'
+                      ? `6 digit code sent to your primary contact ${state.challenge.maskedContact}`
+                      : `6 digit code sent to ${state.challenge.maskedContact}`
+                  }
+                  disabled={busy || locked}
+                  autoFocus
+                />
+              </div>
               {state.primary && (
-                <OtpRHF name="primaryCode" label={`6 digit code sent to your current primary contact ${state.primary.maskedContact}`} disabled={busy || locked} />
+                <div data-testid="contact-flow-primary-code">
+                  <OtpRHF name="primaryCode" label={`6 digit code sent to your current primary contact ${state.primary.maskedContact}`} disabled={busy || locked} />
+                </div>
               )}
               <p className="m3-muted" data-testid="contact-flow-timer">
                 {expired ? 'This code has expired. Send a new one, or start over.' : `Expires in ${formatMMSS(expiresLeft)}`}

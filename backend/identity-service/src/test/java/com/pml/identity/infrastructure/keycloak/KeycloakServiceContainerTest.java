@@ -252,8 +252,8 @@ class KeycloakServiceContainerTest {
     void staffUsers() {
         String username = "ops-" + UUID.randomUUID() + "@example.org";
 
-        String id = service.createStaffUser(username, username, "Ops", "Admin", "Temp-Passw0rd!").block();
-        String again = service.createStaffUser(username, username, "Ops", "Admin", "Temp-Passw0rd!").block();
+        String id = service.createStaffUser(username, username, "Ops", "Admin", "Temp-Passw0rd!", true).block();
+        String again = service.createStaffUser(username, username, "Ops", "Admin", "Temp-Passw0rd!", true).block();
 
         assertThat(again).isEqualTo(id);
         UserRepresentation staff = admin.realm(STAFF).users().get(id).toRepresentation();
@@ -265,6 +265,30 @@ class KeycloakServiceContainerTest {
         assertThat(view.realmRoles()).contains("ADMIN");
         assertThat(view.enabled()).isTrue();
         assertThat(service.readUser(STAFF, UUID.randomUUID().toString()).block()).isNull();
+    }
+
+    @Test
+    @Order(9)
+    @DisplayName("a staff user created unable to sign in stays disabled on a repeat and keeps both required actions until it is enabled")
+    void staffUserCreatedDisabled() {
+        String username = "pending-" + UUID.randomUUID() + "@example.org";
+
+        String id = service.createStaffUser(username, username, "Ops", "Admin", null, false).block();
+        String again = service.createStaffUser(username, username, "Ops", "Admin", null, false).block();
+
+        assertThat(again).isEqualTo(id);
+        UserRepresentation pending = admin.realm(STAFF).users().get(id).toRepresentation();
+        assertThat(pending.isEnabled()).isFalse();
+        assertThat(pending.getRequiredActions()).contains("UPDATE_PASSWORD", "CONFIGURE_TOTP");
+        assertThat(service.findStaffUserId(username).block()).isEqualTo(id);
+
+        service.setEnabled(STAFF, id, true).block();
+
+        UserRepresentation open = admin.realm(STAFF).users().get(id).toRepresentation();
+        assertThat(open.isEnabled()).isTrue();
+        assertThat(open.getRequiredActions()).contains("UPDATE_PASSWORD", "CONFIGURE_TOTP");
+        service.deleteStaffUser(id).block();
+        assertThat(service.findStaffUserId(username).block()).as("removed again").isNull();
     }
 
     @Test

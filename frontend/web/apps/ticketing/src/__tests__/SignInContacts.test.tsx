@@ -401,6 +401,17 @@ describe("change contact", () => {
     expect(
       screen.getByLabelText(/current primary contact \+260 97\* \*\*\*123/),
     ).toBeInTheDocument();
+    // The two code fields are addressable by their own test ids.
+    expect(
+      within(screen.getByTestId("contact-flow-code")).getByLabelText(
+        /sent to n\*\*\*@x\.com/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("contact-flow-primary-code")).getByLabelText(
+        /current primary contact/,
+      ),
+    ).toBeInTheDocument();
     m.confirmChange.mockResolvedValueOnce(done);
     await typeOtp(user, "111111");
     await typeOtp(user, "222222", 1);

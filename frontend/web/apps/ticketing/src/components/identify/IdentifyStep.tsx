@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, CircularProgress } from '@pml.tickets/shared/components/m3';
 import { useCountryOptions } from '@pml.tickets/shared/api/graphql/shared/reference';
@@ -15,11 +15,57 @@ import {
 } from '@/lib/identity/client';
 import { regionOf, type ContactMode } from '@/lib/identity/contact';
 import { describeError } from '@/lib/identity/messages';
-import { formatMMSS, useCountdown } from './useCountdown';
+import { formatMMSS, useCountdown, useCountdownUntil } from './useCountdown';
 
+/**
+ * Sign in with a one-time code.
+ *
+ * What the person is doing: they pick how the code should reach them (WhatsApp or email), type that number or
+ * address, and we send a six digit code. They type the code and we sign them in, creating a free account the
+ * first time. There is no password. The screen always says where the code went.
+ *
+ * What the server promises: a code lives a few minutes and can be asked for again only after a short wait;
+ * a few wrong guesses lock the contact for a while; every refusal is a stable error code that never says
+ * whether the contact already has an account. The browser never holds a token: the server keeps the proof
+ * and the sign-in handle and only hands the browser a redirect.
+ *
+ * What happens on each refusal (shown in the one alert line under the field it concerns):
+ *  - invalid contact: say so and stay on the entry step;
+ *  - wrong code: show the tries left and clear the boxes;
+ *  - expired code: say so and offer a new one;
+ *  - too soon or too many requests: show how long to wait, counted against the clock so it stays right
+ *    after the tab was in the background;
+ *  - locked: show when it lifts and keep the code boxes closed until then;
+ *  - delivery failed, or the channel is not working for the person: "Send by <other channel> instead"
+ *    returns to the entry step with the other channel chosen, so a code is never sent silently to a
+ *    different contact;
+ *  - account unavailable: a dead end with a pointer to support.
+ */
 type Step = 'contact' | 'code' | 'provisioning' | 'welcome';
 
 const MAX_PROVISIONING_POLLS = 8;
+
+/** Where a code was (or is about to be) sent, so a resend goes to exactly that contact. */
+interface Target {
+  value: string;
+  mode: ContactMode;
+  region?: string;
+}
+
+/** A refusal and, when it carries one, the wall-clock moment it stops applying. */
+interface Refusal {
+  failure: IdentityFailure;
+  until: number | null;
+}
+
+function refusalEnd(f: IdentityFailure): number | null {
+  if (f.lockedUntil) {
+    const at = Date.parse(f.lockedUntil);
+    if (!Number.isNaN(at)) return at;
+  }
+  if (f.retryAfterSeconds !== undefined && f.retryAfterSeconds > 0) return Date.now() + f.retryAfterSeconds * 1000;
+  return null;
+}
 
 export interface IdentifyStepProps {
   /** Where the buyer lands after sign-in (same-origin path). */
@@ -37,162 +83,159 @@ export function IdentifyStep({ returnTo, onBeforeRedirect, navigate, welcomeDela
   const { countries } = useCountryOptions();
   const contactForm = useZodForm(contactSchema, { defaultValues: { mode: 'WHATSAPP', phone: '', email: '' } });
   const codeForm = useZodForm(codeSchema, { defaultValues: { code: '' } });
+  const code = codeForm.watch('code') ?? '';
   const mode = contactForm.watch('mode') as ContactMode;
   const phone = contactForm.watch('phone') || undefined;
   const email = contactForm.watch('email');
+  const [attempt, setAttempt] = useState<Target | null>(null);
   const [challenge, setChallenge] = useState<ChallengeOk | null>(null);
   const [challengeStamp, setChallengeStamp] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<IdentityFailure | null>(null);
-  const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [polls, setPolls] = useState(0);
-  const [locked, setLocked] = useState(false);
   const [verified, setVerified] = useState(false);
-  const submittedCode = useRef<string | null>(null);
+  const inFlight = useRef(false);
 
   const expiresLeft = useCountdown(challenge?.expiresInSeconds ?? 0, challengeStamp);
   const resendLeft = useCountdown(challenge?.resendAfterSeconds ?? 0, challengeStamp);
 
-  const go = useCallback(
-    (url: string) => (navigate ? navigate(url) : window.location.assign(url)),
-    [navigate]
-  );
-
+  const failure = refusal?.failure ?? null;
   const info = failure ? describeError(failure.errorCode) : null;
+  const lockCode = failure?.errorCode === 'OTP_LOCKED';
+  const waitCode = failure?.errorCode === 'OTP_RATE_LIMITED' || failure?.errorCode === 'OTP_COOLDOWN_ACTIVE';
+  const lockLeft = useCountdownUntil(lockCode ? (refusal?.until ?? null) : null);
+  const waitLeft = useCountdownUntil(waitCode ? (refusal?.until ?? null) : null);
+  // A lock with no known end stays until the person starts again; one with an end lifts by itself.
+  const locked = lockCode && (refusal?.until == null || lockLeft > 0);
+  const waiting = waitCode && waitLeft > 0;
+  const blocked = info?.kind === 'blocked';
+  const otherMode: ContactMode = (attempt?.mode ?? mode) === 'EMAIL' ? 'WHATSAPP' : 'EMAIL';
 
-  // ---- contact -------------------------------------------------------------
-  const sendCode = async () => {
-    setFailure(null);
-    const value = (mode === 'EMAIL' ? email.trim() : phone) as string;
+  const go = (url: string) => (navigate ? navigate(url) : window.location.assign(url));
+
+  const refuse = (f: IdentityFailure) => setRefusal({ failure: f, until: refusalEnd(f) });
+
+  // ---- asking for a code ---------------------------------------------------
+  const requestCode = async (target: Target): Promise<void> => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setRefusal(null);
+    setAttempt(target);
     setBusy(true);
-    const res = await requestChallenge(value, mode, mode === 'WHATSAPP' ? regionOf(phone) : undefined);
+    const res = await requestChallenge(target.value, target.mode, target.region);
     setBusy(false);
+    inFlight.current = false;
     if (!res.ok) {
-      setFailure(res);
-      setLocked(describeError(res.errorCode).kind === 'locked');
+      refuse(res);
       return;
     }
     setChallenge(res);
     setChallengeStamp((n) => n + 1);
     codeForm.reset({ code: '' });
-    submittedCode.current = null;
-    setAttemptsLeft(null);
-    setLocked(false);
     setVerified(false);
     setStep('code');
   };
 
-  // ---- code ----------------------------------------------------------------
-  const finishEnsure = useCallback(
-    async (attempt: number) => {
-      setBusy(true);
-      const res = await ensureAccount(true);
-      setBusy(false);
-      if (!res.ok) {
-        setFailure(res);
-        const kind = describeError(res.errorCode).kind;
-        if (kind === 'restart') {
-          setVerified(false);
-          setStep('contact');
-        } else if (kind === 'blocked') {
-          setLocked(true);
-        }
-        return;
-      }
-      if (res.httpStatus === 202 || res.status === 'PROVISIONING') {
-        setPolls(attempt);
-        setStep('provisioning');
-        if (attempt < MAX_PROVISIONING_POLLS) {
-          setTimeout(() => void finishEnsure(attempt + 1), Math.max(1, res.retryAfterSeconds ?? 2) * 1000);
-        }
-        return;
-      }
-      setIsNew(res.isNew === true);
-      setStep('welcome');
-    },
-    []
-  );
-
-  const submitCode = useCallback(
-    async (value: string) => {
-      if (!challenge || submittedCode.current === value) return;
-      submittedCode.current = value;
-      setFailure(null);
-      setBusy(true);
-      const res = await verifyCode(challenge.challengeId, value);
-      setBusy(false);
-      if (!res.ok) {
-        setFailure(res);
-        const kind = describeError(res.errorCode).kind;
-        if (res.errorCode === 'OTP_INVALID') {
-          setAttemptsLeft(res.attemptsRemaining ?? null);
-          codeForm.reset({ code: '' });
-          submittedCode.current = null;
-        }
-        if (kind === 'locked') setLocked(true);
-        return;
-      }
-      setVerified(true);
-      await finishEnsure(1);
-    },
-    [challenge, finishEnsure]
-  );
-
-  const resend = async () => {
-    if (!challenge) return;
-    setFailure(null);
-    setBusy(true);
-    const res = await requestChallenge(
-      mode === 'EMAIL' ? email.trim() : (phone as string),
-      mode,
-      mode === 'WHATSAPP' ? regionOf(phone) : undefined
-    );
-    setBusy(false);
-    if (!res.ok) {
-      setFailure(res);
-      setLocked(describeError(res.errorCode).kind === 'locked');
-      return;
-    }
-    setChallenge(res);
-    setChallengeStamp((n) => n + 1);
-    codeForm.reset({ code: '' });
-    submittedCode.current = null;
-    setAttemptsLeft(null);
+  const sendCode = async () => {
+    const value = (mode === 'EMAIL' ? email.trim() : phone) as string;
+    await requestCode({ value, mode, region: mode === 'WHATSAPP' ? regionOf(phone) : undefined });
   };
 
-  const change = () => {
+  const resend = async () => {
+    if (attempt) await requestCode(attempt);
+  };
+
+  // ---- entering the code ---------------------------------------------------
+  const finishEnsure = async (attemptNo: number) => {
+    setBusy(true);
+    const res = await ensureAccount(true);
+    setBusy(false);
+    if (!res.ok) {
+      refuse(res);
+      if (describeError(res.errorCode).kind === 'restart') {
+        setVerified(false);
+        setStep('contact');
+      }
+      return;
+    }
+    if (res.httpStatus === 202 || res.status === 'PROVISIONING') {
+      setPolls(attemptNo);
+      setStep('provisioning');
+      if (attemptNo < MAX_PROVISIONING_POLLS) {
+        setTimeout(() => void finishEnsure(attemptNo + 1), Math.max(1, res.retryAfterSeconds ?? 2) * 1000);
+      }
+      return;
+    }
+    setIsNew(res.isNew === true);
+    setStep('welcome');
+  };
+
+  const submitCode = async (value: string) => {
+    if (!challenge || inFlight.current || locked || blocked || value.length !== 6) return;
+    inFlight.current = true;
+    setRefusal(null);
+    setBusy(true);
+    const res = await verifyCode(challenge.challengeId, value);
+    setBusy(false);
+    inFlight.current = false;
+    if (!res.ok) {
+      refuse(res);
+      if (res.errorCode === 'OTP_INVALID') codeForm.reset({ code: '' });
+      return;
+    }
+    setVerified(true);
+    await finishEnsure(1);
+  };
+
+  /** Back to the entry step. `toMode` also switches the channel, for "Send by <other channel> instead". */
+  const change = (toMode?: ContactMode) => {
+    if (toMode) contactForm.setValue('mode', toMode);
     setStep('contact');
-    setFailure(null);
+    setRefusal(null);
     setChallenge(null);
     codeForm.reset({ code: '' });
-    setLocked(false);
     setVerified(false);
-    submittedCode.current = null;
   };
 
   // ---- welcome -> sign in -------------------------------------------------
-  const continueToSignIn = useCallback(async () => {
+  const continueToSignIn = async () => {
     try {
       await onBeforeRedirect?.();
     } catch {
       /* the cart is best-effort; signing in must not be blocked by it */
     }
     go(`/api/auth/start?next=${encodeURIComponent(returnTo)}`);
-  }, [go, onBeforeRedirect, returnTo]);
+  };
 
+  const continueRef = useRef(continueToSignIn);
+  continueRef.current = continueToSignIn;
   useEffect(() => {
     if (step !== 'welcome') return;
-    const t = setTimeout(() => void continueToSignIn(), welcomeDelayMs);
+    const t = setTimeout(() => void continueRef.current(), welcomeDelayMs);
     return () => clearTimeout(t);
-  }, [step, continueToSignIn, welcomeDelayMs]);
+  }, [step, welcomeDelayMs]);
 
   // ---- render --------------------------------------------------------------
-  const errorBox = (text: string, testId = 'identify-error') => (
-    <div role="alert" data-testid={testId}>
-      <Banner tone="error">{text}</Banner>
-    </div>
-  );
+  /** The refusal, worded for the person, in the one alert line of the step. */
+  const errorBox = (() => {
+    if (!refusal || !failure || !info) return null;
+    let text = info.message;
+    if (lockCode && refusal.until !== null) {
+      text =
+        lockLeft > 0
+          ? `${text} Try again at ${new Date(refusal.until).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} (in ${formatMMSS(lockLeft)}).`
+          : `${text} You can try again now.`;
+    }
+    if (waitCode && refusal.until !== null) {
+      text = waitLeft > 0 ? `${text} Try again in ${formatMMSS(waitLeft)}.` : `${text} You can try again now.`;
+    }
+    return (
+      <div role="alert" data-testid={`otp-error-${failure.errorCode}`}>
+        <Banner tone="error">{text}</Banner>
+      </div>
+    );
+  })();
 
   if (step === 'welcome') {
     return (
@@ -221,55 +264,73 @@ export function IdentifyStep({ returnTo, onBeforeRedirect, navigate, welcomeDela
             Try again
           </Button>
         )}
-        {failure && errorBox(describeError(failure.errorCode).message)}
+        {errorBox}
       </div>
     );
   }
 
   if (step === 'code' && challenge) {
     const expired = expiresLeft === 0;
+    const attemptsLeft = failure?.errorCode === 'OTP_INVALID' ? (failure.attemptsRemaining ?? null) : null;
     return (
       <div className="m3-stack" data-testid="identify-code-step">
         <div className="buyer-split">
           <p data-testid="identify-readback">
-            Code sent to <strong>{challenge.maskedContact}</strong>
+            We sent a 6 digit code by {challenge.channel === 'EMAIL' ? 'email' : 'WhatsApp'} to <strong>{challenge.maskedContact}</strong>
           </p>
-          <Button variant="text" size="sm" onClick={change} data-testid="identify-change">
+          <Button variant="text" size="sm" onClick={() => change()} data-testid="identify-change">
             Change
           </Button>
         </div>
 
         <Form form={codeForm} guardLeave={false} onSubmit={(v) => submitCode(v.code)}>
-          <OtpRHF
-            name="code"
-            label="6 digit code"
-            disabled={busy || locked}
-            autoFocus
-            onComplete={(c) => {
-              if (!busy && !locked) void submitCode(c);
-            }}
-          />
+          <div className="m3-stack">
+            <div data-testid="otp-input">
+              <OtpRHF
+                name="code"
+                label="6 digit code"
+                disabled={busy || locked || blocked}
+                autoFocus
+                onComplete={(c) => void submitCode(c)}
+              />
+            </div>
+            <p className="m3-muted" id="identify-code-help" data-testid="otp-countdown">
+              {expired ? 'This code has expired.' : `Expires in ${formatMMSS(expiresLeft)}`}
+              {attemptsLeft !== null && !locked && (
+                <span data-testid="identify-attempts">
+                  {' '}· {attemptsLeft === 0 ? 'No tries left' : `${attemptsLeft} ${attemptsLeft === 1 ? 'try' : 'tries'} left`}
+                </span>
+              )}
+            </p>
+            {errorBox}
+            <Button
+              variant="accent"
+              fullWidth
+              type="submit"
+              disabled={busy || locked || blocked || code.length !== 6}
+              loading={busy}
+              data-testid="otp-submit"
+            >
+              Verify and sign in
+            </Button>
+          </div>
         </Form>
-        <p className="m3-muted" id="identify-code-help" data-testid="identify-timer">
-          {expired ? 'This code has expired.' : `Expires in ${formatMMSS(expiresLeft)}`}
-          {attemptsLeft !== null && !locked && (
-            <span data-testid="identify-attempts">
-              {' '}· {attemptsLeft} {attemptsLeft === 1 ? 'try' : 'tries'} left
-            </span>
-          )}
-        </p>
-
-        {info && errorBox(info.message)}
-        {busy && <CircularProgress label="Checking" size="sm" />}
 
         <div className="m3-row">
-          {verified && failure && !locked && (
+          {verified && failure && !locked && !blocked && (
             <Button variant="accent" onClick={() => void finishEnsure(1)} disabled={busy} data-testid="identify-ensure-retry">
               Try again
             </Button>
           )}
-          <Button onClick={() => void resend()} disabled={busy || resendLeft > 0 || locked} data-testid="identify-resend">
+          <Button
+            onClick={() => void resend()}
+            disabled={busy || resendLeft > 0 || waiting || locked || blocked}
+            data-testid="otp-resend"
+          >
             {resendLeft > 0 ? `Resend code in ${resendLeft}s` : 'Resend code'}
+          </Button>
+          <Button variant="text" onClick={() => change(otherMode)} disabled={busy} data-testid="otp-switch-channel">
+            {otherMode === 'EMAIL' ? 'Send by email instead' : 'Send by WhatsApp instead'}
           </Button>
         </div>
       </div>
@@ -289,12 +350,16 @@ export function IdentifyStep({ returnTo, onBeforeRedirect, navigate, welcomeDela
         />
 
         {mode === 'WHATSAPP' ? (
-          <PhoneRHF name="phone" countries={countries} id="identify-phone" label="WhatsApp number" defaultCountry="ZM" density="form" />
+          <div data-testid="contact-input">
+            <PhoneRHF name="phone" countries={countries} id="identify-phone" label="WhatsApp number" defaultCountry="ZM" density="form" />
+          </div>
         ) : (
-          <TextFieldRHF name="email" id="identify-email" data-testid="identify-email" label="Email address" type="email" autoComplete="email" inputMode="email" density="form" />
+          <div data-testid="contact-input">
+            <TextFieldRHF name="email" id="identify-email" label="Email address" type="email" autoComplete="email" inputMode="email" density="form" />
+          </div>
         )}
 
-        {info && errorBox(info.message)}
+        {errorBox}
 
         <p className="m3-muted" data-testid="identify-terms">
           By continuing you agree to our <Link className="m3-link" href="/terms">Terms</Link> and{' '}
@@ -302,7 +367,7 @@ export function IdentifyStep({ returnTo, onBeforeRedirect, navigate, welcomeDela
           {mode === 'EMAIL' ? 'this email' : 'this WhatsApp number'} to verify it.
         </p>
 
-        <Button variant="accent" fullWidth type="submit" disabled={busy || locked} loading={busy} data-testid="identify-send">
+        <Button variant="accent" fullWidth type="submit" disabled={busy || locked || waiting || blocked} loading={busy} data-testid="request-code-submit">
           Send code
         </Button>
       </div>

@@ -25,17 +25,39 @@ import org.keycloak.services.managers.BruteForceProtector;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 /**
- * Buyer sign-in by verified contact. Two modes:
+ * Signs a buyer in with a code sent to their phone number or e-mail. There are no passwords.
  *
- * <ul>
- *   <li><b>HANDOFF</b>: the app already proved the contact; {@code login_hint} carries a single-use
- *       login handle which is redeemed server-side. No page is shown.</li>
- *   <li><b>SCREEN</b>: contact page, then code page (challenge, verify, ensure without handle).</li>
- * </ul>
+ * <p><b>What the buyer experiences.</b> Either (SCREEN) they type their contact on a Keycloak
+ * page, receive a code, type the code on the next page and land back in the app signed in; they
+ * may ask for the code again or go back and change the contact. Or (HANDOFF) the app has already
+ * proved the contact and sends them to Keycloak with a one-time login handle in
+ * {@code login_hint}; they see no page at all and are signed in. A handle that is used up,
+ * expired or unknown is simply ignored and they get the contact page instead.</p>
  *
- * The authenticator never creates users and never grants roles: the Keycloak user is created by
- * identity-service, looked up here by {@code username = accountId}. Staff accounts are refused.
- * Without a configured identity client it fails closed.
+ * <p><b>What this step does and promises.</b> The codes, the account and the Keycloak user are
+ * all owned by identity-service. This step only asks identity-service whether the code or handle
+ * is good and which account it belongs to, then signs in the Keycloak user whose username is
+ * that account id. It never creates a user (a missing user is a refusal, not a prompt to
+ * register), never grants a role, never changes an attribute and never enables a disabled user.
+ * A login handle can be redeemed once; the plugin also removes it from the session at the first
+ * attempt so a page refresh never redeems it a second time. The codes' attempt limits, lockouts
+ * and delivery channel are identity-service's decisions; the channel is never taken from the
+ * form, so a buyer cannot steer where a code is sent.</p>
+ *
+ * <p><b>What happens on each refusal, and why it is generic.</b> Mistakes the buyer can fix (empty
+ * contact, wrong or expired code, too many requests, identity-service down) show a specific
+ * message on the same page, because they reveal nothing about other people. Anything that would
+ * reveal the state of an account is answered with one generic "we could not sign you in" page:
+ * the account has no Keycloak user, the user is disabled, the user is a staff member
+ * (ADMIN, SUPER_ADMIN, FINANCE, FINANCE_LEAD, who sign in through the staff realm with a
+ * password and an authenticator app), or the user is temporarily locked out. One message for all
+ * of those means nobody can use this page to find out which contacts or accounts exist, or which
+ * ones belong to staff. The real reason goes only to Keycloak's event log (for example
+ * {@code USER_NOT_FOUND} or {@code NOT_ALLOWED}), where an operator can see it.</p>
+ *
+ * <p>The plugin cannot be built without a working identity-service client; the factory refuses to
+ * start Keycloak when the credentials are missing. The null-client branches below only guard
+ * against a misconfigured embedding and refuse every attempt.</p>
  */
 public class ContactOtpAuthenticator implements Authenticator {
 

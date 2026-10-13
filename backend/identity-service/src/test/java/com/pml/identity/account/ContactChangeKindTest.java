@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("L1")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004-R3 · the change kinds and resend targets the schema names")
+@DisplayName("the change kinds and resend targets the schema names")
 class ContactChangeKindTest {
 
     @Test

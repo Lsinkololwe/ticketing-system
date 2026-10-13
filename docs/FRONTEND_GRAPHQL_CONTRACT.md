@@ -251,20 +251,19 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | catalog | Query | `platformConfiguration` | — |
 | catalog | Query | `referenceDataAll` | `type: ReferenceType!, pagination: OffsetPaginationInput` |
 
-### `ADMIN or FINANCE` — 31 operation(s)
+### `ADMIN or FINANCE` — 30 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Mutation | `approvePayoutRequest` | `payoutRequestId: ID!, notes: String, idempotencyKey: String!` |
 | booking | Mutation | `bulkMarkPayoutsForReview` | `payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String` |
-| booking | Mutation | `bulkRetryFailedPayouts` | `payoutRequestIds: [ID!]!` |
+| booking | Mutation | `bulkRetryFailedPayouts` | `payoutRequestIds: [ID!]!, idempotencyKey: String!` |
 | booking | Mutation | `completePayoutRequest` | `payoutRequestId: ID!, bankReference: String!` |
 | booking | Mutation | `escalatePayoutRequest` | `payoutRequestId: ID!, reason: String!` |
 | booking | Mutation | `markPayoutForReview` | `payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String` |
 | booking | Mutation | `processPayoutRequest` | `payoutRequestId: ID!` |
 | booking | Mutation | `rejectPayoutRequest` | `payoutRequestId: ID!, rejectionReason: String!` |
 | booking | Mutation | `resolvePayoutIssue` | `payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!` |
-| booking | Mutation | `resumePayoutRequest` | `payoutRequestId: ID!` |
 | booking | Mutation | `retryPayoutRequest` | `payoutRequestId: ID!, idempotencyKey: String!` |
 | booking | Mutation | `verifyBankAccount` | `id: ID!` |
 | booking | Query | `escrowAccount` | `id: ID!` |
@@ -296,7 +295,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Query | `payoutRequest` | `id: ID!` |
 | booking | Query | `payoutRequestByRequestId` | `requestId: String!` |
 
-### `ADMIN or FINANCE or SUPER_ADMIN` — 8 operation(s)
+### `ADMIN or FINANCE or SUPER_ADMIN` — 9 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -307,6 +306,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `rejectPayoutAccount` | `organizationId: ID!, reason: String!` |
 | identity | Mutation | `suspendBankAccount` | `organizationId: ID!, reason: String!` |
 | identity | Mutation | `verifyPayoutAccount` | `organizationId: ID!, verified: Boolean!` |
+| identity | Query | `auditLogs` | `filter: AuditLogFilterInput, pagination: OffsetPaginationInput` |
 | identity | Query | `bankAccounts` | `filter: PayoutAccountFilterInput, pagination: OffsetPaginationInput` |
 
 ### `ADMIN or FINANCE or self` — 5 operation(s)
@@ -340,7 +340,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `setMobileMoneyAccount` | `organizationId: ID!, input: SetMobileMoneyAccountInput!` |
 | identity | Mutation | `updatePayoutConfig` | `organizationId: ID!, input: UpdatePayoutConfigInput!` |
 
-### `ADMIN or SUPER_ADMIN` — 49 operation(s)
+### `ADMIN or SUPER_ADMIN` — 48 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -372,7 +372,6 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Mutation | `updateOrganizationStatus` | `id: ID!, status: OrganizationStatus!` |
 | identity | Mutation | `updateUser` | `id: ID!, input: UpdateUserInput!` |
 | identity | Query | `activeRevocations` | `type: RevocationType, pagination: OffsetPaginationInput` |
-| identity | Query | `auditLogs` | `filter: AuditLogFilterInput, pagination: OffsetPaginationInput` |
 | identity | Query | `identityPendingCounts` | — |
 | identity | Query | `organizationApplications` | `status: OrganizationStatus, pagination: OffsetPaginationInput` |
 | identity | Query | `organizationCount` | `status: OrganizationStatus` |
@@ -662,8 +661,9 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Query | `invitationByToken` | `token: String!` |
 | identity | Query | `publicPlatformRules` | — |
 
-### `SUPER_ADMIN` — 1 operation(s)
+### `SUPER_ADMIN` — 2 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Mutation | `forceCompletePaymentAttempts` | `depositIds: [String!]!, reason: String!` |
+| identity | Mutation | `resetStaffTemporaryPassword` | `userId: ID!` |

@@ -22,7 +22,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -135,169 +134,163 @@ class AnonymousDiscoveryTest {
         return new EventDiscoveryFilterInput(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
-    @Nested
-    @DisplayName("the service layer, with no principal")
-    class ServiceLayer {
+    // ── the service layer, with no principal ──────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("every state is really in the collection, so the filters below mean something")
-        void fixtureIsReal() {
-            assertThat(template.findAll(Event.class).collectList().block()).hasSize(11);
-        }
+    @Test
+    @DisplayName("the service layer, with no principal · every state is really in the collection, so the filters below mean something")
+    void serviceLayer_fixtureIsReal() {
+        assertThat(template.findAll(Event.class).collectList().block()).hasSize(11);
+    }
 
-        @Test
-        @DisplayName("discoverEvents returns the published event and no draft, pending, approved, rejected, cancelled or deleted one")
-        void discover() {
-            var page = anonymously(discovery.find(everything(), 50, null));
-            assertThat(page.events()).extracting(Event::getId).containsExactly("published");
-        }
+    @Test
+    @DisplayName("the service layer, with no principal · discoverEvents returns the published event and no draft, pending, approved, rejected, cancelled or deleted one")
+    void serviceLayer_discover() {
+        var page = anonymously(discovery.find(everything(), 50, null));
+        assertThat(page.events()).extracting(Event::getId).containsExactly("published");
+    }
 
-        @Test
-        @DisplayName("trendingEvents returns the published event only")
-        void trending() {
-            assertThat(anonymously(ranking.trending(10).collectList())).extracting(Event::getId).containsExactly("published");
-        }
+    @Test
+    @DisplayName("the service layer, with no principal · trendingEvents returns the published event only")
+    void serviceLayer_trending() {
+        assertThat(anonymously(ranking.trending(10).collectList())).extracting(Event::getId).containsExactly("published");
+    }
 
-        @Test
-        @DisplayName("event(id) answers the published event, and null for every other state")
-        void single() {
-            assertThat(anonymously(service.findVisibleById("published"))).isNotNull();
-            for (String id : List.of("draft", "pending", "changes", "approved", "rejected", "cancelled", "completed", "deleted", "flag-off", "status-off", "no-such-event")) {
-                assertThat(anonymously(service.findVisibleById(id))).as(id).isNull();
-            }
-        }
-
-        @Test
-        @DisplayName("a signed-in caller still reads a completed event the public no longer sees")
-        void signedInKeepsTheBroaderView() {
-            assertThat(anonymously(service.findVisibleById("completed"))).isNull();
-            TenantScope customer = TenantScope.of("user-9", java.util.Set.of());
-            assertThat(service.findVisibleById("completed")
-                    .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(customer))).block()).isNotNull();
-        }
-
-        @Test
-        @DisplayName("the document carries no organizer contact details: identity owns them and the graph federates them")
-        void contactDataIsNotOnTheDocument() {
-            assertThat(java.util.Arrays.stream(Event.class.getDeclaredFields()).map(java.lang.reflect.Field::getName))
-                    .doesNotContain("organizerEmail", "organizerPhone", "organizerBusinessEmail",
-                            "organizerBusinessPhone", "organizerFirstName", "organizerLastName", "organizerCompanyName");
+    @Test
+    @DisplayName("the service layer, with no principal · event(id) answers the published event, and null for every other state")
+    void serviceLayer_single() {
+        assertThat(anonymously(service.findVisibleById("published"))).isNotNull();
+        for (String id : List.of("draft", "pending", "changes", "approved", "rejected", "cancelled", "completed", "deleted", "flag-off", "status-off", "no-such-event")) {
+            assertThat(anonymously(service.findVisibleById(id))).as(id).isNull();
         }
     }
 
-    @Nested
-    @DisplayName("the security chain, with the catalog's allowlist and a real Redis")
-    class Chain {
+    @Test
+    @DisplayName("the service layer, with no principal · a signed-in caller still reads a completed event the public no longer sees")
+    void serviceLayer_signedInKeepsTheBroaderView() {
+        assertThat(anonymously(service.findVisibleById("completed"))).isNull();
+        TenantScope customer = TenantScope.of("user-9", java.util.Set.of());
+        assertThat(service.findVisibleById("completed")
+                .contextWrite(ctx -> CurrentTenantScope.seed(ctx, Mono.just(customer))).block()).isNotNull();
+    }
 
-        private static final int LIMIT = 4;
-        private static AnnotationConfigApplicationContext context;
-        private static WebTestClient web;
+    @Test
+    @DisplayName("the service layer, with no principal · the document carries no organizer contact details: identity owns them and the graph federates them")
+    void serviceLayer_contactDataIsNotOnTheDocument() {
+        assertThat(java.util.Arrays.stream(Event.class.getDeclaredFields()).map(java.lang.reflect.Field::getName))
+                .doesNotContain("organizerEmail", "organizerPhone", "organizerBusinessEmail",
+                        "organizerBusinessPhone", "organizerFirstName", "organizerLastName", "organizerCompanyName");
+    }
 
-        @Configuration
-        @EnableWebFlux
-        @EnableWebFluxSecurity
-        static class Wiring {
+    // ── the security chain, with the catalog's allowlist and a real Redis ─────────────────────────
 
-            @Bean
-            ServiceSecurity serviceSecurity() {
-                return new ServiceSecurity("http://localhost:1/realms/none", "", "myticketzm-catalog-service", "", List.of(), false);
-            }
+    private static final int LIMIT = 4;
+    private static AnnotationConfigApplicationContext context;
+    private static WebTestClient web;
 
-            @Bean
-            SecurityWebFilterChain chain(ServerHttpSecurity http, ServiceSecurity security) {
-                return security.securityWebFilterChain(http);
-            }
+    @Configuration
+    @EnableWebFlux
+    @EnableWebFluxSecurity
+    static class Wiring {
 
-            @Bean
-            PublicGraphQlFilter filter() {
-                LettuceConnectionFactory factory = new LettuceConnectionFactory(
-                        new RedisStandaloneConfiguration(RedisNode.host(), RedisNode.port()));
-                factory.afterPropertiesSet();
-                ReactiveStringRedisTemplate redis = new ReactiveStringRedisTemplate(factory);
-                redis.execute(new DefaultRedisScript<>("return 1", Long.class), List.of("warm"), List.of()).blockLast();
-                PublicOperationPolicy policy = PublicOperationPolicy.of("catalog-it-" + UUID.randomUUID(),
-                                PublicDiscoveryConfig.PUBLIC_ROOT_FIELDS)
-                        .withEntities(PublicDiscoveryConfig.PUBLIC_ENTITY_FIELDS).withLimit(LIMIT, Duration.ofMinutes(1));
-                return new PublicGraphQlFilter(policy, redis, JSON, null,
-                        com.pml.shared.security.publicop.TrustedProxies.parse("10.0.0.0/8"));
-            }
-
-            @Bean
-            org.springframework.web.server.WebFilter routerPeer() {
-                return new com.pml.shared.testing.RouterPeerFilter();
-            }
-
-            @Bean
-            RouterFunction<ServerResponse> graphql() {
-                return RouterFunctions.route().POST("/graphql", request ->
-                        ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue("{\"data\":{\"trendingEvents\":[]}}")).build();
-            }
+        @Bean
+        ServiceSecurity serviceSecurity() {
+            return new ServiceSecurity("http://localhost:1/realms/none", "", "myticketzm-catalog-service", "", List.of(), false);
         }
 
-        @BeforeAll
-        static void start() {
-            context = new AnnotationConfigApplicationContext(Wiring.class);
-            web = WebTestClient.bindToApplicationContext(context).build();
+        @Bean
+        SecurityWebFilterChain chain(ServerHttpSecurity http, ServiceSecurity security) {
+            return security.securityWebFilterChain(http);
         }
 
-        @AfterAll
-        static void stop() {
-            context.close();
+        @Bean
+        PublicGraphQlFilter filter() {
+            LettuceConnectionFactory factory = new LettuceConnectionFactory(
+                    new RedisStandaloneConfiguration(RedisNode.host(), RedisNode.port()));
+            factory.afterPropertiesSet();
+            ReactiveStringRedisTemplate redis = new ReactiveStringRedisTemplate(factory);
+            redis.execute(new DefaultRedisScript<>("return 1", Long.class), List.of("warm"), List.of()).blockLast();
+            PublicOperationPolicy policy = PublicOperationPolicy.of("catalog-it-" + UUID.randomUUID(),
+                            PublicDiscoveryConfig.PUBLIC_ROOT_FIELDS)
+                    .withEntities(PublicDiscoveryConfig.PUBLIC_ENTITY_FIELDS).withLimit(LIMIT, Duration.ofMinutes(1));
+            return new PublicGraphQlFilter(policy, redis, JSON, null,
+                    com.pml.shared.security.publicop.TrustedProxies.parse("10.0.0.0/8"));
         }
 
-        private WebTestClient.ResponseSpec post(String query, String variables, String address) {
-            String body = "{\"query\":" + JSON.valueToTree(query) + (variables == null ? "" : ",\"variables\":" + variables) + "}";
-            return web.post().uri("/graphql").contentType(MediaType.APPLICATION_JSON).header("X-Forwarded-For", address)
-                    .bodyValue(body).exchange();
+        @Bean
+        org.springframework.web.server.WebFilter routerPeer() {
+            return new com.pml.shared.testing.RouterPeerFilter();
         }
 
-        @Test
-        @DisplayName("trending, discovery, one event and the filter lists are served without a token")
-        void buyerReads() {
-            post("{ trendingEvents(first: 3) { id } }", null, "198.51.100.10").expectStatus().isOk();
-            post("query($f: EventDiscoveryFilterInput!) { discoverEvents(filter: $f) { edges { node { id } } } }", "{\"f\":{}}", "198.51.100.10").expectStatus().isOk();
-            post("query($id: ID!) { event(id: $id) { id title } }", "{\"id\":\"e1\"}", "198.51.100.10").expectStatus().isOk();
-            post("{ categories { id } provinces { id } cities { id } citiesWithEvents { id } }", null, "198.51.100.10").expectStatus().isOk();
-            post("query($t: ReferenceType!) { referenceData(type: $t) { code name metadata } }", "{\"t\":\"COUNTRY\"}", "198.51.100.12").expectStatus().isOk();
-            post("query($t: ReferenceType!, $p: String!) { referenceDataByParent(type: $t, parentCode: $p) { code } }", "{\"t\":\"MUSIC_GENRE\",\"p\":\"MUSIC\"}", "198.51.100.12").expectStatus().isOk();
+        @Bean
+        RouterFunction<ServerResponse> graphql() {
+            return RouterFunctions.route().POST("/graphql", request ->
+                    ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue("{\"data\":{\"trendingEvents\":[]}}")).build();
         }
+    }
 
-        @Test
-        @DisplayName("introspection, a mutation, a mixed selection, a personal query, an admin query and a batch are 401")
-        void everythingElse() {
-            for (String query : new String[] {
-                    "{ __schema { types { name } } }",
-                    "mutation { unlockTierWithAccessCode(eventId: \"1\", accessCode: \"x\") { id } }",
-                    "{ trendingEvents { id } myEvents { totalElements } }",
-                    "{ recommendedEvents { reason } }",
-                    "{ pendingApprovalEvents { totalElements } }",
-                    "{ referenceTypes { type } }",
-                    "{ referenceItem(type: BANK, code: \"X\") { code } }",
-                    "{ referenceDataAll(type: BANK) { totalElements } }",
-                    "{ _service { sdl } }" }) {
-                post(query, null, "198.51.100.11").expectStatus().isUnauthorized();
-            }
-            web.post().uri("/graphql").contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue("[{\"query\":\"{ trendingEvents { id } }\"},{\"query\":\"{ trendingEvents { id } }\"}]").exchange()
-                    .expectStatus().isUnauthorized();
-        }
+    @BeforeAll
+    static void start() {
+        context = new AnnotationConfigApplicationContext(Wiring.class);
+        web = WebTestClient.bindToApplicationContext(context).build();
+    }
 
-        @Test
-        @DisplayName("past the limit a client address gets 429 with Retry-After; another address is unaffected")
-        void rateLimit() {
-            String caller = "203.0.113." + (int) (Math.random() * 200 + 20);
-            for (int i = 0; i < LIMIT; i++) {
-                post("{ trendingEvents { id } }", null, caller).expectStatus().isOk();
-            }
-            post("{ trendingEvents { id } }", null, caller).expectStatus().isEqualTo(429).expectHeader().valueEquals("Retry-After", "60");
-            post("{ trendingEvents { id } }", null, "203.0.113.251").expectStatus().isOk();
-        }
+    @AfterAll
+    static void stop() {
+        context.close();
+    }
 
-        @Test
-        @DisplayName("a token the service cannot validate is refused, never treated as anonymous")
-        void badTokenIsNotAnonymous() {
-            web.post().uri("/graphql").contentType(MediaType.APPLICATION_JSON).header("Authorization", "Bearer garbage")
-                    .bodyValue(Map.of("query", "{ trendingEvents { id } }")).exchange().expectStatus().isUnauthorized();
+    private WebTestClient.ResponseSpec post(String query, String variables, String address) {
+        String body = "{\"query\":" + JSON.valueToTree(query) + (variables == null ? "" : ",\"variables\":" + variables) + "}";
+        return web.post().uri("/graphql").contentType(MediaType.APPLICATION_JSON).header("X-Forwarded-For", address)
+                .bodyValue(body).exchange();
+    }
+
+    @Test
+    @DisplayName("Chain · trending, discovery, one event and the filter lists are served without a token")
+    void chain_buyerReads() {
+        post("{ trendingEvents(first: 3) { id } }", null, "198.51.100.10").expectStatus().isOk();
+        post("query($f: EventDiscoveryFilterInput!) { discoverEvents(filter: $f) { edges { node { id } } } }", "{\"f\":{}}", "198.51.100.10").expectStatus().isOk();
+        post("query($id: ID!) { event(id: $id) { id title } }", "{\"id\":\"e1\"}", "198.51.100.10").expectStatus().isOk();
+        post("{ categories { id } provinces { id } cities { id } citiesWithEvents { id } }", null, "198.51.100.10").expectStatus().isOk();
+        post("query($t: ReferenceType!) { referenceData(type: $t) { code name metadata } }", "{\"t\":\"COUNTRY\"}", "198.51.100.12").expectStatus().isOk();
+        post("query($t: ReferenceType!, $p: String!) { referenceDataByParent(type: $t, parentCode: $p) { code } }", "{\"t\":\"MUSIC_GENRE\",\"p\":\"MUSIC\"}", "198.51.100.12").expectStatus().isOk();
+    }
+
+    @Test
+    @DisplayName("Chain · introspection, a mutation, a mixed selection, a personal query, an admin query and a batch are 401")
+    void chain_everythingElse() {
+        for (String query : new String[] {
+                "{ __schema { types { name } } }",
+                "mutation { unlockTierWithAccessCode(eventId: \"1\", accessCode: \"x\") { id } }",
+                "{ trendingEvents { id } myEvents { totalElements } }",
+                "{ recommendedEvents { reason } }",
+                "{ pendingApprovalEvents { totalElements } }",
+                "{ referenceTypes { type } }",
+                "{ referenceItem(type: BANK, code: \"X\") { code } }",
+                "{ referenceDataAll(type: BANK) { totalElements } }",
+                "{ _service { sdl } }" }) {
+            post(query, null, "198.51.100.11").expectStatus().isUnauthorized();
         }
+        web.post().uri("/graphql").contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("[{\"query\":\"{ trendingEvents { id } }\"},{\"query\":\"{ trendingEvents { id } }\"}]").exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    @DisplayName("Chain · past the limit a client address gets 429 with Retry-After; another address is unaffected")
+    void chain_rateLimit() {
+        String caller = "203.0.113." + (int) (Math.random() * 200 + 20);
+        for (int i = 0; i < LIMIT; i++) {
+            post("{ trendingEvents { id } }", null, caller).expectStatus().isOk();
+        }
+        post("{ trendingEvents { id } }", null, caller).expectStatus().isEqualTo(429).expectHeader().valueEquals("Retry-After", "60");
+        post("{ trendingEvents { id } }", null, "203.0.113.251").expectStatus().isOk();
+    }
+
+    @Test
+    @DisplayName("Chain · a token the service cannot validate is refused, never treated as anonymous")
+    void chain_badTokenIsNotAnonymous() {
+        web.post().uri("/graphql").contentType(MediaType.APPLICATION_JSON).header("Authorization", "Bearer garbage")
+                .bodyValue(Map.of("query", "{ trendingEvents { id } }")).exchange().expectStatus().isUnauthorized();
     }
 }

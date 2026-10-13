@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, StatusPill } from '@pml.tickets/shared/components/m3';
+import { normaliseServerError } from '@pml.tickets/shared/forms/server-errors';
 import { humanize, maskEmail, maskPhone } from '@/lib/format';
 
 export const ERR_TEXT = 'Something went wrong. Try again.';
@@ -19,6 +20,11 @@ export function useDebounced<T>(value: T, ms = 300): T {
 export function errorMessage(e: unknown): string {
   const m = (e as { message?: string } | null)?.message;
   return m && m.trim() ? m : ERR_TEXT;
+}
+
+/** Plain-language sentence for a failed staff-account call, chosen by the server's error code rather than its text. */
+export function staffErrorMessage(e: unknown): string {
+  return normaliseServerError(e).message;
 }
 
 /** Two-column responsive grid of cards (collapses on narrow screens). */

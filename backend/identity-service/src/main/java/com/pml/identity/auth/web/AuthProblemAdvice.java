@@ -27,7 +27,7 @@ import java.util.UUID;
 /**
  * RFC 9457 {@code application/problem+json} for the internal auth API, with the extensions
  * {@code errorCode}, {@code retryable} and where relevant {@code retryAfterSeconds},
- * {@code attemptsRemaining}, {@code lockedUntil} (CONTRACT 4).
+ * {@code attemptsRemaining}, {@code lockedUntil}.
  *
  * <p>HTTP statuses are chosen per code here, as the contract fixes them (423 for a locked contact,
  * 429 for throttling, 410 for an expired code) and the generic classification mapping cannot say.

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { silentLogger } from '../logger';
-import { RateLimiter, defaultPolicies, resolveClientIp } from '../ratelimit';
+import { RateLimiter, defaultPolicies, resetUnresolvedAddressWarning, resolveClientIp } from '../ratelimit';
 import { MemoryStore } from '../store';
 import { FakeClock } from '../testing';
 
@@ -21,6 +21,46 @@ describe('resolveClientIp (trusted hops from the right)', () => {
     expect(resolveClientIp(h('1.1.1.1'), 2)).toBe('unknown');
     expect(resolveClientIp(h(), 1)).toBe('unknown');
     expect(resolveClientIp(h('<script>'), 1)).toBe('unknown');
+  });
+});
+
+describe('unresolved visitor address warning', () => {
+  const h = (v?: string) => new Headers(v ? { 'x-forwarded-for': v } : {});
+  const spy = () => {
+    const warn = vi.fn();
+    return { warn, logger: { debug() {}, info() {}, warn, error() {} } };
+  };
+  beforeEach(() => resetUnresolvedAddressWarning());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetUnresolvedAddressWarning();
+  });
+
+  it('warns once in production, however many visitors cannot be resolved, and still returns unknown', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const { warn, logger } = spy();
+    expect(resolveClientIp(h('1.1.1.1'), 0, logger)).toBe('unknown');
+    expect(resolveClientIp(h(), 1, logger)).toBe('unknown');
+    expect(resolveClientIp(h('<script>'), 1, logger)).toBe('unknown');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toBe('auth.client_ip_unresolved');
+    expect(warn.mock.calls[0][1].message).toMatch(/could not be determined.*shares one rate-limit allowance.*number of trusted proxies/);
+  });
+
+  it('says nothing when the address resolves', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const { warn, logger } = spy();
+    expect(resolveClientIp(h('6.6.6.6, 203.0.113.7'), 1, logger)).toBe('203.0.113.7');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('says nothing outside production', () => {
+    for (const env of ['test', 'development']) {
+      vi.stubEnv('NODE_ENV', env);
+      const { warn, logger } = spy();
+      expect(resolveClientIp(h(), 1, logger)).toBe('unknown');
+      expect(warn).not.toHaveBeenCalled();
+    }
   });
 });
 

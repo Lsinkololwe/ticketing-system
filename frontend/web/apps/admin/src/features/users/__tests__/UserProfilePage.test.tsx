@@ -20,7 +20,7 @@ vi.mock('@pml.tickets/shared/api/admin/modules/identity-admin', async (orig) => 
 const ops = vi.hoisted(() => ({ audit: { entries: [] as any[], loading: false, error: undefined as Error | undefined, refetch: vi.fn() }, bookings: { bookings: [] as any[], pageInfo: { totalCount: 0, pageSize: 10 }, loading: false, error: undefined as Error | undefined, refetch: vi.fn() } }));
 vi.mock('@pml.tickets/shared/api/admin/modules/platform-ops', () => ({
   useAuditLogs: () => ops.audit,
-  useStaffActions: () => ({ deleteUser: vi.fn(), createStaff: vi.fn(), busy: false }),
+  useStaffActions: () => ({ deleteUser: vi.fn(), busy: false }),
 }));
 vi.mock('@pml.tickets/shared/api/admin/modules/payments-ops', () => ({ useBookingsByBuyer: () => ops.bookings }));
 import { UserProfilePage } from '../UserProfilePage';

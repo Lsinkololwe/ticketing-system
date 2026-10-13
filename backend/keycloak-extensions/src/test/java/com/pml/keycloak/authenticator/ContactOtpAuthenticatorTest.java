@@ -26,7 +26,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.keycloak.authentication.AuthenticationFlowError;
+import org.keycloak.events.Errors;
+import org.keycloak.models.utils.FormMessage;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 
@@ -74,7 +77,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R1 · SCREEN: contact page, then code page with server-rendered expiry and resend-after")
+    @DisplayName("SCREEN: contact page, then code page with server-rendered expiry and resend-after")
     void screenFlowRendersPages() {
         toCodePage();
         assertThat(fx.attributes).containsEntry("maskedContact", "j***@gmail.com")
@@ -83,7 +86,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R1 · SCREEN: correct code, ensure(issueHandle=false), sign-in by username=accountId")
+    @DisplayName("SCREEN: correct code, ensure(issueHandle=false), sign-in by username=accountId")
     void successfulSignIn() {
         toCodePage();
         UserModel user = fx.user(ACCOUNT, true);
@@ -97,7 +100,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R2 · wrong code shows attemptsRemaining on the code field and stays on the code page")
+    @DisplayName("wrong code shows attemptsRemaining on the code field and stays on the code page")
     void wrongCode() {
         toCodePage();
         when(client.verify(anyString(), anyString())).thenThrow(problem(400, "OTP_INVALID", 3, null, null));
@@ -109,7 +112,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R2 · expired code returns to the contact page with the contact prefilled")
+    @DisplayName("expired code returns to the contact page with the contact prefilled")
     void expiredCode() {
         toCodePage();
         when(client.verify(anyString(), anyString())).thenThrow(problem(410, "OTP_EXPIRED", null, null, null));
@@ -120,7 +123,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R2 · locked shows lockedUntil, rate limited and cooldown show retryAfter")
+    @DisplayName("locked shows lockedUntil, rate limited and cooldown show retryAfter")
     void lockedAndRateLimited() {
         toCodePage();
         when(client.verify(anyString(), anyString()))
@@ -140,7 +143,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R3 · the resend button requests a new challenge and shows the info message")
+    @DisplayName("the resend button requests a new challenge and shows the info message")
     void resendIsHandled() {
         toCodePage();
         when(client.challenge(any())).thenReturn(new Dto.ChallengeResponse("ch-2", "EMAIL", "j***", "EMAIL", 300, 60));
@@ -152,7 +155,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R3 · the change-contact button clears state and shows the contact page")
+    @DisplayName("the change-contact button clears state and shows the contact page")
     void changeContactIsHandled() {
         toCodePage();
         submitCode("", "change");
@@ -162,7 +165,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R4 · missing Keycloak user fails generically and NEVER creates it")
+    @DisplayName("missing Keycloak user fails generically and NEVER creates it")
     void unknownAccountNeverCreated() {
         toCodePage();
         when(client.verify(anyString(), anyString())).thenReturn(new Dto.VerifyResponse("p", "EMAIL", "m", 120));
@@ -178,7 +181,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R4 · disabled user fails and is never enabled")
+    @DisplayName("disabled user fails and is never enabled")
     void disabledUser() {
         UserModel user = fx.user(ACCOUNT, false);
         fx.authNotes.put(ContactOtpAuthenticator.N_STEP, "X");
@@ -186,10 +189,16 @@ class ContactOtpAuthenticatorTest {
         verify(fx.ctx).failure(eq(AuthenticationFlowError.USER_DISABLED), any());
         verify(user, never()).setEnabled(true);
         verify(fx.ctx, never()).success();
+        verify(fx.ctx, never()).setUser(any());
+        assertThat(fx.fieldErrors).as("no field-level hint").isEmpty();
+        assertThat(fx.globalErrors).extracting(FormMessage::getMessage)
+                .as("the buyer sees the same generic message as for a missing user")
+                .containsExactly("contact.error.generic");
+        verify(fx.event).error(Errors.USER_DISABLED);
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R4 · brute-force lockout blocks sign-in")
+    @DisplayName("brute-force lockout blocks sign-in")
     void bruteForceLocked() {
         fx.user(ACCOUNT, true);
         when(fx.protector.isTemporarilyDisabled(any(), any(), any())).thenReturn(true);
@@ -199,7 +208,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R5 · sign-in grants no role, adds no required action, changes no attribute")
+    @DisplayName("sign-in grants no role, adds no required action, changes no attribute")
     void noRoleGrants() {
         UserModel user = fx.user(ACCOUNT, true);
         auth.complete(fx.ctx, ACCOUNT);
@@ -211,23 +220,91 @@ class ContactOtpAuthenticatorTest {
         verify(user, never()).setEnabled(anyBoolean());
     }
 
+    private static final List<String> STAFF = List.of("ADMIN", "SUPER_ADMIN", "FINANCE", "FINANCE_LEAD");
+
+    /** What a refused staff attempt must look like to the buyer and to the event log. */
+    private static void assertStaffDenied(AuthFixture f, UserModel user) {
+        verify(f.ctx).failure(eq(AuthenticationFlowError.INVALID_USER), any());
+        verify(f.ctx, never()).success();
+        verify(f.ctx, never()).setUser(any());
+        verify(f.event).user(user);
+        verify(f.event).error(Errors.NOT_ALLOWED);
+        assertThat(f.fieldErrors).as("no field-level hint that the account is staff").isEmpty();
+        assertThat(f.globalErrors).extracting(FormMessage::getMessage)
+                .as("only the generic message is shown").containsExactly("contact.error.generic");
+    }
+
     @Test
-    @DisplayName("ET-IDN-001-R6 · staff roles are refused in both SCREEN and HANDOFF")
-    void staffRefused() {
-        for (String staffRole : List.of("ADMIN", "SUPER_ADMIN", "FINANCE", "FINANCE_LEAD")) {
+    @DisplayName("a staff account is refused after the code page and the denial is recorded")
+    void staffRefusedAfterCode() {
+        for (String staffRole : STAFF) {
             AuthFixture f = new AuthFixture();
             ContactOtpAuthenticator a = new ContactOtpAuthenticator(client, clock, slept::add, null);
             UserModel user = f.user(ACCOUNT, true);
             RoleModel role = f.role(staffRole);
             when(user.hasRole(role)).thenReturn(true);
-            a.complete(f.ctx, ACCOUNT);
-            verify(f.ctx).failure(eq(AuthenticationFlowError.INVALID_USER), any());
-            verify(f.ctx, never()).success();
+            when(client.challenge(any())).thenReturn(challenge());
+            when(client.verify("ch-1", "123456")).thenReturn(new Dto.VerifyResponse("p-staff", "EMAIL", "m", 120));
+            when(client.ensure("p-staff", "myticketzm-web", false))
+                    .thenReturn(new Dto.EnsureResponse(ACCOUNT, "ACTIVE", false, null, null));
+
+            a.authenticate(f.ctx);
+            f.formData.putSingle("contact", "staff@gmail.com");
+            a.action(f.ctx);
+            f.formData.clear();
+            f.formData.putSingle("code", "123456");
+            f.formData.putSingle("action", "verify");
+            a.action(f.ctx);
+
+            assertStaffDenied(f, user);
         }
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R7 · HANDOFF with a valid handle signs in with no page")
+    @DisplayName("a staff account is refused with a login handle and the denial is recorded")
+    void staffRefusedWithHandle() {
+        for (String staffRole : STAFF) {
+            AuthFixture f = new AuthFixture();
+            ContactOtpAuthenticator a = new ContactOtpAuthenticator(client, clock, slept::add, null);
+            UserModel user = f.user(ACCOUNT, true);
+            RoleModel role = f.role(staffRole);
+            when(user.hasRole(role)).thenReturn(true);
+            f.clientNotes.put("login_hint", "staff-handle");
+            when(client.redeem("staff-handle", "myticketzm-web")).thenReturn(ACCOUNT);
+
+            a.authenticate(f.ctx);
+
+            assertStaffDenied(f, user);
+        }
+    }
+
+    @Test
+    @DisplayName("a channel field posted with the contact or on resend is ignored, so the buyer cannot choose where the code goes")
+    void postedChannelIsIgnored() {
+        when(client.challenge(any())).thenReturn(challenge());
+        auth.authenticate(fx.ctx);
+        fx.formData.putSingle("contact", "jane@gmail.com");
+        fx.formData.putSingle("channel", "SMS");
+        fx.formData.putSingle("preferredChannel", "SMS");
+        auth.action(fx.ctx);
+
+        fx.formData.clear();
+        fx.formData.putSingle("action", "resend");
+        fx.formData.putSingle("channel", "SMS");
+        fx.formData.putSingle("preferredChannel", "SMS");
+        auth.action(fx.ctx);
+
+        ArgumentCaptor<Dto.ChallengeRequest> sent = ArgumentCaptor.forClass(Dto.ChallengeRequest.class);
+        verify(client, times(2)).challenge(sent.capture());
+        assertThat(sent.getAllValues()).hasSize(2).allSatisfy(request -> {
+            assertThat(request.preferredChannel()).isNull();
+            assertThat(request.contact().type()).isNull();
+            assertThat(request.contact().value()).isEqualTo("jane@gmail.com");
+        });
+    }
+
+    @Test
+    @DisplayName("HANDOFF with a valid handle signs in with no page")
     void handoffValid() {
         UserModel user = fx.user(ACCOUNT, true);
         fx.clientNotes.put("login_hint", "handle-1");
@@ -242,7 +319,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R7 · HANDOFF with an invalid or replayed handle falls back to the SCREEN contact page")
+    @DisplayName("HANDOFF with an invalid or replayed handle falls back to the SCREEN contact page")
     void handoffInvalidAndReplayed() {
         fx.clientNotes.put("login_hint", "bad");
         when(client.redeem("bad", "myticketzm-web")).thenThrow(problem(400, "LOGIN_HANDLE_INVALID", null, null, null));
@@ -257,7 +334,20 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R7 · HANDOFF for a handle whose account has no Keycloak user fails generically")
+    @DisplayName("HANDOFF with an expired handle shows the contact page and creates no session")
+    void handoffExpiredHandle() {
+        fx.clientNotes.put("login_hint", "old");
+        when(client.redeem("old", "myticketzm-web")).thenThrow(new IdentityApiException(400,
+                new Dto.Problem(400, "t", "handle expired", "LOGIN_HANDLE_INVALID", null, null, null, null)));
+        auth.authenticate(fx.ctx);
+        assertThat(fx.lastTemplate()).isEqualTo("contact-input.ftl");
+        verify(fx.ctx, never()).success();
+        verify(fx.ctx, never()).setUser(any());
+        verify(fx.ctx, never()).failure(any(), any());
+    }
+
+    @Test
+    @DisplayName("HANDOFF for a handle whose account has no Keycloak user fails generically")
     void handoffUnknownUser() {
         fx.clientNotes.put("login_hint", "h");
         when(client.redeem("h", "myticketzm-web")).thenReturn(ACCOUNT);
@@ -268,7 +358,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R8 · ensure answering 202 is polled with bounded waits, then the proof is kept")
+    @DisplayName("ensure answering 202 is polled with bounded waits, then the proof is kept")
     void provisioningPoll() {
         toCodePage();
         fx.user(ACCOUNT, true);
@@ -282,7 +372,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R8 · still provisioning after the bound shows a message and a retry reuses the proof")
+    @DisplayName("still provisioning after the bound shows a message and a retry reuses the proof")
     void provisioningExhausted() {
         toCodePage();
         when(client.verify(anyString(), anyString())).thenReturn(new Dto.VerifyResponse("p", "EMAIL", "m", 120));
@@ -297,7 +387,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R8 · ACCOUNT_SUSPENDED ends the flow and never signs in")
+    @DisplayName("ACCOUNT_SUSPENDED ends the flow and never signs in")
     void suspended() {
         toCodePage();
         when(client.verify(anyString(), anyString())).thenReturn(new Dto.VerifyResponse("p", "EMAIL", "m", 120));
@@ -308,7 +398,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R9 · identity-service down shows an unavailable message; no sign-in")
+    @DisplayName("identity-service down shows an unavailable message; no sign-in")
     void unavailable() {
         when(client.challenge(any())).thenThrow(new IdentityUnavailableException("down"));
         auth.authenticate(fx.ctx);
@@ -319,7 +409,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R9 · FAIL CLOSED without an identity client: every attempt is refused")
+    @DisplayName("FAIL CLOSED without an identity client: every attempt is refused")
     void failClosed() {
         ContactOtpAuthenticator closed = new ContactOtpAuthenticator(null, clock, slept::add, null);
         closed.authenticate(fx.ctx);
@@ -330,7 +420,7 @@ class ContactOtpAuthenticatorTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R1 · an empty contact is rejected on the field without calling identity-service")
+    @DisplayName("an empty contact is rejected on the field without calling identity-service")
     void emptyContact() {
         auth.authenticate(fx.ctx);
         fx.formData.putSingle("contact", "   ");

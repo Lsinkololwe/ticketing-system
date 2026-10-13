@@ -1,30 +1,25 @@
 package com.pml.identity.service.impl;
 
 import com.pml.identity.account.AccountService;
-import com.pml.identity.account.AccountStates;
 import com.pml.identity.account.ContactService;
-import com.pml.identity.account.KeycloakUserAdminPort;
-import com.pml.identity.config.KeycloakProperties;
-import com.pml.identity.domain.enums.AccountState;
+import com.pml.identity.account.StaffAccountCreator;
+import com.pml.identity.account.StaffAccountPassword;
+import com.pml.identity.account.StaffAccountRequest;
+import com.pml.identity.account.StaffPasswordReset;
 import com.pml.identity.domain.enums.ContactType;
 import com.pml.identity.domain.model.User;
 import com.pml.identity.repository.UserRepository;
-import com.pml.identity.security.ContactHasher;
 import com.pml.identity.service.UserService;
 import com.pml.shared.constants.UserType;
-import com.pml.shared.error.ErrorCode;
-import com.pml.shared.error.TranslatedRefusal;
 import com.pml.shared.util.Emails;
+import com.pml.shared.util.PhoneNumbers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
-import java.util.EnumSet;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -40,9 +35,8 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final ContactService contacts;
     private final AccountService accounts;
-    private final KeycloakUserAdminPort keycloak;
-    private final KeycloakProperties keycloakProperties;
-    private final ContactHasher contactHasher;
+    private final StaffAccountCreator staffAccounts;
+    private final StaffPasswordReset staffPasswordReset;
     private final Clock clock;
 
     // ---- reads -------------------------------------------------------------------------------------
@@ -75,8 +69,7 @@ public class UserServiceImpl implements UserService {
         }
         return contacts.accountByContact(email, ContactType.EMAIL)
                 .switchIfEmpty(Mono.defer(() -> Emails.normalize(email)
-                        .map(userRepository::findByEmail).orElse(Mono.empty())))
-                .switchIfEmpty(Mono.defer(() -> userRepository.findByEmail(email.trim())));
+                        .map(userRepository::findByEmail).orElse(Mono.empty())));
     }
 
     @Override
@@ -85,7 +78,8 @@ public class UserServiceImpl implements UserService {
             return Mono.empty();
         }
         return contacts.accountByContact(phoneNumber, ContactType.WHATSAPP)
-                .switchIfEmpty(Mono.defer(() -> userRepository.findByPhoneNumber(phoneNumber.trim())));
+                .switchIfEmpty(Mono.defer(() -> PhoneNumbers.parseMobile(phoneNumber, PhoneNumbers.DEFAULT_REGION)
+                        .map(parsed -> userRepository.findByPhoneNumber(parsed.e164())).orElse(Mono.empty())));
     }
 
     @Override
@@ -111,62 +105,14 @@ public class UserServiceImpl implements UserService {
     // ---- writes ------------------------------------------------------------------------------------
 
     @Override
-    public Mono<User> createStaffUser(String email, String firstName, String lastName, String temporaryPassword,
-                                      String actorId) {
-        String normalized = Emails.normalize(email).orElse(null);
-        if (normalized == null) {
-            return Mono.error(new TranslatedRefusal(ErrorCode.CONTACT_INVALID, "a staff user needs a valid email"));
-        }
-        return findByEmail(normalized)
-                .flatMap(existing -> Mono.<User>error(new TranslatedRefusal(ErrorCode.RESOURCE_CONFLICT,
-                        "a user with this email already exists")))
-                .switchIfEmpty(Mono.defer(() -> keycloak.createStaffUser(normalized, normalized, firstName, lastName,
-                                temporaryPassword)
-                        .flatMap(keycloakUserId -> {
-                            var now = clock.instant();
-                            User staff = User.builder()
-                                    .id(keycloakUserId)
-                                    .keycloakUserId(keycloakUserId)
-                                    .username(normalized)
-                                    .email(normalized)
-                                    .firstName(firstName)
-                                    .lastName(lastName)
-                                    .roles(EnumSet.of(UserType.CUSTOMER))
-                                    .createdVia(AccountService.STAFF_ADMIN)
-                                    .createdAt(now)
-                                    .updatedAt(now)
-                                    .createdBy(actorId)
-                                    .build();
-                            AccountStates.apply(staff, AccountState.ACTIVE);
-                            return userRepository.save(staff);
-                        })
-                        .onErrorMap(DuplicateKeyException.class, duplicate -> new TranslatedRefusal(
-                                ErrorCode.RESOURCE_CONFLICT, "a user with this email already exists"))));
+    public Mono<StaffAccountPassword> createStaffUser(String email, String firstName, String lastName,
+                                                      String phoneNumber, UserType role, String actorId) {
+        return staffAccounts.create(new StaffAccountRequest(email, firstName, lastName, phoneNumber, role, actorId));
     }
 
     @Override
-    public Mono<User> createStaffUser(String email, String firstName, String lastName, String temporaryPassword,
-                                      String phoneNumber, UserType role, String actorId) {
-        Optional<ContactHasher.Normalized> phone = phoneNumber == null || phoneNumber.isBlank()
-                ? Optional.empty()
-                : contactHasher.normalize(phoneNumber, ContactType.WHATSAPP, null, null);
-        if (phoneNumber != null && !phoneNumber.isBlank() && phone.isEmpty()) {
-            return Mono.error(new TranslatedRefusal(ErrorCode.PHONE_NUMBER_INVALID, "the staff member's number is not valid"));
-        }
-        return createStaffUser(email, firstName, lastName, temporaryPassword, actorId)
-                .flatMap(created -> {
-                    if (phone.isEmpty()) {
-                        return Mono.just(created);
-                    }
-                    created.setPhoneNumber(phone.get().value());
-                    created.setPhoneCountry(phone.get().region());
-                    return userRepository.save(created)
-                            .onErrorMap(DuplicateKeyException.class, duplicate -> new TranslatedRefusal(
-                                    ErrorCode.RESOURCE_CONFLICT, "that number belongs to another account"));
-                })
-                .flatMap(created -> role == null || role == UserType.CUSTOMER
-                        ? Mono.just(created)
-                        : accounts.addRole(created.getId(), role, actorId));
+    public Mono<StaffAccountPassword> resetStaffTemporaryPassword(String userId, String actorId) {
+        return staffPasswordReset.reset(userId, actorId);
     }
 
     @Override

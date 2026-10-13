@@ -18,7 +18,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
@@ -148,122 +147,116 @@ class EventVisibilityTest {
      * {@code denyAll(null)} because a customer has no memberships, and the entry price for
      * holding one of these tokens is registering a phone number.
      */
-    @Nested
-    @DisplayName("a signed-in caller with no memberships")
-    class Customer {
+    // ── a signed-in caller with no memberships ────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("ET-PLT-007 · reads a published event, which is the point of the discovery query")
-        void seesPublished() {
-            assertThat(visibleTo(TenantScope.denyAll(null), PUBLISHED))
-                    .as("closing F-007 must not close the public catalogue")
-                    .isNotNull();
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · cannot read an unpublished draft")
-        void cannotSeeDraft() {
-            assertThat(events.findById(DRAFT).block())
-                    .as("the draft must exist, or this test passes against an empty collection")
-                    .isNotNull();
-
-            assertThat(visibleTo(TenantScope.denyAll(null), DRAFT)).isNull();
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · cannot read a rejected event, nor therefore its rejectionReason")
-        void cannotSeeRejected() {
-            assertThat(events.findById(REJECTED).block().getRejectionReason())
-                    .as("the reason must be on the document for its concealment to mean anything")
-                    .isEqualTo("Venue capacity unverified");
-
-            assertThat(visibleTo(TenantScope.denyAll(null), REJECTED)).isNull();
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · cannot read a soft-deleted event")
-        void cannotSeeSoftDeleted() {
-            assertThat(events.findById(SOFT_DELETED).block()).isNotNull();
-
-            assertThat(visibleTo(TenantScope.denyAll(null), SOFT_DELETED))
-                    .as("published once is not published still — deletion has to withdraw it")
-                    .isNull();
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · a routine miss is not recorded as a security incident")
-        void missIsNotAnIncident() {
-            // A customer opening a stale link to an unpublished event is the ordinary
-            // traffic of the discovery surface. Labelling each one
-            // securityIncident=true is how an incident log gets muted, and a muted log
-            // takes the real cross-tenant reaches down with it.
-            List<ILoggingEvent> recorded = whileCapturingTenantGuardLogs(
-                    () -> visibleTo(TenantScope.denyAll(null), DRAFT));
-
-            assertThat(recorded)
-                    .as("ordinary discovery misses must not reach the incident log")
-                    .noneSatisfy(entry -> assertThat(entry.getFormattedMessage())
-                            .contains("securityIncident=true"));
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · an authenticated caller reaching for somebody else's draft still is")
-        void authenticatedReachIsStillAnIncident() {
-            // The other half, and the reason the case above is a filter on `subject`
-            // rather than a blanket removal of the guard: silence for a caller with no
-            // subject is only affordable while a probe from a member is still recorded.
-            List<ILoggingEvent> recorded = whileCapturingTenantGuardLogs(
-                    () -> visibleTo(TenantScope.of("u", Set.of(OTHER_ORG)), DRAFT));
-
-            assertThat(recorded)
-                    .as("a member of another organization reaching a real id is worth seeing")
-                    .anySatisfy(entry -> assertThat(entry.getFormattedMessage())
-                            .contains("securityIncident=true"));
-        }
-
-        @Test
-        @DisplayName("ET-PLT-007 · a hidden event and an id that was never issued answer identically")
-        void hiddenAndUnknownAreIndistinguishable() {
-            // The anti-enumeration property. If a draft answered differently from an invented
-            // id, the query would sort real ids from invented ones for anyone with a list.
-            assertThat(visibleTo(TenantScope.denyAll(null), DRAFT))
-                    .isEqualTo(visibleTo(TenantScope.denyAll(null), NEVER_ISSUED))
-                    .isNull();
-        }
+    @Test
+    @DisplayName("a signed-in caller with no memberships · ET-PLT-007 · reads a published event, which is the point of the discovery query")
+    void customer_seesPublished() {
+        assertThat(visibleTo(TenantScope.denyAll(null), PUBLISHED))
+                .as("closing F-007 must not close the public catalogue")
+                .isNotNull();
     }
 
-    @Nested
-    @DisplayName("an authenticated organizer")
-    class Organizer {
+    @Test
+    @DisplayName("a signed-in caller with no memberships · ET-PLT-007 · cannot read an unpublished draft")
+    void customer_cannotSeeDraft() {
+        assertThat(events.findById(DRAFT).block())
+                .as("the draft must exist, or this test passes against an empty collection")
+                .isNotNull();
 
-        @Test
-        @DisplayName("ET-PLT-007 · reads their own organization's draft")
-        void ownerSeesOwnDraft() {
-            Event seen = visibleTo(TenantScope.of("u", Set.of(OWNER_ORG)), DRAFT);
+        assertThat(visibleTo(TenantScope.denyAll(null), DRAFT)).isNull();
+    }
 
-            assertThat(seen)
-                    .as("an organizer must still be able to open the event they are writing")
-                    .isNotNull();
-            assertThat(seen.getStatus()).isEqualTo(EventStatus.DRAFT);
-        }
+    @Test
+    @DisplayName("a signed-in caller with no memberships · ET-PLT-007 · cannot read a rejected event, nor therefore its rejectionReason")
+    void customer_cannotSeeRejected() {
+        assertThat(events.findById(REJECTED).block().getRejectionReason())
+                .as("the reason must be on the document for its concealment to mean anything")
+                .isEqualTo("Venue capacity unverified");
 
-        @Test
-        @DisplayName("ET-PLT-007 · cannot read another organization's draft")
-        void nonOwnerIsRefused() {
-            assertThat(events.findById(DRAFT).block()).isNotNull();
+        assertThat(visibleTo(TenantScope.denyAll(null), REJECTED)).isNull();
+    }
 
-            assertThat(visibleTo(TenantScope.of("u", Set.of(OTHER_ORG)), DRAFT))
-                    .as("a role says whether an account may read events, never which ones")
-                    .isNull();
-        }
+    @Test
+    @DisplayName("a signed-in caller with no memberships · ET-PLT-007 · cannot read a soft-deleted event")
+    void customer_cannotSeeSoftDeleted() {
+        assertThat(events.findById(SOFT_DELETED).block()).isNotNull();
 
-        @Test
-        @DisplayName("ET-PLT-007 · still reads another organization's published event")
-        void nonOwnerStillSeesPublished() {
-            // The ordering the implementation depends on: public visibility is decided
-            // before tenancy, so scoping the miss does not scope the catalogue.
-            assertThat(visibleTo(TenantScope.of("u", Set.of(OTHER_ORG)), PUBLISHED)).isNotNull();
-        }
+        assertThat(visibleTo(TenantScope.denyAll(null), SOFT_DELETED))
+                .as("published once is not published still — deletion has to withdraw it")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("a signed-in caller with no memberships · ET-PLT-007 · a routine miss is not recorded as a security incident")
+    void customer_missIsNotAnIncident() {
+        // A customer opening a stale link to an unpublished event is the ordinary
+        // traffic of the discovery surface. Labelling each one
+        // securityIncident=true is how an incident log gets muted, and a muted log
+        // takes the real cross-tenant reaches down with it.
+        List<ILoggingEvent> recorded = whileCapturingTenantGuardLogs(
+                () -> visibleTo(TenantScope.denyAll(null), DRAFT));
+
+        assertThat(recorded)
+                .as("ordinary discovery misses must not reach the incident log")
+                .noneSatisfy(entry -> assertThat(entry.getFormattedMessage())
+                        .contains("securityIncident=true"));
+    }
+
+    @Test
+    @DisplayName("a signed-in caller with no memberships · ET-PLT-007 · an authenticated caller reaching for somebody else's draft still is")
+    void customer_authenticatedReachIsStillAnIncident() {
+        // The other half, and the reason the case above is a filter on `subject`
+        // rather than a blanket removal of the guard: silence for a caller with no
+        // subject is only affordable while a probe from a member is still recorded.
+        List<ILoggingEvent> recorded = whileCapturingTenantGuardLogs(
+                () -> visibleTo(TenantScope.of("u", Set.of(OTHER_ORG)), DRAFT));
+
+        assertThat(recorded)
+                .as("a member of another organization reaching a real id is worth seeing")
+                .anySatisfy(entry -> assertThat(entry.getFormattedMessage())
+                        .contains("securityIncident=true"));
+    }
+
+    @Test
+    @DisplayName("a signed-in caller with no memberships · ET-PLT-007 · a hidden event and an id that was never issued answer identically")
+    void customer_hiddenAndUnknownAreIndistinguishable() {
+        // The anti-enumeration property. If a draft answered differently from an invented
+        // id, the query would sort real ids from invented ones for anyone with a list.
+        assertThat(visibleTo(TenantScope.denyAll(null), DRAFT))
+                .isEqualTo(visibleTo(TenantScope.denyAll(null), NEVER_ISSUED))
+                .isNull();
+    }
+
+    // ── an authenticated organizer ────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("an authenticated organizer · ET-PLT-007 · reads their own organization's draft")
+    void organizer_ownerSeesOwnDraft() {
+        Event seen = visibleTo(TenantScope.of("u", Set.of(OWNER_ORG)), DRAFT);
+
+        assertThat(seen)
+                .as("an organizer must still be able to open the event they are writing")
+                .isNotNull();
+        assertThat(seen.getStatus()).isEqualTo(EventStatus.DRAFT);
+    }
+
+    @Test
+    @DisplayName("an authenticated organizer · ET-PLT-007 · cannot read another organization's draft")
+    void organizer_nonOwnerIsRefused() {
+        assertThat(events.findById(DRAFT).block()).isNotNull();
+
+        assertThat(visibleTo(TenantScope.of("u", Set.of(OTHER_ORG)), DRAFT))
+                .as("a role says whether an account may read events, never which ones")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("an authenticated organizer · ET-PLT-007 · still reads another organization's published event")
+    void organizer_nonOwnerStillSeesPublished() {
+        // The ordering the implementation depends on: public visibility is decided
+        // before tenancy, so scoping the miss does not scope the catalogue.
+        assertThat(visibleTo(TenantScope.of("u", Set.of(OTHER_ORG)), PUBLISHED)).isNotNull();
     }
 
     @Test

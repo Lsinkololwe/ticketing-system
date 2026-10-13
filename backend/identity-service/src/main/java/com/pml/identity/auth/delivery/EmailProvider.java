@@ -12,10 +12,13 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Sends the code by email through {@code spring.mail.*}. The text and HTML bodies are fixed
- * templates into which only the digits of the code are placed. Blocking JavaMail runs on the
- * bounded-elastic scheduler and the whole send is bounded by
- * {@code identity.delivery.email.timeout}. Nothing sensitive is logged.
+ * Sends the sign-in code to a buyer's email address through {@code spring.mail.*}. The text and
+ * HTML bodies are fixed templates into which only the code is placed, and it is HTML-escaped
+ * there even though it is digits. Blocking JavaMail runs on the bounded-elastic scheduler and the
+ * whole send is bounded by {@code identity.delivery.email.timeout}: when the budget runs out the
+ * send is cancelled, which interrupts the sending thread, and the SMTP socket timeouts in
+ * {@code spring.mail.properties} stop a connection that ignores the interrupt. Nothing sensitive
+ * is logged.
  */
 @Component
 public class EmailProvider implements CodeDeliveryProvider {
@@ -92,6 +95,26 @@ public class EmailProvider implements CodeDeliveryProvider {
                 });
     }
 
+    /** Escapes the five characters that can open markup or leave an attribute, whatever the value. */
+    static String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(value.length() + 16);
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '&' -> out.append("&amp;");
+                case '<' -> out.append("&lt;");
+                case '>' -> out.append("&gt;");
+                case '"' -> out.append("&quot;");
+                case '\'' -> out.append("&#39;");
+                default -> out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
     static String text(String code) {
         return "Your MyTicketZM sign-in code is " + code + ".\n\n"
                 + "It expires in 5 minutes. If you did not ask for it, ignore this message.\n";
@@ -100,7 +123,7 @@ public class EmailProvider implements CodeDeliveryProvider {
     static String html(String code) {
         return "<!DOCTYPE html><html><body style=\"font-family:sans-serif\">"
                 + "<p>Your MyTicketZM sign-in code is</p>"
-                + "<p style=\"font-size:28px;letter-spacing:4px;font-weight:bold\">" + code + "</p>"
+                + "<p style=\"font-size:28px;letter-spacing:4px;font-weight:bold\">" + escapeHtml(code) + "</p>"
                 + "<p>It expires in 5 minutes. If you did not ask for it, ignore this message.</p>"
                 + "</body></html>";
     }

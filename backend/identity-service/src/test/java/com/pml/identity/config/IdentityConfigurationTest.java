@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** The typed identity.* configuration binds from the shipped files and refuses bad secrets. L1: no Spring context. */
 @Tag("L1")
 @Tag("ET-IDN-004")
+@Tag("ET-IDN-001")
 @DisplayName("ET-IDN-004 · identity configuration binds and fails fast on missing secrets")
 class IdentityConfigurationTest {
 

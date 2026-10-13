@@ -122,7 +122,7 @@ public class EventAccessServiceImpl implements EventAccessService {
                         grantedById)
                         .onErrorResume(e -> {
                             log.warn("Failed to grant access for user {}: {}",
-                                    request.userId(), e.getMessage());
+                                    request.userId(), e.getClass().getSimpleName());
                             return Mono.empty();
                         }));
     }

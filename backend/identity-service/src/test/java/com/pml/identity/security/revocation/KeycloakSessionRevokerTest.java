@@ -35,11 +35,11 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 
 /**
- * ET-IDN-003 R7 · Keycloak logout revokes that {@code sid}, against real MongoDB and Redis.
+ * Keycloak logout revokes that {@code sid}, against real MongoDB and Redis.
  */
 @Tag("L2")
 @Tag("ET-IDN-003")
-@DisplayName("ET-IDN-003-R7 · a Keycloak logout event writes a durable, cached, idempotent session revocation")
+@DisplayName("a Keycloak logout event writes a durable, cached, idempotent session revocation")
 class KeycloakSessionRevokerTest {
 
     private static MongoClient client;

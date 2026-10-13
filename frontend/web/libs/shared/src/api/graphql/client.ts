@@ -175,7 +175,7 @@ const createErrorLink = (onAuthError?: () => void) =>
  *
  * The browser never holds a bearer token: the BFF route attaches it server-side and refreshes
  * it single-flight. Requests carry the session cookie (same origin only) and the constant
- * `x-pml-csrf` header the BFF requires on unsafe methods. A 401 `SESSION_ENDED` from the BFF
+ * `X-Requested-With: pml-web` header the BFF requires on unsafe methods. A 401 `SESSION_ENDED` from the BFF
  * triggers `onAuthError` once (default: redirect to `/login`).
  */
 export const createBffGraphQLClient = (config: Omit<GraphQLClientConfig, 'uri'> & { uri?: string } = {}) => {
@@ -184,7 +184,7 @@ export const createBffGraphQLClient = (config: Omit<GraphQLClientConfig, 'uri'> 
     credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      'x-pml-csrf': '1',
+      'x-requested-with': 'pml-web',
       ...(config.headers || {}),
     },
   });

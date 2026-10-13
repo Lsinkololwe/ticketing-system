@@ -85,14 +85,14 @@ class AdminReadServiceTest {
         assertThat(page.pageInfo().totalElements()).isEqualTo(3);
         assertThat(page.pageInfo().hasNextPage()).isTrue();
 
-        assertThat(reads.auditLogs(new AuditLogFilterInput(null, null, null, "admin-1", null, null, null, null), null).block().content())
+        assertThat(reads.auditLogs(new AuditLogFilterInput(null, null, null, "admin-1", null, null, null, null, null, null), null).block().content())
                 .extracting(e -> e.resourceId()).containsExactly("org-2", "org-1");
-        assertThat(reads.auditLogs(new AuditLogFilterInput(null, null, null, null, "Organization", "org-1", null, null), null).block().content())
+        assertThat(reads.auditLogs(new AuditLogFilterInput(null, null, null, null, "Organization", "org-1", null, null, null, null), null).block().content())
                 .hasSize(2);
         assertThat(reads.auditLogs(new AuditLogFilterInput(Instant.parse("2026-10-02T00:00:00Z"),
-                Instant.parse("2026-10-03T00:00:00Z"), null, null, null, null, null, null), null).block().content())
+                Instant.parse("2026-10-03T00:00:00Z"), null, null, null, null, null, null, null, null), null).block().content())
                 .extracting(e -> e.action()).containsExactly("ORGANIZATION_COMMISSION_CHANGED");
-        assertThat(reads.auditLogs(new AuditLogFilterInput(null, null, "ORGANIZATION_SUSPENDED", null, null, null, "SUCCESS", null), null)
+        assertThat(reads.auditLogs(new AuditLogFilterInput(null, null, "ORGANIZATION_SUSPENDED", null, null, null, "SUCCESS", null, null, null), null)
                 .block().content()).hasSize(1);
     }
 
@@ -107,7 +107,7 @@ class AdminReadServiceTest {
 
         assertThat(reads.auditLogs(null, null).block().content()).hasSize(1);
 
-        var merged = reads.auditLogs(new AuditLogFilterInput(null, null, null, null, null, null, null, true), null).block();
+        var merged = reads.auditLogs(new AuditLogFilterInput(null, null, null, null, null, null, null, true, null, null), null).block();
         assertThat(merged.content()).extracting(e -> e.source() + ":" + e.action())
                 .containsExactly("ACCOUNT_EVENT:OTP_LOCKED", "AUDIT:USER_SUSPENDED");
         assertThat(merged.content().get(0).metadata()).containsEntry("attempts", 5).doesNotContainKey("nested");

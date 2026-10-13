@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Tag("L1")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004 · the lifecycle state, the legacy status and the active flag move together (CONTRACT 2)")
+@DisplayName("the lifecycle state, the legacy status and the active flag move together")
 class AccountStatesTest {
 
     private static User legacy(AccountStatus status) {

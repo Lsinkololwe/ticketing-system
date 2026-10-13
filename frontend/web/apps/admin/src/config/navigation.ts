@@ -100,7 +100,7 @@ export const MODULES: ConsoleModule[] = [
     ],
   },
   {
-    id: 'transactions', label: 'Transactions', icon: 'server', path: '/transactions', roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE_LEAD'], group: 'Operations',
+    id: 'transactions', label: 'Transactions', icon: 'server', path: '/transactions', roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE', 'FINANCE_LEAD'], group: 'Operations',
     tabs: [
       { id: 'payments', label: 'Payments' },
       { id: 'tickets', label: 'Tickets' },
@@ -110,7 +110,8 @@ export const MODULES: ConsoleModule[] = [
       { id: 'audit', label: 'Audit log' },
       { id: 'announce', label: 'Announcements' },
     ],
-    roleTabs: { FINANCE_LEAD: ['payments', 'reservations', 'recovery', 'audit'] },
+    // Finance reads the money view of the audit log and nothing else in this module.
+    roleTabs: { FINANCE: ['audit'], FINANCE_LEAD: ['payments', 'reservations', 'recovery', 'audit'] },
   },
   { id: 'analytics', label: 'Analytics', icon: 'chart', path: '/analytics', roles: ALL, group: 'Operations' },
   { id: 'health', label: 'Health', icon: 'pulse', path: '/health', roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE_LEAD'], group: 'Operations' },

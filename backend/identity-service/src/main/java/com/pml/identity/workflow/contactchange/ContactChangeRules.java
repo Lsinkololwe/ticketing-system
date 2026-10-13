@@ -15,10 +15,29 @@ public final class ContactChangeRules {
     /** How long a change may wait for its codes (spec 004 R5). */
     public static final Duration EXPIRY = Duration.ofHours(48);
 
+    /**
+     * The longest a change execution may live: the wait for codes plus a day to finish applying. The
+     * execution is started with this as its ceiling, so the server closes it at that point whatever it
+     * is doing, and the marker it sets records the same ceiling as its expiry.
+     */
+    public static final Duration MAX_LIFETIME = EXPIRY.plus(Duration.ofHours(24));
+
     /** Wrong or expired codes tolerated before the change is abandoned. */
     public static final int MAX_FAILED_ATTEMPTS = 5;
 
     private ContactChangeRules() {
+    }
+
+    /**
+     * Whether a marker is past the time its change could still be open. A marker written before expiries
+     * were recorded has none of its own, so its age is measured from when it was set; one with neither is
+     * never "expired", and only the server's word on whether its execution is open can release it.
+     */
+    public static boolean expired(java.time.Instant expiresAt, java.time.Instant since, java.time.Instant now) {
+        if (expiresAt != null) {
+            return !now.isBefore(expiresAt);
+        }
+        return since != null && !now.isBefore(since.plus(MAX_LIFETIME));
     }
 
     public static int attemptsRemaining(int failures) {

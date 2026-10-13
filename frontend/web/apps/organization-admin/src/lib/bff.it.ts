@@ -147,7 +147,6 @@ describe.skipIf(!enabled)('organizer BFF: real Keycloak 26.5.2 + Redis', () => {
       KEYCLOAK_CLIENT_ID: CLIENT,
       KEYCLOAK_CLIENT_SECRET: SECRET,
       API_AUDIENCE: GATEWAY_AUD,
-      ACCOUNT_CLAIM: '', // the stock realm users carry no accountId attribute
       BFF_ENC_KEYS: `k1:${Buffer.alloc(32, 5).toString('base64')}`,
       GRAPHQL_URL: 'http://upstream.test/graphql',
       TRUST_PROXY_HOPS: '1',
@@ -201,15 +200,16 @@ describe.skipIf(!enabled)('organizer BFF: real Keycloak 26.5.2 + Redis', () => {
     expect(setCookie).toMatch(/HttpOnly/);
     expect(setCookie).toMatch(/SameSite=Lax/);
 
-    // session: roles from the real access token, account = Keycloak sub, tokens never exposed
+    // session: roles from the real access token, account = preferred_username (the stock realm users carry no accountId attribute), tokens never exposed
     const d = await bff.internals();
     const s = (await d.sessions.load(jar[cookieName]))!;
     expect(s.record.roles).toContain('ORGANIZER');
     expect(s.record.aud).toContain(GATEWAY_AUD);
-    expect(s.record.accountId).toBe(s.record.sub);
+    expect(s.record.accountId).toBe('organizer');
+    expect(s.record.accountId).not.toBe(s.record.sub);
     expect(s.record.displayName).toBeTruthy();
     const pub = await (await bff.handlers.session(appReq('/api/auth/session', { jar }))).text();
-    expect(JSON.parse(pub)).toMatchObject({ authenticated: true, accountId: s.record.sub, roles: expect.arrayContaining(['ORGANIZER']) });
+    expect(JSON.parse(pub)).toMatchObject({ authenticated: true, accountId: 'organizer', roles: expect.arrayContaining(['ORGANIZER']) });
     expect(pub).not.toMatch(/eyJ/);
 
     // coarse proxy gate: anonymous is sent to /login, the organizer passes

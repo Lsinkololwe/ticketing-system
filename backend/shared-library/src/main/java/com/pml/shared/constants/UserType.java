@@ -20,7 +20,6 @@ public enum UserType {
     ORGANIZER("ORGANIZER", "Organizer", "Event organizer who can create and manage events"),
     ADMIN("ADMIN", "Administrator", "Platform administrator with full access"),
     SUPER_ADMIN("SUPER_ADMIN", "Super Administrator", "Super administrator with highest privileges"),
-    SCANNER("SCANNER", "Scanner", "Ticket scanner/validator at events"),
     FINANCE("FINANCE", "Finance", "Finance team member for payouts and reconciliation"),
     FINANCE_LEAD("FINANCE_LEAD", "Finance lead", "Receives chargeback and refund escalations; held together with FINANCE");
 
@@ -59,6 +58,15 @@ public enum UserType {
     }
 
     /**
+     * Whether this role belongs to platform staff: people who sign in with a password and a second
+     * factor in the staff realm, never through a contact code. Buyers hold CUSTOMER, and an organizer
+     * is a buyer who also applied to run events.
+     */
+    public boolean isStaffRole() {
+        return this == ADMIN || this == SUPER_ADMIN || this == FINANCE || this == FINANCE_LEAD;
+    }
+
+    /**
      * Check if this role is an admin role.
      *
      * @return true if ADMIN or SUPER_ADMIN
@@ -88,7 +96,7 @@ public enum UserType {
      * 1. Must have at least one role
      * 2. Must include CUSTOMER (base role cannot be removed)
      * 3. Cannot have both ADMIN and SUPER_ADMIN (SUPER_ADMIN supersedes ADMIN)
-     * 4. Maximum 7 roles (all possible roles)
+     * 4. Maximum 6 roles (all possible roles)
      *
      * @param roles the set of roles to validate
      * @return true if the combination is valid, false otherwise
@@ -108,8 +116,8 @@ public enum UserType {
             return false;
         }
 
-        // Rule: Max 7 roles
-        if (roles.size() > 7) {
+        // Rule: Max 6 roles
+        if (roles.size() > 6) {
             return false;
         }
 
@@ -167,7 +175,7 @@ public enum UserType {
 
     /**
      * Get the highest privilege role from a set of roles.
-     * Order of privilege: SUPER_ADMIN > ADMIN > FINANCE > ORGANIZER > SCANNER > CUSTOMER
+     * Order of privilege: SUPER_ADMIN > ADMIN > FINANCE > ORGANIZER > CUSTOMER
      *
      * @param roles the set of roles
      * @return the highest privilege role
@@ -181,7 +189,6 @@ public enum UserType {
         if (roles.contains(ADMIN)) return ADMIN;
         if (roles.contains(FINANCE)) return FINANCE;
         if (roles.contains(ORGANIZER)) return ORGANIZER;
-        if (roles.contains(SCANNER)) return SCANNER;
         return CUSTOMER;
     }
 }

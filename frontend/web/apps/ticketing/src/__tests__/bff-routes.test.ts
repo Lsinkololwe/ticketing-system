@@ -325,11 +325,29 @@ describe("checkout intent", () => {
           req(
             "/api/checkout/intent",
             { eventId: "e1", quantities: {} },
-            { "x-pml-csrf": "" },
+            { "x-requested-with": "" },
           ),
         )
       ).status,
     ).toBe(403);
+  });
+
+  it("rate limits per client ip through the trusted proxy chain", async () => {
+    const from = (ip: string) =>
+      intent(
+        req(
+          "/api/checkout/intent",
+          { eventId: "e1", quantities: { t1: 1 } },
+          { "x-forwarded-for": ip },
+        ),
+      );
+    let last = 200;
+    for (let i = 0; i < 31; i++) last = (await from("203.0.113.90")).status;
+    expect(last).toBe(429);
+    // Another client behind the same proxy is not affected.
+    expect((await from("203.0.113.91")).status).toBe(200);
+    // A spoofed leftmost entry does not buy a fresh budget: only the trusted (rightmost) hop counts.
+    expect((await from("198.51.100.1, 203.0.113.90")).status).toBe(429);
   });
 
   it("keeps the cart in the session once signed in", async () => {
@@ -346,26 +364,61 @@ describe("checkout intent", () => {
 });
 
 describe("logout and back-channel logout", () => {
-  it("POST /api/auth/logout destroys the session and ends the Keycloak session", async () => {
+  it("POST /api/auth/logout destroys the session, requests the revocation and ends the Keycloak session from the server", async () => {
+    const m = mockFetch({
+      ...status("ACTIVE"),
+      "/revocations/logout": () => jsonResponse({}),
+    });
+    await signInAs(bff, "acc-1");
+    const before = await bff.getSession();
+    expect(before).not.toBeNull();
+    const ended = kc.endedSessions.length;
+    const res = await sendA(
+      authPost,
+      withAction(
+        req("/api/auth/logout", undefined, { "x-requested-with": "" }),
+        "logout",
+      ),
+    );
+    // The server told Keycloak to end the whole sign-in itself, so the browser goes straight back to the app
+    // instead of hopping through Keycloak's end-session page.
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(`${APP}/`);
+    expect(kc.endedSessions.length).toBe(ended + 1);
+    const revocation = m.calls.find((c) => c.url.includes("/revocations/logout"));
+    expect(JSON.parse(String(revocation?.init?.body))).toMatchObject({
+      sid: expect.any(String),
+      reason: "user_logout",
+    });
+    expect(JSON.parse(String(revocation?.init?.body))).not.toHaveProperty("sub");
+    expect(jar.has(SESSION)).toBe(false);
+    expect(await bff.getSession()).toBeNull();
+  });
+
+  it("POST /api/auth/logout falls back to the browser hop through Keycloak when the server-side end fails", async () => {
     mockFetch({
       ...status("ACTIVE"),
       "/revocations/logout": () => jsonResponse({}),
     });
     await signInAs(bff, "acc-1");
-    expect(await bff.getSession()).not.toBeNull();
-    const res = await sendA(
-      authPost,
-      withAction(
-        req("/api/auth/logout", undefined, { "x-pml-csrf": "" }),
-        "logout",
-      ),
-    );
-    expect(res.status).toBe(303);
-    expect(loc(res).pathname).toBe(
-      "/realms/myticketzm/protocol/openid-connect/logout",
-    );
+    kc.faults.endSession = true;
+    try {
+      const res = await sendA(
+        authPost,
+        withAction(
+          req("/api/auth/logout", undefined, { "x-requested-with": "" }),
+          "logout",
+        ),
+      );
+      expect(res.status).toBe(303);
+      expect(loc(res).pathname).toBe(
+        "/realms/myticketzm/protocol/openid-connect/logout",
+      );
+      expect(loc(res).searchParams.get("post_logout_redirect_uri")).toBe(`${APP}/`);
+    } finally {
+      kc.faults.endSession = false;
+    }
     expect(jar.has(SESSION)).toBe(false);
-    expect(await bff.getSession()).toBeNull();
   });
 
   it("POST /api/auth/backchannel-logout deletes the sessions of the sid", async () => {

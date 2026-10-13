@@ -5,6 +5,7 @@ import com.pml.booking.domain.model.RecoveryProposal;
 import com.pml.shared.error.DomainRefusal;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.security.tenancy.StaffRole;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -26,17 +27,16 @@ public final class DualControlRules {
     private DualControlRules() {
     }
 
-    /** Whether the held authorities satisfy the role an action needs; ADMIN covers FINANCE, SUPER_ADMIN covers all. */
+    /**
+     * Whether the held authorities satisfy the role an action needs; ADMIN covers FINANCE, SUPER_ADMIN covers all.
+     *
+     * <p>This is separation of duties, not a data reach: it is asked of every proposal in a queue and
+     * of every row's "can I confirm this" flag, so it is a plain comparison of role names, held in
+     * the shared {@link StaffRole} rank rule and not recorded per comparison. What is recorded is the
+     * act itself, when a proposal is made and when it is confirmed.
+     */
     public static boolean holdsRole(Collection<String> authorities, RecoveryAction action) {
-        Set<String> held = Set.copyOf(authorities);
-        if (held.contains("ROLE_SUPER_ADMIN")) {
-            return true;
-        }
-        return switch (action.requiredRole()) {
-            case "SUPER_ADMIN" -> false;
-            case "FINANCE" -> held.contains("ROLE_FINANCE") || held.contains("ROLE_ADMIN");
-            default -> held.contains("ROLE_" + action.requiredRole());
-        };
+        return StaffRole.covers(Set.copyOf(authorities), action.requiredRole());
     }
 
     /** Null when {@code reason} is a real justification; otherwise the refusal. */

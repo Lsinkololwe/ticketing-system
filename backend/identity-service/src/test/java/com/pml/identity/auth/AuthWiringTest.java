@@ -43,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** The auth beans wire together from the same collaborators the service provides, and capture is opt-in. */
 @Tag("L3")
 @Tag("ET-IDN-001")
-@DisplayName("ET-IDN-001 · the auth components wire up, and the in-memory capture exists only when switched on")
+@DisplayName("the auth components wire up, and the in-memory capture exists only when switched on")
 class AuthWiringTest {
 
     @Configuration

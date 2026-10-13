@@ -112,6 +112,9 @@ export async function startApp(target: AppTarget, o: { upstreamUrl: string; redi
     KEYCLOAK_CLIENT_SECRET: 'harness',
     IDENTITY_CLIENT_ID: 'harness',
     IDENTITY_CLIENT_SECRET: 'harness',
+    // One trusted hop (the harness is the proxy): the apps refuse to start in production without it, and a
+    // spec that sets X-Forwarded-For gets its own rate-limit bucket.
+    TRUST_PROXY_HOPS: '1',
     NEXT_TELEMETRY_DISABLED: '1',
     NEXT_DIST_DIR: distDir,
     ...o.extraEnv,

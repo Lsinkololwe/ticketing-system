@@ -19,4 +19,3 @@ export * from './IdentityRevocationClient';
 export * from './RevocationService';
 export * from './failClosed';
 export * from './serviceAccountToken';
-export * from './LegacyJtiBlacklistAdapter';

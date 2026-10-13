@@ -34,6 +34,8 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
     public final List<String> realmsUsed = new CopyOnWriteArrayList<>();
     public final AtomicInteger creates = new AtomicInteger();
     public volatile boolean down;
+    /** Refuse every realm-role grant, as Keycloak does when the role is missing or the call fails. */
+    public volatile boolean failGrants;
     /** Fail the next N calls of any kind, then recover. */
     public final AtomicInteger failNext = new AtomicInteger();
 
@@ -123,6 +125,12 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
     public Mono<Void> setEnabled(String realm, String keycloakUserId, boolean enabled) {
         realmsUsed.add(String.valueOf(realm));
         return guard("setEnabled:" + enabled, () -> {
+            KeycloakUserView staffUser = staff.get(keycloakUserId);
+            if (staffUser != null) {
+                staff.put(keycloakUserId, new KeycloakUserView(staffUser.id(), staffUser.username(), staffUser.email(),
+                        staffUser.firstName(), staffUser.lastName(), enabled, staffUser.emailVerified(), staffUser.realmRoles()));
+                return (Void) null;
+            }
             Stored user = byId(keycloakUserId);
             byUsername.put(user.username(), new Stored(user.id(), user.username(), enabled, user.roles(), user.attributes()));
             return (Void) null;
@@ -162,6 +170,13 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
     public Mono<Void> grantRealmRole(String realm, String keycloakUserId, String roleName) {
         realmsUsed.add(String.valueOf(realm));
         return guard("grant:" + roleName, () -> {
+            if (failGrants) {
+                throw new KeycloakWriteFailed("Keycloak refused the role grant");
+            }
+            if (staff.containsKey(keycloakUserId)) {
+                staffRoles.computeIfAbsent(keycloakUserId, id -> ConcurrentHashMap.newKeySet()).add(roleName);
+                return (Void) null;
+            }
             Stored user = byId(keycloakUserId);
             Set<String> roles = new TreeSet<>(user.roles());
             roles.add(roleName);
@@ -173,6 +188,10 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
     @Override
     public Mono<Void> revokeRealmRole(String realm, String keycloakUserId, String roleName) {
         return guard("revoke:" + roleName, () -> {
+            if (staff.containsKey(keycloakUserId)) {
+                staffRoles.computeIfAbsent(keycloakUserId, id -> ConcurrentHashMap.newKeySet()).remove(roleName);
+                return (Void) null;
+            }
             Stored user = byId(keycloakUserId);
             Set<String> roles = new TreeSet<>(user.roles());
             roles.remove(roleName);
@@ -193,13 +212,52 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
 
     @Override
     public Mono<String> createStaffUser(String username, String email, String firstName, String lastName,
-                                        String temporaryPassword) {
+                                        String temporaryPassword, boolean enabled) {
         return guard("createStaffUser", () -> {
+            // a 409 reads the existing user back, as Keycloak's create does
+            KeycloakUserView existing = staff.values().stream()
+                    .filter(user -> username.equalsIgnoreCase(user.username())).findFirst().orElse(null);
+            if (existing != null) {
+                return existing.id();
+            }
             String id = UUID.randomUUID().toString();
-            staff.put(id, new KeycloakUserView(id, username, email, firstName, lastName, true, false, Set.of()));
+            staff.put(id, new KeycloakUserView(id, username, email, firstName, lastName, enabled, false, Set.of()));
+            temporaryPasswords.put(id, temporaryPassword == null ? "" : temporaryPassword);
             return id;
         });
     }
+
+    @Override
+    public Mono<Void> issueTemporaryPassword(String keycloakUserId, String temporaryPassword) {
+        return guard("issueTemporaryPassword", () -> {
+            if (!staff.containsKey(keycloakUserId)) {
+                throw new KeycloakWriteFailed("no such staff user");
+            }
+            temporaryPasswords.put(keycloakUserId, temporaryPassword);
+            return (Void) null;
+        });
+    }
+
+    /** The temporary password each staff user holds now, by Keycloak id (empty string when none). */
+    public final Map<String, String> temporaryPasswords = new ConcurrentHashMap<>();
+
+    @Override
+    public Mono<String> findStaffUserId(String username) {
+        return guard("findStaffUserId", () -> staff.values().stream()
+                .filter(user -> username.equalsIgnoreCase(user.username())).map(KeycloakUserView::id).findFirst().orElse(null));
+    }
+
+    @Override
+    public Mono<Void> deleteStaffUser(String keycloakUserId) {
+        return guard("deleteStaffUser", () -> {
+            staff.remove(keycloakUserId);
+            staffRoles.remove(keycloakUserId);
+            return (Void) null;
+        });
+    }
+
+    /** The realm roles granted to a staff-realm user, by Keycloak id. */
+    public final Map<String, Set<String>> staffRoles = new ConcurrentHashMap<>();
 
     public List<String> callsSnapshot() {
         return new ArrayList<>(calls);

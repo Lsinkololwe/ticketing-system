@@ -118,8 +118,8 @@ public class UserUsernameNormalizationMigrationService {
                                     String id = String.valueOf(loser.get("_id"));
                                     String fresh = fresh(name, id, taken);
                                     taken.add(fresh);
-                                    log.warn("identity_users username '{}' is shared; account {} becomes '{}', account {} keeps it",
-                                            name, id, fresh, group.get(0).get("_id"));
+                                    log.warn("An identity_users username is shared; account {} gets a fresh one, account {} keeps it",
+                                            id, group.get(0).get("_id"));
                                     plan.add(new Document[]{loser, new Document("username", fresh)});
                                 }
                             });

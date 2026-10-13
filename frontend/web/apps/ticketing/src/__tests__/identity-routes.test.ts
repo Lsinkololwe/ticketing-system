@@ -73,6 +73,39 @@ describe("POST /api/identity/challenge", () => {
     expect(sent.deviceId).toBeTruthy();
   });
 
+  it("sends a real address literal even when the visitor's address cannot be resolved", async () => {
+    // A forwarding header that is not an address: the app cannot tell who is asking. The identity
+    // service refuses anything that is not an address, so the unspecified address is sent instead
+    // of "unknown".
+    const m = mockFetch({
+      "/api/internal/auth/challenges": () =>
+        jsonResponse(
+          {
+            challengeId: CHALLENGE_ID,
+            contactType: "EMAIL",
+            maskedContact: "j***@gmail.com",
+            channel: "EMAIL",
+            expiresInSeconds: 300,
+            resendAfterSeconds: 60,
+          },
+          202,
+        ),
+    });
+    const res = await challenge(
+      req(
+        "/api/identity/challenge",
+        { contact: { value: uniq(), type: "EMAIL" } },
+        { "x-forwarded-for": "not-an-address" },
+      ),
+    );
+    expect(res.status).toBe(202);
+    const call = m.calls.find((c) =>
+      c.url.endsWith("/api/internal/auth/challenges"),
+    );
+    const sent = JSON.parse(call?.init?.body as string);
+    expect(sent.clientIp).toBe("0.0.0.0");
+  });
+
   it.each([
     [400, "CONTACT_INVALID"],
     [429, "OTP_RATE_LIMITED"],
@@ -115,13 +148,13 @@ describe("POST /api/identity/challenge", () => {
     expect(m.fn).not.toHaveBeenCalled();
   });
 
-  it("rejects a missing x-pml-csrf header and cross-site fetch metadata", async () => {
+  it("rejects a missing X-Requested-With header and cross-site fetch metadata", async () => {
     const m = mockFetch({});
     const a = await challenge(
       req(
         "/api/identity/challenge",
         { contact: { value: "a@b.co" } },
-        { "x-pml-csrf": "" },
+        { "x-requested-with": "" },
       ),
     );
     const b = await challenge(

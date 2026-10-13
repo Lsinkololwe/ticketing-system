@@ -312,7 +312,7 @@ public class KeycloakService implements KeycloakAccountPort, KeycloakUserAdminPo
 
     @Override
     public Mono<String> createStaffUser(String username, String email, String firstName, String lastName,
-                                        String temporaryPassword) {
+                                        String temporaryPassword, boolean enabled) {
         return blocking(() -> {
             if (isBlank(username)) {
                 throw new IllegalArgumentException("a staff user needs a username");
@@ -323,7 +323,7 @@ public class KeycloakService implements KeycloakAccountPort, KeycloakUserAdminPo
             user.setEmail(email);
             user.setFirstName(firstName);
             user.setLastName(lastName);
-            user.setEnabled(true);
+            user.setEnabled(enabled);
             user.setRequiredActions(List.of("UPDATE_PASSWORD", "CONFIGURE_TOTP"));
             if (!isBlank(temporaryPassword)) {
                 org.keycloak.representations.idm.CredentialRepresentation credential =
@@ -347,6 +347,66 @@ public class KeycloakService implements KeycloakAccountPort, KeycloakUserAdminPo
                 throw new KeycloakWriteFailed("Keycloak refused to create a staff user: HTTP " + status);
             }
         });
+    }
+
+    @Override
+    public Mono<Void> issueTemporaryPassword(String keycloakUserId, String temporaryPassword) {
+        return blocking(() -> {
+            if (isBlank(keycloakUserId) || isBlank(temporaryPassword)) {
+                throw new IllegalArgumentException("a user and a password are required");
+            }
+            UserResource resource = realm(properties.getStaffRealm()).users().get(keycloakUserId);
+            List<org.keycloak.representations.idm.CredentialRepresentation> held = resource.credentials();
+            // The old password goes first so the realm's password-history rule does not compare the new
+            // value with it; a repeat of this call with the same value then also succeeds.
+            for (org.keycloak.representations.idm.CredentialRepresentation credential : held) {
+                if (org.keycloak.representations.idm.CredentialRepresentation.PASSWORD.equals(credential.getType())) {
+                    resource.removeCredential(credential.getId());
+                }
+            }
+            org.keycloak.representations.idm.CredentialRepresentation fresh =
+                    new org.keycloak.representations.idm.CredentialRepresentation();
+            fresh.setType(org.keycloak.representations.idm.CredentialRepresentation.PASSWORD);
+            fresh.setValue(temporaryPassword);
+            fresh.setTemporary(true);
+            resource.resetPassword(fresh);
+
+            boolean secondFactorEnrolled = held.stream().anyMatch(credential ->
+                    "otp".equals(credential.getType())
+                            || org.keycloak.representations.idm.CredentialRepresentation.TOTP.equals(credential.getType()));
+            UserRepresentation user = fullRepresentation(resource, keycloakUserId);
+            Set<String> actions = new java.util.LinkedHashSet<>(
+                    user.getRequiredActions() == null ? List.<String>of() : user.getRequiredActions());
+            actions.add("UPDATE_PASSWORD");
+            if (!secondFactorEnrolled) {
+                actions.add("CONFIGURE_TOTP");
+            }
+            user.setRequiredActions(List.copyOf(actions));
+            resource.update(user);
+            return Boolean.TRUE;
+        }).then();
+    }
+
+    @Override
+    public Mono<String> findStaffUserId(String username) {
+        return blocking(() -> exactUser(realm(properties.getStaffRealm()).users(), username)
+                .map(UserRepresentation::getId).orElse(null));
+    }
+
+    @Override
+    public Mono<Void> deleteStaffUser(String keycloakUserId) {
+        return blocking(() -> {
+            if (isBlank(keycloakUserId)) {
+                return Boolean.TRUE;
+            }
+            try (Response response = realm(properties.getStaffRealm()).users().delete(keycloakUserId)) {
+                int status = response.getStatus();
+                if (status == 204 || status == 404) {
+                    return Boolean.TRUE;
+                }
+                throw new KeycloakWriteFailed("Keycloak refused to delete a staff user: HTTP " + status);
+            }
+        }).then();
     }
 
     @Override

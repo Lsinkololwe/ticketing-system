@@ -2,6 +2,7 @@ package com.pml.booking.config;
 
 import com.pml.shared.persistence.IndexEnsurer;
 import com.pml.shared.persistence.IndexSpec;
+import com.pml.shared.security.tenancy.PlatformWideAuditOutbox;
 import com.pml.booking.persistence.BookingCollections;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,7 +62,7 @@ public class BookingIndexInitializer {
 
     /** Every index booking-service owns. */
     public static List<IndexSpec> specifications() {
-        return List.of(
+        List<IndexSpec> all = new java.util.ArrayList<>(List.of(
                 // **hot** — the reservation decrement targets this and only this
                 IndexSpec.on(BookingCollections.TIER_INVENTORY, "idx_tierId")
                         .asc("tierId")
@@ -507,7 +508,11 @@ public class BookingIndexInitializer {
 
                 // booking_holder_messages: an event's message history, newest first
                 IndexSpec.on(BookingCollections.HOLDER_MESSAGES, "idx_holder_message_event_created")
-                        .asc("eventId").desc("createdAt").build());
+                        .asc("eventId").desc("createdAt").build()));
+
+        // the platform-wide reaches kept locally until identity confirms them
+        all.addAll(PlatformWideAuditOutbox.indexes(BookingCollections.PLATFORM_WIDE_AUDIT_OUTBOX));
+        return List.copyOf(all);
     }
 
     @EventListener(ApplicationReadyEvent.class)

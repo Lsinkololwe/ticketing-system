@@ -52,7 +52,9 @@ class WorkflowDeterminismLintTest {
         List<String> offenders = new ArrayList<>();
         for (Path file : mainSources()) {
             String body = withoutComments(Files.readString(file));
-            if (!body.contains("@WorkflowImpl")) {
+            // A workflow shared by the services is implemented in the shared library, unannotated; it is
+            // recognised by the stub it builds, which only workflow code does.
+            if (!body.contains("@WorkflowImpl") && !body.contains("Workflow.newActivityStub")) {
                 continue;
             }
             Matcher hit = NON_DETERMINISTIC.matcher(body);
@@ -118,6 +120,9 @@ class WorkflowDeterminismLintTest {
             try (Stream<Path> walk = Files.walk(BACKEND.resolve(service + "-service/src/main/java"))) {
                 walk.filter(p -> p.toString().endsWith(".java")).forEach(files::add);
             }
+        }
+        try (Stream<Path> walk = Files.walk(BACKEND.resolve("shared-library/src/main/java"))) {
+            walk.filter(p -> p.toString().endsWith(".java")).forEach(files::add);
         }
         return files;
     }

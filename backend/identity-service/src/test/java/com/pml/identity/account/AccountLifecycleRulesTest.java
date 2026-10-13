@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Tag("L1")
 @Tag("ET-IDN-004")
-@DisplayName("ET-IDN-004-R10 · a person's own deletion request: the grace period and who may ask")
+@DisplayName("a person's own deletion request: the grace period and who may ask")
 class AccountLifecycleRulesTest {
 
     @Test

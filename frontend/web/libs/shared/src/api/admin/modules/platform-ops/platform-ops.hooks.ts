@@ -11,8 +11,6 @@ import type {
   OpsBroadcastNotificationMutationVariables,
   OpsCancelAnnouncementMutation,
   OpsCancelAnnouncementMutationVariables,
-  OpsCreateStaffMutation,
-  OpsCreateStaffMutationVariables,
   OpsDeleteUserMutation,
   OpsDeleteUserMutationVariables,
   OpsReinstateBankAccountMutation,
@@ -58,7 +56,6 @@ import {
   OPS_AUDIT_LOGS,
   OPS_BROADCAST_NOTIFICATION,
   OPS_CANCEL_ANNOUNCEMENT,
-  OPS_CREATE_STAFF,
   OPS_DELETE_USER,
   OPS_ME_SECURITY,
   OPS_MY_SESSIONS,
@@ -237,17 +234,11 @@ export function useStaffAccounts(o: { search?: string; role?: UserType | null; p
 
 export function useStaffActions() {
   const opts = { refetchQueries: ['OpsStaffAccounts', 'IdentityAdminUsers', 'IdentityAdminUser'], errorPolicy: 'none' as const };
-  const [create, c] = useMutation<OpsCreateStaffMutation, OpsCreateStaffMutationVariables>(OPS_CREATE_STAFF, opts);
   const [del, d] = useMutation<OpsDeleteUserMutation, OpsDeleteUserMutationVariables>(OPS_DELETE_USER, opts);
   return {
-    createStaff: useCallback(
-      async (input: { email: string; firstName: string; lastName: string; phoneNumber: string; role: UserType }) =>
-        (await create({ variables: { input } })).data?.createUser ?? null,
-      [create]
-    ),
     /** Soft delete: the account moves to pending deletion and can be restored by support. */
     deleteUser: useCallback(async (id: string) => (await del({ variables: { id } })).data?.deleteUser ?? null, [del]),
-    busy: c.loading || d.loading,
+    busy: d.loading,
   };
 }
 

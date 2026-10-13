@@ -41,8 +41,8 @@ export function HomeClient() {
   const debounced = useDebounced(filters, 300);
   const filter = useMemo(() => toDiscoverFilter(debounced), [debounced]);
   const grid = useDiscoverEvents(filter, PAGE, false, SORT_TO_API[debounced.sort]);
-  // The feed has no `featured` filter (ET-CAT-003 R4 admits five, each indexed): take the most
-  // popular page and keep the events an administrator marked featured.
+  // The feed has no `featured` filter: take the most popular page and keep the events an
+  // administrator marked featured.
   const popular = useDiscoverEvents({}, 24, false, 'POPULAR');
   const featured = { events: popular.events.filter((e) => e.featured).slice(0, 5) };
   const trending = useTrendingEvents(9);

@@ -1,6 +1,6 @@
 package com.pml.identity.auth.challenge;
 
-/** Redis key names of the challenge (CONTRACT 6). None contains a raw contact value. */
+/** Redis key names of a code challenge. None contains a raw contact value, only its contact key. */
 public final class ChallengeKeys {
 
     public static final String CHALLENGE_ID_PREFIX = "chid:";

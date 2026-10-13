@@ -234,7 +234,6 @@ Ensure these roles exist in Keycloak:
 - `CUSTOMER` - Base role for all users
 - `ORGANIZER` - Can create events
 - `ADMIN` - Platform administrator
-- `SCANNER` - Ticket validation
 - `FINANCE` - Payout management
 
 ### 4. Configure Registration Flow

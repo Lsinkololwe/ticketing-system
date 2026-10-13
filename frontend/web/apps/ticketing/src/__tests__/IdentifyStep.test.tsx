@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock('@pml.tickets/shared/api/graphql/shared/reference', async () => (await import('@/__tests__/referenceMock')).referenceModule());
@@ -44,13 +44,13 @@ async function toCodeStep(
 ) {
   requestChallenge.mockResolvedValueOnce(challengeOk(over));
   await user.click(screen.getByRole("radio", { name: "Email" }));
-  await user.type(screen.getByTestId("identify-email"), "j@gmail.com");
-  await user.click(screen.getByTestId("identify-send"));
+  await user.type(within(screen.getByTestId("contact-input")).getByRole("textbox"), "j@gmail.com");
+  await user.click(screen.getByTestId("request-code-submit"));
   await screen.findByTestId("identify-code-step");
 }
 
 const boxes = () =>
-  within(screen.getByRole("group", { name: "6 digit code" })).getAllByRole(
+  within(screen.getByTestId("otp-input")).getAllByRole(
     "textbox",
   ) as HTMLInputElement[];
 async function typeCode(
@@ -69,7 +69,7 @@ describe("IdentifyStep contact step", () => {
   it("validates before calling the server and shows CONTACT_INVALID copy", async () => {
     const user = userEvent.setup();
     render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
-    await user.click(screen.getByTestId("identify-send"));
+    await user.click(screen.getByTestId("request-code-submit"));
     expect(requestChallenge).not.toHaveBeenCalled();
     expect(
       (
@@ -82,9 +82,10 @@ describe("IdentifyStep contact step", () => {
 
   it("shows the terms and consent line", () => {
     render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
-    expect(screen.getByTestId("identify-terms")).toHaveTextContent(
-      /agree to our Terms and Privacy Policy/,
-    );
+    const line = screen.getByTestId("identify-terms");
+    expect(line).toHaveTextContent(/agree to our Terms and Privacy Policy/);
+    expect(within(line).getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
+    expect(within(line).getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
   });
 
   it("accepts a WhatsApp number in E.164", async () => {
@@ -100,7 +101,7 @@ describe("IdentifyStep contact step", () => {
       screen.getByRole("textbox", { name: /WhatsApp number/ }),
       "0971234567",
     );
-    await user.click(screen.getByTestId("identify-send"));
+    await user.click(screen.getByTestId("request-code-submit"));
     await screen.findByTestId("identify-code-step");
     expect(requestChallenge).toHaveBeenCalledWith(
       "+260971234567",
@@ -120,9 +121,9 @@ describe("IdentifyStep contact step", () => {
     requestChallenge.mockResolvedValueOnce(fail(code, {}, 429));
     render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
     await user.click(screen.getByRole("radio", { name: "Email" }));
-    await user.type(screen.getByTestId("identify-email"), "j@gmail.com");
-    await user.click(screen.getByTestId("identify-send"));
-    expect(await screen.findByTestId("identify-error")).toHaveTextContent(
+    await user.type(within(screen.getByTestId("contact-input")).getByRole("textbox"), "j@gmail.com");
+    await user.click(screen.getByTestId("request-code-submit"));
+    expect(await screen.findByTestId(`otp-error-${code}`)).toHaveTextContent(
       IDENTITY_ERROR_MESSAGES[code].message,
     );
   });
@@ -134,7 +135,7 @@ describe("IdentifyStep code step", () => {
     render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
     await toCodeStep(user);
     expect(screen.getByTestId("identify-readback")).toHaveTextContent(
-      "j***@gmail.com",
+      "We sent a 6 digit code by email to j***@gmail.com",
     );
     const input = boxes()[0];
     expect(boxes()).toHaveLength(6);
@@ -148,11 +149,11 @@ describe("IdentifyStep code step", () => {
     const user = userEvent.setup();
     render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
     await toCodeStep(user, { expiresInSeconds: 300, resendAfterSeconds: 60 });
-    expect(screen.getByTestId("identify-timer")).toHaveTextContent(
+    expect(screen.getByTestId("otp-countdown")).toHaveTextContent(
       "Expires in 05:00",
     );
-    expect(screen.getByTestId("identify-resend")).toBeDisabled();
-    expect(screen.getByTestId("identify-resend")).toHaveTextContent(
+    expect(screen.getByTestId("otp-resend")).toBeDisabled();
+    expect(screen.getByTestId("otp-resend")).toHaveTextContent(
       /Resend code in 6\d?s|Resend code in 5\ds/,
     );
   });
@@ -164,7 +165,7 @@ describe("IdentifyStep code step", () => {
     requestChallenge.mockResolvedValueOnce(
       challengeOk({ challengeId: "cid2" }),
     );
-    await user.click(screen.getByTestId("identify-resend"));
+    await user.click(screen.getByTestId("otp-resend"));
     await waitFor(() => expect(requestChallenge).toHaveBeenCalledTimes(2));
   });
 
@@ -179,7 +180,7 @@ describe("IdentifyStep code step", () => {
     expect(await screen.findByTestId("identify-attempts")).toHaveTextContent(
       "3 tries left",
     );
-    expect(screen.getByTestId("identify-error")).toHaveTextContent(
+    expect(screen.getByTestId("otp-error-OTP_INVALID")).toHaveTextContent(
       IDENTITY_ERROR_MESSAGES.OTP_INVALID.message,
     );
     expect(boxes().every((b) => b.value === "")).toBe(true);
@@ -190,10 +191,10 @@ describe("IdentifyStep code step", () => {
     render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
     await toCodeStep(user);
     verifyCode.mockResolvedValueOnce(
-      fail("OTP_LOCKED", { lockedUntil: "2026-10-04T10:00:00Z" }, 423),
+      fail("OTP_LOCKED", { lockedUntil: new Date(Date.now() + 600_000).toISOString() }, 423),
     );
     await typeCode(user, "111111");
-    expect(await screen.findByTestId("identify-error")).toHaveTextContent(
+    expect(await screen.findByTestId("otp-error-OTP_LOCKED")).toHaveTextContent(
       IDENTITY_ERROR_MESSAGES.OTP_LOCKED.message,
     );
     expect(boxes().every((b) => b.disabled)).toBe(true);
@@ -205,10 +206,10 @@ describe("IdentifyStep code step", () => {
     await toCodeStep(user);
     verifyCode.mockResolvedValueOnce(fail("OTP_EXPIRED", {}, 410));
     await typeCode(user, "222222");
-    expect(await screen.findByTestId("identify-error")).toHaveTextContent(
+    expect(await screen.findByTestId("otp-error-OTP_EXPIRED")).toHaveTextContent(
       IDENTITY_ERROR_MESSAGES.OTP_EXPIRED.message,
     );
-    expect(screen.getByTestId("identify-resend")).toBeInTheDocument();
+    expect(screen.getByTestId("otp-resend")).toBeInTheDocument();
   });
 
   it.each(["PROOF_INVALID", "LOGIN_HANDLE_INVALID"])(
@@ -227,7 +228,7 @@ describe("IdentifyStep code step", () => {
       ensureAccount.mockResolvedValueOnce(fail(code));
       await typeCode(user, "333333");
       await screen.findByTestId("identify-contact-step");
-      expect(screen.getByTestId("identify-error")).toHaveTextContent(
+      expect(screen.getByTestId(`otp-error-${code}`)).toHaveTextContent(
         IDENTITY_ERROR_MESSAGES[code].message,
       );
     },
@@ -248,7 +249,7 @@ describe("IdentifyStep code step", () => {
       } as never);
       ensureAccount.mockResolvedValueOnce(fail(code, {}, 409));
       await typeCode(user, "444444");
-      expect(await screen.findByTestId("identify-error")).toHaveTextContent(
+      expect(await screen.findByTestId(`otp-error-${code}`)).toHaveTextContent(
         IDENTITY_ERROR_MESSAGES[code].message,
       );
     },
@@ -349,5 +350,142 @@ describe("code input digits only", () => {
         .map((b) => b.value)
         .join(""),
     ).toBe("123");
+  });
+});
+
+describe("IdentifyStep channel, submit and waits", () => {
+  it("keeps the WhatsApp/Email toggle and sends the typed contact on the chosen channel", async () => {
+    const user = userEvent.setup();
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    expect(screen.getByRole("radio", { name: "WhatsApp" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Email" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /sms/i })).toBeNull();
+    await toCodeStep(user);
+    expect(requestChallenge).toHaveBeenCalledWith("j@gmail.com", "EMAIL", undefined);
+  });
+
+  it("resends to the same contact it first asked for", async () => {
+    const user = userEvent.setup();
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    await toCodeStep(user, { resendAfterSeconds: 0 });
+    requestChallenge.mockResolvedValueOnce(challengeOk({ challengeId: "cid2" }));
+    await user.click(screen.getByTestId("otp-resend"));
+    await waitFor(() => expect(requestChallenge).toHaveBeenCalledTimes(2));
+    expect(requestChallenge).toHaveBeenLastCalledWith("j@gmail.com", "EMAIL", undefined);
+  });
+
+  it("has an explicit submit that stays disabled until six digits; auto-submits on the sixth", async () => {
+    const user = userEvent.setup();
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    await toCodeStep(user);
+    expect(screen.getByTestId("otp-submit")).toBeDisabled();
+    verifyCode.mockResolvedValueOnce(fail("SERVICE_UNAVAILABLE", {}, 503));
+    await typeCode(user, "123456");
+    await waitFor(() => expect(verifyCode).toHaveBeenCalledWith("cid", "123456"));
+    await screen.findByTestId("otp-error-SERVICE_UNAVAILABLE");
+    verifyCode.mockResolvedValueOnce(fail("OTP_INVALID", { attemptsRemaining: 2 }));
+    await user.click(screen.getByTestId("otp-submit"));
+    await waitFor(() => expect(verifyCode).toHaveBeenCalledTimes(2));
+  });
+
+  it("offers 'Send by WhatsApp instead' on an email step and returns to entry with WhatsApp chosen, sending nothing", async () => {
+    const user = userEvent.setup();
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    await toCodeStep(user);
+    expect(screen.getByTestId("otp-switch-channel")).toHaveTextContent("Send by WhatsApp instead");
+    await user.click(screen.getByTestId("otp-switch-channel"));
+    expect(screen.getByTestId("identify-contact-step")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "WhatsApp" })).toBeChecked();
+    expect(requestChallenge).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers 'Send by email instead' on a WhatsApp step, including after OTP_DELIVERY_FAILED on resend", async () => {
+    const user = userEvent.setup();
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    requestChallenge.mockResolvedValueOnce(
+      challengeOk({ contactType: "WHATSAPP", channel: "WHATSAPP", maskedContact: "+260 97* ***567", resendAfterSeconds: 0 }),
+    );
+    await user.type(screen.getByRole("textbox", { name: /WhatsApp number/ }), "0971234567");
+    await user.click(screen.getByTestId("request-code-submit"));
+    await screen.findByTestId("identify-code-step");
+    expect(screen.getByTestId("identify-readback")).toHaveTextContent("by WhatsApp to +260 97* ***567");
+    requestChallenge.mockResolvedValueOnce(fail("OTP_DELIVERY_FAILED", {}, 502));
+    await user.click(screen.getByTestId("otp-resend"));
+    await screen.findByTestId("otp-error-OTP_DELIVERY_FAILED");
+    await user.click(screen.getByTestId("otp-switch-channel"));
+    expect(screen.getByRole("radio", { name: "Email" })).toBeChecked();
+    expect(requestChallenge).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps no contact, code or challenge in storage, the URL or the cookie", async () => {
+    const user = userEvent.setup();
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    verifyCode.mockResolvedValueOnce(fail("OTP_INVALID", { attemptsRemaining: 4 }));
+    await toCodeStep(user);
+    await typeCode(user, "135790");
+    await screen.findByTestId("otp-error-OTP_INVALID");
+    const dump = JSON.stringify({ ...localStorage, ...sessionStorage });
+    for (const secret of ["j@gmail.com", "135790", "cid"]) {
+      expect(dump).not.toContain(secret);
+      expect(window.location.href).not.toContain(secret);
+      expect(document.cookie).not.toContain(secret);
+    }
+  });
+});
+
+describe("IdentifyStep waits and locks follow the clock", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const tick = (ms: number) =>
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+  const setup = () => userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+
+  it("OTP_RATE_LIMITED shows the wait from retryAfterSeconds and re-enables send when it ends", async () => {
+    const user = setup();
+    requestChallenge.mockResolvedValueOnce(fail("OTP_RATE_LIMITED", { retryAfterSeconds: 90 }, 429));
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    await user.click(screen.getByRole("radio", { name: "Email" }));
+    await user.type(within(screen.getByTestId("contact-input")).getByRole("textbox"), "j@gmail.com");
+    await user.click(screen.getByTestId("request-code-submit"));
+    expect(await screen.findByTestId("otp-error-OTP_RATE_LIMITED")).toHaveTextContent("01:30");
+    expect(screen.getByTestId("request-code-submit")).toBeDisabled();
+    tick(60_000);
+    expect(screen.getByTestId("otp-error-OTP_RATE_LIMITED")).toHaveTextContent("00:30");
+    tick(31_000);
+    await waitFor(() => expect(screen.getByTestId("request-code-submit")).toBeEnabled());
+  });
+
+  it("OTP_COOLDOWN_ACTIVE shows the wait from retryAfterSeconds", async () => {
+    const user = setup();
+    requestChallenge.mockResolvedValueOnce(fail("OTP_COOLDOWN_ACTIVE", { retryAfterSeconds: 20 }, 429));
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    await user.click(screen.getByRole("radio", { name: "Email" }));
+    await user.type(within(screen.getByTestId("contact-input")).getByRole("textbox"), "j@gmail.com");
+    await user.click(screen.getByTestId("request-code-submit"));
+    expect(await screen.findByTestId("otp-error-OTP_COOLDOWN_ACTIVE")).toHaveTextContent("00:20");
+  });
+
+  it("OTP_LOCKED shows when it lifts, counts down on the wall clock, and reopens the boxes", async () => {
+    const user = setup();
+    const lockedUntil = new Date(Date.now() + 120_000).toISOString();
+    render(<IdentifyStep returnTo="/" navigate={vi.fn()} />);
+    await toCodeStep(user);
+    verifyCode.mockResolvedValueOnce(fail("OTP_LOCKED", { lockedUntil }, 423));
+    await typeCode(user, "111111");
+    const box = await screen.findByTestId("otp-error-OTP_LOCKED");
+    const clock = new Date(lockedUntil).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    expect(box).toHaveTextContent(clock);
+    expect(box).toHaveTextContent("02:00");
+    expect(boxes().every((b) => b.disabled)).toBe(true);
+    tick(100_000);
+    expect(screen.getByTestId("otp-error-OTP_LOCKED")).toHaveTextContent("00:20");
+    tick(25_000);
+    await waitFor(() => expect(boxes().every((b) => !b.disabled)).toBe(true));
   });
 });

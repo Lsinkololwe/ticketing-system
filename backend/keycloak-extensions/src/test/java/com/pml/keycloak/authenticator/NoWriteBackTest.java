@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 class NoWriteBackTest {
 
     @Test
-    @DisplayName("ET-IDN-001-R5 · no production source can create a user or grant a role")
+    @DisplayName("no production source can create a user or grant a role")
     void noUserCreationOrRoleGrants() throws IOException {
         List<String> forbidden = List.of(".addUser(", ".grantRole(", "addRoleMapping", "setSingleAttribute(",
                 "setAttribute(\"accountType", "registerUser", "UserProvider.addUser", "System.out", "printStackTrace");
@@ -32,7 +32,7 @@ class NoWriteBackTest {
     }
 
     @Test
-    @DisplayName("ET-IDN-001-R5 · no Spring or Gson or phone-otp leftovers in sources and resources")
+    @DisplayName("no Spring or Gson or phone-otp leftovers in sources and resources")
     void noLegacy() throws IOException {
         try (Stream<Path> files = Files.walk(Path.of("src/main"))) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {

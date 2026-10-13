@@ -31,7 +31,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -132,196 +131,184 @@ class NotificationPreferencesTest {
         return map;
     }
 
-    @Nested
-    @DisplayName("saving")
-    class Saving {
+    // ── saving ────────────────────────────────────────────────────────────────────────────────────
 
-        @Test
-        @DisplayName("every switch the settings page shows is stored and reads back")
-        void storesThePage() {
-            save(ALICE, payload(
-                    "emailEnabled", false, "smsEnabled", true, "whatsappEnabled", true, "pushEnabled", false,
-                    "inAppEnabled", false, "eventReminders", false, "marketingEmails", true,
-                    "ticketNotifications", true, "eventUpdates", true, "paymentNotifications", true,
-                    "teamNotifications", true, "systemAnnouncements", true,
-                    "reminderHoursBefore", 6, "quietHoursStart", "22:00", "quietHoursEnd", "07:00",
-                    "timezone", "Africa/Lusaka"));
+    @Test
+    @DisplayName("saving · every switch the settings page shows is stored and reads back")
+    void saving_storesThePage() {
+        save(ALICE, payload(
+                "emailEnabled", false, "smsEnabled", true, "whatsappEnabled", true, "pushEnabled", false,
+                "inAppEnabled", false, "eventReminders", false, "marketingEmails", true,
+                "ticketNotifications", true, "eventUpdates", true, "paymentNotifications", true,
+                "teamNotifications", true, "systemAnnouncements", true,
+                "reminderHoursBefore", 6, "quietHoursStart", "22:00", "quietHoursEnd", "07:00",
+                "timezone", "Africa/Lusaka"));
 
-            NotificationPreferences stored = preferences.findByUserId(ALICE).block();
-            assertThat(stored.isEmailEnabled()).isFalse();
-            assertThat(stored.isPushEnabled()).isFalse();
-            assertThat(stored.isInAppEnabled()).isFalse();
-            assertThat(stored.isEventReminders()).isFalse();
-            assertThat(stored.isMarketingEmails()).isTrue();
-            assertThat(stored.getReminderHoursBefore()).isEqualTo(6);
-            assertThat(stored.getQuietHoursStart()).isEqualTo("22:00");
-            assertThat(stored.getQuietHoursEnd()).isEqualTo("07:00");
-            assertThat(stored.getTimezone()).isEqualTo("Africa/Lusaka");
-            assertThat(stored.isTicketNotifications()).isTrue();
-            assertThat(stored.isPaymentNotifications()).isTrue();
-        }
-
-        @Test
-        @DisplayName("a save names only what changed and leaves the rest alone")
-        void partialSave() {
-            save(ALICE, payload("marketingEmails", true));
-            save(ALICE, payload("smsEnabled", false));
-
-            NotificationPreferences stored = preferences.findByUserId(ALICE).block();
-            assertThat(stored.isMarketingEmails()).isTrue();
-            assertThat(stored.isSmsEnabled()).isFalse();
-        }
-
-        @Test
-        @DisplayName("each user changes their own settings and nobody else's")
-        void ownSettingsOnly() {
-            save(BOB, payload("marketingEmails", false));
-            save(ALICE, payload("marketingEmails", true));
-
-            assertThat(preferences.findByUserId(BOB).block().isMarketingEmails()).isFalse();
-            assertThat(preferences.findByUserId(ALICE).block().isMarketingEmails()).isTrue();
-        }
-
-        @Test
-        @DisplayName("two first saves at once create one row between them")
-        void firstSavesRace() {
-            Flux.range(0, 8)
-                    .flatMap(i -> saving(ALICE, payload("marketingEmails", i % 2 == 0)))
-                    .collectList()
-                    .block();
-
-            assertThat(template.count(Query.query(Criteria.where("userId").is(ALICE)),
-                    IdentityCollections.NOTIFICATION_PREFERENCES).block()).isEqualTo(1);
-        }
+        NotificationPreferences stored = preferences.findByUserId(ALICE).block();
+        assertThat(stored.isEmailEnabled()).isFalse();
+        assertThat(stored.isPushEnabled()).isFalse();
+        assertThat(stored.isInAppEnabled()).isFalse();
+        assertThat(stored.isEventReminders()).isFalse();
+        assertThat(stored.isMarketingEmails()).isTrue();
+        assertThat(stored.getReminderHoursBefore()).isEqualTo(6);
+        assertThat(stored.getQuietHoursStart()).isEqualTo("22:00");
+        assertThat(stored.getQuietHoursEnd()).isEqualTo("07:00");
+        assertThat(stored.getTimezone()).isEqualTo("Africa/Lusaka");
+        assertThat(stored.isTicketNotifications()).isTrue();
+        assertThat(stored.isPaymentNotifications()).isTrue();
     }
 
-    @Nested
-    @DisplayName("essential messages")
-    class Essential {
+    @Test
+    @DisplayName("saving · a save names only what changed and leaves the rest alone")
+    void saving_partialSave() {
+        save(ALICE, payload("marketingEmails", true));
+        save(ALICE, payload("smsEnabled", false));
 
-        @ParameterizedTest
-        @ValueSource(strings = {"ticketNotifications", "paymentNotifications", "eventUpdates",
-                "teamNotifications", "systemAnnouncements"})
-        @DisplayName("cannot be switched off: the save is refused and names the field")
-        void cannotBeSwitchedOff(String field) {
-            assertThat(refusedPaths(payload(field, false))).containsExactly(field);
-            assertThat(preferences.findByUserId(ALICE).block()).as("nothing stored").isNull();
-        }
+        NotificationPreferences stored = preferences.findByUserId(ALICE).block();
+        assertThat(stored.isMarketingEmails()).isTrue();
+        assertThat(stored.isSmsEnabled()).isFalse();
     }
 
-    @Nested
-    @DisplayName("quiet hours and time zone")
-    class QuietHours {
+    @Test
+    @DisplayName("saving · each user changes their own settings and nobody else's")
+    void saving_ownSettingsOnly() {
+        save(BOB, payload("marketingEmails", false));
+        save(ALICE, payload("marketingEmails", true));
 
-        @Test
-        @DisplayName("a time that is not HH:mm is refused by input validation")
-        void timeFormat() {
-            UpdateNotificationPreferencesInput input = new UpdateNotificationPreferencesInput(null, null, null, null,
-                    null, null, null, null, null, null, null, null, 0, "25:00", "7am", null);
-
-            assertThat(VALIDATOR.validate(input)).extracting(v -> v.getPropertyPath().toString())
-                    .contains("quietHoursStart", "quietHoursEnd", "reminderHoursBefore");
-        }
-
-        @Test
-        @DisplayName("a start without an end is refused")
-        void bothEnds() {
-            assertThat(refusedPaths(payload("quietHoursStart", "22:00"))).containsExactly("quietHoursEnd");
-        }
-
-        @Test
-        @DisplayName("a zone that does not exist is refused")
-        void zone() {
-            assertThat(refusedPaths(payload("timezone", "Mars/Olympus_Mons"))).containsExactly("timezone");
-        }
+        assertThat(preferences.findByUserId(BOB).block().isMarketingEmails()).isFalse();
+        assertThat(preferences.findByUserId(ALICE).block().isMarketingEmails()).isTrue();
     }
 
-    @Nested
-    @DisplayName("sending")
-    class Sending {
+    @Test
+    @DisplayName("saving · two first saves at once create one row between them")
+    void saving_firstSavesRace() {
+        Flux.range(0, 8)
+                .flatMap(i -> saving(ALICE, payload("marketingEmails", i % 2 == 0)))
+                .collectList()
+                .block();
 
-        private static final Instant AFTERNOON_IN_LUSAKA = Instant.parse("2026-11-14T12:00:00Z");
-        private static final Instant NIGHT_IN_LUSAKA = Instant.parse("2026-11-14T21:30:00Z");
+        assertThat(template.count(Query.query(Criteria.where("userId").is(ALICE)),
+                IdentityCollections.NOTIFICATION_PREFERENCES).block()).isEqualTo(1);
+    }
 
-        private static final String REMINDER = "event.reminder.24h";
-        private static final String ESSENTIAL = "event.approved";
+    // ── essential messages ────────────────────────────────────────────────────────────────────────
 
-        private NotificationActivitiesImpl activitiesAt(Instant now) {
-            return new NotificationActivitiesImpl(template, Mockito.mock(MessagingService.class),
-                    new com.pml.identity.security.ContactCrypto(new com.pml.identity.security.FieldEncryptionService(
-                            com.pml.identity.security.FieldEncryptionService.generateKey(), "k7")),
-                    Clock.fixed(now, ZoneOffset.UTC));
-        }
+    @ParameterizedTest
+    @ValueSource(strings = {"ticketNotifications", "paymentNotifications", "eventUpdates",
+            "teamNotifications", "systemAnnouncements"})
+    @DisplayName("essential messages · cannot be switched off: the save is refused and names the field")
+    void essential_cannotBeSwitchedOff(String field) {
+        assertThat(refusedPaths(payload(field, false))).containsExactly(field);
+        assertThat(preferences.findByUserId(ALICE).block()).as("nothing stored").isNull();
+    }
 
-        /** Records the notification exactly as the workflow's first activity does, then asks for its channels. */
-        private List<NotificationChannel> channelsFor(String templateKey, Instant now) {
-            NotificationActivitiesImpl activities = activitiesAt(now);
-            String id = activities.record(new NotificationWorkflow.Request(key(templateKey, now), templateKey, ALICE, null, null));
-            return activities.channelsFor(id);
-        }
+    // ── quiet hours and time zone ─────────────────────────────────────────────────────────────────
 
-        private Notification stored(String templateKey, Instant now) {
-            return template.findById(NotificationRules.notificationId(key(templateKey, now)), Notification.class).block();
-        }
+    @Test
+    @DisplayName("quiet hours and time zone · a time that is not HH:mm is refused by input validation")
+    void quietHours_timeFormat() {
+        UpdateNotificationPreferencesInput input = new UpdateNotificationPreferencesInput(null, null, null, null,
+                null, null, null, null, null, null, null, null, 0, "25:00", "7am", null);
 
-        private static String key(String templateKey, Instant now) {
-            return templateKey + ":" + now.getEpochSecond();
-        }
+        assertThat(VALIDATOR.validate(input)).extracting(v -> v.getPropertyPath().toString())
+                .contains("quietHoursStart", "quietHoursEnd", "reminderHoursBefore");
+    }
 
-        @Test
-        @DisplayName("a reminder the user switched off is not sent, and is recorded as suppressed with the reason")
-        void reminderOff() {
-            save(ALICE, payload("eventReminders", false));
+    @Test
+    @DisplayName("quiet hours and time zone · a start without an end is refused")
+    void quietHours_bothEnds() {
+        assertThat(refusedPaths(payload("quietHoursStart", "22:00"))).containsExactly("quietHoursEnd");
+    }
 
-            assertThat(channelsFor(REMINDER, AFTERNOON_IN_LUSAKA)).isEmpty();
-            Notification notification = stored(REMINDER, AFTERNOON_IN_LUSAKA);
-            assertThat(notification.getStatus()).isEqualTo(NotificationStatus.SUPPRESSED);
-            assertThat(notification.getData()).containsEntry("suppressedBecause", PreferenceGate.CATEGORY_DISABLED);
-        }
+    @Test
+    @DisplayName("quiet hours and time zone · a zone that does not exist is refused")
+    void quietHours_zone() {
+        assertThat(refusedPaths(payload("timezone", "Mars/Olympus_Mons"))).containsExactly("timezone");
+    }
 
-        @Test
-        @DisplayName("a reminder inside the user's quiet hours, in their zone, is suppressed")
-        void quietHours() {
-            save(ALICE, payload("quietHoursStart", "22:00", "quietHoursEnd", "07:00", "timezone", "Africa/Lusaka"));
+    // ── sending ───────────────────────────────────────────────────────────────────────────────────
 
-            assertThat(channelsFor(REMINDER, NIGHT_IN_LUSAKA)).isEmpty();
-            assertThat(stored(REMINDER, NIGHT_IN_LUSAKA).getData())
-                    .containsEntry("suppressedBecause", PreferenceGate.QUIET_HOURS);
-            assertThat(channelsFor(REMINDER, AFTERNOON_IN_LUSAKA)).isNotEmpty();
-        }
+    private static final Instant AFTERNOON_IN_LUSAKA = Instant.parse("2026-11-14T12:00:00Z");
+    private static final Instant NIGHT_IN_LUSAKA = Instant.parse("2026-11-14T21:30:00Z");
 
-        @Test
-        @DisplayName("a reminder goes only by the channels the user left on")
-        void channels() {
-            save(ALICE, payload("whatsappEnabled", false));
+    private static final String REMINDER = "event.reminder.24h";
+    private static final String ESSENTIAL = "event.approved";
 
-            assertThat(channelsFor(REMINDER, AFTERNOON_IN_LUSAKA)).containsExactly(NotificationChannel.EMAIL);
-        }
+    private NotificationActivitiesImpl activitiesAt(Instant now) {
+        return new NotificationActivitiesImpl(template, Mockito.mock(MessagingService.class),
+                new com.pml.identity.security.ContactCrypto(new com.pml.identity.security.FieldEncryptionService(
+                        com.pml.identity.security.FieldEncryptionService.generateKey(), "k7")),
+                Clock.fixed(now, ZoneOffset.UTC));
+    }
 
-        @Test
-        @DisplayName("an essential message ignores every preference")
-        void essentialIgnoresPreferences() {
-            save(ALICE, payload("whatsappEnabled", false, "smsEnabled", false, "eventReminders", false,
-                    "quietHoursStart", "00:00", "quietHoursEnd", "23:59"));
+    /** Records the notification exactly as the workflow's first activity does, then asks for its channels. */
+    private List<NotificationChannel> channelsFor(String templateKey, Instant now) {
+        NotificationActivitiesImpl activities = activitiesAt(now);
+        String id = activities.record(new NotificationWorkflow.Request(key(templateKey, now), templateKey, ALICE, null, null));
+        return activities.channelsFor(id);
+    }
 
-            assertThat(channelsFor(ESSENTIAL, NIGHT_IN_LUSAKA)).isEqualTo(NotificationRules.CHAIN);
-            assertThat(stored(ESSENTIAL, NIGHT_IN_LUSAKA).getStatus()).isEqualTo(NotificationStatus.PENDING);
-        }
+    private Notification stored(String templateKey, Instant now) {
+        return template.findById(NotificationRules.notificationId(key(templateKey, now)), Notification.class).block();
+    }
 
-        @Test
-        @DisplayName("a notification addressed by its subject, with no recipient account, is recorded")
-        void subjectAddressedIsRecorded() {
-            String id = activitiesAt(AFTERNOON_IN_LUSAKA).record(new NotificationWorkflow.Request(
-                    "team.invitation:inv-1", "team.invitation", null, NotificationRules.TEAM_INVITATION, "inv-1"));
+    private static String key(String templateKey, Instant now) {
+        return templateKey + ":" + now.getEpochSecond();
+    }
 
-            assertThat(template.findById(id, Notification.class).block().getStatus()).isEqualTo(NotificationStatus.PENDING);
-        }
+    @Test
+    @DisplayName("sending · a reminder the user switched off is not sent, and is recorded as suppressed with the reason")
+    void sending_reminderOff() {
+        save(ALICE, payload("eventReminders", false));
 
-        @Test
-        @DisplayName("a user who never saved settings gets reminders on every channel")
-        void defaults() {
-            assertThat(channelsFor(REMINDER, AFTERNOON_IN_LUSAKA)).isEqualTo(NotificationRules.CHAIN);
-        }
+        assertThat(channelsFor(REMINDER, AFTERNOON_IN_LUSAKA)).isEmpty();
+        Notification notification = stored(REMINDER, AFTERNOON_IN_LUSAKA);
+        assertThat(notification.getStatus()).isEqualTo(NotificationStatus.SUPPRESSED);
+        assertThat(notification.getData()).containsEntry("suppressedBecause", PreferenceGate.CATEGORY_DISABLED);
+    }
+
+    @Test
+    @DisplayName("sending · a reminder inside the user's quiet hours, in their zone, is suppressed")
+    void sending_quietHours() {
+        save(ALICE, payload("quietHoursStart", "22:00", "quietHoursEnd", "07:00", "timezone", "Africa/Lusaka"));
+
+        assertThat(channelsFor(REMINDER, NIGHT_IN_LUSAKA)).isEmpty();
+        assertThat(stored(REMINDER, NIGHT_IN_LUSAKA).getData())
+                .containsEntry("suppressedBecause", PreferenceGate.QUIET_HOURS);
+        assertThat(channelsFor(REMINDER, AFTERNOON_IN_LUSAKA)).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("sending · a reminder goes only by the channels the user left on")
+    void sending_channels() {
+        save(ALICE, payload("whatsappEnabled", false));
+
+        assertThat(channelsFor(REMINDER, AFTERNOON_IN_LUSAKA)).containsExactly(NotificationChannel.EMAIL);
+    }
+
+    @Test
+    @DisplayName("sending · an essential message ignores every preference")
+    void sending_essentialIgnoresPreferences() {
+        save(ALICE, payload("whatsappEnabled", false, "smsEnabled", false, "eventReminders", false,
+                "quietHoursStart", "00:00", "quietHoursEnd", "23:59"));
+
+        assertThat(channelsFor(ESSENTIAL, NIGHT_IN_LUSAKA)).isEqualTo(NotificationRules.CHAIN);
+        assertThat(stored(ESSENTIAL, NIGHT_IN_LUSAKA).getStatus()).isEqualTo(NotificationStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("sending · a notification addressed by its subject, with no recipient account, is recorded")
+    void sending_subjectAddressedIsRecorded() {
+        String id = activitiesAt(AFTERNOON_IN_LUSAKA).record(new NotificationWorkflow.Request(
+                "team.invitation:inv-1", "team.invitation", null, NotificationRules.TEAM_INVITATION, "inv-1"));
+
+        assertThat(template.findById(id, Notification.class).block().getStatus()).isEqualTo(NotificationStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("sending · a user who never saved settings gets reminders on every channel")
+    void sending_defaults() {
+        assertThat(channelsFor(REMINDER, AFTERNOON_IN_LUSAKA)).isEqualTo(NotificationRules.CHAIN);
     }
 
     @Test

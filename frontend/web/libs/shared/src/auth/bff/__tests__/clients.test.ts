@@ -19,14 +19,14 @@ describe('same-origin BFF clients', () => {
     expect(calls[0].url).toBe('/api/graphql');
     expect(calls[0].init.credentials).toBe('same-origin');
     const headers = new Headers(calls[0].init.headers);
-    expect(headers.get('x-pml-csrf')).toBe('1');
+    expect(headers.get('x-requested-with')).toBe('pml-web');
     expect(headers.get('authorization')).toBeNull();
   });
 
   it('REST: base /api/rest, CSRF header, no Authorization interceptor', async () => {
     const client = createBffApiClient();
     expect(client.defaults.baseURL).toBe('/api/rest');
-    expect(client.defaults.headers['x-pml-csrf']).toBe('1');
+    expect(client.defaults.headers['x-requested-with']).toBe('pml-web');
     let seen: Record<string, unknown> = {};
     client.defaults.adapter = async (config) => {
       seen = { ...config.headers.toJSON() };
@@ -34,7 +34,7 @@ describe('same-origin BFF clients', () => {
     };
     const r = await client.get('/events');
     expect(r.data).toEqual({ ok: true });
-    expect(seen['x-pml-csrf']).toBe('1');
+    expect(seen['x-requested-with']).toBe('pml-web');
     expect(seen['Authorization']).toBeUndefined();
   });
 });
